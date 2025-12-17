@@ -1,0 +1,13 @@
+{
+    "module_root": [
+        "/home/noiq/wasm_micro_orm_poc/modules"
+    ],
+    "master_key": "ueioiehsiuehfs",
+    "container_pool": 5,
+    "thread_pool": 20,
+    "db_name": "Test",
+    "db_port": 5432,
+    "db_host": "localhost",
+    "db_user": "postgres",
+    "db_password": "Test123!"
+}

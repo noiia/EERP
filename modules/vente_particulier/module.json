@@ -1,0 +1,12 @@
+{
+    "active": true,
+    "name": "vente_particulier",
+    "display_name": "Vente particulier",
+    "version": "0.1.0",
+    "author": "Edwin Lecomte",
+    "description": "Extension du module Vente pour ajouter les propriété d'une vente B2B",
+    "depends": [],
+    "static_files": [],
+    "comportment": "inherited",
+    "auto_install": true
+}

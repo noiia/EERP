@@ -1,0 +1,12 @@
+{
+    "active": true,
+    "name": "vente",
+    "display_name": "Module de vente",
+    "version": "0.1.0",
+    "author": "Edwin Lecomte",
+    "description": "Coeur du module de vente",
+    "depends": [],
+    "static_files": [],
+    "comportment": "core",
+    "auto_install": true
+}

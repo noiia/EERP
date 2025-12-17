@@ -12,4 +12,5 @@ build:
 	cd modules/vente_particulier && cargo build --target wasm32-unknown-unknown --release
 
 run:
-	cd core && go run main.go
+	docker compose up -d 
+	cd core/cmd/main.go && go run main.go
