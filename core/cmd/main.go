@@ -31,12 +31,20 @@ func main() {
 		fmt.Println("📦 WASM LOG CALLED")
 	})
 
-	configFilePtr := flag.String("configFile", "", "MUST TO HAVE -- config file path")
+	configFilePtr := flag.String("config", "", "MUST TO HAVE -- config file path")
 
-	configContent := common.DecodeJSON(*configFilePtr, types.Config{})
+	flag.Parse()
 
-	module.LoadModules(context.Background(), store, linker, conn, configContent.ModuleRoot)
-	// module.LoadModules(context.Background(), store, linker, conn, "../modules/vente/target/wasm32-unknown-unknown/release/vente.wasm", "vente")
+	configContent, err := common.DecodeJSON[*types.Config](*configFilePtr)
+	if err != nil {
+		log.Fatal("❌ Error reading config file:", err)
+	}
+
+	// Load modules
+	err = module.LoadModules(context.Background(), store, linker, conn, configContent.ModuleRoot)
+	if err != nil {
+		log.Fatal("❌ Error loading modules:", err)
+	}
 
 	// Fake insert
 	vente := types.Vente{

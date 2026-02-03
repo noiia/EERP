@@ -25,7 +25,6 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 	migrate := instance.GetFunc(store, "migrate")
 	migrateLen := instance.GetFunc(store, "migrate_len")
 	if migrate != nil && migrateLen != nil {
-		// Call migrate to get the pointer
 		result, err := migrate.Call(store)
 		if err != nil {
 			panic(err)
@@ -33,7 +32,6 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 
 		ptr := result.(int32)
 
-		// Call migrate_len to get the length
 		lenResult, err := migrateLen.Call(store)
 		if err != nil {
 			panic(err)
@@ -63,9 +61,15 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 	fmt.Println("🔌 Module chargé:", name)
 }
 
-func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, conn *pgx.Conn, moduleRoots []string) {
-	modulePaths := detector(moduleRoots)
+func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, conn *pgx.Conn, moduleRoots []string) error {
+	modulePaths, err := detector(moduleRoots)
+	if err != nil {
+		return err
+	}
+
 	for _, modules := range modulePaths {
 		loadModule(ctx, store, linker, conn, modules.Path, modules.Name)
 	}
+
+	return nil
 }

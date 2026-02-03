@@ -1,5 +1,10 @@
 package types
 
+import (
+	"github.com/dgraph-io/ristretto"
+	"github.com/rogpeppe/go-internal/cache"
+)
+
 // Vente fields
 type Vente struct {
 	ID         string                 `json:"id"`
@@ -37,4 +42,9 @@ type Module struct {
 	Comportment string              `json:"comportment"` // core (create an entire container for this service)/thread (create a thread on the inherited service)/inherited (use the inherited service's thread to run)
 	Thread      string              `json:"thread"`
 	AutoInstall bool                `json:"auto_install"`
+}
+
+type ModuleCache struct {
+	config *cache.Cache
+	wasm   *ristretto.Cache
 }

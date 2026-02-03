@@ -5,15 +5,20 @@ import (
 	"os"
 )
 
-func DecodeJSON(filePath string, content interface{}) interface{} {
+func DecodeJSON[T any](filePath string) (T, error) {
+	var zero T
+
 	jsonFile, err := os.Open(filePath)
 	if err != nil {
-		panic(err)
+		return zero, err
 	}
 	defer jsonFile.Close()
 
 	decoder := json.NewDecoder(jsonFile)
-	err = decoder.Decode(&content)
+	var content T
+	if err := decoder.Decode(&content); err != nil {
+		return zero, err
+	}
 
-	return content
+	return content, nil
 }
