@@ -68,7 +68,8 @@ func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Li
 	}
 
 	for _, modules := range modulePaths {
-		loadModule(ctx, store, linker, conn, modules.Path, modules.Name)
+		fmt.Println("Loading module:", modules.Path)
+		loadModule(ctx, store, linker, conn, modules.WasmPath, modules.Name)
 	}
 
 	return nil

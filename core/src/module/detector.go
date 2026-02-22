@@ -7,18 +7,22 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/google/uuid"
 )
 
 // Pour le moment le detecteur fait donc un rebuild de snapshot à chaque fois et pour chaque chemin en entrée.
 // En l'état il stocke dans un fichier json tous les chemins et métadonnées des fichiers trouvés dans le répertoire du module.
 // Il compare ensuite avec le snapshot précédent pour détecter les ajouts et suppressions de fichiers.
 // Il faut donc maintenant implémenter la lecture des configs de chacun des modules détectés et le chargement des modules WASM.
-func detector(moduleRoots []string) ([]types.Module, error) {
+func detector(moduleRoots []string) (map[string]types.Module, error) {
 	const cachingFolderPath = "./cache/modules"
 
-	rebuildSnapshots(moduleRoots)
+	if err := rebuildSnapshots(moduleRoots); err != nil {
+		return nil, err
+	}
 
-	var modules []types.Module
+	modules := make(map[string]types.Module) // ← Initialiser la map !
 
 	if err := common.MkDirIfNotExists(cachingFolderPath); err != nil {
 		return modules, err
@@ -32,23 +36,45 @@ func detector(moduleRoots []string) ([]types.Module, error) {
 			return nil
 		}
 
-		_, err = d.Info()
+		jsonparse, err := common.DecodeJSON[map[string]types.FileMeta](path)
 		if err != nil {
-			return err
+			return fmt.Errorf("error parsing snapshot file %s: %w", path, err)
 		}
 
-		_, err = os.ReadFile(path)
-		if err != nil {
-			return err
+		for uuid, data := range jsonparse {
+			fmt.Println("uuid :", uuid, " - path:", data.Path)
+
+			moduleConfig, err := common.DecodeJSON[*types.Module](data.Path)
+			if err != nil {
+				return fmt.Errorf("error parsing module config %s: %w", data.Path, err)
+			}
+
+			moduleConfig.Path = data.Path
+			if moduleConfig.WasmPath == "" {
+				moduleConfig.WasmPath = filepath.Join(filepath.Dir(data.Path), "module.wasm")
+				modulesDirectory := filepath.Dir(data.Path)
+				if err := common.MkDirIfNotExists(modulesDirectory); err != nil {
+					return err
+				}
+
+				filepath.WalkDir(modulesDirectory, func(path string, d fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if d.IsDir() {
+						return nil
+					}
+					if filepath.Ext(path) == ".wasm" {
+						moduleConfig.WasmPath = path
+						return filepath.SkipDir
+					}
+					return nil
+				})
+			}
+
+			modules[uuid] = *moduleConfig
 		}
 
-		// fileContent := string(fileBytes)
-
-		// modules[path] = types.Module{
-		// 	Path:    path,
-		// 	Size:    info.Size(),
-		// 	ModTime: info.ModTime(),
-		// }
 		return nil
 	})
 
@@ -60,14 +86,15 @@ func detector(moduleRoots []string) ([]types.Module, error) {
 // Verifying path before rebuilding the snapshot.
 func rebuildSnapshots(moduleRoots []string) error {
 	for _, moduleRoot := range moduleRoots {
-		if notExists, err := common.FileNotExists(moduleRoot); err != nil {
-			return err
-		} else if !notExists {
-			if err := rebuildSnapshot(moduleRoot); err != nil {
-				return fmt.Errorf("❌ Error rebuilding snapshot for root:"+moduleRoot, ":", err)
+		if _, err := os.Stat(moduleRoot); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("path doesn't exist: %s", moduleRoot)
 			}
-		} else {
-			return fmt.Errorf("❌ Error rebuilding snapshot for root:"+moduleRoot, " - Path doesn't exists, please specify an existing folder")
+			return fmt.Errorf("error accessing path %s: %w", moduleRoot, err)
+		}
+
+		if err := rebuildSnapshot(moduleRoot); err != nil {
+			return fmt.Errorf("error rebuilding snapshot for %s: %w", moduleRoot, err)
 		}
 	}
 	return nil
@@ -119,7 +146,8 @@ func scanFiles(root string) (map[string]types.FileMeta, error) {
 		}
 
 		if d.Name() == "module.json" {
-			files[path] = types.FileMeta{
+			uuid := uuid.New().String()
+			files[uuid] = types.FileMeta{
 				Path:    path,
 				Size:    info.Size(),
 				ModTime: info.ModTime(),
