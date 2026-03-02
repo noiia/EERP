@@ -1,6 +1,6 @@
 {
     "module_root": [
-        "/home/noiq/wasm_micro_orm_poc/modules"
+        "/home/noiq/EERP/modules"
     ],
     "master_key": "ueioiehsiuehfs",
     "container_pool": 5,

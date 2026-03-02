@@ -1,31 +1,29 @@
 package module
 
 import (
-	"core/src/common"
-	"core/src/types"
+	"core/internal/common"
+	"core/internal/types"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
-// Pour le moment le detecteur fait donc un rebuild de snapshot à chaque fois et pour chaque chemin en entrée.
-// En l'état il stocke dans un fichier json tous les chemins et métadonnées des fichiers trouvés dans le répertoire du module.
-// Il compare ensuite avec le snapshot précédent pour détecter les ajouts et suppressions de fichiers.
-// Il faut donc maintenant implémenter la lecture des configs de chacun des modules détectés et le chargement des modules WASM.
+// detector rebuilds module snapshots from the provided roots, detects filesystem
+// changes, loads module configurations, resolves WASM paths, and returns all detected modules.
 func detector(moduleRoots []string) (map[string]types.Module, error) {
 	const cachingFolderPath = "./cache/modules"
 
-	if err := rebuildSnapshots(moduleRoots); err != nil {
-		return nil, err
-	}
-
-	modules := make(map[string]types.Module) // ← Initialiser la map !
-
+	modules := make(map[string]types.Module)
 	if err := common.MkDirIfNotExists(cachingFolderPath); err != nil {
 		return modules, err
+	}
+
+	if err := rebuildSnapshots(moduleRoots); err != nil {
+		return nil, err
 	}
 
 	err := filepath.WalkDir(cachingFolderPath, func(path string, d fs.DirEntry, err error) error {
@@ -42,7 +40,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 		}
 
 		for uuid, data := range jsonparse {
-			fmt.Println("uuid :", uuid, " - path:", data.Path)
+			common.Logger.Info("uuid : ", zap.String("", uuid), zap.String("path : ", data.Path))
 
 			moduleConfig, err := common.DecodeJSON[*types.Module](data.Path)
 			if err != nil {
@@ -57,7 +55,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 					return err
 				}
 
-				filepath.WalkDir(modulesDirectory, func(path string, d fs.DirEntry, err error) error {
+				if err := filepath.WalkDir(modulesDirectory, func(path string, d fs.DirEntry, err error) error {
 					if err != nil {
 						return err
 					}
@@ -69,7 +67,9 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 						return filepath.SkipDir
 					}
 					return nil
-				})
+				}); err != nil {
+					return err
+				}
 			}
 
 			modules[uuid] = *moduleConfig
@@ -116,11 +116,11 @@ func rebuildSnapshot(root string) error {
 	diff := diffSnapshots(oldSnap, newSnap)
 
 	for _, f := range diff.Added {
-		fmt.Println("➕", f.Path)
+		common.Logger.Info("➕", zap.String("", f.Path))
 	}
 
 	for _, f := range diff.Removed {
-		fmt.Println("➖", f.Path)
+		common.Logger.Info("➖", zap.String("", f.Path))
 	}
 
 	return saveSnapshot(snapshotFile, newSnap)
