@@ -46,6 +46,9 @@ type Module struct {
 }
 
 type ModuleCache struct {
-	config *cache.Cache
-	wasm   *ristretto.Cache
+	// Waiting for implementation, commented to run linters while it's not used
+	//config *cache.Cache
+	_ *cache.Cache
+	// wasm   *ristretto.Cache
+	_ *ristretto.Cache
 }

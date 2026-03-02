@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 
-	"core/src/types"
+	"core/internal/common"
+	"core/internal/types"
 )
 
 func applyMigration(ctx context.Context, conn *pgx.Conn, module string, m types.Migration) error {
@@ -21,7 +23,7 @@ func applyMigration(ctx context.Context, conn *pgx.Conn, module string, m types.
 	}
 
 	if exists {
-		fmt.Println("↪️ Migration déjà appliquée:", module, m.Version)
+		common.Logger.Info("↪️ migration already applied:", zap.String("module : ", module), zap.Int("version : ", m.Version))
 		return nil
 	}
 
@@ -33,7 +35,7 @@ func applyMigration(ctx context.Context, conn *pgx.Conn, module string, m types.
 				op.Column,
 				op.SQLType,
 			)
-			fmt.Println("🛠️", sql)
+			common.Logger.Info("🛠️", zap.String("", sql))
 			if _, err := conn.Exec(ctx, sql); err != nil {
 				return err
 			}
@@ -45,6 +47,6 @@ func applyMigration(ctx context.Context, conn *pgx.Conn, module string, m types.
 		module, m.Version,
 	)
 
-	fmt.Println("✅ Migration appliquée:", module, m.Version)
+	common.Logger.Info("✅ Migration applied:", zap.String("module : ", module), zap.Int("version : ", m.Version))
 	return err
 }
