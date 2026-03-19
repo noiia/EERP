@@ -17,7 +17,7 @@ This Project aims to create a new OpenSource light, modular and efficient ERP. T
 Clone the repository:
 
 ```bash
-git clone https://github.com/noiia/wasm_micro_orm_poc.git
+git clone https://github.com/noiia/EERP.git
 ```
 Install dependencies:
 ```bash
