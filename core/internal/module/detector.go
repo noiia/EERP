@@ -48,6 +48,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 				return fmt.Errorf("error parsing module config %s: %w", data.Path, err)
 			}
 
+			moduleConfig.Priority = data.Priority
 			moduleConfig.Path = data.Path
 			if moduleConfig.WasmPath == "" {
 				moduleConfig.WasmPath = filepath.Join(filepath.Dir(data.Path), "module.wasm")

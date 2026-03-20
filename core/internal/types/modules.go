@@ -43,6 +43,7 @@ type Module struct {
 	IsService        bool                `json:"is_service"`
 	InheritedService string              `json:"inherited_service"`
 	AutoInstall      bool                `json:"auto_install"`
+	Priority         int                 `json:"priority"`
 }
 
 type ModuleCache struct {

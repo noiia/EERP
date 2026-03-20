@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"core/internal/common"
 	"core/internal/types"
@@ -70,18 +71,45 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 }
 
 func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, conn *pgx.Conn, moduleRoots []string) []error {
-	modulePaths, err := detector(moduleRoots)
+	modules, err := detector(moduleRoots)
 	if err != nil {
 		return []error{err}
 	}
 
-	var errList []error
-
-	for _, modules := range modulePaths {
-		common.Logger.Info("Loading module:", zap.String("", modules.Path))
-		if err := loadModule(ctx, store, linker, conn, modules.WasmPath, modules.Name); err != nil {
-			errList = append(errList, err)
+	priorityGroups := make(map[int][]types.Module)
+	maxPriority := 0
+	for _, mod := range modules {
+		priorityGroups[mod.Priority] = append(priorityGroups[mod.Priority], mod)
+		if mod.Priority > maxPriority {
+			maxPriority = mod.Priority
 		}
+	}
+
+	var (
+		errMu   sync.Mutex
+		errList []error
+	)
+
+	for p := 0; p <= maxPriority; p++ {
+		group, ok := priorityGroups[p]
+		if !ok {
+			continue
+		}
+		fmt.Println(p)
+		var wg sync.WaitGroup
+		for _, mod := range group {
+			wg.Add(1)
+			go func(mod types.Module) {
+				defer wg.Done()
+				common.Logger.Info("Loading module:", zap.String("name", mod.Name), zap.Int("priority", mod.Priority))
+				if err := loadModule(ctx, store, linker, conn, mod.WasmPath, mod.Name); err != nil {
+					errMu.Lock()
+					errList = append(errList, err)
+					errMu.Unlock()
+				}
+			}(mod)
+		}
+		wg.Wait()
 	}
 
 	return errList
