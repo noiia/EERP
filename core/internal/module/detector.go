@@ -3,6 +3,7 @@ package module
 import (
 	"core/internal/common"
 	"core/internal/types"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -34,7 +35,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 			return nil
 		}
 
-		jsonparse, err := common.DecodeJSON[map[string]types.FileMeta](path)
+		jsonparse, err := common.DecodeJSON[common.FileMetaMap](path)
 		if err != nil {
 			return fmt.Errorf("error parsing snapshot file %s: %w", path, err)
 		}
@@ -47,6 +48,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 				return fmt.Errorf("error parsing module config %s: %w", data.Path, err)
 			}
 
+			moduleConfig.Priority = data.Priority
 			moduleConfig.Path = data.Path
 			if moduleConfig.WasmPath == "" {
 				moduleConfig.WasmPath = filepath.Join(filepath.Dir(data.Path), "module.wasm")
@@ -113,6 +115,12 @@ func rebuildSnapshot(root string) error {
 		return err
 	}
 
+	if ok, missingDepsMap := newSnap.CheckDependencies(); !ok {
+		return fmt.Errorf("modules are calling the following missing dependencies: %v", missingDepsMap)
+	}
+
+	newSnap.Reassort()
+
 	diff := diffSnapshots(oldSnap, newSnap)
 
 	for _, f := range diff.Added {
@@ -129,8 +137,8 @@ func rebuildSnapshot(root string) error {
 // WalkDir in the root to read any of its documents.
 //
 // Verify if the documents is a file and returning its path, size and modtime
-func scanFiles(root string) (map[string]types.FileMeta, error) {
-	files := make(map[string]types.FileMeta)
+func scanFiles(root string) (common.FileMetaMap, error) {
+	files := make(common.FileMetaMap)
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -145,12 +153,27 @@ func scanFiles(root string) (map[string]types.FileMeta, error) {
 			return err
 		}
 
+		type Resp struct {
+			Depends []string `json:"depends"`
+		}
+
 		if d.Name() == "module.json" {
 			uuid := uuid.New().String()
+			var r Resp
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			if err := json.Unmarshal(data, &r); err != nil {
+				return err
+			}
+
 			files[uuid] = types.FileMeta{
-				Path:    path,
-				Size:    info.Size(),
-				ModTime: info.ModTime(),
+				Path:        path,
+				Size:        info.Size(),
+				ModTime:     info.ModTime(),
+				Dependances: r.Depends,
 			}
 		}
 
