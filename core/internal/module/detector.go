@@ -41,7 +41,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 		}
 
 		for uuid, data := range jsonparse {
-			common.Logger.Info("uuid : ", zap.String("", uuid), zap.String("path : ", data.Path))
+			common.Logger.Info("", zap.String("uuid", uuid), zap.String("path", data.Path))
 
 			moduleConfig, err := common.DecodeJSON[*types.Module](data.Path)
 			if err != nil {
@@ -119,16 +119,16 @@ func rebuildSnapshot(root string) error {
 		return fmt.Errorf("modules are calling the following missing dependencies: %v", missingDepsMap)
 	}
 
-	newSnap.Reassort()
+	newSnap.SetPriorities()
 
 	diff := diffSnapshots(oldSnap, newSnap)
 
 	for _, f := range diff.Added {
-		common.Logger.Info("➕", zap.String("", f.Path))
+		common.Logger.Info("", zap.String("➕", f.Path))
 	}
 
 	for _, f := range diff.Removed {
-		common.Logger.Info("➖", zap.String("", f.Path))
+		common.Logger.Info("", zap.String("➖", f.Path))
 	}
 
 	return saveSnapshot(snapshotFile, newSnap)
@@ -154,11 +154,11 @@ func scanFiles(root string) (common.FileMetaMap, error) {
 		}
 
 		type Resp struct {
+			Name    string   `json:"name"`
 			Depends []string `json:"depends"`
 		}
 
 		if d.Name() == "module.json" {
-			uuid := uuid.New().String()
 			var r Resp
 			data, err := os.ReadFile(path)
 			if err != nil {
@@ -169,11 +169,13 @@ func scanFiles(root string) (common.FileMetaMap, error) {
 				return err
 			}
 
+			uuid := uuid.NewSHA1(uuid.NameSpaceDNS, []byte(r.Name)).String()
+
 			files[uuid] = types.FileMeta{
 				Path:        path,
 				Size:        info.Size(),
 				ModTime:     info.ModTime(),
-				Dependances: r.Depends,
+				Dependences: r.Depends,
 			}
 		}
 

@@ -3,6 +3,7 @@ package module
 import (
 	"core/internal/types"
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -29,6 +30,8 @@ func loadSnapshot(path string) (map[string]types.FileMeta, error) {
 func diffSnapshots(oldSnap, newSnap map[string]types.FileMeta) types.Diff {
 	diff := types.Diff{}
 
+	fmt.Println("oldSnap", oldSnap)
+	fmt.Println("newSnap", newSnap)
 	for path, meta := range newSnap {
 		if _, exists := oldSnap[path]; !exists {
 			diff.Added = append(diff.Added, meta)

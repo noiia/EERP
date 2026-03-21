@@ -7,8 +7,8 @@ import (
 
 type FileMetaMap map[string]types.FileMeta
 
-// Sort the FileMeta map to reorder the snapshot, based on the dependances in each modules.
-func (fmMap FileMetaMap) Reassort() {
+// Set priorities on modules for module installation
+func (fmMap FileMetaMap) SetPriorities() {
 	depsList := make(map[string]int, len(fmMap))
 	waitList := make([]types.FileMeta, 0, len(fmMap))
 	i := 0
@@ -48,7 +48,7 @@ func (fmMap FileMetaMap) Reassort() {
 }
 
 func hasAllDeps(fileMeta types.FileMeta, depsList map[string]int) bool {
-	for _, dep := range fileMeta.Dependances {
+	for _, dep := range fileMeta.Dependences {
 		if _, ok := depsList[dep]; !ok {
 			return false
 		}
@@ -56,6 +56,7 @@ func hasAllDeps(fileMeta types.FileMeta, depsList map[string]int) bool {
 	return true
 }
 
+// Get a FileMetaMap and return if some dependencies are missing and the lists with the missing dependency followed by the list of modules inheriting the dependency.
 func (fmMap FileMetaMap) CheckDependencies() (bool, map[string][]string) {
 	existingDeps := make(map[string]int, len(fmMap))
 	missingDeps := make(map[string][]string, len(fmMap))
@@ -65,7 +66,7 @@ func (fmMap FileMetaMap) CheckDependencies() (bool, map[string][]string) {
 	}
 
 	for _, fileMeta := range fmMap {
-		for _, deps := range fileMeta.Dependances {
+		for _, deps := range fileMeta.Dependences {
 			if _, ok := existingDeps[deps]; !ok {
 				missingDeps[deps] = append(missingDeps[deps], filepath.Base(filepath.Dir(fileMeta.Path)))
 			}
