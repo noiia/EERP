@@ -57,12 +57,12 @@ func main() {
 
 	b, err := os.ReadFile("../../schema.sql")
 	if err != nil {
-		common.Logger.Error("❌ Error loading squema.sql:", zap.Error(err))
+		common.Logger.Error("❌ Error loading schema.sql:", zap.Error(err))
 	}
 
 	_, err = conn.Exec(context.Background(), string(b))
 	if err != nil {
-		common.Logger.Error("❌ Error inserting vente:", zap.Error(err))
+		common.Logger.Error("❌ Error inserting schema.sql:", zap.Error(err))
 	}
 
 	// Fake insert

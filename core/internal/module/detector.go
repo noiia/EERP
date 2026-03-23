@@ -156,6 +156,7 @@ func scanFiles(root string) (common.FileMetaMap, error) {
 		type Resp struct {
 			Name    string   `json:"name"`
 			Depends []string `json:"depends"`
+			Active  bool     `json:"active"`
 		}
 
 		if d.Name() == "module.json" {
@@ -176,6 +177,7 @@ func scanFiles(root string) (common.FileMetaMap, error) {
 				Size:        info.Size(),
 				ModTime:     info.ModTime(),
 				Dependences: r.Depends,
+				Active:      r.Active,
 			}
 		}
 

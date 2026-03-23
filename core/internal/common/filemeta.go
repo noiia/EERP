@@ -2,6 +2,7 @@ package common
 
 import (
 	"core/internal/types"
+	"fmt"
 	"path/filepath"
 )
 
@@ -58,16 +59,18 @@ func hasAllDeps(fileMeta types.FileMeta, depsList map[string]int) bool {
 
 // Get a FileMetaMap and return if some dependencies are missing and the lists with the missing dependency followed by the list of modules inheriting the dependency.
 func (fmMap FileMetaMap) CheckDependencies() (bool, map[string][]string) {
-	existingDeps := make(map[string]int, len(fmMap))
+	existingDeps := make(map[string]bool, len(fmMap))
 	missingDeps := make(map[string][]string, len(fmMap))
 
 	for _, fileMeta := range fmMap {
-		existingDeps[filepath.Base(filepath.Dir(fileMeta.Path))] = 0
+		existingDeps[filepath.Base(filepath.Dir(fileMeta.Path))] = fileMeta.Active
 	}
+
+	fmt.Println(existingDeps)
 
 	for _, fileMeta := range fmMap {
 		for _, deps := range fileMeta.Dependences {
-			if _, ok := existingDeps[deps]; !ok {
+			if active, ok := existingDeps[deps]; !ok || !active {
 				missingDeps[deps] = append(missingDeps[deps], filepath.Base(filepath.Dir(fileMeta.Path)))
 			}
 		}

@@ -8,6 +8,7 @@ type FileMeta struct {
 	ModTime     time.Time
 	Dependences []string
 	Priority    int
+	Active      bool
 }
 
 type Diff struct {
