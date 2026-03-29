@@ -43,9 +43,13 @@ type Module struct {
 	IsService        bool                `json:"is_service"`
 	InheritedService string              `json:"inherited_service"`
 	AutoInstall      bool                `json:"auto_install"`
+	Priority         int                 `json:"priority"`
 }
 
 type ModuleCache struct {
-	config *cache.Cache
-	wasm   *ristretto.Cache
+	// Waiting for implementation, commented to run linters while it's not used
+	//config *cache.Cache
+	_ *cache.Cache
+	// wasm   *ristretto.Cache
+	_ *ristretto.Cache
 }

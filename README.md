@@ -44,9 +44,9 @@ This project follows standard Go project layout conventions:
 │   ├── cmd/            # Application entry points
 │   │   └── app/
 │   │       └── main.go
+│   ├── configs/        # Configuration files
 │   ├── internal/       # Private application code
 │   ├── pkg/            # Public reusable packages
-│   ├── configs/        # Configuration files
 │   ├── scripts/        # Helper scripts
 │   ├── go.mod
 │   ├── go.sum
@@ -54,11 +54,12 @@ This project follows standard Go project layout conventions:
 │   
 ├── modules/
 ├── .gitignore
+├── compose.yml
+├── eerp-config.json
+├── golangci.yml
 ├── Makefile
 ├── README.md
-├── TODO.md
-├── compose.yml
-└── eerp-config.json
+└── TODO.md
 ```
 ### Rules:
 
@@ -81,6 +82,21 @@ Always run:
 gofmt -w .
 ```
 No manual formatting.
+
+### Linting
+
+Install golangci-lint
+```bash
+curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.10.1
+echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Always run:
+```bash
+cd core
+golangci-lint run ./...
+```
 
 ### Naming
 
@@ -220,3 +236,16 @@ git checkout -b feat/my-feature
 Commit using the convention above
 
 Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the GNU AGPL v3.
+
+## Contributions
+
+By contributing to this project, you agree to the terms of the
+Contributor License Agreement (CLA) available in the CLA.md file.
+
+In short:
+- You allow the project owner to reuse your contributions freely
+- Your contributions may be relicensed, including into proprietary software

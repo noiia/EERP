@@ -5,7 +5,6 @@
     "version": "0.1.0",
     "author": "Edwin Lecomte",
     "description": "Coeur du module de vente",
-    "depends": [],
     "static_files": {},
     "is_service": true,
     "auto_install": true

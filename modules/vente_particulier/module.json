@@ -5,7 +5,9 @@
     "version": "0.1.0",
     "author": "Edwin Lecomte",
     "description": "Extension du module Vente pour ajouter les propriété d'une vente B2B",
-    "depends": [],
+    "depends": [
+        "vente"
+    ],
     "static_files": {},
     "is_service": false,
     "inherited_service": "vente",

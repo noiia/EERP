@@ -1,31 +1,30 @@
 package module
 
 import (
-	"core/src/common"
-	"core/src/types"
+	"core/internal/common"
+	"core/internal/types"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
-// Pour le moment le detecteur fait donc un rebuild de snapshot à chaque fois et pour chaque chemin en entrée.
-// En l'état il stocke dans un fichier json tous les chemins et métadonnées des fichiers trouvés dans le répertoire du module.
-// Il compare ensuite avec le snapshot précédent pour détecter les ajouts et suppressions de fichiers.
-// Il faut donc maintenant implémenter la lecture des configs de chacun des modules détectés et le chargement des modules WASM.
+// detector rebuilds module snapshots from the provided roots, detects filesystem
+// changes, loads module configurations, resolves WASM paths, and returns all detected modules.
 func detector(moduleRoots []string) (map[string]types.Module, error) {
 	const cachingFolderPath = "./cache/modules"
 
-	if err := rebuildSnapshots(moduleRoots); err != nil {
-		return nil, err
-	}
-
-	modules := make(map[string]types.Module) // ← Initialiser la map !
-
+	modules := make(map[string]types.Module)
 	if err := common.MkDirIfNotExists(cachingFolderPath); err != nil {
 		return modules, err
+	}
+
+	if err := rebuildSnapshots(moduleRoots); err != nil {
+		return nil, err
 	}
 
 	err := filepath.WalkDir(cachingFolderPath, func(path string, d fs.DirEntry, err error) error {
@@ -36,19 +35,20 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 			return nil
 		}
 
-		jsonparse, err := common.DecodeJSON[map[string]types.FileMeta](path)
+		jsonparse, err := common.DecodeJSON[common.FileMetaMap](path)
 		if err != nil {
 			return fmt.Errorf("error parsing snapshot file %s: %w", path, err)
 		}
 
 		for uuid, data := range jsonparse {
-			fmt.Println("uuid :", uuid, " - path:", data.Path)
+			common.Logger.Info("uuid : ", zap.String("", uuid), zap.String("path : ", data.Path))
 
 			moduleConfig, err := common.DecodeJSON[*types.Module](data.Path)
 			if err != nil {
 				return fmt.Errorf("error parsing module config %s: %w", data.Path, err)
 			}
 
+			moduleConfig.Priority = data.Priority
 			moduleConfig.Path = data.Path
 			if moduleConfig.WasmPath == "" {
 				moduleConfig.WasmPath = filepath.Join(filepath.Dir(data.Path), "module.wasm")
@@ -57,7 +57,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 					return err
 				}
 
-				filepath.WalkDir(modulesDirectory, func(path string, d fs.DirEntry, err error) error {
+				if err := filepath.WalkDir(modulesDirectory, func(path string, d fs.DirEntry, err error) error {
 					if err != nil {
 						return err
 					}
@@ -69,7 +69,9 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 						return filepath.SkipDir
 					}
 					return nil
-				})
+				}); err != nil {
+					return err
+				}
 			}
 
 			modules[uuid] = *moduleConfig
@@ -113,14 +115,20 @@ func rebuildSnapshot(root string) error {
 		return err
 	}
 
+	if ok, missingDepsMap := newSnap.CheckDependencies(); !ok {
+		return fmt.Errorf("modules are calling the following missing dependencies: %v", missingDepsMap)
+	}
+
+	newSnap.Reassort()
+
 	diff := diffSnapshots(oldSnap, newSnap)
 
 	for _, f := range diff.Added {
-		fmt.Println("➕", f.Path)
+		common.Logger.Info("➕", zap.String("", f.Path))
 	}
 
 	for _, f := range diff.Removed {
-		fmt.Println("➖", f.Path)
+		common.Logger.Info("➖", zap.String("", f.Path))
 	}
 
 	return saveSnapshot(snapshotFile, newSnap)
@@ -129,8 +137,8 @@ func rebuildSnapshot(root string) error {
 // WalkDir in the root to read any of its documents.
 //
 // Verify if the documents is a file and returning its path, size and modtime
-func scanFiles(root string) (map[string]types.FileMeta, error) {
-	files := make(map[string]types.FileMeta)
+func scanFiles(root string) (common.FileMetaMap, error) {
+	files := make(common.FileMetaMap)
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -145,12 +153,27 @@ func scanFiles(root string) (map[string]types.FileMeta, error) {
 			return err
 		}
 
+		type Resp struct {
+			Depends []string `json:"depends"`
+		}
+
 		if d.Name() == "module.json" {
 			uuid := uuid.New().String()
+			var r Resp
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			if err := json.Unmarshal(data, &r); err != nil {
+				return err
+			}
+
 			files[uuid] = types.FileMeta{
-				Path:    path,
-				Size:    info.Size(),
-				ModTime: info.ModTime(),
+				Path:        path,
+				Size:        info.Size(),
+				ModTime:     info.ModTime(),
+				Dependances: r.Depends,
 			}
 		}
 

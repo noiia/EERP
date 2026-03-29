@@ -1,7 +1,7 @@
 package module
 
 import (
-	"core/src/types"
+	"core/internal/types"
 	"encoding/json"
 	"os"
 )
