@@ -2,8 +2,9 @@ package common
 
 import (
 	"core/internal/types"
-	"fmt"
 	"path/filepath"
+
+	"go.uber.org/zap"
 )
 
 type FileMetaMap map[string]types.FileMeta
@@ -66,7 +67,7 @@ func (fmMap FileMetaMap) CheckDependencies() (bool, map[string][]string) {
 		existingDeps[filepath.Base(filepath.Dir(fileMeta.Path))] = fileMeta.Active
 	}
 
-	fmt.Println(existingDeps)
+	Logger.Debug("existing maps and active status", zap.Any("deps", existingDeps))
 
 	for _, fileMeta := range fmMap {
 		for _, deps := range fileMeta.Dependences {

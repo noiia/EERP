@@ -41,7 +41,7 @@ func detector(moduleRoots []string) (map[string]types.Module, error) {
 		}
 
 		for uuid, data := range jsonparse {
-			common.Logger.Info("", zap.String("uuid", uuid), zap.String("path", data.Path))
+			common.Logger.Debug("", zap.String("uuid", uuid), zap.String("path", data.Path))
 
 			moduleConfig, err := common.DecodeJSON[*types.Module](data.Path)
 			if err != nil {
@@ -124,11 +124,11 @@ func rebuildSnapshot(root string) error {
 	diff := diffSnapshots(oldSnap, newSnap)
 
 	for _, f := range diff.Added {
-		common.Logger.Info("", zap.String("➕", f.Path))
+		common.Logger.Debug("", zap.String("➕", f.Path))
 	}
 
 	for _, f := range diff.Removed {
-		common.Logger.Info("", zap.String("➖", f.Path))
+		common.Logger.Debug("", zap.String("➖", f.Path))
 	}
 
 	return saveSnapshot(snapshotFile, newSnap)
