@@ -236,3 +236,16 @@ git checkout -b feat/my-feature
 Commit using the convention above
 
 Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the GNU AGPL v3.
+
+## Contributions
+
+By contributing to this project, you agree to the terms of the
+Contributor License Agreement (CLA) available in the CLA.md file.
+
+In short:
+- You allow the project owner to reuse your contributions freely
+- Your contributions may be relicensed, including into proprietary software
