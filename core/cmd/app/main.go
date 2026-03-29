@@ -15,7 +15,13 @@ import (
 )
 
 func main() {
-	if err := common.InitLogger(); err != nil {
+	configFilePtr := flag.String("config", "", "MUST TO HAVE -- config file path")
+
+	logLevelPtr := flag.String("log-level", "", "define log level between :\n- 'INFO'\n- 'DEBUG'")
+
+	flag.Parse()
+
+	if err := common.InitLogger(*logLevelPtr); err != nil {
 		panic(err)
 	}
 
@@ -39,10 +45,6 @@ func main() {
 	}); err != nil {
 		common.Logger.Error("❌ FuncWraping error : ", zap.Error(err))
 	}
-
-	configFilePtr := flag.String("config", "", "MUST TO HAVE -- config file path")
-
-	flag.Parse()
 
 	configContent, err := common.DecodeJSON[*types.Config](*configFilePtr)
 	if err != nil {

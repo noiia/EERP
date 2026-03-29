@@ -18,7 +18,7 @@ build:
 	cd $(root)/modules/vente_particulier && cargo build --target wasm32-unknown-unknown --release
 
 run-back:
-	cd $(root)/core/cmd/app && go run main.go -config="$(root)/eerp-config.json"
+	cd $(root)/core/cmd/app && go run main.go -config="$(root)/eerp-config.json" --log-level=info
 
 run-front:
 	cd $(root)/core-front && npm run dev -- --host 0.0.0.0

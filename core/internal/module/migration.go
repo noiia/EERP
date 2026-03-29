@@ -23,7 +23,7 @@ func applyMigration(ctx context.Context, conn *pgx.Conn, module string, m types.
 	}
 
 	if exists {
-		common.Logger.Info("↪️ migration already applied:", zap.String("module : ", module), zap.Int("version : ", m.Version))
+		common.Logger.Warn("↪️ migration already applied:", zap.String("module : ", module), zap.Int("version : ", m.Version))
 		return nil
 	}
 
@@ -35,7 +35,7 @@ func applyMigration(ctx context.Context, conn *pgx.Conn, module string, m types.
 				op.Column,
 				op.SQLType,
 			)
-			common.Logger.Info("🛠️", zap.String("", sql))
+			common.Logger.Debug("🛠️", zap.String("", sql))
 			if _, err := conn.Exec(ctx, sql); err != nil {
 				return err
 			}
