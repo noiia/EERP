@@ -95,19 +95,20 @@ func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Li
 		if !ok {
 			continue
 		}
-		fmt.Println(p)
 		var wg sync.WaitGroup
 		for _, mod := range group {
-			wg.Add(1)
-			go func(mod types.Module) {
-				defer wg.Done()
-				common.Logger.Info("Loading module:", zap.String("name", mod.Name), zap.Int("priority", mod.Priority))
-				if err := loadModule(ctx, store, linker, conn, mod.WasmPath, mod.Name); err != nil {
-					errMu.Lock()
-					errList = append(errList, err)
-					errMu.Unlock()
-				}
-			}(mod)
+			if mod.Active {
+				wg.Add(1)
+				go func(mod types.Module) {
+					defer wg.Done()
+					common.Logger.Info("Loading module:", zap.String("name", mod.Name), zap.Int("priority", mod.Priority))
+					if err := loadModule(ctx, store, linker, conn, mod.WasmPath, mod.Name); err != nil {
+						errMu.Lock()
+						errList = append(errList, err)
+						errMu.Unlock()
+					}
+				}(mod)
+			}
 		}
 		wg.Wait()
 	}

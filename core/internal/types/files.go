@@ -6,8 +6,9 @@ type FileMeta struct {
 	Path        string
 	Size        int64
 	ModTime     time.Time
-	Dependances []string
+	Dependences []string
 	Priority    int
+	Active      bool
 }
 
 type Diff struct {

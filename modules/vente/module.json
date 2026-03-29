@@ -1,5 +1,5 @@
 {
-    "active": true,
+    "active": false,
     "name": "vente",
     "display_name": "Module de vente",
     "version": "0.1.0",

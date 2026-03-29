@@ -15,7 +15,14 @@ pub extern "C" fn migrate() -> i32 {
                 "sql_type": "TEXT",
                 "nullable": true
             }
-        ]
+        ],
+        "data" : {
+            "id":      "123456789",
+            "amount": 24.2,
+            "extensions": {
+                "type_client": "particulier",
+            },
+        }
     });
 
     let s = migration.to_string();
