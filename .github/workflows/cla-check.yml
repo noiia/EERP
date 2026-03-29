@@ -1,0 +1,56 @@
+name: CLA Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  cla-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check PR body for CLA agreement
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prBody = context.payload.pull_request.body || "";
+
+            const requiredPhrases = [
+              "Contributor License Agreement (CLA)",
+              "I have read and agree to the terms of the CLA",
+              "I have the rights to submit this contribution",
+              "I grant the project owner the right to use, modify, and redistribute my contribution",
+              "I agree that my contribution may be relicensed"
+            ];
+
+            const missing = requiredPhrases.filter(p => !prBody.includes(p));
+
+            if (missing.length > 0) {
+              core.setFailed(
+                "❌ CLA section is missing or has been modified.\n" +
+                "Please use the Pull Request template and do not alter the CLA section.\n\n" +
+                "Missing elements:\n- " + missing.join("\n- ")
+              );
+            }
+
+      - name: Check CLA checkboxes are checked
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prBody = context.payload.pull_request.body || "";
+
+            const requiredChecks = [
+              "- [x] I have read and agree to the terms of the CLA",
+              "- [x] I have the rights to submit this contribution",
+              "- [x] I grant the project owner the right to use, modify, and redistribute my contribution",
+              "- [x] I agree that my contribution may be relicensed"
+            ];
+
+            const unchecked = requiredChecks.filter(c => !prBody.toLowerCase().includes(c.toLowerCase()));
+
+            if (unchecked.length > 0) {
+              core.setFailed(
+                "❌ CLA checkboxes must be checked before merging.\n\n" +
+                "Please confirm all CLA items in the Pull Request description."
+              );
+            }
