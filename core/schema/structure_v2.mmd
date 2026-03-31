@@ -1,0 +1,85 @@
+flowchart LR
+    %% Styles par type
+    classDef frontend fill:#f9f,stroke:#333,stroke-width:1px,color:#000;
+    classDef core fill:#8dd3c7,stroke:#333,stroke-width:1px,color:#000;
+    classDef worker fill:#ffffb3,stroke:#333,stroke-width:1px,color:#000;
+    classDef wasm fill:#bebada,stroke:#333,stroke-width:1px,color:#000;
+    classDef microservice fill:#fb8072,stroke:#333,stroke-width:1px,color:#000;
+    classDef redis fill:#80b1d3,stroke:#333,stroke-width:1px,color:#000;
+    classDef db fill:#fdb462,stroke:#333,stroke-width:1px,color:#000;
+
+    %% Frontend
+    subgraph Frontend
+        Svelte["SvelteKit Frontend"]:::frontend
+    end
+
+    %% Core Master
+    subgraph Core_Master
+        Master["Core ERP Go - Master"]:::core
+        ORM_Master["ORM Centralisé"]:::core
+        WASM_Manager_Master["WASM Loader / Manager"]:::wasm
+    end
+
+    %% Core Workers
+    subgraph Core_Workers
+        Worker1["Core Worker 1 - stateless"]:::worker
+        Worker2["Core Worker 2 - stateless"]:::worker
+        WorkerN["Core Worker N - stateless"]:::worker
+        Worker1 --> WASM_Manager_Worker1["WASM Loader / Manager"]:::wasm
+        Worker2 --> WASM_Manager_Worker2["WASM Loader / Manager"]:::wasm
+        WorkerN --> WASM_Manager_WorkerN["WASM Loader / Manager"]:::wasm
+    end
+
+    %% WASM Registry
+    subgraph WASM_Registry
+        WASM_Repo["Registry / Bucket / Versioned Storage"]:::wasm
+    end
+
+    %% Microservices
+    subgraph Microservices
+        IA["IA Service Python / ONNX"]:::microservice
+        Analytics["Analytics / Batch Service"]:::microservice
+    end
+
+    %% Redis Cluster
+    subgraph Redis_Cluster
+        Redis_Master[(Redis Master)]:::redis
+        Redis_Replica1[(Redis Replica 1)]:::redis
+        Redis_Replica2[(Redis Replica 2)]:::redis
+    end
+
+    %% PostgreSQL Cluster
+    subgraph PostgreSQL_Cluster
+        DB_Master[(PostgreSQL Master)]:::db
+        DB_Replica1[(PostgreSQL Replica 1)]:::db
+        DB_Replica2[(PostgreSQL Replica 2)]:::db
+    end
+
+    %% Flows
+    Svelte -->|HTTP / REST| Master
+    Master --> WASM_Manager_Master
+    WASM_Manager_Master -->|fetch/download| WASM_Repo
+
+    %% Job distribution via Redis
+    Master --> Redis_Master
+    Worker1 --> Redis_Master
+    Worker2 --> Redis_Master
+    WorkerN --> Redis_Master
+
+    %% Redis replication
+    Redis_Master --> Redis_Replica1
+    Redis_Master --> Redis_Replica2
+
+    %% PostgreSQL flow
+    Redis_Master --> DB_Master
+    DB_Master --> DB_Replica1
+    DB_Master --> DB_Replica2
+
+    %% Workers WASM execution
+    Worker1 --> WASM_Manager_Worker1
+    Worker2 --> WASM_Manager_Worker2
+    WorkerN --> WASM_Manager_WorkerN
+
+    %% Microservices flows
+    Master -->|gRPC / HTTP| IA
+    Master -->|gRPC / HTTP| Analytics
