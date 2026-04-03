@@ -1,4 +1,4 @@
-package core
+package config
 
 import (
 	"errors"
@@ -40,6 +40,8 @@ func (c Config) Validate() error {
 	if c.MaxConns > 0 && c.MinConns > c.MaxConns {
 		errs = append(errs, fmt.Errorf("MinConns (%d) must not exceed MaxConns (%d)", c.MinConns, c.MaxConns))
 	}
+
+	c.withDefaults()
 
 	return errors.Join(errs...)
 }

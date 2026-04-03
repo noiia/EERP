@@ -1,12 +1,11 @@
-package core_test
+package log_test
 
 import (
 	"context"
+	"core/orm/log"
 	"errors"
 	"testing"
 	"time"
-
-	"core/orm/core"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
@@ -17,9 +16,9 @@ import (
 func TestNoopLogger_NeverPanics(t *testing.T) {
 	t.Parallel()
 
-	l := core.NoopLogger{}
+	l := log.NoopLogger{}
 	// Should be a no-op with no panic — any args, any error.
-	l.Log(context.Background(), core.LogEntry{
+	l.Log(context.Background(), log.LogEntry{
 		SQL:      "SELECT 1",
 		Args:     []any{1, "two"},
 		Duration: time.Millisecond,
@@ -31,18 +30,18 @@ func TestNoopLogger_NeverPanics(t *testing.T) {
 
 // zapObserver builds a ZapLogger backed by an in-memory observer so we can
 // assert on emitted log entries without touching stdout.
-func zapObserver(t *testing.T) (*core.ZapLogger, *observer.ObservedLogs) {
+func zapObserver(t *testing.T) (*log.ZapLogger, *observer.ObservedLogs) {
 	t.Helper()
-	core_, obs := observer.New(zap.DebugLevel)
-	z := zap.New(core_)
-	return core.NewZapLogger(z), obs
+	log_, obs := observer.New(zap.DebugLevel)
+	z := zap.New(log_)
+	return log.NewZapLogger(z), obs
 }
 
 func TestZapLogger_SuccessQuery_LoggedAtDebug(t *testing.T) {
 	t.Parallel()
 
 	logger, obs := zapObserver(t)
-	entry := core.LogEntry{
+	entry := log.LogEntry{
 		SQL:      "SELECT id FROM orders WHERE id = $1",
 		Args:     []any{42},
 		Duration: 3 * time.Millisecond,
@@ -65,7 +64,7 @@ func TestZapLogger_ErrorQuery_LoggedAtError(t *testing.T) {
 	t.Parallel()
 
 	logger, obs := zapObserver(t)
-	entry := core.LogEntry{
+	entry := log.LogEntry{
 		SQL:      "INSERT INTO orders VALUES ($1)",
 		Args:     []any{"bad"},
 		Duration: time.Millisecond,
@@ -89,7 +88,7 @@ func TestZapLogger_Fields_Presence(t *testing.T) {
 	t.Parallel()
 
 	logger, obs := zapObserver(t)
-	logger.Log(context.Background(), core.LogEntry{
+	logger.Log(context.Background(), log.LogEntry{
 		SQL:      "SELECT 1",
 		Args:     []any{},
 		Duration: time.Second,
@@ -109,7 +108,7 @@ func TestZapLogger_ErrorField_OnlyWhenErr(t *testing.T) {
 	logger, obs := zapObserver(t)
 
 	// Without error — "error" key must be absent.
-	logger.Log(context.Background(), core.LogEntry{SQL: "SELECT 1"})
+	logger.Log(context.Background(), log.LogEntry{SQL: "SELECT 1"})
 	fields := obs.All()[0].ContextMap()
 	if _, ok := fields["error"]; ok {
 		t.Error("\"error\" field must not be present on successful query")
@@ -117,7 +116,7 @@ func TestZapLogger_ErrorField_OnlyWhenErr(t *testing.T) {
 
 	// With error — "error" key must be present.
 	obs.TakeAll() // reset
-	logger.Log(context.Background(), core.LogEntry{
+	logger.Log(context.Background(), log.LogEntry{
 		SQL: "SELECT 1",
 		Err: errors.New("oops"),
 	})
@@ -131,6 +130,6 @@ func TestZapLogger_ImplementsInterface(t *testing.T) {
 	t.Parallel()
 
 	// Compile-time check that both types satisfy Logger.
-	var _ core.Logger = core.NewZapLogger(zap.NewNop())
-	var _ core.Logger = core.NoopLogger{}
+	var _ log.Logger = log.NewZapLogger(zap.NewNop())
+	var _ log.Logger = log.NoopLogger{}
 }

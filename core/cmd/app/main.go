@@ -5,8 +5,10 @@ import (
 	"core/internal/common"
 	"core/internal/module"
 	"core/internal/types"
+	ormconfig "core/orm/pool/config"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
@@ -17,15 +19,27 @@ import (
 func main() {
 	configFilePtr := flag.String("config", "", "MUST TO HAVE -- config file path")
 
-	logLevelPtr := flag.String("log-level", "", "define log level between :\n- 'INFO'\n- 'DEBUG'")
+	debugPtr := flag.Bool("debug", false, "define log level between :\n- 'INFO' : false \n- 'DEBUG' : true")
 
 	flag.Parse()
 
-	if err := common.InitLogger(*logLevelPtr); err != nil {
+	if err := common.InitLogger(*debugPtr); err != nil {
 		panic(err)
 	}
 
-	conn, err := pgx.Connect(context.Background(), "postgres://postgres:postgres@localhost:5432/poc")
+	configContent, err := common.DecodeJSON[*types.Config](*configFilePtr)
+	if err != nil {
+		common.Logger.Error("❌ Error reading config file:", zap.Error(err))
+	}
+
+	dbLink := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", configContent.DbUser, configContent.DbPassword, configContent.DbHost, configContent.DbPort, configContent.DbName)
+	dbConf := ormconfig.Config{DSN: dbLink, MaxConns: configContent.MaxConns, MinConns: configContent.MinConns, Debug: *debugPtr}
+
+	if err := dbConf.Validate(); err != nil {
+		common.Logger.Error("❌ Error validating db conf:", zap.Error(err))
+	}
+
+	conn, err := pgx.Connect(context.Background(), dbLink)
 	if err != nil {
 		panic(err)
 	}
@@ -44,11 +58,6 @@ func main() {
 		common.Logger.Info("📦 WASM LOG CALLED")
 	}); err != nil {
 		common.Logger.Error("❌ FuncWraping error : ", zap.Error(err))
-	}
-
-	configContent, err := common.DecodeJSON[*types.Config](*configFilePtr)
-	if err != nil {
-		common.Logger.Error("❌ Error reading config file:", zap.Error(err))
 	}
 
 	// Load modules

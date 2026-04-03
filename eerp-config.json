@@ -9,5 +9,7 @@
     "db_port": 5432,
     "db_host": "localhost",
     "db_user": "postgres",
-    "db_password": "Test123!"
+    "db_password": "Test123!",
+    "max_connection": 10,
+    "min_connection": 4
 }

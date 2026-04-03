@@ -11,4 +11,7 @@ type Config struct {
 	DbHost         string   `json:"db_host" needed:"true"`
 	DbUser         string   `json:"db_user" needed:"true"`
 	DbPassword     string   `json:"db_password" needed:"true"`
+	MaxConns       int32    `json:"max_connection" needed:"false"`
+	MinConns       int32    `json:"min_connection" needed:"false"`
+	DSN            string
 }
