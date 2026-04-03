@@ -1,15 +1,15 @@
-package models_test
+package model_test
 
 import (
 	"testing"
 
 	"core/orm/internal/cache"
-	"core/orm/models"
+	"core/orm/model"
 )
 
 // concreteEntity embeds BaseModel to simulate a real ERP entity.
 type concreteEntity struct {
-	models.BaseModel
+	model.BaseModel
 	Name string `db:"name"`
 }
 
