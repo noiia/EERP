@@ -5,11 +5,15 @@
     "master_key": "ueioiehsiuehfs",
     "container_pool": 5,
     "thread_pool": 20,
-    "db_name": "Test",
+    "db_name": "poc",
     "db_port": 5432,
     "db_host": "localhost",
     "db_user": "postgres",
-    "db_password": "Test123!",
+    "db_password": "postgres",
     "max_connection": 10,
-    "min_connection": 4
+    "min_connection": 4,
+    "max_conn_idle_time": 1800,
+    "max_conn_life_time": 3600,
+    "health_check_period": 60,
+    "connect_timeout": 10
 }

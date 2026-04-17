@@ -1,17 +1,23 @@
 package types
 
+import "time"
+
 // Config fields
 type Config struct {
-	ModuleRoot     []string `json:"module_root" needed:"true"`
-	MasterPassword string   `json:"master_key" needed:"false"`
-	ContainerPool  int      `json:"container_pool" needed:"false"`
-	ThreadPool     int      `json:"thread_pool" needed:"false"`
-	DbName         string   `json:"db_name" needed:"false"`
-	DbPort         int      `json:"db_port" needed:"true"`
-	DbHost         string   `json:"db_host" needed:"true"`
-	DbUser         string   `json:"db_user" needed:"true"`
-	DbPassword     string   `json:"db_password" needed:"true"`
-	MaxConns       int32    `json:"max_connection" needed:"false"`
-	MinConns       int32    `json:"min_connection" needed:"false"`
-	DSN            string
+	ModuleRoot        []string      `json:"module_root" needed:"true"`
+	MasterPassword    string        `json:"master_key" needed:"false"`
+	ContainerPool     int           `json:"container_pool" needed:"false"`
+	ThreadPool        int           `json:"thread_pool" needed:"false"`
+	DbName            string        `json:"db_name" needed:"false"`
+	DbPort            int           `json:"db_port" needed:"true"`
+	DbHost            string        `json:"db_host" needed:"true"`
+	DbUser            string        `json:"db_user" needed:"true"`
+	DbPassword        string        `json:"db_password" needed:"true"`
+	MaxConns          int32         `json:"max_connection" needed:"false"`
+	MinConns          int32         `json:"min_connection" needed:"false"`
+	MaxConnIdleTime   time.Duration `json:"max_conn_idle_time" needed:"false"`
+	MaxConnLifeTime   time.Duration `json:"max_conn_life_time" needed:"false"`
+	HealthCheckPeriod time.Duration `json:"health_check_period" needed:"false"`
+	ConnectTimeout    time.Duration `json:"connect_timeout" needed:"false"`
+	DSN               string
 }

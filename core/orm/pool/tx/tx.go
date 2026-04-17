@@ -64,7 +64,7 @@ func (t *Tx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandT
 func (t *Tx) Savepoint(ctx context.Context, name string) error {
 	_, err := t.Tx.Exec(ctx, fmt.Sprintf("SAVEPOINT %s", PgxSafeName(name)))
 	if err != nil {
-		return fmt.Errorf("orm: savepoint %q: %w", name, err)
+		return fmt.Errorf("orm: savepoint %q: %v", name, err)
 	}
 	return nil
 }
@@ -74,7 +74,7 @@ func (t *Tx) Savepoint(ctx context.Context, name string) error {
 func (t *Tx) RollbackTo(ctx context.Context, name string) error {
 	_, err := t.Tx.Exec(ctx, fmt.Sprintf("ROLLBACK TO SAVEPOINT %s", PgxSafeName(name)))
 	if err != nil {
-		return fmt.Errorf("orm: rollback to savepoint %q: %w", name, err)
+		return fmt.Errorf("orm: rollback to savepoint %q: %v", name, err)
 	}
 	return nil
 }
@@ -84,7 +84,7 @@ func (t *Tx) RollbackTo(ctx context.Context, name string) error {
 func (t *Tx) Release(ctx context.Context, name string) error {
 	_, err := t.Tx.Exec(ctx, fmt.Sprintf("RELEASE SAVEPOINT %s", PgxSafeName(name)))
 	if err != nil {
-		return fmt.Errorf("orm: release savepoint %q: %w", name, err)
+		return fmt.Errorf("orm: release savepoint %q: %v", name, err)
 	}
 	return nil
 }
@@ -109,9 +109,10 @@ func PgxSafeName(s string) string {
 		}
 	}
 	if len(out) == 0 {
-		return "sp"
+		out = []byte("sp")
 	}
-	return string(out)
+
+	return `"` + string(out) + `"`
 }
 
 // txLoggedRow mirrors loggedRow for the Tx context.

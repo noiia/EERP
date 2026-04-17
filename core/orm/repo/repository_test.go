@@ -10,6 +10,7 @@ import (
 	"core/orm/model"
 	"core/orm/query"
 	"core/orm/repo"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -132,6 +133,8 @@ func assertNotSQL(t *testing.T, got, want string) {
 // ── New ───────────────────────────────────────────────────────────────────────
 
 func TestNew_ValidEntity(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r, err := repo.New[orderEntity](ex)
 	if err != nil {
@@ -143,6 +146,8 @@ func TestNew_ValidEntity(t *testing.T) {
 }
 
 func TestFindByID_BuildsCorrectSQL(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -160,6 +165,8 @@ func TestFindByID_BuildsCorrectSQL(t *testing.T) {
 }
 
 func TestFindByID_PropagatesError(t *testing.T) {
+	t.Parallel()
+
 	boom := errors.New("connection reset")
 	ex := &mockExecutor{queryRow: &errRow{err: boom}}
 	r := newRepo(t, ex)
@@ -176,6 +183,8 @@ func TestFindByID_PropagatesError(t *testing.T) {
 // ── FindAll ───────────────────────────────────────────────────────────────────
 
 func TestFindAll_NoConditions_IncludesSoftDeleteGuard(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -187,6 +196,8 @@ func TestFindAll_NoConditions_IncludesSoftDeleteGuard(t *testing.T) {
 }
 
 func TestFindAll_WithConditions_AppendsAfterSoftDelete(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -204,6 +215,8 @@ func TestFindAll_WithConditions_AppendsAfterSoftDelete(t *testing.T) {
 }
 
 func TestFindAllWithDeleted_NoSoftDeleteGuard(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -216,6 +229,8 @@ func TestFindAllWithDeleted_NoSoftDeleteGuard(t *testing.T) {
 // ── Query ─────────────────────────────────────────────────────────────────────
 
 func TestQuery_ReturnsSelectBuilder(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -233,6 +248,8 @@ func TestQuery_ReturnsSelectBuilder(t *testing.T) {
 // ── Create ────────────────────────────────────────────────────────────────────
 
 func TestCreate_BuildsInsertSQL(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	entity := orderEntity{Status: "pending", CustomerID: 5}
@@ -246,6 +263,8 @@ func TestCreate_BuildsInsertSQL(t *testing.T) {
 }
 
 func TestCreate_PropagatesError(t *testing.T) {
+	t.Parallel()
+
 	boom := errors.New("unique violation")
 	ex := &mockExecutor{queryRow: &errRow{err: boom}}
 	r := newRepo(t, ex)
@@ -259,6 +278,8 @@ func TestCreate_PropagatesError(t *testing.T) {
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func TestUpdate_BuildsUpdateSQL(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -275,6 +296,8 @@ func TestUpdate_BuildsUpdateSQL(t *testing.T) {
 }
 
 func TestUpdate_IDAppearsInWhereNotSet(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -293,6 +316,8 @@ func TestUpdate_IDAppearsInWhereNotSet(t *testing.T) {
 // ── Delete (soft) ─────────────────────────────────────────────────────────────
 
 func TestDelete_SoftDelete_SetsDeletedAt(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -307,6 +332,8 @@ func TestDelete_SoftDelete_SetsDeletedAt(t *testing.T) {
 }
 
 func TestDelete_SoftDelete_DoesNotHardDelete(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -319,6 +346,8 @@ func TestDelete_SoftDelete_DoesNotHardDelete(t *testing.T) {
 // ── Delete (hard) ─────────────────────────────────────────────────────────────
 
 func TestDelete_HardEntity_IssuesDeleteFrom(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newHardRepo(t, ex)
 	id := uuid.New()
@@ -334,6 +363,8 @@ func TestDelete_HardEntity_IssuesDeleteFrom(t *testing.T) {
 }
 
 func TestHardDelete_AlwaysIssuesDeleteFrom(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex) // orderEntity has soft-delete
 
@@ -347,6 +378,8 @@ func TestHardDelete_AlwaysIssuesDeleteFrom(t *testing.T) {
 // ── Restore ───────────────────────────────────────────────────────────────────
 
 func TestRestore_ClearsDeletedAt(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -360,6 +393,8 @@ func TestRestore_ClearsDeletedAt(t *testing.T) {
 }
 
 func TestRestore_HardEntity_ReturnsError(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newHardRepo(t, ex)
 
@@ -372,6 +407,8 @@ func TestRestore_HardEntity_ReturnsError(t *testing.T) {
 // ── CreateBatch ───────────────────────────────────────────────────────────────
 
 func TestCreateBatch_Empty_IsNoop(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -388,6 +425,8 @@ func TestCreateBatch_Empty_IsNoop(t *testing.T) {
 }
 
 func TestCreateBatch_MultipleRows_SingleQuery(t *testing.T) {
+	t.Parallel()
+
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -410,6 +449,8 @@ func TestCreateBatch_MultipleRows_SingleQuery(t *testing.T) {
 // ── Executor propagation — Tx compatibility ───────────────────────────────────
 
 func TestRepository_AcceptsTxAsExecutor(t *testing.T) {
+	t.Parallel()
+
 	// Repository accepts core.Executor — verify *mockExecutor satisfies it.
 	// If *Tx also satisfies Executor (compile-time check in core), then
 	// Repository works inside transactions without any code change.
@@ -423,6 +464,8 @@ func TestRepository_AcceptsTxAsExecutor(t *testing.T) {
 // ── Timing: updated_at is always set on Update/Delete ────────────────────────
 
 func TestUpdate_UpdatedAt_IsSet(t *testing.T) {
+	t.Parallel()
+
 	before := time.Now().Add(-time.Second)
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
@@ -445,6 +488,8 @@ func TestUpdate_UpdatedAt_IsSet(t *testing.T) {
 }
 
 func TestMustNew_ValidEntity_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("unexpected panic: %v", r)

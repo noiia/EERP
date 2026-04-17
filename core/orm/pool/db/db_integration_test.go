@@ -4,21 +4,35 @@ package db_test
 
 import (
 	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"testing"
+
+	"core/internal/common"
+	"core/internal/types"
 	"core/orm/pool/config"
 	"core/orm/pool/db"
 	"core/orm/pool/tx"
-	"errors"
-	"os"
-	"testing"
 )
 
-// Run with:
-//   TEST_DSN="postgres://user:pass@localhost:5432/erp_test?sslmode=disable" \
-//   go test -tags integration ./core/...
+var configFile = flag.String("config", "", "config file path")
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	os.Exit(m.Run())
+}
 
 func testDSN(t *testing.T) string {
 	t.Helper()
-	dsn := os.Getenv("TEST_DSN")
+
+	configContent, err := common.DecodeJSON[*types.Config](*configFile)
+	if err != nil {
+		t.Error("❌ Error reading config file:", err)
+	}
+
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", configContent.DbUser, configContent.DbPassword, configContent.DbHost, configContent.DbPort, configContent.DbName)
 	if dsn == "" {
 		t.Skip("TEST_DSN not set — skipping integration test")
 	}
@@ -27,8 +41,14 @@ func testDSN(t *testing.T) string {
 
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
+	var dsn string
+
+	if dsn == "" {
+		dsn = testDSN(t)
+	}
+
 	db, err := db.Open(context.Background(), config.Config{
-		DSN:   testDSN(t),
+		DSN:   dsn,
 		Debug: true,
 	})
 	if err != nil {
