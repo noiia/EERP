@@ -1,11 +1,8 @@
-//go:build integration
-
 package db_test
 
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"testing"
@@ -17,22 +14,20 @@ import (
 	"core/orm/pool/tx"
 )
 
-var configFile = flag.String("config", "", "config file path")
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	os.Exit(m.Run())
-}
-
 func testDSN(t *testing.T) string {
 	t.Helper()
 
-	configContent, err := common.DecodeJSON[*types.Config](*configFile)
+	configFile := os.Getenv("CONFIG")
+
+	t.Log(configFile)
+	configContent, err := common.DecodeJSON[*types.Config](configFile)
 	if err != nil {
 		t.Error("❌ Error reading config file:", err)
 	}
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", configContent.DbUser, configContent.DbPassword, configContent.DbHost, configContent.DbPort, configContent.DbName)
+
+	t.Log(dsn)
 	if dsn == "" {
 		t.Skip("TEST_DSN not set — skipping integration test")
 	}

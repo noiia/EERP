@@ -78,12 +78,12 @@ func TestPgxSafeName_Exported(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"lines", "lines"},
-		{"order_lines", "order_lines"},
-		{"drop table orders; --", "droptableorders"},
-		{"", "sp"},
-		{"123abc", "123abc"},
-		{"hello world", "helloworld"},
+		{"lines", "\"lines\""},
+		{"order_lines", "\"order_lines\""},
+		{"drop table orders; --", "\"droptableorders\""},
+		{"", "\"sp\""},
+		{"123abc", "\"123abc\""},
+		{"hello world", "\"helloworld\""},
 	}
 	for _, c := range cases {
 		got := tx.PgxSafeName(c.in)

@@ -26,7 +26,7 @@ run-back:
 BACKTESTPATH ?= ./...
 run-back-tests:
 	docker compose up -d 
-	cd $(root)/core && go test $(BACKTESTPATH) $(ARGS) -config="$(CONFIG)" 
+	cd $(root)/core && CONFIG="$(CONFIG)" go test $(BACKTESTPATH) $(ARGS)
 
 run-front:
 	cd $(root)/core-front && npm run dev -- --host 0.0.0.0
