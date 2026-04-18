@@ -55,6 +55,27 @@ func MustNew[T model.Entity](db executor.Executor) *Repository[T] {
 	return r
 }
 
+// ── Accessors ─────────────────────────────────────────────────────────────────
+
+// Meta returns the resolved StructMeta for T.
+// Use it to pass to query builders when you need to drop below the repo layer:
+//
+//	orm.Select[Order](orders.Meta()).Join(...).All(ctx, db)
+func (r *Repository[T]) Meta() cache.StructMeta {
+	return r.meta
+}
+
+// WithTx returns a shallow copy of the Repository scoped to the given Tx.
+// Use inside db.Transaction() to run repository operations atomically:
+//
+//	db.Transaction(ctx, func(tx *tx.Tx) error {
+//	    _, err := orders.WithTx(tx).Create(ctx, newOrder)
+//	    return err
+//	})
+func (r *Repository[T]) WithTx(tx executor.Executor) *Repository[T] {
+	return &Repository[T]{db: tx, meta: r.meta}
+}
+
 // ── Read ──────────────────────────────────────────────────────────────────────
 
 // FindByID returns the entity with the given UUID primary key.
