@@ -10,6 +10,7 @@ type FieldMeta struct {
 	OmitEmpty bool         // db:"col,omitempty"
 	IsPK      bool         // db:"col,pk"
 	SoftDel   bool         // db:"col,softdelete"
+	Immutable bool         // db:"col,immutable" or implied by pk/softdelete — never written by UPDATE
 	Type      reflect.Type // field's reflect.Type for fast type assertion
 }
 

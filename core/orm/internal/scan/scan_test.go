@@ -14,10 +14,11 @@ import (
 
 // ── mock pgx.Rows ─────────────────────────────────────────────────────────────
 
-// mockRows satisfies pgx.Rows without a real database connection.
+// mockRows satisfies pgx.Rows. Its Scan writes each value into dest[i]
+// which is always a *any — matching makeAnyDest's contract.
 type mockRows struct {
 	cols    []string
-	data    [][]any
+	data    [][]any // each inner slice is one row of already-decoded Go values
 	pos     int
 	err     error
 	scanErr error
@@ -36,11 +37,9 @@ func (r *mockRows) FieldDescriptions() []pgconn.FieldDescription {
 	return fds
 }
 
-func (r *mockRows) Next() bool {
-	r.pos++
-	return r.pos < len(r.data)
-}
+func (r *mockRows) Next() bool { r.pos++; return r.pos < len(r.data) }
 
+// Scan: dest[i] is always *any (from makeAnyDest). Write the test value into it.
 func (r *mockRows) Scan(dest ...any) error {
 	if r.scanErr != nil {
 		return r.scanErr
@@ -50,47 +49,23 @@ func (r *mockRows) Scan(dest ...any) error {
 		if i >= len(row) {
 			break
 		}
-		setPtr(d, row[i])
+		if p, ok := d.(*any); ok {
+			*p = row[i] // NULL stays nil, values are set directly
+		}
 	}
 	return nil
 }
 
-func (r *mockRows) Close()                        { r.closed = true }
-func (r *mockRows) Err() error                    { return r.err }
-func (r *mockRows) CommandTag() pgconn.CommandTag { return pgconn.CommandTag{} }
-func (r *mockRows) Values() ([]any, error)        { return nil, nil }
-func (r *mockRows) RawValues() [][]byte           { return nil }
-func (r *mockRows) Conn() *pgx.Conn               { return nil }
-
-// setPtr writes val into the pointer dest using a type switch.
-// Covers every type used in test fixtures.
-func setPtr(dest, val any) {
-	if val == nil {
-		return
-	}
-	switch d := dest.(type) {
-	case **int:
-		v := val.(int)
-		*d = &v
-	case *int:
-		*d = val.(int)
-	case **string:
-		v := val.(string)
-		*d = &v
-	case *string:
-		*d = val.(string)
-	case **time.Time:
-		v := val.(time.Time)
-		*d = &v
-	case *time.Time:
-		*d = val.(time.Time)
-	case *any:
-		*d = val
-	}
-}
+func (r *mockRows) Close()                                       { r.closed = true }
+func (r *mockRows) Err() error                                   { return r.err }
+func (r *mockRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *mockRows) Values() ([]any, error)                       { return nil, nil }
+func (r *mockRows) RawValues() [][]byte                          { return nil }
+func (r *mockRows) Conn() *pgx.Conn                              { return nil }
 
 // ── mock pgx.Row ──────────────────────────────────────────────────────────────
 
+// mockRow: dest[i] is *any — write vals[i] directly.
 type mockRow struct {
 	vals []any
 	err  error
@@ -104,7 +79,9 @@ func (r *mockRow) Scan(dest ...any) error {
 		if i >= len(r.vals) {
 			break
 		}
-		setPtr(d, r.vals[i])
+		if p, ok := d.(*any); ok {
+			*p = r.vals[i]
+		}
 	}
 	return nil
 }
@@ -127,7 +104,7 @@ type embBase struct {
 	Name string `db:"name"`
 }
 
-type order struct {
+type orderEnt struct {
 	embBase
 	Status string `db:"status"`
 }
@@ -135,8 +112,6 @@ type order struct {
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
 func TestRows_Empty(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[flat]()
 	rows := newMockRows([]string{"id", "name", "age"}, nil)
 
@@ -153,14 +128,11 @@ func TestRows_Empty(t *testing.T) {
 }
 
 func TestRows_SingleRow(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[flat]()
 	rows := newMockRows(
 		[]string{"id", "name", "age"},
 		[][]any{{1, "alice", 30}},
 	)
-
 	result, err := scan.Rows[flat](rows, meta)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -175,14 +147,11 @@ func TestRows_SingleRow(t *testing.T) {
 }
 
 func TestRows_MultipleRows(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[flat]()
 	rows := newMockRows(
 		[]string{"id", "name", "age"},
 		[][]any{{1, "alice", 30}, {2, "bob", 25}, {3, "carol", 35}},
 	)
-
 	result, err := scan.Rows[flat](rows, meta)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -196,19 +165,11 @@ func TestRows_MultipleRows(t *testing.T) {
 }
 
 func TestRows_ColumnOrderIndependent(t *testing.T) {
-	t.Parallel()
-
-	// Columns arrive in a different order than struct field declaration.
-	meta, err := cache.Get[flat]()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
+	meta, _ := cache.Get[flat]()
 	rows := newMockRows(
-		[]string{"age", "name", "id"},
+		[]string{"age", "name", "id"}, // reversed order
 		[][]any{{30, "alice", 1}},
 	)
-
 	result, err := scan.Rows[flat](rows, meta)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -220,15 +181,11 @@ func TestRows_ColumnOrderIndependent(t *testing.T) {
 }
 
 func TestRows_ExtraColumnsIgnored(t *testing.T) {
-	t.Parallel()
-
-	// Query returns columns the struct doesn't have — must be silently skipped.
 	meta, _ := cache.Get[flat]()
 	rows := newMockRows(
 		[]string{"id", "name", "age", "irrelevant"},
 		[][]any{{1, "alice", 30, "extra"}},
 	)
-
 	result, err := scan.Rows[flat](rows, meta)
 	if err != nil {
 		t.Fatalf("extra columns must be silently ignored, got: %v", err)
@@ -239,14 +196,11 @@ func TestRows_ExtraColumnsIgnored(t *testing.T) {
 }
 
 func TestRows_NullPointerField_NilResult(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[withPtr]()
 	rows := newMockRows(
 		[]string{"id", "deleted_at"},
-		[][]any{{1, nil}},
+		[][]any{{1, nil}}, // NULL → *any holds nil
 	)
-
 	result, err := scan.Rows[withPtr](rows, meta)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -257,15 +211,12 @@ func TestRows_NullPointerField_NilResult(t *testing.T) {
 }
 
 func TestRows_NonNullPointerField(t *testing.T) {
-	t.Parallel()
-
 	now := time.Now().Truncate(time.Second)
 	meta, _ := cache.Get[withPtr]()
 	rows := newMockRows(
 		[]string{"id", "deleted_at"},
 		[][]any{{1, now}},
 	)
-
 	result, err := scan.Rows[withPtr](rows, meta)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -279,15 +230,12 @@ func TestRows_NonNullPointerField(t *testing.T) {
 }
 
 func TestRows_EmbeddedStruct(t *testing.T) {
-	t.Parallel()
-
-	meta, _ := cache.Get[order]()
+	meta, _ := cache.Get[orderEnt]()
 	rows := newMockRows(
 		[]string{"id", "name", "status"},
 		[][]any{{7, "acme", "open"}},
 	)
-
-	result, err := scan.Rows[order](rows, meta)
+	result, err := scan.Rows[orderEnt](rows, meta)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -298,8 +246,6 @@ func TestRows_EmbeddedStruct(t *testing.T) {
 }
 
 func TestRows_ScanError_Propagated(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[flat]()
 	rows := newMockRows([]string{"id", "name", "age"}, [][]any{{1, "alice", 30}})
 	rows.scanErr = errors.New("injected scan failure")
@@ -311,25 +257,17 @@ func TestRows_ScanError_Propagated(t *testing.T) {
 }
 
 func TestRows_IterationError_Propagated(t *testing.T) {
-	t.Parallel()
-
-	meta, err := cache.Get[flat]()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	meta, _ := cache.Get[flat]()
 	rows := newMockRows([]string{"id", "name", "age"}, nil)
 	rows.err = errors.New("network interrupted")
 
-	_, err = scan.Rows[flat](rows, meta)
+	_, err := scan.Rows[flat](rows, meta)
 	if err == nil {
 		t.Fatal("expected error from rows.Err()")
 	}
 }
 
 func TestRows_AlwaysCloses(t *testing.T) {
-	t.Parallel()
-
-	// Even on scan failure, rows.Close() must be called (defer).
 	meta, _ := cache.Get[flat]()
 	rows := newMockRows([]string{"id", "name", "age"}, [][]any{{1, "x", 0}})
 	rows.scanErr = errors.New("injected")
@@ -343,8 +281,6 @@ func TestRows_AlwaysCloses(t *testing.T) {
 // ── Row ───────────────────────────────────────────────────────────────────────
 
 func TestRow_Success(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[flat]()
 	row := &mockRow{vals: []any{42, "dave", 28}}
 
@@ -358,13 +294,75 @@ func TestRow_Success(t *testing.T) {
 }
 
 func TestRow_Error_Propagated(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[flat]()
 	row := &mockRow{err: errors.New("no rows in result set")}
 
 	_, err := scan.Row[flat](row, meta)
 	if err == nil {
 		t.Fatal("expected error for failed scan")
+	}
+}
+
+// ── RowFromRows ───────────────────────────────────────────────────────────────
+
+func TestRowFromRows_SingleRow(t *testing.T) {
+	meta, _ := cache.Get[flat]()
+	rows := newMockRows([]string{"id", "name", "age"}, [][]any{{7, "alice", 30}})
+
+	got, err := scan.RowFromRows[flat](rows, meta)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.ID != 7 || got.Name != "alice" || got.Age != 30 {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestRowFromRows_Empty_ReturnsErrNoRows(t *testing.T) {
+	meta, _ := cache.Get[flat]()
+	rows := newMockRows([]string{"id", "name", "age"}, nil)
+
+	_, err := scan.RowFromRows[flat](rows, meta)
+	if err == nil {
+		t.Fatal("expected ErrNoRows for empty result")
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("expected pgx.ErrNoRows, got: %v", err)
+	}
+}
+
+func TestRowFromRows_ColumnOrderIndependent(t *testing.T) {
+	// Columns returned in different order than meta.Fields — name-based mapping must handle it.
+	meta, _ := cache.Get[flat]()
+	rows := newMockRows([]string{"age", "name", "id"}, [][]any{{25, "bob", 99}})
+
+	got, err := scan.RowFromRows[flat](rows, meta)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.ID != 99 || got.Name != "bob" || got.Age != 25 {
+		t.Errorf("got %+v, columns were reordered", got)
+	}
+}
+
+func TestRowFromRows_ScanError_Propagated(t *testing.T) {
+	meta, _ := cache.Get[flat]()
+	rows := newMockRows([]string{"id", "name", "age"}, [][]any{{1, "x", 0}})
+	rows.scanErr = errors.New("injected scan error")
+
+	_, err := scan.RowFromRows[flat](rows, meta)
+	if err == nil {
+		t.Fatal("expected error to propagate")
+	}
+}
+
+func TestRowFromRows_AlwaysCloses(t *testing.T) {
+	meta, _ := cache.Get[flat]()
+	rows := newMockRows([]string{"id", "name", "age"}, [][]any{{1, "x", 0}})
+	rows.scanErr = errors.New("injected")
+
+	scan.RowFromRows[flat](rows, meta) //nolint:errcheck
+	if !rows.closed {
+		t.Error("rows.Close() must be called even when scan fails")
 	}
 }

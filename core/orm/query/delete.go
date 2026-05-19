@@ -105,8 +105,11 @@ func (b DeleteBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, err
 	if err != nil {
 		return zero, err
 	}
-	row := ex.QueryRow(ctx, sql, args...)
-	return scan.Row[T](row, b.meta)
+	rows, err := ex.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, err
+	}
+	return scan.RowFromRows[T](rows, b.meta)
 }
 
 // All runs DELETE … RETURNING and scans all deleted rows into []T.

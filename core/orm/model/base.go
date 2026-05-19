@@ -16,7 +16,7 @@ import (
 //   - DeletedAt → "deleted_at,softdelete" — nil means active; non-nil means soft-deleted
 type BaseModel struct {
 	ID        uuid.UUID  `db:"id,pk"`
-	CreatedAt time.Time  `db:"created_at"`
+	CreatedAt time.Time  `db:"created_at,immutable"`
 	UpdatedAt time.Time  `db:"updated_at"`
 	DeletedAt *time.Time `db:"deleted_at,softdelete"`
 }

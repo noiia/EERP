@@ -57,8 +57,6 @@ type ignoredField struct {
 // ── toSnake ───────────────────────────────────────────────────────────────────
 
 func TestToSnake(t *testing.T) {
-	t.Parallel()
-
 	cases := []struct {
 		in   string
 		want string
@@ -83,14 +81,12 @@ func TestToSnake(t *testing.T) {
 // ── Get / build ───────────────────────────────────────────────────────────────
 
 func TestGet_SimpleModel(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[simpleModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if meta.Table != "simple_model" {
-		t.Errorf("Table = %q, want %q", meta.Table, "simple_model")
+	if meta.Table != "simple_models" {
+		t.Errorf("Table = %q, want %q", meta.Table, "simple_models")
 	}
 	if meta.PK != "id" {
 		t.Errorf("PK = %q, want %q", meta.PK, "id")
@@ -101,8 +97,6 @@ func TestGet_SimpleModel(t *testing.T) {
 }
 
 func TestGet_CustomTableName(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[tablerModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -113,8 +107,6 @@ func TestGet_CustomTableName(t *testing.T) {
 }
 
 func TestGet_NoTagModel_SnakeCase(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[noTagModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -129,8 +121,6 @@ func TestGet_NoTagModel_SnakeCase(t *testing.T) {
 }
 
 func TestGet_EmbeddedStruct(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[orderModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -145,8 +135,6 @@ func TestGet_EmbeddedStruct(t *testing.T) {
 }
 
 func TestGet_EmbeddedStruct_ColumnOrder(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[orderModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -165,8 +153,6 @@ func TestGet_EmbeddedStruct_ColumnOrder(t *testing.T) {
 }
 
 func TestGet_IgnoredField(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[ignoredField]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -182,8 +168,6 @@ func TestGet_IgnoredField(t *testing.T) {
 }
 
 func TestGet_OmitEmpty(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[simpleModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -196,8 +180,6 @@ func TestGet_OmitEmpty(t *testing.T) {
 }
 
 func TestGet_SoftDelete(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[softModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -211,9 +193,22 @@ func TestGet_SoftDelete(t *testing.T) {
 	}
 }
 
-func TestGet_Cached_SamePointer(t *testing.T) {
-	t.Parallel()
+func TestGet_Immutable_PKAndSoftDelete(t *testing.T) {
+	meta, err := cache.Get[softModel]()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, f := range meta.Fields {
+		if f.IsPK && !f.Immutable {
+			t.Errorf("field %q is PK but not Immutable", f.Column)
+		}
+		if f.SoftDel && !f.Immutable {
+			t.Errorf("field %q is SoftDel but not Immutable", f.Column)
+		}
+	}
+}
 
+func TestGet_Cached_SamePointer(t *testing.T) {
 	m1, _ := cache.Get[simpleModel]()
 	m2, _ := cache.Get[simpleModel]()
 	// Identical Fields slice pointer proves the sync.Map returned the same value.
@@ -225,8 +220,6 @@ func TestGet_Cached_SamePointer(t *testing.T) {
 // ── StructMeta helpers ────────────────────────────────────────────────────────
 
 func TestStructMeta_Columns(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[simpleModel]()
 	if len(meta.Columns()) != 3 {
 		t.Fatalf("Columns len = %d, want 3", len(meta.Columns()))
@@ -234,8 +227,6 @@ func TestStructMeta_Columns(t *testing.T) {
 }
 
 func TestStructMeta_WritableColumns_ExcludesPK(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[simpleModel]()
 	for _, c := range meta.WritableColumns() {
 		if c == "id" {
@@ -245,8 +236,6 @@ func TestStructMeta_WritableColumns_ExcludesPK(t *testing.T) {
 }
 
 func TestStructMeta_ColumnIndex_HitAndMiss(t *testing.T) {
-	t.Parallel()
-
 	meta, _ := cache.Get[simpleModel]()
 	if meta.ColumnIndex("name") < 0 {
 		t.Error("ColumnIndex(\"name\") returned -1, want valid index")
@@ -259,8 +248,6 @@ func TestStructMeta_ColumnIndex_HitAndMiss(t *testing.T) {
 // ── FieldMeta.FieldValue — embedded IndexPath resolution ─────────────────────
 
 func TestFieldMeta_FieldValue_Embedded(t *testing.T) {
-	t.Parallel()
-
 	meta, err := cache.Get[orderModel]()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -290,8 +277,6 @@ func TestFieldMeta_FieldValue_Embedded(t *testing.T) {
 // ── Error cases ───────────────────────────────────────────────────────────────
 
 func TestGet_NonStruct_ReturnsError(t *testing.T) {
-	t.Parallel()
-
 	_, err := cache.Global.Get(cache.ReflectTypeOf[int]())
 	if err == nil {
 		t.Error("expected error for non-struct type, got nil")

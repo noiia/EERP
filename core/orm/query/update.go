@@ -52,7 +52,9 @@ func (b UpdateBuilder[T]) FromStruct(v T) UpdateBuilder[T] {
 	rv := reflect.ValueOf(v)
 	sets := make([]setClause, 0, len(b.meta.Fields))
 	for _, f := range b.meta.Fields {
-		if f.IsPK {
+		if f.Immutable {
+			// Skip pk, softdelete, and immutable (created_at) fields —
+			// these are managed by the ORM or database, never by user updates.
 			continue
 		}
 		fv := f.FieldValue(rv)
@@ -85,6 +87,9 @@ func (b UpdateBuilder[T]) Returning(cols ...string) UpdateBuilder[T] {
 
 // ToSQL returns the UPDATE statement and its argument slice.
 // Returns an error if no SET clauses or no WHERE conditions are present.
+// When the same column appears multiple times in sets (e.g. from FromStruct
+// followed by an explicit Set call), the last value wins — this prevents
+// "multiple assignments to same column" errors from PostgreSQL.
 func (b UpdateBuilder[T]) ToSQL() (string, []any, error) {
 	if len(b.sets) == 0 {
 		return "", nil, fmt.Errorf("update: no SET clauses provided")
@@ -93,10 +98,23 @@ func (b UpdateBuilder[T]) ToSQL() (string, []any, error) {
 		return "", nil, fmt.Errorf("update: refusing to build UPDATE without WHERE clause")
 	}
 
-	args := make([]any, 0, len(b.sets)+4)
-	setParts := make([]string, len(b.sets))
-
+	// Deduplicate: last Set() call for a given column wins.
+	seen := make(map[string]int, len(b.sets)) // col → final index in b.sets
 	for i, s := range b.sets {
+		seen[s.col] = i
+	}
+	// Rebuild in original order, keeping only the last occurrence of each column.
+	dedupSets := make([]setClause, 0, len(seen))
+	for i, s := range b.sets {
+		if seen[s.col] == i {
+			dedupSets = append(dedupSets, s)
+		}
+	}
+
+	args := make([]any, 0, len(dedupSets)+4)
+	setParts := make([]string, len(dedupSets))
+
+	for i, s := range dedupSets {
 		args = append(args, s.val)
 		setParts[i] = fmt.Sprintf("%s = $%d", s.col, len(args))
 	}
@@ -135,14 +153,19 @@ func (b UpdateBuilder[T]) Exec(ctx context.Context, ex executor.Executor) (int64
 }
 
 // One runs the UPDATE … RETURNING and scans the first returned row into T.
+// Uses Query (not QueryRow) so FieldDescriptions are available for correct
+// name-based column mapping — required when RETURNING * is used.
 func (b UpdateBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, error) {
+	var zero T
 	sql, args, err := b.ToSQL()
 	if err != nil {
-		var zero T
 		return zero, err
 	}
-	row := ex.QueryRow(ctx, sql, args...)
-	return scan.Row[T](row, b.meta)
+	rows, err := ex.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, fmt.Errorf("update one: %w", err)
+	}
+	return scan.RowFromRows[T](rows, b.meta)
 }
 
 // All runs UPDATE … RETURNING and scans all returned rows.

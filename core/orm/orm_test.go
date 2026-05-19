@@ -198,8 +198,8 @@ func TestMeta_TableName(t *testing.T) {
 	r := orm.MustRepo[invoice](ex)
 	meta := r.Meta()
 
-	if meta.Table != "invoice" {
-		t.Errorf("Table = %q, want %q", meta.Table, "invoice")
+	if meta.Table != "invoices" {
+		t.Errorf("Table = %q, want %q", meta.Table, "invoices")
 	}
 }
 

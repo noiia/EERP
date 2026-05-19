@@ -19,7 +19,6 @@ func testDSN(t *testing.T) string {
 
 	configFile := os.Getenv("CONFIG")
 
-	t.Log(configFile)
 	configContent, err := common.DecodeJSON[*types.Config](configFile)
 	if err != nil {
 		t.Error("❌ Error reading config file:", err)
@@ -27,9 +26,8 @@ func testDSN(t *testing.T) string {
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", configContent.DbUser, configContent.DbPassword, configContent.DbHost, configContent.DbPort, configContent.DbName)
 
-	t.Log(dsn)
 	if dsn == "" {
-		t.Skip("TEST_DSN not set — skipping integration test")
+		t.Skip("DSN not set — skipping integration test")
 	}
 	return dsn
 }

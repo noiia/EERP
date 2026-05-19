@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"core/orm/internal/cache"
 	"core/orm/internal/scan"
@@ -44,34 +45,64 @@ func (b InsertBuilder[T]) Returning(cols ...string) InsertBuilder[T] {
 	return b
 }
 
+// effectiveCols determines which columns to include in the INSERT by
+// inspecting the first row. Columns are excluded when:
+//   - The field is the primary key (server-generated via DEFAULT).
+//   - The field is the soft-delete column (always NULL on fresh insert).
+//   - The field holds a zero time.Time — this allows PostgreSQL's
+//     DEFAULT now() to fire for created_at and updated_at instead of
+//     inserting the Go zero epoch "0001-01-01 00:00:00 UTC".
+//
+// All subsequent rows in a batch must use the same column list as the
+// first row — callers should not mix structs with different zero fields.
+func (b InsertBuilder[T]) effectiveCols() []cache.FieldMeta {
+	if len(b.rows) == 0 {
+		return nil
+	}
+	rv := reflect.ValueOf(b.rows[0])
+	result := make([]cache.FieldMeta, 0, len(b.meta.Fields))
+	for _, f := range b.meta.Fields {
+		if f.IsPK || f.SoftDel {
+			continue
+		}
+		val := f.FieldValue(rv).Interface()
+		if t, ok := val.(time.Time); ok && t.IsZero() {
+			// Zero timestamp — omit so PostgreSQL DEFAULT fires.
+			continue
+		}
+		result = append(result, f)
+	}
+	return result
+}
+
 // ToSQL returns the INSERT statement and its argument slice.
 // Produces a multi-row VALUES clause when more than one row was provided.
 func (b InsertBuilder[T]) ToSQL() (string, []any) {
-	cols := b.meta.WritableColumns()
-	args := make([]any, 0, len(b.rows)*len(cols))
+	fields := b.effectiveCols()
+	colNames := make([]string, len(fields))
+	for i, f := range fields {
+		colNames[i] = f.Column
+	}
 
-	// Build VALUES ($1,$2,…), ($N+1,…) for all rows.
+	args := make([]any, 0, len(b.rows)*len(fields))
 	valueSets := make([]string, len(b.rows))
+
 	for i, row := range b.rows {
 		rv := reflect.ValueOf(row)
-		set := make([]string, len(cols))
-		for j, col := range cols {
-			fidx := b.meta.ColumnIndex(col)
-			if fidx < 0 {
-				continue
-			}
-			fv := b.meta.Fields[fidx].FieldValue(rv)
-			args = append(args, fv.Interface())
-			set[j] = fmt.Sprintf("$%d", len(args))
+		placeholders := make([]string, len(fields))
+		for j, f := range fields {
+			val := f.FieldValue(rv).Interface()
+			args = append(args, val)
+			placeholders[j] = fmt.Sprintf("$%d", len(args))
 		}
-		valueSets[i] = "(" + strings.Join(set, ", ") + ")"
+		valueSets[i] = "(" + strings.Join(placeholders, ", ") + ")"
 	}
 
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO ")
 	sb.WriteString(b.meta.Table)
 	sb.WriteString(" (")
-	sb.WriteString(strings.Join(cols, ", "))
+	sb.WriteString(strings.Join(colNames, ", "))
 	sb.WriteString(") VALUES ")
 	sb.WriteString(strings.Join(valueSets, ", "))
 
@@ -92,8 +123,11 @@ func (b InsertBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, err
 		return zero, fmt.Errorf("insert: no rows provided")
 	}
 	sql, args := b.ToSQL()
-	row := ex.QueryRow(ctx, sql, args...)
-	return scan.Row[T](row, b.meta)
+	rows, err := ex.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, err
+	}
+	return scan.RowFromRows[T](rows, b.meta)
 }
 
 // Batch inserts all rows in a single multi-row VALUES statement and returns

@@ -1,0 +1,407 @@
+{
+  "/home/noiq/EERP/eerp-config.json": {
+    "mtime": 1776514117.4595547,
+    "ast_hash": "c763539d8c57419a4cf365c47b841121",
+    "semantic_hash": "c763539d8c57419a4cf365c47b841121"
+  },
+  "/home/noiq/EERP/.vscode/launch.json": {
+    "mtime": 1773948443.006445,
+    "ast_hash": "2a07fdde0a3a261addeff19c6eeb4df3",
+    "semantic_hash": "2a07fdde0a3a261addeff19c6eeb4df3"
+  },
+  "/home/noiq/EERP/core-front/tsconfig.json": {
+    "mtime": 1774784715.752362,
+    "ast_hash": "7dea0cc2fb98e87d0df3173e0658e68f",
+    "semantic_hash": "7dea0cc2fb98e87d0df3173e0658e68f"
+  },
+  "/home/noiq/EERP/core-front/package.json": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "031190e4dfded2de1a9bf75b428dc203",
+    "semantic_hash": "031190e4dfded2de1a9bf75b428dc203"
+  },
+  "/home/noiq/EERP/core-front/svelte.config.js": {
+    "mtime": 1774784715.752362,
+    "ast_hash": "d45a346d110f748a93af541743beb373",
+    "semantic_hash": "d45a346d110f748a93af541743beb373"
+  },
+  "/home/noiq/EERP/core-front/vite.config.ts": {
+    "mtime": 1774784715.7563925,
+    "ast_hash": "c0b083df13ec8b53b799b7ca69dc4721",
+    "semantic_hash": "c0b083df13ec8b53b799b7ca69dc4721"
+  },
+  "/home/noiq/EERP/core-front/src/app.d.ts": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "78b56494b3f78d7f9bacda13678f159e",
+    "semantic_hash": "78b56494b3f78d7f9bacda13678f159e"
+  },
+  "/home/noiq/EERP/core-front/src/routes/+page.svelte": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "0aa0d19d1d2ad102d03b4c9364e1477f",
+    "semantic_hash": "0aa0d19d1d2ad102d03b4c9364e1477f"
+  },
+  "/home/noiq/EERP/core-front/src/routes/+layout.svelte": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "3a538dcd468bd9dac7f1b1a17c9b498a",
+    "semantic_hash": "3a538dcd468bd9dac7f1b1a17c9b498a"
+  },
+  "/home/noiq/EERP/core-front/src/routes/+layout.ts": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "d519d19c7b253b50a6c56a3cf1f6462b",
+    "semantic_hash": "d519d19c7b253b50a6c56a3cf1f6462b"
+  },
+  "/home/noiq/EERP/core/schema.sql": {
+    "mtime": 1771928482.9046211,
+    "ast_hash": "ca8a9490efecc0fc13770ab5b7ffde91",
+    "semantic_hash": "ca8a9490efecc0fc13770ab5b7ffde91"
+  },
+  "/home/noiq/EERP/core/orm/orm_test.go": {
+    "mtime": 1779138625.0867715,
+    "ast_hash": "c5304a613864ad784ac120a70c2a0e98",
+    "semantic_hash": "c5304a613864ad784ac120a70c2a0e98"
+  },
+  "/home/noiq/EERP/core/orm/orm.go": {
+    "mtime": 1776517388.7159023,
+    "ast_hash": "edf528a65dc41e2af254268155428672",
+    "semantic_hash": "edf528a65dc41e2af254268155428672"
+  },
+  "/home/noiq/EERP/core/orm/log/logger.go": {
+    "mtime": 1775138468.090254,
+    "ast_hash": "c4097bd309cdd778cb853df4c82c2d61",
+    "semantic_hash": "c4097bd309cdd778cb853df4c82c2d61"
+  },
+  "/home/noiq/EERP/core/orm/log/logger_test.go": {
+    "mtime": 1775138473.3093653,
+    "ast_hash": "fdc218e425fcf31eb2a78cef5e586379",
+    "semantic_hash": "fdc218e425fcf31eb2a78cef5e586379"
+  },
+  "/home/noiq/EERP/core/orm/internal/cache/cache_test.go": {
+    "mtime": 1777136176.4886246,
+    "ast_hash": "53d4aa7ef96d50f2bc40025f4df7e01c",
+    "semantic_hash": "53d4aa7ef96d50f2bc40025f4df7e01c"
+  },
+  "/home/noiq/EERP/core/orm/internal/cache/meta.go": {
+    "mtime": 1777135898.9217072,
+    "ast_hash": "7111b2463cda8f19d079f1a21abba4de",
+    "semantic_hash": "7111b2463cda8f19d079f1a21abba4de"
+  },
+  "/home/noiq/EERP/core/orm/internal/cache/cache.go": {
+    "mtime": 1777135899.0777073,
+    "ast_hash": "f3c824ffe70aa46d47542acf1b3fa356",
+    "semantic_hash": "f3c824ffe70aa46d47542acf1b3fa356"
+  },
+  "/home/noiq/EERP/core/orm/internal/scan/scan_test.go": {
+    "mtime": 1777111868.607664,
+    "ast_hash": "b6bd521b455873d070fbaad5fac6f85e",
+    "semantic_hash": "b6bd521b455873d070fbaad5fac6f85e"
+  },
+  "/home/noiq/EERP/core/orm/internal/scan/scan.go": {
+    "mtime": 1779182754.4941745,
+    "ast_hash": "d85327d998c53b623182d1fd5c5f0f92",
+    "semantic_hash": "d85327d998c53b623182d1fd5c5f0f92"
+  },
+  "/home/noiq/EERP/core/orm/model/base.go": {
+    "mtime": 1777136076.8503945,
+    "ast_hash": "3d3d51775ae5d45fe833837bfe16cf62",
+    "semantic_hash": "3d3d51775ae5d45fe833837bfe16cf62"
+  },
+  "/home/noiq/EERP/core/orm/model/entity.go": {
+    "mtime": 1775214878.8289294,
+    "ast_hash": "cfcad8f6295d91e162e43a4d50e5e01d",
+    "semantic_hash": "cfcad8f6295d91e162e43a4d50e5e01d"
+  },
+  "/home/noiq/EERP/core/orm/model/base_test.go": {
+    "mtime": 1775214897.2302516,
+    "ast_hash": "6a1e266fd13d3aa17017edea98b50c61",
+    "semantic_hash": "6a1e266fd13d3aa17017edea98b50c61"
+  },
+  "/home/noiq/EERP/core/orm/query/delete.go": {
+    "mtime": 1777129775.1322923,
+    "ast_hash": "f5e8d1187d17f6b90571d18572ebc346",
+    "semantic_hash": "f5e8d1187d17f6b90571d18572ebc346"
+  },
+  "/home/noiq/EERP/core/orm/query/insert.go": {
+    "mtime": 1777134705.0163972,
+    "ast_hash": "cc810ec8ebb72a50f040ffed18d10a72",
+    "semantic_hash": "cc810ec8ebb72a50f040ffed18d10a72"
+  },
+  "/home/noiq/EERP/core/orm/query/condition.go": {
+    "mtime": 1775208692.8092105,
+    "ast_hash": "32aad8f74e9357912b70af9a9089b228",
+    "semantic_hash": "32aad8f74e9357912b70af9a9089b228"
+  },
+  "/home/noiq/EERP/core/orm/query/upsert.go": {
+    "mtime": 1777135287.2103813,
+    "ast_hash": "57210b3bc8d6a688e66fbf658bc4039c",
+    "semantic_hash": "57210b3bc8d6a688e66fbf658bc4039c"
+  },
+  "/home/noiq/EERP/core/orm/query/update.go": {
+    "mtime": 1777136112.4336038,
+    "ast_hash": "cefb1db30e4a75d2585ee0b601869323",
+    "semantic_hash": "cefb1db30e4a75d2585ee0b601869323"
+  },
+  "/home/noiq/EERP/core/orm/query/select.go": {
+    "mtime": 1779182869.0902476,
+    "ast_hash": "e7000199f8d8e0c5d0f76d3bfe7a1775",
+    "semantic_hash": "e7000199f8d8e0c5d0f76d3bfe7a1775"
+  },
+  "/home/noiq/EERP/core/orm/query/query_test.go": {
+    "mtime": 1779182773.2837365,
+    "ast_hash": "cb8377755620f9f85b964973cf901cac",
+    "semantic_hash": "cb8377755620f9f85b964973cf901cac"
+  },
+  "/home/noiq/EERP/core/orm/pool/executor/executor.go": {
+    "mtime": 1775139112.0601318,
+    "ast_hash": "d0c425201fbf29805265e5aee6f027ce",
+    "semantic_hash": "d0c425201fbf29805265e5aee6f027ce"
+  },
+  "/home/noiq/EERP/core/orm/pool/db/db_integration_test.go": {
+    "mtime": 1777131983.0270324,
+    "ast_hash": "b5f4ab61fbbacdcf61bd6a1a0e6cd24a",
+    "semantic_hash": "b5f4ab61fbbacdcf61bd6a1a0e6cd24a"
+  },
+  "/home/noiq/EERP/core/orm/pool/db/db.go": {
+    "mtime": 1777134358.2619143,
+    "ast_hash": "7c0bae1ee4b3f294cfe2312ac8d1ac92",
+    "semantic_hash": "7c0bae1ee4b3f294cfe2312ac8d1ac92"
+  },
+  "/home/noiq/EERP/core/orm/pool/db/mock_test.go": {
+    "mtime": 1775140062.7744236,
+    "ast_hash": "d26308259be9513dd9e2712d06b31862",
+    "semantic_hash": "d26308259be9513dd9e2712d06b31862"
+  },
+  "/home/noiq/EERP/core/orm/pool/db/db_test.go": {
+    "mtime": 1776515269.6274679,
+    "ast_hash": "ef0009147e95b26d7982b624d1223d64",
+    "semantic_hash": "ef0009147e95b26d7982b624d1223d64"
+  },
+  "/home/noiq/EERP/core/orm/pool/config/config.go": {
+    "mtime": 1776514117.4555664,
+    "ast_hash": "d29e8da4c0c34c93e65e9d506336ef0a",
+    "semantic_hash": "d29e8da4c0c34c93e65e9d506336ef0a"
+  },
+  "/home/noiq/EERP/core/orm/pool/config/config_test.go": {
+    "mtime": 1775138509.359862,
+    "ast_hash": "a0fa47991efdddff0d374b535edad443",
+    "semantic_hash": "a0fa47991efdddff0d374b535edad443"
+  },
+  "/home/noiq/EERP/core/orm/pool/tx/tx.go": {
+    "mtime": 1776514117.4555664,
+    "ast_hash": "358139b8e11d1dde7693bd44eb790262",
+    "semantic_hash": "358139b8e11d1dde7693bd44eb790262"
+  },
+  "/home/noiq/EERP/core/orm/repo/repository.go": {
+    "mtime": 1779182858.4454033,
+    "ast_hash": "835de61f56f8331ed072e7d14ca66e8f",
+    "semantic_hash": "835de61f56f8331ed072e7d14ca66e8f"
+  },
+  "/home/noiq/EERP/core/orm/repo/repository_test.go": {
+    "mtime": 1779182832.7857673,
+    "ast_hash": "380034698e0d2c4361e142df9eddfcfb",
+    "semantic_hash": "380034698e0d2c4361e142df9eddfcfb"
+  },
+  "/home/noiq/EERP/core/orm/repo/repo_integration_test.go": {
+    "mtime": 1779141335.2019472,
+    "ast_hash": "d12b1a3760512b8d41c90f9b7008cf8c",
+    "semantic_hash": "d12b1a3760512b8d41c90f9b7008cf8c"
+  },
+  "/home/noiq/EERP/core/internal/module/migration.go": {
+    "mtime": 1774792274.0407932,
+    "ast_hash": "5ee88efeb5816f45aba7e64310b2f206",
+    "semantic_hash": "5ee88efeb5816f45aba7e64310b2f206"
+  },
+  "/home/noiq/EERP/core/internal/module/snapshot.go": {
+    "mtime": 1774212474.2680285,
+    "ast_hash": "3cfddd1490a0c1a81e7a124d358076d2",
+    "semantic_hash": "3cfddd1490a0c1a81e7a124d358076d2"
+  },
+  "/home/noiq/EERP/core/internal/module/detector.go": {
+    "mtime": 1774792274.0407932,
+    "ast_hash": "40a37d7c62db287428dfee30fe0eb941",
+    "semantic_hash": "40a37d7c62db287428dfee30fe0eb941"
+  },
+  "/home/noiq/EERP/core/internal/module/load.go": {
+    "mtime": 1774792274.0407932,
+    "ast_hash": "0f1edbda4a9900dec029361f4ec95b1f",
+    "semantic_hash": "0f1edbda4a9900dec029361f4ec95b1f"
+  },
+  "/home/noiq/EERP/core/internal/common/readjson.go": {
+    "mtime": 1773933813.9721293,
+    "ast_hash": "2db0dd41d31f1dd012f56725e9b53823",
+    "semantic_hash": "2db0dd41d31f1dd012f56725e9b53823"
+  },
+  "/home/noiq/EERP/core/internal/common/logs.go": {
+    "mtime": 1775051599.7140374,
+    "ast_hash": "e89285491fe1cd7ff392c90fee7fc3da",
+    "semantic_hash": "e89285491fe1cd7ff392c90fee7fc3da"
+  },
+  "/home/noiq/EERP/core/internal/common/file.go": {
+    "mtime": 1773933624.5526335,
+    "ast_hash": "b640c311370d006841d829f2726b33a5",
+    "semantic_hash": "b640c311370d006841d829f2726b33a5"
+  },
+  "/home/noiq/EERP/core/internal/common/filemeta.go": {
+    "mtime": 1774792274.0407932,
+    "ast_hash": "01a3cc4132c5e2b359b54b0362434503",
+    "semantic_hash": "01a3cc4132c5e2b359b54b0362434503"
+  },
+  "/home/noiq/EERP/core/internal/common/editstring/editstring.go": {
+    "mtime": 1774792274.0369484,
+    "ast_hash": "9535d270503a26e5d271246ec41a074d",
+    "semantic_hash": "9535d270503a26e5d271246ec41a074d"
+  },
+  "/home/noiq/EERP/core/internal/common/editstring/editstring_test.go": {
+    "mtime": 1774792274.0369484,
+    "ast_hash": "d1321dc0d69dd6e2b820dfbca46cee72",
+    "semantic_hash": "d1321dc0d69dd6e2b820dfbca46cee72"
+  },
+  "/home/noiq/EERP/core/internal/common/errornow/errornow.go": {
+    "mtime": 1774792274.0407932,
+    "ast_hash": "b5b34b9740eaa44dc63f311a3b807f16",
+    "semantic_hash": "b5b34b9740eaa44dc63f311a3b807f16"
+  },
+  "/home/noiq/EERP/core/internal/common/errornow/errornow_test.go": {
+    "mtime": 1774792274.0407932,
+    "ast_hash": "2bd5a21ae35b23985f1cb8d1cec60533",
+    "semantic_hash": "2bd5a21ae35b23985f1cb8d1cec60533"
+  },
+  "/home/noiq/EERP/core/internal/types/files.go": {
+    "mtime": 1774784715.7563925,
+    "ast_hash": "73ddd0c463b4f9b07b1df2a13b5000ba",
+    "semantic_hash": "73ddd0c463b4f9b07b1df2a13b5000ba"
+  },
+  "/home/noiq/EERP/core/internal/types/modules.go": {
+    "mtime": 1774784715.7563925,
+    "ast_hash": "c7f1dce5299126b01862a1163b6252e6",
+    "semantic_hash": "c7f1dce5299126b01862a1163b6252e6"
+  },
+  "/home/noiq/EERP/core/internal/types/config.go": {
+    "mtime": 1776514117.4515784,
+    "ast_hash": "2e0b1836c6a87f98bfa024ca9dee8250",
+    "semantic_hash": "2e0b1836c6a87f98bfa024ca9dee8250"
+  },
+  "/home/noiq/EERP/core/cmd/app/main.go": {
+    "mtime": 1775140349.6414535,
+    "ast_hash": "b3ea09c135dc1cf706c11818eaf08cd7",
+    "semantic_hash": "b3ea09c135dc1cf706c11818eaf08cd7"
+  },
+  "/home/noiq/EERP/core/cmd/app/cache/modules/.fs_snapshot_modules.json": {
+    "mtime": 1774816160.0639582,
+    "ast_hash": "a8b845ddb6de40564d5f5658dfcceb2d",
+    "semantic_hash": "a8b845ddb6de40564d5f5658dfcceb2d"
+  },
+  "/home/noiq/EERP/modules/vente_particulier/module.json": {
+    "mtime": 1774784715.7563925,
+    "ast_hash": "529db4da96ef3284c295dd3af36d4b01",
+    "semantic_hash": "529db4da96ef3284c295dd3af36d4b01"
+  },
+  "/home/noiq/EERP/modules/vente_particulier/src/lib.rs": {
+    "mtime": 1774784715.7563925,
+    "ast_hash": "cc90e1e5cb5a572bf0eed191bc5710aa",
+    "semantic_hash": "cc90e1e5cb5a572bf0eed191bc5710aa"
+  },
+  "/home/noiq/EERP/modules/vente/module.json": {
+    "mtime": 1774792274.044638,
+    "ast_hash": "c44a258628048f5135d406ae383eb44e",
+    "semantic_hash": "c44a258628048f5135d406ae383eb44e"
+  },
+  "/home/noiq/EERP/modules/vente/src/lib.rs": {
+    "mtime": 1771928482.9088662,
+    "ast_hash": "7fb2e1942afc02e36e6718a4a7742164",
+    "semantic_hash": "7fb2e1942afc02e36e6718a4a7742164"
+  },
+  "/home/noiq/EERP/compose.yml": {
+    "mtime": 1771928482.9046211,
+    "ast_hash": "f1158491f56d73afbcd2a87ab5369b73",
+    "semantic_hash": "f1158491f56d73afbcd2a87ab5369b73"
+  },
+  "/home/noiq/EERP/SKILLS.md": {
+    "mtime": 1779214295.8858063,
+    "ast_hash": "b973626ce61efec9e3814fa30cc53f8d",
+    "semantic_hash": "b973626ce61efec9e3814fa30cc53f8d"
+  },
+  "/home/noiq/EERP/TODO.md": {
+    "mtime": 1771928482.9046211,
+    "ast_hash": "7add0602bcacf515bd1ec1a5e82807f6",
+    "semantic_hash": "7add0602bcacf515bd1ec1a5e82807f6"
+  },
+  "/home/noiq/EERP/CLA.md": {
+    "mtime": 1774784715.7402706,
+    "ast_hash": "2037c8b2a5bf61d7c8ef1dfa74b74ed7",
+    "semantic_hash": "2037c8b2a5bf61d7c8ef1dfa74b74ed7"
+  },
+  "/home/noiq/EERP/golangci.yml": {
+    "mtime": 1773933813.9763443,
+    "ast_hash": "67c4dd93665bb84bd7bf8e7343edd5ed",
+    "semantic_hash": "67c4dd93665bb84bd7bf8e7343edd5ed"
+  },
+  "/home/noiq/EERP/CLAUDE.md": {
+    "mtime": 1779217076.2542377,
+    "ast_hash": "c52f9096bb35cb50549e96ae856f3945",
+    "semantic_hash": "c52f9096bb35cb50549e96ae856f3945"
+  },
+  "/home/noiq/EERP/README.md": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "9e70d795da0a39a8e3cf86b0cfd0c7f4",
+    "semantic_hash": "9e70d795da0a39a8e3cf86b0cfd0c7f4"
+  },
+  "/home/noiq/EERP/.github/pull_request_template.md": {
+    "mtime": 1774784715.7402706,
+    "ast_hash": "5ad4249f9370c7bebd9f18c4dacc38d1",
+    "semantic_hash": "5ad4249f9370c7bebd9f18c4dacc38d1"
+  },
+  "/home/noiq/EERP/.github/.testcoverage.yml": {
+    "mtime": 1775198307.221656,
+    "ast_hash": "10a0ca79a640949cff7779e818454993",
+    "semantic_hash": "10a0ca79a640949cff7779e818454993"
+  },
+  "/home/noiq/EERP/.github/workflows/test-check.yml": {
+    "mtime": 1775198345.9486337,
+    "ast_hash": "913c399c509b68f1ca8d367d9fd8961d",
+    "semantic_hash": "913c399c509b68f1ca8d367d9fd8961d"
+  },
+  "/home/noiq/EERP/.github/workflows/cla-check.yml": {
+    "mtime": 1774784715.7402706,
+    "ast_hash": "5eb92afecca8023e3aa1c081303c0b33",
+    "semantic_hash": "5eb92afecca8023e3aa1c081303c0b33"
+  },
+  "/home/noiq/EERP/.github/ISSUE_TEMPLATE/eerp-bug-report-template-.md": {
+    "mtime": 1771928777.5110996,
+    "ast_hash": "36bf9f5e3152b3151380300895ff324e",
+    "semantic_hash": "36bf9f5e3152b3151380300895ff324e"
+  },
+  "/home/noiq/EERP/.github/ISSUE_TEMPLATE/eerp-improvements-template.md": {
+    "mtime": 1771928777.5110996,
+    "ast_hash": "8fdcda5c711cd065a17d5d29cde731b3",
+    "semantic_hash": "8fdcda5c711cd065a17d5d29cde731b3"
+  },
+  "/home/noiq/EERP/.github/ISSUE_TEMPLATE/eerp-feature-template.md": {
+    "mtime": 1771928777.5110996,
+    "ast_hash": "6591ed1f5e1a4705adf9261ffb24c09a",
+    "semantic_hash": "6591ed1f5e1a4705adf9261ffb24c09a"
+  },
+  "/home/noiq/EERP/core-front/README.md": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "b7eb7090c9e98e66c186ee4a0b3a9741",
+    "semantic_hash": "b7eb7090c9e98e66c186ee4a0b3a9741"
+  },
+  "/home/noiq/EERP/core-front/static/robots.txt": {
+    "mtime": 1774784715.752362,
+    "ast_hash": "fa1ded1ed7c11438a9b0385b1e112850",
+    "semantic_hash": "fa1ded1ed7c11438a9b0385b1e112850"
+  },
+  "/home/noiq/EERP/core-front/src/app.html": {
+    "mtime": 1774784715.744301,
+    "ast_hash": "cc2127d60a357dbff4d890d6e87e8f54",
+    "semantic_hash": "cc2127d60a357dbff4d890d6e87e8f54"
+  },
+  "/home/noiq/EERP/core-front/static/favicon.png": {
+    "mtime": 1774784715.752362,
+    "ast_hash": "3a387408ecc6cc283f724b39ca5fffb4",
+    "semantic_hash": "3a387408ecc6cc283f724b39ca5fffb4"
+  },
+  "/home/noiq/EERP/core-front/static/bg.jpg": {
+    "mtime": 1774784715.752362,
+    "ast_hash": "454fd9c9bc84b16eaa34e6e2bf58538d",
+    "semantic_hash": "454fd9c9bc84b16eaa34e6e2bf58538d"
+  }
+}

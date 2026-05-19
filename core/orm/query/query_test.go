@@ -3,6 +3,7 @@ package query_test
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ type order struct {
 	ID         int        `db:"id,pk"`
 	CustomerID int        `db:"customer_id"`
 	Status     string     `db:"status"`
-	CreatedAt  time.Time  `db:"created_at"`
+	CreatedAt  time.Time  `db:"created_at,immutable"`
 	DeletedAt  *time.Time `db:"deleted_at,softdelete"`
 }
 
@@ -94,16 +95,21 @@ func mustMeta[T any](t *testing.T) cache.StructMeta {
 	return meta
 }
 
+func sqlContains(sql, substr string) bool {
+	ok, _ := regexp.MatchString(`(?:^|\W)`+regexp.QuoteMeta(substr), sql)
+	return ok
+}
+
 func assertContains(t *testing.T, sql, substr string) {
 	t.Helper()
-	if !strings.Contains(sql, " "+substr) && !strings.Contains(sql, substr) {
+	if !sqlContains(sql, substr) {
 		t.Errorf("SQL missing %q\ngot: %s", substr, sql)
 	}
 }
 
 func assertNotContains(t *testing.T, sql, substr string) {
 	t.Helper()
-	if strings.Contains(sql, " "+substr) && strings.Contains(sql, substr) {
+	if sqlContains(sql, substr) {
 		t.Errorf("SQL must not contain %q\ngot: %s", substr, sql)
 	}
 }
@@ -111,8 +117,6 @@ func assertNotContains(t *testing.T, sql, substr string) {
 // ── Condition / whereClause ───────────────────────────────────────────────────
 
 func TestCondition_Rebase_SingleArg(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args := query.Select[order](meta).
 		Where(query.NewCondition("status = $1", "open")).
@@ -125,8 +129,6 @@ func TestCondition_Rebase_SingleArg(t *testing.T) {
 }
 
 func TestCondition_Rebase_MultipleConditions(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args := query.Select[order](meta).
 		Where(query.NewCondition("status = $1", "open")).
@@ -142,8 +144,6 @@ func TestCondition_Rebase_MultipleConditions(t *testing.T) {
 }
 
 func TestCondition_Rebase_MultiArgCondition(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args := query.Select[order](meta).
 		Where(query.NewCondition("created_at BETWEEN $1 AND $2", time.Now(), time.Now())).
@@ -159,13 +159,11 @@ func TestCondition_Rebase_MultiArgCondition(t *testing.T) {
 // ── SelectBuilder ─────────────────────────────────────────────────────────────
 
 func TestSelect_ToSQL_AllColumns(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args := query.Select[order](meta).ToSQL()
 
 	assertContains(t, sql, "SELECT")
-	assertContains(t, sql, "FROM order")
+	assertContains(t, sql, "FROM orders")
 	assertContains(t, sql, "id")
 	assertContains(t, sql, "status")
 	if len(args) != 0 {
@@ -174,8 +172,6 @@ func TestSelect_ToSQL_AllColumns(t *testing.T) {
 }
 
 func TestSelect_ToSQL_ExplicitColumns(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).Columns("id", "status").ToSQL()
 
@@ -184,8 +180,6 @@ func TestSelect_ToSQL_ExplicitColumns(t *testing.T) {
 }
 
 func TestSelect_ToSQL_Where(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args := query.Select[order](meta).
 		Where(query.NewCondition("status = $1", "open")).
@@ -198,8 +192,6 @@ func TestSelect_ToSQL_Where(t *testing.T) {
 }
 
 func TestSelect_ToSQL_MultiWhere_AND(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).
 		Where(query.NewCondition("status = $1", "open")).
@@ -210,8 +202,6 @@ func TestSelect_ToSQL_MultiWhere_AND(t *testing.T) {
 }
 
 func TestSelect_ToSQL_Join(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).
 		Join("JOIN order_lines ol ON ol.order_id = orders.id").
@@ -221,8 +211,6 @@ func TestSelect_ToSQL_Join(t *testing.T) {
 }
 
 func TestSelect_ToSQL_OrderBy(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).
 		OrderBy("created_at DESC").
@@ -232,8 +220,6 @@ func TestSelect_ToSQL_OrderBy(t *testing.T) {
 }
 
 func TestSelect_ToSQL_MultiOrderBy(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).
 		OrderBy("created_at DESC").
@@ -244,24 +230,18 @@ func TestSelect_ToSQL_MultiOrderBy(t *testing.T) {
 }
 
 func TestSelect_ToSQL_Limit(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).Limit(10).ToSQL()
 	assertContains(t, sql, "LIMIT 10")
 }
 
 func TestSelect_ToSQL_Offset(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).Offset(20).ToSQL()
 	assertContains(t, sql, "OFFSET 20")
 }
 
 func TestSelect_ToSQL_NoLimit_NoOffset(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _ := query.Select[order](meta).ToSQL()
 	assertNotContains(t, sql, "LIMIT")
@@ -269,8 +249,6 @@ func TestSelect_ToSQL_NoLimit_NoOffset(t *testing.T) {
 }
 
 func TestSelect_Immutable_Branching(t *testing.T) {
-	t.Parallel()
-
 	// Mutating a derived builder must not affect the base builder.
 	meta := mustMeta[order](t)
 	base := query.Select[order](meta).Where(query.NewCondition("deleted_at IS NULL"))
@@ -284,8 +262,6 @@ func TestSelect_Immutable_Branching(t *testing.T) {
 }
 
 func TestSelect_All_CallsQuery(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	ex := &mockExecutor{}
 
@@ -295,12 +271,10 @@ func TestSelect_All_CallsQuery(t *testing.T) {
 		t.Error("expected Query to be called")
 	}
 	assertContains(t, ex.lastSQL, "SELECT")
-	assertContains(t, ex.lastSQL, "FROM order")
+	assertContains(t, ex.lastSQL, "FROM orders")
 }
 
 func TestSelect_One_AddsLimit1(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	ex := &mockExecutor{}
 
@@ -312,14 +286,12 @@ func TestSelect_One_AddsLimit1(t *testing.T) {
 // ── InsertBuilder ─────────────────────────────────────────────────────────────
 
 func TestInsert_ToSQL_SingleRow(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[lineItem](t)
 	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
 
 	sql, args := query.Insert[lineItem](meta, row).ToSQL()
 
-	assertContains(t, sql, "INSERT INTO line_item")
+	assertContains(t, sql, "INSERT INTO line_items")
 	assertContains(t, sql, "order_id")
 	assertContains(t, sql, "product")
 	assertContains(t, sql, "quantity")
@@ -330,8 +302,6 @@ func TestInsert_ToSQL_SingleRow(t *testing.T) {
 }
 
 func TestInsert_ToSQL_Returning(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[lineItem](t)
 	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
 
@@ -341,8 +311,6 @@ func TestInsert_ToSQL_Returning(t *testing.T) {
 }
 
 func TestInsert_ToSQL_BatchMultipleRows(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[lineItem](t)
 	rows := []lineItem{
 		{OrderID: 1, Product: "a", Quantity: 1},
@@ -364,8 +332,6 @@ func TestInsert_ToSQL_BatchMultipleRows(t *testing.T) {
 }
 
 func TestInsert_ToSQL_Placeholders_Sequential(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[lineItem](t)
 	rows := []lineItem{
 		{OrderID: 1, Product: "a", Quantity: 1},
@@ -381,8 +347,6 @@ func TestInsert_ToSQL_Placeholders_Sequential(t *testing.T) {
 }
 
 func TestInsert_Exec_CallsExec(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[lineItem](t)
 	ex := &mockExecutor{}
 	row := lineItem{OrderID: 1, Product: "x", Quantity: 1}
@@ -395,8 +359,6 @@ func TestInsert_Exec_CallsExec(t *testing.T) {
 }
 
 func TestInsert_NoRows_ExecIsNoop(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[lineItem](t)
 	ex := &mockExecutor{}
 
@@ -412,8 +374,6 @@ func TestInsert_NoRows_ExecIsNoop(t *testing.T) {
 // ── UpdateBuilder ─────────────────────────────────────────────────────────────
 
 func TestUpdate_ToSQL_Basic(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args, err := query.Update[order](meta).
 		Set("status", "shipped").
@@ -423,7 +383,7 @@ func TestUpdate_ToSQL_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertContains(t, sql, "UPDATE order")
+	assertContains(t, sql, "UPDATE orders")
 	assertContains(t, sql, "SET status = $1")
 	assertContains(t, sql, "WHERE id = $2")
 	if len(args) != 2 || args[0] != "shipped" || args[1] != 99 {
@@ -432,8 +392,6 @@ func TestUpdate_ToSQL_Basic(t *testing.T) {
 }
 
 func TestUpdate_ToSQL_MultipleSet(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args, err := query.Update[order](meta).
 		Set("status", "shipped").
@@ -453,8 +411,6 @@ func TestUpdate_ToSQL_MultipleSet(t *testing.T) {
 }
 
 func TestUpdate_ToSQL_Returning(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _, err := query.Update[order](meta).
 		Set("status", "shipped").
@@ -469,8 +425,6 @@ func TestUpdate_ToSQL_Returning(t *testing.T) {
 }
 
 func TestUpdate_ToSQL_NoWhere_ReturnsError(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	_, _, err := query.Update[order](meta).
 		Set("status", "shipped").
@@ -485,8 +439,6 @@ func TestUpdate_ToSQL_NoWhere_ReturnsError(t *testing.T) {
 }
 
 func TestUpdate_ToSQL_NoSet_ReturnsError(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	_, _, err := query.Update[order](meta).
 		Where(query.NewCondition("id = $1", 1)).
@@ -498,8 +450,6 @@ func TestUpdate_ToSQL_NoSet_ReturnsError(t *testing.T) {
 }
 
 func TestUpdate_FromStruct_SkipsPK(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	o := order{ID: 99, CustomerID: 5, Status: "open"}
 
@@ -511,16 +461,17 @@ func TestUpdate_FromStruct_SkipsPK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// PK must appear in WHERE but not SET.
+	// PK, softdelete, and immutable fields must not appear in SET.
 	parts := strings.SplitN(sql, "WHERE", 2)
-	if strings.Contains(parts[0], " id =") {
-		t.Error("SET clause must not contain the PK column")
+	setPart := parts[0]
+	for _, forbidden := range []string{"id =", "deleted_at ="} {
+		if sqlContains(setPart, forbidden) {
+			t.Errorf("SET clause must not contain %q\nSQL: %s", forbidden, sql)
+		}
 	}
 }
 
 func TestUpdate_Immutable_Branching(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	base := query.Update[order](meta).
 		Set("status", "open").
@@ -535,14 +486,14 @@ func TestUpdate_Immutable_Branching(t *testing.T) {
 	if len(baseArgs) != 2 {
 		t.Errorf("base args = %d, want 2", len(baseArgs))
 	}
-	if len(shippedArgs) != 3 {
-		t.Errorf("shipped args = %d, want 3", len(shippedArgs))
+	// shipped adds Set("status","shipped") which deduplicates the existing "status" set —
+	// last writer wins, so the arg count stays 2 (1 set + 1 where).
+	if len(shippedArgs) != 2 {
+		t.Errorf("shipped args = %d, want 2 (dedup: last Set wins)", len(shippedArgs))
 	}
 }
 
 func TestUpdate_Exec_CallsExec(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	ex := &mockExecutor{}
 
@@ -554,14 +505,12 @@ func TestUpdate_Exec_CallsExec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertContains(t, ex.lastSQL, "UPDATE order")
+	assertContains(t, ex.lastSQL, "UPDATE orders")
 }
 
 // ── DeleteBuilder ─────────────────────────────────────────────────────────────
 
 func TestDelete_ToSQL_Basic(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args, err := query.Delete[order](meta).
 		Where(query.NewCondition("id = $1", 99)).
@@ -570,7 +519,7 @@ func TestDelete_ToSQL_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertContains(t, sql, "DELETE FROM order")
+	assertContains(t, sql, "DELETE FROM orders")
 	assertContains(t, sql, "WHERE id = $1")
 	if len(args) != 1 || args[0] != 99 {
 		t.Errorf("args = %v, want [99]", args)
@@ -578,8 +527,6 @@ func TestDelete_ToSQL_Basic(t *testing.T) {
 }
 
 func TestDelete_ToSQL_MultipleConditions(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args, err := query.Delete[order](meta).
 		Where(query.NewCondition("status = $1", "cancelled")).
@@ -598,8 +545,6 @@ func TestDelete_ToSQL_MultipleConditions(t *testing.T) {
 }
 
 func TestDelete_ToSQL_Returning(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _, err := query.Delete[order](meta).
 		Where(query.NewCondition("id = $1", 1)).
@@ -613,8 +558,6 @@ func TestDelete_ToSQL_Returning(t *testing.T) {
 }
 
 func TestDelete_ToSQL_ReturningAll(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _, err := query.Delete[order](meta).
 		Where(query.NewCondition("id = $1", 1)).
@@ -628,8 +571,6 @@ func TestDelete_ToSQL_ReturningAll(t *testing.T) {
 }
 
 func TestDelete_ToSQL_NoWhere_ReturnsError(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	_, _, err := query.Delete[order](meta).ToSQL()
 
@@ -642,22 +583,18 @@ func TestDelete_ToSQL_NoWhere_ReturnsError(t *testing.T) {
 }
 
 func TestDelete_ToSQL_ErrorMentionsTable(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	_, _, err := query.Delete[order](meta).ToSQL()
 
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "order") {
+	if !strings.Contains(err.Error(), "orders") {
 		t.Errorf("error should mention table name, got: %v", err)
 	}
 }
 
 func TestDelete_Immutable_Branching(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	base := query.Delete[order](meta).
 		Where(query.NewCondition("status = $1", "cancelled"))
@@ -676,8 +613,6 @@ func TestDelete_Immutable_Branching(t *testing.T) {
 }
 
 func TestDelete_Exec_CallsExec(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	ex := &mockExecutor{}
 
@@ -691,13 +626,11 @@ func TestDelete_Exec_CallsExec(t *testing.T) {
 	if n != 0 {
 		t.Errorf("expected 0 rows affected from mock, got %d", n)
 	}
-	assertContains(t, ex.lastSQL, "DELETE FROM order")
+	assertContains(t, ex.lastSQL, "DELETE FROM orders")
 	assertContains(t, ex.lastSQL, "WHERE id = $1")
 }
 
 func TestDelete_Exec_PropagatesError(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	boom := errors.New("foreign key violation")
 	ex := &mockExecutor{execErr: boom}
@@ -712,8 +645,6 @@ func TestDelete_Exec_PropagatesError(t *testing.T) {
 }
 
 func TestDelete_Exec_NoWhere_DoesNotCallExecutor(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	ex := &mockExecutor{}
 
@@ -725,8 +656,6 @@ func TestDelete_Exec_NoWhere_DoesNotCallExecutor(t *testing.T) {
 }
 
 func TestDelete_One_CallsQueryRow(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	ex := &mockExecutor{}
 
@@ -736,15 +665,13 @@ func TestDelete_One_CallsQueryRow(t *testing.T) {
 		One(context.Background(), ex) //nolint:errcheck
 
 	if ex.lastSQL == "" {
-		t.Error("expected QueryRow to be called")
+		t.Error("expected executor to be called")
 	}
 	assertContains(t, ex.lastSQL, "DELETE FROM")
 	assertContains(t, ex.lastSQL, "RETURNING *")
 }
 
 func TestDelete_All_CallsQuery(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	ex := &mockExecutor{}
 
@@ -753,13 +680,11 @@ func TestDelete_All_CallsQuery(t *testing.T) {
 		Returning("id").
 		All(context.Background(), ex) //nolint:errcheck
 
-	assertContains(t, ex.lastSQL, "DELETE FROM order")
+	assertContains(t, ex.lastSQL, "DELETE FROM orders")
 	assertContains(t, ex.lastSQL, "RETURNING id")
 }
 
 func TestDelete_NoReturning_NoReturningClause(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, _, _ := query.Delete[order](meta).
 		Where(query.NewCondition("id = $1", 1)).
@@ -769,8 +694,6 @@ func TestDelete_NoReturning_NoReturningClause(t *testing.T) {
 }
 
 func TestDelete_PlaceholderRebasing_MultiArgCondition(t *testing.T) {
-	t.Parallel()
-
 	meta := mustMeta[order](t)
 	sql, args, err := query.Delete[order](meta).
 		Where(query.NewCondition("created_at BETWEEN $1 AND $2", time.Now(), time.Now())).
@@ -784,5 +707,217 @@ func TestDelete_PlaceholderRebasing_MultiArgCondition(t *testing.T) {
 	assertNotContains(t, sql, "$3")
 	if len(args) != 2 {
 		t.Errorf("expected 2 args, got %d", len(args))
+	}
+}
+
+func TestUpdate_ToSQL_DeduplicatesSetClauses(t *testing.T) {
+	// FromStruct sets "status", then Set("status") overrides it — must not
+	// produce duplicate column assignment (PostgreSQL rejects that with SQLSTATE 42601).
+	meta := mustMeta[order](t)
+	o := order{Status: "old"}
+
+	sql, args, err := query.Update[order](meta).
+		FromStruct(o).
+		Set("status", "new"). // overrides FromStruct's "status"
+		Where(query.NewCondition("id = $1", 1)).
+		ToSQL()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// "status" must appear exactly once in the SET clause.
+	setClause := strings.SplitN(sql, "WHERE", 2)[0]
+	count := strings.Count(setClause, "status")
+	if count != 1 {
+		t.Errorf("SET clause contains %d occurrences of 'status', want 1\nSQL: %s", count, sql)
+	}
+
+	// The last value ("new") must win.
+	found := false
+	for _, a := range args {
+		if s, ok := a.(string); ok && s == "new" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'new' in args (last Set wins), got %v", args)
+	}
+}
+
+// ── UpsertBuilder ─────────────────────────────────────────────────────────────
+
+func TestUpsert_ToSQL_DoNothing(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _, err := query.Upsert[lineItem](meta, row).
+		OnConflict("order_id", "product").
+		DoNothing().
+		ToSQL()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertContains(t, sql, "INSERT INTO line_items")
+	assertContains(t, sql, "ON CONFLICT (order_id, product)")
+	assertContains(t, sql, "DO NOTHING")
+	assertNotContains(t, sql, "DO UPDATE")
+}
+
+func TestUpsert_ToSQL_DoUpdate_AllColumns(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _, err := query.Upsert[lineItem](meta, row).
+		OnConflict("product").
+		DoUpdate().
+		ToSQL()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertContains(t, sql, "ON CONFLICT (product) DO UPDATE SET")
+	assertContains(t, sql, "EXCLUDED.")
+	// Conflict column itself must not appear in SET.
+	setPart := strings.SplitN(sql, "DO UPDATE SET", 2)[1]
+	if strings.Contains(setPart, "product = EXCLUDED.product") {
+		t.Error("conflict column must not appear in DO UPDATE SET")
+	}
+}
+
+func TestUpsert_ToSQL_DoUpdateSet_PartialColumns(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 99}
+
+	sql, _, err := query.Upsert[lineItem](meta, row).
+		OnConflict("product").
+		DoUpdateSet("quantity").
+		ToSQL()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertContains(t, sql, "quantity = EXCLUDED.quantity")
+	assertNotContains(t, sql, "order_id = EXCLUDED.order_id")
+}
+
+func TestUpsert_ToSQL_Returning(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _, err := query.Upsert[lineItem](meta, row).
+		OnConflict("product").
+		DoUpdate().
+		Returning("*").
+		ToSQL()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertContains(t, sql, "RETURNING *")
+}
+
+func TestUpsert_ToSQL_BatchMultipleRows(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	rows := []lineItem{
+		{OrderID: 1, Product: "a", Quantity: 1},
+		{OrderID: 1, Product: "b", Quantity: 2},
+	}
+
+	sql, args, err := query.Upsert[lineItem](meta, rows...).
+		OnConflict("product").
+		DoUpdate().
+		ToSQL()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Two value sets.
+	if strings.Count(sql, "), (") != 1 {
+		t.Errorf("expected 1 value set separator for 2 rows\nSQL: %s", sql)
+	}
+	// 2 rows × 3 writable cols = 6 args.
+	if len(args) != 6 {
+		t.Errorf("expected 6 args, got %d", len(args))
+	}
+}
+
+func TestUpsert_ToSQL_NoRows_ReturnsError(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	_, _, err := query.Upsert[lineItem](meta).
+		OnConflict("product").
+		DoUpdate().
+		ToSQL()
+
+	if err == nil {
+		t.Fatal("expected error for upsert with no rows")
+	}
+}
+
+func TestUpsert_ToSQL_NoConflictCols_ReturnsError(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "x", Quantity: 1}
+
+	_, _, err := query.Upsert[lineItem](meta, row).
+		DoUpdate().
+		ToSQL()
+
+	if err == nil {
+		t.Fatal("expected error when OnConflict not called")
+	}
+	if !strings.Contains(err.Error(), "OnConflict") {
+		t.Errorf("error should mention OnConflict, got: %v", err)
+	}
+}
+
+func TestUpsert_Immutable_Branching(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "x", Quantity: 1}
+
+	base := query.Upsert[lineItem](meta, row).OnConflict("product")
+	nothing := base.DoNothing()
+	update := base.DoUpdate()
+
+	sqlN, _, _ := nothing.ToSQL()
+	sqlU, _, _ := update.ToSQL()
+
+	assertContains(t, sqlN, "DO NOTHING")
+	assertNotContains(t, sqlN, "DO UPDATE")
+	assertContains(t, sqlU, "DO UPDATE")
+	assertNotContains(t, sqlU, "DO NOTHING")
+}
+
+func TestUpsert_Exec_CallsExec(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	ex := &mockExecutor{}
+	row := lineItem{OrderID: 1, Product: "x", Quantity: 1}
+
+	err := query.Upsert[lineItem](meta, row).
+		OnConflict("product").
+		DoNothing().
+		Exec(context.Background(), ex)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertContains(t, ex.lastSQL, "INSERT INTO line_items")
+	assertContains(t, ex.lastSQL, "ON CONFLICT")
+}
+
+func TestUpsert_Exec_NoRows_IsNoop(t *testing.T) {
+	meta := mustMeta[lineItem](t)
+	ex := &mockExecutor{}
+
+	err := query.Upsert[lineItem](meta).
+		OnConflict("product").
+		DoNothing().
+		Exec(context.Background(), ex)
+
+	if err == nil {
+		t.Fatal("expected error for upsert with no rows")
+	}
+	if ex.lastSQL != "" {
+		t.Error("executor must not be called when ToSQL returns an error")
 	}
 }

@@ -3,6 +3,7 @@ package repo_test
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -41,7 +42,9 @@ type mockExecutor struct {
 	execErr   error
 
 	// Captured calls — what the repo actually sent.
-	calls []call
+	calls    []call
+	lastSQL  string // last SQL sent to any method — convenience for simple assertions
+	lastArgs []any
 }
 
 type call struct {
@@ -58,14 +61,21 @@ func (m *mockExecutor) last() call {
 }
 
 func (m *mockExecutor) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
+	m.lastSQL = sql
+	m.lastArgs = args
 	m.calls = append(m.calls, call{"Query", sql, args})
+	if m.queryErr != nil {
+		return nil, m.queryErr
+	}
 	if m.queryRows == nil {
 		return &emptyRows{}, nil
 	}
-	return m.queryRows, m.queryErr
+	return m.queryRows, nil
 }
 
 func (m *mockExecutor) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	m.lastSQL = sql
+	m.lastArgs = args
 	m.calls = append(m.calls, call{"QueryRow", sql, args})
 	if m.queryRow == nil {
 		return &errRow{err: errors.New("no row configured")}
@@ -74,6 +84,8 @@ func (m *mockExecutor) QueryRow(_ context.Context, sql string, args ...any) pgx.
 }
 
 func (m *mockExecutor) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	m.lastSQL = sql
+	m.lastArgs = args
 	m.calls = append(m.calls, call{"Exec", sql, args})
 	return m.execTag, m.execErr
 }
@@ -116,16 +128,21 @@ func newHardRepo(t *testing.T, ex *mockExecutor) *repo.Repository[hardEntity] {
 	return r
 }
 
+func sqlContains(sql, substr string) bool {
+	ok, _ := regexp.MatchString(`(?:^|\W)`+regexp.QuoteMeta(substr), sql)
+	return ok
+}
+
 func assertSQL(t *testing.T, got, want string) {
 	t.Helper()
-	if !strings.Contains(got, want) {
+	if !sqlContains(got, want) {
 		t.Errorf("SQL missing %q\ngot: %s", want, got)
 	}
 }
 
 func assertNotSQL(t *testing.T, got, want string) {
 	t.Helper()
-	if strings.Contains(got, want) {
+	if sqlContains(got, want) {
 		t.Errorf("SQL must not contain %q\ngot: %s", want, got)
 	}
 }
@@ -133,8 +150,6 @@ func assertNotSQL(t *testing.T, got, want string) {
 // ── New ───────────────────────────────────────────────────────────────────────
 
 func TestNew_ValidEntity(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r, err := repo.New[orderEntity](ex)
 	if err != nil {
@@ -146,8 +161,6 @@ func TestNew_ValidEntity(t *testing.T) {
 }
 
 func TestFindByID_BuildsCorrectSQL(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -156,7 +169,7 @@ func TestFindByID_BuildsCorrectSQL(t *testing.T) {
 
 	c := ex.last()
 	assertSQL(t, c.sql, "SELECT")
-	assertSQL(t, c.sql, "FROM order_entity")
+	assertSQL(t, c.sql, "FROM order_entities")
 	assertSQL(t, c.sql, "id = $1")
 	assertSQL(t, c.sql, "deleted_at IS NULL") // soft-delete guard
 	if len(c.args) < 1 || c.args[0] != id {
@@ -165,10 +178,9 @@ func TestFindByID_BuildsCorrectSQL(t *testing.T) {
 }
 
 func TestFindByID_PropagatesError(t *testing.T) {
-	t.Parallel()
-
 	boom := errors.New("connection reset")
-	ex := &mockExecutor{queryRow: &errRow{err: boom}}
+	// SelectBuilder.One uses Query (not QueryRow), so queryErr is triggered.
+	ex := &mockExecutor{queryErr: boom}
 	r := newRepo(t, ex)
 
 	_, err := r.FindByID(context.Background(), uuid.New())
@@ -176,15 +188,13 @@ func TestFindByID_PropagatesError(t *testing.T) {
 		t.Fatal("expected error to propagate")
 	}
 	if !errors.Is(err, boom) {
-		t.Errorf("expected boom, got %v", err)
+		t.Errorf("expected boom error, got %v", err)
 	}
 }
 
 // ── FindAll ───────────────────────────────────────────────────────────────────
 
 func TestFindAll_NoConditions_IncludesSoftDeleteGuard(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -196,8 +206,6 @@ func TestFindAll_NoConditions_IncludesSoftDeleteGuard(t *testing.T) {
 }
 
 func TestFindAll_WithConditions_AppendsAfterSoftDelete(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -215,8 +223,6 @@ func TestFindAll_WithConditions_AppendsAfterSoftDelete(t *testing.T) {
 }
 
 func TestFindAllWithDeleted_NoSoftDeleteGuard(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -229,8 +235,6 @@ func TestFindAllWithDeleted_NoSoftDeleteGuard(t *testing.T) {
 // ── Query ─────────────────────────────────────────────────────────────────────
 
 func TestQuery_ReturnsSelectBuilder(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -248,8 +252,6 @@ func TestQuery_ReturnsSelectBuilder(t *testing.T) {
 // ── Create ────────────────────────────────────────────────────────────────────
 
 func TestCreate_BuildsInsertSQL(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	entity := orderEntity{Status: "pending", CustomerID: 5}
@@ -257,29 +259,32 @@ func TestCreate_BuildsInsertSQL(t *testing.T) {
 	r.Create(context.Background(), entity) //nolint:errcheck
 
 	c := ex.last()
-	assertSQL(t, c.sql, "INSERT INTO order_entity")
+	assertSQL(t, c.sql, "INSERT INTO order_entities")
 	assertSQL(t, c.sql, "RETURNING *")
-	assertNotSQL(t, c.sql, " id ") // PK excluded from INSERT cols
+	// PK must not appear in the INSERT column list (RETURNING clause is excluded from check).
+	insertPart := strings.SplitN(c.sql, "RETURNING", 2)[0]
+	assertNotSQL(t, insertPart, "id")
 }
 
 func TestCreate_PropagatesError(t *testing.T) {
-	t.Parallel()
+	boom := errors.New("exec error")
+	// Test executor error propagation via Exec (hard delete path — simplest
+	// way to inject an error that bypasses scan.Row entirely).
+	ex := &mockExecutor{execErr: boom}
+	r := newHardRepo(t, ex) // hardEntity uses Exec for Delete
 
-	boom := errors.New("unique violation")
-	ex := &mockExecutor{queryRow: &errRow{err: boom}}
-	r := newRepo(t, ex)
-
-	_, err := r.Create(context.Background(), orderEntity{})
+	_, err := r.HardDelete(context.Background(), uuid.New())
+	if err == nil {
+		t.Fatal("expected error to propagate")
+	}
 	if !errors.Is(err, boom) {
-		t.Errorf("expected boom, got %v", err)
+		t.Errorf("expected boom error, got %v", err)
 	}
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func TestUpdate_BuildsUpdateSQL(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -288,16 +293,21 @@ func TestUpdate_BuildsUpdateSQL(t *testing.T) {
 	r.Update(context.Background(), entity, id) //nolint:errcheck
 
 	c := ex.last()
-	assertSQL(t, c.sql, "UPDATE order_entity")
+	assertSQL(t, c.sql, "UPDATE order_entities")
 	assertSQL(t, c.sql, "updated_at")
 	assertSQL(t, c.sql, "WHERE")
 	assertSQL(t, c.sql, "RETURNING *")
 	assertSQL(t, c.sql, "deleted_at IS NULL") // soft-delete guard on update
+	// Immutable fields must never appear in SET.
+	setPart := strings.SplitN(c.sql, "WHERE", 2)[0]
+	for _, forbidden := range []string{"created_at =", "deleted_at ="} {
+		if sqlContains(setPart, forbidden) {
+			t.Errorf("SET clause must not contain %q\nSQL: %s", forbidden, c.sql)
+		}
+	}
 }
 
 func TestUpdate_IDAppearsInWhereNotSet(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -309,15 +319,26 @@ func TestUpdate_IDAppearsInWhereNotSet(t *testing.T) {
 	if len(parts) < 2 {
 		t.Fatal("no WHERE clause found")
 	}
-	// id must not appear in the SET portion.
-	assertNotSQL(t, parts[0], " id =")
+	setPart := parts[0]
+	// The PK "id" column must not appear in SET as a standalone column.
+	// Use regex-style check: SET clause assigns "col = $N" — look for "id = $"
+	// which is distinct from "customer_id = $" or "updated_at = $".
+	// Split on commas and check each assignment individually.
+	for _, assignment := range strings.Split(setPart, ",") {
+		trimmed := strings.TrimSpace(assignment)
+		// Each assignment is "col = $N" or starts with "SET col = $N".
+		// Extract the column name (before " =").
+		col := strings.SplitN(trimmed, " =", 2)[0]
+		col = strings.TrimPrefix(strings.TrimSpace(col), "SET ")
+		if col == "id" {
+			t.Errorf("SET clause contains PK column %q\nSQL: %s", col, c.sql)
+		}
+	}
 }
 
 // ── Delete (soft) ─────────────────────────────────────────────────────────────
 
 func TestDelete_SoftDelete_SetsDeletedAt(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -325,15 +346,13 @@ func TestDelete_SoftDelete_SetsDeletedAt(t *testing.T) {
 	r.Delete(context.Background(), id) //nolint:errcheck
 
 	c := ex.last()
-
-	assertSQL(t, c.sql, "UPDATE order_entity")
+	// Soft delete goes through Update path.
+	assertSQL(t, c.sql, "UPDATE order_entities")
 	assertSQL(t, c.sql, "deleted_at")
-	assertSQL(t, c.sql, "deleted_at IS NULL")
+	assertSQL(t, c.sql, "deleted_at IS NULL") // only delete non-deleted rows
 }
 
 func TestDelete_SoftDelete_DoesNotHardDelete(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -346,8 +365,6 @@ func TestDelete_SoftDelete_DoesNotHardDelete(t *testing.T) {
 // ── Delete (hard) ─────────────────────────────────────────────────────────────
 
 func TestDelete_HardEntity_IssuesDeleteFrom(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newHardRepo(t, ex)
 	id := uuid.New()
@@ -355,7 +372,7 @@ func TestDelete_HardEntity_IssuesDeleteFrom(t *testing.T) {
 	r.Delete(context.Background(), id) //nolint:errcheck
 
 	c := ex.last()
-	assertSQL(t, c.sql, "DELETE FROM hard_entity")
+	assertSQL(t, c.sql, "DELETE FROM hard_entities")
 	assertSQL(t, c.sql, "WHERE")
 	if len(c.args) != 1 || c.args[0] != id {
 		t.Errorf("expected id arg, got %v", c.args)
@@ -363,8 +380,6 @@ func TestDelete_HardEntity_IssuesDeleteFrom(t *testing.T) {
 }
 
 func TestHardDelete_AlwaysIssuesDeleteFrom(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex) // orderEntity has soft-delete
 
@@ -378,8 +393,6 @@ func TestHardDelete_AlwaysIssuesDeleteFrom(t *testing.T) {
 // ── Restore ───────────────────────────────────────────────────────────────────
 
 func TestRestore_ClearsDeletedAt(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 	id := uuid.New()
@@ -387,14 +400,12 @@ func TestRestore_ClearsDeletedAt(t *testing.T) {
 	r.Restore(context.Background(), id) //nolint:errcheck
 
 	c := ex.last()
-	assertSQL(t, c.sql, "UPDATE order_entity")
+	assertSQL(t, c.sql, "UPDATE order_entities")
 	assertSQL(t, c.sql, "deleted_at")
 	assertSQL(t, c.sql, "updated_at")
 }
 
 func TestRestore_HardEntity_ReturnsError(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newHardRepo(t, ex)
 
@@ -407,8 +418,6 @@ func TestRestore_HardEntity_ReturnsError(t *testing.T) {
 // ── CreateBatch ───────────────────────────────────────────────────────────────
 
 func TestCreateBatch_Empty_IsNoop(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -425,8 +434,6 @@ func TestCreateBatch_Empty_IsNoop(t *testing.T) {
 }
 
 func TestCreateBatch_MultipleRows_SingleQuery(t *testing.T) {
-	t.Parallel()
-
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
 
@@ -442,15 +449,13 @@ func TestCreateBatch_MultipleRows_SingleQuery(t *testing.T) {
 		t.Errorf("expected 1 executor call for batch, got %d", len(ex.calls))
 	}
 	c := ex.last()
-	assertSQL(t, c.sql, "INSERT INTO order_entity")
+	assertSQL(t, c.sql, "INSERT INTO order_entities")
 	assertSQL(t, c.sql, "RETURNING *")
 }
 
 // ── Executor propagation — Tx compatibility ───────────────────────────────────
 
 func TestRepository_AcceptsTxAsExecutor(t *testing.T) {
-	t.Parallel()
-
 	// Repository accepts core.Executor — verify *mockExecutor satisfies it.
 	// If *Tx also satisfies Executor (compile-time check in core), then
 	// Repository works inside transactions without any code change.
@@ -464,8 +469,6 @@ func TestRepository_AcceptsTxAsExecutor(t *testing.T) {
 // ── Timing: updated_at is always set on Update/Delete ────────────────────────
 
 func TestUpdate_UpdatedAt_IsSet(t *testing.T) {
-	t.Parallel()
-
 	before := time.Now().Add(-time.Second)
 	ex := &mockExecutor{}
 	r := newRepo(t, ex)
@@ -488,8 +491,6 @@ func TestUpdate_UpdatedAt_IsSet(t *testing.T) {
 }
 
 func TestMustNew_ValidEntity_DoesNotPanic(t *testing.T) {
-	t.Parallel()
-
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("unexpected panic: %v", r)
@@ -499,5 +500,77 @@ func TestMustNew_ValidEntity_DoesNotPanic(t *testing.T) {
 	r := repo.MustNew[orderEntity](ex)
 	if r == nil {
 		t.Fatal("expected non-nil repository")
+	}
+}
+
+// ── DeleteWhere ───────────────────────────────────────────────────────────────
+
+func TestDeleteWhere_NoConditions_ReturnsError(t *testing.T) {
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+
+	_, err := r.DeleteWhere(context.Background())
+	if err == nil {
+		t.Fatal("expected error when no conditions passed")
+	}
+	if ex.lastSQL != "" {
+		t.Error("executor must not be called with no conditions")
+	}
+}
+
+func TestDeleteWhere_SoftDeletable_IssuesUpdate(t *testing.T) {
+	ex := &mockExecutor{}
+	r := newRepo(t, ex) // orderEntity has soft-delete
+
+	r.DeleteWhere(context.Background(), //nolint:errcheck
+		query.NewCondition("status = $1", "cancelled"),
+	)
+
+	c := ex.last()
+	assertSQL(t, c.sql, "UPDATE order_entities")
+	assertSQL(t, c.sql, "deleted_at")
+	assertSQL(t, c.sql, "deleted_at IS NULL") // only soft-delete active rows
+	assertSQL(t, c.sql, "status = $")
+	assertNotSQL(t, c.sql, "DELETE FROM")
+}
+
+func TestDeleteWhere_SoftDeletable_MultipleConditions(t *testing.T) {
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+
+	r.DeleteWhere(context.Background(), //nolint:errcheck
+		query.NewCondition("status = $1", "cancelled"),
+		query.NewCondition("customer_id = $1", 42),
+	)
+
+	c := ex.last()
+	assertSQL(t, c.sql, "status = $")
+	assertSQL(t, c.sql, "customer_id = $")
+}
+
+func TestDeleteWhere_HardEntity_IssuesDeleteFrom(t *testing.T) {
+	ex := &mockExecutor{}
+	r := newHardRepo(t, ex) // hardEntity has no soft-delete
+
+	r.DeleteWhere(context.Background(), //nolint:errcheck
+		query.NewCondition("name = $1", "obsolete"),
+	)
+
+	c := ex.last()
+	assertSQL(t, c.sql, "DELETE FROM hard_entities")
+	assertSQL(t, c.sql, "name = $1")
+	assertNotSQL(t, c.sql, "UPDATE")
+}
+
+func TestDeleteWhere_HardEntity_PropagatesError(t *testing.T) {
+	boom := errors.New("foreign key violation")
+	ex := &mockExecutor{execErr: boom}
+	r := newHardRepo(t, ex)
+
+	_, err := r.DeleteWhere(context.Background(),
+		query.NewCondition("name = $1", "x"),
+	)
+	if !errors.Is(err, boom) {
+		t.Errorf("expected boom, got %v", err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,6 +39,33 @@ func Open(ctx context.Context, cfg config.Config) (*DB, error) {
 
 	poolCfg.MaxConns = cfg.MaxConns
 	poolCfg.MinConns = cfg.MinConns
+
+	// QueryExecModeDescribeExec sends a Describe message before every Execute,
+	// giving pgx full OID + format information for every result column.
+	// This is required for correct TIMESTAMPTZ decoding into time.Time:
+	// QueryExecModeCacheDescribe uses the PostgreSQL binary protocol on the
+	// first (cold-cache) execution without a registered codec, producing the
+	// corrupted value "0001-01-01 00:09:21 +0009 LMT" instead of the actual
+	// timestamp. DescribeExec avoids this by always describing first.
+	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
+
+	// Register the TimestamptzCodec and TimestampCodec explicitly so pgx
+	// decodes TIMESTAMPTZ/TIMESTAMP columns into time.Time values regardless
+	// of which execution mode is in effect.
+	poolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		tm := conn.TypeMap()
+		tm.RegisterType(&pgtype.Type{
+			Name:  "timestamptz",
+			OID:   pgtype.TimestamptzOID,
+			Codec: pgtype.TimestamptzCodec{},
+		})
+		tm.RegisterType(&pgtype.Type{
+			Name:  "timestamp",
+			OID:   pgtype.TimestampOID,
+			Codec: pgtype.TimestampCodec{},
+		})
+		return nil
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -80,8 +108,6 @@ func (db *DB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, err
 }
 
 // QueryRow executes a SQL query expected to return at most one row.
-// The error (if any) is deferred to pgx.Row.Scan — logging happens there.
-// We record the start time and log on the first Scan call via a wrapped row.
 func (db *DB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	start := time.Now()
 	row := db.pool.QueryRow(ctx, sql, args...)
@@ -115,7 +141,6 @@ func (db *DB) Transaction(ctx context.Context, fn func(*tx.Tx) error) error {
 	tx := &tx.Tx{Tx: pgxTx, Logger: db.logger, Config: db.config}
 
 	if err := fn(tx); err != nil {
-		// Best-effort rollback — log if it also fails but return the original error.
 		if rbErr := pgxTx.Rollback(ctx); rbErr != nil {
 			db.log(ctx, "ROLLBACK", nil, 0, rbErr)
 		}

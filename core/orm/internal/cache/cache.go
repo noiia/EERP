@@ -119,7 +119,7 @@ func (c *MetadataCache) build(t reflect.Type) (StructMeta, error) {
 func parseField(sf reflect.StructField, tag string) (FieldMeta, error) {
 	fm := FieldMeta{
 		Name:      sf.Name,
-		IndexPath: sf.Index,
+		IndexPath: sf.Index, // full path: handles promoted fields correctly
 		Type:      sf.Type,
 	}
 
@@ -137,8 +137,12 @@ func parseField(sf reflect.StructField, tag string) (FieldMeta, error) {
 			fm.OmitEmpty = true
 		case "pk":
 			fm.IsPK = true
+			fm.Immutable = true // PKs are never updated
 		case "softdelete":
 			fm.SoftDel = true
+			fm.Immutable = true // soft-delete is managed by the repo layer only
+		case "immutable":
+			fm.Immutable = true // set-once fields like created_at
 		}
 	}
 
@@ -156,7 +160,35 @@ func tableName(t reflect.Type) string {
 	if tb, ok := v.(Tabler); ok {
 		return tb.TableName()
 	}
-	return toSnake(t.Name())
+	return pluralize(toSnake(t.Name()))
+}
+
+// pluralize applies simple English pluralization rules to a snake_case table name.
+// Covers the cases that appear in typical ERP schemas.
+// For irregular plurals, implement the Tabler interface and return the correct name.
+func pluralize(s string) string {
+	if s == "" {
+		return s
+	}
+	// Already plural heuristic — ends in s, es, or ies.
+	// We don't apply this heuristic; always pluralize and let Tabler override.
+	switch {
+	// Words ending in s, x, z, ch, sh → add "es"
+	case strings.HasSuffix(s, "s") ||
+		strings.HasSuffix(s, "x") ||
+		strings.HasSuffix(s, "z") ||
+		strings.HasSuffix(s, "ch") ||
+		strings.HasSuffix(s, "sh"):
+		return s + "es"
+	// Words ending in consonant+y → replace y with ies
+	case strings.HasSuffix(s, "_y") || (len(s) >= 2 &&
+		s[len(s)-1] == 'y' &&
+		!strings.ContainsAny(string(s[len(s)-2]), "aeiou")):
+		return s[:len(s)-1] + "ies"
+	// Default → add "s"
+	default:
+		return s + "s"
+	}
 }
 
 // ReflectTypeOf is the exported form of typeOf, used in tests.

@@ -8,6 +8,8 @@ import (
 	"core/orm/internal/cache"
 	"core/orm/internal/scan"
 	"core/orm/pool/executor"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // SelectBuilder constructs a SELECT query for type T.
@@ -128,9 +130,22 @@ func (b SelectBuilder[T]) All(ctx context.Context, ex executor.Executor) ([]T, e
 }
 
 // One executes the query with LIMIT 1 and returns the first matching row.
+// Uses Query (not QueryRow) so FieldDescriptions are available for correct
+// column-name mapping regardless of SELECT column order.
 // Returns an error wrapping pgx.ErrNoRows when no row is found.
 func (b SelectBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, error) {
+	var zero T
 	sql, args := b.Limit(1).ToSQL()
-	row := ex.QueryRow(ctx, sql, args...)
-	return scan.Row[T](row, b.meta)
+	rows, err := ex.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, fmt.Errorf("select: query: %w", err)
+	}
+	results, err := scan.Rows[T](rows, b.meta)
+	if err != nil {
+		return zero, err
+	}
+	if len(results) == 0 {
+		return zero, fmt.Errorf("select: %w", pgx.ErrNoRows)
+	}
+	return results[0], nil
 }

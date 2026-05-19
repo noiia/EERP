@@ -28,9 +28,9 @@
 //
 //	// 5. Drop to builders for complex queries.
 //	results, err := query.Select[Order](orders.Meta()).
-//	    Join("JOIN customers c ON c.id = orders.customer_id").
+//	    Join("JOIN customers c ON c.id = order.customer_id").
 //	    Where(orm.Cond("c.region = $1", "EU")).
-//	    OrderBy("orders.created_at DESC").
+//	    OrderBy("order.created_at DESC").
 //	    Limit(50).
 //	    All(ctx, db)
 //
@@ -98,7 +98,11 @@ var NewZapLogger = log.NewZapLogger
 // This is the DB default — call db.SetLogger to replace it.
 func NewNoopLogger() log.Logger { return log.NoopLogger{} }
 
-// ── Repository ────────────────────────────────────────────────────────────────
+// Repository is the generic typed repository returned by Repo and MustRepo.
+// Aliased here so ERP code can reference the type without importing the repo sub-package.
+type Repository[T model.Entity] = repo.Repository[T]
+
+// ── Repository ───────────────────────────────────────────────────────────────
 
 // Repo constructs a typed Repository[T] bound to the given executor.
 // Returns an error if T's struct tags cannot be resolved by the metadata cache.

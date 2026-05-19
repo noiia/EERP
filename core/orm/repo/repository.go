@@ -68,7 +68,7 @@ func (r *Repository[T]) Meta() cache.StructMeta {
 // WithTx returns a shallow copy of the Repository scoped to the given Tx.
 // Use inside db.Transaction() to run repository operations atomically:
 //
-//	db.Transaction(ctx, func(tx *tx.Tx) error {
+//	db.Transaction(ctx, func(tx *core.Tx) error {
 //	    _, err := orders.WithTx(tx).Create(ctx, newOrder)
 //	    return err
 //	})
@@ -222,6 +222,53 @@ func (r *Repository[T]) Restore(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("repo: Restore %s: entity not found", id)
 	}
 	return nil
+}
+
+// DeleteWhere bulk-deletes all rows matching the given conditions.
+//
+// For soft-deletable entities this performs a soft delete (sets deleted_at = now).
+// For entities without a soft-delete field this issues a hard DELETE FROM.
+//
+// At least one condition is required — passing none returns an error to prevent
+// accidental full-table wipes.
+//
+// ERP example — cancel all open lines for a cancelled order:
+//
+//	n, err := lines.DeleteWhere(ctx,
+//	    orm.Cond("order_id = $1", orderID),
+//	    orm.Cond("status = $1", "open"),
+//	)
+func (r *Repository[T]) DeleteWhere(ctx context.Context, conditions ...query.Condition) (int64, error) {
+	if len(conditions) == 0 {
+		return 0, fmt.Errorf("repo: DeleteWhere: at least one condition is required")
+	}
+
+	if _, hasSoftDel := r.meta.SoftDeleteField(); hasSoftDel {
+		// Soft delete — UPDATE … SET deleted_at = now WHERE conditions AND deleted_at IS NULL.
+		b := query.Update[T](r.meta).
+			Set("deleted_at", time.Now()).
+			Set("updated_at", time.Now()).
+			Where(query.NewCondition("deleted_at IS NULL"))
+		for _, c := range conditions {
+			b = b.Where(c)
+		}
+		n, err := b.Exec(ctx, r.db)
+		if err != nil {
+			return 0, fmt.Errorf("repo: DeleteWhere (soft): %w", err)
+		}
+		return n, nil
+	}
+
+	// Hard delete — DELETE FROM … WHERE conditions.
+	b := query.Delete[T](r.meta)
+	for _, c := range conditions {
+		b = b.Where(c)
+	}
+	n, err := b.Exec(ctx, r.db)
+	if err != nil {
+		return 0, fmt.Errorf("repo: DeleteWhere (hard): %w", err)
+	}
+	return n, nil
 }
 
 // ── Batch ─────────────────────────────────────────────────────────────────────

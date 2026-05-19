@@ -1,6 +1,8 @@
 target
 Cargo.lock
 core/cmd/app/cache
+cache
+
 *.log
 __debug*
 .vscode
