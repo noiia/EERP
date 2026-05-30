@@ -1,0 +1,40 @@
+package orm
+
+import "core/orm/internal/registry"
+
+// Option configures a Register call. Re-exported so callers only import core/orm.
+type Option = registry.Option
+
+// Register builds and stores an API descriptor for struct T.
+// Must be called before server.BuildHandlers.
+func Register[T any](opts ...registry.Option) error {
+	return registry.Register[T](opts...)
+}
+
+// AutoScan is a no-op placeholder.
+// Go compiled binaries cannot discover struct types in a package at runtime.
+// Use Register[T] for explicit registration.
+func AutoScan(pkgPath string) error {
+	return registry.AutoScan(pkgPath)
+}
+
+// WithTableName overrides the table name derived from the struct name.
+func WithTableName(name string) Option {
+	return registry.WithTableName(name)
+}
+
+// WithReadOnlyFields marks the named columns as read-only in the API.
+func WithReadOnlyFields(fields ...string) Option {
+	return registry.WithReadOnlyFields(fields...)
+}
+
+// WithExcludeFields removes the named columns from the API.
+func WithExcludeFields(fields ...string) Option {
+	return registry.WithExcludeFields(fields...)
+}
+
+// LoadAPIConfig loads per-table overrides from a YAML file.
+// Call before Register if you want api.yaml overrides to take effect.
+func LoadAPIConfig(path string) error {
+	return registry.LoadAPIConfig(path)
+}
