@@ -10,11 +10,11 @@ import (
 	"core/internal/types"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
-	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
 
-func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, conn *pgx.Conn, path string, name string) error {
+// func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, conn *pgx.Conn, path string, name string) error {
+func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, path string, name string) error {
 	module, err := wasmtime.NewModuleFromFile(store.Engine, path)
 	if err != nil {
 		return err
@@ -60,9 +60,9 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 			return err
 		}
 
-		if err := applyMigration(ctx, conn, name, m); err != nil {
-			return err
-		}
+		// if err := applyMigration(ctx, conn, name, m); err != nil {
+		// 	return err
+		// }
 	}
 
 	common.Logger.Debug("🔌 Module chargé: ", zap.String("name", name))
@@ -70,7 +70,7 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 	return nil
 }
 
-func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, conn *pgx.Conn, moduleRoots []string) []error {
+func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, moduleRoots []string) []error {
 	modules, err := detector(moduleRoots)
 	if err != nil {
 		return []error{err}
@@ -102,7 +102,7 @@ func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Li
 				go func(mod types.Module) {
 					defer wg.Done()
 					common.Logger.Debug("Loading module:", zap.String("name", mod.Name), zap.Int("priority", mod.Priority))
-					if err := loadModule(ctx, store, linker, conn, mod.WasmPath, mod.Name); err != nil {
+					if err := loadModule(ctx, store, linker, mod.WasmPath, mod.Name); err != nil {
 						errMu.Lock()
 						errList = append(errList, err)
 						errMu.Unlock()
