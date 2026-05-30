@@ -2,6 +2,8 @@ root := $(CURDIR)
 
 .PHONY: rebuild-and-run clean build run run-back run-front
 
+CONFIG ?= $(root)/eerp-config.json
+
 rebuild-and-run:
 	make clean
 	make build
@@ -18,7 +20,13 @@ build:
 	cd $(root)/modules/vente_particulier && cargo build --target wasm32-unknown-unknown --release
 
 run-back:
-	cd $(root)/core/cmd/app && go run main.go -config="$(root)/eerp-config.json" --log-level=info
+	cd $(root)/core/cmd/app && go run main.go -config="$(CONFIG)" --debug=0
+
+
+BACKTESTPATH ?= ./...
+run-back-tests:
+	docker compose up -d 
+	cd $(root)/core && CONFIG="$(CONFIG)" go test $(BACKTESTPATH) $(ARGS)
 
 run-front:
 	cd $(root)/core-front && npm run dev -- --host 0.0.0.0

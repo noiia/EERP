@@ -1,7 +1,6 @@
 package common
 
 import (
-	"core/internal/common/editstring"
 	"os"
 
 	"go.uber.org/zap"
@@ -34,15 +33,11 @@ func new(encoderCfg zapcore.EncoderConfig, level zapcore.Level) (*zap.Logger, er
 	return zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel)), nil
 }
 
-func InitLogger(logLevel string) error {
+func InitLogger(debug bool) error {
 	var err error
-
-	loglv := editstring.LowedNoSpaces(editstring.Clean(logLevel))
-
-	switch loglv {
-	case "debug":
+	if debug {
 		Logger, err = new(zap.NewDevelopmentEncoderConfig(), zap.DebugLevel)
-	default:
+	} else {
 		Logger, err = new(zap.NewProductionEncoderConfig(), zap.InfoLevel)
 	}
 
