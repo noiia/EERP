@@ -101,6 +101,15 @@ func NewNoopLogger() log.Logger { return log.NoopLogger{} }
 
 // ── Repository ────────────────────────────────────────────────────────────────
 
+// Repository is the generic CRUD repository type for T.
+// Use this as a field type in service structs so callers never need to import
+// the repo sub-package directly:
+//
+//	type ContactService struct {
+//	    contacts *orm.Repository[Contact]
+//	}
+type Repository[T model.Entity] = repo.Repository[T]
+
 // Repo constructs a typed Repository[T] bound to the given executor.
 // Returns an error if T's struct tags cannot be resolved by the metadata cache.
 //

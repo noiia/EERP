@@ -6,12 +6,15 @@ import (
 	"core/internal/module"
 	"core/internal/types"
 	"core/orm"
+	"core/orm/pool/db"
 	"flag"
 	"fmt"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
 	"go.uber.org/zap"
 )
+
+var Db *db.DB
 
 func main() {
 	configFilePtr := flag.String("config", "", "MUST TO HAVE -- config file path")
@@ -36,11 +39,11 @@ func main() {
 		common.Logger.Error("❌ Error validating db conf:", zap.Error(err))
 	}
 
-	db, err := orm.Open(context.Background(), dbConf)
+	Db, err = orm.Open(context.Background(), dbConf)
 	if err != nil {
 		common.Logger.Error("❌ Error on openning db pool : ", zap.Error(err))
 	}
-	defer db.Close()
+	defer Db.Close()
 
 	engine := wasmtime.NewEngine()
 	store := wasmtime.NewStore(engine)
