@@ -24,9 +24,11 @@ type DB struct {
 	config config.Config
 }
 
-// Open validates cfg, applies defaults, connects the pgxpool, and returns
+// Open applies defaults, validates cfg, connects the pgxpool, and returns
 // a ready *DB. The pool is pinged to verify connectivity before returning.
 func Open(ctx context.Context, cfg config.Config) (*DB, error) {
+	cfg.ApplyDefaults()
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("orm: invalid config: %w", err)
 	}
@@ -38,6 +40,10 @@ func Open(ctx context.Context, cfg config.Config) (*DB, error) {
 
 	poolCfg.MaxConns = cfg.MaxConns
 	poolCfg.MinConns = cfg.MinConns
+	poolCfg.MaxConnIdleTime = cfg.MaxConnIdleTime
+	poolCfg.MaxConnLifetime = cfg.MaxConnLifeTime
+	poolCfg.HealthCheckPeriod = cfg.HealthCheckPeriod
+	poolCfg.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -112,7 +118,7 @@ func (db *DB) Transaction(ctx context.Context, fn func(*tx.Tx) error) error {
 		return fmt.Errorf("orm: begin transaction: %w", err)
 	}
 
-	tx := &tx.Tx{Tx: pgxTx, Logger: db.logger, Config: db.config}
+	tx := tx.New(pgxTx, db.logger, db.config)
 
 	if err := fn(tx); err != nil {
 		// Best-effort rollback — log if it also fails but return the original error.

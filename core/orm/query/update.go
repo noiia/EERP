@@ -9,6 +9,8 @@ import (
 	"core/orm/internal/cache"
 	"core/orm/internal/scan"
 	"core/orm/pool/executor"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // UpdateBuilder constructs an UPDATE query for type T.
@@ -136,13 +138,23 @@ func (b UpdateBuilder[T]) Exec(ctx context.Context, ex executor.Executor) (int64
 
 // One runs the UPDATE … RETURNING and scans the first returned row into T.
 func (b UpdateBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, error) {
+	var zero T
 	sql, args, err := b.ToSQL()
 	if err != nil {
-		var zero T
 		return zero, err
 	}
-	row := ex.QueryRow(ctx, sql, args...)
-	return scan.Row[T](row, b.meta)
+	rows, err := ex.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, fmt.Errorf("update: one: %w", err)
+	}
+	results, err := scan.Rows[T](rows, b.meta)
+	if err != nil {
+		return zero, err
+	}
+	if len(results) == 0 {
+		return zero, fmt.Errorf("update: one: %w", pgx.ErrNoRows)
+	}
+	return results[0], nil
 }
 
 // All runs UPDATE … RETURNING and scans all returned rows.

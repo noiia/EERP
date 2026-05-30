@@ -8,6 +8,8 @@ import (
 	"core/orm/internal/cache"
 	"core/orm/internal/scan"
 	"core/orm/pool/executor"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // DeleteBuilder constructs a DELETE query for type T.
@@ -105,8 +107,18 @@ func (b DeleteBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, err
 	if err != nil {
 		return zero, err
 	}
-	row := ex.QueryRow(ctx, sql, args...)
-	return scan.Row[T](row, b.meta)
+	rows, err := ex.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, fmt.Errorf("delete: one: %w", err)
+	}
+	results, err := scan.Rows[T](rows, b.meta)
+	if err != nil {
+		return zero, err
+	}
+	if len(results) == 0 {
+		return zero, fmt.Errorf("delete: one: %w", pgx.ErrNoRows)
+	}
+	return results[0], nil
 }
 
 // All runs DELETE … RETURNING and scans all deleted rows into []T.

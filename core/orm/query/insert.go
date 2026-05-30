@@ -26,10 +26,20 @@ import (
 //	results, err := Insert[Order](meta, orders...).
 //	    Returning("id").
 //	    Batch(ctx, db)
+//
+// Upsert:
+//
+//	result, err := Insert[Order](meta, order).
+//	    OnConflict("id").DoUpdate("status = EXCLUDED.status").
+//	    Returning("*").
+//	    One(ctx, db)
 type InsertBuilder[T any] struct {
-	meta      cache.StructMeta
-	rows      []T
-	returning []string
+	meta       cache.StructMeta
+	rows       []T
+	returning  []string
+	conflictOn string // column(s) for ON CONFLICT (…)
+	doUpdate   string // SET fragment for DO UPDATE SET …; empty = DO NOTHING
+	doNothing  bool
 }
 
 // Insert creates an InsertBuilder for one or more values of type T.
@@ -41,6 +51,31 @@ func Insert[T any](meta cache.StructMeta, rows ...T) InsertBuilder[T] {
 // Pass "*" to return all columns.
 func (b InsertBuilder[T]) Returning(cols ...string) InsertBuilder[T] {
 	b.returning = cols
+	return b
+}
+
+// OnConflictDoNothing adds ON CONFLICT DO NOTHING to the INSERT.
+func (b InsertBuilder[T]) OnConflictDoNothing() InsertBuilder[T] {
+	b.doNothing = true
+	b.conflictOn = ""
+	b.doUpdate = ""
+	return b
+}
+
+// OnConflict begins an ON CONFLICT (target) clause. Chain DoUpdate or DoNothing:
+//
+//	Insert[Order](meta, order).
+//	    OnConflict("id").DoUpdate("status = EXCLUDED.status")
+func (b InsertBuilder[T]) OnConflict(target string) InsertBuilder[T] {
+	b.conflictOn = target
+	b.doNothing = false
+	return b
+}
+
+// DoUpdate completes an OnConflict clause with DO UPDATE SET <setFragment>.
+// setFragment is a raw SQL fragment, e.g. "status = EXCLUDED.status, updated_at = now()".
+func (b InsertBuilder[T]) DoUpdate(setFragment string) InsertBuilder[T] {
+	b.doUpdate = setFragment
 	return b
 }
 
@@ -75,6 +110,21 @@ func (b InsertBuilder[T]) ToSQL() (string, []any) {
 	sb.WriteString(") VALUES ")
 	sb.WriteString(strings.Join(valueSets, ", "))
 
+	// ON CONFLICT
+	if b.doNothing {
+		sb.WriteString(" ON CONFLICT DO NOTHING")
+	} else if b.conflictOn != "" {
+		sb.WriteString(" ON CONFLICT (")
+		sb.WriteString(b.conflictOn)
+		sb.WriteString(")")
+		if b.doUpdate != "" {
+			sb.WriteString(" DO UPDATE SET ")
+			sb.WriteString(b.doUpdate)
+		} else {
+			sb.WriteString(" DO NOTHING")
+		}
+	}
+
 	if len(b.returning) > 0 {
 		sb.WriteString(" RETURNING ")
 		sb.WriteString(strings.Join(b.returning, ", "))
@@ -92,8 +142,18 @@ func (b InsertBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, err
 		return zero, fmt.Errorf("insert: no rows provided")
 	}
 	sql, args := b.ToSQL()
-	row := ex.QueryRow(ctx, sql, args...)
-	return scan.Row[T](row, b.meta)
+	rows, err := ex.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, fmt.Errorf("insert: one: %w", err)
+	}
+	results, err := scan.Rows[T](rows, b.meta)
+	if err != nil {
+		return zero, err
+	}
+	if len(results) == 0 {
+		return zero, fmt.Errorf("insert: one: no row returned (missing RETURNING?)")
+	}
+	return results[0], nil
 }
 
 // Batch inserts all rows in a single multi-row VALUES statement and returns

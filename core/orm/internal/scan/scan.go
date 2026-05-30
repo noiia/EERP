@@ -5,8 +5,8 @@
 // The hot path is:
 //  1. pgx returns column names via rows.FieldDescriptions()
 //  2. We build a one-time []int index mapping column position → Fields index
-//  3. Each row is scanned into a []any dest slice, then copied into the struct
-//     via FieldMeta.FieldValue + reflect.Value.Set
+//  3. Each row is scanned into a fresh []any dest slice, then copied into the
+//     struct via FieldMeta.FieldValue + reflect.Value.Set
 //
 // The column→field mapping is built once per query result set (not per row),
 // so reflection cost is O(cols) + O(rows×cols) with no map lookups per row.
@@ -30,11 +30,12 @@ import (
 func Rows[T any](rows pgx.Rows, meta cache.StructMeta) ([]T, error) {
 	defer rows.Close()
 
-	// Build the column→field mapping once for this result set.
+	// Build the column→field mapping once for this entire result set.
+	mapping := buildMapping(rows, meta)
 
 	var results []T
 	for rows.Next() {
-		mapping, dest := buildMapping[T](rows, meta)
+		dest := buildDest(mapping, meta)
 
 		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("scan: row scan: %w", err)
@@ -54,8 +55,10 @@ func Rows[T any](rows pgx.Rows, meta cache.StructMeta) ([]T, error) {
 	return results, nil
 }
 
-// Row scans a single pgx.Row into T.
-// Returns ErrNoRows (wrapping pgx.ErrNoRows) when no row was found.
+// Row scans a single pgx.Row into T using positional column order.
+// The query must select columns in the same order as meta.Fields — this is
+// guaranteed when using SelectBuilder (which lists columns explicitly) but
+// NOT when using RETURNING *. For RETURNING *, use Rows instead.
 func Row[T any](row pgx.Row, meta cache.StructMeta) (T, error) {
 	var zero T
 
@@ -95,18 +98,22 @@ func Row[T any](row pgx.Row, meta cache.StructMeta) (T, error) {
 // -1 means the column has no matching field and should be skipped.
 type colMapping []int
 
-// buildMapping constructs the colMapping and a reusable dest slice.
-// Called once per query, not once per row.
-func buildMapping[T any](rows pgx.Rows, meta cache.StructMeta) (colMapping, []any) {
+// buildMapping constructs the colMapping from field descriptions.
+// Call once per query result set, before the row-iteration loop.
+func buildMapping(rows pgx.Rows, meta cache.StructMeta) colMapping {
 	descs := rows.FieldDescriptions()
 	mapping := make(colMapping, len(descs))
-	dest := make([]any, len(descs))
-
 	for i, fd := range descs {
-		col := string(fd.Name)
-		fieldIdx := meta.ColumnIndex(col)
-		mapping[i] = fieldIdx
+		mapping[i] = meta.ColumnIndex(string(fd.Name))
+	}
+	return mapping
+}
 
+// buildDest allocates a fresh dest slice for a single row scan.
+// Called once per row — each row needs its own pointer targets.
+func buildDest(mapping colMapping, meta cache.StructMeta) []any {
+	dest := make([]any, len(mapping))
+	for i, fieldIdx := range mapping {
 		if fieldIdx >= 0 {
 			dest[i] = newPtr(meta.Fields[fieldIdx].Type)
 		} else {
@@ -114,8 +121,7 @@ func buildMapping[T any](rows pgx.Rows, meta cache.StructMeta) (colMapping, []an
 			dest[i] = &sink
 		}
 	}
-
-	return mapping, dest
+	return dest
 }
 
 // applyDest copies scanned values from dest into a new T using the mapping.
@@ -157,8 +163,7 @@ func applyDest[T any](dest []any, mapping colMapping, meta cache.StructMeta) (T,
 // pgx requires scanning into pointers so it can handle NULLs.
 func newPtr(t reflect.Type) any {
 	// For pointer fields (e.g. *time.Time for soft-delete), pgx expects **T
-	// so it can set the outer pointer to nil on NULL. We allocate one extra
-	// level of indirection.
+	// so it can set the outer pointer to nil on NULL.
 	if t.Kind() == reflect.Ptr {
 		return reflect.New(t).Interface() // **T
 	}

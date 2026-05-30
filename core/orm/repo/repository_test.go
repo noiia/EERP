@@ -59,10 +59,13 @@ func (m *mockExecutor) last() call {
 
 func (m *mockExecutor) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
 	m.calls = append(m.calls, call{"Query", sql, args})
+	if m.queryErr != nil {
+		return nil, m.queryErr
+	}
 	if m.queryRows == nil {
 		return &emptyRows{}, nil
 	}
-	return m.queryRows, m.queryErr
+	return m.queryRows, nil
 }
 
 func (m *mockExecutor) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
@@ -168,7 +171,7 @@ func TestFindByID_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("connection reset")
-	ex := &mockExecutor{queryRow: &errRow{err: boom}}
+	ex := &mockExecutor{queryErr: boom}
 	r := newRepo(t, ex)
 
 	_, err := r.FindByID(context.Background(), uuid.New())
@@ -266,7 +269,7 @@ func TestCreate_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("unique violation")
-	ex := &mockExecutor{queryRow: &errRow{err: boom}}
+	ex := &mockExecutor{queryErr: boom}
 	r := newRepo(t, ex)
 
 	_, err := r.Create(context.Background(), orderEntity{})
@@ -500,4 +503,70 @@ func TestMustNew_ValidEntity_DoesNotPanic(t *testing.T) {
 	if r == nil {
 		t.Fatal("expected non-nil repository")
 	}
+}
+
+// ── FindOne ───────────────────────────────────────────────────────────────────
+
+func TestFindOne_BuildsCorrectSQL(t *testing.T) {
+	t.Parallel()
+
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+
+	r.FindOne(context.Background(), //nolint:errcheck
+		query.NewCondition("status = $1", "open"),
+	)
+
+	c := ex.last()
+	assertSQL(t, c.sql, "SELECT")
+	assertSQL(t, c.sql, "FROM order_entity")
+	assertSQL(t, c.sql, "deleted_at IS NULL")
+	assertSQL(t, c.sql, "status = $")
+	assertSQL(t, c.sql, "LIMIT 1")
+}
+
+func TestFindOne_PropagatesError(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("connection reset")
+	ex := &mockExecutor{queryErr: boom}
+	r := newRepo(t, ex)
+
+	_, err := r.FindOne(context.Background())
+	if !errors.Is(err, boom) {
+		t.Errorf("expected boom, got %v", err)
+	}
+}
+
+// ── Count ─────────────────────────────────────────────────────────────────────
+
+func TestCount_BuildsCorrectSQL(t *testing.T) {
+	t.Parallel()
+
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+
+	r.Count(context.Background()) //nolint:errcheck
+
+	c := ex.last()
+	assertSQL(t, c.sql, "COUNT(*)")
+	assertSQL(t, c.sql, "FROM order_entity")
+	assertSQL(t, c.sql, "deleted_at IS NULL")
+	assertNotSQL(t, c.sql, "LIMIT")
+	assertNotSQL(t, c.sql, "ORDER BY")
+}
+
+func TestCount_WithCondition(t *testing.T) {
+	t.Parallel()
+
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+
+	r.Count(context.Background(), //nolint:errcheck
+		query.NewCondition("status = $1", "open"),
+	)
+
+	c := ex.last()
+	assertSQL(t, c.sql, "COUNT(*)")
+	assertSQL(t, c.sql, "status = $")
 }

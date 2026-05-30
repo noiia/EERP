@@ -724,7 +724,7 @@ func TestDelete_Exec_NoWhere_DoesNotCallExecutor(t *testing.T) {
 	}
 }
 
-func TestDelete_One_CallsQueryRow(t *testing.T) {
+func TestDelete_One_CallsQuery(t *testing.T) {
 	t.Parallel()
 
 	meta := mustMeta[order](t)
@@ -736,7 +736,7 @@ func TestDelete_One_CallsQueryRow(t *testing.T) {
 		One(context.Background(), ex) //nolint:errcheck
 
 	if ex.lastSQL == "" {
-		t.Error("expected QueryRow to be called")
+		t.Error("expected Query to be called")
 	}
 	assertContains(t, ex.lastSQL, "DELETE FROM")
 	assertContains(t, ex.lastSQL, "RETURNING *")
@@ -785,4 +785,126 @@ func TestDelete_PlaceholderRebasing_MultiArgCondition(t *testing.T) {
 	if len(args) != 2 {
 		t.Errorf("expected 2 args, got %d", len(args))
 	}
+}
+
+// ── SelectBuilder — GroupBy / Having / Count ──────────────────────────────────
+
+func TestSelect_ToSQL_GroupBy(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[order](t)
+	sql, _ := query.Select[order](meta).
+		GroupBy("customer_id").
+		ToSQL()
+
+	assertContains(t, sql, "GROUP BY customer_id")
+}
+
+func TestSelect_ToSQL_GroupByMultiple(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[order](t)
+	sql, _ := query.Select[order](meta).
+		GroupBy("customer_id", "status").
+		ToSQL()
+
+	assertContains(t, sql, "GROUP BY customer_id, status")
+}
+
+func TestSelect_ToSQL_Having(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[order](t)
+	sql, args := query.Select[order](meta).
+		Where(query.NewCondition("deleted_at IS NULL")).
+		GroupBy("customer_id").
+		Having(query.NewCondition("COUNT(*) > $1", 5)).
+		ToSQL()
+
+	assertContains(t, sql, "GROUP BY customer_id")
+	assertContains(t, sql, "HAVING COUNT(*) >")
+	// WHERE has no args; HAVING arg should be rebased to $1.
+	if len(args) != 1 || args[0] != 5 {
+		t.Errorf("args = %v, want [5]", args)
+	}
+}
+
+func TestSelect_ToSQL_Having_PlaceholderAfterWhere(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[order](t)
+	sql, args := query.Select[order](meta).
+		Where(query.NewCondition("status = $1", "open")).
+		GroupBy("customer_id").
+		Having(query.NewCondition("COUNT(*) > $1", 3)).
+		ToSQL()
+
+	// WHERE consumes $1; HAVING must be rebased to $2.
+	assertContains(t, sql, "status = $1")
+	assertContains(t, sql, "COUNT(*) > $2")
+	if len(args) != 2 || args[0] != "open" || args[1] != 3 {
+		t.Errorf("args = %v", args)
+	}
+}
+
+func TestSelect_Count_CallsQueryRow(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[order](t)
+	ex := &mockExecutor{row: &errRow{err: errors.New("scan error")}}
+
+	query.Select[order](meta).Count(context.Background(), ex) //nolint:errcheck
+
+	assertContains(t, ex.lastSQL, "COUNT(*)")
+	assertContains(t, ex.lastSQL, "FROM order")
+	assertNotContains(t, ex.lastSQL, "LIMIT")
+	assertNotContains(t, ex.lastSQL, "ORDER BY")
+}
+
+func TestSelect_Count_WithWhere(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[order](t)
+	ex := &mockExecutor{row: &errRow{err: errors.New("scan error")}}
+
+	query.Select[order](meta).
+		Where(query.NewCondition("status = $1", "open")).
+		Count(context.Background(), ex) //nolint:errcheck
+
+	assertContains(t, ex.lastSQL, "WHERE status = $1")
+}
+
+// ── InsertBuilder — OnConflict ────────────────────────────────────────────────
+
+func TestInsert_OnConflictDoNothing(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	sql, _ := query.Insert[lineItem](meta, lineItem{OrderID: 1, Product: "x", Quantity: 1}).
+		OnConflictDoNothing().
+		ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT DO NOTHING")
+}
+
+func TestInsert_OnConflict_DoUpdate(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	sql, _ := query.Insert[lineItem](meta, lineItem{OrderID: 1, Product: "x", Quantity: 1}).
+		OnConflict("id").DoUpdate("quantity = EXCLUDED.quantity").
+		ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT (id) DO UPDATE SET quantity = EXCLUDED.quantity")
+}
+
+func TestInsert_OnConflict_NoDoUpdate_IsDoNothing(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	sql, _ := query.Insert[lineItem](meta, lineItem{OrderID: 1, Product: "x", Quantity: 1}).
+		OnConflict("id").
+		ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT (id) DO NOTHING")
 }

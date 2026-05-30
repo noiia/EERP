@@ -46,6 +46,7 @@ package orm
 import (
 	"context"
 
+	"core/orm/internal/cache"
 	"core/orm/log"
 	"core/orm/model"
 	"core/orm/pool/config"
@@ -116,6 +117,17 @@ func MustRepo[T model.Entity](db executor.Executor) *repo.Repository[T] {
 }
 
 // ── Condition shorthand ───────────────────────────────────────────────────────
+
+// Select is a shorthand for query.Select — drops to the builder tier
+// when Repository's convenience methods aren't expressive enough.
+//
+//	rows, err := orm.Select[Order](repo.Meta()).
+//	    GroupBy("customer_id").
+//	    Having(orm.Cond("COUNT(*) > $1", 5)).
+//	    All(ctx, db)
+func Select[T model.Entity](meta cache.StructMeta) query.SelectBuilder[T] {
+	return query.Select[T](meta)
+}
 
 // Cond is a shorthand for query.NewCondition.
 // Lets ERP code stay readable without importing the query sub-package.

@@ -97,6 +97,50 @@ func (r *Repository[T]) FindByID(ctx context.Context, id uuid.UUID) (T, error) {
 	return result, nil
 }
 
+// FindOne returns the first active row matching the given conditions.
+// Returns an error wrapping pgx.ErrNoRows when no row is found.
+//
+//	user, err := repo.FindOne(ctx, orm.Cond("email = $1", email))
+func (r *Repository[T]) FindOne(ctx context.Context, conditions ...query.Condition) (T, error) {
+	b := query.Select[T](r.meta)
+
+	if _, hasSoftDel := r.meta.SoftDeleteField(); hasSoftDel {
+		b = b.Where(query.NewCondition("deleted_at IS NULL"))
+	}
+
+	for _, c := range conditions {
+		b = b.Where(c)
+	}
+
+	result, err := b.One(ctx, r.db)
+	if err != nil {
+		var zero T
+		return zero, fmt.Errorf("repo: FindOne: %w", err)
+	}
+	return result, nil
+}
+
+// Count returns the number of active (non-soft-deleted) rows matching the conditions.
+//
+//	n, err := repo.Count(ctx, orm.Cond("status = $1", "open"))
+func (r *Repository[T]) Count(ctx context.Context, conditions ...query.Condition) (int64, error) {
+	b := query.Select[T](r.meta)
+
+	if _, hasSoftDel := r.meta.SoftDeleteField(); hasSoftDel {
+		b = b.Where(query.NewCondition("deleted_at IS NULL"))
+	}
+
+	for _, c := range conditions {
+		b = b.Where(c)
+	}
+
+	n, err := b.Count(ctx, r.db)
+	if err != nil {
+		return 0, fmt.Errorf("repo: Count: %w", err)
+	}
+	return n, nil
+}
+
 // FindAll returns all active (non-soft-deleted) rows matching the given conditions.
 // Pass no conditions to return the full table — use carefully in ERP contexts.
 func (r *Repository[T]) FindAll(ctx context.Context, conditions ...query.Condition) ([]T, error) {

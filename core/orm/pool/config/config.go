@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // Config holds all parameters needed to open the pgxpool connection.
@@ -41,11 +39,11 @@ type Config struct {
 	// Debug enables query logging at Debug level. When false,
 	// only errors are logged regardless of the logger implementation.
 	Debug bool
-
-	ConnConfig *pgx.ConnConfig
 }
 
-// Validate returns an error if the Config is unusable.
+// Validate returns an error if the Config values are out of range.
+// It is a pure function — it never modifies c. Call ApplyDefaults first
+// if you want zero values replaced before validation.
 func (c *Config) Validate() error {
 	var errs []error
 
@@ -69,56 +67,35 @@ func (c *Config) Validate() error {
 	if c.MaxConnLifeTime < 0 {
 		errs = append(errs, fmt.Errorf("MaxConnLifeTime must be >= 0, got %v", c.MaxConnLifeTime))
 	}
-
 	if c.HealthCheckPeriod < 0 {
 		errs = append(errs, fmt.Errorf("HealthCheckPeriod must be >= 0, got %v", c.HealthCheckPeriod))
 	}
-
 	if c.ConnectTimeout < 0 {
 		errs = append(errs, fmt.Errorf("ConnectTimeout must be >= 0, got %v", c.ConnectTimeout))
-	}
-
-	if err := c.withDefaults(); err != nil {
-		errs = append(errs, fmt.Errorf("WithDefault error : %v", err))
 	}
 
 	return errors.Join(errs...)
 }
 
-// withDefaults returns a copy of c with zero values replaced by sensible defaults.
-func (c *Config) withDefaults() error {
+// ApplyDefaults fills zero values with sensible production defaults.
+// Call this before Validate in Open so validation sees the final values.
+func (c *Config) ApplyDefaults() {
 	if c.MaxConns == 0 {
 		c.MaxConns = 10
 	}
 	if c.MinConns == 0 {
 		c.MinConns = 2
 	}
-
 	if c.MaxConnIdleTime == 0 {
-		c.MaxConnIdleTime = time.Minute * 30
+		c.MaxConnIdleTime = 30 * time.Minute
 	}
-
 	if c.MaxConnLifeTime == 0 {
 		c.MaxConnLifeTime = time.Hour
 	}
-
 	if c.HealthCheckPeriod == 0 {
 		c.HealthCheckPeriod = time.Minute
 	}
-
-	if c.ConnConfig == nil {
-		connConfig, err := pgx.ParseConfig(c.DSN)
-		if err != nil {
-			return err
-		}
-		c.ConnConfig = connConfig
-	}
-
 	if c.ConnectTimeout == 0 {
-		c.ConnConfig.ConnectTimeout = time.Second * 10
-	} else {
-		c.ConnConfig.ConnectTimeout = c.ConnectTimeout
+		c.ConnectTimeout = 10 * time.Second
 	}
-
-	return nil
 }

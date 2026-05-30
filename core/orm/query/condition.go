@@ -72,11 +72,3 @@ func whereClause(conditions []Condition, startIdx int) (string, []any) {
 	return "WHERE " + strings.Join(parts, " AND "), args
 }
 
-// placeholders returns "$1,$2,…,$n" starting at offset.
-func placeholders(count, offset int) string {
-	parts := make([]string, count)
-	for i := range parts {
-		parts[i] = fmt.Sprintf("$%d", offset+i)
-	}
-	return strings.Join(parts, ", ")
-}
