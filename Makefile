@@ -13,7 +13,7 @@ clean:
 	@for dir in $(root)/core/modules/*/; do \
 		name=$$(basename $$dir); \
 		echo "Cleaning $$name..."; \
-		rm -rf $(root)/core/$$dir/build/;\
+		rm -rf $$dir/build/;\
 	done
 	rm -rf $(root)/core/cmd/app/cache
 	find $(root) -name '__debug_bin*' -delete
@@ -26,7 +26,8 @@ build:
 	done
 
 run-back:
-	cd $(root)/core/cmd/app && go run main.go -config="$(CONFIG)" --debug=0
+	docker compose up -d 
+# 	cd $(root)/core/cmd/app && go run main.go -config="$(CONFIG)" --debug=0
 
 
 BACKTESTPATH ?= ./...

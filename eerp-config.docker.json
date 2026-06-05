@@ -1,0 +1,19 @@
+{
+    "module_root": ["/app/modules"],
+    "master_key": "ueioiehsiuehfs",
+    "container_pool": 5,
+    "thread_pool": 20,
+    "db_name": "poc",
+    "db_port": 5432,
+    "db_host": "db",
+    "db_user": "postgres",
+    "db_password": "postgres",
+    "max_connection": 10,
+    "min_connection": 4,
+    "max_conn_idle_time": 1800,
+    "max_conn_life_time": 3600,
+    "health_check_period": 60,
+    "connect_timeout": 10,
+    "public_address": "0.0.0.0",
+    "backend_port": 8080
+}

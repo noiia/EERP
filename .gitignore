@@ -3,7 +3,7 @@ Cargo.lock
 core/cmd/app/cache
 build
 
-^app$
+app
 *.log
 __debug*
 .vscode
