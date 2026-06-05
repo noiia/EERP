@@ -28,6 +28,13 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 	return registry.RegisterSchema(tableName, fields)
 }
 
+// ExtendSchema appends extra columns to an already-registered table's ORM entry.
+// Call this from an inheriting module's Register() to add fields to another
+// module's entity without modifying that module's code.
+func ExtendSchema(tableName string, extra []SchemaField) error {
+	return registry.ExtendSchema(tableName, extra)
+}
+
 // WithTableName overrides the table name derived from the struct name.
 func WithTableName(name string) Option {
 	return registry.WithTableName(name)

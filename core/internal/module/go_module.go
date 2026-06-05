@@ -9,9 +9,8 @@ import (
 )
 
 // GoModule is the interface every pure-Go module must implement.
-// Register() calls orm.Register[T]() for each model the module owns.
-// Migration is derived automatically from the struct's db tags — no manual
-// operations list is needed.
+// Register() calls orm.Register[T]() for new tables, or orm.ExtendSchema()
+// for tables owned by another module. Migration is derived automatically.
 type GoModule interface {
 	Name() string
 	Register() error
@@ -40,33 +39,61 @@ func LoadGoModules(ctx context.Context, db *orm.DB) []error {
 
 	var errs []error
 	for _, m := range mods {
-		before := tableSet(orm.RegisteredTableNames())
+		// Column-level snapshot before Register() so we detect both new
+		// tables AND new columns added to existing tables by ExtendSchema.
+		before := columnSnapshot()
 
 		if err := m.Register(); err != nil {
 			errs = append(errs, fmt.Errorf("module %s: register: %w", m.Name(), err))
 			continue
 		}
 
-		for _, tableName := range orm.RegisteredTableNames() {
-			if before[tableName] {
+		for tableName, afterCols := range columnSnapshot() {
+			prevCols := before[tableName]
+
+			// Collect only the columns that are new since before Register().
+			var newFields []orm.MigrationField
+			allFields, _ := orm.MigrationFieldsForTable(tableName)
+			for _, f := range allFields {
+				if !prevCols[f.Column] {
+					newFields = append(newFields, f)
+				}
+			}
+			if len(newFields) == 0 {
 				continue
 			}
-			fields, ok := orm.MigrationFieldsForTable(tableName)
-			if !ok {
-				continue
+
+			// New table: create it with BaseModel columns first.
+			if afterCols != nil && prevCols == nil {
+				if err := ensureTable(ctx, db, tableName); err != nil {
+					errs = append(errs, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err))
+					continue
+				}
 			}
-			if err := autoMigrateTable(ctx, db, tableName, fields); err != nil {
-				errs = append(errs, fmt.Errorf("module %s: auto-migrate %s: %w", m.Name(), tableName, err))
+
+			// Add the new columns (idempotent, IF NOT EXISTS).
+			if err := ensureColumns(ctx, db, tableName, newFields); err != nil {
+				errs = append(errs, fmt.Errorf("module %s: ensure columns %s: %w", m.Name(), tableName, err))
 			}
 		}
 	}
 	return errs
 }
 
-func tableSet(names []string) map[string]bool {
-	s := make(map[string]bool, len(names))
-	for _, n := range names {
-		s[n] = true
+// columnSnapshot captures the current set of column names per registered table.
+// Comparing two snapshots reveals both new tables and new columns on existing ones.
+func columnSnapshot() map[string]map[string]bool {
+	snap := make(map[string]map[string]bool)
+	for _, name := range orm.RegisteredTableNames() {
+		fields, ok := orm.MigrationFieldsForTable(name)
+		if !ok {
+			continue
+		}
+		cols := make(map[string]bool, len(fields))
+		for _, f := range fields {
+			cols[f.Column] = true
+		}
+		snap[name] = cols
 	}
-	return s
+	return snap
 }

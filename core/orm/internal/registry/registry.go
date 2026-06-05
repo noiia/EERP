@@ -122,6 +122,54 @@ func Register[T any](opts ...Option) error {
 // discovery in compiled binaries — use Register[T] for explicit registration.
 func AutoScan(_ string) error { return nil }
 
+// ExtendSchema appends extra columns to an already-registered table.
+// Use this from an inheriting module to add fields to another module's entity
+// without touching the base module's code.
+// Returns an error if tableName has not been registered yet — ensure the base
+// module's Register() runs before the inheriting module's (import it with _).
+func ExtendSchema(tableName string, extra []SchemaField) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	existing, ok := entries[tableName]
+	if !ok {
+		return fmt.Errorf("registry: extend: table %q is not registered", tableName)
+	}
+
+	existingCols := make(map[string]bool, len(existing.StructMeta.Fields))
+	for _, f := range existing.StructMeta.Fields {
+		existingCols[f.Column] = true
+	}
+
+	cacheFields := make([]cache.FieldMeta, len(existing.StructMeta.Fields))
+	copy(cacheFields, existing.StructMeta.Fields)
+	regFields := make([]FieldMeta, len(existing.Fields))
+	copy(regFields, existing.Fields)
+
+	for _, f := range extra {
+		if existingCols[f.Column] {
+			continue
+		}
+		cacheFields = append(cacheFields, cache.FieldMeta{
+			Name:    f.Column,
+			Column:  f.Column,
+			IsPK:    f.IsPK,
+			SoftDel: f.SoftDel,
+		})
+		regFields = append(regFields, FieldMeta{
+			Name:     f.Column,
+			Column:   f.Column,
+			Nullable: f.Nullable,
+			ReadOnly: f.IsPK,
+		})
+	}
+
+	existing.StructMeta = cache.NewStructMeta(existing.TableName, existing.StructMeta.PK, cacheFields)
+	existing.Fields = regFields
+	entries[tableName] = existing
+	return nil
+}
+
 // SchemaField describes one column for dynamic (non-reflect) registration.
 type SchemaField struct {
 	Column   string

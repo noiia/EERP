@@ -90,12 +90,17 @@ var baseModelColumns = map[string]bool{
 	"id": true, "created_at": true, "updated_at": true, "deleted_at": true,
 }
 
-// autoMigrateTable ensures the table exists and adds any missing columns,
-// derived automatically from the struct's ORM metadata. Idempotent.
+// autoMigrateTable ensures the table exists and adds any missing columns.
 func autoMigrateTable(ctx context.Context, db *orm.DB, table string, fields []orm.MigrationField) error {
 	if err := ensureTable(ctx, db, table); err != nil {
 		return err
 	}
+	return ensureColumns(ctx, db, table, fields)
+}
+
+// ensureColumns issues ALTER TABLE ADD COLUMN IF NOT EXISTS for each field
+// that is not a BaseModel column. Idempotent — safe to call on extension.
+func ensureColumns(ctx context.Context, db *orm.DB, table string, fields []orm.MigrationField) error {
 	for _, f := range fields {
 		if baseModelColumns[f.Column] {
 			continue

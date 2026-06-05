@@ -12,8 +12,8 @@ import (
 // causes each module's init() to call RegisterGoModule.
 func TestGoModules_InitEnlistsModules(t *testing.T) {
 	n := module.GoModuleCount()
-	if n == 0 {
-		t.Fatal("no Go modules enlisted — check that modules/all blank-imports are in place and init() calls RegisterGoModule")
+	if n < 3 {
+		t.Fatalf("expected at least 3 Go modules (contact, crm, crminheritdemo), got %d", n)
 	}
 	t.Logf("%d Go module(s) enlisted via init()", n)
 }
@@ -44,4 +44,37 @@ func TestGoModules_RegisterAddsToORM(t *testing.T) {
 		}
 		t.Logf("  /api/v1/%s — %d columns", name, len(fields))
 	}
+}
+
+// TestGoModules_InheritanceExtendsTable verifies that crminheritdemo adds
+// its fields to the crm table without the crm module knowing about it.
+func TestGoModules_InheritanceExtendsTable(t *testing.T) {
+	errs := module.RegisterSchemaOnly()
+	for _, err := range errs {
+		t.Errorf("Register() error: %v", err)
+	}
+
+	fields, ok := orm.MigrationFieldsForTable("crm")
+	if !ok {
+		t.Fatal("crm table not in registry")
+	}
+
+	colNames := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		colNames[f.Column] = true
+	}
+
+	for _, want := range []string{"date", "comment"} {
+		if !colNames[want] {
+			t.Errorf("crm table missing %q column — crminheritdemo extension did not apply", want)
+		}
+	}
+
+	t.Logf("crm columns after inheritance: %v", func() []string {
+		names := make([]string, 0, len(fields))
+		for _, f := range fields {
+			names = append(names, f.Column)
+		}
+		return names
+	}())
 }

@@ -8,4 +8,5 @@ package all
 import (
 	_ "core/modules/contact"
 	_ "core/modules/crm"
+	_ "core/modules/crminheritdemo"
 )

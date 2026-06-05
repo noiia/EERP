@@ -12,10 +12,11 @@ import (
 // The table name is derived automatically from the struct name: "crm".
 type CRM struct {
 	model.BaseModel
-	Name    string `db:"name"`
-	Email   string `db:"email"`
-	Company string `db:"company"`
-	Status  string `db:"status"` // "lead", "prospect", "customer", "churned"
+	Name     string    `db:"name"`
+	Email    string    `db:"email"`
+	Company  string    `db:"company"`
+	Status   string    `db:"status"` // "lead", "prospect", "customer", "churned"
+	Contacts uuid.UUID `db:"contact_id"`
 }
 
 // Service holds the CRM business logic, wired to the database at startup.
