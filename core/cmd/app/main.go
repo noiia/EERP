@@ -5,6 +5,7 @@ import (
 	"core/internal/common"
 	"core/internal/module"
 	"core/internal/types"
+	_ "core/modules/all"
 	"core/orm"
 	ormserver "core/orm/server"
 	"encoding/json"
@@ -54,8 +55,6 @@ func main() {
 		common.Logger.Fatal("❌ Error validating db conf", zap.Error(err))
 	}
 
-	orm.AutoScan("")
-
 	app, err := orm.New(dbConf, common.Logger)
 	if err != nil {
 		common.Logger.Fatal("❌ Error opening db pool", zap.Error(err))
@@ -64,7 +63,13 @@ func main() {
 
 	engine := wasmtime.NewEngine()
 	store := wasmtime.NewStore(engine)
+	wasiCfg := wasmtime.NewWasiConfig()
+	store.SetWasi(wasiCfg)
 	linker := wasmtime.NewLinker(engine)
+
+	if err := linker.DefineWasi(); err != nil {
+		common.Logger.Fatal("❌ DefineWasi error", zap.Error(err))
+	}
 
 	if err := linker.FuncWrap("host", "log", func(ptr int32, len int32) {
 		common.Logger.Info("📦 WASM LOG CALLED")
@@ -72,10 +77,12 @@ func main() {
 		common.Logger.Fatal("❌ FuncWrap error", zap.Error(err))
 	}
 
-	// Load modules
-	errList := module.LoadModules(store, linker, configContent.ModuleRoot)
-	for i := range errList {
-		common.Logger.Error("❌ Error loading module", zap.Error(errList[i]))
+	for _, err := range module.LoadModules(context.Background(), app.DB, store, linker, configContent.ModuleRoot) {
+		common.Logger.Error("❌ Error loading WASM module", zap.Error(err))
+	}
+
+	for _, err := range module.LoadGoModules(context.Background(), app.DB) {
+		common.Logger.Error("❌ Error loading Go module", zap.Error(err))
 	}
 
 	// ── Build server ──────────────────────────────────────────────────────────
@@ -84,6 +91,10 @@ func main() {
 	}
 	srv := ormserver.New(app, srvCfg)
 	srv.RegisterRoutes(ormserver.BuildHandlers(app))
+
+	for _, r := range srv.Routes() {
+		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))
+	}
 
 	// ── Graceful shutdown ─────────────────────────────────────────────────────
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
