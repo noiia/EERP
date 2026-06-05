@@ -122,6 +122,67 @@ func Register[T any](opts ...Option) error {
 // discovery in compiled binaries — use Register[T] for explicit registration.
 func AutoScan(_ string) error { return nil }
 
+// SchemaField describes one column for dynamic (non-reflect) registration.
+type SchemaField struct {
+	Column   string
+	Nullable bool
+	IsPK     bool
+	SoftDel  bool
+}
+
+// RegisterSchema stores a TableMeta built entirely from runtime data.
+// Use this for WASM-defined tables where no Go struct exists.
+// The crud layer uses scanToMaps (column names from pgx descriptors), so
+// IndexPath in the underlying FieldMeta is safe to leave nil.
+func RegisterSchema(tableName string, fields []SchemaField) error {
+	cacheFields := make([]cache.FieldMeta, len(fields))
+	regFields := make([]FieldMeta, len(fields))
+	var pkCol string
+	var pkField FieldMeta
+	hasSoftDel := false
+
+	for i, f := range fields {
+		cacheFields[i] = cache.FieldMeta{
+			Name:    f.Column,
+			Column:  f.Column,
+			IsPK:    f.IsPK,
+			SoftDel: f.SoftDel,
+		}
+		if f.IsPK {
+			pkCol = f.Column
+		}
+		if f.SoftDel {
+			hasSoftDel = true
+		}
+		rf := FieldMeta{
+			Name:     f.Column,
+			Column:   f.Column,
+			Nullable: f.Nullable,
+			ReadOnly: f.IsPK,
+		}
+		if f.IsPK {
+			pkField = rf
+		}
+		regFields[i] = rf
+	}
+
+	sm := cache.NewStructMeta(tableName, pkCol, cacheFields)
+	meta := TableMeta{
+		TableName:   tableName,
+		RoutePrefix: tableName,
+		Fields:      regFields,
+		PKField:     pkField,
+		SoftDelete:  hasSoftDel,
+		StructMeta:  sm,
+	}
+	applyAPIConfig(&meta, ensureAPIConfig())
+
+	mu.Lock()
+	entries[meta.TableName] = meta
+	mu.Unlock()
+	return nil
+}
+
 // All returns all registered, non-excluded TableMetas.
 func All() []TableMeta {
 	mu.RLock()

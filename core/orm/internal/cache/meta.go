@@ -69,6 +69,14 @@ func (f FieldMeta) FieldValue(v reflect.Value) reflect.Value {
 	return v.FieldByIndex(f.IndexPath)
 }
 
+// NewStructMeta builds a StructMeta from runtime data without reflection.
+// Use this when there is no Go struct to reflect on (e.g. WASM-declared tables).
+// FieldMeta.IndexPath should be nil — the generic crud layer uses scanToMaps,
+// which reads column names from pgx descriptors, so IndexPath is never accessed.
+func NewStructMeta(table, pk string, fields []FieldMeta) StructMeta {
+	return newStructMeta(table, pk, fields)
+}
+
 // newStructMeta constructs a StructMeta and pre-builds the columnIndex.
 func newStructMeta(table, pk string, fields []FieldMeta) StructMeta {
 	idx := make(map[string]int, len(fields))

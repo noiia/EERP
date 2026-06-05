@@ -104,6 +104,12 @@ func mountHandler(g *echo.Group, h *handler.GenericHandler) {
 	}
 }
 
+// Routes returns every route registered on the Echo instance.
+// Useful for logging mounted endpoints at startup.
+func (s *Server) Routes() []*echo.Route {
+	return s.echo.Routes()
+}
+
 // Start binds the server and blocks until ctx is cancelled.
 // Initiates graceful shutdown with a 10-second drain window.
 func (s *Server) Start(ctx context.Context) error {

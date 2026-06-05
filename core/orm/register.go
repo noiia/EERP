@@ -18,6 +18,16 @@ func AutoScan(pkgPath string) error {
 	return registry.AutoScan(pkgPath)
 }
 
+// SchemaField is re-exported so callers only import core/orm.
+type SchemaField = registry.SchemaField
+
+// RegisterSchema stores a TableMeta built from runtime schema data.
+// Use this for WASM-defined tables where no Go struct exists — loadModule
+// calls this automatically, so modules never need to be listed in main.go.
+func RegisterSchema(tableName string, fields []SchemaField) error {
+	return registry.RegisterSchema(tableName, fields)
+}
+
 // WithTableName overrides the table name derived from the struct name.
 func WithTableName(name string) Option {
 	return registry.WithTableName(name)
