@@ -3,18 +3,19 @@ package module
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
 	"core/internal/common"
 	"core/internal/types"
+	"core/orm"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
 	"go.uber.org/zap"
 )
 
-// func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, conn *pgx.Conn, path string, name string) error {
-func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, path string, name string) error {
+func loadModule(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *wasmtime.Linker, path string, name string) error {
 	module, err := wasmtime.NewModuleFromFile(store.Engine, path)
 	if err != nil {
 		return err
@@ -23,6 +24,21 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 	instance, err := linker.Instantiate(store, module)
 	if err != nil {
 		return err
+	}
+
+	if start := instance.GetFunc(store, "_start"); start != nil {
+		if _, err := start.Call(store); err != nil {
+			var wasmErr *wasmtime.Error
+			if errors.As(err, &wasmErr) {
+				if code, ok := wasmErr.ExitStatus(); ok && code == 0 {
+					// normal exit — runtime initialised successfully
+				} else {
+					return fmt.Errorf("module %s: _start: %w", name, err)
+				}
+			} else {
+				return fmt.Errorf("module %s: _start: %w", name, err)
+			}
+		}
 	}
 
 	migrate := instance.GetFunc(store, "migrate")
@@ -60,9 +76,13 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 			return err
 		}
 
-		// if err := applyMigration(ctx, conn, name, m); err != nil {
-		// 	return err
-		// }
+		if err := applyMigration(ctx, db, name, m); err != nil {
+			return err
+		}
+
+		if err := registerSchemas(m); err != nil {
+			return fmt.Errorf("module %s: register schema: %w", name, err)
+		}
 	}
 
 	common.Logger.Debug("🔌 Module chargé: ", zap.String("name", name))
@@ -70,7 +90,46 @@ func loadModule(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Lin
 	return nil
 }
 
-func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Linker, moduleRoots []string) []error {
+// baseModelFields are the standard columns every module table inherits.
+// They match model.BaseModel: uuid PK, timestamps, and soft-delete.
+var baseModelFields = []orm.SchemaField{
+	{Column: "id", IsPK: true},
+	{Column: "created_at"},
+	{Column: "updated_at"},
+	{Column: "deleted_at", Nullable: true, SoftDel: true},
+}
+
+// registerSchemas builds an ORM schema entry for every table touched by m.
+// This lets BuildHandlers discover and mount routes without any per-module
+// code in main.go.
+func registerSchemas(m types.Migration) error {
+	// Group columns by table, prepending BaseModel fields.
+	tables := map[string][]orm.SchemaField{}
+	for _, op := range m.Operations {
+		if _, seen := tables[op.Table]; !seen {
+			tables[op.Table] = append([]orm.SchemaField{}, baseModelFields...)
+		}
+		if op.Type == "add_column" {
+			tables[op.Table] = append(tables[op.Table], orm.SchemaField{
+				Column:   op.Column,
+				Nullable: op.Nullable,
+			})
+		}
+	}
+
+	for table, fields := range tables {
+		if err := orm.RegisterSchema(table, fields); err != nil {
+			return fmt.Errorf("table %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+func LoadModules(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *wasmtime.Linker, moduleRoots []string) []error {
+	if err := bootstrapMigrationsTable(ctx, db); err != nil {
+		return []error{fmt.Errorf("bootstrap module_migrations: %w", err)}
+	}
+
 	modules, err := detector(moduleRoots)
 	if err != nil {
 		return []error{err}
@@ -97,12 +156,12 @@ func LoadModules(ctx context.Context, store *wasmtime.Store, linker *wasmtime.Li
 		}
 		var wg sync.WaitGroup
 		for _, mod := range group {
-			if mod.Active {
+			if mod.Active && mod.Type != "go" {
 				wg.Add(1)
 				go func(mod types.Module) {
 					defer wg.Done()
 					common.Logger.Debug("Loading module:", zap.String("name", mod.Name), zap.Int("priority", mod.Priority))
-					if err := loadModule(ctx, store, linker, mod.WasmPath, mod.Name); err != nil {
+					if err := loadModule(ctx, db, store, linker, mod.WasmPath, mod.Name); err != nil {
 						errMu.Lock()
 						errList = append(errList, err)
 						errMu.Unlock()

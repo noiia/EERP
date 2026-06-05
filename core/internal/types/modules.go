@@ -31,6 +31,7 @@ type Operation struct {
 // Module fields
 type Module struct {
 	Active           bool                `json:"active"`
+	Type             string              `json:"type"` // "wasm" (default) or "go"
 	Path             string              `json:"path"`
 	WasmPath         string              `json:"wasm_path"`
 	Name             string              `json:"name"`

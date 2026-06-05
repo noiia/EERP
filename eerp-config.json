@@ -1,6 +1,6 @@
 {
     "module_root": [
-        "/home/noiq/EERP/modules"
+        "/home/noiq/EERP/core/modules"
     ],
     "master_key": "ueioiehsiuehfs",
     "container_pool": 5,
@@ -15,5 +15,7 @@
     "max_conn_idle_time": 1800,
     "max_conn_life_time": 3600,
     "health_check_period": 60,
-    "connect_timeout": 10
+    "connect_timeout": 10,
+    "public_address": "localhost",
+    "backend_port": 8080
 }
