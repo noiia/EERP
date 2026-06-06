@@ -120,3 +120,58 @@ The Docker Compose service (`compose.yml`) runs PostgreSQL 18 on port 5432 with 
 - Interfaces defined at the call site, not the implementation
 - Table-driven tests with subtests (`t.Run`)
 - `depguard` blocks direct use of `fmt` and `log` packages (use `go.uber.org/zap` via `common.Logger`)
+
+# Documentation Rules
+
+Documentation is considered part of the codebase.
+
+Whenever the architecture, public API, data model, routing, ORM behavior, module system or developer workflow changes, update the documentation in the same task.
+
+Never leave documentation outdated.
+
+Documentation should always explain:
+
+- Why something exists
+- What problem it solves
+- How it works
+- How developers should use it
+- Common pitfalls
+
+Do not simply describe the code.
+
+Prefer architecture explanations over implementation details.
+
+Every documentation page should be understandable by a developer discovering the project for the first time.
+
+Whenever possible:
+
+- Generate Mermaid diagrams.
+- Link related pages.
+- Include practical examples.
+- Explain design decisions.
+
+If an architectural decision changes significantly, create or update an ADR.
+
+Documentation should be written in Markdown and compatible with MkDocs Material.
+
+Avoid duplicate information.
+
+Documentation must remain concise, technical and maintainable.
+
+## Framework-first documentation
+
+Assume this project is a reusable framework rather than a single application.
+
+Document stable concepts instead of current implementations.
+
+When documenting a component, focus on:
+
+- its contract
+- its public behavior
+- its responsibilities
+- its extension mechanisms
+- its integration with the rest of the framework
+
+Avoid documenting private implementation details unless they are essential to understanding the architecture.
+
+Documentation should remain valid even if internal implementations evolve.

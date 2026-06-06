@@ -19,7 +19,7 @@ func init() {
 // Registered under the "crm" table name, it replaces the base registration so
 // the generic API automatically includes date and comment — the crm module is
 // never touched.
-type ExtendedCRM struct {
+type CRM struct {
 	crm.CRM
 	Date    *time.Time `db:"date"`
 	Comment string     `db:"comment"`
@@ -30,5 +30,5 @@ type crminheritdemoModule struct{}
 func (m *crminheritdemoModule) Name() string { return "crminheritdemo" }
 
 func (m *crminheritdemoModule) Register() error {
-	return orm.Register[ExtendedCRM](orm.WithTableName("crm"))
+	return orm.Register[CRM](orm.WithTableName("crm"))
 }

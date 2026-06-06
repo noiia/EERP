@@ -45,3 +45,6 @@ run:
 	FRONT_PID=$$!; \
 	trap 'kill $$FRONT_PID' EXIT INT TERM; \
 	$(MAKE) --no-print-directory run-back
+
+logs:
+	docker compose logs -f -n 50
