@@ -10,17 +10,24 @@ rebuild-and-run:
 	make run
 
 clean:
-	rm -rf $(root)/modules/vente/target
-	rm -rf $(root)/modules/vente_particulier/target
+	@for dir in $(root)/core/modules/*/; do \
+		name=$$(basename $$dir); \
+		echo "Cleaning $$name..."; \
+		rm -rf $$dir/build/;\
+	done
 	rm -rf $(root)/core/cmd/app/cache
 	find $(root) -name '__debug_bin*' -delete
 
 build:
-	cd $(root)/modules/vente && cargo build --target wasm32-unknown-unknown --release
-	cd $(root)/modules/vente_particulier && cargo build --target wasm32-unknown-unknown --release
+	@for dir in $(root)/core/modules/*/; do \
+		name=$$(basename $$dir); \
+		echo "Building $$name..."; \
+		GOOS=wasip1 GOARCH=wasm go build -C $(root)/core -o $$dir/build/$$name.wasm ./modules/$$name; \
+	done
 
 run-back:
-	cd $(root)/core/cmd/app && go run main.go -config="$(CONFIG)" --debug=0
+	docker compose up -d 
+# 	cd $(root)/core/cmd/app && go run main.go -config="$(CONFIG)" --debug=0
 
 
 BACKTESTPATH ?= ./...
