@@ -1,0 +1,6 @@
+tables:
+  refresh_tokens:
+    exclude: true
+  users:
+    exclude_fields:
+      - password_hash

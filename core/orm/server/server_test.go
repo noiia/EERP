@@ -135,7 +135,7 @@ func TestMountHandler_SoftDelete_AllSixRoutes(t *testing.T) {
 func TestServer_Routes_NonEmptyAfterRegister(t *testing.T) {
 	s := ormserver.New(nil, ormserver.Config{})
 	h := buildHandler("orders", true)
-	s.RegisterRoutes(map[string]*handler.GenericHandler{"orders": h})
+	s.RegisterRoutes(map[string]*handler.GenericHandler{"orders": h}, nil)
 
 	if len(s.Routes()) == 0 {
 		t.Error("Routes() returned empty slice after RegisterRoutes")

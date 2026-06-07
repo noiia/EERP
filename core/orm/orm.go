@@ -55,7 +55,15 @@ import (
 	"core/orm/pool/tx"
 	"core/orm/query"
 	"core/orm/repo"
+
+	"github.com/jackc/pgx/v5"
 )
+
+// ── Sentinel errors ───────────────────────────────────────────────────────────
+
+// ErrNotFound is the canonical "no row matched" sentinel.
+// It wraps pgx.ErrNoRows so errors.Is works across the whole call stack.
+var ErrNotFound = pgx.ErrNoRows
 
 // ── Type aliases — ERP code never imports sub-packages directly ───────────────
 

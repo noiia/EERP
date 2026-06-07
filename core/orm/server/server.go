@@ -66,17 +66,29 @@ func NewEcho(app *orm.App) *echo.Echo {
 		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
 	}))
 
-	e.HTTPErrorHandler = errorHandler
+	if app != nil && app.Logger != nil {
+		e.HTTPErrorHandler = newErrorHandler(app.Logger)
+	} else {
+		e.HTTPErrorHandler = newErrorHandler(nil)
+	}
 
 	return e
 }
 
-// RegisterRoutes mounts each handler's routes under /api/v1.
-// Route generation rules:
-//   - Every table: GET, GET /:id, POST, PUT /:id.
-//   - Soft-delete tables additionally: DELETE /:id, POST /:id/restore.
-func (s *Server) RegisterRoutes(handlers map[string]*handler.GenericHandler) {
-	g := s.echo.Group("/api/v1")
+// RegisterRoutes mounts each handler's routes under /api/v1 with optional
+// JWT and permission middleware on the protected group.
+// authGroup receives public auth routes (no middleware).
+// jwtMw and permMw are applied to all other /api/v1 routes when non-nil.
+func (s *Server) RegisterRoutes(
+	handlers map[string]*handler.GenericHandler,
+	authGroup func(*echo.Echo),
+	middlewares ...echo.MiddlewareFunc,
+) {
+	if authGroup != nil {
+		authGroup(s.echo)
+	}
+
+	g := s.echo.Group("/api/v1", middlewares...)
 	for _, h := range handlers {
 		mountHandler(g, h)
 	}
@@ -84,8 +96,8 @@ func (s *Server) RegisterRoutes(handlers map[string]*handler.GenericHandler) {
 
 // MountHandler mounts an individual handler on a group.
 // Exported for use in integration tests.
-func MountHandler(e *echo.Echo, h *handler.GenericHandler) {
-	g := e.Group("/api/v1")
+func MountHandler(e *echo.Echo, h *handler.GenericHandler, middlewares ...echo.MiddlewareFunc) {
+	g := e.Group("/api/v1", middlewares...)
 	mountHandler(g, h)
 }
 
@@ -108,6 +120,12 @@ func mountHandler(g *echo.Group, h *handler.GenericHandler) {
 // Useful for logging mounted endpoints at startup.
 func (s *Server) Routes() []*echo.Route {
 	return s.echo.Routes()
+}
+
+// Echo returns the underlying Echo instance.
+// Use to mount custom route groups (e.g. auth endpoints) without middleware.
+func (s *Server) Echo() *echo.Echo {
+	return s.echo
 }
 
 // Start binds the server and blocks until ctx is cancelled.
@@ -143,10 +161,24 @@ func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 			req := c.Request()
 			start := time.Now()
 			err := next(c)
+
+			// Derive the actual status: if the handler returned an error without
+			// committing a response, the error handler will write it after we return —
+			// so we predict the status here rather than reading the still-default 200.
+			status := c.Response().Status
+			if err != nil && !c.Response().Committed {
+				var he *echo.HTTPError
+				if errors.As(err, &he) {
+					status = he.Code
+				} else {
+					status = http.StatusInternalServerError
+				}
+			}
+
 			logger.Info("request",
 				zap.String("method", req.Method),
 				zap.String("uri", req.RequestURI),
-				zap.Int("status", c.Response().Status),
+				zap.Int("status", status),
 				zap.Duration("latency", time.Since(start)),
 				zap.String("request_id", c.Response().Header().Get(echo.HeaderXRequestID)),
 			)
@@ -157,23 +189,31 @@ func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 
 // ── Error handler ─────────────────────────────────────────────────────────────
 
-func errorHandler(err error, c echo.Context) {
-	if c.Response().Committed {
-		return
-	}
+func newErrorHandler(logger *zap.Logger) echo.HTTPErrorHandler {
+	return func(err error, c echo.Context) {
+		if c.Response().Committed {
+			return
+		}
 
-	var he *echo.HTTPError
-	if errors.As(err, &he) {
-		code := he.Code
-		msg := fmt.Sprintf("%v", he.Message)
-		_ = c.JSON(code, ErrorResponse{Error: msg, Code: httpCode(code)})
-		return
-	}
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			code := he.Code
+			msg := fmt.Sprintf("%v", he.Message)
+			_ = c.JSON(code, ErrorResponse{Error: msg, Code: httpCode(code)})
+			return
+		}
 
-	_ = c.JSON(http.StatusInternalServerError, ErrorResponse{
-		Error: "internal server error",
-		Code:  "INTERNAL_ERROR",
-	})
+		if logger != nil {
+			logger.Error("unhandled error",
+				zap.Error(err),
+				zap.String("request_id", c.Response().Header().Get(echo.HeaderXRequestID)),
+			)
+		}
+		_ = c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error: "internal server error",
+			Code:  "INTERNAL_ERROR",
+		})
+	}
 }
 
 func httpCode(status int) string {

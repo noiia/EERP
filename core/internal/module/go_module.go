@@ -16,6 +16,14 @@ type GoModule interface {
 	Register() error
 }
 
+// Migrator is an optional extension to GoModule.
+// Implement it when your module needs DDL beyond what the auto-migration derives
+// from registered structs — for example, join tables with composite PKs.
+// Migrate is called after Register and the struct-level auto-migration.
+type Migrator interface {
+	Migrate(ctx context.Context, db *orm.DB) error
+}
+
 var (
 	goMu      sync.Mutex
 	goModules []GoModule
@@ -74,6 +82,13 @@ func LoadGoModules(ctx context.Context, db *orm.DB) []error {
 			// Add the new columns (idempotent, IF NOT EXISTS).
 			if err := ensureColumns(ctx, db, tableName, newFields); err != nil {
 				errs = append(errs, fmt.Errorf("module %s: ensure columns %s: %w", m.Name(), tableName, err))
+			}
+		}
+
+		// Optional extra DDL (join tables, constraints, etc.).
+		if migrator, ok := m.(Migrator); ok {
+			if err := migrator.Migrate(ctx, db); err != nil {
+				errs = append(errs, fmt.Errorf("module %s: migrate: %w", m.Name(), err))
 			}
 		}
 	}

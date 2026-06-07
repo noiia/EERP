@@ -3,6 +3,8 @@
         "/home/noiq/EERP/core/modules"
     ],
     "master_key": "ueioiehsiuehfs",
+    "access_ttl_seconds": 3600,
+    "refresh_ttl_seconds": 604800,
     "container_pool": 5,
     "thread_pool": 20,
     "db_name": "poc",
@@ -17,5 +19,6 @@
     "health_check_period": 60,
     "connect_timeout": 10,
     "public_address": "localhost",
-    "backend_port": 8080
+    "backend_port": 8080,
+    "api_config_path": "/home/noiq/EERP/api.yaml"
 }

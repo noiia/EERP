@@ -2,6 +2,7 @@ target
 Cargo.lock
 core/cmd/app/cache
 build
+graphify-out/
 
 app
 *.log
