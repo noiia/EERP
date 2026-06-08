@@ -40,19 +40,22 @@ func derivePermission(c echo.Context) string {
 }
 
 // derivePermissionFromPath builds "module:resource:action" from method and URL path.
-// Route shape: /api/v1/{module}/{resource}[/...].
-// HTTP method maps to: GET→read, POST→write, PUT→write, DELETE→delete.
+// Two-segment routes /api/v1/{module}/{resource} map to "module:resource:action".
+// Single-segment routes /api/v1/{table} treat the table as both module and resource:
+// "table:table:action". Returns "" for unrecognised method or empty path.
 func derivePermissionFromPath(method, path string) string {
 	const prefix = "/api/v1/"
 	path = strings.TrimPrefix(path, prefix)
-
-	segments := strings.SplitN(path, "/", 3)
-	if len(segments) < 2 {
+	if path == "" {
 		return ""
 	}
+
+	segments := strings.SplitN(path, "/", 3)
 	mod := segments[0]
-	res := segments[1]
-	res = strings.SplitN(res, "/", 2)[0]
+	res := mod // flat route: table is its own module
+	if len(segments) >= 2 {
+		res = strings.SplitN(segments[1], "/", 2)[0]
+	}
 
 	action := methodToAction(method)
 	if action == "" {

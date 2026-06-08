@@ -82,6 +82,10 @@ func TestDerivePermission_PathParsing(t *testing.T) {
 		{http.MethodPost, "/api/v1/inventory/items", "inventory:items:write"},
 		{http.MethodPut, "/api/v1/crm/orders", "crm:orders:write"},
 		{http.MethodDelete, "/api/v1/crm/contacts", "crm:contacts:delete"},
+		// flat single-segment route: table acts as its own module
+		{http.MethodGet, "/api/v1/crm", "crm:crm:read"},
+		{http.MethodPost, "/api/v1/crm", "crm:crm:write"},
+		{http.MethodDelete, "/api/v1/crm", "crm:crm:delete"},
 	}
 
 	for _, tc := range cases {
