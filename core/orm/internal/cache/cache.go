@@ -114,6 +114,24 @@ func (c *MetadataCache) build(t reflect.Type) (StructMeta, error) {
 	return newStructMeta(table, pk, fields), nil
 }
 
+// IndexMethods are the PostgreSQL index access methods accepted in the
+// db:"col,index=<method>" tag option. btree is the default when only
+// "index" is given.
+var IndexMethods = []string{"btree", "hash", "gist", "spgist", "gin", "brin"}
+
+// DefaultIndexMethod is used when db:"col,index" is given without a method.
+const DefaultIndexMethod = "btree"
+
+// validIndexMethod reports whether method is a supported PostgreSQL index method.
+func validIndexMethod(method string) bool {
+	for _, m := range IndexMethods {
+		if m == method {
+			return true
+		}
+	}
+	return false
+}
+
 // parseField converts a reflect.StructField + raw tag into a FieldMeta.
 // sf.Index is stored as IndexPath for nested access via reflect.Value.FieldByIndex.
 func parseField(sf reflect.StructField, tag string) (FieldMeta, error) {
@@ -131,14 +149,27 @@ func parseField(sf reflect.StructField, tag string) (FieldMeta, error) {
 
 	parts := strings.Split(col, ",")
 	col = parts[0]
-	for _, opt := range parts[1:] {
-		switch strings.TrimSpace(opt) {
-		case "omitempty":
+	for _, raw := range parts[1:] {
+		opt := strings.TrimSpace(raw)
+		switch {
+		case opt == "omitempty":
 			fm.OmitEmpty = true
-		case "pk":
+		case opt == "pk":
 			fm.IsPK = true
-		case "softdelete":
+		case opt == "softdelete":
 			fm.SoftDel = true
+		case opt == "index" || strings.HasPrefix(opt, "index="):
+			// "index" → default btree; "index=<method>" → explicit method.
+			method := DefaultIndexMethod
+			if eq := strings.IndexByte(opt, '='); eq >= 0 {
+				method = strings.ToLower(strings.TrimSpace(opt[eq+1:]))
+			}
+			if !validIndexMethod(method) {
+				return FieldMeta{}, fmt.Errorf(
+					"invalid index method %q (valid: %s)", method, strings.Join(IndexMethods, ", "))
+			}
+			fm.Index = true
+			fm.IndexType = method
 		}
 	}
 

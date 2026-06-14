@@ -10,6 +10,8 @@ type FieldMeta struct {
 	OmitEmpty bool         // db:"col,omitempty"
 	IsPK      bool         // db:"col,pk"
 	SoftDel   bool         // db:"col,softdelete"
+	Index     bool         // db:"col,index" — create a secondary index on this column
+	IndexType string       // postgres index method: btree (default), hash, gist, spgist, gin, brin
 	Type      reflect.Type // field's reflect.Type for fast type assertion
 }
 

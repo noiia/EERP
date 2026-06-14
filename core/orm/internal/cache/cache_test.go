@@ -54,6 +54,62 @@ type ignoredField struct {
 	private string //nolint:unused
 }
 
+type indexedModel struct {
+	ID      int    `db:"id,pk"`
+	Email   string `db:"email,index"`       // default btree
+	Token   string `db:"token,index=hash"`  // explicit method
+	Payload string `db:"payload,index=gin"` // explicit method
+	Name    string `db:"name"`              // not indexed
+}
+
+type badIndexModel struct {
+	ID   int    `db:"id,pk"`
+	Name string `db:"name,index=bogus"` // unknown method
+}
+
+// ── Index tag ─────────────────────────────────────────────────────────────────
+
+func TestGet_IndexTag(t *testing.T) {
+	t.Parallel()
+
+	meta, err := cache.Get[indexedModel]()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := map[string]struct {
+		index  bool
+		method string
+	}{
+		"email":   {true, "btree"},
+		"token":   {true, "hash"},
+		"payload": {true, "gin"},
+		"name":    {false, ""},
+	}
+
+	for _, f := range meta.Fields {
+		w, ok := want[f.Column]
+		if !ok {
+			continue
+		}
+		if f.Index != w.index {
+			t.Errorf("%s: Index = %v, want %v", f.Column, f.Index, w.index)
+		}
+		if f.IndexType != w.method {
+			t.Errorf("%s: IndexType = %q, want %q", f.Column, f.IndexType, w.method)
+		}
+	}
+}
+
+func TestGet_InvalidIndexMethod_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := cache.Get[badIndexModel]()
+	if err == nil {
+		t.Fatal("expected error for invalid index method, got nil")
+	}
+}
+
 // ── toSnake ───────────────────────────────────────────────────────────────────
 
 func TestToSnake(t *testing.T) {

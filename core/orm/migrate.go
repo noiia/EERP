@@ -17,6 +17,11 @@ type MigrationField struct {
 	Nullable bool
 	IsPK     bool
 	SoftDel  bool
+	// Index, when true, requests a secondary index on this column.
+	// IndexType is the PostgreSQL index method (btree, hash, gin, …);
+	// empty means btree.
+	Index     bool
+	IndexType string
 }
 
 // RegisteredTableNames returns the names of all currently registered
@@ -42,11 +47,13 @@ func MigrationFieldsForTable(tableName string) ([]MigrationField, bool) {
 	fields := make([]MigrationField, len(meta.StructMeta.Fields))
 	for i, f := range meta.StructMeta.Fields {
 		fields[i] = MigrationField{
-			Column:   f.Column,
-			SQLType:  reflectTypeToSQL(f.Type),
-			Nullable: f.Type != nil && f.Type.Kind() == reflect.Ptr,
-			IsPK:     f.IsPK,
-			SoftDel:  f.SoftDel,
+			Column:    f.Column,
+			SQLType:   reflectTypeToSQL(f.Type),
+			Nullable:  f.Type != nil && f.Type.Kind() == reflect.Ptr,
+			IsPK:      f.IsPK,
+			SoftDel:   f.SoftDel,
+			Index:     f.Index,
+			IndexType: f.IndexType,
 		}
 	}
 	return fields, true

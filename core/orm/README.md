@@ -150,10 +150,37 @@ db:"column_name"              — explicit column name
 db:"column_name,pk"           — primary key
 db:"column_name,omitempty"    — skip field when zero value (UPDATE/INSERT)
 db:"column_name,softdelete"   — marks the soft-delete timestamp column
+db:"column_name,index"        — secondary index (btree)
+db:"column_name,index=hash"   — secondary index with an explicit method
 db:"-"                        — exclude from all queries
 ```
 
 If no `db:` tag is present, the column name defaults to `CamelCase → snake_case`.
+
+### Indexes
+
+Tag a column with `index` to have an index created during auto-migration. The
+optional `index=<method>` selects the PostgreSQL access method — valid methods
+are `btree` (default), `hash`, `gist`, `spgist`, `gin`, and `brin`. An unknown
+method fails fast at startup with a metadata error.
+
+```go
+type Session struct {
+    model.BaseModel
+    Token  string         `db:"token,index=hash"`  // exact-match lookups
+    UserID uuid.UUID      `db:"user_id,index"`     // foreign-key style lookups (btree)
+    Tags   map[string]any `db:"tags,index=gin"`    // jsonb / array containment
+}
+```
+
+Indexes are created as `idx_<table>_<column>` with `CREATE INDEX IF NOT EXISTS`,
+so migration is idempotent — adding an `index` tag to an existing column creates
+the index on the next startup without touching the data. Removing the tag does
+**not** drop the index; drop it manually if no longer wanted.
+
+The WASM/JSON migration path supports the same via an operation: set `"index": true`
+(optionally `"index_type"`) on an `add_column` op, or use a standalone
+`{"type": "create_index", "table": "...", "column": "...", "index_type": "gin"}`.
 
 ### Custom table name
 
