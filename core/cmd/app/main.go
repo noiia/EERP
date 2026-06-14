@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
-	"core/internal/common"
-	"core/internal/module"
-	"core/internal/types"
-	_ "core/modules/all"
-	"core/orm"
-	ormserver "core/orm/server"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"core/internal/auth"
+	"core/internal/common"
+	authmw "core/internal/middleware"
+	"core/internal/module"
+	"core/internal/types"
+	_ "core/modules/all"
+	"core/orm"
+	ormserver "core/orm/server"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
 	"go.uber.org/zap"
@@ -42,14 +45,26 @@ func main() {
 		common.Logger.Fatal("❌ Error reading config file", zap.Error(err))
 	}
 
+	// Refuse to start with an insecure signing key.
+	if configContent.MasterPassword == "" || configContent.MasterPassword == "change-me-in-production" {
+		common.Logger.Fatal("❌ master_key is empty or set to the insecure default — set a strong secret before starting")
+	}
+
 	if notExists, _ := common.FileNotExists(configContent.ApiConfigPath); !notExists {
 		if err := orm.LoadAPIConfig(configContent.ApiConfigPath); err != nil {
 			common.Logger.Warn("could not load api.yaml", zap.String("path", configContent.ApiConfigPath), zap.Error(err))
 		}
 	}
 
-	dbLink := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", configContent.DbUser, configContent.DbPassword, configContent.DbHost, configContent.DbPort, configContent.DbName)
-	dbConf := orm.Config{DSN: dbLink, MaxConns: configContent.MaxConns, MinConns: configContent.MinConns, Debug: *debugPtr}
+	dbLink := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+		configContent.DbUser, configContent.DbPassword,
+		configContent.DbHost, configContent.DbPort, configContent.DbName)
+	dbConf := orm.Config{
+		DSN:      dbLink,
+		MaxConns: configContent.MaxConns,
+		MinConns: configContent.MinConns,
+		Debug:    *debugPtr,
+	}
 
 	if err := dbConf.Validate(); err != nil {
 		common.Logger.Fatal("❌ Error validating db conf", zap.Error(err))
@@ -70,7 +85,6 @@ func main() {
 	if err := linker.DefineWasi(); err != nil {
 		common.Logger.Fatal("❌ DefineWasi error", zap.Error(err))
 	}
-
 	if err := linker.FuncWrap("host", "log", func(ptr int32, len int32) {
 		common.Logger.Info("📦 WASM LOG CALLED")
 	}); err != nil {
@@ -80,17 +94,34 @@ func main() {
 	for _, err := range module.LoadModules(context.Background(), app.DB, store, linker, configContent.ModuleRoot) {
 		common.Logger.Error("❌ Error loading WASM module", zap.Error(err))
 	}
-
 	for _, err := range module.LoadGoModules(context.Background(), app.DB) {
 		common.Logger.Error("❌ Error loading Go module", zap.Error(err))
 	}
+
+	// ── Auth layer ────────────────────────────────────────────────────────────
+	tokenSvc := auth.NewTokenService(configContent)
+	refreshStore := auth.NewRefreshStore(app.DB)
+	userRepo := auth.NewUserRepository(app.DB)
+	permRepo := auth.NewPermissionRepository(app.DB)
+	authHandler := auth.NewHandler(userRepo, tokenSvc, refreshStore, permRepo)
+
+	jwtMw := authmw.JWTMiddleware(tokenSvc)
+	permMw := authmw.PermissionMiddleware(permRepo)
 
 	// ── Build server ──────────────────────────────────────────────────────────
 	srvCfg := ormserver.Config{
 		Addr: fmt.Sprintf("%s:%d", configContent.PublicAddress, configContent.BackendPort),
 	}
 	srv := ormserver.New(app, srvCfg)
-	srv.RegisterRoutes(ormserver.BuildHandlers(app))
+
+	// Public auth routes — no JWT/permission middleware.
+	authGroup := srv.Echo().Group("/api/v1/auth")
+	authGroup.POST("/login", authHandler.Login)
+	authGroup.POST("/refresh", authHandler.Refresh)
+	authGroup.POST("/logout", authHandler.Logout)
+
+	// Protected routes — JWT + permission middleware on the group.
+	srv.RegisterRoutes(ormserver.BuildHandlers(app), nil, jwtMw, permMw)
 
 	for _, r := range srv.Routes() {
 		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))

@@ -40,9 +40,11 @@ func DefaultConfig() *Config {
 
 // Config fields
 type Config struct {
-	ModuleRoot        []string      `json:"module_root" needed:"true"`
-	MasterPassword    string        `json:"master_key" needed:"false"`
-	ContainerPool     int           `json:"container_pool" needed:"false"`
+	ModuleRoot          []string      `json:"module_root" needed:"true"`
+	MasterPassword      string        `json:"master_key" needed:"false"`
+	AccessTTLSeconds    int           `json:"access_ttl_seconds" needed:"false"`
+	RefreshTTLSeconds   int           `json:"refresh_ttl_seconds" needed:"false"`
+	ContainerPool       int           `json:"container_pool" needed:"false"`
 	ThreadPool        int           `json:"thread_pool" needed:"false"`
 	DbName            string        `json:"db_name" needed:"false"`
 	DbPort            int           `json:"db_port" needed:"true"`

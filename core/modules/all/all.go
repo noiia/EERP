@@ -6,6 +6,7 @@
 package all
 
 import (
+	_ "core/modules/auth"
 	_ "core/modules/contact"
 	_ "core/modules/crm"
 	_ "core/modules/crminheritdemo"
