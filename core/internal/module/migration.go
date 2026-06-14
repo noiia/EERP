@@ -49,7 +49,8 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 	}
 
 	for _, op := range m.Operations {
-		if op.Type == "add_column" {
+		switch op.Type {
+		case "add_column":
 			sql := fmt.Sprintf(
 				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
 				op.Table,
@@ -58,6 +59,15 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 			)
 			common.Logger.Debug("🛠️", zap.String("", sql))
 			if _, err := db.Exec(ctx, sql); err != nil {
+				return err
+			}
+			if op.Index {
+				if err := createIndex(ctx, db, op); err != nil {
+					return err
+				}
+			}
+		case "create_index":
+			if err := createIndex(ctx, db, op); err != nil {
 				return err
 			}
 		}
@@ -69,6 +79,24 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 	)
 	common.Logger.Info("✅ Migration applied:", zap.String("module : ", module), zap.Int("version : ", m.Version))
 	return err
+}
+
+// createIndex creates a single secondary index from a migration Operation.
+// Idempotent via IF NOT EXISTS; index name is deterministic.
+func createIndex(ctx context.Context, db *orm.DB, op types.Operation) error {
+	method := op.IndexType
+	if method == "" {
+		method = "btree"
+	}
+	name := fmt.Sprintf("idx_%s_%s", op.Table, op.Column)
+	// #nosec G201 — table/column/method come from module manifests, not user input.
+	sql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s USING %s (%s)",
+		name, op.Table, method, op.Column)
+	common.Logger.Debug("🛠️", zap.String("", sql))
+	if _, err := db.Exec(ctx, sql); err != nil {
+		return fmt.Errorf("create index %s: %w", name, err)
+	}
+	return nil
 }
 
 // ensureTable creates the table with BaseModel columns if it does not exist.
@@ -90,12 +118,16 @@ var baseModelColumns = map[string]bool{
 	"id": true, "created_at": true, "updated_at": true, "deleted_at": true,
 }
 
-// autoMigrateTable ensures the table exists and adds any missing columns.
+// autoMigrateTable ensures the table exists, adds any missing columns, and
+// creates any declared indexes.
 func autoMigrateTable(ctx context.Context, db *orm.DB, table string, fields []orm.MigrationField) error {
 	if err := ensureTable(ctx, db, table); err != nil {
 		return err
 	}
-	return ensureColumns(ctx, db, table, fields)
+	if err := ensureColumns(ctx, db, table, fields); err != nil {
+		return err
+	}
+	return ensureIndexes(ctx, db, table, fields)
 }
 
 // ensureColumns issues ALTER TABLE ADD COLUMN IF NOT EXISTS for each field
@@ -114,6 +146,29 @@ func ensureColumns(ctx context.Context, db *orm.DB, table string, fields []orm.M
 			table, f.Column, f.SQLType, notNull)
 		if _, err := db.Exec(ctx, sql); err != nil {
 			return fmt.Errorf("add column %s: %w", f.Column, err)
+		}
+	}
+	return nil
+}
+
+// ensureIndexes creates a secondary index for each field tagged db:"col,index".
+// Index names are deterministic (idx_<table>_<column>) and creation is
+// idempotent via IF NOT EXISTS, so this is safe to run on every startup.
+func ensureIndexes(ctx context.Context, db *orm.DB, table string, fields []orm.MigrationField) error {
+	for _, f := range fields {
+		if !f.Index {
+			continue
+		}
+		method := f.IndexType
+		if method == "" {
+			method = "btree"
+		}
+		name := fmt.Sprintf("idx_%s_%s", table, f.Column)
+		// #nosec G201 — table/column/method come from struct tags, not user input.
+		sql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s USING %s (%s)",
+			name, table, method, f.Column)
+		if _, err := db.Exec(ctx, sql); err != nil {
+			return fmt.Errorf("create index %s: %w", name, err)
 		}
 	}
 	return nil

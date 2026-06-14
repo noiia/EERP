@@ -92,6 +92,19 @@ func LoadGoModules(ctx context.Context, db *orm.DB) []error {
 			}
 		}
 	}
+
+	// Ensure declared indexes for every registered table in one idempotent
+	// pass. Done after all modules load so it also covers indexes added to
+	// pre-existing columns (which the per-column diff above does not detect).
+	for _, name := range orm.RegisteredTableNames() {
+		fields, ok := orm.MigrationFieldsForTable(name)
+		if !ok {
+			continue
+		}
+		if err := ensureIndexes(ctx, db, name, fields); err != nil {
+			errs = append(errs, fmt.Errorf("ensure indexes %s: %w", name, err))
+		}
+	}
 	return errs
 }
 
