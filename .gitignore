@@ -4,7 +4,10 @@ core/cmd/app/cache
 build
 graphify-out/
 
-app
+# Stray `go build ./cmd/app` binaries (anchored — a bare `app` also matched the
+# Next.js App Router directory core-front/apps/shell/app and excluded it from git).
+/core/app
+/core/cmd/app/app
 *.log
 __debug*
 .vscode
