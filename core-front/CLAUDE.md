@@ -143,7 +143,7 @@ sequenceDiagram
 Create a pnpm workspace at core-front/ (frontend SERVICE; Next.js App Router; React 19; TS).
 packages/core-front: a TS library "@eerp/core-front" with src/{api,views,auth,registry}, a CLIENT
 barrel index.ts and a SERVER-ONLY barrel server.ts ('server-only'), both empty. Build with tsup; ship types.
-apps/shell: a Next.js 15 App Router app (no /pages dir) depending on @eerp/core-front via the workspace.
+apps/shell: a Next.js 16 App Router app (no /pages dir) depending on @eerp/core-front via the workspace.
 Add MUI v6 + @mui/material-nextjs (App Router SSR emotion cache) + @mui/x-data-grid + @mui/x-tree-view,
 and zustand. Workspace dev deps: vitest + @testing-library/react + msw, eslint + prettier.
 Server env only (no client secrets): API_BASE + API_VERSION (default "1"); type them.
