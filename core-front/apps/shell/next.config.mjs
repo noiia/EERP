@@ -1,18 +1,38 @@
-import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import path from 'node:path'
+import { discoverModuleViews, findRepoRoot, readConfig } from './scripts/module-discovery.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// The generated manifest imports external module views by RELATIVE path, so no alias
+// config is needed. We still resolve the repo root + view sources here to (a) root the
+// bundler/trace at the monorepo so external module files are inside the project, and
+// (b) keep those sources in the standalone output trace.
+const repoRoot = findRepoRoot(__dirname)
+const moduleViewSources = discoverModuleViews(repoRoot, readConfig(repoRoot)).flatMap((m) =>
+  m.views.map((v) => v.sourceFile),
+)
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Standalone output so the service ships as a self-contained `node server.js`.
   output: 'standalone',
-  // Monorepo: trace workspace deps from the repo root.
-  outputFileTracingRoot: path.join(__dirname, '../../'),
+  // Trace from the repo root so external module files (under module_root) are included.
+  outputFileTracingRoot: repoRoot,
   // The engine is a workspace package; let Next transpile it directly.
   transpilePackages: ['@eerp/core-front'],
-  // Phase 2 adds here: discovery codegen (src/generated/generated-modules.ts) +
-  // resolve/transpile of external module dirs from the repo-root eerp-config.json.
+  // Treat the whole monorepo as the Turbopack project root so external module view
+  // files (imported from the generated manifest by relative path) are resolved and
+  // transpiled like first-party code.
+  turbopack: {
+    root: repoRoot,
+  },
+  // webpack fallback (`next build --webpack`): allow importing TS from outside the app.
+  experimental: {
+    externalDir: true,
+  },
+  // Keep external module sources in the standalone trace when any are wired.
+  ...(moduleViewSources.length ? { outputFileTracingIncludes: { '/**': moduleViewSources } } : {}),
 }
 
 export default nextConfig

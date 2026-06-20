@@ -4,10 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "generate": "node scripts/generate-modules.mjs",
+    "predev": "node scripts/generate-modules.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/generate-modules.mjs",
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "pretypecheck": "node scripts/generate-modules.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
