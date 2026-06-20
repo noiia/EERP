@@ -38,6 +38,18 @@ function authHeader(init: RequestInit | undefined): string | undefined {
   return (init?.headers as Record<string, string> | undefined)?.Authorization
 }
 
+// Go's refresh response: new access token in the body, rotated refresh token in a
+// Set-Cookie header (never in the body).
+function refreshResponse(access: string, rotatedRefresh: string): Response {
+  return new Response(JSON.stringify({ access_token: access, token_type: 'Bearer', expires_in: 3600 }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Set-Cookie': `refresh_token=${rotatedRefresh}; Path=/; HttpOnly`,
+    },
+  })
+}
+
 /** Await a call expected to reject and return its ApiError. */
 async function captureError(p: Promise<unknown>): Promise<ApiError> {
   try {
@@ -104,7 +116,7 @@ describe('ServerApiClient', () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const u = String(url)
       if (u.endsWith('/auth/refresh')) {
-        return jsonResponse(200, { access_token: 'new', refresh_token: 'r2' })
+        return refreshResponse('new', 'r2')
       }
       return authHeader(init) === 'Bearer new'
         ? jsonResponse(200, [{ id: '1' }])
@@ -146,7 +158,7 @@ describe('ServerApiClient', () => {
         refreshCount += 1
         // Hold the refresh open so both 401'd requests attach to the same promise.
         await new Promise((resolve) => setTimeout(resolve, 10))
-        return jsonResponse(200, { access_token: 'new', refresh_token: 'r2' })
+        return refreshResponse('new', 'r2')
       }
       return authHeader(init) === 'Bearer new'
         ? jsonResponse(200, [{ id: '1' }])

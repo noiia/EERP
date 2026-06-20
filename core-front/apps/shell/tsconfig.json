@@ -8,7 +8,10 @@
     "incremental": true,
     "allowJs": true,
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
-    "plugins": [{ "name": "next" }]
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["next-env.d.ts", "env.d.ts", "app", "src", "vitest.config.ts", ".next/types/**/*.ts"],
   "exclude": ["node_modules", ".next"]

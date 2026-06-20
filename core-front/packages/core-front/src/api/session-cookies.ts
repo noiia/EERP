@@ -6,6 +6,14 @@
 export const ACCESS_COOKIE = 'eerp_access'
 export const REFRESH_COOKIE = 'eerp_refresh'
 
+/**
+ * The cookie name Go sets its rotated refresh token under (HttpOnly, on the Go
+ * domain). The BFF and the ApiClient read it from Go's Set-Cookie response header
+ * and re-store it as REFRESH_COOKIE on the Next domain — Go does NOT return the
+ * refresh token in the JSON body.
+ */
+export const GO_REFRESH_COOKIE = 'refresh_token'
+
 /** access 1h, refresh 7d (refresh is single-use / rotated). */
 export const ACCESS_TTL_SECONDS = 3600
 export const REFRESH_TTL_SECONDS = 604800
@@ -27,4 +35,19 @@ export function sessionCookieOptions(maxAge: number): SessionCookieOptions {
     path: '/',
     maxAge,
   }
+}
+
+/**
+ * Extract a cookie value from a response's Set-Cookie headers by name. Used to read
+ * Go's rotated `refresh_token` after login/refresh (it isn't in the JSON body).
+ */
+export function parseSetCookie(headers: Headers, name: string): string | undefined {
+  const cookies = typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : []
+  for (const cookie of cookies) {
+    const pair = cookie.split(';', 1)[0] ?? ''
+    const eq = pair.indexOf('=')
+    if (eq === -1) continue
+    if (pair.slice(0, eq).trim() === name) return decodeURIComponent(pair.slice(eq + 1).trim())
+  }
+  return undefined
 }

@@ -1,12 +1,14 @@
 import 'server-only'
 import { cookies } from 'next/headers'
 import { revalidateTag } from 'next/cache'
-import { ApiError, parseError } from './errors'
+import { parseError } from './errors'
 import {
   ACCESS_COOKIE,
   ACCESS_TTL_SECONDS,
+  GO_REFRESH_COOKIE,
   REFRESH_COOKIE,
   REFRESH_TTL_SECONDS,
+  parseSetCookie,
   sessionCookieOptions,
 } from './session-cookies'
 
@@ -55,12 +57,14 @@ function refreshSession(): Promise<boolean> {
       if (!res.ok) return false
 
       const data: unknown = await res.json().catch(() => null)
-      const tokens = data as { access_token?: unknown; refresh_token?: unknown } | null
-      if (!tokens || typeof tokens.access_token !== 'string') return false
+      const accessToken = (data as { access_token?: unknown } | null)?.access_token
+      if (typeof accessToken !== 'string') return false
 
-      store.set(ACCESS_COOKIE, tokens.access_token, sessionCookieOptions(ACCESS_TTL_SECONDS))
-      if (typeof tokens.refresh_token === 'string') {
-        store.set(REFRESH_COOKIE, tokens.refresh_token, sessionCookieOptions(REFRESH_TTL_SECONDS))
+      store.set(ACCESS_COOKIE, accessToken, sessionCookieOptions(ACCESS_TTL_SECONDS))
+      // Go rotates the refresh token via a Set-Cookie header, not the JSON body.
+      const rotated = parseSetCookie(res.headers, GO_REFRESH_COOKIE)
+      if (rotated) {
+        store.set(REFRESH_COOKIE, rotated, sessionCookieOptions(REFRESH_TTL_SECONDS))
       }
       return true
     })().finally(() => {
@@ -166,5 +170,3 @@ class ServerApiClientImpl implements ServerApiClient {
 export function createServerApiClient(): ServerApiClient {
   return new ServerApiClientImpl()
 }
-
-export type { ApiError }
