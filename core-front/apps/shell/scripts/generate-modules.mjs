@@ -5,13 +5,18 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { discoverModuleViews, findRepoRoot, readConfig, renderManifest } from './module-discovery.mjs'
+import { discoverFrom, findRepoRoot, renderManifest } from './module-discovery.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const shellRoot = join(scriptDir, '..')
-const repoRoot = findRepoRoot(scriptDir)
 
-const discovered = discoverModuleViews(repoRoot, readConfig(repoRoot))
+if (!findRepoRoot(scriptDir)) {
+  console.warn(
+    `[generate-modules] eerp-config.json not reachable from ${scriptDir} — ` +
+      'writing an empty manifest (no modules discovered).',
+  )
+}
+const discovered = discoverFrom(scriptDir)
 const outFile = join(shellRoot, 'src', 'generated', 'generated-modules.ts')
 mkdirSync(dirname(outFile), { recursive: true })
 writeFileSync(outFile, renderManifest(discovered, dirname(outFile)))

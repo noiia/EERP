@@ -7,17 +7,29 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-/** Walk up from startDir until eerp-config.json is found; return that directory. */
+/**
+ * Walk up from startDir until eerp-config.json is found; return that directory, or
+ * null when it isn't reachable. Discovery degrades gracefully to "no modules" rather
+ * than throwing — e.g. a Docker build whose context is scoped to core-front/ has no
+ * repo-root config and (by design) no module roots in the image.
+ */
 export function findRepoRoot(startDir) {
   let dir = startDir
   for (;;) {
     if (existsSync(join(dir, 'eerp-config.json'))) return dir
     const parent = dirname(dir)
-    if (parent === dir) {
-      throw new Error(`eerp-config.json not found in any parent of ${startDir}`)
-    }
+    if (parent === dir) return null
     dir = parent
   }
+}
+
+/**
+ * Discover module views starting from a directory inside the repo. Resolves the
+ * shared config by walking up; returns [] (no modules) when no config is reachable.
+ */
+export function discoverFrom(startDir) {
+  const repoRoot = findRepoRoot(startDir)
+  return repoRoot ? discoverModuleViews(repoRoot, readConfig(repoRoot)) : []
 }
 
 export function readConfig(repoRoot) {

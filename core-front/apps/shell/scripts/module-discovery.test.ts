@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  discoverFrom,
   discoverModuleViews,
   findRepoRoot,
   readConfig,
@@ -39,6 +40,17 @@ afterEach(() => {
 describe('findRepoRoot', () => {
   it('walks up to the directory holding eerp-config.json', () => {
     expect(findRepoRoot(join(repo, 'mods', 'demo', 'views'))).toBe(repo)
+  })
+
+  it('returns null when no config is reachable (e.g. a scoped Docker context)', () => {
+    // The filesystem root has no eerp-config.json, so the walk-up exhausts to null.
+    expect(findRepoRoot('/')).toBeNull()
+  })
+})
+
+describe('discoverFrom', () => {
+  it('degrades to an empty list when no config is reachable', () => {
+    expect(discoverFrom('/')).toEqual([])
   })
 })
 
