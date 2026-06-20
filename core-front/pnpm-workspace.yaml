@@ -1,6 +1,10 @@
 packages:
   - 'packages/*'
   - 'apps/*'
+  # Business modules live outside the frontend (under the repo-root eerp-config.json
+  # module_root). Those declaring a package.json are linked so their views can import
+  # the shared @eerp/core-front engine for dev/typecheck.
+  - '../core/modules/*'
 allowBuilds:
   core-js-pure: false
   esbuild: true

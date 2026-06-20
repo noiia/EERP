@@ -81,9 +81,17 @@ describe('ServerApiClient', () => {
 
     await expect(createServerApiClient().list('crm')).resolves.toEqual([{ id: '1' }])
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://api.test/api/v1/crm/',
+      'http://api.test/api/v1/crm',
       expect.objectContaining({ method: 'GET', next: { tags: ['crm'] } }),
     )
+  })
+
+  it('unwraps the paginated { data } envelope from the list endpoint', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(200, { data: [{ id: '1' }, { id: '2' }], total: 2, page: 1, page_size: 50 })),
+    )
+    await expect(createServerApiClient().list('crm')).resolves.toEqual([{ id: '1' }, { id: '2' }])
   })
 
   it('throws an ApiError carrying the envelope code on 404', async () => {
@@ -193,6 +201,6 @@ describe('ServerApiClient', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await createServerApiClient().list('crm')
-    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/v2/crm/', expect.anything())
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/v2/crm', expect.anything())
   })
 })

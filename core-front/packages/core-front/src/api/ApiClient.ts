@@ -140,8 +140,14 @@ export interface ServerApiClient {
 }
 
 class ServerApiClientImpl implements ServerApiClient {
-  list<T>(entity: string): Promise<T[]> {
-    return request<T[]>('GET', `/${entity}/`, [entity])
+  // Go's ORM server mounts list/create at `/{entity}` (no trailing slash) and the
+  // rest at `/{entity}/{id}`. List returns a paginated envelope { data, total, ... };
+  // single-record endpoints return the record object directly.
+  async list<T>(entity: string): Promise<T[]> {
+    const body = await request<unknown>('GET', `/${entity}`, [entity])
+    if (Array.isArray(body)) return body as T[]
+    const data = (body as { data?: unknown } | null)?.data
+    return Array.isArray(data) ? (data as T[]) : []
   }
 
   get<T>(entity: string, id: string): Promise<T> {
@@ -149,7 +155,7 @@ class ServerApiClientImpl implements ServerApiClient {
   }
 
   async create<T>(entity: string, body: unknown): Promise<T> {
-    const created = await request<T>('POST', `/${entity}/`, [entity], body)
+    const created = await request<T>('POST', `/${entity}`, [entity], body)
     revalidateTag(entity, REVALIDATE_PROFILE)
     return created
   }

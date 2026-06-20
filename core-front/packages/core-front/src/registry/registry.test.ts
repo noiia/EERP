@@ -50,3 +50,30 @@ describe('ModuleRegistry', () => {
     expect(registry.buildRegistry().get('/misc')?.permission).toBeUndefined()
   })
 })
+
+describe('ModuleRegistry.match', () => {
+  const registry = new ModuleRegistry().register({
+    name: 'crm',
+    routes: [
+      { path: '/crm/contacts', descriptor: treeDescriptor, permission: 'crm:contacts:read' },
+      { path: '/crm/contacts/:id', descriptor: formDescriptor, permission: 'crm:contacts:read' },
+    ],
+  })
+
+  it('matches an exact path with no params', () => {
+    const match = registry.match('/crm/contacts')
+    expect(match?.route.descriptor.viewType).toBe('tree')
+    expect(match?.params).toEqual({})
+  })
+
+  it('matches a :param pattern and extracts the value', () => {
+    const match = registry.match('/crm/contacts/42')
+    expect(match?.route.descriptor.viewType).toBe('form')
+    expect(match?.params).toEqual({ id: '42' })
+  })
+
+  it('returns null for an unregistered path', () => {
+    expect(registry.match('/crm')).toBeNull()
+    expect(registry.match('/crm/contacts/42/extra')).toBeNull()
+  })
+})

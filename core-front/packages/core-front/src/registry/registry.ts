@@ -27,6 +27,12 @@ export interface RouteConfig {
   permission?: string
 }
 
+/** A resolved route plus the `:param` values extracted from the concrete pathname. */
+export interface RouteMatch {
+  route: RouteConfig
+  params: Record<string, string>
+}
+
 export class ModuleRegistry {
   private readonly modules: FrontModule[] = []
 
@@ -52,6 +58,41 @@ export class ModuleRegistry {
     }
     return map
   }
+
+  /**
+   * Match a concrete pathname to a registered route, extracting `:param` segments.
+   * Exact paths win over patterns; otherwise the first pattern (in registration order)
+   * with the same segment count whose literals match is returned. So '/crm/contacts'
+   * resolves to the list route and '/crm/contacts/42' to the form route ({ id: '42' }).
+   */
+  match(pathname: string): RouteMatch | null {
+    const map = this.buildRegistry()
+    const exact = map.get(pathname)
+    if (exact) return { route: exact, params: {} }
+
+    const segments = splitPath(pathname)
+    for (const [pattern, route] of map) {
+      const patternSegments = splitPath(pattern)
+      if (patternSegments.length !== segments.length) continue
+
+      const params: Record<string, string> = {}
+      let matched = true
+      for (let i = 0; i < patternSegments.length; i++) {
+        const part = patternSegments[i]
+        if (part.startsWith(':')) params[part.slice(1)] = segments[i]
+        else if (part !== segments[i]) {
+          matched = false
+          break
+        }
+      }
+      if (matched) return { route, params }
+    }
+    return null
+  }
+}
+
+function splitPath(path: string): string[] {
+  return path.split('/').filter(Boolean)
 }
 
 /**

@@ -24,8 +24,9 @@ export default async function ModulePage({ params }: ModulePageProps) {
   // descriptor permission re-enters the frontend gate once permissions are exposed).
   await requireAuth(modulePathFromSegments(segments))
 
-  const route = resolveModuleRoute(segments)
-  if (!route) notFound()
+  const match = resolveModuleRoute(segments)
+  if (!match) notFound()
+  const { route, params: routeParams } = match
 
   const { entity } = route.descriptor
   // Bound Server Actions are serializable references the client form store can call.
@@ -35,5 +36,11 @@ export default async function ModulePage({ params }: ModulePageProps) {
     remove: removeRecord.bind(null, entity),
   } as unknown as EntityActions<AnyRecord>
 
-  return <EntityViewServer descriptor={route.descriptor as ViewDescriptor<AnyRecord>} actions={actions} />
+  return (
+    <EntityViewServer
+      descriptor={route.descriptor as ViewDescriptor<AnyRecord>}
+      actions={actions}
+      recordId={routeParams.id}
+    />
+  )
 }
