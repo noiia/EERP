@@ -1,2 +1,4 @@
-// Permission primitives — hasPermission, <Can>, usePermission (Phase 1d). Empty for Phase 0.
-export {}
+// Client-safe auth surface: the pure permission matcher and the UI gate. The
+// server guard (requirePermission) is server-only and lives behind `server.ts`.
+export * from './permissions'
+export * from './Can'

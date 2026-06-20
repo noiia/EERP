@@ -12,3 +12,6 @@ export * from './src/api/session-cookies'
 
 // 1c — RSC data loader + server dispatcher.
 export * from './src/views/loader'
+
+// 1d — server-side permission guard.
+export * from './src/auth/guards'
