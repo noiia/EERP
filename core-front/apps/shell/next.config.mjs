@@ -1,23 +1,38 @@
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { discoverFrom, findRepoRoot } from './scripts/module-discovery.mjs'
+import { backendApiBase, backendApiVersion, findRepoRoot, readConfig } from './scripts/module-discovery.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// The generated manifest imports external module views by RELATIVE path, so no alias
-// config is needed. We still resolve the repo root + view sources here to (a) root the
-// bundler/trace at the monorepo so external module files are inside the project, and
-// (b) keep those sources in the standalone output trace. When the shared config isn't
-// reachable (e.g. a Docker build scoped to core-front/), discovery yields nothing and
-// the bundler/trace root falls back to the workspace.
-const projectRoot = findRepoRoot(__dirname) ?? path.join(__dirname, '../../')
-const moduleViewSources = discoverFrom(__dirname).flatMap((m) => m.views.map((v) => v.sourceFile))
+// Root the bundler + standalone trace at the monorepo so the generated manifest's
+// RELATIVE imports of external module views (under module_root, outside the workspace)
+// resolve and transpile. Falls back to the workspace when the config isn't reachable
+// (e.g. a build with no repo-root eerp-config). NOTE: because this is the monorepo
+// root, the standalone entry is `core-front/apps/shell/server.js` (the Dockerfile runs
+// it from there).
+const workspaceRoot = path.join(__dirname, '../../')
+const repoRoot = findRepoRoot(__dirname)
+const config = repoRoot ? readConfig(repoRoot) : null
+const projectRoot = repoRoot ?? workspaceRoot
+
+// API_BASE / API_VERSION come from the shared eerp-config.json (backend_host[:port] +
+// backend_version), baked at build time. An explicit env var still wins (e.g. the
+// Docker build arg) so deployments can point at the backend service without editing
+// the config. `||` (not `??`) so an empty value also falls back to the config.
+const apiBase = process.env.API_BASE || (config ? backendApiBase(config) : undefined)
+const apiVersion = process.env.API_VERSION || (config ? backendApiVersion(config) : undefined)
+const serverEnv = {
+  ...(apiBase ? { API_BASE: apiBase } : {}),
+  ...(apiVersion ? { API_VERSION: apiVersion } : {}),
+}
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Standalone output so the service ships as a self-contained `node server.js`.
   output: 'standalone',
-  // Trace from the repo root so external module files (under module_root) are included.
+  // Backend connection (BFF) resolved from the shared config; baked into the build.
+  env: serverEnv,
+  // Bundler + standalone trace rooted at the monorepo (see projectRoot above).
   outputFileTracingRoot: projectRoot,
   // The engine is a workspace package; let Next transpile it directly.
   transpilePackages: ['@eerp/core-front'],
@@ -31,8 +46,6 @@ const nextConfig = {
   experimental: {
     externalDir: true,
   },
-  // Keep external module sources in the standalone trace when any are wired.
-  ...(moduleViewSources.length ? { outputFileTracingIncludes: { '/**': moduleViewSources } } : {}),
 }
 
 export default nextConfig

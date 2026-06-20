@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  backendApiBase,
+  backendApiVersion,
   discoverFrom,
   discoverModuleViews,
   findRepoRoot,
@@ -51,6 +53,29 @@ describe('findRepoRoot', () => {
 describe('discoverFrom', () => {
   it('degrades to an empty list when no config is reachable', () => {
     expect(discoverFrom('/')).toEqual([])
+  })
+})
+
+describe('backendApiBase', () => {
+  it('builds host:port and prepends http:// when no scheme', () => {
+    expect(backendApiBase({ backend_host: '127.0.0.1', backend_port: 8080 })).toBe('http://127.0.0.1:8080')
+  })
+
+  it('keeps an explicit scheme and omits the port when empty', () => {
+    expect(backendApiBase({ backend_host: 'https://api.example.com' })).toBe('https://api.example.com')
+  })
+
+  it('falls back to public_address, and returns undefined with no host', () => {
+    expect(backendApiBase({ public_address: 'core-back', backend_port: 8080 })).toBe('http://core-back:8080')
+    expect(backendApiBase({})).toBeUndefined()
+  })
+})
+
+describe('backendApiVersion', () => {
+  it('strips a leading v and returns undefined when unset', () => {
+    expect(backendApiVersion({ backend_version: 'v1' })).toBe('1')
+    expect(backendApiVersion({ backend_version: '2' })).toBe('2')
+    expect(backendApiVersion({})).toBeUndefined()
   })
 })
 

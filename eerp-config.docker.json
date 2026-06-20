@@ -1,6 +1,10 @@
 {
-    "module_root": ["/app/modules"],
+    "module_root": [
+        "/app/modules"
+    ],
     "master_key": "ueioiehsiuehfs",
+    "access_ttl_seconds": 3600,
+    "refresh_ttl_seconds": 604800,
     "container_pool": 5,
     "thread_pool": 20,
     "db_name": "poc",
@@ -15,5 +19,8 @@
     "health_check_period": 60,
     "connect_timeout": 10,
     "public_address": "0.0.0.0",
-    "backend_port": 8080
+    "backend_port": 8080,
+    "backend_host": "backend",
+    "backend_version": "v1",
+    "seed_dev_admin": true
 }

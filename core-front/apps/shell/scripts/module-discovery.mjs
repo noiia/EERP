@@ -36,6 +36,28 @@ export function readConfig(repoRoot) {
   return JSON.parse(readFileSync(join(repoRoot, 'eerp-config.json'), 'utf8'))
 }
 
+/**
+ * Build the backend origin the frontend BFF calls, from the shared config:
+ * {scheme}{backend_host}[:{backend_port}]. Falls back to public_address, defaults the
+ * scheme to http://, and omits the port when backend_port is empty. Returns undefined
+ * when no host is configured. This is the API_BASE the ApiClient/BFF use.
+ */
+export function backendApiBase(config) {
+  let host = config.backend_host || config.public_address || ''
+  if (!host) return undefined
+  if (!/^https?:\/\//.test(host)) host = `http://${host}`
+  return config.backend_port ? `${host}:${config.backend_port}` : host
+}
+
+/**
+ * The API version number from backend_version, normalized to a bare number (the
+ * ApiClient builds `/api/v{version}`, so "v1" -> "1"). Returns undefined when unset.
+ */
+export function backendApiVersion(config) {
+  if (!config.backend_version) return undefined
+  return String(config.backend_version).replace(/^v/i, '')
+}
+
 function walkForModuleJson(dir, found) {
   let entries
   try {
