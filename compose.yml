@@ -13,12 +13,22 @@ services:
       timeout: 5s
       retries: 10
 
-  core:
+  core-back:
     build:
       context: .
       dockerfile: core/Dockerfile
     ports:
       - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  core-front:
+    build:
+      context: ./core-front
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
     depends_on:
       db:
         condition: service_healthy

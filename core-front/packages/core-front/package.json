@@ -1,7 +1,7 @@
 {
   "name": "@eerp/core-front",
   "version": "0.0.0",
-  "description": "EERP frontend engine — controllers, descriptors, renderers, ApiClient, module registry (the frontend ABI).",
+  "description": "EERP frontend engine — descriptors, Zustand stores, renderers, server ApiClient, module registry (the frontend ABI).",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -10,17 +10,26 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
     }
   },
   "files": [
     "dist"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/server.js"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "server-only": "^0.0.1"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -30,7 +39,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.3.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "typescript": "^6",
+    "vitest": "^4"
   }
 }
