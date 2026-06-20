@@ -1,2 +1,3 @@
-// FrontModule contract + ModuleRegistry (Phase 1e). Empty for Phase 0.
-export {}
+// FrontModule contract + ModuleRegistry. Isomorphic (pure data): the build-time
+// discovery registers modules here and the catch-all route reads buildRegistry().
+export * from './registry'

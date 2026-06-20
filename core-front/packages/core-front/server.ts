@@ -15,3 +15,8 @@ export * from './src/views/loader'
 
 // 1d — server-side permission guard.
 export * from './src/auth/guards'
+
+// 1e — module registry (isomorphic; also on the client barrel). Re-exported here so
+// the catch-all route can resolve routes server-side without pulling the client
+// stores (and their localStorage access) in through the client barrel.
+export * from './src/registry'
