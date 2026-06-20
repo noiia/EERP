@@ -9,3 +9,6 @@ import 'server-only'
 // 1a — server ApiClient (BFF) + session cookie contract.
 export * from './src/api/ApiClient'
 export * from './src/api/session-cookies'
+
+// 1c — RSC data loader + server dispatcher.
+export * from './src/views/loader'
