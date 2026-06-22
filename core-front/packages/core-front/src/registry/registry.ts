@@ -33,6 +33,19 @@ export interface RouteMatch {
   params: Record<string, string>
 }
 
+/** A directly navigable view in the application menu (a concrete path, no `:param`). */
+export interface MenuRoute {
+  path: string
+  descriptor: ViewDescriptor
+  permission?: string
+}
+
+/** An installed application and its navigable views, for the landing menu. */
+export interface MenuModule {
+  name: string
+  routes: MenuRoute[]
+}
+
 export class ModuleRegistry {
   private readonly modules: FrontModule[] = []
 
@@ -57,6 +70,22 @@ export class ModuleRegistry {
       }
     }
     return map
+  }
+
+  /**
+   * The installed-application menu: every registered module paired with its directly
+   * navigable routes — those with no `:param` segment. A form route like
+   * '/crm/contacts/:id' needs an id, so it is not a menu entry; the list/tree view that
+   * links to it is. Preserves registration order; modules left with no navigable route
+   * are omitted. The landing page renders this (permission-filtered) as the menu.
+   */
+  menu(): MenuModule[] {
+    const result: MenuModule[] = []
+    for (const module of this.modules) {
+      const routes = module.routes.filter((route) => !hasParam(route.path))
+      if (routes.length > 0) result.push({ name: module.name, routes })
+    }
+    return result
   }
 
   /**
@@ -93,6 +122,10 @@ export class ModuleRegistry {
 
 function splitPath(path: string): string[] {
   return path.split('/').filter(Boolean)
+}
+
+function hasParam(path: string): boolean {
+  return splitPath(path).some((segment) => segment.startsWith(':'))
 }
 
 /**

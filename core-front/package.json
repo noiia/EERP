@@ -19,7 +19,7 @@
     "globals": "^17",
     "prettier": "^3",
     "typescript": "^6",
-    "typescript-eslint": "^8",
+    "typescript-eslint": "^8.61.1",
     "vitest": "^4"
   }
 }

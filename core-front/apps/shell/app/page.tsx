@@ -1,15 +1,21 @@
-import Container from '@mui/material/Container'
-import Typography from '@mui/material/Typography'
+import { moduleRegistry } from '@eerp/core-front/server'
+// Side-effect import: registers every discovered module's FrontModule into the shared
+// registry before we read the menu (same manifest the catch-all route imports).
+import '@/generated/generated-modules'
+import { requireAuth } from '@/lib/session'
+import Menu from './Menu'
 
-// Placeholder landing route for Phase 0. Module routes arrive via the
-// catch-all app/[...module]/page.tsx in Phase 2.
-export default function HomePage() {
-  return (
-    <Container sx={{ py: 6 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        EERP
-      </Typography>
-      <Typography color="text.secondary">Frontend service — Phase 0 (Next.js)</Typography>
-    </Container>
-  )
+// Landing route. Anonymous users are redirected to /login (requireAuth). A signed-in
+// user who hits the app root gets the application menu: every installed module and its
+// navigable views. This is the fallback any logged-in user lands on after login or when
+// opening the service by its URL.
+//
+// We gate on AUTHENTICATION only here — the same stance the catch-all module route takes
+// — and let Go authorize each data call. The frontend can't yet permission-filter the
+// menu: the access token carries no `permissions` claim (see lib/jwt.ts), so the session
+// mirror's permission set is empty and filtering would hide everything. Once Go exposes
+// permissions in the token, re-introduce a per-route gate via `hasPermission`.
+export default async function HomePage() {
+  const identity = await requireAuth()
+  return <Menu menu={moduleRegistry.menu()} userId={identity.userId} />
 }

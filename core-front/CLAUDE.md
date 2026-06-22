@@ -93,6 +93,7 @@ core-front/                          # frontend SERVICE (Next.js) — own proces
     ├── next.config.js               # discovery codegen + resolve/transpile external module dirs
     ├── app/
     │   ├── layout.tsx               # RootLayout: MUI AppRouterCacheProvider + ThemeProvider + providers
+    │   ├── page.tsx + Menu.tsx      # landing menu: requireAuth (anon → /login), else installed apps + views (permission-filtered)
     │   ├── (auth)/login/page.tsx    # login page (BFF)
     │   ├── api/auth/                # BFF route handlers: login / logout / refresh (proxy to Go, set cookie)
     │   └── [...module]/page.tsx     # catch-all: matches registry → server-fetch → client renderer

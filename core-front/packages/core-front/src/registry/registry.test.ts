@@ -51,6 +51,37 @@ describe('ModuleRegistry', () => {
   })
 })
 
+describe('ModuleRegistry.menu', () => {
+  it('lists navigable routes per module, dropping :param routes', () => {
+    const registry = new ModuleRegistry().register(crm)
+    const menu = registry.menu()
+
+    expect(menu).toEqual([
+      {
+        name: 'crm',
+        routes: [{ path: '/crm/contacts', descriptor: treeDescriptor, permission: 'crm:contacts:read' }],
+      },
+    ])
+  })
+
+  it('omits modules whose every route needs a :param', () => {
+    const registry = new ModuleRegistry().register({
+      name: 'detail-only',
+      routes: [{ path: '/thing/:id', descriptor: formDescriptor }],
+    })
+    expect(registry.menu()).toEqual([])
+  })
+
+  it('preserves module registration order', () => {
+    const inventory: FrontModule = {
+      name: 'inventory',
+      routes: [{ path: '/inventory/items', descriptor: treeDescriptor }],
+    }
+    const registry = new ModuleRegistry().register(crm).register(inventory)
+    expect(registry.menu().map((m) => m.name)).toEqual(['crm', 'inventory'])
+  })
+})
+
 describe('ModuleRegistry.match', () => {
   const registry = new ModuleRegistry().register({
     name: 'crm',
