@@ -6,6 +6,8 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import CircularProgress from '@mui/material/CircularProgress'
+import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Grid from '@mui/material/Grid'
 import MenuItem from '@mui/material/MenuItem'
@@ -18,6 +20,7 @@ import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import type { SerializedError } from '../api/errors'
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
+import { layout, tabularNums } from './tokens'
 import {
   createDashboardStore,
   createFormStore,
@@ -115,7 +118,10 @@ function FieldInput({
       label={field.label}
       type={type}
       required={field.required}
+      fullWidth
       slotProps={field.type === 'date' ? { inputLabel: { shrink: true } } : undefined}
+      // Numeric figures align in columns (tabular figures token).
+      sx={field.type === 'number' ? { '& input': { fontVariantNumeric: tabularNums } } : undefined}
       value={(value as string | number) ?? ''}
       onChange={(e) =>
         onChange(field.type === 'number' ? Number(e.target.value) : e.target.value)
@@ -130,29 +136,78 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
   const dirty = useFormDirty(store)
   const error = useFormError(store)
   const { setField } = store.getState()
+  // Transient view-only state: the in-flight save, for the button's busy affordance. The
+  // business logic stays in the store's commit(); this only mirrors its pendency.
+  // NOTE: the durable home for this is a `submitting` flag on the form store — a store-API
+  // addition deliberately deferred so this pass stays renderer/theme-only.
+  const [submitting, setSubmitting] = useState(false)
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      await store.getState().commit()
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <Box
       component="form"
-      onSubmit={(e) => {
-        e.preventDefault()
-        void store.getState().commit()
-      }}
+      onSubmit={onSubmit}
+      aria-busy={submitting}
+      sx={{ maxWidth: layout.formMaxWidth }}
     >
-      <Stack spacing={2} sx={{ maxWidth: 480 }}>
-        {error ? <ErrorAlert error={{ code: error.code, message: error.message, requestId: error.requestId }} /> : null}
-        {descriptor.fields.map((field) => (
-          <FieldInput
-            key={field.name}
-            field={field}
-            value={(draft as Record<string, unknown>)[field.name]}
-            onChange={(value) => setField(field.name as keyof T, value as T[keyof T])}
-          />
-        ))}
-        <Button type="submit" variant="contained" disabled={!dirty} sx={{ alignSelf: 'flex-start' }}>
-          Save
-        </Button>
-      </Stack>
+      <Card>
+        <CardContent sx={{ p: 3 }}>
+          <Stack spacing={2.5}>
+            {error ? (
+              <ErrorAlert
+                error={{ code: error.code, message: error.message, requestId: error.requestId }}
+              />
+            ) : null}
+            {descriptor.fields.map((field) => (
+              <FieldInput
+                key={field.name}
+                field={field}
+                value={(draft as Record<string, unknown>)[field.name]}
+                onChange={(value) => setField(field.name as keyof T, value as T[keyof T])}
+              />
+            ))}
+          </Stack>
+        </CardContent>
+        <Divider />
+        {/* Footer action bar: primary Save + a Reset that discards edits (store.reset). */}
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 1,
+            px: 3,
+            py: 2,
+          }}
+        >
+          <Button
+            type="button"
+            color="inherit"
+            disabled={!dirty || submitting}
+            onClick={() => store.getState().reset()}
+          >
+            Reset
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={!dirty || submitting}
+            startIcon={
+              submitting ? <CircularProgress size={16} color="inherit" thickness={5} /> : undefined
+            }
+          >
+            {submitting ? 'Saving…' : 'Save'}
+          </Button>
+        </Box>
+      </Card>
     </Box>
   )
 }

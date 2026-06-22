@@ -41,6 +41,11 @@ function LoginForm() {
 
     useSessionStore.getState().setIdentity((data?.identity as never) ?? null)
     router.push(params.get('next') || '/')
+    // The login cookie was just set, but the (server) root layout — and the app top bar
+    // it renders — was already cached without a session. Re-fetch the server tree so it
+    // re-resolves identity from the new cookie; otherwise the chrome only appears after a
+    // manual refresh.
+    router.refresh()
   }
 
   return (

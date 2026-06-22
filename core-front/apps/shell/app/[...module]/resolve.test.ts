@@ -14,7 +14,7 @@ vi.mock('@eerp/core-front/server', () => ({
   },
 }))
 
-import { modulePathFromSegments, resolveModuleRoute } from './resolve'
+import { modulePageTitle, modulePathFromSegments, resolveModuleRoute } from './resolve'
 
 describe('modulePathFromSegments', () => {
   it('joins catch-all segments into a leading-slash path', () => {
@@ -29,5 +29,19 @@ describe('resolveModuleRoute', () => {
 
   it('returns null for an unregistered path', () => {
     expect(resolveModuleRoute(['nope'])).toBeNull()
+  })
+})
+
+describe('modulePageTitle', () => {
+  it('titleizes the last path segment', () => {
+    expect(modulePageTitle(['crm', 'contacts'], {})).toBe('Contacts')
+  })
+
+  it('drops :param (id) segments so a form route titles by its entity view', () => {
+    expect(modulePageTitle(['crm', 'contacts', '42'], { id: '42' })).toBe('Contacts')
+  })
+
+  it('handles slugs with separators', () => {
+    expect(modulePageTitle(['crm', 'sales_orders'], {})).toBe('Sales Orders')
   })
 })

@@ -22,20 +22,20 @@ const menu: MenuModule[] = [
 ]
 
 describe('Menu', () => {
-  it('lists installed applications and their views as links', () => {
-    render(<Menu menu={menu} userId="user-1" />)
+  it('renders one tile per installed application, linking to its first view', () => {
+    render(<Menu menu={menu} />)
 
-    expect(screen.getByRole('heading', { name: 'Applications' })).toBeInTheDocument()
-    expect(screen.getByText('Signed in as user-1')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Crm' })).toBeInTheDocument()
+    // The application is "crm" — one tile labeled by the app, linking to its first route.
+    const app = screen.getByRole('link', { name: 'Crm' })
+    expect(app).toHaveAttribute('href', '/crm/contacts')
 
-    const link = screen.getByRole('link', { name: /contacts/i })
-    expect(link).toHaveAttribute('href', '/crm/contacts')
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings')
   })
 
   it('shows an empty-state message when no application is available', () => {
-    render(<Menu menu={[]} userId="user-1" />)
+    render(<Menu menu={[]} />)
     expect(screen.getByText(/no applications are available/i)).toBeInTheDocument()
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    // The Settings tile is always present; no application tiles are.
+    expect(screen.queryByRole('link', { name: 'Crm' })).not.toBeInTheDocument()
   })
 })

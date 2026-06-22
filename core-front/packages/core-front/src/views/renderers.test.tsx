@@ -48,6 +48,22 @@ describe('EntityView', () => {
     expect(save).toBeEnabled()
   })
 
+  it('offers Reset once dirty, and resetting re-disables Save', () => {
+    render(<EntityView descriptor={formDescriptor} initialData={[]} actions={noopActions} />)
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    const reset = screen.getByRole('button', { name: 'Reset' })
+    expect(reset).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ada' } })
+    expect(reset).toBeEnabled()
+    expect(save).toBeEnabled()
+
+    fireEvent.click(reset)
+    expect(save).toBeDisabled()
+    expect(reset).toBeDisabled()
+  })
+
   it('renders a flat grid for a "tree" view with no hierarchy', () => {
     const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
     render(

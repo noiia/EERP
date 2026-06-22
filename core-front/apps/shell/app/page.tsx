@@ -2,7 +2,6 @@ import { moduleRegistry } from '@eerp/core-front/server'
 // Side-effect import: registers every discovered module's FrontModule into the shared
 // registry before we read the menu (same manifest the catch-all route imports).
 import '@/generated/generated-modules'
-import { requireAuth } from '@/lib/session'
 import Menu from './Menu'
 
 // Landing route. Anonymous users are redirected to /login (requireAuth). A signed-in
@@ -16,6 +15,5 @@ import Menu from './Menu'
 // mirror's permission set is empty and filtering would hide everything. Once Go exposes
 // permissions in the token, re-introduce a per-route gate via `hasPermission`.
 export default async function HomePage() {
-  const identity = await requireAuth()
-  return <Menu menu={moduleRegistry.menu()} userId={identity.userId} />
+  return <Menu menu={moduleRegistry.menu()} />
 }

@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react'
-import CssBaseline from '@mui/material/CssBaseline'
-import { ThemeProvider } from '@mui/material/styles'
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter'
-import { theme } from '../src/theme'
+import { AppThemeProvider } from '../src/components/AppThemeProvider'
+import { AppTopBar } from '../src/components/AppTopBar'
 import { SessionHydrator } from '../src/components/SessionHydrator'
 import { getIdentity } from '../src/lib/session'
 
@@ -18,11 +17,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang="en">
       <body>
         <AppRouterCacheProvider>
-          <ThemeProvider theme={theme}>
-            <CssBaseline />
+          <AppThemeProvider>
             <SessionHydrator identity={identity} />
+            <AppTopBar identity={identity} />
             {children}
-          </ThemeProvider>
+          </AppThemeProvider>
         </AppRouterCacheProvider>
       </body>
     </html>
