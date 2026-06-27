@@ -8,6 +8,7 @@
     "build": "pnpm -r build",
     "start": "pnpm --filter @eerp/shell start",
     "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test:coverage",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "format": "prettier --write ."
@@ -15,6 +16,7 @@
   "devDependencies": {
     "@eslint/js": "^10",
     "@types/node": "^26",
+    "@vitest/coverage-v8": "^4",
     "eslint": "^10",
     "globals": "^17",
     "prettier": "^3",

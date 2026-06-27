@@ -1,21 +1,60 @@
-name: Go test check
+name: Test check
 
+# Runs on every PR for fast feedback, and is reusable (workflow_call) so the
+# Test & Build pipeline (test-build.yml) can gate the Docker builds on the same
+# checks without duplicating them.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  workflow_call:
 
 jobs:
-    go-test-coverage-check:
+    core-test-and-coverage:
         runs-on: ubuntu-latest
         steps:
           - uses: actions/checkout@v6
           - uses: actions/setup-go@v6
             with:
               go-version: '1.26'
-          - name: generate test coverage
+          - name: test code and generate coverage report
             run: docker compose up -d db && cd ./core/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
-          
-          - name: check test coverage
+
+          - name: analyse coverage
             uses: vladopajic/go-test-coverage@v2
             with:
                 config: .github/.testcoverage.yml
+
+    core-front-test-and-coverage:
+        runs-on: ubuntu-latest
+        defaults:
+          run:
+            working-directory: ./core-front
+        steps:
+          - uses: actions/checkout@v6
+          - uses: pnpm/action-setup@v4
+            with:
+              version: 11.8.0
+          - uses: actions/setup-node@v6
+            with:
+              node-version: '26'
+              cache: pnpm
+              cache-dependency-path: core-front/pnpm-lock.yaml
+          - name: install dependencies
+            run: pnpm install --frozen-lockfile
+          - name: lint
+            run: pnpm lint
+          - name: typecheck
+            run: pnpm typecheck
+          - name: test code and generate coverage report
+            # vitest (v8 provider) runs the analysis itself — the frontend analog of
+            # the backend's go-test-coverage step. lcov is emitted for tooling.
+            run: pnpm test:coverage
+          - name: upload coverage report
+            if: always()
+            uses: actions/upload-artifact@v4
+            with:
+              name: core-front-coverage
+              path: |
+                core-front/apps/shell/coverage/lcov.info
+                core-front/packages/core-front/coverage/lcov.info
+              if-no-files-found: ignore

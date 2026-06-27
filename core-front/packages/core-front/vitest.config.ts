@@ -23,5 +23,15 @@ export default defineConfig({
       // Node's ESM loader rejects; inlining routes it through Vite's resolver instead.
       deps: { inline: [/@mui\//, 'react-transition-group'] },
     },
+    // Coverage mirrors the backend's go-test-coverage step: reported on every CI run
+    // (text for logs, lcov for tooling, json-summary for badges/PR diffs). Thresholds
+    // stay off — like the commented thresholds in .github/.testcoverage.yml — so the
+    // gate reports without blocking until the team sets targets.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'json-summary'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', '**/*.d.ts'],
+    },
   },
 })

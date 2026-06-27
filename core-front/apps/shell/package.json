@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "pretypecheck": "node scripts/generate-modules.mjs",
     "typecheck": "tsc --noEmit"
   },
