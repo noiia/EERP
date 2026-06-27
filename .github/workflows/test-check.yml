@@ -16,6 +16,8 @@ jobs:
           - uses: actions/setup-go@v6
             with:
               go-version: '1.26'
+              # go.mod lives in core/, not the repo root — point the build cache at it.
+              cache-dependency-path: core/go.sum
           - name: test code and generate coverage report
             run: docker compose up -d db && cd ./core/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
@@ -41,6 +43,11 @@ jobs:
               cache-dependency-path: core-front/pnpm-lock.yaml
           - name: install dependencies
             run: pnpm install --frozen-lockfile
+          - name: build engine package
+            # The shell app and the external modules import @eerp/core-front via its
+            # built dist/ (types + js). A fresh checkout has no dist/, so typecheck and
+            # tests can't resolve it — build the engine first.
+            run: pnpm --filter @eerp/core-front build
           - name: lint
             run: pnpm lint
           - name: typecheck
