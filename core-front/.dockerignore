@@ -1,0 +1,8 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+apps/shell/src/generated/*
+!apps/shell/src/generated/.gitkeep
+.git

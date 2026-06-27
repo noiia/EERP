@@ -26,7 +26,7 @@ build:
 	done
 
 run-back:
-	docker compose up -d 
+	docker compose up -d core-back
 # 	cd $(root)/core/cmd/app && go run main.go -config="$(CONFIG)" --debug=0
 
 
@@ -35,7 +35,7 @@ run-back-tests:
 	docker compose up -d 
 	cd $(root)/core && CONFIG="$(CONFIG)" go test $(BACKTESTPATH) $(ARGS)
 
-run-front:
+run-front-dev:
 	cd $(root)/core-front && npm run dev -- --host 0.0.0.0
 
 run:

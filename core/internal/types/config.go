@@ -2,6 +2,8 @@ package types
 
 import (
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,6 +31,8 @@ func DefaultConfig() *Config {
 		MinConns:          2,
 		PublicAddress:     "0.0.0.0",
 		BackendPort:       8080,
+		BackendHost:       "127.0.0.1",
+		BackendVersion:    "v1",
 		MaxConnIdleTime:   5 * time.Minute,
 		MaxConnLifeTime:   30 * time.Minute,
 		HealthCheckPeriod: time.Minute,
@@ -40,11 +44,11 @@ func DefaultConfig() *Config {
 
 // Config fields
 type Config struct {
-	ModuleRoot          []string      `json:"module_root" needed:"true"`
-	MasterPassword      string        `json:"master_key" needed:"false"`
-	AccessTTLSeconds    int           `json:"access_ttl_seconds" needed:"false"`
-	RefreshTTLSeconds   int           `json:"refresh_ttl_seconds" needed:"false"`
-	ContainerPool       int           `json:"container_pool" needed:"false"`
+	ModuleRoot        []string      `json:"module_root" needed:"true"`
+	MasterPassword    string        `json:"master_key" needed:"false"`
+	AccessTTLSeconds  int           `json:"access_ttl_seconds" needed:"false"`
+	RefreshTTLSeconds int           `json:"refresh_ttl_seconds" needed:"false"`
+	ContainerPool     int           `json:"container_pool" needed:"false"`
 	ThreadPool        int           `json:"thread_pool" needed:"false"`
 	DbName            string        `json:"db_name" needed:"false"`
 	DbPort            int           `json:"db_port" needed:"true"`
@@ -60,5 +64,36 @@ type Config struct {
 	ApiConfigPath     string        `json:"api_config_path" needed:"false"`
 	PublicAddress     string        `json:"public_address" needed:"true"`
 	BackendPort       int           `json:"backend_port" needed:"true"`
-	DSN               string
+	// BackendHost / BackendVersion describe how clients (e.g. the frontend BFF) reach
+	// the API — distinct from PublicAddress, which is the bind address. The frontend
+	// derives its API_BASE from BackendHost[:BackendPort] and API version from
+	// BackendVersion.
+	BackendHost    string `json:"backend_host" needed:"false"`
+	BackendVersion string `json:"backend_version" needed:"false"`
+	// SeedDevAdmin, when true, seeds a development admin user on startup so login works
+	// out of the box. DEV ONLY — never enable in production.
+	SeedDevAdmin bool `json:"seed_dev_admin" needed:"false"`
+	DSN          string
+}
+
+// BackendBaseURL builds the public API base URL clients use to reach the backend:
+// {scheme}{host}[:{port}]/api/{version}. The host falls back to PublicAddress and the
+// scheme defaults to http:// when absent. When BackendPort is 0 the port is omitted
+// (host + version only); BackendVersion defaults to "v1".
+func (c Config) BackendBaseURL() string {
+	host := c.BackendHost
+	if host == "" {
+		host = c.PublicAddress
+	}
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		host = "http://" + host
+	}
+	if c.BackendPort != 0 {
+		host = host + ":" + strconv.Itoa(c.BackendPort)
+	}
+	version := c.BackendVersion
+	if version == "" {
+		version = "v1"
+	}
+	return host + "/api/" + version
 }

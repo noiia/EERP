@@ -1,6 +1,6 @@
 {
     "module_root": [
-        "/home/noiq/EERP/core/modules"
+        "core/modules"
     ],
     "master_key": "ueioiehsiuehfs",
     "access_ttl_seconds": 3600,
@@ -20,5 +20,8 @@
     "connect_timeout": 10,
     "public_address": "localhost",
     "backend_port": 8080,
-    "api_config_path": "/home/noiq/EERP/api.yaml"
+    "backend_host": "127.0.0.1",
+    "backend_version": "v1",
+    "seed_dev_admin": true,
+    "api_config_path": "api.yaml"
 }

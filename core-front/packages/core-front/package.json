@@ -1,0 +1,64 @@
+{
+  "name": "@eerp/core-front",
+  "version": "0.0.0",
+  "description": "EERP frontend engine — descriptors, Zustand stores, renderers, server ApiClient, module registry (the frontend ABI).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "./dist/server.js"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "server-only": "^0.0.1",
+    "zustand": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^9.1.1",
+    "@mui/x-data-grid": "^9.6.0",
+    "@mui/x-tree-view": "^9.6.0",
+    "next": "^16",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^9.1.1",
+    "@mui/x-data-grid": "^9.6.0",
+    "@mui/x-tree-view": "^9.6.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "jsdom": "^29.1.1",
+    "next": "^16",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^6",
+    "vite": "^8",
+    "vitest": "^4"
+  }
+}

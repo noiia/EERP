@@ -111,6 +111,8 @@ Struct tags use `db:"column_name"`, with optional `,pk` and `,softdelete` modifi
 go run main.go -config="../../eerp-config.json"
 ```
 
+**Path resolution:** relative path fields (`module_root`, `api_config_path`) are anchored to the **config file's directory**, not the process CWD (`main.go` resolves them right after decoding; absolute paths pass through untouched). This keeps a single committed config portable — the app (run from `core/cmd/app`), tests (run from `core`), and the frontend build (run from `core-front`) all resolve `core/modules` to the same place. Prefer repo-relative paths in the committed config so it is relocatable across machines.
+
 The Docker Compose service (`compose.yml`) runs PostgreSQL 18 on port 5432 with user/password `postgres` and database `poc`.
 
 ## Conventions

@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:18
+    container_name: db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -13,12 +14,33 @@ services:
       timeout: 5s
       retries: 10
 
-  core:
+  core-back:
+    container_name: backend
     build:
       context: .
       dockerfile: core/Dockerfile
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       db:
         condition: service_healthy
+
+  core-front:
+    container_name: frontend
+    build:
+      # Repo-root context so the build can read eerp-config.json + core/modules and
+      # discover the module views (mirrored under /app in the image).
+      context: .
+      dockerfile: core-front/Dockerfile
+      args:
+        # BFF -> backend, baked at build time: the core-back service on its backend_port
+        # (8080). Inside the network the backend is the service name, NOT 127.0.0.1
+        # (which would be the frontend container itself).
+        API_BASE: "http://backend:8080"
+    ports:
+      - "3001:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      core-back:
+        condition: service_started

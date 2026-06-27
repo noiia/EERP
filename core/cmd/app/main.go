@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"core/internal/auth"
@@ -43,6 +44,22 @@ func main() {
 	configContent, err := common.DecodeJSON[*types.Config](*configFilePtr)
 	if err != nil {
 		common.Logger.Fatal("❌ Error reading config file", zap.Error(err))
+	}
+
+	// Relative paths in the config are anchored to the config file's directory, not
+	// the process CWD. This keeps a single committed config portable across machines
+	// and across the different working directories the app, tests, and the frontend
+	// build run from. Absolute paths are left untouched.
+	configDir := filepath.Dir(*configFilePtr)
+	resolveConfigPath := func(p string) string {
+		if p == "" || filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(configDir, p)
+	}
+	configContent.ApiConfigPath = resolveConfigPath(configContent.ApiConfigPath)
+	for i, root := range configContent.ModuleRoot {
+		configContent.ModuleRoot[i] = resolveConfigPath(root)
 	}
 
 	// Refuse to start with an insecure signing key.
@@ -98,6 +115,15 @@ func main() {
 		common.Logger.Error("❌ Error loading Go module", zap.Error(err))
 	}
 
+	// DEV ONLY: seed an admin user so login works out of the box (gated by config).
+	if configContent.SeedDevAdmin {
+		if err := auth.SeedDevAdmin(context.Background(), app.DB); err != nil {
+			common.Logger.Error("❌ seed dev admin failed", zap.Error(err))
+		} else {
+			common.Logger.Warn("⚠️  seeded DEV admin user", zap.String("email", auth.DevAdminEmail))
+		}
+	}
+
 	// ── Auth layer ────────────────────────────────────────────────────────────
 	tokenSvc := auth.NewTokenService(configContent)
 	refreshStore := auth.NewRefreshStore(app.DB)
@@ -109,10 +135,13 @@ func main() {
 	permMw := authmw.PermissionMiddleware(permRepo)
 
 	// ── Build server ──────────────────────────────────────────────────────────
+	// Bind on PublicAddress (e.g. 0.0.0.0); clients reach the API at BackendBaseURL
+	// (BackendHost[:BackendPort]/api/BackendVersion) — that's what the frontend uses.
 	srvCfg := ormserver.Config{
 		Addr: fmt.Sprintf("%s:%d", configContent.PublicAddress, configContent.BackendPort),
 	}
 	srv := ormserver.New(app, srvCfg)
+	common.Logger.Info("backend API base", zap.String("url", configContent.BackendBaseURL()))
 
 	// Public auth routes — no JWT/permission middleware.
 	authGroup := srv.Echo().Group("/api/v1/auth")
