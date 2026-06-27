@@ -4,8 +4,6 @@ name: Test check
 # Test & Build pipeline (test-build.yml) can gate the Docker builds on the same
 # checks without duplicating them.
 on:
-  pull_request:
-    types: [opened, edited, synchronize, reopened]
   workflow_call:
 
 jobs:
@@ -38,7 +36,11 @@ jobs:
               version: 11.8.0
           - uses: actions/setup-node@v6
             with:
-              node-version: '26'
+              # Node 24+ exposes a built-in Web Storage `localStorage` global that is
+              # non-functional without --localstorage-file and shadows jsdom's working
+              # one, breaking zustand's persist middleware under vitest. The test runner
+              # is independent of the production image (node:26), so pin it to 22 LTS.
+              node-version: '22'
               cache: pnpm
               cache-dependency-path: core-front/pnpm-lock.yaml
           - name: install dependencies
