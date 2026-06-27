@@ -26,6 +26,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --passWithNoTests --coverage",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

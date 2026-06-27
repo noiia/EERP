@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "pretypecheck": "node scripts/generate-modules.mjs",
     "typecheck": "tsc --noEmit"
   },
@@ -26,6 +27,7 @@
     "next": "^16",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

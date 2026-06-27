@@ -25,5 +25,20 @@ export default defineConfig({
       // MUI via the renderers).
       deps: { inline: [/@mui\//, 'react-transition-group'] },
     },
+    // Coverage mirrors the backend's go-test-coverage step (see the engine vitest
+    // config). Generated artefacts and the BFF test stubs are excluded. Thresholds
+    // stay off so the gate reports without blocking until the team sets targets.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'json-summary'],
+      include: ['app/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
+      exclude: [
+        '**/*.{test,spec}.{ts,tsx}',
+        'src/test/**',
+        'src/generated/**',
+        'scripts/**',
+        '**/*.d.ts',
+      ],
+    },
   },
 })

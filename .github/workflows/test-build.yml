@@ -1,0 +1,53 @@
+name: Test & Build
+
+# Top-level pipeline: run the test + coverage checks, then (only if they pass)
+# build and publish the backend and frontend Docker images to ghcr.io.
+#
+# It is the "summary" workflow wiring the reusable pieces together:
+#   - test-check.yml         (Go + frontend tests and coverage)
+#   - build-core.yml         (backend image -> ghcr)
+#   - build-core-front.yml   (frontend image -> ghcr)
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag applied to the published images"
+        required: false
+        type: string
+        default: latest
+      environment:
+        description: "GitHub Environment whose variables/secrets back the build"
+        required: false
+        type: string
+        default: build
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # 1. Gate: reuse the exact same checks PRs run.
+  test:
+    uses: ./.github/workflows/test-check.yml
+
+  # 2a. Backend image (waits on green tests).
+  build-core:
+    needs: test
+    uses: ./.github/workflows/build-core.yml
+    with:
+      image_tag: ${{ inputs.image_tag || 'latest' }}
+      environment: ${{ inputs.environment || 'build' }}
+    secrets: inherit
+
+  # 2b. Frontend image (waits on green tests).
+  build-core-front:
+    needs: test
+    uses: ./.github/workflows/build-core-front.yml
+    with:
+      image_tag: ${{ inputs.image_tag || 'latest' }}
+      environment: ${{ inputs.environment || 'build' }}
+    secrets: inherit
