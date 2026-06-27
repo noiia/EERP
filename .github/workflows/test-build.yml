@@ -9,7 +9,9 @@ name: Test & Build
 #   - build-core-front.yml   (frontend image -> ghcr)
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
   workflow_dispatch:
     inputs:
       image_tag:
