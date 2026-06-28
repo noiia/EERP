@@ -19,7 +19,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LogoutIcon from '@mui/icons-material/Logout'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import SettingsIcon from '@mui/icons-material/Settings'
-import { useSessionStore, type Identity } from '@eerp/core-front'
+import { useSessionStore, type Identity, type ModuleNav } from '@eerp/core-front'
 
 // The persistent application top bar (shell chrome). Shown on every authenticated route:
 // left = the module breadcrumb (fil d'Ariane) derived from the path, rooted at the menu;
@@ -56,7 +56,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
     <Breadcrumbs
       aria-label="breadcrumb"
       separator={<NavigateNextIcon fontSize="small" />}
-      sx={{ color: 'inherit', flexGrow: 1, '& .MuiBreadcrumbs-separator': { color: 'inherit' } }}
+      sx={{ color: 'inherit', '& .MuiBreadcrumbs-separator': { color: 'inherit' } }}
     >
       {/* Root: the application menu. Plain text (current page) when already on the menu. */}
       {crumbs.length === 0 ? (
@@ -91,6 +91,39 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
         ),
       )}
     </Breadcrumbs>
+  )
+}
+
+/**
+ * The current module's main pages (dashboard / list / settings), shown next to the
+ * breadcrumb. Bolder and larger than the breadcrumb so it reads as the primary in-module
+ * navigation. The active page is underlined and full-opacity. Renders nothing when the
+ * current route belongs to no module with main pages (e.g. the menu or Settings).
+ */
+function ModuleNav({ nav, pathname }: { nav: ModuleNav[]; pathname: string }) {
+  const moduleSlug = pathname.split('/').filter(Boolean)[0]
+  const current = moduleSlug ? nav.find((n) => n.module === moduleSlug) : undefined
+  if (!current) return null
+
+  return (
+    <Box component="nav" aria-label="module pages" sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 3 }}>
+      {current.pages.map((page) => {
+        const active = pathname === page.path
+        return (
+          <MuiLink
+            key={page.path}
+            component={Link}
+            href={page.path}
+            color="inherit"
+            // underline={active ? 'always' : 'hover'}
+            aria-current={active ? 'page' : undefined}
+            sx={{ fontWeight: 700, opacity: active ? 1 : 0.85 }}
+          >
+            {page.label}
+          </MuiLink>
+        )
+      })}
+    </Box>
   )
 }
 
@@ -154,7 +187,14 @@ function UserMenu({ identity }: { identity: Identity }) {
   )
 }
 
-export function AppTopBar({ identity }: { identity: Identity | null }) {
+export function AppTopBar({
+  identity,
+  nav = [],
+}: {
+  identity: Identity | null
+  /** Per-module main pages, resolved server-side from the registry (empty in isolation). */
+  nav?: ModuleNav[]
+}) {
   const pathname = usePathname()
   // No bar before authentication (login page) or without a session.
   if (!identity || pathname === '/login') return null
@@ -163,6 +203,8 @@ export function AppTopBar({ identity }: { identity: Identity | null }) {
     <AppBar position="sticky">
       <Toolbar variant="dense">
         <PathBreadcrumbs pathname={pathname} />
+        <ModuleNav nav={nav} pathname={pathname} />
+        <Box sx={{ flexGrow: 1 }} />
         <UserMenu identity={identity} />
       </Toolbar>
     </AppBar>

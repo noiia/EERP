@@ -46,6 +46,43 @@ export interface MenuModule {
   routes: MenuRoute[]
 }
 
+/**
+ * The canonical top-level pages a module may expose, in display order. The module
+ * nav (next to the breadcrumb) shows each page the module actually has — a module is
+ * never required to provide all three. Identified by a route's last path segment, so a
+ * module opts in simply by declaring a `/<module>/dashboard|list|settings` route.
+ */
+export type MainPageKind = 'dashboard' | 'list' | 'settings'
+
+const MAIN_PAGE_ORDER: MainPageKind[] = ['dashboard', 'list', 'settings']
+const MAIN_PAGE_LABELS: Record<MainPageKind, string> = {
+  dashboard: 'Dashboard',
+  list: 'List',
+  settings: 'Settings',
+}
+
+/** One entry in a module's top-bar navigation. */
+export interface MainPage {
+  kind: MainPageKind
+  /** Human label shown in the nav (e.g. 'Dashboard'). */
+  label: string
+  /** Concrete path the entry links to. */
+  path: string
+  permission?: string
+}
+
+/** A module paired with the main pages it exposes, for the top-bar module nav. */
+export interface ModuleNav {
+  module: string
+  pages: MainPage[]
+}
+
+/** Classify a route's last path segment as a main-page kind, or null if it isn't one. */
+function mainPageKind(path: string): MainPageKind | null {
+  const last = splitPath(path).pop()
+  return MAIN_PAGE_ORDER.includes(last as MainPageKind) ? (last as MainPageKind) : null
+}
+
 export class ModuleRegistry {
   private readonly modules: FrontModule[] = []
 
@@ -86,6 +123,47 @@ export class ModuleRegistry {
       if (routes.length > 0) result.push({ name: module.name, routes })
     }
     return result
+  }
+
+  /**
+   * The top-bar module navigation: every registered module paired with the main pages
+   * it exposes (dashboard / list / settings), in canonical order. A module appears only
+   * with the pages it actually declares — "if it has it" — and modules with none are
+   * omitted. The shell renders the entry for the module the current route belongs to,
+   * next to the breadcrumb. The first declared route of each kind wins.
+   */
+  moduleNav(): ModuleNav[] {
+    const result: ModuleNav[] = []
+    for (const module of this.modules) {
+      const byKind = new Map<MainPageKind, MainPage>()
+      for (const route of module.routes) {
+        const kind = mainPageKind(route.path)
+        if (kind && !byKind.has(kind)) {
+          byKind.set(kind, {
+            kind,
+            label: MAIN_PAGE_LABELS[kind],
+            path: route.path,
+            permission: route.permission,
+          })
+        }
+      }
+      const pages = MAIN_PAGE_ORDER.filter((k) => byKind.has(k)).map((k) => byKind.get(k)!)
+      if (pages.length > 0) result.push({ module: module.name, pages })
+    }
+    return result
+  }
+
+  /**
+   * A module's flat/hierarchical list views (viewType 'tree'). The dashboard rolls these
+   * up into one block each (name + entry count), so it needs to know which list views the
+   * owning module ships. Empty for an unknown module.
+   */
+  listViews(moduleName: string): MenuRoute[] {
+    const module = this.modules.find((m) => m.name === moduleName)
+    if (!module) return []
+    return module.routes
+      .filter((route) => route.descriptor.viewType === 'tree')
+      .map((route) => ({ path: route.path, descriptor: route.descriptor, permission: route.permission }))
   }
 
   /**

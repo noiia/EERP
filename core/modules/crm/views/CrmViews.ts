@@ -20,6 +20,12 @@ const fields: ViewDescriptor['fields'] = [
   { name: 'status', label: 'Status', type: 'text' },
 ]
 
+const dashboardView: ViewDescriptor = {
+  entity: 'crm',
+  viewType: 'dashboard', // flat data (no parent_id) -> the engine renders a DataGrid
+  fields,
+  permissions: ['crm:contacts:read'],
+}
 // entity 'crm' maps to Go's /api/v1/crm routes (RoutePrefix = table name "crm").
 const listView: ViewDescriptor = {
   entity: 'crm',
@@ -38,8 +44,9 @@ const formView: ViewDescriptor = {
 const crm: FrontModule = {
   name: 'crm',
   routes: [
-    { path: '/crm/contacts', descriptor: listView, permission: 'crm:contacts:read' },
-    { path: '/crm/contacts/:id', descriptor: formView, permission: 'crm:contacts:read' },
+    { path: '/crm/dashboard', descriptor: dashboardView, permission: 'crm:contacts:read' },
+    { path: '/crm/list', descriptor: listView, permission: 'crm:contacts:read' },
+    { path: '/crm/:id', descriptor: formView, permission: 'crm:contacts:read' },
   ],
 }
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useSessionStore, type Identity } from '@eerp/core-front'
+import { useSessionStore, type Identity, type ModuleNav } from '@eerp/core-front'
 
 const pathnameMock = vi.fn<() => string>()
 const pushMock = vi.fn()
@@ -13,6 +13,16 @@ vi.mock('next/navigation', () => ({
 import { AppTopBar } from './AppTopBar'
 
 const identity: Identity = { userId: 'ada', tenantId: 't1', roles: [], permissions: [] }
+
+const crmNav: ModuleNav[] = [
+  {
+    module: 'crm',
+    pages: [
+      { kind: 'dashboard', label: 'Dashboard', path: '/crm/dashboard' },
+      { kind: 'list', label: 'List', path: '/crm/list' },
+    ],
+  },
+]
 
 beforeEach(() => {
   pushMock.mockReset()
@@ -32,6 +42,25 @@ describe('AppTopBar', () => {
     // The current (last) crumb is plain text, not a link.
     expect(screen.queryByRole('link', { name: 'Contacts' })).not.toBeInTheDocument()
     expect(screen.getByText('Contacts')).toBeInTheDocument()
+  })
+
+  it('shows the current module main pages next to the breadcrumb, marking the active one', () => {
+    pathnameMock.mockReturnValue('/crm/list')
+    render(<AppTopBar identity={identity} nav={crmNav} />)
+
+    const dashboard = screen.getByRole('link', { name: 'Dashboard' })
+    const list = screen.getByRole('link', { name: 'List' })
+    expect(dashboard).toHaveAttribute('href', '/crm/dashboard')
+    expect(list).toHaveAttribute('href', '/crm/list')
+    // The page matching the current path is marked current.
+    expect(list).toHaveAttribute('aria-current', 'page')
+    expect(dashboard).not.toHaveAttribute('aria-current')
+  })
+
+  it('shows no module nav for a route outside the registered modules', () => {
+    pathnameMock.mockReturnValue('/settings')
+    render(<AppTopBar identity={identity} nav={crmNav} />)
+    expect(screen.queryByRole('navigation', { name: /module pages/i })).not.toBeInTheDocument()
   })
 
   it('is hidden without a session', () => {

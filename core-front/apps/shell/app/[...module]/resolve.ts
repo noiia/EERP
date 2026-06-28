@@ -1,4 +1,4 @@
-import { moduleRegistry, type RouteMatch } from '@eerp/core-front/server'
+import { moduleRegistry, type DashboardListView, type RouteMatch } from '@eerp/core-front/server'
 
 // Maps a catch-all path back to its registered route, extracting any `:param` values
 // (e.g. the form route '/crm/contacts/:id'). Modules register into the shared registry
@@ -10,6 +10,18 @@ export function modulePathFromSegments(segments: string[]): string {
 
 export function resolveModuleRoute(segments: string[]): RouteMatch | null {
   return moduleRegistry.match(modulePathFromSegments(segments))
+}
+
+/**
+ * The list views a module's dashboard rolls up into blocks: one per tree view, titled by
+ * its entity and linking to its list path. The engine fetches each view's entry count.
+ */
+export function dashboardListViews(moduleName: string): DashboardListView[] {
+  return moduleRegistry.listViews(moduleName).map((route) => ({
+    entity: route.descriptor.entity,
+    title: titleize(route.descriptor.entity),
+    href: route.path,
+  }))
 }
 
 /** "crm" -> "Crm", "contacts" -> "Contacts" — a readable label from a slug. */

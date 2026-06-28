@@ -9,7 +9,12 @@ import type { EntityActions, ViewDescriptor } from '@eerp/core-front'
 import '@/generated/generated-modules'
 import { requireAuth } from '@/lib/session'
 import { createRecord, removeRecord, updateRecord } from './actions'
-import { modulePageTitle, modulePathFromSegments, resolveModuleRoute } from './resolve'
+import {
+  dashboardListViews,
+  modulePageTitle,
+  modulePathFromSegments,
+  resolveModuleRoute,
+} from './resolve'
 
 // The view engine dispatches dynamically off the descriptor, so records are opaque
 // here — the minimal HasId shape is all the engine needs at this boundary.
@@ -39,6 +44,10 @@ export default async function ModulePage({ params }: ModulePageProps) {
     remove: removeRecord.bind(null, entity),
   } as unknown as EntityActions<AnyRecord>
 
+  // A dashboard rolls the owning module's list views into count blocks; other views ignore this.
+  const listViews =
+    route.descriptor.viewType === 'dashboard' ? dashboardListViews(route.module) : undefined
+
   return (
     <Container sx={{ py: 4 }}>
       <Stack spacing={3}>
@@ -49,6 +58,7 @@ export default async function ModulePage({ params }: ModulePageProps) {
           descriptor={route.descriptor as ViewDescriptor<AnyRecord>}
           actions={actions}
           recordId={routeParams.id}
+          listViews={listViews}
         />
       </Stack>
     </Container>

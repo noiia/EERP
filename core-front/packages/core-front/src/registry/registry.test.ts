@@ -82,6 +82,72 @@ describe('ModuleRegistry.menu', () => {
   })
 })
 
+describe('ModuleRegistry.moduleNav', () => {
+  const dashboardDescriptor: ViewDescriptor = { ...formDescriptor, viewType: 'dashboard' }
+  const navModule: FrontModule = {
+    name: 'crm',
+    routes: [
+      { path: '/crm/dashboard', descriptor: dashboardDescriptor, permission: 'crm:contacts:read' },
+      { path: '/crm/list', descriptor: treeDescriptor, permission: 'crm:contacts:read' },
+      { path: '/crm/:id', descriptor: formDescriptor, permission: 'crm:contacts:read' },
+    ],
+  }
+
+  it('exposes the module main pages it has, in canonical order, dropping non-main routes', () => {
+    const nav = new ModuleRegistry().register(navModule).moduleNav()
+    expect(nav).toEqual([
+      {
+        module: 'crm',
+        pages: [
+          { kind: 'dashboard', label: 'Dashboard', path: '/crm/dashboard', permission: 'crm:contacts:read' },
+          { kind: 'list', label: 'List', path: '/crm/list', permission: 'crm:contacts:read' },
+        ],
+      },
+    ])
+  })
+
+  it('includes a settings page when the module declares one', () => {
+    const nav = new ModuleRegistry()
+      .register({
+        name: 'crm',
+        routes: [
+          { path: '/crm/list', descriptor: treeDescriptor },
+          { path: '/crm/settings', descriptor: formDescriptor },
+        ],
+      })
+      .moduleNav()
+    expect(nav[0].pages.map((p) => p.kind)).toEqual(['list', 'settings'])
+  })
+
+  it('omits modules with no main pages', () => {
+    const nav = new ModuleRegistry()
+      .register({ name: 'crm', routes: [{ path: '/crm/:id', descriptor: formDescriptor }] })
+      .moduleNav()
+    expect(nav).toEqual([])
+  })
+})
+
+describe('ModuleRegistry.listViews', () => {
+  it('returns only the tree views of the named module', () => {
+    const dashboardDescriptor: ViewDescriptor = { ...formDescriptor, viewType: 'dashboard' }
+    const registry = new ModuleRegistry().register({
+      name: 'crm',
+      routes: [
+        { path: '/crm/dashboard', descriptor: dashboardDescriptor },
+        { path: '/crm/list', descriptor: treeDescriptor, permission: 'crm:contacts:read' },
+        { path: '/crm/:id', descriptor: formDescriptor },
+      ],
+    })
+    expect(registry.listViews('crm')).toEqual([
+      { path: '/crm/list', descriptor: treeDescriptor, permission: 'crm:contacts:read' },
+    ])
+  })
+
+  it('returns an empty list for an unknown module', () => {
+    expect(new ModuleRegistry().listViews('nope')).toEqual([])
+  })
+})
+
 describe('ModuleRegistry.match', () => {
   const registry = new ModuleRegistry().register({
     name: 'crm',

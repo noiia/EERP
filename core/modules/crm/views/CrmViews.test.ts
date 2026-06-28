@@ -3,17 +3,17 @@ import crm from './CrmViews'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('crm FrontModule', () => {
-  it('is named "crm" and exposes the contact list + form routes', () => {
+  it('is named "crm" and exposes the dashboard, list, and form routes', () => {
     expect(crm.name).toBe('crm')
-    expect(crm.routes.map((r) => r.path)).toEqual(['/crm/contacts', '/crm/contacts/:id'])
+    expect(crm.routes.map((r) => r.path)).toEqual(['/crm/dashboard', '/crm/list', '/crm/:id'])
   })
 
-  it('wires a tree list and a form, both over the crm entity', () => {
-    const [list, form] = crm.routes
+  it('wires a dashboard, a tree list, and a form, all over the crm entity', () => {
+    const [dashboard, list, form] = crm.routes
+    expect(dashboard.descriptor.viewType).toBe('dashboard')
     expect(list.descriptor.viewType).toBe('tree')
     expect(form.descriptor.viewType).toBe('form')
-    expect(list.descriptor.entity).toBe('crm')
-    expect(form.descriptor.entity).toBe('crm')
+    expect(crm.routes.every((r) => r.descriptor.entity === 'crm')).toBe(true)
   })
 
   it('guards every route with crm:contacts:read', () => {

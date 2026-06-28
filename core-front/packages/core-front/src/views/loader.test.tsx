@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from './descriptor'
-import { loadView } from './loader'
+import { loadDashboardWidgets, loadView } from './loader'
 import type { ServerApiClient } from '../api/ApiClient'
 import { ApiError } from '../api/errors'
 
@@ -54,5 +54,36 @@ describe('loadView', () => {
     const result = await loadView(tree, api)
     expect(result.initialData).toEqual([])
     expect(result.error).toEqual({ code: 'FORBIDDEN', message: 'no', requestId: undefined })
+  })
+})
+
+describe('loadDashboardWidgets', () => {
+  it('builds one block per list view, each carrying its entry count and link', async () => {
+    const api = fakeApi({
+      list: vi.fn(async (entity: string) =>
+        entity === 'crm' ? [{ id: '1' }, { id: '2' }, { id: '3' }] : [{ id: 'a' }],
+      ) as never,
+    })
+    const widgets = await loadDashboardWidgets(
+      [
+        { entity: 'crm', title: 'Crm', href: '/crm/list' },
+        { entity: 'orders', title: 'Orders', href: '/sales/list' },
+      ],
+      api,
+    )
+    expect(widgets).toEqual([
+      { id: '/crm/list', title: 'Crm', href: '/crm/list', count: 3 },
+      { id: '/sales/list', title: 'Orders', href: '/sales/list', count: 1 },
+    ])
+  })
+
+  it('leaves a block count null when its list view fails to load', async () => {
+    const api = fakeApi({
+      list: vi.fn(async () => {
+        throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
+      }) as never,
+    })
+    const [widget] = await loadDashboardWidgets([{ entity: 'crm', title: 'Crm', href: '/crm/list' }], api)
+    expect(widget).toEqual({ id: '/crm/list', title: 'Crm', href: '/crm/list', count: null })
   })
 })

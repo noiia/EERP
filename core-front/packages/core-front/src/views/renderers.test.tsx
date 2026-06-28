@@ -93,16 +93,32 @@ describe('EntityView', () => {
     expect(screen.getByText('Root')).toBeInTheDocument()
   })
 
-  it('renders dashboard widget cards from the seed', () => {
+  it('renders a dashboard block per list view with its name and entry count', () => {
     const dashDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'dashboard' }
     render(
       <EntityView
         descriptor={dashDescriptor}
         initialData={[]}
         actions={noopActions}
-        widgets={[{ id: 'w1', title: 'Pipeline' }]}
+        widgets={[{ id: 'w1', title: 'Contacts', href: '/crm/list', count: 12 }]}
       />,
     )
-    expect(screen.getByText('Pipeline')).toBeInTheDocument()
+    expect(screen.getByText('Contacts')).toBeInTheDocument()
+    expect(screen.getByText('12')).toBeInTheDocument()
+    // The block links to its list view.
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/crm/list')
+  })
+
+  it('shows a dash for a dashboard block whose count failed to load', () => {
+    const dashDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'dashboard' }
+    render(
+      <EntityView
+        descriptor={dashDescriptor}
+        initialData={[]}
+        actions={noopActions}
+        widgets={[{ id: 'w1', title: 'Contacts', href: '/crm/list', count: null }]}
+      />,
+    )
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 })

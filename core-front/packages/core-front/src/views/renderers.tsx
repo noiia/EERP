@@ -5,6 +5,7 @@ import AlertTitle from '@mui/material/AlertTitle'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
+import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
@@ -259,7 +260,7 @@ function HierarchyTree<T extends HasId & TreeNode>({
   )
 }
 
-// --- dashboard (stub widget contract) ---
+// --- dashboard (one block per module list view: name + entry count) ---
 
 function DashboardRenderer<T extends HasId>({ descriptor, widgets, onRefresh }: EntityViewProps<T>) {
   const [store] = useState(() =>
@@ -268,21 +269,38 @@ function DashboardRenderer<T extends HasId>({ descriptor, widgets, onRefresh }: 
   const items = useStore(store, (s) => s.widgets)
 
   return (
-    <Box>
-      <Button onClick={() => void store.getState().refresh()} sx={{ mb: 2 }}>
-        Refresh
-      </Button>
-      <Grid container spacing={2}>
-        {items.map((widget) => (
-          <Grid key={widget.id} size={{ xs: 12, sm: 6, md: 4 }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6">{widget.title}</Typography>
-              </CardContent>
+    <Grid container spacing={2}>
+      {items.map((widget) => {
+        // The server seeds count (number) or null when that list view failed to load.
+        const count = widget.count
+        const href = typeof widget.href === 'string' ? widget.href : undefined
+        const block = (
+          <CardContent sx={{ p: 2 }}>
+            {/* Name in bold, top-left; the entry count below it. */}
+            <Typography sx={{ fontWeight: 700 }}>{widget.title}</Typography>
+            <Typography
+              variant="h4"
+              component="div"
+              sx={{ mt: 0.5, fontVariantNumeric: tabularNums }}
+            >
+              {typeof count === 'number' ? count : '—'}
+            </Typography>
+          </CardContent>
+        )
+        return (
+          <Grid key={widget.id} size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card variant="outlined">
+              {href ? (
+                <CardActionArea component="a" href={href}>
+                  {block}
+                </CardActionArea>
+              ) : (
+                block
+              )}
             </Card>
           </Grid>
-        ))}
-      </Grid>
-    </Box>
+        )
+      })}
+    </Grid>
   )
 }
