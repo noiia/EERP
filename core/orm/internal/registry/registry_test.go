@@ -162,6 +162,46 @@ func TestRegister_TypeRef_IsCorrectType(t *testing.T) {
 	}
 }
 
+func TestWithExcluded_KeepsTableOffHTTPSurface(t *testing.T) {
+	resetRegistry()
+
+	if err := registry.Register[product](registry.WithExcluded()); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Not in All() (BuildHandlers iterates All(), so no routes mounted)...
+	for _, m := range registry.All() {
+		if m.TableName == "product" {
+			t.Error("code-excluded table should not appear in All()")
+		}
+	}
+	// ...but still registered with the ORM (typed repo / migrations use Get()).
+	meta, ok := registry.Get("product")
+	if !ok {
+		t.Fatal("code-excluded table should still be registered")
+	}
+	if !meta.Excluded {
+		t.Error("Excluded should be true")
+	}
+}
+
+func TestLoadAPIConfig_FailsClosedOnMalformedYAML(t *testing.T) {
+	resetRegistry()
+
+	path := writeTempYAML(t, "tables: [this is not a map")
+	if err := registry.LoadAPIConfig(path); err == nil {
+		t.Fatal("malformed api.yaml must return an error, not silently drop overrides")
+	}
+}
+
+func TestLoadAPIConfig_FailsClosedOnMissingFile(t *testing.T) {
+	resetRegistry()
+
+	if err := registry.LoadAPIConfig(t.TempDir() + "/does-not-exist.yaml"); err == nil {
+		t.Fatal("missing configured api.yaml must return an error")
+	}
+}
+
 func TestAll_ExcludesExcludedTables(t *testing.T) {
 	resetRegistry()
 

@@ -1,6 +1,15 @@
-tables:
-  refresh_tokens:
-    exclude: true
-  users:
-    exclude_fields:
-      - password_hash
+# api.yaml — cosmetic, per-table overrides for the auto-generated CRUD surface.
+#
+# Supported knobs per table: route_prefix, read_only_fields, exclude_fields, exclude.
+#
+# IMPORTANT: do NOT put security-critical exclusions here. This file loads at
+# startup and only shapes the API surface; a missing or malformed file must never
+# be able to *widen* it. Security-load-bearing decisions are enforced in code so
+# they fail closed:
+#   - users.password_hash  -> WithExcludeFields("password_hash") in modules/auth
+#   - refresh_tokens table  -> WithExcluded() in modules/auth
+#
+# Use this file only for non-sensitive presentation tweaks (URL prefixes, field
+# renames, hiding optional non-secret columns, integrator overrides).
+
+tables: {}

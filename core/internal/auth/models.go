@@ -9,7 +9,8 @@ import (
 )
 
 // User represents an EERP user account.
-// password_hash is excluded from API responses via api.yaml and WithExcludeFields.
+// password_hash is excluded from the API in code via WithExcludeFields (fail-closed);
+// it is intentionally not relying on api.yaml for that guarantee.
 type Users struct {
 	model.BaseModel
 	TenantID     uuid.UUID `db:"tenant_id"`

@@ -32,7 +32,10 @@ func (m *authModule) Register() error {
 	if err := orm.Register[auth.Permissions](); err != nil {
 		return err
 	}
-	if err := orm.Register[auth.RefreshTokens](); err != nil {
+	// Registered for the ORM (typed repo + migrations) but never exposed over HTTP:
+	// refresh-token hashes must not be listable/mutable via the generic CRUD API.
+	// Enforced in code (fail-closed), not via api.yaml.
+	if err := orm.Register[auth.RefreshTokens](orm.WithExcluded()); err != nil {
 		return err
 	}
 	return nil

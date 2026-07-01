@@ -67,9 +67,14 @@ func main() {
 		common.Logger.Fatal("❌ master_key is empty or set to the insecure default — set a strong secret before starting")
 	}
 
-	if notExists, _ := common.FileNotExists(configContent.ApiConfigPath); !notExists {
+	// api.yaml now carries only cosmetic API-surface overrides; security-critical
+	// exclusions live in code (WithExcludeFields / WithExcluded). Even so, if a path
+	// is configured the file MUST load cleanly — a missing or malformed override file
+	// is a misconfiguration, so we fail closed rather than silently drop overrides.
+	if configContent.ApiConfigPath != "" {
 		if err := orm.LoadAPIConfig(configContent.ApiConfigPath); err != nil {
-			common.Logger.Warn("could not load api.yaml", zap.String("path", configContent.ApiConfigPath), zap.Error(err))
+			common.Logger.Fatal("❌ failed to load api config — refusing to start",
+				zap.String("path", configContent.ApiConfigPath), zap.Error(err))
 		}
 	}
 

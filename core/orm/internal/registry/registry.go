@@ -56,6 +56,7 @@ type regOptions struct {
 	tableName    string
 	readOnly     []string
 	excludeCols  []string
+	excluded     bool
 }
 
 // WithTableName overrides the table name derived from the struct name.
@@ -72,6 +73,16 @@ func WithReadOnlyFields(fields ...string) Option {
 // WithExcludeFields removes the named columns from the API entirely.
 func WithExcludeFields(fields ...string) Option {
 	return func(o *regOptions) { o.excludeCols = append(o.excludeCols, fields...) }
+}
+
+// WithExcluded keeps the table off the HTTP surface entirely: it is still
+// registered with the ORM (typed repos, migrations) but BuildHandlers mounts no
+// CRUD routes for it. This is the code-level, fail-closed equivalent of the
+// api.yaml `exclude: true` knob — use it for internal tables (e.g. refresh
+// tokens) whose exposure would be a security issue, so the guarantee cannot be
+// lost by a missing or malformed override file.
+func WithExcluded() Option {
+	return func(o *regOptions) { o.excluded = true }
 }
 
 // ── Global registry ───────────────────────────────────────────────────────────
@@ -252,16 +263,31 @@ func Get(tableName string) (TableMeta, bool) {
 	return m, ok
 }
 
-// LoadAPIConfig forces the registry to load api.yaml from the given path
-// instead of the default "api.yaml" in the working directory.
-// Must be called before any Register calls that should see the overrides.
+// LoadAPIConfig loads api.yaml from the given path, replacing any previously
+// loaded overrides. Must be called before any Register calls that should see the
+// overrides.
+//
+// Unlike the lazy default loader, this fails closed: a path that cannot be read
+// or does not parse returns an error instead of silently dropping every override.
+// Callers (main.go) must treat that error as fatal — a security control (field or
+// table exclusion) that vanishes on a typo is worse than no file at all.
 func LoadAPIConfig(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("registry: load api config %q: %w", path, err)
+	}
+	var cfg apiConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("registry: parse api config %q: %w", path, err)
+	}
+	// Consume the lazy loader so a later ensureAPIConfig call cannot re-read the
+	// file or clobber this config. Done outside apiCfgMu because the once-func in
+	// ensureAPIConfig also acquires apiCfgMu.
+	apiCfgOnce.Do(func() {})
 	apiCfgMu.Lock()
 	apiCfgPath = path
-	apiCfg = nil
-	apiCfgOnce = sync.Once{} // reset so ensureAPIConfig re-reads
+	apiCfg = &cfg
 	apiCfgMu.Unlock()
-	ensureAPIConfig()
 	return nil
 }
 
@@ -374,6 +400,7 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 		Fields:      fields,
 		PKField:     pkField,
 		SoftDelete:  hasSoftDel,
+		Excluded:    o.excluded,
 		TypeRef:     t,
 		StructMeta:  sm,
 	}

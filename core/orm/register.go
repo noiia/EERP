@@ -50,6 +50,12 @@ func WithExcludeFields(fields ...string) Option {
 	return registry.WithExcludeFields(fields...)
 }
 
+// WithExcluded keeps the table registered with the ORM but off the HTTP surface
+// (no CRUD routes). Code-level, fail-closed equivalent of api.yaml `exclude: true`.
+func WithExcluded() Option {
+	return registry.WithExcluded()
+}
+
 // LoadAPIConfig loads per-table overrides from a YAML file.
 // Call before Register if you want api.yaml overrides to take effect.
 func LoadAPIConfig(path string) error {
