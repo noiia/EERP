@@ -24,9 +24,23 @@ type MigrationField struct {
 	IndexType string
 }
 
-// RegisteredTableNames returns the names of all currently registered
-// (non-excluded) tables. Used by the module loader to find newly added tables.
+// RegisteredTableNames returns the names of all registered tables, including
+// tables excluded from the HTTP surface. Used by the module loader to migrate
+// schemas: exclusion only withholds a table from the API, never from migration,
+// so tables like refresh_tokens and the auth tables are still created/altered.
 func RegisteredTableNames() []string {
+	all := registry.AllRegistered()
+	names := make([]string, len(all))
+	for i, m := range all {
+		names[i] = m.TableName
+	}
+	return names
+}
+
+// ExposedTableNames returns the names of tables mounted on the generic HTTP CRUD
+// surface: registered AND not excluded. Complements RegisteredTableNames (which
+// also includes excluded tables) and is handy for auditing what is reachable.
+func ExposedTableNames() []string {
 	all := registry.All()
 	names := make([]string, len(all))
 	for i, m := range all {

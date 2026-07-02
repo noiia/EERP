@@ -202,6 +202,31 @@ func TestLoadAPIConfig_FailsClosedOnMissingFile(t *testing.T) {
 	}
 }
 
+func TestAllRegistered_IncludesExcludedTablesForMigration(t *testing.T) {
+	resetRegistry()
+
+	if err := registry.Register[product](registry.WithExcluded()); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Excluded from the HTTP surface...
+	for _, m := range registry.All() {
+		if m.TableName == "product" {
+			t.Error("excluded table must not appear in All() (no HTTP routes)")
+		}
+	}
+	// ...but still visible to the migration layer.
+	found := false
+	for _, m := range registry.AllRegistered() {
+		if m.TableName == "product" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("excluded table must still appear in AllRegistered() so its schema migrates")
+	}
+}
+
 func TestAll_ExcludesExcludedTables(t *testing.T) {
 	resetRegistry()
 

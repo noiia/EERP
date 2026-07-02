@@ -20,21 +20,26 @@ type authModule struct{}
 func (m *authModule) Name() string { return "auth" }
 
 func (m *authModule) Register() error {
+	// The auth tables are registered with the ORM (so their schemas migrate and the
+	// typed repos work) but kept OFF the generic HTTP CRUD surface via WithExcluded.
+	// Auto-generated CRUD on these is a privilege-escalation and cross-tenant
+	// integrity risk (mutating the global permission catalog, creating password-less
+	// users, deleting roles). Account/role/permission management must go through
+	// dedicated, audited endpoints — never the generic CRUD. Enforced in code so the
+	// guarantee is fail-closed, not dependent on an external config file.
 	if err := orm.Register[auth.Users](
 		orm.WithTableName("users"),
 		orm.WithExcludeFields("password_hash"),
+		orm.WithExcluded(),
 	); err != nil {
 		return err
 	}
-	if err := orm.Register[auth.Roles](); err != nil {
+	if err := orm.Register[auth.Roles](orm.WithExcluded()); err != nil {
 		return err
 	}
-	if err := orm.Register[auth.Permissions](); err != nil {
+	if err := orm.Register[auth.Permissions](orm.WithExcluded()); err != nil {
 		return err
 	}
-	// Registered for the ORM (typed repo + migrations) but never exposed over HTTP:
-	// refresh-token hashes must not be listable/mutable via the generic CRUD API.
-	// Enforced in code (fail-closed), not via api.yaml.
 	if err := orm.Register[auth.RefreshTokens](orm.WithExcluded()); err != nil {
 		return err
 	}

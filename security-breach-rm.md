@@ -88,21 +88,34 @@ automatically with no further CRUD changes. Tracked as item 1a below.
 
 ---
 
-## 2. 🟠 Scope the exposed auth tables (`users` / `roles` / `permissions`)
+## 2. 🟠 Scope the exposed auth tables (`users` / `roles` / `permissions`) — [x] DONE
 
-- **Files:** `core/modules/auth/module.go`, `api.yaml`,
-  `core/orm/internal/crud/*`
-- **Problem:** These are served by the auto-generated CRUD. Combined with #1 this is a
-  cross-tenant read/write and privilege-escalation surface (e.g. mutate roles/permissions
-  outside your tenant).
-- **Do:**
-  - Ensure all three are tenant-scoped via #1.
-  - Consider replacing the generic CRUD for these with dedicated handlers that enforce
-    invariants (cannot grant permissions/roles outside your tenant, cannot self-assign).
-  - Confirm `password_hash` stays excluded from input **and** output (currently correct)
-    and `refresh_tokens` stays `exclude: true`.
-- **Acceptance:** A non-admin cannot escalate via role/permission CRUD; denied paths
-  covered by tests.
+- **Files:** `core/modules/auth/module.go`, `core/orm/internal/registry/registry.go`,
+  `core/orm/migrate.go`.
+- **Problem:** These were served by the auto-generated CRUD. That is a
+  privilege-escalation / cross-tenant integrity surface: a caller with the right
+  permission could mutate the **global** permission catalog (no `tenant_id`), create
+  password-less users, or delete roles. No feature (frontend or otherwise) actually
+  uses generic CRUD on them.
+- **Fix (done):** take all four auth tables off the HTTP surface with `WithExcluded()`
+  (`users`, `roles`, `permissions`, and `refresh_tokens`). They remain registered so
+  their schemas migrate and the typed repos / auth flows keep working. Account, role,
+  and permission management must go through dedicated, audited endpoints — never the
+  generic CRUD (that dedicated surface is future work; the dangerous auto-CRUD is now
+  closed, fail-closed).
+- **Latent bug fixed along the way:** `Excluded` previously removed a table from
+  `registry.All()`, which the **migration** layer also used — so excluded tables
+  (`refresh_tokens`) were never auto-migrated in the real app. Split the concepts:
+  `All()` = HTTP surface (excludes), new `AllRegistered()` = every registered table
+  (for migration). `RegisteredTableNames()` now uses `AllRegistered()`, so excluded
+  tables migrate correctly.
+- **Tests:** `modules/auth/module_test.go` (the four tables are registered/migrated but
+  not exposed), `orm/internal/registry/registry_test.go`
+  (`AllRegistered` includes excluded, `All` does not). Also added `orm.ExposedTableNames()`
+  for auditability.
+- **Note:** `password_hash` stays excluded from input/output regardless (item 5), and
+  since users/roles are tenant-scoped (item 1) any future dedicated endpoints inherit
+  that isolation.
 
 ---
 

@@ -243,6 +243,7 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 }
 
 // All returns all registered, non-excluded TableMetas.
+// Used to mount the generic HTTP CRUD surface — excluded tables get no routes.
 func All() []TableMeta {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -251,6 +252,21 @@ func All() []TableMeta {
 		if !m.Excluded {
 			out = append(out, m)
 		}
+	}
+	return out
+}
+
+// AllRegistered returns every registered TableMeta, including excluded ones.
+// Exclusion only withholds a table from the HTTP surface — its schema is still
+// managed by the ORM, so the migration layer must see excluded tables too (e.g.
+// refresh_tokens, users/roles/permissions). Keeping this separate from All()
+// decouples "not exposed over HTTP" from "not migrated".
+func AllRegistered() []TableMeta {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make([]TableMeta, 0, len(entries))
+	for _, m := range entries {
+		out = append(out, m)
 	}
 	return out
 }
