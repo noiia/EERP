@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"core/internal/auth"
+	"core/orm/access"
 
 	"github.com/labstack/echo/v4"
 )
@@ -27,6 +28,9 @@ func JWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
 
 			identity := auth.NewIdentityFromClaims(claims)
 			ctx := auth.SetIdentity(c.Request().Context(), identity)
+			// Stamp the tenant so the generic CRUD layer can isolate rows to this
+			// caller's tenant (fail-closed on tenant-owned tables).
+			ctx = access.WithTenant(ctx, identity.TenantID)
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}

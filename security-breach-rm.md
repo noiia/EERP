@@ -10,9 +10,48 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ---
 
-## 1. 🔴 Enforce tenant isolation in the generic CRUD layer
+## 1. 🔴 Enforce tenant isolation in the generic CRUD layer — [x] MECHANISM DONE
 
 **The headline breach — cross-tenant IDOR / broken access control.**
+
+**Status:** the framework mechanism is implemented and tested. Any registered
+table carrying a `tenant_id` column is now automatically isolated; `users` and
+`roles` (both tenant-owned and exposed via generic CRUD) are protected. See the
+follow-up note below on business tables that still lack a `tenant_id` column.
+
+**What shipped:**
+- New `core/orm/access` package holds the request-scoped tenant (kept out of the
+  app's auth package so the ORM stays a self-contained framework — no import cycle).
+- `JWTMiddleware` stamps `access.WithTenant(ctx, identity.TenantID)` after auth.
+- `crud.Repository` scopes every operation to the caller's tenant when the table
+  has a `tenant_id` column: `FindAll` (count + page), `FindByID`, `Update`,
+  soft/hard `Delete`, and `Restore` all get `WHERE tenant_id = $tenant`; `Create`
+  forces `tenant_id` server-side (ignoring any client value); `Update` refuses to
+  change `tenant_id` (immutable — no moving a row across tenants).
+- **Fail-closed:** a tenant-scoped table accessed with no tenant in context returns
+  `crud.ErrTenantMissing` rather than an unscoped, all-tenants query.
+- Tables without a `tenant_id` column stay global by design (e.g. the shared
+  `permissions` catalog).
+- Tests: `orm/internal/crud/repository_test.go` (scoping on every verb, tenant
+  forced on create, immutable on update, fail-closed, and global-table pass-through).
+
+**Follow-up (data model — not yet done):** `contacts` and the `crm` entities have
+**no `tenant_id` column**, so they are global by schema and the mechanism does not
+(and cannot) isolate them. To make them tenant-owned, add a `TenantID` field to
+those models (auto-migration will add the column) — then isolation applies
+automatically with no further CRUD changes. Tracked as item 1a below.
+
+### 1a. 🟠 Add `tenant_id` to tenant-owned business entities
+- **Files:** `core/modules/contact/internal/contacts.go`, `core/modules/crm/model.go`
+  (and any future business modules).
+- **Do:** add `TenantID uuid.UUID \`db:"tenant_id"\`` to entities that should be
+  tenant-owned; verify auto-migration adds the column; backfill existing rows.
+- **Acceptance:** integration test proves cross-tenant reads/writes on contacts are
+  blocked (same invariant as item 1).
+
+---
+
+### Original plan (for reference)
 
 - **Files:** `core/orm/internal/crud/repository.go`,
   `core/orm/internal/crud/service.go`,

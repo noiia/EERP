@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"core/orm/access"
 	"core/orm/internal/registry"
 	"core/orm/pool/executor"
 	"core/orm/query"
@@ -18,6 +19,18 @@ import (
 // ErrNotFound is returned by FindByID when no row matches the given id
 // (or the row is soft-deleted). Callers use errors.Is to detect it.
 var ErrNotFound = errors.New("not found")
+
+// ErrTenantMissing is returned when a tenant-scoped table is accessed without a
+// tenant in the request context. This is a wiring/authentication failure and is
+// treated as a hard error — a tenant-owned query is never silently downgraded to
+// an unscoped, all-tenants query.
+var ErrTenantMissing = errors.New("crud: tenant scope required but absent from context")
+
+// tenantColumn marks a table as tenant-owned. Any registered table carrying this
+// column is automatically isolated: reads, updates, deletes and restores are
+// scoped to the caller's tenant, and creates have it forced server-side. Tables
+// without the column are global (e.g. the shared permission catalog).
+const tenantColumn = "tenant_id"
 
 // Repository performs generic CRUD on a single table, returning map[string]any
 // rows. It uses the query builders for SQL generation and custom map-scanning.
@@ -31,11 +44,46 @@ func NewRepository(db executor.Executor, meta registry.TableMeta) *Repository {
 	return &Repository{db: db, meta: meta}
 }
 
+// tenantScoped reports whether this table is tenant-owned (has a tenant_id column).
+func (r *Repository) tenantScoped() bool {
+	return r.meta.HasField(tenantColumn)
+}
+
+// callerTenant returns the tenant the current request is scoped to. It fails
+// closed: a tenant-scoped table with no tenant in context returns ErrTenantMissing
+// rather than an unscoped query that would read/write across every tenant.
+func (r *Repository) callerTenant(ctx context.Context) (uuid.UUID, error) {
+	id, ok := access.TenantFromContext(ctx)
+	if !ok || id == uuid.Nil {
+		return uuid.Nil, fmt.Errorf("%s: %w", r.meta.TableName, ErrTenantMissing)
+	}
+	return id, nil
+}
+
+// tenantCondition returns the WHERE predicate that scopes a query to the caller's
+// tenant, or (zero, nil) when the table is global. The bool reports whether a
+// condition was produced so callers can append it directly.
+func (r *Repository) tenantCondition(ctx context.Context) (query.Condition, bool, error) {
+	if !r.tenantScoped() {
+		return query.Condition{}, false, nil
+	}
+	tid, err := r.callerTenant(ctx)
+	if err != nil {
+		return query.Condition{}, false, err
+	}
+	return query.NewCondition(tenantColumn+" = $1", tid), true, nil
+}
+
 // FindAll returns a paginated slice of rows and the total non-deleted count.
 func (r *Repository) FindAll(ctx context.Context, page, pageSize int) ([]map[string]any, int, error) {
 	b := query.Select[struct{}](r.meta.StructMeta)
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
+	}
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return nil, 0, err
+	} else if ok {
+		b = b.Where(cond)
 	}
 
 	total, err := b.Count(ctx, r.db)
@@ -72,6 +120,11 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		b = b.Where(cond)
+	}
 
 	sql, args := b.Limit(1).ToSQL()
 	rows, err := r.db.Query(ctx, sql, args...)
@@ -92,6 +145,16 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 // Create inserts a new row and returns it with all server-set columns populated
 // via RETURNING *.
 func (r *Repository) Create(ctx context.Context, data map[string]any) (map[string]any, error) {
+	if r.tenantScoped() {
+		tid, err := r.callerTenant(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Force the tenant server-side: a client can never create a row in
+		// another tenant by supplying its own tenant_id.
+		data[tenantColumn] = tid
+	}
+
 	cols, vals := r.orderedData(data)
 	if len(cols) == 0 {
 		return nil, fmt.Errorf("crud: create %s: no data", r.meta.TableName)
@@ -133,6 +196,9 @@ func (r *Repository) Update(ctx context.Context, id any, data map[string]any) (m
 		if f.Column == r.meta.PKField.Column {
 			continue // never overwrite PK
 		}
+		if f.Column == tenantColumn {
+			continue // tenant is immutable — a client cannot move a row across tenants
+		}
 		val, ok := data[f.Column]
 		if !ok {
 			continue
@@ -146,6 +212,11 @@ func (r *Repository) Update(ctx context.Context, id any, data map[string]any) (m
 
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
+	}
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		b = b.Where(cond)
 	}
 
 	sql, args, err := b.ToSQL()
@@ -186,6 +257,11 @@ func (r *Repository) Restore(ctx context.Context, id any) (map[string]any, error
 		Set("updated_at", time.Now()).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id)).
 		Returning("*")
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		b = b.Where(cond)
+	}
 
 	sql, args, err := b.ToSQL()
 	if err != nil {
@@ -215,6 +291,11 @@ func (r *Repository) softDelete(ctx context.Context, id any) error {
 		Set("updated_at", time.Now()).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id)).
 		Where(query.NewCondition("deleted_at IS NULL"))
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return err
+	} else if ok {
+		b = b.Where(cond)
+	}
 
 	sql, args, err := b.ToSQL()
 	if err != nil {
@@ -234,6 +315,11 @@ func (r *Repository) softDelete(ctx context.Context, id any) error {
 func (r *Repository) hardDelete(ctx context.Context, id any) error {
 	b := query.Delete[struct{}](r.meta.StructMeta).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id))
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return err
+	} else if ok {
+		b = b.Where(cond)
+	}
 
 	sql, args, err := b.ToSQL()
 	if err != nil {
