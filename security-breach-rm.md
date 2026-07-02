@@ -119,23 +119,32 @@ automatically with no further CRUD changes. Tracked as item 1a below.
 
 ---
 
-## 3. 🟡 Make permission enforcement consistent and fail-closed
+## 3. 🟡 Make permission enforcement consistent and fail-closed — [x] DONE
 
-- **Files:** `core/internal/middleware/permission.go`
-- **Problems:**
-  - When a permission can't be derived, the middleware falls through with `next(c)` —
-    non-standard methods (`methodToAction` → `""`) **bypass authorization**.
-  - Item routes derive `table:<uuid>:action` while list routes derive
-    `table:table:action`, so exact-scoped permissions behave inconsistently and push
-    operators toward over-broad wildcard grants.
-- **Do:**
-  - Default to **deny** (403) when no permission can be derived, or explicitly allowlist
-    handled methods.
-  - Normalize the resource segment so `/{table}/{id}` derives the same
-    `module:resource:action` as the list route (treat `:id` as the record, not the
-    resource). Update `derivePermissionFromPath` and its tests.
-- **Acceptance:** List and item routes for the same table require the same permission;
-  unknown method/shape is denied; tests cover both.
+- **Files:** `core/internal/middleware/permission.go`,
+  `core/internal/middleware/export_test.go`, `core/internal/middleware/permission_test.go`.
+- **Problems (fixed):**
+  - The middleware fell through with `next(c)` when no permission could be derived —
+    an unexpected method/shape **bypassed authorization** (fail-open).
+  - Derivation parsed the raw URL, so item routes produced `table:<uuid>:action`
+    while collection routes produced `table:table:action`. Exact-scoped permissions
+    were inconsistent between the two, pushing operators toward wildcard grants.
+- **Fix (done):**
+  - Derive from the **matched route pattern** (`c.Path()`, e.g. `/api/v1/crm/:id`)
+    instead of the raw URL. The resource is taken from the static segments before the
+    first path parameter, so item, collection and `:id/restore` routes for a table all
+    resolve to the SAME `module:resource:action` (the id never leaks into the resource;
+    the `restore` suffix folds into the write action).
+  - Fail **closed**: an empty derived permission now returns 403 instead of passing
+    through.
+  - Refactored `PermissionMiddleware` to take a small call-site `permissionChecker`
+    interface (`*auth.PermissionRepository` still satisfies it) so the allow/deny paths
+    are unit-testable without a DB.
+- **Tests:** `permission_test.go` covers item==collection consistency, the restore
+  suffix, fail-closed cases (unknown method / OPTIONS / no resource segment), and
+  allow (200) vs deny (403) through a real `:id` route asserting the id doesn't leak.
+- **Acceptance:** met — list and item routes require the same permission; unknown
+  method/shape is denied; tests cover both.
 
 ---
 

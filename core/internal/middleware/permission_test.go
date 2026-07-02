@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,24 +13,19 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// stubPermRepo is a test double for PermissionRepository.
+// stubPermRepo is a test double satisfying the middleware's permissionChecker.
 type stubPermRepo struct {
-	has bool
-	err error
+	has  bool
+	err  error
+	seen string // the last required permission it was asked about
 }
 
-func (s *stubPermRepo) Has(_ interface{}, _ []string, _ string) (bool, error) {
+func (s *stubPermRepo) Has(_ context.Context, _ []string, required string) (bool, error) {
+	s.seen = required
 	return s.has, s.err
 }
 
 // ── PermissionMiddleware ──────────────────────────────────────────────────────
-
-func setupPermTest(t *testing.T, has bool) (*echo.Echo, *auth.PermissionRepository, *bool) {
-	t.Helper()
-	e := testEcho()
-	reached := false
-	return e, nil, &reached
-}
 
 func injectIdentity(roles []string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -72,6 +68,47 @@ func TestPermissionMiddleware_NoPermission_Returns403(t *testing.T) {
 	}
 }
 
+func TestPermissionMiddleware_Allows_WhenGranted(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: true}
+	g := e.Group("/api/v1", injectIdentity([]string{"admin"}), authmw.PermissionMiddleware(stub))
+	g.GET("/crm/:id", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/crm/"+uuid.NewString(), nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	// The concrete id must not leak into the resource segment.
+	if stub.seen != "crm:crm:read" {
+		t.Errorf("required = %q, want crm:crm:read", stub.seen)
+	}
+}
+
+func TestPermissionMiddleware_Denies_WhenNotGranted(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: false}
+	reached := false
+	g := e.Group("/api/v1", injectIdentity([]string{"viewer"}), authmw.PermissionMiddleware(stub))
+	g.DELETE("/crm/:id", func(c echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/crm/"+uuid.NewString(), nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not run when permission is denied")
+	}
+	if stub.seen != "crm:crm:delete" {
+		t.Errorf("required = %q, want crm:crm:delete", stub.seen)
+	}
+}
+
 func TestDerivePermission_PathParsing(t *testing.T) {
 	cases := []struct {
 		method string
@@ -86,6 +123,17 @@ func TestDerivePermission_PathParsing(t *testing.T) {
 		{http.MethodGet, "/api/v1/crm", "crm:crm:read"},
 		{http.MethodPost, "/api/v1/crm", "crm:crm:write"},
 		{http.MethodDelete, "/api/v1/crm", "crm:crm:delete"},
+
+		// Item routes (the matched pattern carries ":id") must resolve to the SAME
+		// permission as the collection — the id must never leak into the resource.
+		{http.MethodGet, "/api/v1/crm/:id", "crm:crm:read"},
+		{http.MethodPut, "/api/v1/crm/:id", "crm:crm:write"},
+		{http.MethodDelete, "/api/v1/crm/:id", "crm:crm:delete"},
+		{http.MethodGet, "/api/v1/crm/contacts/:id", "crm:contacts:read"},
+		{http.MethodDelete, "/api/v1/crm/contacts/:id", "crm:contacts:delete"},
+		// restore: the "restore" suffix folds into the method (write), not the resource.
+		{http.MethodPost, "/api/v1/crm/:id/restore", "crm:crm:write"},
+		{http.MethodPost, "/api/v1/crm/contacts/:id/restore", "crm:contacts:write"},
 	}
 
 	for _, tc := range cases {
@@ -93,6 +141,25 @@ func TestDerivePermission_PathParsing(t *testing.T) {
 			got := authmw.DerivePermission(tc.method, tc.path)
 			if got != tc.want {
 				t.Errorf("DerivePermission(%q, %q) = %q, want %q", tc.method, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDerivePermission_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"unknown method", http.MethodHead, "/api/v1/crm"},
+		{"options preflight", http.MethodOptions, "/api/v1/crm/contacts"},
+		{"no static resource segment", http.MethodGet, "/api/v1/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := authmw.DerivePermission(tc.method, tc.path); got != "" {
+				t.Errorf("DerivePermission(%q, %q) = %q, want \"\" (so the middleware denies)", tc.method, tc.path, got)
 			}
 		})
 	}
