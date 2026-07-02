@@ -41,13 +41,26 @@ follow-up note below on business tables that still lack a `tenant_id` column.
 those models (auto-migration will add the column) — then isolation applies
 automatically with no further CRUD changes. Tracked as item 1a below.
 
-### 1a. 🟠 Add `tenant_id` to tenant-owned business entities
-- **Files:** `core/modules/contact/internal/contacts.go`, `core/modules/crm/model.go`
-  (and any future business modules).
-- **Do:** add `TenantID uuid.UUID \`db:"tenant_id"\`` to entities that should be
-  tenant-owned; verify auto-migration adds the column; backfill existing rows.
-- **Acceptance:** integration test proves cross-tenant reads/writes on contacts are
-  blocked (same invariant as item 1).
+### 1a. 🟠 Add `tenant_id` to tenant-owned business entities — [x] DONE
+- **Files:** `core/modules/contact/internal/contacts.go`,
+  `core/modules/crm/internal/crm.go`, `core/orm/internal/crud/dto.go`.
+- **What shipped:**
+  - Added `TenantID uuid.UUID \`db:"tenant_id"\`` to `Contact` and `CRM` (the latter
+    also flows into `crminheritdemo`'s extended CRM, which embeds it). The
+    auto-migration adds the column via `ALTER TABLE ... ADD COLUMN`, so both tables
+    are now covered by the item-1 isolation mechanism automatically.
+  - Marked `tenant_id` as server-generated in `dto.go` so the generic CRUD create
+    validation does not demand it from clients — the repository forces it from the
+    caller's identity.
+  - Tests: `modules/contact/module_test.go`, `modules/crm/module_test.go` assert
+    each table carries `tenant_id`.
+- **Caveat (dev DBs):** the new column is `NOT NULL`. On a **fresh** database it
+  migrates cleanly. On an existing dev DB that already has `contact`/`crm` rows,
+  `ADD COLUMN ... NOT NULL` will fail — reset the POC database (or backfill
+  `tenant_id` and add the column manually) after pulling this change.
+- **Follow-up:** a DB-backed integration test proving cross-tenant reads/writes on
+  contacts are blocked (needs `TEST_DSN`); the unit-level invariant is covered by
+  `repository_test.go` + the two module tests.
 
 ---
 

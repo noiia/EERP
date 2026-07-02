@@ -7,12 +7,16 @@ import (
 	"core/orm/internal/registry"
 )
 
-// serverGenerated columns are injected by the service layer, not the client.
+// serverGenerated columns are injected by the server, not the client, so they are
+// never treated as required-on-create. tenant_id is forced from the caller's
+// authenticated identity by the repository (see tenant isolation), so — like the
+// id and timestamp columns — clients must not be asked to supply it.
 var serverGenerated = map[string]bool{
 	"id":         true,
 	"created_at": true,
 	"updated_at": true,
 	"deleted_at": true,
+	"tenant_id":  true,
 }
 
 // ValidationError holds a list of missing required field names.

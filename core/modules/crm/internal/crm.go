@@ -12,6 +12,7 @@ import (
 // The table name is derived automatically from the struct name: "crm".
 type CRM struct {
 	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id"` // owning tenant; set server-side, enforces row isolation
 	Name     string    `db:"name"`
 	Email    string    `db:"email"`
 	Company  string    `db:"company"`
