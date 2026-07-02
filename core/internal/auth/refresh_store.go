@@ -28,27 +28,29 @@ func NewRefreshStore(db *orm.DB) *RefreshStore {
 }
 
 // Save hashes rawToken and stores it, revoking all previous tokens for userID first.
+// The revoke and insert run in a single transaction so a failure can never leave the
+// user with every token revoked and no replacement (which would strand their session).
 func (s *RefreshStore) Save(ctx context.Context, userID uuid.UUID, rawToken string, expiresAt time.Time) error {
-	if err := s.RevokeAll(ctx, userID); err != nil {
-		return fmt.Errorf("refresh: save: revoke old tokens: %w", err)
-	}
-
 	digest := sha256.Sum256([]byte(rawToken))
 	hash, err := bcrypt.GenerateFromPassword(digest[:], bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("refresh: save: hash token: %w", err)
 	}
 
-	_, err = s.tokens.Create(ctx, RefreshTokens{
-		UserID:    userID,
-		TokenHash: string(hash),
-		ExpiresAt: expiresAt,
-		Revoked:   false,
+	return orm.Transact(ctx, s.db, func(tx *orm.Tx) error {
+		if _, err := tx.Exec(ctx, revokeAllSQL, userID); err != nil {
+			return fmt.Errorf("refresh: save: revoke old tokens: %w", err)
+		}
+		if _, err := s.tokens.WithTx(tx).Create(ctx, RefreshTokens{
+			UserID:    userID,
+			TokenHash: string(hash),
+			ExpiresAt: expiresAt,
+			Revoked:   false,
+		}); err != nil {
+			return fmt.Errorf("refresh: save: %w", err)
+		}
+		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("refresh: save: %w", err)
-	}
-	return nil
 }
 
 // Validate returns nil if a valid, non-revoked, non-expired token matching rawToken exists.
@@ -105,14 +107,17 @@ func (s *RefreshStore) Validate(ctx context.Context, userID uuid.UUID, rawToken 
 	return fmt.Errorf("refresh: validate: token not found")
 }
 
+// revokeAllSQL revokes every live refresh token for a user. Shared by RevokeAll and
+// the transactional Save so both express the invariant identically.
+const revokeAllSQL = `
+	UPDATE refresh_tokens
+	SET revoked = TRUE, updated_at = now()
+	WHERE user_id = $1 AND revoked = FALSE AND deleted_at IS NULL
+`
+
 // RevokeAll soft-revokes all refresh tokens for userID.
 func (s *RefreshStore) RevokeAll(ctx context.Context, userID uuid.UUID) error {
-	_, err := s.db.Exec(ctx, `
-		UPDATE refresh_tokens
-		SET revoked = TRUE, updated_at = now()
-		WHERE user_id = $1 AND revoked = FALSE AND deleted_at IS NULL
-	`, userID)
-	if err != nil {
+	if _, err := s.db.Exec(ctx, revokeAllSQL, userID); err != nil {
 		return fmt.Errorf("refresh: revoke all: %w", err)
 	}
 	return nil

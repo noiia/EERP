@@ -70,6 +70,15 @@ type Config struct {
 	// BackendVersion.
 	BackendHost    string `json:"backend_host" needed:"false"`
 	BackendVersion string `json:"backend_version" needed:"false"`
+	// AllowedOrigins is the CORS allow-list for browser clients. Leave empty only in
+	// development — an empty list falls back to "*" (any origin). Set it to the
+	// frontend origin(s) in production.
+	AllowedOrigins []string `json:"allowed_origins" needed:"false"`
+	// RequestBodyLimit caps request body size (e.g. "1M", "512K"). Defaults to "1M".
+	RequestBodyLimit string `json:"request_body_limit" needed:"false"`
+	// AuthRateLimitPerMinute throttles the public auth endpoints per client IP to
+	// blunt credential brute-forcing. Defaults to 20/min when unset.
+	AuthRateLimitPerMinute int `json:"auth_rate_limit_per_minute" needed:"false"`
 	// SeedDevAdmin, when true, seeds a development admin user on startup so login works
 	// out of the box. DEV ONLY — never enable in production.
 	SeedDevAdmin bool `json:"seed_dev_admin" needed:"false"`

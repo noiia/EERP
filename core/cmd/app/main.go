@@ -143,13 +143,19 @@ func main() {
 	// Bind on PublicAddress (e.g. 0.0.0.0); clients reach the API at BackendBaseURL
 	// (BackendHost[:BackendPort]/api/BackendVersion) — that's what the frontend uses.
 	srvCfg := ormserver.Config{
-		Addr: fmt.Sprintf("%s:%d", configContent.PublicAddress, configContent.BackendPort),
+		Addr:         fmt.Sprintf("%s:%d", configContent.PublicAddress, configContent.BackendPort),
+		AllowOrigins: configContent.AllowedOrigins,
+		BodyLimit:    configContent.RequestBodyLimit,
+	}
+	if len(configContent.AllowedOrigins) == 0 {
+		common.Logger.Warn("⚠️  allowed_origins not set — CORS defaults to \"*\"; set it to the frontend origin(s) in production")
 	}
 	srv := ormserver.New(app, srvCfg)
 	common.Logger.Info("backend API base", zap.String("url", configContent.BackendBaseURL()))
 
-	// Public auth routes — no JWT/permission middleware.
-	authGroup := srv.Echo().Group("/api/v1/auth")
+	// Public auth routes — no JWT/permission middleware, but rate-limited per IP to
+	// blunt credential brute-forcing.
+	authGroup := srv.Echo().Group("/api/v1/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
 	authGroup.POST("/login", authHandler.Login)
 	authGroup.POST("/refresh", authHandler.Refresh)
 	authGroup.POST("/logout", authHandler.Logout)

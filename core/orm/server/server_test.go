@@ -239,3 +239,27 @@ func TestErrorHandler_PlainError_Returns500WithInternalCode(t *testing.T) {
 type plainError struct{ msg string }
 
 func (e *plainError) Error() string { return e.msg }
+
+// ── AuthRateLimiter ───────────────────────────────────────────────────────────
+
+func TestAuthRateLimiter_BlocksAfterBurst(t *testing.T) {
+	e := echo.New()
+	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) },
+		ormserver.AuthRateLimiter(2)) // burst = 2
+
+	codes := make([]int, 0, 4)
+	for i := 0; i < 4; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req.RemoteAddr = "203.0.113.7:5555" // same client IP → shared bucket
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		codes = append(codes, rec.Code)
+	}
+
+	if codes[0] != http.StatusOK || codes[1] != http.StatusOK {
+		t.Fatalf("first two requests should pass, got %v", codes)
+	}
+	if codes[3] != http.StatusTooManyRequests {
+		t.Errorf("expected 429 once the burst is exhausted, got %v", codes)
+	}
+}

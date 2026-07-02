@@ -189,17 +189,26 @@ automatically with no further CRUD changes. Tracked as item 1a below.
 
 ---
 
-## Hardening (optional, not exploitable breaches)
+## Hardening (optional, not exploitable breaches) — [x] DONE
 
-- [ ] 🟡 **Lock down CORS** — `core/orm/server/server.go` (~L62): replace
-  `AllowOrigins: ["*"]` with the known frontend origin(s), configurable via config/env.
-- [ ] 🟠 **Login rate limiting / lockout** — `core/orm/server/server.go`,
-  `core/internal/auth/handler.go`: throttle `/api/v1/auth/login` (IP + account) to blunt
-  brute force.
-- [ ] **Request body-size limit** — add `middleware.BodyLimit(...)` to bound payloads.
-- [ ] **Transactional refresh rotation** — `core/internal/auth/refresh_store.go`: wrap
-  `RevokeAll` + `Create` in one transaction so a crash can't strand a user without a
-  valid refresh token.
+Config additions: `allowed_origins`, `request_body_limit`, `auth_rate_limit_per_minute`
+(`core/internal/types/config.go`), threaded through `main.go` into `ormserver.Config`.
+
+- [x] 🟡 **Lock down CORS** — `ormserver.Config.AllowOrigins` drives the CORS allow-list
+  (`core/orm/server/server.go`); it falls back to `"*"` only when `allowed_origins` is
+  unset, and `main.go` logs a warning in that case. Set `allowed_origins` in production.
+- [x] 🟠 **Login rate limiting** — `ormserver.AuthRateLimiter(perMinute)` (in-memory,
+  per client IP, default 20/min) is applied to the `/api/v1/auth` group in `main.go`.
+  Test: `TestAuthRateLimiter_BlocksAfterBurst` (429 once the burst is exhausted).
+- [x] **Request body-size limit** — `middleware.BodyLimit` added to the server stack,
+  default `1M`, configurable via `request_body_limit`.
+- [x] **Transactional refresh rotation** — `RefreshStore.Save` now runs the revoke +
+  insert inside `orm.Transact`, so a failure can't leave a user with all tokens revoked
+  and no replacement. The revoke SQL is shared via a `revokeAllSQL` constant.
+
+**Note:** rate limiting is per-IP and in-memory (per process). For multi-instance
+deployments or account-level lockout, back it with a shared store (e.g. Redis) — future
+work if/when the API is horizontally scaled.
 
 ---
 

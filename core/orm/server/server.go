@@ -16,11 +16,16 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 )
 
 // Config holds HTTP server settings.
 type Config struct {
 	Addr string // bind address, e.g. "0.0.0.0:8080"
+	// AllowOrigins is the CORS allow-list. Empty falls back to "*" (dev only).
+	AllowOrigins []string
+	// BodyLimit caps request body size (e.g. "1M"). Empty defaults to "1M".
+	BodyLimit string
 }
 
 // Server wraps an Echo instance and the App.
@@ -37,19 +42,23 @@ type ErrorResponse struct {
 }
 
 // New creates a Server with the standard middleware stack:
-// RequestID → zap logger → Recover → CORS.
+// RequestID → zap logger → Recover → BodyLimit → CORS.
 func New(app *orm.App, cfg Config) *Server {
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
 	}
 
-	e := NewEcho(app)
+	e := newEcho(app, cfg)
 	return &Server{echo: e, cfg: cfg, app: app}
 }
 
-// NewEcho creates a configured Echo instance without binding it to a port.
-// Exposed so integration tests can get an httptest-friendly Echo.
+// NewEcho creates a configured Echo instance with default settings, without binding
+// it to a port. Exposed so integration tests can get an httptest-friendly Echo.
 func NewEcho(app *orm.App) *echo.Echo {
+	return newEcho(app, Config{})
+}
+
+func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -61,8 +70,21 @@ func NewEcho(app *orm.App) *echo.Echo {
 	}
 
 	e.Use(middleware.Recover())
+
+	// Cap request bodies to bound memory use / basic DoS. Default 1M.
+	bodyLimit := cfg.BodyLimit
+	if bodyLimit == "" {
+		bodyLimit = "1M"
+	}
+	e.Use(middleware.BodyLimit(bodyLimit))
+
+	// CORS: restrict to configured origins; fall back to "*" only when unset (dev).
+	allowOrigins := cfg.AllowOrigins
+	if len(allowOrigins) == 0 {
+		allowOrigins = []string{"*"}
+	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"},
+		AllowOrigins: allowOrigins,
 		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
 	}))
 
@@ -73,6 +95,21 @@ func NewEcho(app *orm.App) *echo.Echo {
 	}
 
 	return e
+}
+
+// AuthRateLimiter returns an in-memory, per-IP rate limiter for the public auth
+// endpoints, to blunt credential brute-forcing. perMinute requests are allowed per
+// client IP (burst = perMinute); it defaults to 20/min when perMinute <= 0.
+func AuthRateLimiter(perMinute int) echo.MiddlewareFunc {
+	if perMinute <= 0 {
+		perMinute = 20
+	}
+	store := middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
+		Rate:      rate.Limit(float64(perMinute) / 60.0), // tokens per second
+		Burst:     perMinute,
+		ExpiresIn: 3 * time.Minute,
+	})
+	return middleware.RateLimiter(store)
 }
 
 // RegisterRoutes mounts each handler's routes under /api/v1 with optional
