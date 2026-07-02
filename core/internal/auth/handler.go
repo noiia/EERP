@@ -75,6 +75,22 @@ type errEnvelope struct {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
+// dummyHash is a valid bcrypt hash generated once at startup, at the same cost as
+// stored password hashes (bcrypt.DefaultCost). The login handler compares against it
+// when the email is unknown so that path performs the same KDF work as a real
+// credential check — closing the timing side-channel that would otherwise reveal
+// whether an account exists. Generating it (rather than hard-coding a literal) keeps
+// the cost in lock-step with DefaultCost if it is ever changed.
+var dummyHash = mustDummyHash()
+
+func mustDummyHash() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("timing-attack-mitigation-constant"), bcrypt.DefaultCost)
+	if err != nil {
+		panic("auth: cannot generate timing-mitigation dummy hash: " + err.Error())
+	}
+	return h
+}
+
 // Login handles POST /api/v{version}/auth/login.
 func (h *Handler) Login(c echo.Context) error {
 	var req struct {
@@ -90,8 +106,12 @@ func (h *Handler) Login(c echo.Context) error {
 	user, err := h.users.FindByEmail(c.Request().Context(), req.Email)
 	if err != nil {
 		if errors.Is(err, orm.ErrNotFound) || errors.Is(err, ErrUserNotFound) {
-			// Run bcrypt comparison even when user is not found to prevent timing attacks.
-			_ = bcrypt.CompareHashAndPassword([]byte("$2a$12$placeholder_hash_for_timing_____"), []byte(req.Password))
+			// Do the same bcrypt work for an unknown user as for a real one, so the
+			// response time does not reveal whether the email exists. dummyHash is a
+			// valid hash at the same cost as stored passwords, so this comparison runs
+			// the full KDF (the previous placeholder was not a valid hash, so bcrypt
+			// returned instantly and the timing side-channel remained open).
+			_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password))
 			return h.unauthMsg(c, errMsg)
 		}
 		return fmt.Errorf("login: %w", err)

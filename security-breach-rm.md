@@ -148,16 +148,20 @@ automatically with no further CRUD changes. Tracked as item 1a below.
 
 ---
 
-## 4. 🟡 Fix the broken login timing-attack mitigation
+## 4. 🟡 Fix the broken login timing-attack mitigation — [x] DONE
 
-- **Files:** `core/internal/auth/handler.go` (unknown-user branch)
+- **Files:** `core/internal/auth/handler.go`, `core/internal/auth/export_test.go`,
+  `core/internal/auth/timing_test.go`.
 - **Problem:** The placeholder `"$2a$12$placeholder_hash_for_timing_____"` is not a valid
-  bcrypt hash, so `CompareHashAndPassword` errors out instantly instead of doing the KDF.
-  The unknown-user path stays measurably faster → account enumeration via timing.
-- **Do:** Replace with a real precomputed bcrypt hash (cost 12) of a dummy password so
-  both paths do equal work.
-- **Acceptance:** Unit test asserts the constant is a valid bcrypt hash; known vs unknown
-  user timings are comparable.
+  bcrypt hash, so `CompareHashAndPassword` errored out instantly instead of doing the
+  KDF. The unknown-user path stayed measurably faster → account enumeration via timing.
+- **Fix (done):** the handler now compares against `dummyHash`, a real bcrypt hash
+  generated once at startup at `bcrypt.DefaultCost` (the same cost as stored passwords,
+  so it tracks any future cost change). The unknown-user path now runs the full KDF,
+  matching a real credential check.
+- **Tests:** `timing_test.go` asserts the dummy hash is a valid bcrypt hash at
+  `DefaultCost` and that comparing against it performs real work (returns
+  `ErrMismatchedHashAndPassword`, not an invalid-hash short-circuit).
 
 ---
 
