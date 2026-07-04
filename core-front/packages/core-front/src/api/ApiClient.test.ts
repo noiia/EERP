@@ -24,7 +24,7 @@ vi.mock('next/cache', () => ({
   revalidateTag: (tag: string, profile: unknown) => revalidateTagMock(tag, profile),
 }))
 
-import { createServerApiClient, onSessionExpired } from './ApiClient'
+import { apiRequest, createServerApiClient, onSessionExpired } from './ApiClient'
 import { ApiError } from './errors'
 
 function jsonResponse(status: number, body?: unknown): Response {
@@ -193,6 +193,37 @@ describe('ServerApiClient', () => {
 
     await expect(createServerApiClient().remove('crm', '1')).resolves.toBeUndefined()
     expect(revalidateTagMock).toHaveBeenCalledWith('crm', 'max')
+  })
+
+  it('apiRequest GETs stay out of the Data Cache (session-scoped, never shared)', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { preferred_locale: 'fr', default_locale: null }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('GET', '/me/preferences')).resolves.toEqual({
+      preferred_locale: 'fr',
+      default_locale: null,
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }]
+    expect(url).toBe('http://api.test/api/v1/me/preferences')
+    expect(authHeader(init)).toBe('Bearer old')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+  })
+
+  it('apiRequest resolves undefined on 204 and refreshes once on 401', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url)
+      if (u.endsWith('/auth/refresh')) return refreshResponse('new', 'r2')
+      return authHeader(init) === 'Bearer new'
+        ? jsonResponse(204)
+        : jsonResponse(401, { error: { code: 'TOKEN_EXPIRED', message: 'expired' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      apiRequest('PUT', '/me/preferences', { preferred_locale: 'fr' }),
+    ).resolves.toBeUndefined()
+    expect(cookieJar.get('eerp_access')).toBe('new')
   })
 
   it('honors API_VERSION when set', async () => {

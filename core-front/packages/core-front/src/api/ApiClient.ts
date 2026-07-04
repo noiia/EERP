@@ -88,10 +88,12 @@ const REVALIDATE_PROFILE = 'max'
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
+// tags: the Data Cache tags for a GET, or null to force no-store — per-user and
+// per-tenant responses must never land in the shared cache.
 async function authedFetch(
   method: Method,
   path: string,
-  tags: string[],
+  tags: string[] | null,
   body?: unknown,
 ): Promise<Response> {
   const store = await cookies()
@@ -104,14 +106,15 @@ async function authedFetch(
     headers['Content-Type'] = 'application/json'
     init.body = JSON.stringify(body)
   }
-  // GETs participate in the Data Cache (tagged for revalidation); mutations never cache.
-  if (method === 'GET') init.next = { tags }
+  // Tagged GETs participate in the Data Cache (revalidated by mutations); everything
+  // else — mutations and untagged session-scoped reads — never caches.
+  if (method === 'GET' && tags) init.next = { tags }
   else init.cache = 'no-store'
 
   return fetch(`${baseUrl()}${path}`, init)
 }
 
-async function request<T>(method: Method, path: string, tags: string[], body?: unknown): Promise<T> {
+async function request<T>(method: Method, path: string, tags: string[] | null, body?: unknown): Promise<T> {
   let res = await authedFetch(method, path, tags, body)
 
   if (res.status === 401) {
@@ -175,4 +178,16 @@ class ServerApiClientImpl implements ServerApiClient {
 /** Construct a request-scoped client bound to the current session cookie. */
 export function createServerApiClient(): ServerApiClient {
   return new ServerApiClientImpl()
+}
+
+/**
+ * Authed request to a non-entity backend endpoint (self-service preferences, tenant
+ * settings — anything with a dedicated handler instead of the generic CRUD surface).
+ * Shares the entity client's session semantics (Bearer from the cookie, refresh-once
+ * on 401, ApiError on failure) but always bypasses the Data Cache: these responses
+ * are per-user or per-tenant, so a shared cache entry would leak state across
+ * sessions. `path` is relative to the versioned API base (e.g. "/me/preferences").
+ */
+export function apiRequest<T>(method: Method, path: string, body?: unknown): Promise<T> {
+  return request<T>(method, path, null, body)
 }

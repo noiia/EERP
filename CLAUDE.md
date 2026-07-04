@@ -55,6 +55,7 @@ Key internal packages:
 - `internal/module/` — module detection (`detector.go`), loading (`load.go`), and DB migration (`migration.go`). The detector scans `module_root` dirs for `module.json` files, builds filesystem snapshots for change detection, resolves `depends` ordering via topological priority, and loads each `.wasm` binary in priority order (same-priority modules load concurrently).
 - `internal/types/` — shared structs: `Config`, `Module`, `Migration`, `Operation`
 - `internal/common/` — logger (zap), file utilities, JSON decoder
+- `internal/settings/` — tenant-scoped `app_settings` key/value store (kept off the generic CRUD surface) plus the dedicated handlers behind it: `GET/PUT /api/v1/me/preferences` (self-service, JWT-scoped — e.g. the user's `preferred_locale`) and `PUT /api/v1/settings/i18n` (workspace default language, key `i18n.default_locale`, permission `settings:i18n:write`)
 
 ### 2. WASM modules (`modules/`) — Rust
 Each module is a Rust crate compiled to `wasm32-unknown-unknown`. A module directory must contain:
@@ -63,7 +64,7 @@ Each module is a Rust crate compiled to `wasm32-unknown-unknown`. A module direc
 
 Modules may optionally export two WASM functions: `migrate()` returning a pointer and `migrate_len()` returning its byte length. The core reads the pointer from linear memory, deserializes the JSON `Migration` struct, and applies `add_column` operations via `ALTER TABLE`.
 
-A module may also ship an optional `i18n/` folder (gettext `<name>.pot` template + one `<locale>.po` per language). It is consumed by the **frontend build**, not the Go core: the frontend's module discovery compiles the catalogs in and the UI offers them under Settings → Translations (see `core-front/CLAUDE.md`).
+A module may also ship an optional `i18n/` folder (gettext `<name>.pot` template + one `<locale>.po` per language). The catalogs are consumed by the **frontend build**: the frontend's module discovery compiles them in and the UI offers them under Settings → Translations (see `core-front/CLAUDE.md`). The Go core owns only which language each user sees: the per-user `preferred_locale` on the user record and the workspace default in `app_settings` (see `internal/settings/`).
 
 ### 3. Frontend (`core-front/`) — SvelteKit + TypeScript
 

@@ -48,7 +48,15 @@ msgid "Translations"
 msgstr ""
 
 #: app/settings/SettingsHub.tsx
-msgid "Interface language, plus the translations modules provide."
+msgid "Workspace default language, plus the translations modules provide."
+msgstr ""
+
+#: app/settings/SettingsHub.tsx src/components/AccountSettings.tsx
+msgid "Account"
+msgstr ""
+
+#: app/settings/SettingsHub.tsx
+msgid "Your personal preferences, like the display language."
 msgstr ""
 
 #: src/components/AppearanceSettings.tsx
@@ -68,15 +76,43 @@ msgid "Preview"
 msgstr ""
 
 #: src/components/TranslationSettings.tsx
-msgid "Choose the interface language and manage the translations installed modules provide."
+msgid "Choose the workspace default language and manage the translations installed modules provide."
 msgstr ""
 
 #: src/components/TranslationSettings.tsx
-msgid "Language"
+msgid "Default language"
 msgstr ""
 
 #: src/components/TranslationSettings.tsx
+msgid "The interface language for every user who has not picked one in Settings → Account."
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Changing the workspace default language requires the settings:i18n:write permission."
+msgstr ""
+
+#: src/components/TranslationSettings.tsx src/components/AccountSettings.tsx
 msgid "English (source)"
+msgstr ""
+
+#: src/components/AccountSettings.tsx
+msgid "Your personal preferences. They follow your account on every device."
+msgstr ""
+
+#: src/components/AccountSettings.tsx
+msgid "Display language"
+msgstr ""
+
+#: src/components/AccountSettings.tsx
+msgid "Workspace default"
+msgstr ""
+
+#: src/components/AccountSettings.tsx
+msgid "Languages come from the translations enabled in Settings → Translations. \"Workspace default\" follows whatever the workspace administrator picks."
+msgstr ""
+
+#: src/components/AccountSettings.tsx
+msgid "Your preferences could not be loaded — try reloading the page."
 msgstr ""
 
 #: src/components/TranslationSettings.tsx
@@ -84,7 +120,7 @@ msgid "Available translations"
 msgstr ""
 
 #: src/components/TranslationSettings.tsx
-msgid "Discovered from the i18n folder of each module (.po files, one per language). Add a translation to make it selectable above."
+msgid "Discovered from the i18n folder of each module (.po files, one per language). Add a translation to offer it as a display language in Settings → Account."
 msgstr ""
 
 #: src/components/TranslationSettings.tsx

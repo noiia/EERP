@@ -16,6 +16,10 @@ type Users struct {
 	TenantID     uuid.UUID `db:"tenant_id"`
 	Email        string    `db:"email"`
 	PasswordHash string    `db:"password_hash"`
+	// PreferredLocale is the user's display-language choice. nil inherits the
+	// tenant default (app_settings "i18n.default_locale"); the reserved value
+	// "source" forces the untranslated source language.
+	PreferredLocale *string `db:"preferred_locale"`
 }
 
 // Role is a named set of permissions scoped to a tenant.

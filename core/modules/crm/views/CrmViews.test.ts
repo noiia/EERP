@@ -5,7 +5,7 @@ import crm from './CrmViews'
 describe('crm FrontModule', () => {
   it('is named "crm" and exposes the dashboard, list, and form routes', () => {
     expect(crm.name).toBe('crm')
-    expect(crm.routes.map((r) => r.path)).toEqual(['/crm/dashboard', '/crm/list', '/crm/:id'])
+    expect(crm.routes.map((r) => r.path)).toEqual(['/crm', '/crm/list', '/crm/:id'])
   })
 
   it('wires a dashboard, a tree list, and a form, all over the crm entity', () => {
@@ -26,6 +26,7 @@ describe('crm FrontModule', () => {
       'email',
       'company',
       'status',
+      'contact',
     ])
   })
 })

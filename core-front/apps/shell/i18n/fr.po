@@ -35,8 +35,14 @@ msgstr "Couleurs de marque et mode clair/sombre pour toute l'interface."
 msgid "Translations"
 msgstr "Traductions"
 
-msgid "Interface language, plus the translations modules provide."
-msgstr "Langue de l'interface et traductions fournies par les modules."
+msgid "Workspace default language, plus the translations modules provide."
+msgstr "Langue par défaut de l'espace de travail et traductions fournies par les modules."
+
+msgid "Account"
+msgstr "Compte"
+
+msgid "Your personal preferences, like the display language."
+msgstr "Vos préférences personnelles, comme la langue d'affichage."
 
 msgid "Customize the brand colors used across the interface. Changes apply instantly and are saved on this device."
 msgstr "Personnalisez les couleurs de marque utilisées dans l'interface. Les modifications s'appliquent immédiatement et sont enregistrées sur cet appareil."
@@ -50,20 +56,41 @@ msgstr "Réinitialiser les valeurs par défaut"
 msgid "Preview"
 msgstr "Aperçu"
 
-msgid "Choose the interface language and manage the translations installed modules provide."
-msgstr "Choisissez la langue de l'interface et gérez les traductions fournies par les modules installés."
+msgid "Choose the workspace default language and manage the translations installed modules provide."
+msgstr "Choisissez la langue par défaut de l'espace de travail et gérez les traductions fournies par les modules installés."
 
-msgid "Language"
-msgstr "Langue"
+msgid "Default language"
+msgstr "Langue par défaut"
+
+msgid "The interface language for every user who has not picked one in Settings → Account."
+msgstr "La langue de l'interface pour chaque utilisateur qui n'en a pas choisi une dans Paramètres → Compte."
+
+msgid "Changing the workspace default language requires the settings:i18n:write permission."
+msgstr "Modifier la langue par défaut de l'espace de travail nécessite la permission settings:i18n:write."
 
 msgid "English (source)"
 msgstr "Anglais (source)"
 
+msgid "Your personal preferences. They follow your account on every device."
+msgstr "Vos préférences personnelles. Elles suivent votre compte sur tous vos appareils."
+
+msgid "Display language"
+msgstr "Langue d'affichage"
+
+msgid "Workspace default"
+msgstr "Défaut de l'espace de travail"
+
+msgid "Languages come from the translations enabled in Settings → Translations. \"Workspace default\" follows whatever the workspace administrator picks."
+msgstr "Les langues proviennent des traductions activées dans Paramètres → Traductions. « Défaut de l'espace de travail » suit le choix de l'administrateur de l'espace de travail."
+
+msgid "Your preferences could not be loaded — try reloading the page."
+msgstr "Vos préférences n'ont pas pu être chargées — essayez de recharger la page."
+
 msgid "Available translations"
 msgstr "Traductions disponibles"
 
-msgid "Discovered from the i18n folder of each module (.po files, one per language). Add a translation to make it selectable above."
-msgstr "Découvertes dans le dossier i18n de chaque module (fichiers .po, un par langue). Ajoutez une traduction pour la rendre sélectionnable ci-dessus."
+msgid "Discovered from the i18n folder of each module (.po files, one per language). Add a translation to offer it as a display language in Settings → Account."
+msgstr "Découvertes dans le dossier i18n de chaque module (fichiers .po, un par langue). Ajoutez une traduction pour la proposer comme langue d'affichage dans Paramètres → Compte."
 
 msgid "No translations found. Modules ship them as i18n/<locale>.po files."
 msgstr "Aucune traduction trouvée. Les modules les fournissent sous forme de fichiers i18n/<locale>.po."

@@ -18,6 +18,15 @@ describe('SettingsHub', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/appearance')).toBe(true)
   })
 
+  it('ships Account as a default section, linked from the hub', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/account')).toBe(true)
+    render(<SettingsHub />)
+    expect(screen.getByRole('link', { name: /account/i })).toHaveAttribute(
+      'href',
+      '/settings/account',
+    )
+  })
+
   it('ships Translations as a default section, linked from the hub', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/translations')).toBe(true)
     render(<SettingsHub />)

@@ -7,8 +7,10 @@ import '@/generated/generated-modules'
 import { AppThemeProvider } from '../src/components/AppThemeProvider'
 import { AppTopBar } from '../src/components/AppTopBar'
 import { I18nInit } from '../src/components/I18nInit'
+import { LocaleSync } from '../src/components/LocaleSync'
 import { SessionHydrator } from '../src/components/SessionHydrator'
 import { getIdentity } from '../src/lib/session'
+import { getMyLocalePreferences } from '../src/lib/preferences'
 
 export const metadata = {
   title: 'EERP',
@@ -18,6 +20,9 @@ export const metadata = {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Resolve identity on the server and seed the client mirror for UI gating.
   const identity = await getIdentity()
+  // Server-owned language preferences (user choice + workspace default) → LocaleSync
+  // applies them to the client i18n store. Anonymous visitors keep the local state.
+  const preferences = identity ? await getMyLocalePreferences() : null
   // Per-module main pages for the top-bar nav (plain data → client AppTopBar).
   const nav = moduleRegistry.moduleNav()
   return (
@@ -26,6 +31,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <AppRouterCacheProvider>
           <AppThemeProvider>
             <I18nInit />
+            <LocaleSync preferences={preferences} />
             <SessionHydrator identity={identity} />
             <AppTopBar identity={identity} nav={nav} />
             {children}

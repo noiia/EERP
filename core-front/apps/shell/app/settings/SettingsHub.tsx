@@ -22,6 +22,11 @@ export interface SettingsSection {
 /** The installed settings sections. Appearance ships first; more land here later. */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
+    path: '/settings/account',
+    title: 'Account',
+    description: 'Your personal preferences, like the display language.',
+  },
+  {
     path: '/settings/appearance',
     title: 'Appearance',
     description: 'Brand colors and light/dark mode for the whole interface.',
@@ -29,7 +34,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     path: '/settings/translations',
     title: 'Translations',
-    description: 'Interface language, plus the translations modules provide.',
+    description: 'Workspace default language, plus the translations modules provide.',
   },
 ] as const
 

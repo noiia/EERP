@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { translationRegistry, useI18nStore } from '@eerp/core-front'
+
+// The workspace-default save is a Server Action; the component only sees its
+// result object.
+const saveDefaultLocaleMock = vi.fn()
+vi.mock('@/lib/preferences', () => ({
+  setDefaultLocale: (locale: string | null) => saveDefaultLocaleMock(locale),
+}))
+
 import TranslationSettings from './TranslationSettings'
 
 // The generated manifest is aliased to an empty stub in vitest.config.ts (it is a
@@ -9,6 +17,8 @@ import TranslationSettings from './TranslationSettings'
 
 describe('TranslationSettings', () => {
   beforeEach(() => {
+    saveDefaultLocaleMock.mockReset()
+    saveDefaultLocaleMock.mockResolvedValue({ ok: true })
     translationRegistry.registerTemplate({ module: 'crm', keys: ['Name', 'Email', 'Status'] })
     translationRegistry.register({
       locale: 'fr',
@@ -31,33 +41,69 @@ describe('TranslationSettings', () => {
     expect(screen.getByText(/1 \/ 3 strings · from shell/)).toBeInTheDocument()
   })
 
-  it('adds a translation, making it selectable as the language', () => {
-    render(<TranslationSettings />)
+  it('adds and removes translations from the enabled set', () => {
+    render(<TranslationSettings canEditDefault />)
     fireEvent.click(screen.getByRole('button', { name: 'Add fr' }))
     expect(useI18nStore.getState().enabledLocales).toEqual(['fr'])
 
-    fireEvent.mouseDown(screen.getByLabelText('Language'))
-    const listbox = within(screen.getByRole('listbox'))
-    expect(listbox.getByText('français')).toBeInTheDocument()
-    expect(listbox.queryByText('Deutsch')).not.toBeInTheDocument()
-
-    fireEvent.click(listbox.getByText('français'))
-    expect(useI18nStore.getState().locale).toBe('fr')
-  })
-
-  it('removes an enabled translation and falls back to the source language', () => {
-    useI18nStore.setState({ locale: 'fr', enabledLocales: ['fr'] })
-    render(<TranslationSettings />)
     fireEvent.click(screen.getByRole('button', { name: 'Remove fr' }))
     expect(useI18nStore.getState().enabledLocales).toEqual([])
+  })
+
+  it('removing the active translation falls back to the source language', () => {
+    useI18nStore.setState({ locale: 'fr', enabledLocales: ['fr'] })
+    render(<TranslationSettings canEditDefault />)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove fr' }))
     expect(useI18nStore.getState().locale).toBeNull()
   })
 
-  it('ignores persisted locales whose catalogs no longer ship', () => {
-    useI18nStore.setState({ locale: 'xx', enabledLocales: ['xx'] })
-    render(<TranslationSettings />)
-    // 'xx' is not in the pool: the selector falls back to the source entry.
-    expect(screen.getByLabelText('Language')).toHaveTextContent('English (source)')
+  describe('workspace default language', () => {
+    it('offers the whole build-time pool and persists the pick server-side', async () => {
+      render(<TranslationSettings canEditDefault preferredLocale="de" />)
+
+      fireEvent.mouseDown(screen.getByLabelText('Default language'))
+      const listbox = within(screen.getByRole('listbox'))
+      // The default offers everything shipped, independent of the enabled set.
+      expect(listbox.getByText('Deutsch')).toBeInTheDocument()
+      fireEvent.click(listbox.getByText('français'))
+
+      await waitFor(() => expect(saveDefaultLocaleMock).toHaveBeenCalledWith('fr'))
+      // The caller has their own preference ('de') — their active locale is untouched.
+      expect(useI18nStore.getState().locale).toBeNull()
+    })
+
+    it('applies the new default immediately to a caller who inherits it', async () => {
+      render(<TranslationSettings canEditDefault preferredLocale={null} />)
+
+      fireEvent.mouseDown(screen.getByLabelText('Default language'))
+      fireEvent.click(within(screen.getByRole('listbox')).getByText('français'))
+
+      await waitFor(() => expect(useI18nStore.getState().locale).toBe('fr'))
+      expect(useI18nStore.getState().enabledLocales).toContain('fr')
+    })
+
+    it('reverts the pick and surfaces the backend message when the save fails', async () => {
+      saveDefaultLocaleMock.mockResolvedValue({ ok: false, message: 'Missing permission' })
+      render(<TranslationSettings canEditDefault defaultLocale="de" preferredLocale={null} />)
+
+      fireEvent.mouseDown(screen.getByLabelText('Default language'))
+      fireEvent.click(within(screen.getByRole('listbox')).getByText('français'))
+
+      expect(await screen.findByText('Missing permission')).toBeInTheDocument()
+      expect(screen.getByLabelText('Default language')).toHaveTextContent('Deutsch')
+      expect(useI18nStore.getState().locale).toBeNull()
+    })
+
+    it('is read-only without settings:i18n:write', () => {
+      render(<TranslationSettings defaultLocale="fr" />)
+      expect(screen.getByLabelText('Default language')).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByText(/requires the settings:i18n:write permission/)).toBeInTheDocument()
+    })
+
+    it('shows the source language when the stored default no longer ships', () => {
+      render(<TranslationSettings canEditDefault defaultLocale="xx" />)
+      expect(screen.getByLabelText('Default language')).toHaveTextContent('English (source)')
+    })
   })
 
   it('shows an empty state when no module ships translations', () => {

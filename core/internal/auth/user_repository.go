@@ -50,6 +50,23 @@ func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (Users, err
 	return u, nil
 }
 
+// SetPreferredLocale updates the user's display-language preference.
+// nil clears the preference (the user inherits the tenant default).
+func (r *UserRepository) SetPreferredLocale(ctx context.Context, userID uuid.UUID, locale *string) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET preferred_locale = $1, updated_at = now()
+		WHERE id = $2 AND deleted_at IS NULL
+	`, locale, userID)
+	if err != nil {
+		return fmt.Errorf("user: set preferred locale: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user: set preferred locale: %w", orm.ErrNotFound)
+	}
+	return nil
+}
+
 // FindRoleNames returns the role names assigned to the given user.
 func (r *UserRepository) FindRoleNames(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	rows, err := r.db.Query(ctx, `

@@ -14,6 +14,7 @@ import (
 	"core/internal/common"
 	authmw "core/internal/middleware"
 	"core/internal/module"
+	"core/internal/settings"
 	"core/internal/types"
 	_ "core/modules/all"
 	"core/orm"
@@ -159,6 +160,21 @@ func main() {
 	authGroup.POST("/login", authHandler.Login)
 	authGroup.POST("/refresh", authHandler.Refresh)
 	authGroup.POST("/logout", authHandler.Logout)
+
+	// ── Settings / preferences ────────────────────────────────────────────────
+	settingsHandler := settings.NewHandler(userRepo, settings.NewRepository(app.DB))
+
+	// Self-service routes: JWT only, no permission middleware. The identity in the
+	// token scopes every query to the caller's own record, so granting a dedicated
+	// permission would gate users out of their own preferences.
+	meGroup := srv.Echo().Group("/api/v1/me", jwtMw)
+	meGroup.GET("/preferences", settingsHandler.GetMyPreferences)
+	meGroup.PUT("/preferences", settingsHandler.PutMyPreferences)
+
+	// Tenant-wide settings: JWT + permission middleware (PUT /settings/i18n
+	// derives settings:i18n:write).
+	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
+	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
 
 	// Protected routes — JWT + permission middleware on the group.
 	srv.RegisterRoutes(ormserver.BuildHandlers(app), nil, jwtMw, permMw)

@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -25,13 +26,15 @@ import {
 // Catalogs register as an import side effect; importing here (not only in the layout)
 // guarantees the registry is populated before this page lists it.
 import '@/generated/generated-translations'
+import { setDefaultLocale as saveDefaultLocale } from '@/lib/preferences'
 
-// Settings → Translations: the language manager. Everything here is client-owned
-// preference state (like the theme): the POOL of translations is fixed at build time —
-// whatever the modules ship in their i18n/ folders as .po files — while the user's
-// SELECTION lives in the persisted useI18nStore. "Add" enables a discovered
-// translation for the language selector; "Remove" disables it (and falls back to the
-// source language when it was active). No server round-trip.
+// Settings → Translations: the workspace-level language manager. The POOL of
+// translations is fixed at build time — whatever the modules ship in their i18n/
+// folders as .po files — and the add/remove SELECTION lives client-side in the
+// persisted useI18nStore. The DEFAULT LANGUAGE is workspace state: it persists
+// server-side (PUT /settings/i18n, permission settings:i18n:write) and applies to
+// every user who has not chosen a personal display language — that per-user choice
+// lives under Settings → Account.
 
 /** The Select value standing for the source language (MUI wants a non-null value). */
 const SOURCE_VALUE = 'source'
@@ -179,19 +182,101 @@ function ExportSection() {
   )
 }
 
-export default function TranslationSettings() {
-  const t = useT()
-  const locale = useI18nStore((s) => s.locale)
-  const enabledLocales = useI18nStore((s) => s.enabledLocales)
-  const setLocale = useI18nStore((s) => s.setLocale)
+export interface TranslationSettingsProps {
+  /**
+   * The caller's own preferred_locale (null = inherits the workspace default,
+   * undefined = unknown because the preferences read failed). Used to reflect a
+   * default-language change immediately for callers who inherit it.
+   */
+  preferredLocale?: string | null
+  /** The current workspace default locale (null/undefined = source language). */
+  defaultLocale?: string | null
+  /** Whether the caller holds settings:i18n:write (the page resolves it server-side). */
+  canEditDefault?: boolean
+}
 
-  // The build-time pool. Persisted state may reference locales whose .po files are
-  // gone since the last build — selectable entries are always pool ∩ enabled.
+/**
+ * The workspace default language: server-persisted, applied to every user without a
+ * personal preference. The save is optimistic — reverted with the backend's error
+ * message when it fails (e.g. the permission was revoked since the page rendered).
+ */
+function DefaultLanguageSection({
+  preferredLocale,
+  defaultLocale,
+  canEditDefault,
+}: TranslationSettingsProps) {
+  const t = useT()
+  const addLocale = useI18nStore((s) => s.addLocale)
+  const setLocale = useI18nStore((s) => s.setLocale)
+  const [saved, setSaved] = useState(defaultLocale ?? null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const pool = translationRegistry.locales()
+  const selectValue = pool.some((info) => info.locale === saved) ? (saved as string) : SOURCE_VALUE
+
+  async function onChange(value: string) {
+    const next = value === SOURCE_VALUE ? null : value
+    const previous = saved
+    setSaved(next)
+    setSaving(true)
+    const result = await saveDefaultLocale(next)
+    setSaving(false)
+    if (!result.ok) {
+      setSaved(previous)
+      setError(result.message)
+      return
+    }
+    setError(null)
+    // Callers without a personal choice inherit the default — reflect it now
+    // instead of on the next full load.
+    if (preferredLocale === null) {
+      if (next) addLocale(next)
+      setLocale(next)
+    }
+  }
+
+  return (
+    <Stack spacing={2}>
+      <FormControl sx={{ maxWidth: 320 }} disabled={!canEditDefault || saving}>
+        <InputLabel id="default-language-label">{t('Default language')}</InputLabel>
+        <Select
+          labelId="default-language-label"
+          label={t('Default language')}
+          value={selectValue}
+          onChange={(e) => void onChange(e.target.value)}
+        >
+          <MenuItem value={SOURCE_VALUE}>{t('English (source)')}</MenuItem>
+          {pool.map((info) => (
+            <MenuItem key={info.locale} value={info.locale}>
+              {localeDisplayName(info.locale, info.locale)}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      <Typography variant="body2" color="text.secondary">
+        {canEditDefault
+          ? t(
+              'The interface language for every user who has not picked one in Settings → Account.',
+            )
+          : t('Changing the workspace default language requires the settings:i18n:write permission.')}
+      </Typography>
+      {error && <Alert severity="error">{error}</Alert>}
+    </Stack>
+  )
+}
+
+export default function TranslationSettings({
+  preferredLocale,
+  defaultLocale,
+  canEditDefault = false,
+}: TranslationSettingsProps = {}) {
+  const t = useT()
+  const enabledLocales = useI18nStore((s) => s.enabledLocales)
+
+  // The build-time pool. Persisted enabled state may reference locales whose .po
+  // files are gone since the last build — they simply stop being offered.
   const available = translationRegistry.locales()
-  const selectable = available.filter((info) => enabledLocales.includes(info.locale))
-  const selectValue = selectable.some((info) => info.locale === locale)
-    ? (locale as string)
-    : SOURCE_VALUE
 
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
@@ -202,27 +287,16 @@ export default function TranslationSettings() {
           </Typography>
           <Typography color="text.secondary">
             {t(
-              'Choose the interface language and manage the translations installed modules provide.',
+              'Choose the workspace default language and manage the translations installed modules provide.',
             )}
           </Typography>
         </Stack>
 
-        <FormControl sx={{ maxWidth: 320 }}>
-          <InputLabel id="active-language-label">{t('Language')}</InputLabel>
-          <Select
-            labelId="active-language-label"
-            label={t('Language')}
-            value={selectValue}
-            onChange={(e) => setLocale(e.target.value === SOURCE_VALUE ? null : e.target.value)}
-          >
-            <MenuItem value={SOURCE_VALUE}>{t('English (source)')}</MenuItem>
-            {selectable.map((info) => (
-              <MenuItem key={info.locale} value={info.locale}>
-                {localeDisplayName(info.locale, info.locale)}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <DefaultLanguageSection
+          preferredLocale={preferredLocale}
+          defaultLocale={defaultLocale}
+          canEditDefault={canEditDefault}
+        />
 
         <Divider />
 
@@ -232,7 +306,7 @@ export default function TranslationSettings() {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {t(
-              'Discovered from the i18n folder of each module (.po files, one per language). Add a translation to make it selectable above.',
+              'Discovered from the i18n folder of each module (.po files, one per language). Add a translation to offer it as a display language in Settings → Account.',
             )}
           </Typography>
         </Stack>
