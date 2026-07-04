@@ -44,7 +44,7 @@ const formView: ViewDescriptor = {
 const crm: FrontModule = {
   name: 'crm',
   routes: [
-    { path: '/crm/dashboard', descriptor: dashboardView, permission: 'crm:contacts:read' },
+    { path: '/crm', descriptor: dashboardView, permission: 'crm:contacts:read' },
     { path: '/crm/list', descriptor: listView, permission: 'crm:contacts:read' },
     { path: '/crm/:id', descriptor: formView, permission: 'crm:contacts:read' },
   ],

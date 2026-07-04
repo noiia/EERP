@@ -11,13 +11,14 @@ import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { BRAND_COLORS, isHexColor, useUiStore } from '@eerp/core-front'
+import { BRAND_COLORS, isHexColor, useT, useUiStore } from '@eerp/core-front'
 
 // The color manager for Settings → Appearance. Edits the persisted brand palette in
 // `useUiStore`; because the shell themes off that store, every change re-themes the
 // whole app live (this card and its preview included). No server round-trip: the
 // palette is a per-user UI preference (CONVENTIONS.md — the client owns the theme).
 export default function AppearanceSettings() {
+  const t = useT()
   const palette = useUiStore((s) => s.palette)
   const mode = useUiStore((s) => s.theme)
   const setPaletteColor = useUiStore((s) => s.setPaletteColor)
@@ -29,11 +30,12 @@ export default function AppearanceSettings() {
       <Stack spacing={3}>
         <Stack spacing={1}>
           <Typography variant="h4" component="h1">
-            Appearance
+            {t('Appearance')}
           </Typography>
           <Typography color="text.secondary">
-            Customize the brand colors used across the interface. Changes apply instantly and are
-            saved on this device.
+            {t(
+              'Customize the brand colors used across the interface. Changes apply instantly and are saved on this device.',
+            )}
           </Typography>
         </Stack>
 
@@ -45,7 +47,7 @@ export default function AppearanceSettings() {
               slotProps={{ input: { 'aria-label': 'Dark mode' } }}
             />
           }
-          label="Dark mode"
+          label={t('Dark mode')}
         />
 
         <Stack spacing={2}>
@@ -114,7 +116,7 @@ export default function AppearanceSettings() {
           {/* `inherit` (not secondary): secondary is Deep Ocean, illegible on a dark
               surface. Inheriting the text color keeps this readable in both modes. */}
           <Button variant="outlined" color="inherit" onClick={resetPalette}>
-            Reset to defaults
+            {t('Reset to defaults')}
           </Button>
         </Box>
 
@@ -124,7 +126,7 @@ export default function AppearanceSettings() {
         <Card variant="outlined">
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              Preview
+              {t('Preview')}
             </Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
               <Button variant="contained" color="primary">

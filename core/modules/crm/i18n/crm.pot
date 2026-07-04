@@ -1,0 +1,28 @@
+# CRM module — translatable strings (gettext template).
+# Field labels declared in views/CrmViews.ts descriptors; the engine's renderers
+# translate them via useT, so localizing the CRM needs only a <locale>.po here.
+msgid ""
+msgstr ""
+"Project-Id-Version: crm 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+# Titleized module/entity name ('crm' -> 'Crm'): the menu tile, breadcrumb, and
+# dashboard block title all render it, so the module owns its display name here.
+msgid "Crm"
+msgstr ""
+
+#: views/CrmViews.ts
+msgid "Name"
+msgstr ""
+
+#: views/CrmViews.ts
+msgid "Email"
+msgstr ""
+
+#: views/CrmViews.ts
+msgid "Company"
+msgstr ""
+
+#: views/CrmViews.ts
+msgid "Status"
+msgstr ""

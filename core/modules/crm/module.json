@@ -1,12 +1,16 @@
 {
-    "active": true,
+    "active": false,
     "type": "go",
     "name": "crm",
     "display_name": "CRM",
     "version": "0.0.1",
     "author": "Edwin Lecomte",
     "description": "CRM core module",
-    "static_files": { "views": ["CrmViews.ts"] },
+    "static_files": {
+        "views": [
+            "CrmViews.ts"
+        ]
+    },
     "is_service": true,
     "auto_install": true
 }

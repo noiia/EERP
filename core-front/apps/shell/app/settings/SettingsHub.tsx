@@ -6,6 +6,7 @@ import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import { useT } from '@eerp/core-front'
 
 // The main settings page: the catalog of setting sections, rendered as navigable
 // cards (the same shape as the application menu). Purely presentational — the page
@@ -25,6 +26,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Appearance',
     description: 'Brand colors and light/dark mode for the whole interface.',
   },
+  {
+    path: '/settings/translations',
+    title: 'Translations',
+    description: 'Interface language, plus the translations modules provide.',
+  },
 ] as const
 
 export default function SettingsHub({
@@ -32,13 +38,16 @@ export default function SettingsHub({
 }: {
   sections?: readonly SettingsSection[]
 }) {
+  // Section titles/descriptions are gettext msgids — the shell ships their catalogs
+  // in apps/shell/i18n/*.po, so the hub localizes without touching SETTINGS_SECTIONS.
+  const t = useT()
   return (
     <Container sx={{ py: 6 }}>
       <Stack spacing={1} sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1">
-          Settings
+          {t('Settings')}
         </Typography>
-        <Typography color="text.secondary">Manage your workspace preferences.</Typography>
+        <Typography color="text.secondary">{t('Manage your workspace preferences.')}</Typography>
       </Stack>
 
       <Box
@@ -52,9 +61,9 @@ export default function SettingsHub({
           <Card key={section.path} variant="outlined">
             <CardActionArea component={Link} href={section.path} sx={{ p: 2, height: '100%' }}>
               <Stack spacing={1}>
-                <Typography variant="subtitle1">{section.title}</Typography>
+                <Typography variant="subtitle1">{t(section.title)}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {section.description}
+                  {t(section.description)}
                 </Typography>
               </Stack>
             </CardActionArea>

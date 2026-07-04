@@ -6,6 +6,7 @@ import { moduleRegistry } from '@eerp/core-front/server'
 import '@/generated/generated-modules'
 import { AppThemeProvider } from '../src/components/AppThemeProvider'
 import { AppTopBar } from '../src/components/AppTopBar'
+import { I18nInit } from '../src/components/I18nInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
 import { getIdentity } from '../src/lib/session'
 
@@ -24,6 +25,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <AppRouterCacheProvider>
           <AppThemeProvider>
+            <I18nInit />
             <SessionHydrator identity={identity} />
             <AppTopBar identity={identity} nav={nav} />
             {children}

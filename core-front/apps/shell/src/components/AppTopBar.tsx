@@ -19,7 +19,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LogoutIcon from '@mui/icons-material/Logout'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import SettingsIcon from '@mui/icons-material/Settings'
-import { useSessionStore, type Identity, type ModuleNav } from '@eerp/core-front'
+import { useSessionStore, useT, type Identity, type ModuleNav } from '@eerp/core-front'
 
 // The persistent application top bar (shell chrome). Shown on every authenticated route:
 // left = the module breadcrumb (fil d'Ariane) derived from the path, rooted at the menu;
@@ -51,6 +51,7 @@ function crumbsFromPath(pathname: string): Crumb[] {
 }
 
 function PathBreadcrumbs({ pathname }: { pathname: string }) {
+  const t = useT()
   const crumbs = crumbsFromPath(pathname)
   return (
     <Breadcrumbs
@@ -63,7 +64,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <HomeIcon fontSize="small" />
           <Typography variant="subtitle2" component="span">
-            Menu
+            {t('Menu')}
           </Typography>
         </Box>
       ) : (
@@ -75,18 +76,20 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
           sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
         >
           <HomeIcon fontSize="small" />
-          Menu
+          {t('Menu')}
         </MuiLink>
       )}
 
+      {/* Crumb labels are titleized slugs used as msgids: known strings ('List',
+          'Settings', module names) translate; ids fall back to themselves. */}
       {crumbs.map((crumb, i) =>
         i === crumbs.length - 1 ? (
           <Typography key={crumb.href} variant="subtitle2" component="span" color="inherit">
-            {crumb.label}
+            {t(crumb.label)}
           </Typography>
         ) : (
           <MuiLink key={crumb.href} component={Link} href={crumb.href} color="inherit" underline="hover">
-            {crumb.label}
+            {t(crumb.label)}
           </MuiLink>
         ),
       )}
@@ -101,6 +104,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
  * current route belongs to no module with main pages (e.g. the menu or Settings).
  */
 function ModuleNav({ nav, pathname }: { nav: ModuleNav[]; pathname: string }) {
+  const t = useT()
   const moduleSlug = pathname.split('/').filter(Boolean)[0]
   const current = moduleSlug ? nav.find((n) => n.module === moduleSlug) : undefined
   if (!current) return null
@@ -119,7 +123,7 @@ function ModuleNav({ nav, pathname }: { nav: ModuleNav[]; pathname: string }) {
             aria-current={active ? 'page' : undefined}
             sx={{ fontWeight: 700, opacity: active ? 1 : 0.85 }}
           >
-            {page.label}
+            {t(page.label)}
           </MuiLink>
         )
       })}
@@ -128,6 +132,7 @@ function ModuleNav({ nav, pathname }: { nav: ModuleNav[]; pathname: string }) {
 }
 
 function UserMenu({ identity }: { identity: Identity }) {
+  const t = useT()
   const router = useRouter()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const open = Boolean(anchorEl)
@@ -167,20 +172,20 @@ function UserMenu({ identity }: { identity: Identity }) {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 0.5, display: 'block' }}>
-          Signed in as {identity.userId}
+          {t('Signed in as')} {identity.userId}
         </Typography>
         <Divider />
         <MenuItem component={Link} href="/settings" onClick={close}>
           <ListItemIcon>
             <SettingsIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>Settings</ListItemText>
+          <ListItemText>{t('Settings')}</ListItemText>
         </MenuItem>
         <MenuItem onClick={onLogout}>
           <ListItemIcon>
             <LogoutIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>Logout</ListItemText>
+          <ListItemText>{t('Logout')}</ListItemText>
         </MenuItem>
       </Menu>
     </>

@@ -11,6 +11,12 @@ export default defineConfig({
       // The engine's server barrel imports 'server-only', which throws outside an RSC
       // bundle; alias it to an empty stub so BFF/route code can be unit-tested.
       'server-only': fileURLToPath(new URL('./src/test/server-only-stub.ts', import.meta.url)),
+      // The generated translations manifest is a build artefact (gitignored, written
+      // by generate-modules.mjs) — stub it so tests neither require a prior codegen
+      // run nor inherit whatever catalogs the last build discovered.
+      '@/generated/generated-translations': fileURLToPath(
+        new URL('./src/test/empty-generated-translations.ts', import.meta.url),
+      ),
       // Mirror the tsconfig "@/*" path (vitest doesn't read tsconfig paths).
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },

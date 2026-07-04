@@ -1,0 +1,21 @@
+# CRM module — French. Locale = this file's basename ('fr').
+msgid ""
+msgstr ""
+"Project-Id-Version: crm 0.0.1\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Crm"
+msgstr "CRM"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Email"
+msgstr "Courriel"
+
+msgid "Company"
+msgstr "Société"
+
+msgid "Status"
+msgstr "Statut"

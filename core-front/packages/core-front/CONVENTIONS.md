@@ -23,6 +23,7 @@ session, and authorization; **Zustand** owns client interaction + UI state.
 | View types (v1) | `form`, `tree`, `dashboard`. New entity = a descriptor; new view type = one store factory + one renderer + one server loader path. |
 | Data + mutations | **Reads** server-side via the server `ApiClient` (Next Data Cache, `tags:[entity]`). **Writes** via Server Actions that call Go then `revalidateTag(entity)` — no client→Go calls. |
 | **Module FE contract** | `module.json.static_files.views` lists `.ts` files under the module's `views/`. Each file default-exports a **`FrontModule`** ( `{ name; routes:[{ path; descriptor: ViewDescriptor; permission? }] }` ) registered with the engine. A module contributes **descriptors only** — the engine derives the server loader, the Zustand store, and the renderer. Modules import the engine from `@eerp/core-front`. |
+| **i18n contract** | Gettext, **source string = msgid**: components call `useT()` / `t('Save')`; untranslated strings render verbatim. A module ships translations in an **`i18n/` folder** next to its `module.json` — `<name>.pot` (declared source strings) + one `<locale>.po` per language (`fr.po` → locale `fr`); the shell's own chrome strings live in `apps/shell/i18n/`. Discovered with the modules at **build time** (no module.json field — the folder is the contract), parsed to JSON, registered into the shared `translationRegistry`; catalogs of the same locale **merge across modules** (last registered wins per msgid). The user's language choice + enabled translations persist client-side in `useI18nStore` (Settings → Translations). Settings → Translations also **exports** one drop-in `.po` per module for a chosen target language (every translatable msgid, existing msgstrs pre-filled, blanks otherwise — `renderModulePo`). No plurals/msgctxt (such entries are skipped). |
 
 ## Module discovery (build-time, shared config)
 
@@ -33,13 +34,19 @@ the backend config keeps a single source of truth for module roots. The read hap
 only** — the running frontend service never reads the backend's config or filesystem at runtime, so
 the BFF boundary still holds.
 
+The same walk discovers each module's **`i18n/` folder** (if any): every `<locale>.po` is parsed to
+JSON at build time and written into a generated manifest that registers it with the engine's
+`translationRegistry` — the browser never ships a gettext parser. Adding a language to a module is
+dropping a `.po` file in its `i18n/` folder and rebuilding; no declaration anywhere else.
+
 ## State model (server vs client)
 
 - **Server owns:** data fetching, the Next Data Cache, the session (httpOnly cookie → identity
   resolved server-side), and authorization.
 - **Client (Zustand) owns:** per-view interaction stores seeded from server `initialData` (records,
   selected, draft, dirty, expanded); a `useSessionStore` (`persist`) mirroring identity/permissions
-  for UI gating; a `useUiStore` (`persist`) for theme/sidebar/last-route. No `useSyncExternalStore`
+  for UI gating; a `useUiStore` (`persist`) for theme/sidebar/last-route; a `useI18nStore`
+  (`persist`) for the active language + enabled translations. No `useSyncExternalStore`
   controller layer.
 - **Mutations:** Server Actions → Go → `revalidateTag` → server re-render. The client store updates
   optimistically, then reconciles with the revalidated server data.

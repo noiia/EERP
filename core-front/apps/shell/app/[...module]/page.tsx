@@ -3,7 +3,7 @@ import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { EntityViewServer } from '@eerp/core-front/server'
-import type { EntityActions, ViewDescriptor } from '@eerp/core-front'
+import { T, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
 // Side-effect import: registers every discovered module's FrontModule into the shared
 // registry before we resolve the route. Regenerated at build time (gitignored).
 import '@/generated/generated-modules'
@@ -51,8 +51,10 @@ export default async function ModulePage({ params }: ModulePageProps) {
   return (
     <Container sx={{ py: 4 }}>
       <Stack spacing={3}>
+        {/* The title is computed here (RSC) but the locale is client state, so the
+            <T> leaf translates it at the client boundary. */}
         <Typography variant="h4" component="h1">
-          {modulePageTitle(segments, routeParams)}
+          <T text={modulePageTitle(segments, routeParams)} />
         </Typography>
         <EntityViewServer
           descriptor={route.descriptor as ViewDescriptor<AnyRecord>}

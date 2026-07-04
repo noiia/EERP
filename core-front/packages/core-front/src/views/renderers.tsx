@@ -20,6 +20,7 @@ import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import type { SerializedError } from '../api/errors'
+import { useT } from '../i18n/translate'
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { layout, tabularNums } from './tokens'
 import {
@@ -91,11 +92,14 @@ function FieldInput({
   value: unknown
   onChange: (value: unknown) => void
 }) {
+  // Descriptor labels are gettext msgids: modules ship their translations in i18n/*.po,
+  // so field labels localize with no descriptor change (fallback = the label itself).
+  const t = useT()
   if (field.type === 'boolean') {
     return (
       <FormControlLabel
         control={<Switch checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />}
-        label={field.label}
+        label={t(field.label)}
       />
     )
   }
@@ -104,7 +108,7 @@ function FieldInput({
     return (
       <TextField
         select
-        label={field.label}
+        label={t(field.label)}
         required={field.required}
         value={(value as string) ?? ''}
         onChange={(e) => onChange(e.target.value)}
@@ -116,7 +120,7 @@ function FieldInput({
   const type = field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'
   return (
     <TextField
-      label={field.label}
+      label={t(field.label)}
       type={type}
       required={field.required}
       fullWidth
@@ -132,6 +136,7 @@ function FieldInput({
 }
 
 function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: EntityViewProps<T>) {
+  const t = useT()
   const [store] = useState(() => createFormStore(descriptor, actions, initialData[0] ?? {}))
   const draft = useFormDraft(store)
   const dirty = useFormDirty(store)
@@ -195,7 +200,7 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
             disabled={!dirty || submitting}
             onClick={() => store.getState().reset()}
           >
-            Reset
+            {t('Reset')}
           </Button>
           <Button
             type="submit"
@@ -205,7 +210,7 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
               submitting ? <CircularProgress size={16} color="inherit" thickness={5} /> : undefined
             }
           >
-            {submitting ? 'Saving…' : 'Save'}
+            {submitting ? t('Saving…') : t('Save')}
           </Button>
         </Box>
       </Card>
@@ -216,12 +221,13 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
 // --- tree (hierarchy) with a flat DataGrid fallback ---
 
 function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewProps<T>) {
+  const t = useT()
   // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
   const hierarchical = (initialData as TreeNode[]).some((r) => r.parent_id != null)
   if (!hierarchical) {
     const columns: GridColDef[] = descriptor.fields.map((f) => ({
       field: f.name,
-      headerName: f.label,
+      headerName: t(f.label),
       flex: 1,
     }))
     return (
@@ -263,6 +269,7 @@ function HierarchyTree<T extends HasId & TreeNode>({
 // --- dashboard (one block per module list view: name + entry count) ---
 
 function DashboardRenderer<T extends HasId>({ descriptor, widgets, onRefresh }: EntityViewProps<T>) {
+  const t = useT()
   const [store] = useState(() =>
     createDashboardStore(descriptor, onRefresh ?? (async () => widgets ?? []), widgets ?? []),
   )
@@ -277,7 +284,7 @@ function DashboardRenderer<T extends HasId>({ descriptor, widgets, onRefresh }: 
         const block = (
           <CardContent sx={{ p: 2 }}>
             {/* Name in bold, top-left; the entry count below it. */}
-            <Typography sx={{ fontWeight: 700 }}>{widget.title}</Typography>
+            <Typography sx={{ fontWeight: 700 }}>{t(widget.title)}</Typography>
             <Typography
               variant="h4"
               component="div"

@@ -17,4 +17,13 @@ describe('SettingsHub', () => {
   it('ships Appearance as a default section', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/appearance')).toBe(true)
   })
+
+  it('ships Translations as a default section, linked from the hub', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/translations')).toBe(true)
+    render(<SettingsHub />)
+    expect(screen.getByRole('link', { name: /translations/i })).toHaveAttribute(
+      'href',
+      '/settings/translations',
+    )
+  })
 })

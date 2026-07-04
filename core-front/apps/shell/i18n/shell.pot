@@ -1,0 +1,142 @@
+# EERP shell — translatable chrome strings (gettext template).
+# Source strings ARE the msgids: components call t('Settings') and the catalog for
+# the active locale maps it. New UI string -> add it here, then translate in each
+# <locale>.po next to this file. Parsed at build time by generate-modules.mjs.
+msgid ""
+msgstr ""
+"Project-Id-Version: eerp-shell 0.0.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#: src/components/AppTopBar.tsx
+msgid "Menu"
+msgstr ""
+
+#: src/components/AppTopBar.tsx app/settings/SettingsHub.tsx
+msgid "Settings"
+msgstr ""
+
+#: src/components/AppTopBar.tsx
+msgid "Logout"
+msgstr ""
+
+#: src/components/AppTopBar.tsx
+msgid "Signed in as"
+msgstr ""
+
+#: src/components/AppTopBar.tsx (module nav labels from the engine registry)
+msgid "Dashboard"
+msgstr ""
+
+#: src/components/AppTopBar.tsx
+msgid "List"
+msgstr ""
+
+#: app/settings/SettingsHub.tsx
+msgid "Manage your workspace preferences."
+msgstr ""
+
+#: app/settings/SettingsHub.tsx src/components/AppearanceSettings.tsx
+msgid "Appearance"
+msgstr ""
+
+#: app/settings/SettingsHub.tsx
+msgid "Brand colors and light/dark mode for the whole interface."
+msgstr ""
+
+#: app/settings/SettingsHub.tsx src/components/TranslationSettings.tsx
+msgid "Translations"
+msgstr ""
+
+#: app/settings/SettingsHub.tsx
+msgid "Interface language, plus the translations modules provide."
+msgstr ""
+
+#: src/components/AppearanceSettings.tsx
+msgid "Customize the brand colors used across the interface. Changes apply instantly and are saved on this device."
+msgstr ""
+
+#: src/components/AppearanceSettings.tsx
+msgid "Dark mode"
+msgstr ""
+
+#: src/components/AppearanceSettings.tsx
+msgid "Reset to defaults"
+msgstr ""
+
+#: src/components/AppearanceSettings.tsx
+msgid "Preview"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Choose the interface language and manage the translations installed modules provide."
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Language"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "English (source)"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Available translations"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Discovered from the i18n folder of each module (.po files, one per language). Add a translation to make it selectable above."
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "No translations found. Modules ship them as i18n/<locale>.po files."
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Add"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Remove"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "strings"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "from"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Export translation files"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Download one .po file per selected module with every translatable string, pre-filled with the existing translations for the target language. Save each file as i18n/<locale>.po inside its module folder and rebuild."
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Modules"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Target language"
+msgstr ""
+
+#: src/components/TranslationSettings.tsx
+msgid "Export"
+msgstr ""
+
+#: app/Menu.tsx
+msgid "No applications are available for your account."
+msgstr ""
+
+#: @eerp/core-front renderers (form action bar)
+msgid "Reset"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Saving…"
+msgstr ""

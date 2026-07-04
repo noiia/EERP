@@ -6,11 +6,15 @@ import {
   backendApiBase,
   backendApiVersion,
   discoverFrom,
+  discoverModuleTranslations,
   discoverModuleViews,
+  discoverTranslationsFrom,
   findRepoRoot,
   readConfig,
   renderManifest,
+  renderTranslationsManifest,
   toImportSpecifier,
+  translationsForDir,
 } from './module-discovery.mjs'
 
 // A temp repo fixture: a config with a module_root, one module that declares a view
@@ -33,6 +37,16 @@ beforeEach(() => {
   const goOnly = join(repo, 'mods', 'goonly')
   mkdirSync(goOnly, { recursive: true })
   writeFileSync(join(goOnly, 'module.json'), JSON.stringify({ name: 'goonly', static_files: {} }))
+
+  // The Go-only module ships translations anyway — i18n discovery must be independent
+  // of static_files.views.
+  mkdirSync(join(goOnly, 'i18n'), { recursive: true })
+  writeFileSync(
+    join(goOnly, 'i18n', 'goonly.pot'),
+    'msgid "Name"\nmsgstr ""\n\nmsgid "Status"\nmsgstr ""\n',
+  )
+  writeFileSync(join(goOnly, 'i18n', 'fr.po'), 'msgid "Name"\nmsgstr "Nom"\n')
+  writeFileSync(join(goOnly, 'i18n', 'de.po'), 'msgid "Name"\nmsgstr "Name"\n')
 })
 
 afterEach(() => {
@@ -94,6 +108,50 @@ describe('discoverModuleViews', () => {
       JSON.stringify({ name: 'demo', static_files: { views: ['Missing.ts'] } }),
     )
     expect(discoverModuleViews(repo, readConfig(repo))).toEqual([])
+  })
+})
+
+describe('translationsForDir', () => {
+  it('collects .po files (locale = basename) and .pot templates, sorted', () => {
+    const bundle = translationsForDir('goonly', join(repo, 'mods', 'goonly'))
+    expect(bundle).not.toBeNull()
+    expect(bundle!.pos.map((p: { locale: string }) => p.locale)).toEqual(['de', 'fr'])
+    expect(bundle!.pots).toEqual([join(repo, 'mods', 'goonly', 'i18n', 'goonly.pot')])
+  })
+
+  it('returns null for a directory without an i18n folder', () => {
+    expect(translationsForDir('demo', join(repo, 'mods', 'demo'))).toBeNull()
+  })
+})
+
+describe('discoverModuleTranslations', () => {
+  it('finds every module shipping i18n/, regardless of frontend views', () => {
+    const discovered = discoverModuleTranslations(repo, readConfig(repo))
+    expect(discovered.map((b: { name: string }) => b.name)).toEqual(['goonly'])
+  })
+
+  it('degrades to an empty list when no config is reachable', () => {
+    expect(discoverTranslationsFrom('/')).toEqual([])
+  })
+})
+
+describe('renderTranslationsManifest', () => {
+  it('parses catalogs at build time and registers them with the client registry', () => {
+    const manifest = renderTranslationsManifest(discoverModuleTranslations(repo, readConfig(repo)))
+    expect(manifest).toContain("import { translationRegistry } from '@eerp/core-front'")
+    expect(manifest).toContain(
+      `translationRegistry.registerTemplate({"module":"goonly","keys":["Name","Status"]})`,
+    )
+    expect(manifest).toContain(
+      `translationRegistry.register({"locale":"fr","module":"goonly","entries":{"Name":"Nom"}})`,
+    )
+    expect(manifest).toContain('export { translationRegistry }')
+  })
+
+  it('emits a registration-free manifest when nothing ships i18n', () => {
+    const manifest = renderTranslationsManifest([])
+    expect(manifest).toContain("import { translationRegistry } from '@eerp/core-front'")
+    expect(manifest).not.toContain('register(')
   })
 })
 

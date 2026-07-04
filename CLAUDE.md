@@ -63,6 +63,8 @@ Each module is a Rust crate compiled to `wasm32-unknown-unknown`. A module direc
 
 Modules may optionally export two WASM functions: `migrate()` returning a pointer and `migrate_len()` returning its byte length. The core reads the pointer from linear memory, deserializes the JSON `Migration` struct, and applies `add_column` operations via `ALTER TABLE`.
 
+A module may also ship an optional `i18n/` folder (gettext `<name>.pot` template + one `<locale>.po` per language). It is consumed by the **frontend build**, not the Go core: the frontend's module discovery compiles the catalogs in and the UI offers them under Settings → Translations (see `core-front/CLAUDE.md`).
+
 ### 3. Frontend (`core-front/`) — SvelteKit + TypeScript
 
 ## ORM (`core/orm/`)

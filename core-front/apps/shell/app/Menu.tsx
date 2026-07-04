@@ -7,7 +7,7 @@ import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
 import SettingsIcon from '@mui/icons-material/Settings'
-import type { MenuModule } from '@eerp/core-front'
+import { useT, type MenuModule } from '@eerp/core-front'
 
 // The landing menu: one square tile per installed application, laid out as centered
 // lines spanning 2/3 of the screen. A Client Component because each tile uses MUI's
@@ -62,11 +62,14 @@ function SquareTile({ href, label, icon }: { href: string; label: string; icon?:
 }
 
 export default function Menu({ menu }: MenuProps) {
+  // Tile labels are titleized module names — msgids like any other string, so a
+  // module can localize its own tile by translating its titleized name in its .po.
+  const t = useT()
   return (
     <Container maxWidth={false} sx={{ py: 6 }}>
       {menu.length === 0 ? (
         <Typography color="text.secondary" sx={{ mb: 4 }}>
-          No applications are available for your account.
+          {t('No applications are available for your account.')}
         </Typography>
       ) : null}
 
@@ -85,11 +88,11 @@ export default function Menu({ menu }: MenuProps) {
           <SquareTile
             key={module.name}
             href={module.routes[0].path}
-            label={titleize(module.name)}
+            label={t(titleize(module.name))}
           />
         ))}
         {/* Settings is a built-in shell application, always available. */}
-        <SquareTile href="/settings" label="Settings" icon={<SettingsIcon />} />
+        <SquareTile href="/settings" label={t('Settings')} icon={<SettingsIcon />} />
       </Box>
     </Container>
   )
