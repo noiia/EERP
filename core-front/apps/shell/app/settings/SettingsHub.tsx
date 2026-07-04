@@ -36,6 +36,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Translations',
     description: 'Workspace default language, plus the translations modules provide.',
   },
+  {
+    path: '/settings/users',
+    title: 'Users',
+    description: 'User accounts and roles of the workspace.',
+  },
 ] as const
 
 export default function SettingsHub({

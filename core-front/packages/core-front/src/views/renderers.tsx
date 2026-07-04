@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Alert from '@mui/material/Alert'
 import AlertTitle from '@mui/material/AlertTitle'
 import Box from '@mui/material/Box'
@@ -222,6 +223,7 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
 
 function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewProps<T>) {
   const t = useT()
+  const router = useRouter()
   // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
   const hierarchical = (initialData as TreeNode[]).some((r) => r.parent_id != null)
   if (!hierarchical) {
@@ -230,9 +232,21 @@ function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewPr
       headerName: t(f.label),
       flex: 1,
     }))
+    // A formPath makes rows navigable: clicking one opens that record's form.
+    const { formPath } = descriptor
     return (
       <Box sx={{ width: '100%' }}>
-        <DataGrid rows={initialData} columns={columns} autoHeight />
+        <DataGrid
+          rows={initialData}
+          columns={columns}
+          autoHeight
+          onRowClick={
+            formPath
+              ? (params) => router.push(formPath.replace(':id', String(params.id)))
+              : undefined
+          }
+          sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
+        />
       </Box>
     )
   }

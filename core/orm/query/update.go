@@ -95,10 +95,26 @@ func (b UpdateBuilder[T]) ToSQL() (string, []any, error) {
 		return "", nil, fmt.Errorf("update: refusing to build UPDATE without WHERE clause")
 	}
 
-	args := make([]any, 0, len(b.sets)+4)
-	setParts := make([]string, len(b.sets))
+	// Deduplicate SET clauses by column, LAST assignment wins — so an explicit
+	// Set() overrides the same column captured by FromStruct (e.g. the repo's
+	// Set("updated_at", now)). Postgres rejects duplicate assignments outright
+	// ("multiple assignments to same column"), so this is correctness, not polish.
+	// First-occurrence order is kept so the SQL stays deterministic.
+	deduped := make([]setClause, 0, len(b.sets))
+	byCol := make(map[string]int, len(b.sets))
+	for _, s := range b.sets {
+		if i, seen := byCol[s.col]; seen {
+			deduped[i].val = s.val
+			continue
+		}
+		byCol[s.col] = len(deduped)
+		deduped = append(deduped, s)
+	}
 
-	for i, s := range b.sets {
+	args := make([]any, 0, len(deduped)+4)
+	setParts := make([]string, len(deduped))
+
+	for i, s := range deduped {
 		args = append(args, s.val)
 		setParts[i] = fmt.Sprintf("%s = $%d", s.col, len(args))
 	}

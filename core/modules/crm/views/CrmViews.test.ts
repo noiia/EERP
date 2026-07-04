@@ -16,6 +16,11 @@ describe('crm FrontModule', () => {
     expect(crm.routes.every((r) => r.descriptor.entity === 'crm')).toBe(true)
   })
 
+  it('makes list rows open the contact form', () => {
+    const list = crm.routes.find((r) => r.path === '/crm/list')
+    expect(list?.descriptor.formPath).toBe('/crm/:id')
+  })
+
   it('guards every route with crm:contacts:read', () => {
     expect(crm.routes.every((r) => r.permission === 'crm:contacts:read')).toBe(true)
   })

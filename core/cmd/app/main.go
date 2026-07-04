@@ -176,6 +176,20 @@ func main() {
 	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
 	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
 
+	// ── Users / roles administration ──────────────────────────────────────────
+	// The auth tables are excluded from the generic CRUD surface; these dedicated,
+	// field-whitelisting endpoints are the only HTTP path to them. The permission
+	// middleware derives users:users:* and roles:roles:* from the routes.
+	adminHandler := auth.NewAdminHandler(userRepo, auth.NewRoleRepository(app.DB))
+	usersGroup := srv.Echo().Group("/api/v1/users", jwtMw, permMw)
+	usersGroup.GET("", adminHandler.ListUsers)
+	usersGroup.GET("/:id", adminHandler.GetUser)
+	usersGroup.PUT("/:id", adminHandler.UpdateUser)
+	rolesGroup := srv.Echo().Group("/api/v1/roles", jwtMw, permMw)
+	rolesGroup.GET("", adminHandler.ListRoles)
+	rolesGroup.GET("/:id", adminHandler.GetRole)
+	rolesGroup.PUT("/:id", adminHandler.UpdateRole)
+
 	// Protected routes — JWT + permission middleware on the group.
 	srv.RegisterRoutes(ormserver.BuildHandlers(app), nil, jwtMw, permMw)
 

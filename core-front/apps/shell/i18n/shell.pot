@@ -163,6 +163,43 @@ msgstr ""
 msgid "Export"
 msgstr ""
 
+#: app/settings/SettingsHub.tsx app/settings/users/page.tsx (also a dashboard widget title)
+msgid "Users"
+msgstr ""
+
+#: app/settings/SettingsHub.tsx
+msgid "User accounts and roles of the workspace."
+msgstr ""
+
+#: app/settings/users/accounts/page.tsx
+msgid "User accounts"
+msgstr ""
+
+#: app/settings/users/accounts/[id]/page.tsx
+msgid "Edit user"
+msgstr ""
+
+#: app/settings/users/roles/page.tsx (also a dashboard widget title)
+msgid "Roles"
+msgstr ""
+
+#: app/settings/users/roles/[id]/page.tsx
+msgid "Edit role"
+msgstr ""
+
+#: app/settings/users/descriptors.ts (field labels)
+msgid "Email"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Created"
+msgstr ""
+
 #: app/Menu.tsx
 msgid "No applications are available for your account."
 msgstr ""

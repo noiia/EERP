@@ -452,6 +452,35 @@ func TestUpdate_ToSQL_MultipleSet(t *testing.T) {
 	}
 }
 
+func TestUpdate_ToSQL_DuplicateColumn_LastWins(t *testing.T) {
+	t.Parallel()
+
+	// Postgres rejects "SET col = $1, col = $2" outright, so repeated assignments
+	// must collapse to one — the later value wins. This is what lets the repo's
+	// Update compose FromStruct (which captures updated_at from the entity) with
+	// its own Set("updated_at", now).
+	meta := mustMeta[order](t)
+	sql, args, err := query.Update[order](meta).
+		Set("status", "stale").
+		Set("customer_id", 7).
+		Set("status", "shipped").
+		Where(query.NewCondition("id = $1", 1)).
+		ToSQL()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Count(sql, "status =") != 1 {
+		t.Fatalf("status assigned more than once: %s", sql)
+	}
+	assertContains(t, sql, "status = $1")
+	assertContains(t, sql, "customer_id = $2")
+	assertContains(t, sql, "WHERE id = $3")
+	if len(args) != 3 || args[0] != "shipped" || args[1] != 7 {
+		t.Errorf("args = %v, want [shipped 7 1]", args)
+	}
+}
+
 func TestUpdate_ToSQL_Returning(t *testing.T) {
 	t.Parallel()
 
@@ -526,12 +555,15 @@ func TestUpdate_Immutable_Branching(t *testing.T) {
 		Set("status", "open").
 		Where(query.NewCondition("id = $1", 1))
 
-	shipped := base.Set("status", "shipped")
+	// Branch on a DIFFERENT column: same-column re-assignment now collapses via
+	// the last-wins dedupe, so it no longer distinguishes the two builders.
+	shipped := base.Set("customer_id", 7)
 
 	_, baseArgs, _ := base.ToSQL()
 	_, shippedArgs, _ := shipped.ToSQL()
 
-	// base has 2 args (1 set + 1 where), shipped has 3 (2 sets + 1 where).
+	// base has 2 args (1 set + 1 where), shipped has 3 (2 sets + 1 where) — the
+	// branch must not have mutated base.
 	if len(baseArgs) != 2 {
 		t.Errorf("base args = %d, want 2", len(baseArgs))
 	}

@@ -23,6 +23,12 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
   fields: FieldDescriptor[]
   /** Permissions required to view (server authorizes; client gates UI). */
   permissions?: string[]
+  /**
+   * For list ('tree') views: the form route for one record, as a path template
+   * whose ':id' is replaced by the clicked row's id (e.g. '/crm/:id'). Set it to
+   * make rows clickable; omit it for read-only lists.
+   */
+  formPath?: string
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

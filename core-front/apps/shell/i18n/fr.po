@@ -122,6 +122,36 @@ msgstr "Langue cible"
 msgid "Export"
 msgstr "Exporter"
 
+msgid "Users"
+msgstr "Utilisateurs"
+
+msgid "User accounts and roles of the workspace."
+msgstr "Comptes utilisateurs et rôles de l'espace de travail."
+
+msgid "User accounts"
+msgstr "Comptes utilisateurs"
+
+msgid "Edit user"
+msgstr "Modifier l'utilisateur"
+
+msgid "Roles"
+msgstr "Rôles"
+
+msgid "Edit role"
+msgstr "Modifier le rôle"
+
+msgid "Email"
+msgstr "E-mail"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Created"
+msgstr "Créé le"
+
 msgid "No applications are available for your account."
 msgstr "Aucune application n'est disponible pour votre compte."
 

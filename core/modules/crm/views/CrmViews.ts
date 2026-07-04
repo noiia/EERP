@@ -30,8 +30,10 @@ const dashboardView: ViewDescriptor = {
 
 const listView: ViewDescriptor = {
   entity: 'crm',
-  viewType: 'tree', 
+  viewType: 'tree',
   fields,
+  // Clicking a row opens that contact's form.
+  formPath: '/crm/:id',
   permissions: ['crm:contacts:read'],
 }
 

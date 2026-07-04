@@ -21,7 +21,7 @@ describe('SettingsHub', () => {
   it('ships Account as a default section, linked from the hub', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/account')).toBe(true)
     render(<SettingsHub />)
-    expect(screen.getByRole('link', { name: /account/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^account/i })).toHaveAttribute(
       'href',
       '/settings/account',
     )
@@ -33,6 +33,15 @@ describe('SettingsHub', () => {
     expect(screen.getByRole('link', { name: /translations/i })).toHaveAttribute(
       'href',
       '/settings/translations',
+    )
+  })
+
+  it('ships Users as a default section, linked from the hub', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/users')).toBe(true)
+    render(<SettingsHub />)
+    expect(screen.getByRole('link', { name: /^users/i })).toHaveAttribute(
+      'href',
+      '/settings/users',
     )
   })
 })

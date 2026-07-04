@@ -66,6 +66,10 @@ Gettext-based, **source string = msgid** (`useT()` / `t('Save')`; untranslated t
 
 **Settings → Translations** (workspace level) lists the discovered pool (coverage vs `.pot`, contributing modules), lets the user **add/remove** translations from the enabled set, and — for holders of `settings:i18n:write` — sets the **workspace default language**. **Settings → Account** (personal) is where each user picks their own **display language**: workspace default, source, or any enabled translation. The Translations page also **exports** translation files: pick a target language, and it downloads one `.po` per module containing every string that module declares translatable (its `.pot` keys + already-translated msgids), pre-filled with the target language's existing translations and blank where untranslated (`renderModulePo` in the engine) — save the file as `i18n/<locale>.po` in the module folder and rebuild; that is how a new language starts.
 
+## Settings pages (the hub + engine reuse)
+
+Settings live under `apps/shell/app/settings/*` and are listed in `SETTINGS_SECTIONS` (SettingsHub) — a new area is one entry + a page. Hand-built pages (Appearance, Translations, Account) own their UI; **Settings → Users** instead reuses the view engine outside the module catch-all: `app/settings/users/descriptors.ts` declares dashboard/tree/form descriptors over the `users` and `roles` entities, and the pages render `EntityViewServer` with the generic entity Server Actions — proof that "descriptors only" works for any authenticated route, not just module routes. Those entities resolve to Go's **dedicated admin endpoints** (the auth tables are off the generic CRUD surface; the handlers whitelist writable fields and pin the tenant), which mimic the generic list envelope so the engine's ApiClient needs no special case. A list descriptor's `formPath` (e.g. `/settings/users/accounts/:id`) makes rows navigate to the record's form.
+
 ## State model (server vs client)
 
 - **Server owns:** data fetching, the Next Data Cache, the session (httpOnly cookie → identity resolved server-side), and authorization.

@@ -1,8 +1,19 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+
+// The flat list navigates to a record's form on row click via the App Router.
+const pushMock = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
+}))
+
 import type { ViewDescriptor } from './descriptor'
 import { EntityView } from './renderers'
 import type { EntityActions } from './stores'
+
+beforeEach(() => {
+  pushMock.mockClear()
+})
 
 interface Contact {
   id: string
@@ -75,6 +86,36 @@ describe('EntityView', () => {
     )
     expect(screen.getByRole('grid')).toBeInTheDocument()
     expect(screen.getByText('Ada')).toBeInTheDocument()
+  })
+
+  it('navigates to the record form on row click when the descriptor sets formPath', () => {
+    const treeDescriptor: ViewDescriptor<Contact> = {
+      ...formDescriptor,
+      viewType: 'tree',
+      formPath: '/crm/:id',
+    }
+    render(
+      <EntityView
+        descriptor={treeDescriptor}
+        initialData={[{ id: '42', name: 'Ada' }]}
+        actions={noopActions}
+      />,
+    )
+    fireEvent.click(screen.getByText('Ada'))
+    expect(pushMock).toHaveBeenCalledWith('/crm/42')
+  })
+
+  it('keeps rows inert when the descriptor has no formPath', () => {
+    const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+    render(
+      <EntityView
+        descriptor={treeDescriptor}
+        initialData={[{ id: '42', name: 'Ada' }]}
+        actions={noopActions}
+      />,
+    )
+    fireEvent.click(screen.getByText('Ada'))
+    expect(pushMock).not.toHaveBeenCalled()
   })
 
   it('renders a hierarchical tree when records carry parent links', () => {
