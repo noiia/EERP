@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
-import { translationRegistry, useI18nStore } from '@eerp/core-front'
+import {
+  DEFAULT_NUMBER_FORMAT,
+  translationRegistry,
+  useFormatStore,
+  useI18nStore,
+} from '@eerp/core-front'
 import { LocaleSync } from './LocaleSync'
 
 // The shared registry is the build-time pool; tests seed it directly (the generated
@@ -14,6 +19,7 @@ beforeEach(() => {
   translationRegistry.register({ module: 'crm', locale: 'fr', entries: { Save: 'Enregistrer' } })
   translationRegistry.register({ module: 'crm', locale: 'de', entries: { Save: 'Speichern' } })
   useI18nStore.setState({ locale: null, enabledLocales: [] })
+  useFormatStore.setState({ ...DEFAULT_NUMBER_FORMAT })
 })
 
 afterEach(() => {
@@ -48,5 +54,24 @@ describe('LocaleSync', () => {
     render(<LocaleSync preferences={prefs('pt-BR', null)} />)
     expect(useI18nStore.getState().locale).toBeNull()
     expect(useI18nStore.getState().enabledLocales).toEqual([])
+  })
+
+  it('applies the workspace number format to the format mirror', () => {
+    render(
+      <LocaleSync
+        preferences={{
+          ...prefs(null, null),
+          number_format: { decimal_separator: ',', thousands_separator: ' ' },
+        }}
+      />,
+    )
+    expect(useFormatStore.getState().decimalSeparator).toBe(',')
+    expect(useFormatStore.getState().thousandsSeparator).toBe(' ')
+  })
+
+  it('keeps the format mirror when the workspace never set a format', () => {
+    useFormatStore.setState({ decimalSeparator: ',', thousandsSeparator: ' ' })
+    render(<LocaleSync preferences={{ ...prefs(null, null), number_format: null }} />)
+    expect(useFormatStore.getState().decimalSeparator).toBe(',')
   })
 })

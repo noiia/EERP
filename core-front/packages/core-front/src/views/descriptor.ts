@@ -7,13 +7,67 @@ export type ViewType = 'form' | 'tree' | 'dashboard'
 
 export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean'
 
+/**
+ * Descriptors cross the RSC boundary as props, so everything in them — widget
+ * options included — must stay JSON-serializable. No functions, ever.
+ */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
+/**
+ * The widgets each field type may render as; the FIRST entry is the type's
+ * default. `type` is the data type, `widget` the presentation — a descriptor
+ * never needs one for the stock look (docs/roadmaps/field-widgets.md).
+ * boolean picture/signature (Phase 3) and relation tags/list (Phase 4) will
+ * extend this matrix.
+ */
+export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
+  text: ['simple', 'long', 'phone'],
+  number: ['float', 'int', 'percent', 'stars', 'phone'],
+  boolean: ['switch'],
+  date: ['simple'],
+  relation: ['search'],
+}
+
 export interface FieldDescriptor {
   /** Property name on the record and the form draft. */
   name: string
   /** Human label shown by the renderer. */
   label: string
   type: FieldType
+  /**
+   * Presentation decorator: how the value renders and edits (e.g. a number as
+   * 'stars', a text as 'long'). Must be allowed for the type per FIELD_WIDGETS;
+   * omitted = the type's default. Validated at module registration.
+   */
+  widget?: string
+  /** Widget tuning (e.g. { max: 5 } for stars). JSON-serializable only. */
+  widgetOptions?: Record<string, JsonValue>
   required?: boolean
+}
+
+/**
+ * Resolve a field's effective widget: the declared one when valid, the type's
+ * default when omitted. Throws — naming field, type, and widget — on a pair the
+ * matrix forbids, so a bad descriptor fails at registration, not at render.
+ */
+export function resolveWidget(field: FieldDescriptor): string {
+  const allowed = FIELD_WIDGETS[field.type]
+  if (!allowed) {
+    throw new Error(`field "${field.name}": unknown field type "${field.type}"`)
+  }
+  const widget = field.widget ?? allowed[0]
+  if (!allowed.includes(widget)) {
+    throw new Error(
+      `field "${field.name}": widget "${widget}" is not allowed for type "${field.type}" ` +
+        `(allowed: ${allowed.join(', ')})`,
+    )
+  }
+  return widget
+}
+
+/** Validate every field's widget/type pair of a descriptor (see resolveWidget). */
+export function validateDescriptorWidgets<T>(descriptor: ViewDescriptor<T>): void {
+  for (const field of descriptor.fields) resolveWidget(field)
 }
 
 export interface ViewDescriptor<T = Record<string, unknown>> {

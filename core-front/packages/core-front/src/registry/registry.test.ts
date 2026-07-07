@@ -49,6 +49,24 @@ describe('ModuleRegistry', () => {
     registry.register({ name: 'misc', routes: [{ path: '/misc', descriptor: formDescriptor }] })
     expect(registry.buildRegistry().get('/misc')?.permission).toBeUndefined()
   })
+
+  it('rejects a descriptor whose widget the field type forbids, naming module and route', () => {
+    const bad: FrontModule = {
+      name: 'broken',
+      routes: [
+        {
+          path: '/broken',
+          descriptor: {
+            ...formDescriptor,
+            fields: [{ name: 'rating', label: 'Rating', type: 'text', widget: 'stars' }],
+          },
+        },
+      ],
+    }
+    expect(() => new ModuleRegistry().register(bad)).toThrowError(
+      /module "broken", route "\/broken": field "rating"/,
+    )
+  })
 })
 
 describe('ModuleRegistry.menu', () => {

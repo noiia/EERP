@@ -10,14 +10,23 @@
  */
 export const SOURCE_PREFERENCE = 'source'
 
+/** Tenant-wide number display format (app_settings key format.number). */
+export interface NumberFormatPreference {
+  decimal_separator: string
+  thousands_separator: string
+}
+
 /**
  * Server-owned language preferences, as returned by GET /me/preferences.
  * preferred_locale: null = inherit the workspace default, "source" = force the
  * source language, otherwise a locale tag. default_locale: null = source language.
+ * number_format rides along (one round-trip seeds every client mirror); null =
+ * the frontend's built-in default.
  */
 export interface LocalePreferences {
   preferred_locale: string | null
   default_locale: string | null
+  number_format?: NumberFormatPreference | null
 }
 
 /**

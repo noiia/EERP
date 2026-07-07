@@ -1,4 +1,4 @@
-import type { ViewDescriptor } from '../views/descriptor'
+import { validateDescriptorWidgets, type ViewDescriptor } from '../views/descriptor'
 
 // The frontend module contract + registry. A module contributes DESCRIPTORS ONLY:
 // it default-exports a FrontModule listing routes, each a path + descriptor (+ optional
@@ -107,6 +107,16 @@ export class ModuleRegistry {
   private readonly entries: RegisteredModule[] = []
 
   register(module: FrontModule, options: RegisterOptions = {}): this {
+    // Fail loud at registration (build/boot), not at render: a descriptor with a
+    // widget its field type forbids is a module bug, named module + route + field.
+    for (const route of module.routes) {
+      try {
+        validateDescriptorWidgets(route.descriptor)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        throw new Error(`module "${module.name}", route "${route.path}": ${message}`)
+      }
+    }
     this.entries.push({ module, appMode: options.appMode === true })
     return this
   }

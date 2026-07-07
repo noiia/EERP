@@ -32,6 +32,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Brand colors and light/dark mode for the whole interface.',
   },
   {
+    path: '/settings/formats',
+    title: 'Formats',
+    description: 'How numbers display across the workspace, for everyone.',
+  },
+  {
     path: '/settings/translations',
     title: 'Translations',
     description: 'Workspace default language, plus the translations modules provide.',

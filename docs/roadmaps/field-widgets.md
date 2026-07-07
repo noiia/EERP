@@ -61,7 +61,7 @@ today has nowhere to live.
 | Format settings | `app_settings` key `format.number` = `{ decimal_separator, thousands_separator }`; `PUT /api/v1/settings/format` (permission `settings:format:write`); read with the preferences load; `useNumberFormat()` engine hook is the only consumer path. |
 | boolean/picture | Field value = "image exists". Upload/replace/delete through the picture service; widget shows thumbnail or upload affordance. |
 | boolean/signature | Drawable canvas; non-empty drawing ⇒ field `true`; on "done" the canvas exports PNG → picture service; a **reset button** deletes the picture and sets `false`. |
-| Picture service | Core `picture` table: `id, tenant_id, table_name, record_id, field, object_key, mime, size, created_at…` (off the generic CRUD surface). Routes: `POST /api/v1/pictures` (multipart) · `GET /api/v1/pictures/:id` (stream) · `GET /api/v1/pictures?table&record&field` · `DELETE /api/v1/pictures/:id`; permissions `pictures:pictures:read\|write` from the route; respects the existing body-size limit. Config: `s3_endpoint, s3_bucket, s3_access_key, s3_secret_key, s3_region` in `eerp-config.json`; Garage service in `compose.yml`, config in `infra/garage/` (see its README). |
+| Picture service | Core `picture` table: `id, tenant_id, table_name, record_id, field, object_key, mime, size, created_at…` (off the generic CRUD surface). Routes: `POST /api/v1/pictures` (multipart) · `GET /api/v1/pictures/:id` (stream) · `GET /api/v1/pictures?table&record&field` · `DELETE /api/v1/pictures/:id`; permissions `pictures:pictures:read\|write` from the route; respects the existing body-size limit. Storage is **already provisioned**: the `s3_*` fields sit in `eerp-config.json` (host endpoint `:3910`) and `eerp-config.docker.json` (`http://garage:3900`), backed by the compose `garage` service — bootstrap with `make garage-init`, details in `infra/garage/README.md`. |
 | relation metadata | `relation: { entity, kind: 'many2one'\|'one2many'\|'many2many', labelField? ('name'), inverseField? (o2m), via? (m2m junction entity) }`. `entity` = Go route prefix, as everywhere. |
 | relation/search (m2o) | An autocomplete search bar querying the related entity's list (Go authorizes — the user only ever sees records they may read). A **link icon at the right** of the field opens a **wizard dialog** (search + grid, select to set) — v1 basic, improved in a later iteration. Selected record renders as a tag. |
 | relation tags (m2o/m2m) | Tag shows the related record's `labelField`; **on hover a cross appears on the tag's right side**; clicking it unlinks (m2o → null, m2m → junction row removed). |
@@ -84,7 +84,7 @@ registerFieldFunction({ entity: 'crm', name: 'crm.rating',
 
 ---
 
-## Phase 1 — Widget architecture + text/number widgets + format settings
+## Phase 1 — Widget architecture + text/number widgets + format settings ✅ (implemented)
 
 **Claude Code prompt:**
 ```
@@ -137,11 +137,14 @@ per `store`; a tagged Go column materializes a real index of the right method in
 **Claude Code prompt:**
 ```
 1. Backend (core/internal/pictures/, mounted like settings/auth): the picture table
-   (registered off the generic surface), S3 client from new eerp-config.json fields
-   (s3_endpoint, s3_bucket, s3_access_key, s3_secret_key, s3_region — path resolution
-   rules unchanged), the compose garage service (infra/garage/, already provisioned). Routes per the contracts table;
-   tenant-pinned; multipart within the existing body limit; DELETE removes object + row.
-   Table-driven tests against the dev Garage node (skipped without it).
+   (registered off the generic surface) and an S3 client reading the EXISTING s3_*
+   fields of eerp-config.json — the dev Garage node, its bucket, and the imported dev
+   key are already provisioned (compose `garage` service + `make garage-init`; see
+   infra/garage/README.md; in-network endpoint http://garage:3900 per
+   eerp-config.docker.json). Add the s3_* fields to types.Config. Routes per the
+   contracts table; tenant-pinned; multipart within the existing body limit; DELETE
+   removes object + row. Table-driven tests against the dev Garage node (skipped when
+   it is unreachable — same stance as TEST_API_BASE).
 2. BFF: a Next route handler proxies multipart upload to Go with the Bearer (browser
    never talks to Go); engine ApiClient gains uploadPicture/deletePicture helpers.
 3. Widgets: boolean/picture (thumbnail via GET stream, upload/replace/delete; field

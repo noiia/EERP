@@ -172,9 +172,10 @@ func main() {
 	meGroup.PUT("/preferences", settingsHandler.PutMyPreferences)
 
 	// Tenant-wide settings: JWT + permission middleware (PUT /settings/i18n
-	// derives settings:i18n:write).
+	// derives settings:i18n:write, PUT /settings/format settings:format:write).
 	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
 	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
+	settingsGroup.PUT("/format", settingsHandler.PutFormatSettings)
 
 	// ── Users / roles administration ──────────────────────────────────────────
 	// The auth tables are excluded from the generic CRUD surface; these dedicated,

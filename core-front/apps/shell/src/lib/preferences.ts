@@ -1,6 +1,6 @@
 'use server'
 import { ApiError, apiRequest } from '@eerp/core-front/server'
-import type { LocalePreferences } from './locale'
+import type { LocalePreferences, NumberFormatPreference } from './locale'
 
 // Server Actions for the language preferences. The browser never calls Go directly:
 // these run server-side and hit the dedicated (non-CRUD) backend endpoints through
@@ -53,5 +53,21 @@ export async function setDefaultLocale(locale: string | null): Promise<SaveResul
     return { ok: true }
   } catch (e) {
     return failure(e, 'Could not save the workspace default language.')
+  }
+}
+
+/**
+ * Save the workspace number format (separators every numeric widget renders
+ * with). Go authorizes: callers without settings:format:write get the error
+ * envelope back as a message.
+ */
+export async function setWorkspaceNumberFormat(
+  format: NumberFormatPreference,
+): Promise<SaveResult> {
+  try {
+    await apiRequest('PUT', '/settings/format', format)
+    return { ok: true }
+  } catch (e) {
+    return failure(e, 'Could not save the workspace number format.')
   }
 }

@@ -1,0 +1,350 @@
+'use client'
+import { useState, type ComponentType } from 'react'
+import Box from '@mui/material/Box'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import InputAdornment from '@mui/material/InputAdornment'
+import MenuItem from '@mui/material/MenuItem'
+import Rating from '@mui/material/Rating'
+import Switch from '@mui/material/Switch'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import { useT } from '../i18n/translate'
+import { resolveWidget, type FieldDescriptor } from './descriptor'
+import { useNumberFormat } from './format-store'
+import { tabularNums } from './tokens'
+
+// The widget layer: one component per (type, widget) pair of the FIELD_WIDGETS
+// matrix. Engine-internal — modules select widgets DECLARATIVELY on their field
+// descriptors; nothing here is part of the module ABI. The form renderer
+// dispatches through fieldWidget(); numeric widgets format exclusively through
+// useNumberFormat(), so the workspace separators apply app-wide with zero widget
+// code change (docs/roadmaps/field-widgets.md, Phase 1).
+
+export interface WidgetProps {
+  field: FieldDescriptor
+  value: unknown
+  onChange: (value: unknown) => void
+}
+
+// ── text ──────────────────────────────────────────────────────────────────────
+
+function TextSimpleWidget({ field, value, onChange }: WidgetProps) {
+  const t = useT()
+  return (
+    <TextField
+      label={t(field.label)}
+      required={field.required}
+      fullWidth
+      value={(value as string) ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+function TextLongWidget({ field, value, onChange }: WidgetProps) {
+  const t = useT()
+  return (
+    <TextField
+      label={t(field.label)}
+      required={field.required}
+      fullWidth
+      multiline
+      minRows={4}
+      value={(value as string) ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+// ── date (stock input moved out of the renderer) ──────────────────────────────
+
+function DateWidget({ field, value, onChange }: WidgetProps) {
+  const t = useT()
+  return (
+    <TextField
+      label={t(field.label)}
+      type="date"
+      required={field.required}
+      fullWidth
+      slotProps={{ inputLabel: { shrink: true } }}
+      value={(value as string) ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+// ── relation (Phase 1 stub — the search/tags/list widgets are Phase 4) ────────
+
+function RelationSearchWidget({ field, value, onChange }: WidgetProps) {
+  const t = useT()
+  return (
+    <TextField
+      select
+      label={t(field.label)}
+      required={field.required}
+      value={(value as string) ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <MenuItem value="">—</MenuItem>
+    </TextField>
+  )
+}
+
+// ── boolean ───────────────────────────────────────────────────────────────────
+
+function BooleanSwitchWidget({ field, value, onChange }: WidgetProps) {
+  const t = useT()
+  return (
+    <FormControlLabel
+      control={<Switch checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />}
+      label={t(field.label)}
+    />
+  )
+}
+
+// ── number ────────────────────────────────────────────────────────────────────
+
+/**
+ * Shared editing behavior for formatted numeric inputs: the field shows the
+ * FORMATTED value (workspace separators) while idle and switches to a raw
+ * editable string while focused; every parseable keystroke commits to the
+ * draft, blur reformats. `scale` maps between the stored and displayed value
+ * (percent stores a ratio, displays ×100).
+ */
+function useNumericInput({
+  value,
+  onChange,
+  decimals,
+  scale = 1,
+  integer = false,
+}: {
+  value: unknown
+  onChange: (value: unknown) => void
+  decimals?: number
+  scale?: number
+  integer?: boolean
+}) {
+  const { format, parse, decimalSeparator } = useNumberFormat()
+  const [editing, setEditing] = useState<string | null>(null)
+
+  const stored = typeof value === 'number' && Number.isFinite(value) ? value : null
+  const displayed = stored != null ? stored * scale : null
+  const text = editing ?? (displayed != null ? format(displayed, { decimals }) : '')
+
+  return {
+    text,
+    onFocus: () =>
+      setEditing(displayed != null ? String(displayed).replace('.', decimalSeparator) : ''),
+    onBlur: () => setEditing(null),
+    onInput: (raw: string) => {
+      setEditing(raw)
+      if (raw.trim() === '') {
+        onChange(null)
+        return
+      }
+      const parsed = parse(raw)
+      if (Number.isNaN(parsed)) return
+      const scaled = parsed / scale
+      onChange(integer ? Math.round(scaled) : scaled)
+    },
+  }
+}
+
+function NumberInput({
+  field,
+  input,
+  endAdornment,
+}: {
+  field: FieldDescriptor
+  input: ReturnType<typeof useNumericInput>
+  endAdornment?: string
+}) {
+  const t = useT()
+  return (
+    <TextField
+      label={t(field.label)}
+      required={field.required}
+      fullWidth
+      value={input.text}
+      onFocus={input.onFocus}
+      onBlur={input.onBlur}
+      onChange={(e) => input.onInput(e.target.value)}
+      slotProps={{
+        input: {
+          endAdornment: endAdornment ? (
+            <InputAdornment position="end">{endAdornment}</InputAdornment>
+          ) : undefined,
+        },
+        htmlInput: { inputMode: 'decimal' },
+      }}
+      sx={{ '& input': { fontVariantNumeric: tabularNums } }}
+    />
+  )
+}
+
+function NumberFloatWidget({ field, value, onChange }: WidgetProps) {
+  const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
+  const input = useNumericInput({ value, onChange, decimals })
+  return <NumberInput field={field} input={input} />
+}
+
+function NumberIntWidget({ field, value, onChange }: WidgetProps) {
+  const input = useNumericInput({ value, onChange, decimals: 0, integer: true })
+  return <NumberInput field={field} input={input} />
+}
+
+function NumberPercentWidget({ field, value, onChange }: WidgetProps) {
+  // base 'ratio' (default): 0.25 stored, "25 %" shown. base 'percent': stored as-is.
+  const scale = field.widgetOptions?.base === 'percent' ? 1 : 100
+  const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
+  const input = useNumericInput({ value, onChange, decimals, scale })
+  return <NumberInput field={field} input={input} endAdornment="%" />
+}
+
+function NumberStarsWidget({ field, value, onChange }: WidgetProps) {
+  const t = useT()
+  const max = typeof field.widgetOptions?.max === 'number' ? field.widgetOptions.max : 3
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary" component="legend">
+        {t(field.label)}
+      </Typography>
+      <Rating
+        max={max}
+        precision={0.5}
+        value={typeof value === 'number' ? value : 0}
+        onChange={(_e, next) => onChange(next ?? 0)}
+      />
+    </Box>
+  )
+}
+
+// ── phone (allowed on text — recommended — and number) ────────────────────────
+
+/**
+ * The country indicator's dial-code table. Deliberately compact: dev-facing
+ * defaults, not a libphonenumber replacement. Ordered longest-dial-first when
+ * matching so '+1 ...' never shadows '+1242'-style codes we may add later.
+ */
+export const PHONE_COUNTRIES: readonly { code: string; dial: string; flag: string }[] = [
+  { code: 'FR', dial: '33', flag: '🇫🇷' },
+  { code: 'BE', dial: '32', flag: '🇧🇪' },
+  { code: 'CH', dial: '41', flag: '🇨🇭' },
+  { code: 'DE', dial: '49', flag: '🇩🇪' },
+  { code: 'ES', dial: '34', flag: '🇪🇸' },
+  { code: 'IT', dial: '39', flag: '🇮🇹' },
+  { code: 'PT', dial: '351', flag: '🇵🇹' },
+  { code: 'NL', dial: '31', flag: '🇳🇱' },
+  { code: 'GB', dial: '44', flag: '🇬🇧' },
+  { code: 'IE', dial: '353', flag: '🇮🇪' },
+  { code: 'US', dial: '1', flag: '🇺🇸' },
+  { code: 'CA', dial: '1', flag: '🇨🇦' },
+  { code: 'BR', dial: '55', flag: '🇧🇷' },
+  { code: 'MA', dial: '212', flag: '🇲🇦' },
+  { code: 'DZ', dial: '213', flag: '🇩🇿' },
+  { code: 'TN', dial: '216', flag: '🇹🇳' },
+  { code: 'SN', dial: '221', flag: '🇸🇳' },
+  { code: 'CI', dial: '225', flag: '🇨🇮' },
+  { code: 'JP', dial: '81', flag: '🇯🇵' },
+  { code: 'CN', dial: '86', flag: '🇨🇳' },
+  { code: 'IN', dial: '91', flag: '🇮🇳' },
+  { code: 'AU', dial: '61', flag: '🇦🇺' },
+]
+
+/** Split a stored phone value into the matched country + national digits. */
+function splitPhone(value: unknown): { country: (typeof PHONE_COUNTRIES)[number] | null; national: string } {
+  const digits = String(value ?? '')
+    .replace(/^\+/, '')
+    .replace(/\D/g, '')
+  if (!digits) return { country: null, national: '' }
+  const match = [...PHONE_COUNTRIES]
+    .sort((a, b) => b.dial.length - a.dial.length)
+    .find((c) => digits.startsWith(c.dial))
+  return match
+    ? { country: match, national: digits.slice(match.dial.length) }
+    : { country: null, national: digits }
+}
+
+function PhoneWidget({ field, value, onChange }: WidgetProps) {
+  const t = useT()
+  const defaultCode =
+    typeof field.widgetOptions?.defaultCountry === 'string' ? field.widgetOptions.defaultCountry : 'FR'
+  const parsed = splitPhone(value)
+  // The picked country only needs local state while the number is still empty;
+  // once digits exist the stored E.164 value is the single source of truth.
+  const [pickedCode, setPickedCode] = useState(defaultCode)
+  const country =
+    parsed.country ?? PHONE_COUNTRIES.find((c) => c.code === pickedCode) ?? PHONE_COUNTRIES[0]
+
+  const commit = (dial: string, national: string) => {
+    const digits = national.replace(/\D/g, '')
+    if (!digits) {
+      onChange(null)
+      return
+    }
+    // text columns get E.164 ('+33612…'); numeric columns can't hold the '+'
+    // (nor leading zeros — the roadmap documents why text is recommended).
+    onChange(field.type === 'number' ? Number(`${dial}${digits}`) : `+${dial}${digits}`)
+  }
+
+  return (
+    <Box sx={{ display: 'flex', gap: 1 }}>
+      <TextField
+        select
+        aria-label={t('Country')}
+        value={country.code}
+        onChange={(e) => {
+          setPickedCode(e.target.value)
+          const next = PHONE_COUNTRIES.find((c) => c.code === e.target.value)
+          if (next && parsed.national) commit(next.dial, parsed.national)
+        }}
+        sx={{ minWidth: 110 }}
+      >
+        {PHONE_COUNTRIES.map((c) => (
+          <MenuItem key={c.code} value={c.code}>
+            {c.flag} +{c.dial}
+          </MenuItem>
+        ))}
+      </TextField>
+      <TextField
+        label={t(field.label)}
+        required={field.required}
+        fullWidth
+        value={parsed.national}
+        onChange={(e) => commit(country.dial, e.target.value)}
+        slotProps={{ htmlInput: { inputMode: 'tel' } }}
+        sx={{ '& input': { fontVariantNumeric: tabularNums } }}
+      />
+    </Box>
+  )
+}
+
+// ── dispatch ──────────────────────────────────────────────────────────────────
+
+const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
+  'text/simple': TextSimpleWidget,
+  'text/long': TextLongWidget,
+  'text/phone': PhoneWidget,
+  'number/float': NumberFloatWidget,
+  'number/int': NumberIntWidget,
+  'number/percent': NumberPercentWidget,
+  'number/stars': NumberStarsWidget,
+  'number/phone': PhoneWidget,
+  'boolean/switch': BooleanSwitchWidget,
+  'date/simple': DateWidget,
+  'relation/search': RelationSearchWidget,
+}
+
+/**
+ * Resolve a field to its widget component. resolveWidget() already enforces the
+ * matrix (and registration validated it), so a miss here is an engine bug — a
+ * matrix entry without a component — and throws accordingly.
+ */
+export function fieldWidget(field: FieldDescriptor): ComponentType<WidgetProps> {
+  const widget = resolveWidget(field)
+  const component = WIDGET_COMPONENTS[`${field.type}/${widget}`]
+  if (!component) {
+    throw new Error(`engine bug: no component for widget "${field.type}/${widget}"`)
+  }
+  return component
+}
