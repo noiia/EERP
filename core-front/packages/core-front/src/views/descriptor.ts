@@ -43,6 +43,19 @@ export interface FieldDescriptor {
   /** Widget tuning (e.g. { max: 5 } for stars). JSON-serializable only. */
   widgetOptions?: Record<string, JsonValue>
   required?: boolean
+  /**
+   * Name of a registered field function (registerFieldFunction) computing this
+   * field's value from the draft. A NAME, never a function — descriptors cross
+   * the RSC boundary. Computed fields render read-only and recompute whenever a
+   * field in the function's `depends` list changes.
+   */
+  compute?: string
+  /**
+   * Whether the value persists to the DB column on commit. Default true.
+   * `store: false` = display-only (typically with `compute`): stripped from the
+   * commit payload and expected absent in server data.
+   */
+  store?: boolean
 }
 
 /**

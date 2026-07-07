@@ -24,16 +24,19 @@ export interface WidgetProps {
   field: FieldDescriptor
   value: unknown
   onChange: (value: unknown) => void
+  /** Render inert (computed fields — the engine owns their value). */
+  disabled?: boolean
 }
 
 // ── text ──────────────────────────────────────────────────────────────────────
 
-function TextSimpleWidget({ field, value, onChange }: WidgetProps) {
+function TextSimpleWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
       label={t(field.label)}
       required={field.required}
+      disabled={disabled}
       fullWidth
       value={(value as string) ?? ''}
       onChange={(e) => onChange(e.target.value)}
@@ -41,12 +44,13 @@ function TextSimpleWidget({ field, value, onChange }: WidgetProps) {
   )
 }
 
-function TextLongWidget({ field, value, onChange }: WidgetProps) {
+function TextLongWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
       label={t(field.label)}
       required={field.required}
+      disabled={disabled}
       fullWidth
       multiline
       minRows={4}
@@ -58,13 +62,14 @@ function TextLongWidget({ field, value, onChange }: WidgetProps) {
 
 // ── date (stock input moved out of the renderer) ──────────────────────────────
 
-function DateWidget({ field, value, onChange }: WidgetProps) {
+function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
       label={t(field.label)}
       type="date"
       required={field.required}
+      disabled={disabled}
       fullWidth
       slotProps={{ inputLabel: { shrink: true } }}
       value={(value as string) ?? ''}
@@ -75,13 +80,14 @@ function DateWidget({ field, value, onChange }: WidgetProps) {
 
 // ── relation (Phase 1 stub — the search/tags/list widgets are Phase 4) ────────
 
-function RelationSearchWidget({ field, value, onChange }: WidgetProps) {
+function RelationSearchWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
       select
       label={t(field.label)}
       required={field.required}
+      disabled={disabled}
       value={(value as string) ?? ''}
       onChange={(e) => onChange(e.target.value)}
     >
@@ -92,12 +98,13 @@ function RelationSearchWidget({ field, value, onChange }: WidgetProps) {
 
 // ── boolean ───────────────────────────────────────────────────────────────────
 
-function BooleanSwitchWidget({ field, value, onChange }: WidgetProps) {
+function BooleanSwitchWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <FormControlLabel
       control={<Switch checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />}
       label={t(field.label)}
+      disabled={disabled}
     />
   )
 }
@@ -154,16 +161,19 @@ function NumberInput({
   field,
   input,
   endAdornment,
+  disabled,
 }: {
   field: FieldDescriptor
   input: ReturnType<typeof useNumericInput>
   endAdornment?: string
+  disabled?: boolean
 }) {
   const t = useT()
   return (
     <TextField
       label={t(field.label)}
       required={field.required}
+      disabled={disabled}
       fullWidth
       value={input.text}
       onFocus={input.onFocus}
@@ -182,26 +192,26 @@ function NumberInput({
   )
 }
 
-function NumberFloatWidget({ field, value, onChange }: WidgetProps) {
+function NumberFloatWidget({ field, value, onChange, disabled }: WidgetProps) {
   const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
   const input = useNumericInput({ value, onChange, decimals })
-  return <NumberInput field={field} input={input} />
+  return <NumberInput field={field} input={input} disabled={disabled} />
 }
 
-function NumberIntWidget({ field, value, onChange }: WidgetProps) {
+function NumberIntWidget({ field, value, onChange, disabled }: WidgetProps) {
   const input = useNumericInput({ value, onChange, decimals: 0, integer: true })
-  return <NumberInput field={field} input={input} />
+  return <NumberInput field={field} input={input} disabled={disabled} />
 }
 
-function NumberPercentWidget({ field, value, onChange }: WidgetProps) {
+function NumberPercentWidget({ field, value, onChange, disabled }: WidgetProps) {
   // base 'ratio' (default): 0.25 stored, "25 %" shown. base 'percent': stored as-is.
   const scale = field.widgetOptions?.base === 'percent' ? 1 : 100
   const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
   const input = useNumericInput({ value, onChange, decimals, scale })
-  return <NumberInput field={field} input={input} endAdornment="%" />
+  return <NumberInput field={field} input={input} endAdornment="%" disabled={disabled} />
 }
 
-function NumberStarsWidget({ field, value, onChange }: WidgetProps) {
+function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   const max = typeof field.widgetOptions?.max === 'number' ? field.widgetOptions.max : 3
   return (
@@ -212,6 +222,7 @@ function NumberStarsWidget({ field, value, onChange }: WidgetProps) {
       <Rating
         max={max}
         precision={0.5}
+        readOnly={disabled}
         value={typeof value === 'number' ? value : 0}
         onChange={(_e, next) => onChange(next ?? 0)}
       />
@@ -265,7 +276,7 @@ function splitPhone(value: unknown): { country: (typeof PHONE_COUNTRIES)[number]
     : { country: null, national: digits }
 }
 
-function PhoneWidget({ field, value, onChange }: WidgetProps) {
+function PhoneWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   const defaultCode =
     typeof field.widgetOptions?.defaultCountry === 'string' ? field.widgetOptions.defaultCountry : 'FR'
@@ -292,6 +303,7 @@ function PhoneWidget({ field, value, onChange }: WidgetProps) {
       <TextField
         select
         aria-label={t('Country')}
+        disabled={disabled}
         value={country.code}
         onChange={(e) => {
           setPickedCode(e.target.value)
@@ -309,6 +321,7 @@ function PhoneWidget({ field, value, onChange }: WidgetProps) {
       <TextField
         label={t(field.label)}
         required={field.required}
+        disabled={disabled}
         fullWidth
         value={parsed.national}
         onChange={(e) => commit(country.dial, e.target.value)}

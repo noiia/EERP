@@ -1,3 +1,4 @@
+import { buildBehaviorPlan } from '../views/behaviors'
 import { validateDescriptorWidgets, type ViewDescriptor } from '../views/descriptor'
 
 // The frontend module contract + registry. A module contributes DESCRIPTORS ONLY:
@@ -107,11 +108,15 @@ export class ModuleRegistry {
   private readonly entries: RegisteredModule[] = []
 
   register(module: FrontModule, options: RegisterOptions = {}): this {
-    // Fail loud at registration (build/boot), not at render: a descriptor with a
-    // widget its field type forbids is a module bug, named module + route + field.
+    // Fail loud at registration (build/boot), not at render: a widget the field
+    // type forbids, an unregistered compute name, or a compute cycle is a module
+    // bug, named module + route + field. Views files register their field
+    // functions at import time, so they exist by the time the generated manifest
+    // registers the module.
     for (const route of module.routes) {
       try {
         validateDescriptorWidgets(route.descriptor)
+        buildBehaviorPlan(route.descriptor)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         throw new Error(`module "${module.name}", route "${route.path}": ${message}`)

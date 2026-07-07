@@ -7,6 +7,7 @@ import {
   createTreeStore,
   type EntityActions,
 } from './stores'
+import { behaviorRegistry, registerFieldFunction, registerOnChange } from './behaviors'
 import { useSessionStore } from './session-store'
 import { useUiStore } from './ui-store'
 
@@ -141,5 +142,100 @@ describe('persisted stores', () => {
     const persisted = JSON.parse(localStorage.getItem('eerp-ui') ?? '{}')
     expect(persisted.state.theme).toBe('dark')
     expect(persisted.state.lastRoute).toBe('/crm/contacts')
+  })
+})
+
+// ── form store × behavior layer (compute / on_change / store:false) ───────────
+
+describe('createFormStore behaviors', () => {
+  interface Line {
+    id: string
+    qty?: number
+    price?: number
+    subtotal?: number
+    country?: string
+    vat_rate?: number
+  }
+
+  const behaviorDescriptor: ViewDescriptor<Line> = {
+    entity: 'lines',
+    viewType: 'form',
+    fields: [
+      { name: 'qty', label: 'Qty', type: 'number' },
+      { name: 'price', label: 'Price', type: 'number' },
+      // Computed AND display-only: recomputes from qty/price, never persisted.
+      { name: 'subtotal', label: 'Subtotal', type: 'number', compute: 'lines.subtotal', store: false },
+      { name: 'country', label: 'Country', type: 'text' },
+      { name: 'vat_rate', label: 'VAT', type: 'number' },
+    ],
+  }
+
+  function lineActions() {
+    const update = vi.fn(async (id: string, body: Partial<Line>) => ({ id, ...body }) as Line)
+    const create = vi.fn(async (body: Partial<Line>) => ({ id: 'new', ...body }) as Line)
+    return { actions: { create, update } as EntityActions<Line>, create, update }
+  }
+
+  beforeEach(() => {
+    behaviorRegistry.clear()
+    registerFieldFunction({
+      entity: 'lines',
+      name: 'lines.subtotal',
+      depends: ['qty', 'price', 'vat_rate'],
+      handler: (d) =>
+        (((d.qty as number) ?? 0) * ((d.price as number) ?? 0)) *
+        (1 + ((d.vat_rate as number) ?? 0)),
+    })
+    registerOnChange({
+      entity: 'lines',
+      name: 'lines.countryDefaults',
+      onChange: ['country'],
+      handler: (d) => ({ vat_rate: d.country === 'FR' ? 0.2 : 0 }),
+    })
+  })
+
+  it('seeds computed values from initial data without marking the form dirty', () => {
+    const { actions } = lineActions()
+    const store = createFormStore(behaviorDescriptor, actions, { id: '1', qty: 2, price: 10 })
+    expect(store.getState().draft.subtotal).toBe(20)
+    expect(store.getState().dirty).toBe(false)
+  })
+
+  it('recomputes dependent fields on setField', () => {
+    const { actions } = lineActions()
+    const store = createFormStore(behaviorDescriptor, actions, { id: '1', qty: 2, price: 10 })
+    store.getState().setField('price', 25)
+    expect(store.getState().draft.subtotal).toBe(50)
+    expect(store.getState().dirty).toBe(true)
+  })
+
+  it('an on_change patch cascades into the compute in the same edit', () => {
+    const { actions } = lineActions()
+    const store = createFormStore(behaviorDescriptor, actions, { id: '1', qty: 1, price: 100 })
+    store.getState().setField('country', 'FR')
+    expect(store.getState().draft.vat_rate).toBe(0.2)
+    expect(store.getState().draft.subtotal).toBe(120)
+  })
+
+  it('strips store:false fields from the commit payload and re-seeds them after', async () => {
+    const { actions, update } = lineActions()
+    const store = createFormStore(behaviorDescriptor, actions, { id: '1', qty: 2, price: 10 })
+    store.getState().setField('price', 30)
+    await store.getState().commit()
+
+    const payload = update.mock.calls[0][1]
+    expect(payload).not.toHaveProperty('subtotal')
+    expect(payload.price).toBe(30)
+    // The server response has no subtotal column; the reconcile recomputes it.
+    expect(store.getState().draft.subtotal).toBe(60)
+    expect(store.getState().dirty).toBe(false)
+  })
+
+  it('fails store creation on an unregistered compute name', () => {
+    behaviorRegistry.clear()
+    const { actions } = lineActions()
+    expect(() => createFormStore(behaviorDescriptor, actions, { id: '1' })).toThrowError(
+      /lines\.subtotal" is not registered/,
+    )
   })
 })

@@ -122,9 +122,12 @@ function FieldInput({
 }) {
   // Dispatch through the widget layer: the field's type picks the data shape,
   // its (optional) widget decorator the control — descriptor labels stay gettext
-  // msgids translated inside each widget (widgets.tsx).
+  // msgids translated inside each widget (widgets.tsx). Computed fields render
+  // inert: the behavior layer owns their value (behaviors.ts).
   const Widget = fieldWidget(field)
-  return <Widget field={field} value={value} onChange={onChange} />
+  return (
+    <Widget field={field} value={value} onChange={onChange} disabled={Boolean(field.compute)} />
+  )
 }
 
 function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: EntityViewProps<T>) {

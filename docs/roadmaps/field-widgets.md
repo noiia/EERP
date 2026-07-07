@@ -109,7 +109,12 @@ percent and separator formatting against both separator configs; stars half-step
 **DoD:** existing views render unchanged (defaults); each widget proven by a store round-trip
 test; separators flip app-wide from Settings with no widget code change.
 
-## Phase 2 — Behavior layer: compute / depends / on_change / store, index DDL
+## Phase 2 — Behavior layer: compute / depends / on_change / store, index DDL ✅ (implemented)
+
+> Implementation note: the index DDL turned out to already exist end to end
+> (`internal/module/migration.go` `ensureIndexes`/`createIndex`, wired into the Go-module
+> load path) — Phase 2 refactored the DDL helpers onto the call-site `orm.Executor`
+> interface and added the missing per-method + idempotency tests.
 
 **Claude Code prompt:**
 ```

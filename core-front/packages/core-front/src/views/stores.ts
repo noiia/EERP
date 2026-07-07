@@ -1,6 +1,7 @@
 import type { StoreApi } from 'zustand'
 import { createStore, useStore } from 'zustand'
 import { ApiError, toApiError } from '../api/errors'
+import { applyBehaviors, buildBehaviorPlan, stripUnstored, type DraftRecord } from './behaviors'
 import type { ViewDescriptor } from './descriptor'
 
 // Per-view client stores. Each is SEEDED with server-fetched initialData and never
@@ -66,30 +67,51 @@ export interface FormState<T extends HasId> {
 export type FormStoreApi<T extends HasId> = StoreApi<FormState<T>>
 
 export function createFormStore<T extends HasId>(
-  _descriptor: ViewDescriptor<T>,
+  descriptor: ViewDescriptor<T>,
   actions: EntityActions<T>,
   initial: Partial<T> = {},
 ): FormStoreApi<T> {
+  // Resolve compute/on_change/store behaviors once (throws on cycles or unknown
+  // function names — a module bug, not a runtime condition). Seeds run the full
+  // compute pass so display-only (store:false) values exist before any edit,
+  // WITHOUT marking the form dirty.
+  const plan = buildBehaviorPlan(descriptor)
+  const seed = (record: Partial<T>): Partial<T> =>
+    applyBehaviors(plan, { ...record } as DraftRecord, null) as Partial<T>
+
   return createStore<FormState<T>>((set, get) => ({
-    draft: initial,
+    draft: seed(initial),
     dirty: false,
     error: null,
-    edit: (record) => set({ draft: { ...record }, dirty: false, error: null }),
-    setField: (key, value) => set((state) => ({ draft: { ...state.draft, [key]: value }, dirty: true })),
+    edit: (record) => set({ draft: seed(record), dirty: false, error: null }),
+    setField: (key, value) =>
+      set((state) => ({
+        // One edit = on_change patches + dependent recomputes, in plan order.
+        draft: applyBehaviors(
+          plan,
+          { ...state.draft, [key]: value } as DraftRecord,
+          [key as string],
+        ) as Partial<T>,
+        dirty: true,
+      })),
     commit: async () => {
       const { draft } = get()
       const id = (draft as Partial<HasId>).id
+      // store:false fields never reach Go — they have no column.
+      const payload = stripUnstored(draft, plan.unstored)
       try {
-        const saved = id ? await actions.update(id, draft) : await actions.create(draft)
-        // Reconcile with the authoritative server record; revalidation refreshes lists.
-        set({ draft: saved, dirty: false, error: null })
+        const saved = id ? await actions.update(id, payload) : await actions.create(payload)
+        // Reconcile with the authoritative server record; revalidation refreshes
+        // lists. Re-seed so display-only computed values survive the reconcile
+        // (the server response never carries them).
+        set({ draft: seed(saved), dirty: false, error: null })
         return saved
       } catch (e) {
         set({ error: toApiError(e) })
         return null
       }
     },
-    reset: () => set({ draft: initial, dirty: false, error: null }),
+    reset: () => set({ draft: seed(initial), dirty: false, error: null }),
   }))
 }
 
