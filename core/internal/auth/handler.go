@@ -25,11 +25,17 @@ type userQuerier interface {
 }
 
 type tokenIssuer interface {
-	IssueAccess(user Users, roles []string) (string, error)
+	IssueAccess(user Users, roles []string, permissions []string) (string, error)
 	IssueRefresh(userID uuid.UUID) (string, error)
 	ParseRefresh(raw string) (uuid.UUID, error)
 	accessTTLSeconds() int // lowercase: only implementations in this package
 	refreshTTLDuration() time.Duration
+}
+
+// permissionSource resolves the effective permission codes for a role set —
+// embedded in the access token so the frontend session mirror can gate UI.
+type permissionSource interface {
+	ForRoles(ctx context.Context, roles []string) ([]string, error)
 }
 
 type refreshStorer interface {
@@ -43,16 +49,17 @@ type Handler struct {
 	users   userQuerier
 	tokens  tokenIssuer
 	refresh refreshStorer
+	perms   permissionSource
 }
 
 // NewHandler constructs an auth Handler from concrete implementations.
-func NewHandler(users *UserRepository, tokens *TokenService, refresh *RefreshStore, _ *PermissionRepository) *Handler {
-	return &Handler{users: users, tokens: tokens, refresh: refresh}
+func NewHandler(users *UserRepository, tokens *TokenService, refresh *RefreshStore, perms *PermissionRepository) *Handler {
+	return &Handler{users: users, tokens: tokens, refresh: refresh, perms: perms}
 }
 
 // newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(users userQuerier, tokens tokenIssuer, refresh refreshStorer) *Handler {
-	return &Handler{users: users, tokens: tokens, refresh: refresh}
+func newHandlerWith(users userQuerier, tokens tokenIssuer, refresh refreshStorer, perms permissionSource) *Handler {
+	return &Handler{users: users, tokens: tokens, refresh: refresh, perms: perms}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -130,7 +137,12 @@ func (h *Handler) Login(c echo.Context) error {
 		return fmt.Errorf("login: find roles: %w", err)
 	}
 
-	accessToken, err := h.tokens.IssueAccess(user, roles)
+	permissions, err := h.perms.ForRoles(c.Request().Context(), roles)
+	if err != nil {
+		return fmt.Errorf("login: resolve permissions: %w", err)
+	}
+
+	accessToken, err := h.tokens.IssueAccess(user, roles, permissions)
 	if err != nil {
 		return fmt.Errorf("login: issue access token: %w", err)
 	}
@@ -183,7 +195,12 @@ func (h *Handler) Refresh(c echo.Context) error {
 		return fmt.Errorf("refresh: find roles: %w", err)
 	}
 
-	accessToken, err := h.tokens.IssueAccess(user, roles)
+	permissions, err := h.perms.ForRoles(c.Request().Context(), roles)
+	if err != nil {
+		return fmt.Errorf("refresh: resolve permissions: %w", err)
+	}
+
+	accessToken, err := h.tokens.IssueAccess(user, roles, permissions)
 	if err != nil {
 		return fmt.Errorf("refresh: issue access token: %w", err)
 	}

@@ -32,12 +32,32 @@ func TestIssueAccess_ReturnsSigned(t *testing.T) {
 	u := testUser()
 	u.BaseModel.ID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
-	tok, err := svc.IssueAccess(u, []string{"admin"})
+	tok, err := svc.IssueAccess(u, []string{"admin"}, []string{"*:*:*"})
 	if err != nil {
 		t.Fatalf("IssueAccess: %v", err)
 	}
 	if tok == "" {
 		t.Error("got empty token")
+	}
+}
+
+func TestIssueAccess_EmbedsPermissionsClaim(t *testing.T) {
+	// The frontend session mirror reads this claim to gate UI (Create buttons,
+	// <Can>); Go still authorizes server-side, but the claim must round-trip.
+	svc := auth.NewTokenService(testConfig())
+	u := testUser()
+	u.BaseModel.ID = uuid.New()
+
+	raw, err := svc.IssueAccess(u, []string{"admin"}, []string{"crm:contacts:write", "users:users:read"})
+	if err != nil {
+		t.Fatalf("IssueAccess: %v", err)
+	}
+	claims, err := svc.ParseAccess(raw)
+	if err != nil {
+		t.Fatalf("ParseAccess: %v", err)
+	}
+	if len(claims.Permissions) != 2 || claims.Permissions[0] != "crm:contacts:write" {
+		t.Errorf("permissions = %v, want the issued codes", claims.Permissions)
 	}
 }
 
@@ -47,7 +67,7 @@ func TestParseAccess_ValidToken_ReturnsRoles(t *testing.T) {
 	u.BaseModel.ID = uuid.New()
 	roles := []string{"admin", "crm:write"}
 
-	raw, err := svc.IssueAccess(u, roles)
+	raw, err := svc.IssueAccess(u, roles, nil)
 	if err != nil {
 		t.Fatalf("IssueAccess: %v", err)
 	}
@@ -102,7 +122,7 @@ func TestParseAccess_WrongKey_ReturnsError(t *testing.T) {
 
 	u := testUser()
 	u.BaseModel.ID = uuid.New()
-	raw, _ := svc1.IssueAccess(u, nil)
+	raw, _ := svc1.IssueAccess(u, nil, nil)
 
 	_, err := svc2.ParseAccess(raw)
 	if err == nil {
@@ -157,7 +177,7 @@ func TestTokenService_ZeroTTL_UsesDefaults(t *testing.T) {
 	u := testUser()
 	u.BaseModel.ID = uuid.New()
 
-	tok, err := svc.IssueAccess(u, nil)
+	tok, err := svc.IssueAccess(u, nil, nil)
 	if err != nil {
 		t.Fatalf("IssueAccess with zero TTL: %v", err)
 	}

@@ -4,9 +4,10 @@ import type { Identity } from '@eerp/core-front'
 // Decode the access JWT to build the session Identity. The token was issued by Go and
 // stored by our BFF in an HttpOnly cookie, so we TRUST it here and only read claims —
 // signature verification is Go's job (it validates the Bearer token on every API call).
-// Go's claims: { sub: userId, tenant: tenantId, roles: [], exp }. Permissions are NOT
-// in the token today (resolved server-side from roles in Go); we read a `permissions`
-// claim if it ever appears so <Can> lights up without further frontend changes.
+// Go's claims: { sub: userId, tenant: tenantId, roles: [], permissions: [], exp }. The
+// permissions claim carries the role-derived codes that light up <Can> and the Create
+// buttons; it refreshes with the token (grant changes apply on the next issue), and it
+// is UI gating only — Go re-authorizes every call from the database.
 
 interface AccessClaims {
   sub?: string

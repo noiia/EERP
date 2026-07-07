@@ -15,6 +15,11 @@ type Claims struct {
 	Sub    uuid.UUID `json:"sub"`
 	Tenant uuid.UUID `json:"tenant"`
 	Roles  []string  `json:"roles"`
+	// Permissions carries the role-derived permission codes so the frontend's
+	// session mirror can gate UI (Create buttons, <Can>) without a round-trip.
+	// UI convenience only — Go still authorizes every call from the DB, so a
+	// stale claim (grants changed mid-token) can never widen real access.
+	Permissions []string `json:"permissions,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -28,13 +33,15 @@ func NewTokenService(cfg *types.Config) *TokenService {
 	return &TokenService{cfg: cfg}
 }
 
-// IssueAccess issues a signed access token embedding user ID, tenant ID, and roles.
-func (t *TokenService) IssueAccess(user Users, roles []string) (string, error) {
+// IssueAccess issues a signed access token embedding user ID, tenant ID, roles,
+// and the role-derived permission codes (see Claims.Permissions).
+func (t *TokenService) IssueAccess(user Users, roles []string, permissions []string) (string, error) {
 	ttl := t.accessTTL()
 	claims := Claims{
-		Sub:    user.ID,
-		Tenant: user.TenantID,
-		Roles:  roles,
+		Sub:         user.ID,
+		Tenant:      user.TenantID,
+		Roles:       roles,
+		Permissions: permissions,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
