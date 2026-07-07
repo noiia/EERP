@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-front
+.PHONY: rebuild-and-run clean build run run-back run-front garage-init
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -48,3 +48,8 @@ run:
 
 logs:
 	docker compose logs -f -n 50
+
+# One-time (idempotent) bootstrap of the dev Garage node: layout, dev S3 key, eerp bucket.
+garage-init:
+	docker compose up -d garage
+	bash $(root)/infra/garage/init.sh

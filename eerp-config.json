@@ -23,5 +23,10 @@
     "backend_host": "127.0.0.1",
     "backend_version": "v1",
     "seed_dev_admin": true,
-    "api_config_path": "api.yaml"
+    "api_config_path": "api.yaml",
+    "s3_endpoint": "http://127.0.0.1:3910",
+    "s3_region": "garage",
+    "s3_bucket": "eerp",
+    "s3_access_key": "GKdeadbeefdeadbeefdeadbeef",
+    "s3_secret_key": "3b7932955ae6e6d18fa87084d6c4f35898471aee3bbce0da3d5779b65195080c"
 }

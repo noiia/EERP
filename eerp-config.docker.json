@@ -22,5 +22,10 @@
     "backend_port": 8080,
     "backend_host": "backend",
     "backend_version": "v1",
-    "seed_dev_admin": true
+    "seed_dev_admin": true,
+    "s3_endpoint": "http://garage:3900",
+    "s3_region": "garage",
+    "s3_bucket": "eerp",
+    "s3_access_key": "GKdeadbeefdeadbeefdeadbeef",
+    "s3_secret_key": "3b7932955ae6e6d18fa87084d6c4f35898471aee3bbce0da3d5779b65195080c"
 }

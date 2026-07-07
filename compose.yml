@@ -14,6 +14,25 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible object storage for the picture service (see infra/garage/README.md).
+  # Starts empty: run `make garage-init` once to create the layout, dev key and bucket.
+  garage:
+    image: dxflrs/garage:v2.3.0
+    container_name: garage
+    volumes:
+      - ./infra/garage/garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    ports:
+      # Host 3910 (3900 is commonly taken by other garage instances); in-network
+      # clients still use garage:3900.
+      - "3910:3900" # S3 API
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   core-back:
     container_name: backend
     build:
@@ -44,3 +63,7 @@ services:
         condition: service_healthy
       core-back:
         condition: service_started
+
+volumes:
+  garage-meta:
+  garage-data:
