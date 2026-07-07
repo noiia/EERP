@@ -10,7 +10,7 @@ import (
 
 type Contact struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"` // owning tenant; set server-side, enforces row isolation
+	TenantID uuid.UUID `db:"tenant_id"`
 	Name     string    `db:"name"`
 	Email    string    `db:"email"`
 	Company  string    `db:"company"`

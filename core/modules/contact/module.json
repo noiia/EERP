@@ -6,7 +6,12 @@
     "version": "0.0.1",
     "author": "Edwin Lecomte",
     "description": "Contact core module",
-    "static_files": {},
+    "app_mode": true,
+    "static_files": {
+        "views": [
+            "ContactsViews.ts"
+        ]
+    },
     "is_service": true,
     "auto_install": true
 }
