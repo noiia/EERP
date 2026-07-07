@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Tenant-scoped admin queries backing the users/roles management endpoints
@@ -56,6 +58,32 @@ func (r *UserRepository) UpdateEmail(ctx context.Context, tenantID, id uuid.UUID
 	return updated, nil
 }
 
+// CreateUser creates a user in the tenant with a LOCKED credential: the password
+// hash is derived from random bytes that are immediately discarded, so no password
+// can ever match it. The account exists (assignable, listable, editable) but cannot
+// log in until a dedicated password/invitation flow sets a real credential — that
+// flow is deliberately separate from this admin surface.
+func (r *UserRepository) CreateUser(ctx context.Context, tenantID uuid.UUID, email string) (Users, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return Users{}, fmt.Errorf("user: create: generate locked credential: %w", err)
+	}
+	hash, err := bcrypt.GenerateFromPassword(raw, bcrypt.DefaultCost)
+	if err != nil {
+		return Users{}, fmt.Errorf("user: create: hash locked credential: %w", err)
+	}
+
+	created, err := r.users.Create(ctx, Users{
+		TenantID:     tenantID,
+		Email:        email,
+		PasswordHash: string(hash),
+	})
+	if err != nil {
+		return Users{}, fmt.Errorf("user: create: %w", err)
+	}
+	return created, nil
+}
+
 // RoleRepository provides the tenant-scoped role queries the admin endpoints need.
 type RoleRepository struct {
 	roles *orm.Repository[Roles]
@@ -86,6 +114,20 @@ func (r *RoleRepository) FindInTenant(ctx context.Context, tenantID, id uuid.UUI
 		return Roles{}, fmt.Errorf("role: find in tenant: %w", err)
 	}
 	return role, nil
+}
+
+// CreateRole creates a role in the tenant. It starts with no permission grants —
+// grants keep their own flows.
+func (r *RoleRepository) CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string) (Roles, error) {
+	created, err := r.roles.Create(ctx, Roles{
+		TenantID:    tenantID,
+		Name:        name,
+		Description: description,
+	})
+	if err != nil {
+		return Roles{}, fmt.Errorf("role: create: %w", err)
+	}
+	return created, nil
 }
 
 // UpdateRole sets the role's name and description (the whitelisted fields).

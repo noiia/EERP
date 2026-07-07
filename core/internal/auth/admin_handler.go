@@ -22,20 +22,24 @@ import (
 // Routing decides authorization: mounted under /api/v1/users and /api/v1/roles
 // behind the permission middleware, which derives users:users:* / roles:roles:*.
 //
-// Deliberately read+update only — account/role creation, deletion, and role
-// assignment stay out until they get their own audited, purpose-built flows.
+// Create is supported for both (POST derives the same :write permission); a new
+// user starts LOCKED — no password, so no login — until a dedicated credential
+// flow exists. Deletion and role/permission assignment stay out until they get
+// their own audited, purpose-built flows.
 
 // ── Call-site interfaces (defined here, not at implementation) ────────────────
 
 type adminUserStore interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Users, error)
 	FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Users, error)
+	CreateUser(ctx context.Context, tenantID uuid.UUID, email string) (Users, error)
 	UpdateEmail(ctx context.Context, tenantID, id uuid.UUID, email string) (Users, error)
 }
 
 type adminRoleStore interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Roles, error)
 	FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Roles, error)
+	CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string) (Roles, error)
 	UpdateRole(ctx context.Context, tenantID, id uuid.UUID, name, description string) (Roles, error)
 }
 
@@ -119,6 +123,29 @@ func (h *AdminHandler) ListUsers(c echo.Context) error {
 	return c.JSON(http.StatusOK, listEnvelope{Data: data, Total: len(data)})
 }
 
+// CreateUser handles POST /api/v1/users. The body carries only the email; the
+// account is created locked (see UserRepository.CreateUser) in the caller's tenant.
+func (h *AdminHandler) CreateUser(c echo.Context) error {
+	identity := MustIdentity(c.Request().Context())
+
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	email := strings.TrimSpace(req.Email)
+	if !validEmail(email) {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "email must be a valid address.")
+	}
+
+	created, err := h.users.CreateUser(c.Request().Context(), identity.TenantID, email)
+	if err != nil {
+		return fmt.Errorf("admin: create user: %w", err)
+	}
+	return c.JSON(http.StatusCreated, toUserResponse(created))
+}
+
 // GetUser handles GET /api/v1/users/:id.
 func (h *AdminHandler) GetUser(c echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
@@ -153,7 +180,7 @@ func (h *AdminHandler) UpdateUser(c echo.Context) error {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	email := strings.TrimSpace(req.Email)
-	if len(email) < 3 || len(email) > 254 || !strings.Contains(email[1:len(email)-1], "@") {
+	if !validEmail(email) {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "email must be a valid address.")
 	}
 
@@ -182,6 +209,29 @@ func (h *AdminHandler) ListRoles(c echo.Context) error {
 		data = append(data, toRoleResponse(r))
 	}
 	return c.JSON(http.StatusOK, listEnvelope{Data: data, Total: len(data)})
+}
+
+// CreateRole handles POST /api/v1/roles. The new role starts with no grants.
+func (h *AdminHandler) CreateRole(c echo.Context) error {
+	identity := MustIdentity(c.Request().Context())
+
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	name := strings.TrimSpace(req.Name)
+	if msg := validateRole(name, req.Description); msg != "" {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
+	}
+
+	created, err := h.roles.CreateRole(c.Request().Context(), identity.TenantID, name, strings.TrimSpace(req.Description))
+	if err != nil {
+		return fmt.Errorf("admin: create role: %w", err)
+	}
+	return c.JSON(http.StatusCreated, toRoleResponse(created))
 }
 
 // GetRole handles GET /api/v1/roles/:id.
@@ -219,11 +269,8 @@ func (h *AdminHandler) UpdateRole(c echo.Context) error {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	name := strings.TrimSpace(req.Name)
-	if name == "" || len(name) > 100 {
-		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "name is required (max 100 characters).")
-	}
-	if len(req.Description) > 500 {
-		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "description too long (max 500 characters).")
+	if msg := validateRole(name, req.Description); msg != "" {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
 	}
 
 	updated, err := h.roles.UpdateRole(c.Request().Context(), identity.TenantID, id, name, strings.TrimSpace(req.Description))
@@ -237,6 +284,24 @@ func (h *AdminHandler) UpdateRole(c echo.Context) error {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+// validEmail keeps junk out of the column: a non-edge '@', sane length. Real
+// deliverability is not this handler's problem.
+func validEmail(email string) bool {
+	return len(email) >= 3 && len(email) <= 254 && strings.Contains(email[1:len(email)-1], "@")
+}
+
+// validateRole returns the validation message for a trimmed name + raw
+// description, or "" when both are acceptable.
+func validateRole(name, description string) string {
+	if name == "" || len(name) > 100 {
+		return "name is required (max 100 characters)."
+	}
+	if len(description) > 500 {
+		return "description too long (max 500 characters)."
+	}
+	return ""
+}
 
 func adminErrorJSON(c echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{

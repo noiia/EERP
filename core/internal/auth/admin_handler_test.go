@@ -35,6 +35,16 @@ func (s *stubAdminUsers) FindInTenant(_ context.Context, tenantID, id uuid.UUID)
 	return s.user, s.err
 }
 
+func (s *stubAdminUsers) CreateUser(_ context.Context, tenantID uuid.UUID, email string) (Users, error) {
+	s.gotTenant, s.gotEmail = tenantID, email
+	if s.err != nil {
+		return Users{}, s.err
+	}
+	u := s.user
+	u.Email = email
+	return u, nil
+}
+
 func (s *stubAdminUsers) UpdateEmail(_ context.Context, tenantID, id uuid.UUID, email string) (Users, error) {
 	s.gotTenant, s.gotID, s.gotEmail = tenantID, id, email
 	if s.err != nil {
@@ -59,6 +69,14 @@ func (s *stubAdminRoles) ListByTenant(_ context.Context, _ uuid.UUID) ([]Roles, 
 
 func (s *stubAdminRoles) FindInTenant(_ context.Context, _, _ uuid.UUID) (Roles, error) {
 	return s.role, s.err
+}
+
+func (s *stubAdminRoles) CreateRole(_ context.Context, _ uuid.UUID, name, description string) (Roles, error) {
+	s.gotName, s.gotDesc = name, description
+	if s.err != nil {
+		return Roles{}, s.err
+	}
+	return Roles{Name: name, Description: description}, nil
 }
 
 func (s *stubAdminRoles) UpdateRole(_ context.Context, _, _ uuid.UUID, name, description string) (Roles, error) {
@@ -197,6 +215,42 @@ func TestAdminUpdateUser(t *testing.T) {
 	}
 }
 
+func TestAdminCreateUser(t *testing.T) {
+	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantEmail  string
+	}{
+		{name: "valid email creates in the caller's tenant", body: `{"email":"new@x.io"}`, wantStatus: http.StatusCreated, wantEmail: "new@x.io"},
+		{name: "extra fields ignored", body: `{"email":"new@x.io","password_hash":"evil","id":"11111111-1111-1111-1111-111111111111"}`, wantStatus: http.StatusCreated, wantEmail: "new@x.io"},
+		{name: "invalid email rejected", body: `{"email":"nope"}`, wantStatus: http.StatusBadRequest},
+		{name: "empty body rejected", body: `{}`, wantStatus: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			users := &stubAdminUsers{}
+			h := newAdminHandlerWith(users, &stubAdminRoles{})
+			rec := serveAdmin(t, h.CreateUser, http.MethodPost, "/users", "", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusCreated {
+				return
+			}
+			if users.gotEmail != tt.wantEmail || users.gotTenant != identity.TenantID {
+				t.Errorf("created (%q, %s), want (%q, %s)", users.gotEmail, users.gotTenant, tt.wantEmail, identity.TenantID)
+			}
+			if strings.Contains(rec.Body.String(), "password") {
+				t.Fatalf("password material leaked: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
 // ── Roles ─────────────────────────────────────────────────────────────────────
 
 func TestAdminListRoles(t *testing.T) {
@@ -255,6 +309,35 @@ func TestAdminUpdateRole(t *testing.T) {
 			}
 			if roles.gotName != tt.wantName || roles.gotDesc != tt.wantDesc {
 				t.Errorf("saved (%q,%q), want (%q,%q)", roles.gotName, roles.gotDesc, tt.wantName, tt.wantDesc)
+			}
+		})
+	}
+}
+
+func TestAdminCreateRole(t *testing.T) {
+	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantName   string
+	}{
+		{name: "valid", body: `{"name":"support","description":"helpdesk"}`, wantStatus: http.StatusCreated, wantName: "support"},
+		{name: "empty name rejected", body: `{"name":""}`, wantStatus: http.StatusBadRequest},
+		{name: "overlong description rejected", body: `{"name":"x","description":"` + strings.Repeat("d", 501) + `"}`, wantStatus: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			roles := &stubAdminRoles{}
+			h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+			rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus == http.StatusCreated && roles.gotName != tt.wantName {
+				t.Errorf("created name = %q, want %q", roles.gotName, tt.wantName)
 			}
 		})
 	}

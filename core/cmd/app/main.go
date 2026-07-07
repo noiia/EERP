@@ -183,10 +183,12 @@ func main() {
 	adminHandler := auth.NewAdminHandler(userRepo, auth.NewRoleRepository(app.DB))
 	usersGroup := srv.Echo().Group("/api/v1/users", jwtMw, permMw)
 	usersGroup.GET("", adminHandler.ListUsers)
+	usersGroup.POST("", adminHandler.CreateUser)
 	usersGroup.GET("/:id", adminHandler.GetUser)
 	usersGroup.PUT("/:id", adminHandler.UpdateUser)
 	rolesGroup := srv.Echo().Group("/api/v1/roles", jwtMw, permMw)
 	rolesGroup.GET("", adminHandler.ListRoles)
+	rolesGroup.POST("", adminHandler.CreateRole)
 	rolesGroup.GET("/:id", adminHandler.GetRole)
 	rolesGroup.PUT("/:id", adminHandler.UpdateRole)
 
