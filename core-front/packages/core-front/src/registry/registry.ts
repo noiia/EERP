@@ -20,6 +20,21 @@ export interface FrontModule {
   routes: FrontRoute[]
 }
 
+/**
+ * Build-time metadata attached when a module is registered — sourced from the module's
+ * `module.json`, not from the FrontModule itself (the views file stays descriptors-only;
+ * how the module presents in the shell is deployment metadata, so it lives in the same
+ * manifest the Go backend reads).
+ */
+export interface RegisterOptions {
+  /**
+   * `module.json` `app_mode`: the module is a full application and gets a tile on the
+   * landing menu. Default false — its routes stay registered and navigable (deep links,
+   * cross-module formPath targets), it just has no home-page entry.
+   */
+  appMode?: boolean
+}
+
 /** What the catch-all page resolves per path: the owning module + how to render it. */
 export interface RouteConfig {
   module: string
@@ -83,11 +98,16 @@ function mainPageKind(path: string): MainPageKind | null {
   return MAIN_PAGE_ORDER.includes(last as MainPageKind) ? (last as MainPageKind) : null
 }
 
-export class ModuleRegistry {
-  private readonly modules: FrontModule[] = []
+interface RegisteredModule {
+  module: FrontModule
+  appMode: boolean
+}
 
-  register(module: FrontModule): this {
-    this.modules.push(module)
+export class ModuleRegistry {
+  private readonly entries: RegisteredModule[] = []
+
+  register(module: FrontModule, options: RegisterOptions = {}): this {
+    this.entries.push({ module, appMode: options.appMode === true })
     return this
   }
 
@@ -97,7 +117,7 @@ export class ModuleRegistry {
    */
   buildRegistry(): Map<string, RouteConfig> {
     const map = new Map<string, RouteConfig>()
-    for (const module of this.modules) {
+    for (const { module } of this.entries) {
       for (const route of module.routes) {
         map.set(route.path, {
           module: module.name,
@@ -110,15 +130,18 @@ export class ModuleRegistry {
   }
 
   /**
-   * The installed-application menu: every registered module paired with its directly
-   * navigable routes — those with no `:param` segment. A form route like
-   * '/crm/contacts/:id' needs an id, so it is not a menu entry; the list/tree view that
-   * links to it is. Preserves registration order; modules left with no navigable route
-   * are omitted. The landing page renders this (permission-filtered) as the menu.
+   * The installed-application menu: every module registered as an application
+   * (`module.json` `app_mode: true`) paired with its directly navigable routes — those
+   * with no `:param` segment. A form route like '/crm/contacts/:id' needs an id, so it
+   * is not a menu entry; the list/tree view that links to it is. Preserves registration
+   * order; non-app modules and modules left with no navigable route are omitted (their
+   * routes stay reachable — they just get no tile). The landing page renders this
+   * (permission-filtered) as the menu.
    */
   menu(): MenuModule[] {
     const result: MenuModule[] = []
-    for (const module of this.modules) {
+    for (const { module, appMode } of this.entries) {
+      if (!appMode) continue
       const routes = module.routes.filter((route) => !hasParam(route.path))
       if (routes.length > 0) result.push({ name: module.name, routes })
     }
@@ -134,7 +157,7 @@ export class ModuleRegistry {
    */
   moduleNav(): ModuleNav[] {
     const result: ModuleNav[] = []
-    for (const module of this.modules) {
+    for (const { module } of this.entries) {
       const byKind = new Map<MainPageKind, MainPage>()
       for (const route of module.routes) {
         const kind = mainPageKind(route.path)
@@ -159,7 +182,7 @@ export class ModuleRegistry {
    * owning module ships. Empty for an unknown module.
    */
   listViews(moduleName: string): MenuRoute[] {
-    const module = this.modules.find((m) => m.name === moduleName)
+    const module = this.entries.find((e) => e.module.name === moduleName)?.module
     if (!module) return []
     return module.routes
       .filter((route) => route.descriptor.viewType === 'tree')

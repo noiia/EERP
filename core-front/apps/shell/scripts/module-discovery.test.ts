@@ -30,7 +30,7 @@ beforeEach(() => {
   mkdirSync(join(demo, 'views'), { recursive: true })
   writeFileSync(
     join(demo, 'module.json'),
-    JSON.stringify({ name: 'demo', static_files: { views: ['DemoViews.ts'] } }),
+    JSON.stringify({ name: 'demo', app_mode: true, static_files: { views: ['DemoViews.ts'] } }),
   )
   writeFileSync(join(demo, 'views', 'DemoViews.ts'), 'export default { name: "demo", routes: [] }')
 
@@ -109,6 +109,29 @@ describe('discoverModuleViews', () => {
     )
     expect(discoverModuleViews(repo, readConfig(repo))).toEqual([])
   })
+
+  it('skips a deactivated module (active: false), keeping a missing active as active', () => {
+    writeFileSync(
+      join(repo, 'mods', 'demo', 'module.json'),
+      JSON.stringify({
+        name: 'demo',
+        active: false,
+        app_mode: true,
+        static_files: { views: ['DemoViews.ts'] },
+      }),
+    )
+    expect(discoverModuleViews(repo, readConfig(repo))).toEqual([])
+  })
+
+  it('carries app_mode through, defaulting to false when module.json omits it', () => {
+    expect(discoverModuleViews(repo, readConfig(repo))[0].appMode).toBe(true)
+
+    writeFileSync(
+      join(repo, 'mods', 'demo', 'module.json'),
+      JSON.stringify({ name: 'demo', static_files: { views: ['DemoViews.ts'] } }),
+    )
+    expect(discoverModuleViews(repo, readConfig(repo))[0].appMode).toBe(false)
+  })
 })
 
 describe('translationsForDir', () => {
@@ -128,6 +151,14 @@ describe('discoverModuleTranslations', () => {
   it('finds every module shipping i18n/, regardless of frontend views', () => {
     const discovered = discoverModuleTranslations(repo, readConfig(repo))
     expect(discovered.map((b: { name: string }) => b.name)).toEqual(['goonly'])
+  })
+
+  it('skips the translations of a deactivated module (active: false)', () => {
+    writeFileSync(
+      join(repo, 'mods', 'goonly', 'module.json'),
+      JSON.stringify({ name: 'goonly', active: false, static_files: {} }),
+    )
+    expect(discoverModuleTranslations(repo, readConfig(repo))).toEqual([])
   })
 
   it('degrades to an empty list when no config is reachable', () => {
@@ -175,8 +206,19 @@ describe('renderManifest', () => {
     )
     expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front/server'")
     expect(manifest).toContain("import m0 from '../../../../mods/demo/views/DemoViews'")
-    expect(manifest).toContain('moduleRegistry.register(m0)')
+    // The fixture module declares app_mode: true — the registration carries it.
+    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true })')
     expect(manifest).toContain('export { moduleRegistry }')
+  })
+
+  it('registers a module without app_mode plainly (routes only, no menu tile)', () => {
+    writeFileSync(
+      join(repo, 'mods', 'demo', 'module.json'),
+      JSON.stringify({ name: 'demo', static_files: { views: ['DemoViews.ts'] } }),
+    )
+    const manifest = renderManifest(discoverModuleViews(repo, readConfig(repo)), fromDir)
+    expect(manifest).toContain('moduleRegistry.register(m0)')
+    expect(manifest).not.toContain('appMode')
   })
 
   it('emits an empty (registration-free) manifest when no module has views', () => {

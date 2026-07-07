@@ -52,8 +52,8 @@ describe('ModuleRegistry', () => {
 })
 
 describe('ModuleRegistry.menu', () => {
-  it('lists navigable routes per module, dropping :param routes', () => {
-    const registry = new ModuleRegistry().register(crm)
+  it('lists navigable routes per app-mode module, dropping :param routes', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true })
     const menu = registry.menu()
 
     expect(menu).toEqual([
@@ -64,11 +64,21 @@ describe('ModuleRegistry.menu', () => {
     ])
   })
 
-  it('omits modules whose every route needs a :param', () => {
-    const registry = new ModuleRegistry().register({
-      name: 'detail-only',
-      routes: [{ path: '/thing/:id', descriptor: formDescriptor }],
-    })
+  it('omits modules not registered as applications, keeping their routes reachable', () => {
+    const registry = new ModuleRegistry().register(crm)
+    expect(registry.menu()).toEqual([])
+    // No tile, but the routes are still registered and navigable.
+    expect(registry.buildRegistry().has('/crm/contacts')).toBe(true)
+  })
+
+  it('omits app-mode modules whose every route needs a :param', () => {
+    const registry = new ModuleRegistry().register(
+      {
+        name: 'detail-only',
+        routes: [{ path: '/thing/:id', descriptor: formDescriptor }],
+      },
+      { appMode: true },
+    )
     expect(registry.menu()).toEqual([])
   })
 
@@ -77,7 +87,9 @@ describe('ModuleRegistry.menu', () => {
       name: 'inventory',
       routes: [{ path: '/inventory/items', descriptor: treeDescriptor }],
     }
-    const registry = new ModuleRegistry().register(crm).register(inventory)
+    const registry = new ModuleRegistry()
+      .register(crm, { appMode: true })
+      .register(inventory, { appMode: true })
     expect(registry.menu().map((m) => m.name)).toEqual(['crm', 'inventory'])
   })
 })

@@ -5,9 +5,9 @@ import '@/generated/generated-modules'
 import Menu from './Menu'
 
 // Landing route. Anonymous users are redirected to /login (requireAuth). A signed-in
-// user who hits the app root gets the application menu: every installed module and its
-// navigable views. This is the fallback any logged-in user lands on after login or when
-// opening the service by its URL.
+// user who hits the app root gets the application menu: every module registered as an
+// application (module.json app_mode: true) and its navigable views. This is the fallback
+// any logged-in user lands on after login or when opening the service by its URL.
 //
 // We gate on AUTHENTICATION only here — the same stance the catch-all module route takes
 // — and let Go authorize each data call. The frontend can't yet permission-filter the

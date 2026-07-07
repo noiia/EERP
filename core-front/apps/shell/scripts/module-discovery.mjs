@@ -77,9 +77,13 @@ function walkForModuleJson(dir, found) {
 
 /**
  * Discover every module declaring `static_files.views`. Returns one entry per module
- * (sorted by name for deterministic output), each carrying its absolute dir and the
- * resolved view files with their `@module/<name>/views/<file>` import specifiers.
- * Modules without frontend views (Go-only) are skipped.
+ * (sorted by name for deterministic output), each carrying its absolute dir, the
+ * resolved view files with their `@module/<name>/views/<file>` import specifiers, and
+ * its `app_mode` flag (module.json `app_mode: true` = present the module as a full
+ * application: a tile on the landing menu; default false = routes only, no tile).
+ * Modules without frontend views (Go-only) are skipped, and so are deactivated
+ * modules (`active: false`) — the backend doesn't serve them, so compiling their
+ * views would produce dead routes. A missing `active` counts as active.
  */
 export function discoverModuleViews(repoRoot, config) {
   const roots = Array.isArray(config.module_root) ? config.module_root : []
@@ -94,6 +98,7 @@ export function discoverModuleViews(repoRoot, config) {
       } catch {
         continue
       }
+      if (meta?.active === false) continue
       const views = meta?.static_files?.views
       if (!Array.isArray(views) || views.length === 0) continue
 
@@ -105,7 +110,7 @@ export function discoverModuleViews(repoRoot, config) {
         .filter((v) => existsSync(v.sourceFile) && statSync(v.sourceFile).isFile())
 
       if (viewFiles.length === 0) continue
-      discovered.push({ name, moduleDir, views: viewFiles })
+      discovered.push({ name, moduleDir, appMode: meta.app_mode === true, views: viewFiles })
     }
   }
 
@@ -150,6 +155,8 @@ export function translationsForDir(name, dir) {
  * e.g. for entity labels other modules' views render. Locale = the .po basename
  * ('i18n/fr.po' -> 'fr'); the module never declares locales in module.json, dropping
  * a .po in the folder is the whole contract (mirrors .wasm auto-discovery).
+ * Deactivated modules (`active: false`) contribute nothing — an uninstalled module's
+ * strings have no surface to appear on.
  */
 export function discoverModuleTranslations(repoRoot, config) {
   const roots = Array.isArray(config.module_root) ? config.module_root : []
@@ -164,6 +171,7 @@ export function discoverModuleTranslations(repoRoot, config) {
       } catch {
         continue
       }
+      if (meta?.active === false) continue
       const moduleDir = dirname(moduleJsonPath)
       const name = typeof meta.name === 'string' && meta.name ? meta.name : basename(moduleDir)
       const translations = translationsForDir(name, moduleDir)
@@ -251,18 +259,26 @@ export function renderManifest(discovered, fromDir) {
     "import { moduleRegistry } from '@eerp/core-front/server'",
   ]
 
-  const identifiers = []
+  const registrations = []
   let i = 0
   for (const module of discovered) {
     for (const view of module.views) {
       const id = `m${i++}`
-      identifiers.push(id)
+      registrations.push({ id, appMode: module.appMode })
       lines.push(`import ${id} from '${toImportSpecifier(fromDir, view.sourceFile)}'`)
     }
   }
 
   lines.push('')
-  for (const id of identifiers) lines.push(`moduleRegistry.register(${id})`)
+  // app_mode rides along from module.json: it is registration metadata (how the shell
+  // presents the module), not part of the FrontModule the views file exports.
+  for (const r of registrations) {
+    lines.push(
+      r.appMode
+        ? `moduleRegistry.register(${r.id}, { appMode: true })`
+        : `moduleRegistry.register(${r.id})`,
+    )
+  }
   lines.push('')
   lines.push('export { moduleRegistry }')
   lines.push('')
