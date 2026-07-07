@@ -329,6 +329,38 @@ func TestInsert_ToSQL_SingleRow(t *testing.T) {
 	}
 }
 
+func TestInsert_ToSQL_ZeroTimestamps_LeftToDBDefault(t *testing.T) {
+	t.Parallel()
+
+	// BaseModel entities arrive with zero created_at/updated_at; inserting the Go
+	// zero time would override the schema's DEFAULT now(). The builder must drop
+	// the columns instead so the database stamps them.
+	meta := mustMeta[order](t)
+	row := order{CustomerID: 7, Status: "open"}
+
+	sql, args := query.Insert[order](meta, row).ToSQL()
+
+	assertNotContains(t, sql, "created_at")
+	if len(args) != 3 { // customer_id, status, deleted_at — not created_at
+		t.Errorf("expected 3 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestInsert_ToSQL_ExplicitTimestamps_Kept(t *testing.T) {
+	t.Parallel()
+
+	// Data imports set historical timestamps on purpose — those must insert.
+	meta := mustMeta[order](t)
+	row := order{CustomerID: 7, Status: "open", CreatedAt: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
+
+	sql, args := query.Insert[order](meta, row).ToSQL()
+
+	assertContains(t, sql, "created_at")
+	if len(args) != 4 {
+		t.Errorf("expected 4 args, got %d: %v", len(args), args)
+	}
+}
+
 func TestInsert_ToSQL_Returning(t *testing.T) {
 	t.Parallel()
 

@@ -79,10 +79,44 @@ func (b InsertBuilder[T]) DoUpdate(setFragment string) InsertBuilder[T] {
 	return b
 }
 
+// timestampCols are the audit columns the schema defaults to now(). Writing the
+// Go zero time would silently override that default (BaseModel values are zero
+// unless the caller set them), so ToSQL drops them from the column list when
+// every row leaves them zero — explicitly set values (data imports) still insert.
+var timestampCols = map[string]bool{"created_at": true, "updated_at": true}
+
+// insertableColumns returns the writable columns minus the zero-valued audit
+// timestamps (see timestampCols). The filter is all-rows-or-nothing because a
+// multi-row VALUES clause needs one consistent column list.
+func (b InsertBuilder[T]) insertableColumns() []string {
+	writable := b.meta.WritableColumns()
+	cols := make([]string, 0, len(writable))
+	for _, col := range writable {
+		if timestampCols[col] && b.allRowsZero(col) {
+			continue
+		}
+		cols = append(cols, col)
+	}
+	return cols
+}
+
+func (b InsertBuilder[T]) allRowsZero(col string) bool {
+	fidx := b.meta.ColumnIndex(col)
+	if fidx < 0 {
+		return false
+	}
+	for _, row := range b.rows {
+		if !b.meta.Fields[fidx].FieldValue(reflect.ValueOf(row)).IsZero() {
+			return false
+		}
+	}
+	return true
+}
+
 // ToSQL returns the INSERT statement and its argument slice.
 // Produces a multi-row VALUES clause when more than one row was provided.
 func (b InsertBuilder[T]) ToSQL() (string, []any) {
-	cols := b.meta.WritableColumns()
+	cols := b.insertableColumns()
 	args := make([]any, 0, len(b.rows)*len(cols))
 
 	// Build VALUES ($1,$2,…), ($N+1,…) for all rows.
