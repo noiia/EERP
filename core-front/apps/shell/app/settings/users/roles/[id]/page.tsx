@@ -26,7 +26,7 @@ export default async function RolePage({ params }: { params: Promise<{ id: strin
     <Container sx={{ py: 4 }}>
       <Stack spacing={3}>
         <Typography variant="h4" component="h1">
-          <T text="Edit role" />
+          <T text={id === 'new' ? 'New role' : 'Edit role'} />
         </Typography>
         <EntityViewServer descriptor={roleFormDescriptor} actions={actions} recordId={id} />
       </Stack>

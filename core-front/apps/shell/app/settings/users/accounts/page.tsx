@@ -1,8 +1,9 @@
+import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { EntityViewServer } from '@eerp/core-front/server'
-import { T, type EntityActions } from '@eerp/core-front'
+import { CreateBar, T, type EntityActions } from '@eerp/core-front'
 import { requireAuth } from '@/lib/session'
 import { createRecord, removeRecord, updateRecord } from '../../../[...module]/actions'
 import { usersListDescriptor } from '../descriptors'
@@ -24,9 +25,16 @@ export default async function UserAccountsPage() {
   return (
     <Container sx={{ py: 4 }}>
       <Stack spacing={3}>
-        <Typography variant="h4" component="h1">
-          <T text="User accounts" />
-        </Typography>
+        {/* Title row carries the Create button (right side); CreateBar hides
+            itself without users:users:write. */}
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}
+        >
+          <Typography variant="h4" component="h1">
+            <T text="User accounts" />
+          </Typography>
+          <CreateBar descriptor={usersListDescriptor} />
+        </Box>
         <EntityViewServer descriptor={usersListDescriptor} actions={actions} />
       </Stack>
     </Container>

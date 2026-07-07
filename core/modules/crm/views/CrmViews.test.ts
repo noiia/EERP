@@ -21,6 +21,15 @@ describe('crm FrontModule', () => {
     expect(list?.descriptor.formPath).toBe('/crm/:id')
   })
 
+  it('gates the Create button on the write permission — list only, never the dashboard', () => {
+    const list = crm.routes.find((r) => r.path === '/crm/list')
+    expect(list?.descriptor.createPermission).toBe('crm:contacts:write')
+    expect(list?.descriptor.formPath).toBe('/crm/:id')
+
+    const dashboard = crm.routes.find((r) => r.path === '/crm')
+    expect(dashboard?.descriptor.createPermission).toBeUndefined()
+  })
+
   it('guards every route with crm:contacts:read', () => {
     expect(crm.routes.every((r) => r.permission === 'crm:contacts:read')).toBe(true)
   })

@@ -23,7 +23,7 @@ const fields: ViewDescriptor['fields'] = [
 
 const dashboardView: ViewDescriptor = {
   entity: 'crm',
-  viewType: 'dashboard', 
+  viewType: 'dashboard',
   fields,
   permissions: ['crm:contacts:read'],
 }
@@ -32,8 +32,9 @@ const listView: ViewDescriptor = {
   entity: 'crm',
   viewType: 'tree',
   fields,
-  // Clicking a row opens that contact's form.
+  // Clicking a row opens that contact's form; Create opens it empty (writers only).
   formPath: '/crm/:id',
+  createPermission: 'crm:contacts:write',
   permissions: ['crm:contacts:read'],
 }
 

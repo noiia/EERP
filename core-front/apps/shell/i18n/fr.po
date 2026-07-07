@@ -134,11 +134,17 @@ msgstr "Comptes utilisateurs"
 msgid "Edit user"
 msgstr "Modifier l'utilisateur"
 
+msgid "New user"
+msgstr "Nouvel utilisateur"
+
 msgid "Roles"
 msgstr "Rôles"
 
 msgid "Edit role"
 msgstr "Modifier le rôle"
+
+msgid "New role"
+msgstr "Nouveau rôle"
 
 msgid "Email"
 msgstr "E-mail"
@@ -163,3 +169,6 @@ msgstr "Enregistrer"
 
 msgid "Saving…"
 msgstr "Enregistrement…"
+
+msgid "Create"
+msgstr "Créer"

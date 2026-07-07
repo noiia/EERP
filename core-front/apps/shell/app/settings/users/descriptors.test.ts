@@ -43,4 +43,11 @@ describe('Settings → Users descriptors', () => {
     expect(rolesListDescriptor.permissions).toContain('roles:roles:read')
     expect(roleFormDescriptor.permissions).toContain('roles:roles:read')
   })
+
+  it('gates Create on the write permissions — lists only, never the dashboard', () => {
+    expect(usersListDescriptor.createPermission).toBe('users:users:write')
+    expect(rolesListDescriptor.createPermission).toBe('roles:roles:write')
+    expect(usersDashboardDescriptor.createPermission).toBeUndefined()
+    expect(usersDashboardDescriptor.formPath).toBeUndefined()
+  })
 })

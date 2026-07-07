@@ -29,8 +29,10 @@ export const usersListDescriptor: ViewDescriptor<AdminRecord> = {
     { name: 'email', label: 'Email', type: 'text', required: true },
     { name: 'created_at', label: 'Created', type: 'date' },
   ],
-  // Clicking a row opens that user's form.
+  // Clicking a row opens that user's form; Create opens it empty. A created
+  // account starts LOCKED (no password) until a credential flow sets one.
   formPath: '/settings/users/accounts/:id',
+  createPermission: 'users:users:write',
   permissions: ['users:users:read'],
 }
 
@@ -51,6 +53,7 @@ export const rolesListDescriptor: ViewDescriptor<AdminRecord> = {
     { name: 'description', label: 'Description', type: 'text' },
   ],
   formPath: '/settings/users/roles/:id',
+  createPermission: 'roles:roles:write',
   permissions: ['roles:roles:read'],
 }
 

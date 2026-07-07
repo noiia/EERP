@@ -8,11 +8,17 @@ vi.mock('next/navigation', () => ({
 }))
 
 import type { ViewDescriptor } from './descriptor'
-import { EntityView } from './renderers'
+import { CreateBar, EntityView } from './renderers'
+import { useSessionStore, type Identity } from './session-store'
 import type { EntityActions } from './stores'
+
+function identityWith(permissions: string[]): Identity {
+  return { userId: 'u1', tenantId: 't1', roles: ['tester'], permissions }
+}
 
 beforeEach(() => {
   pushMock.mockClear()
+  useSessionStore.setState({ identity: null })
 })
 
 interface Contact {
@@ -116,6 +122,67 @@ describe('EntityView', () => {
     )
     fireEvent.click(screen.getByText('Ada'))
     expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  describe('Create button', () => {
+    const creatableList: ViewDescriptor<Contact> = {
+      ...formDescriptor,
+      viewType: 'tree',
+      formPath: '/crm/:id',
+      createPermission: 'crm:contacts:write',
+    }
+
+    it('is exported for the host title row and opens the empty form when granted', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:contacts:write']) })
+      render(<CreateBar descriptor={creatableList} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+      expect(pushMock).toHaveBeenCalledWith('/crm/new')
+    })
+
+    it('honors role wildcards from the session mirror', () => {
+      useSessionStore.setState({ identity: identityWith(['*:*:*']) })
+      render(<CreateBar descriptor={creatableList} />)
+      expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
+    })
+
+    it('stays hidden when the session lacks the permission', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:contacts:read']) })
+      render(<CreateBar descriptor={creatableList} />)
+      expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+    })
+
+    it('stays hidden when the descriptor declares no createPermission (default-closed)', () => {
+      useSessionStore.setState({ identity: identityWith(['*:*:*']) })
+      const readOnly: ViewDescriptor<Contact> = { ...creatableList, createPermission: undefined }
+      render(<CreateBar descriptor={readOnly} />)
+      expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+    })
+
+    it('is NOT rendered by the tree view itself — the host owns its title-row placement', () => {
+      useSessionStore.setState({ identity: identityWith(['*:*:*']) })
+      render(
+        <EntityView
+          descriptor={creatableList}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+    })
+
+    it('is NOT rendered on dashboards — tree views only', () => {
+      useSessionStore.setState({ identity: identityWith(['*:*:*']) })
+      const dash: ViewDescriptor<Contact> = { ...creatableList, viewType: 'dashboard' }
+      render(
+        <EntityView
+          descriptor={dash}
+          initialData={[]}
+          actions={noopActions}
+          widgets={[{ id: 'w1', title: 'Contacts', href: '/crm/list', count: 1 }]}
+        />,
+      )
+      expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+    })
   })
 
   it('renders a hierarchical tree when records carry parent links', () => {

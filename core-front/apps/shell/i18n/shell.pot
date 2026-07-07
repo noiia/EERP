@@ -179,12 +179,20 @@ msgstr ""
 msgid "Edit user"
 msgstr ""
 
+#: app/settings/users/accounts/[id]/page.tsx
+msgid "New user"
+msgstr ""
+
 #: app/settings/users/roles/page.tsx (also a dashboard widget title)
 msgid "Roles"
 msgstr ""
 
 #: app/settings/users/roles/[id]/page.tsx
 msgid "Edit role"
+msgstr ""
+
+#: app/settings/users/roles/[id]/page.tsx
+msgid "New role"
 msgstr ""
 
 #: app/settings/users/descriptors.ts (field labels)
@@ -212,4 +220,8 @@ msgid "Save"
 msgstr ""
 
 msgid "Saving…"
+msgstr ""
+
+#: @eerp/core-front renderers (collection views' create affordance)
+msgid "Create"
 msgstr ""

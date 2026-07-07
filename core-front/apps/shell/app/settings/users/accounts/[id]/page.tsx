@@ -7,8 +7,10 @@ import { requireAuth } from '@/lib/session'
 import { createRecord, removeRecord, updateRecord } from '../../../../[...module]/actions'
 import { userFormDescriptor } from '../../descriptors'
 
-// Settings → Users → Accounts → one account: the edit form. Email is the only
-// field Go accepts on save; everything else in the record is read-only context.
+// Settings → Users → Accounts → one account: the edit form, or ("new") the empty
+// create form the list/dashboard Create button opens. Email is the only field Go
+// accepts on save; a created account starts locked (no password) until a
+// credential flow sets one.
 
 type AnyRecord = { id: string } & Record<string, unknown>
 
@@ -26,7 +28,7 @@ export default async function UserAccountPage({ params }: { params: Promise<{ id
     <Container sx={{ py: 4 }}>
       <Stack spacing={3}>
         <Typography variant="h4" component="h1">
-          <T text="Edit user" />
+          <T text={id === 'new' ? 'New user' : 'Edit user'} />
         </Typography>
         <EntityViewServer descriptor={userFormDescriptor} actions={actions} recordId={id} />
       </Stack>

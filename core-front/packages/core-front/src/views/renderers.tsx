@@ -21,6 +21,7 @@ import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import type { SerializedError } from '../api/errors'
+import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { layout, tabularNums } from './tokens'
@@ -82,6 +83,35 @@ export function EntityView<T extends HasId>(props: EntityViewProps<T>) {
   }
 }
 
+// --- create affordance (tree views) ---
+
+/**
+ * The Create button for tree (list) views — dashboards and forms deliberately
+ * offer none. Default-closed: it renders only when the descriptor declares BOTH
+ * formPath and createPermission AND the session's role-derived permissions grant
+ * it (the client mirror — display gating only, Go re-authorizes the POST).
+ * Navigates to the empty form (formPath with ':id' → 'new'); the form store
+ * creates on commit since the draft has no id.
+ *
+ * No renderer places it: the HOST page renders it inline on the title row
+ * (right side) next to the tree view — exported for exactly that.
+ */
+export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDescriptor<T> }) {
+  const t = useT()
+  const router = useRouter()
+  const { formPath, createPermission } = descriptor
+  // The hook runs unconditionally (rules of hooks); '' never matches a grant.
+  const allowed = usePermission(createPermission ?? '')
+  if (!formPath || !createPermission || !allowed) return null
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <Button variant="contained" onClick={() => router.push(formPath.replace(':id', 'new'))}>
+        {t('Create')}
+      </Button>
+    </Box>
+  )
+}
+
 // --- form ---
 
 function FieldInput({
@@ -129,9 +159,7 @@ function FieldInput({
       // Numeric figures align in columns (tabular figures token).
       sx={field.type === 'number' ? { '& input': { fontVariantNumeric: tabularNums } } : undefined}
       value={(value as string | number) ?? ''}
-      onChange={(e) =>
-        onChange(field.type === 'number' ? Number(e.target.value) : e.target.value)
-      }
+      onChange={(e) => onChange(field.type === 'number' ? Number(e.target.value) : e.target.value)}
     />
   )
 }
@@ -226,6 +254,7 @@ function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewPr
   const router = useRouter()
   // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
   const hierarchical = (initialData as TreeNode[]).some((r) => r.parent_id != null)
+  let view: React.ReactNode
   if (!hierarchical) {
     const columns: GridColDef[] = descriptor.fields.map((f) => ({
       field: f.name,
@@ -234,7 +263,7 @@ function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewPr
     }))
     // A formPath makes rows navigable: clicking one opens that record's form.
     const { formPath } = descriptor
-    return (
+    view = (
       <Box sx={{ width: '100%' }}>
         <DataGrid
           rows={initialData}
@@ -249,8 +278,11 @@ function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewPr
         />
       </Box>
     )
+  } else {
+    view = <HierarchyTree descriptor={descriptor} initialData={initialData as (T & TreeNode)[]} />
   }
-  return <HierarchyTree descriptor={descriptor} initialData={initialData as (T & TreeNode)[]} />
+  // No CreateBar here: for tree views the host page renders it on the title row.
+  return view
 }
 
 function HierarchyTree<T extends HasId & TreeNode>({
@@ -266,7 +298,9 @@ function HierarchyTree<T extends HasId & TreeNode>({
 
   const toItem = (node: T): TreeViewDefaultItemModelProperties => ({
     id: node.id,
-    label: String(labelField ? ((node as Record<string, unknown>)[labelField] ?? node.id) : node.id),
+    label: String(
+      labelField ? ((node as Record<string, unknown>)[labelField] ?? node.id) : node.id,
+    ),
     children: store.getState().children(node.id).map(toItem),
   })
   const items = store.getState().roots().map(toItem)
@@ -282,7 +316,11 @@ function HierarchyTree<T extends HasId & TreeNode>({
 
 // --- dashboard (one block per module list view: name + entry count) ---
 
-function DashboardRenderer<T extends HasId>({ descriptor, widgets, onRefresh }: EntityViewProps<T>) {
+function DashboardRenderer<T extends HasId>({
+  descriptor,
+  widgets,
+  onRefresh,
+}: EntityViewProps<T>) {
   const t = useT()
   const [store] = useState(() =>
     createDashboardStore(descriptor, onRefresh ?? (async () => widgets ?? []), widgets ?? []),
