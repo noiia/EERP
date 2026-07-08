@@ -51,7 +51,7 @@ today has nowhere to live.
 
 | Concern | Contract |
 | --- | --- |
-| FieldDescriptor v2 | `{ name, label, type, widget?, widgetOptions?, required?, readOnly?, states?, compute?, store?, relation? }` — all JSON-serializable. `store?: boolean` default `true`; `compute?: string` (registered function name). |
+| FieldDescriptor v2 | `{ name, label?, type, widget?, widgetOptions?, required?, readOnly?, states?, compute?, store?, relation? }` — all JSON-serializable. `label?` optional: omitted, the engine humanizes `name` via `fieldLabel()` (`contact_id` → "Contact id"); the result is the gettext msgid either way. `store?: boolean` default `true`; `compute?: string` (registered function name). |
 | Widget matrix | boolean: `switch` (default) · `picture` · `signature` — text: `simple` (default) · `long` (multiline) — number: `float` (default) · `int` · `percent` · `stars` · `phone` — relation: `search` (default, many2one) · `tags` (many2many) · `list` (one2many) — date: unchanged. Anything else ⇒ registration error. |
 | number/float | Default widget; formatted `%.2f` (`widgetOptions.decimals` overrides), separators from settings. |
 | number/int | Integer input/display, thousands separator from settings. |
@@ -66,6 +66,7 @@ today has nowhere to live.
 | relation/search (m2o) | An autocomplete search bar querying the related entity's list (Go authorizes — the user only ever sees records they may read). A **link icon at the right** of the field opens a **wizard dialog** (search + grid, select to set) — v1 basic, improved in a later iteration. Selected record renders as a tag. |
 | relation tags (m2o/m2m) | Tag shows the related record's `labelField`; **on hover a cross appears on the tag's right side**; clicking it unlinks (m2o → null, m2m → junction row removed). |
 | relation/list (o2m) | The inverse side: records of another table whose `inverseField` column holds this record's id. v1 renders a read-only embedded grid (list filtered by the inverse FK); inline create/edit deferred. |
+| default | `default?: JsonValue` on the field: the seed value when a record lacks the field (new records, columns added later). A JSON literal, or the NAME of a registered field function (called with the seed draft) — never a function object (RSC rule). Omitted ⇒ the type's zero default: text `''`, number `0`, boolean `false`, date/relation `null` (`fieldZeroDefault`). Applied at draft seed BEFORE the compute pass (defaults feed computes), never overwrites present values (explicit `null` is a value), never dirties the form; virtual relations (o2m/m2m) seed nothing. |
 | compute | `registerFieldFunction({ entity, name, depends: string[], handler(draft) => value })`. Recomputed when any `depends` field changes in the draft; result written to the field. Dependency cycles ⇒ registration error. |
 | on_change | `registerOnChange({ entity, name, onChange: string[], handler(draft) => Partial<draft> })`. Fired when a listed field changes; the returned patch merges into the draft (may cascade compute, cycle-guarded). |
 | index | Go struct tag `db:"col,index"` (btree default) or `db:"col,index=gin"` etc. — metadata already parsed; migration emits `CREATE INDEX IF NOT EXISTS idx_<table>_<col> ON <table> USING <method> (<col>)`. |
