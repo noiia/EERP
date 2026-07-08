@@ -34,13 +34,33 @@ describe('crm FrontModule', () => {
     expect(crm.routes.every((r) => r.permission === 'crm:contacts:read')).toBe(true)
   })
 
-  it('exposes the expected contact fields', () => {
+  it('exposes the scalar fields on every view and the relations on the form only', () => {
     expect(crm.routes[0].descriptor.fields.map((f) => f.name)).toEqual([
       'name',
       'email',
       'company',
       'status',
-      'contact',
     ])
+    const form = crm.routes.find((r) => r.path === '/crm/:id')
+    expect(form?.descriptor.fields.map((f) => f.name)).toEqual([
+      'name',
+      'email',
+      'company',
+      'status',
+      'contact_id',
+      'tags',
+    ])
+    const byName = new Map(form?.descriptor.fields.map((f) => [f.name, f]))
+    expect(byName.get('contact_id')?.relation).toEqual({
+      entity: 'contact',
+      kind: 'many2one',
+      labelField: 'name',
+    })
+    expect(byName.get('tags')?.relation).toEqual({
+      entity: 'tag',
+      kind: 'many2many',
+      via: 'crm_tag',
+      labelField: 'name',
+    })
   })
 })

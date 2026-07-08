@@ -46,7 +46,19 @@ describe('contacts FrontModule', () => {
       'email',
       'company',
       'status',
-      'tenant_id',
     ])
+  })
+
+  it('embeds the inverse CRM records on the form only (one2many)', () => {
+    const form = contacts.routes.find((r) => r.path === '/contacts/:id')
+    const o2m = form?.descriptor.fields.find((f) => f.name === 'crm_records')
+    expect(o2m?.relation).toEqual({
+      entity: 'crm',
+      kind: 'one2many',
+      inverseField: 'contact_id',
+      labelField: 'name',
+    })
+    const list = contacts.routes.find((r) => r.path === '/contacts/list')
+    expect(list?.descriptor.fields.some((f) => f.name === 'crm_records')).toBe(false)
   })
 })

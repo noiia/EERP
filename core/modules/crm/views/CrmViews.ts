@@ -11,6 +11,7 @@ export interface Crm {
   email: string
   company?: string
   status?: string
+  contact_id?: string | null
 }
 
 const fields: ViewDescriptor['fields'] = [
@@ -18,7 +19,26 @@ const fields: ViewDescriptor['fields'] = [
   { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'company', label: 'Company', type: 'text' },
   { name: 'status', label: 'Status', type: 'text' },
-  { name: 'contact', label: 'Contact', type: 'relation'}
+]
+
+// Relation fields render on the FORM only: the list's DataGrid would show the
+// raw FK / nothing for the virtual tags field. contact_id is a real column
+// (many2one -> search + wizard); tags is virtual — the links are crm_tag
+// junction rows the widget writes directly, never part of the crm payload.
+const formFields: ViewDescriptor['fields'] = [
+  ...fields,
+  {
+    name: 'contact_id',
+    label: 'Contact',
+    type: 'relation',
+    relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+  },
+  {
+    name: 'tags',
+    label: 'Tags',
+    type: 'relation',
+    relation: { entity: 'tag', kind: 'many2many', via: 'crm_tag', labelField: 'name' },
+  },
 ]
 
 const dashboardView: ViewDescriptor = {
@@ -41,7 +61,7 @@ const listView: ViewDescriptor = {
 const formView: ViewDescriptor = {
   entity: 'crm',
   viewType: 'form',
-  fields,
+  fields: formFields,
   permissions: ['crm:contacts:read'],
 }
 
