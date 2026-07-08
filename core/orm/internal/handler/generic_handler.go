@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"core/orm/internal/crud"
 	"core/orm/internal/registry"
@@ -43,8 +44,24 @@ func (h *GenericHandler) Meta() registry.TableMeta { return h.meta }
 
 // ── Route handlers ────────────────────────────────────────────────────────────
 
-// List handles GET /api/v1/{table}?page=&page_size=
-func (h *GenericHandler) List(c echo.Context) error {
+// bracketColumn extracts the column of a `prefix[column]` query key, e.g.
+// bracketColumn("filter[contact_id]", "filter") -> ("contact_id", true).
+func bracketColumn(key, prefix string) (string, bool) {
+	if !strings.HasPrefix(key, prefix+"[") || !strings.HasSuffix(key, "]") {
+		return "", false
+	}
+	return key[len(prefix)+1 : len(key)-1], true
+}
+
+// listFilter builds the ListFilter from the query string:
+//
+//	?page=&page_size=              pagination (defaults 1 / 20)
+//	?filter[<column>]=<value>      exact match — relation scoping (o2m, junctions)
+//	?search[<column>]=<text>       case-insensitive containment — autocomplete
+//
+// Filter columns are validated against the table meta here (friendly 400) and
+// again in the repository (the actual security boundary).
+func (h *GenericHandler) listFilter(c echo.Context) (crud.ListFilter, error) {
 	page, _ := strconv.Atoi(c.QueryParam("page"))
 	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
 	if page < 1 {
@@ -53,9 +70,44 @@ func (h *GenericHandler) List(c echo.Context) error {
 	if pageSize < 1 {
 		pageSize = 20
 	}
+	f := crud.ListFilter{Page: page, PageSize: pageSize}
 
-	rows, total, err := h.svc.List(c.Request().Context(), crud.ListFilter{Page: page, PageSize: pageSize})
+	for key, vals := range c.QueryParams() {
+		if len(vals) == 0 || vals[0] == "" {
+			continue
+		}
+		into := &f.Equals
+		col, ok := bracketColumn(key, "filter")
+		if !ok {
+			into = &f.Matches
+			col, ok = bracketColumn(key, "search")
+		}
+		if !ok {
+			continue
+		}
+		if !h.meta.HasField(col) {
+			return f, echo.NewHTTPError(http.StatusBadRequest, "unknown filter column: "+col)
+		}
+		if *into == nil {
+			*into = make(map[string]string)
+		}
+		(*into)[col] = vals[0]
+	}
+	return f, nil
+}
+
+// List handles GET /api/v1/{table}?page=&page_size=&filter[col]=&search[col]=
+func (h *GenericHandler) List(c echo.Context) error {
+	f, err := h.listFilter(c)
 	if err != nil {
+		return err
+	}
+
+	rows, total, err := h.svc.List(c.Request().Context(), f)
+	if err != nil {
+		if errors.Is(err, crud.ErrUnknownColumn) {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
 		return err
 	}
 
@@ -67,8 +119,8 @@ func (h *GenericHandler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, crud.PaginatedResponse{
 		Data:     resp,
 		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
+		Page:     f.Page,
+		PageSize: f.PageSize,
 	})
 }
 

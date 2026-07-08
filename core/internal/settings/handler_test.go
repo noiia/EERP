@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -38,8 +39,8 @@ func (s *stubUsers) SetPreferredLocale(_ context.Context, userID uuid.UUID, loca
 }
 
 type stubStore struct {
-	value     string
-	exists    bool
+	// values holds per-key stored settings (GetMyPreferences reads several keys).
+	values    map[string]string
 	getErr    error
 	setErr    error
 	setCalled bool
@@ -48,8 +49,9 @@ type stubStore struct {
 	gotValue  string
 }
 
-func (s *stubStore) Get(_ context.Context, _ uuid.UUID, _ string) (string, bool, error) {
-	return s.value, s.exists, s.getErr
+func (s *stubStore) Get(_ context.Context, _ uuid.UUID, key string) (string, bool, error) {
+	value, ok := s.values[key]
+	return value, ok, s.getErr
 }
 
 func (s *stubStore) Set(_ context.Context, tenantID uuid.UUID, key, value string) error {
@@ -90,6 +92,7 @@ func TestGetMyPreferences(t *testing.T) {
 		wantStatus    int
 		wantPreferred any
 		wantDefault   any
+		wantFormat    any
 	}{
 		{
 			name:          "no preference, no default",
@@ -98,22 +101,45 @@ func TestGetMyPreferences(t *testing.T) {
 			wantStatus:    http.StatusOK,
 			wantPreferred: nil,
 			wantDefault:   nil,
+			wantFormat:    nil,
 		},
 		{
 			name:          "preference and default set",
 			users:         &stubUsers{user: auth.Users{PreferredLocale: strPtr("fr")}},
-			store:         &stubStore{value: "de", exists: true},
+			store:         &stubStore{values: map[string]string{DefaultLocaleKey: "de"}},
 			wantStatus:    http.StatusOK,
 			wantPreferred: "fr",
 			wantDefault:   "de",
+			wantFormat:    nil,
 		},
 		{
 			name:          "empty stored default reads as null (source)",
 			users:         &stubUsers{},
-			store:         &stubStore{value: "", exists: true},
+			store:         &stubStore{values: map[string]string{DefaultLocaleKey: ""}},
 			wantStatus:    http.StatusOK,
 			wantPreferred: nil,
 			wantDefault:   nil,
+			wantFormat:    nil,
+		},
+		{
+			name:  "stored number format rides along",
+			users: &stubUsers{},
+			store: &stubStore{values: map[string]string{
+				NumberFormatKey: `{"decimal_separator":",","thousands_separator":" "}`,
+			}},
+			wantStatus:    http.StatusOK,
+			wantPreferred: nil,
+			wantDefault:   nil,
+			wantFormat:    map[string]any{"decimal_separator": ",", "thousands_separator": " "},
+		},
+		{
+			name:          "unparsable stored format degrades to null",
+			users:         &stubUsers{},
+			store:         &stubStore{values: map[string]string{NumberFormatKey: "{not json"}},
+			wantStatus:    http.StatusOK,
+			wantPreferred: nil,
+			wantDefault:   nil,
+			wantFormat:    nil,
 		},
 		{
 			name:       "user record gone reads as unauthenticated",
@@ -144,6 +170,9 @@ func TestGetMyPreferences(t *testing.T) {
 			}
 			if resp["default_locale"] != tt.wantDefault {
 				t.Errorf("default_locale = %v, want %v", resp["default_locale"], tt.wantDefault)
+			}
+			if !reflect.DeepEqual(resp["number_format"], tt.wantFormat) {
+				t.Errorf("number_format = %v, want %v", resp["number_format"], tt.wantFormat)
 			}
 		})
 	}
@@ -237,6 +266,73 @@ func TestPutI18nSettings(t *testing.T) {
 			}
 			if store.gotKey != DefaultLocaleKey {
 				t.Errorf("key = %q, want %q", store.gotKey, DefaultLocaleKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
+// ── PUT /settings/format ──────────────────────────────────────────────────────
+
+func TestPutFormatSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantValue  string
+	}{
+		{
+			name:       "anglo format",
+			body:       `{"decimal_separator":".","thousands_separator":","}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"decimal_separator":".","thousands_separator":","}`,
+		},
+		{
+			name:       "european format (comma decimal, space grouping)",
+			body:       `{"decimal_separator":",","thousands_separator":" "}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"decimal_separator":",","thousands_separator":" "}`,
+		},
+		{
+			name:       "no grouping accepted",
+			body:       `{"decimal_separator":".","thousands_separator":""}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"decimal_separator":".","thousands_separator":""}`,
+		},
+		{name: "unknown decimal rejected", body: `{"decimal_separator":";","thousands_separator":","}`, wantStatus: http.StatusBadRequest},
+		{name: "empty decimal rejected", body: `{"decimal_separator":"","thousands_separator":","}`, wantStatus: http.StatusBadRequest},
+		{name: "unknown thousands rejected", body: `{"decimal_separator":".","thousands_separator":"_"}`, wantStatus: http.StatusBadRequest},
+		{name: "identical separators rejected", body: `{"decimal_separator":".","thousands_separator":"."}`, wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store)
+			rec := serve(t, h.PutFormatSettings, http.MethodPut, "/settings/format", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotTenant != identity.TenantID {
+				t.Errorf("tenant = %s, want the caller's %s", store.gotTenant, identity.TenantID)
+			}
+			if store.gotKey != NumberFormatKey {
+				t.Errorf("key = %q, want %q", store.gotKey, NumberFormatKey)
 			}
 			if store.gotValue != tt.wantValue {
 				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)

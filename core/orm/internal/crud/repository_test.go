@@ -137,7 +137,7 @@ func TestRepository_FindAll_ScopesEveryStatementToTenant(t *testing.T) {
 	tid := uuid.New()
 	ctx := access.WithTenant(context.Background(), tid)
 
-	if _, _, err := repo.FindAll(ctx, 1, 20); err != nil {
+	if _, _, err := repo.FindAll(ctx, crud.ListFilter{Page: 1, PageSize: 20}); err != nil {
 		t.Fatalf("FindAll: %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestRepository_FailsClosedWithoutTenant(t *testing.T) {
 	repo := crud.NewRepository(&captureExec{}, tenantMeta(t))
 	ctx := context.Background() // no tenant stamped
 
-	if _, _, err := repo.FindAll(ctx, 1, 20); !errors.Is(err, crud.ErrTenantMissing) {
+	if _, _, err := repo.FindAll(ctx, crud.ListFilter{Page: 1, PageSize: 20}); !errors.Is(err, crud.ErrTenantMissing) {
 		t.Errorf("FindAll: want ErrTenantMissing, got %v", err)
 	}
 	if _, err := repo.FindByID(ctx, uuid.New()); !errors.Is(err, crud.ErrTenantMissing) {
@@ -253,12 +253,69 @@ func TestRepository_GlobalTable_NotScopedAndWorksWithoutTenant(t *testing.T) {
 	repo := crud.NewRepository(ex, globalMeta(t))
 	ctx := context.Background() // no tenant — fine for a global table
 
-	if _, _, err := repo.FindAll(ctx, 1, 20); err != nil {
+	if _, _, err := repo.FindAll(ctx, crud.ListFilter{Page: 1, PageSize: 20}); err != nil {
 		t.Fatalf("FindAll on global table: %v", err)
 	}
 	for _, q := range ex.queries {
 		if strings.Contains(q, "tenant_id") {
 			t.Errorf("global table must not be tenant-scoped: %q", q)
 		}
+	}
+}
+
+func TestRepository_FindAll_AppliesEqualsAndMatchesFilters(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, globalMeta(t))
+	target := uuid.New()
+
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{
+		Page:     1,
+		PageSize: 20,
+		Equals:   map[string]string{"id": target.String()},
+		Matches:  map[string]string{"label": "ada"},
+	})
+	if err != nil {
+		t.Fatalf("FindAll: %v", err)
+	}
+
+	if len(ex.queries) < 2 {
+		t.Fatalf("expected a count and a select query, got %v", ex.queries)
+	}
+	for _, q := range ex.queries { // count + paginated select must both filter
+		if !strings.Contains(q, "id::text =") {
+			t.Errorf("query missing the equals filter: %q", q)
+		}
+		if !strings.Contains(q, "label::text ILIKE") {
+			t.Errorf("query missing the matches filter: %q", q)
+		}
+	}
+	// Filter values are bound as parameters, never interpolated.
+	sql, args := ex.find(t, "ILIKE")
+	if strings.Contains(sql, "ada") || strings.Contains(sql, target.String()) {
+		t.Errorf("filter value interpolated into SQL: %q", sql)
+	}
+	found := 0
+	for _, a := range args {
+		if a == "ada" || a == target.String() {
+			found++
+		}
+	}
+	if found != 2 {
+		t.Errorf("filter values not bound as args: %v", args)
+	}
+}
+
+func TestRepository_FindAll_RejectsUnknownFilterColumn(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, globalMeta(t))
+
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{
+		Equals: map[string]string{"nope; DROP TABLE": "x"},
+	})
+	if !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Fatalf("err = %v, want ErrUnknownColumn", err)
+	}
+	if len(ex.queries) != 0 {
+		t.Errorf("no SQL must run for an unknown column, got %v", ex.queries)
 	}
 }

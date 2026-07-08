@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -64,7 +65,26 @@ type preferencesResponse struct {
 	PreferredLocale *string `json:"preferred_locale"`
 	// DefaultLocale: the tenant-wide default. null = source language.
 	DefaultLocale *string `json:"default_locale"`
+	// NumberFormat: the tenant-wide number display format. null = the
+	// frontend's built-in default. Rides along with the preferences load so
+	// one round-trip seeds every client-side format mirror.
+	NumberFormat *numberFormat `json:"number_format"`
 }
+
+// numberFormat is both the stored value of NumberFormatKey and the request
+// body of PUT /settings/format.
+type numberFormat struct {
+	DecimalSeparator   string `json:"decimal_separator"`
+	ThousandsSeparator string `json:"thousands_separator"`
+}
+
+// The accepted separator sets. Small on purpose: these are display characters
+// injected into every rendered number, so junk stays out of the column and out
+// of the UI. Thousands may be empty (no grouping); decimal may not.
+var (
+	decimalSeparators   = map[string]bool{".": true, ",": true}
+	thousandsSeparators = map[string]bool{"": true, " ": true, "\u00a0": true, ".": true, ",": true, "'": true}
+)
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -91,6 +111,19 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 	resp := preferencesResponse{PreferredLocale: user.PreferredLocale}
 	if ok && defaultLocale != "" {
 		resp.DefaultLocale = &defaultLocale
+	}
+
+	rawFormat, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, NumberFormatKey)
+	if err != nil {
+		return fmt.Errorf("preferences: read number format: %w", err)
+	}
+	if ok && rawFormat != "" {
+		var format numberFormat
+		// An unparsable stored value degrades to null (frontend default) rather
+		// than failing the whole preferences load — it is display config only.
+		if err := json.Unmarshal([]byte(rawFormat), &format); err == nil {
+			resp.NumberFormat = &format
+		}
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -145,6 +178,39 @@ func (h *Handler) PutI18nSettings(c echo.Context) error {
 	}
 	if err := h.store.Set(c.Request().Context(), identity.TenantID, DefaultLocaleKey, value); err != nil {
 		return fmt.Errorf("settings: set default locale: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// PutFormatSettings handles PUT /api/v1/settings/format — the tenant-wide
+// number display format. Mounted behind the permission middleware, which
+// derives settings:format:write from the route.
+func (h *Handler) PutFormatSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	var req numberFormat
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if !decimalSeparators[req.DecimalSeparator] {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			`decimal_separator must be "." or ",".`)
+	}
+	if !thousandsSeparators[req.ThousandsSeparator] {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			`thousands_separator must be "", " ", ".", ",", "'" or a narrow space.`)
+	}
+	if req.DecimalSeparator == req.ThousandsSeparator {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			"decimal_separator and thousands_separator must differ.")
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal number format: %w", err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, NumberFormatKey, string(value)); err != nil {
+		return fmt.Errorf("settings: set number format: %w", err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

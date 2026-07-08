@@ -225,3 +225,44 @@ msgstr ""
 #: @eerp/core-front renderers (collection views' create affordance)
 msgid "Create"
 msgstr ""
+
+#: src/components/FormatSettings.tsx + SettingsHub entry
+msgid "Formats"
+msgstr ""
+
+msgid "How numbers display across the workspace, for everyone."
+msgstr ""
+
+msgid "Decimal separator"
+msgstr ""
+
+msgid "Thousands separator"
+msgstr ""
+
+msgid "Period"
+msgstr ""
+
+msgid "Comma"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "Space"
+msgstr ""
+
+msgid "Apostrophe"
+msgstr ""
+
+msgid "Preview:"
+msgstr ""
+
+msgid "The decimal and thousands separators must differ."
+msgstr ""
+
+msgid "Changing the workspace number format requires the settings:format:write permission."
+msgstr ""
+
+#: @eerp/core-front widgets (phone country indicator)
+msgid "Country"
+msgstr ""

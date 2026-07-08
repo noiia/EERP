@@ -83,7 +83,7 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 
 // createIndex creates a single secondary index from a migration Operation.
 // Idempotent via IF NOT EXISTS; index name is deterministic.
-func createIndex(ctx context.Context, db *orm.DB, op types.Operation) error {
+func createIndex(ctx context.Context, db orm.Executor, op types.Operation) error {
 	method := op.IndexType
 	if method == "" {
 		method = "btree"
@@ -101,7 +101,7 @@ func createIndex(ctx context.Context, db *orm.DB, op types.Operation) error {
 
 // ensureTable creates the table with BaseModel columns if it does not exist.
 // Module-specific columns are added separately via ALTER TABLE ADD COLUMN.
-func ensureTable(ctx context.Context, db *orm.DB, table string) error {
+func ensureTable(ctx context.Context, db orm.Executor, table string) error {
 	// #nosec G201 — table names come from module manifests, not user input.
 	_, err := db.Exec(ctx, fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
@@ -120,7 +120,7 @@ var baseModelColumns = map[string]bool{
 
 // autoMigrateTable ensures the table exists, adds any missing columns, and
 // creates any declared indexes.
-func autoMigrateTable(ctx context.Context, db *orm.DB, table string, fields []orm.MigrationField) error {
+func autoMigrateTable(ctx context.Context, db orm.Executor, table string, fields []orm.MigrationField) error {
 	if err := ensureTable(ctx, db, table); err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func autoMigrateTable(ctx context.Context, db *orm.DB, table string, fields []or
 
 // ensureColumns issues ALTER TABLE ADD COLUMN IF NOT EXISTS for each field
 // that is not a BaseModel column. Idempotent — safe to call on extension.
-func ensureColumns(ctx context.Context, db *orm.DB, table string, fields []orm.MigrationField) error {
+func ensureColumns(ctx context.Context, db orm.Executor, table string, fields []orm.MigrationField) error {
 	for _, f := range fields {
 		if baseModelColumns[f.Column] {
 			continue
@@ -154,7 +154,7 @@ func ensureColumns(ctx context.Context, db *orm.DB, table string, fields []orm.M
 // ensureIndexes creates a secondary index for each field tagged db:"col,index".
 // Index names are deterministic (idx_<table>_<column>) and creation is
 // idempotent via IF NOT EXISTS, so this is safe to run on every startup.
-func ensureIndexes(ctx context.Context, db *orm.DB, table string, fields []orm.MigrationField) error {
+func ensureIndexes(ctx context.Context, db orm.Executor, table string, fields []orm.MigrationField) error {
 	for _, f := range fields {
 		if !f.Index {
 			continue

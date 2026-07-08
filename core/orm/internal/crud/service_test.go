@@ -3,6 +3,7 @@ package crud_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func hardMeta() registry.TableMeta {
 // ── mock repository ───────────────────────────────────────────────────────────
 
 type mockRepo struct {
-	findAll  func(ctx context.Context, page, pageSize int) ([]map[string]any, int, error)
+	findAll  func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
 	findByID func(ctx context.Context, id any) (map[string]any, error)
 	create   func(ctx context.Context, data map[string]any) (map[string]any, error)
 	update   func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
@@ -48,9 +49,9 @@ type mockRepo struct {
 	restore  func(ctx context.Context, id any) (map[string]any, error)
 }
 
-func (m *mockRepo) FindAll(ctx context.Context, page, pageSize int) ([]map[string]any, int, error) {
+func (m *mockRepo) FindAll(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
 	if m.findAll != nil {
-		return m.findAll(ctx, page, pageSize)
+		return m.findAll(ctx, f)
 	}
 	return nil, 0, nil
 }
@@ -87,19 +88,25 @@ func (m *mockRepo) Restore(ctx context.Context, id any) (map[string]any, error) 
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
-func TestService_List_PaginationPassedThrough(t *testing.T) {
-	var gotPage, gotSize int
+func TestService_List_FilterPassedThrough(t *testing.T) {
+	var got crud.ListFilter
 	repo := &mockRepo{
-		findAll: func(_ context.Context, page, pageSize int) ([]map[string]any, int, error) {
-			gotPage, gotSize = page, pageSize
+		findAll: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+			got = f
 			return nil, 0, nil
 		},
 	}
 	svc := crud.NewServiceFromRepo(repo, softMeta())
-	svc.List(context.Background(), crud.ListFilter{Page: 3, PageSize: 15}) //nolint:errcheck
+	want := crud.ListFilter{
+		Page:     3,
+		PageSize: 15,
+		Equals:   map[string]string{"contact_id": "abc"},
+		Matches:  map[string]string{"name": "ada"},
+	}
+	svc.List(context.Background(), want) //nolint:errcheck
 
-	if gotPage != 3 || gotSize != 15 {
-		t.Errorf("got page=%d size=%d, want 3/15", gotPage, gotSize)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("repo received %+v, want the filter unchanged %+v", got, want)
 	}
 }
 

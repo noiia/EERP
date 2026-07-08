@@ -19,10 +19,16 @@ func init() {
 // Registered under the "crm" table name, it replaces the base registration so
 // the generic API automatically includes date and comment — the crm module is
 // never touched.
+//
+// RULE: extension columns MUST be pointers (nullable). A non-pointer field
+// registers (and migrates) as NOT NULL, which makes it required on every
+// create of the base table — breaking writers that don't know the extension
+// exists (the base module's own form included): the generic handler 422s them
+// with "missing required fields".
 type CRM struct {
 	crm.CRM
 	Date    *time.Time `db:"date"`
-	Comment string     `db:"comment"`
+	Comment *string    `db:"comment"`
 }
 
 type crminheritdemoModule struct{}

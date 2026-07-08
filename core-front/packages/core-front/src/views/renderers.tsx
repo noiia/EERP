@@ -10,12 +10,8 @@ import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
-import Switch from '@mui/material/Switch'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
@@ -23,8 +19,9 @@ import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models
 import type { SerializedError } from '../api/errors'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
-import type { FieldDescriptor, ViewDescriptor } from './descriptor'
+import { fieldLabel, type FieldDescriptor, type ViewDescriptor } from './descriptor'
 import { layout, tabularNums } from './tokens'
+import { fieldWidget } from './widgets'
 import {
   createDashboardStore,
   createFormStore,
@@ -118,48 +115,29 @@ function FieldInput({
   field,
   value,
   onChange,
+  entity,
+  recordId,
 }: {
   field: FieldDescriptor
   value: unknown
   onChange: (value: unknown) => void
+  entity: string
+  recordId: string | null
 }) {
-  // Descriptor labels are gettext msgids: modules ship their translations in i18n/*.po,
-  // so field labels localize with no descriptor change (fallback = the label itself).
-  const t = useT()
-  if (field.type === 'boolean') {
-    return (
-      <FormControlLabel
-        control={<Switch checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />}
-        label={t(field.label)}
-      />
-    )
-  }
-  if (field.type === 'relation') {
-    // Stub: a relation picker with no options yet (resolved against the related entity later).
-    return (
-      <TextField
-        select
-        label={t(field.label)}
-        required={field.required}
-        value={(value as string) ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <MenuItem value="">—</MenuItem>
-      </TextField>
-    )
-  }
-  const type = field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'
+  // Dispatch through the widget layer: the field's type picks the data shape,
+  // its (optional) widget decorator the control — descriptor labels stay gettext
+  // msgids translated inside each widget (widgets.tsx). Computed fields render
+  // inert: the behavior layer owns their value (behaviors.ts). entity + recordId
+  // give service-backed widgets (picture/signature) their anchor.
+  const Widget = fieldWidget(field)
   return (
-    <TextField
-      label={t(field.label)}
-      type={type}
-      required={field.required}
-      fullWidth
-      slotProps={field.type === 'date' ? { inputLabel: { shrink: true } } : undefined}
-      // Numeric figures align in columns (tabular figures token).
-      sx={field.type === 'number' ? { '& input': { fontVariantNumeric: tabularNums } } : undefined}
-      value={(value as string | number) ?? ''}
-      onChange={(e) => onChange(field.type === 'number' ? Number(e.target.value) : e.target.value)}
+    <Widget
+      field={field}
+      value={value}
+      onChange={onChange}
+      disabled={Boolean(field.compute)}
+      entity={entity}
+      recordId={recordId}
     />
   )
 }
@@ -208,6 +186,8 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
                 field={field}
                 value={(draft as Record<string, unknown>)[field.name]}
                 onChange={(value) => setField(field.name as keyof T, value as T[keyof T])}
+                entity={descriptor.entity}
+                recordId={(draft as { id?: string }).id ?? null}
               />
             ))}
           </Stack>
@@ -258,7 +238,7 @@ function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewPr
   if (!hierarchical) {
     const columns: GridColDef[] = descriptor.fields.map((f) => ({
       field: f.name,
-      headerName: t(f.label),
+      headerName: t(fieldLabel(f)),
       flex: 1,
     }))
     // A formPath makes rows navigable: clicking one opens that record's form.

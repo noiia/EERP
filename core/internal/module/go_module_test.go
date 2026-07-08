@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"core/internal/module"
-	"core/orm"
 	_ "core/modules/all" // triggers init() → RegisterGoModule for each module
+	"core/orm"
 )
 
 // TestGoModules_InitEnlistsModules verifies that blank-importing modules/all

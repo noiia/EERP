@@ -51,8 +51,9 @@ today has nowhere to live.
 
 | Concern | Contract |
 | --- | --- |
-| FieldDescriptor v2 | `{ name, label, type, widget?, widgetOptions?, required?, readOnly?, states?, compute?, store?, relation? }` — all JSON-serializable. `store?: boolean` default `true`; `compute?: string` (registered function name). |
-| Widget matrix | boolean: `switch` (default) · `picture` · `signature` — text: `simple` (default) · `long` (multiline) — number: `float` (default) · `int` · `percent` · `stars` · `phone` — relation: `search` (default, many2one) · `tags` (many2many) · `list` (one2many) — date: unchanged. Anything else ⇒ registration error. |
+| FieldDescriptor v2 | `{ name, label?, type, widget?, widgetOptions?, required?, readOnly?, states?, compute?, store?, relation?, selection? }` — all JSON-serializable. `label?` optional: omitted, the engine humanizes `name` via `fieldLabel()` (`contact_id` → "Contact id"); the result is the gettext msgid either way. `store?: boolean` default `true`; `compute?: string` (registered function name). |
+| Widget matrix | boolean: `switch` (default) · `picture` · `signature` — text: `simple` (default) · `long` (multiline) — number: `float` (default) · `int` · `percent` · `stars` · `phone` — relation: `search` (default, many2one) · `tags` (many2many) · `list` (one2many) — selection: `select` (the only entry — a dropdown) — date: unchanged. Anything else ⇒ registration error. |
+| type/selection | `selection: { options: string[] }` is REQUIRED and must be non-empty (registration error otherwise, same tier as the relation block). A closed value list rendered as a dropdown (`widget: 'select'`); each option's display goes through `t()` (a msgid, like a field label) while the stored/onChange value stays the raw option string. No `default` declared ⇒ `fieldZeroDefault` seeds the FIRST option — a selection has no natural empty value, so "first in the list" is the type's own zero default, overridable exactly like any other type's `default`. |
 | number/float | Default widget; formatted `%.2f` (`widgetOptions.decimals` overrides), separators from settings. |
 | number/int | Integer input/display, thousands separator from settings. |
 | number/percent | Value stored as ratio 0..1 by default (`widgetOptions.base: 'ratio'\|'percent'`), displayed `× 100` with `%`. |
@@ -61,13 +62,15 @@ today has nowhere to live.
 | Format settings | `app_settings` key `format.number` = `{ decimal_separator, thousands_separator }`; `PUT /api/v1/settings/format` (permission `settings:format:write`); read with the preferences load; `useNumberFormat()` engine hook is the only consumer path. |
 | boolean/picture | Field value = "image exists". Upload/replace/delete through the picture service; widget shows thumbnail or upload affordance. |
 | boolean/signature | Drawable canvas; non-empty drawing ⇒ field `true`; on "done" the canvas exports PNG → picture service; a **reset button** deletes the picture and sets `false`. |
-| Picture service | Core `picture` table: `id, tenant_id, table_name, record_id, field, object_key, mime, size, created_at…` (off the generic CRUD surface). Routes: `POST /api/v1/pictures` (multipart) · `GET /api/v1/pictures/:id` (stream) · `GET /api/v1/pictures?table&record&field` · `DELETE /api/v1/pictures/:id`; permissions `pictures:pictures:read\|write` from the route; respects the existing body-size limit. Config: `s3_endpoint, s3_bucket, s3_access_key, s3_secret_key, s3_region` in `eerp-config.json`; Garage service in `compose.yml`, config in `infra/garage/` (see its README). |
-| relation metadata | `relation: { entity, kind: 'many2one'\|'one2many'\|'many2many', labelField? ('name'), inverseField? (o2m), via? (m2m junction entity) }`. `entity` = Go route prefix, as everywhere. |
+| Picture service | Core `picture` table: `id, tenant_id, table_name, record_id, field, object_key, mime, size, created_at…` (off the generic CRUD surface). Routes: `POST /api/v1/pictures` (multipart) · `GET /api/v1/pictures/:id` (stream) · `GET /api/v1/pictures?table&record&field` · `DELETE /api/v1/pictures/:id`; permissions `pictures:pictures:read\|write` from the route; respects the existing body-size limit. Storage is **already provisioned**: the `s3_*` fields sit in `eerp-config.json` (host endpoint `:3910`) and `eerp-config.docker.json` (`http://garage:3900`), backed by the compose `garage` service — bootstrap with `make garage-init`, details in `infra/garage/README.md`. |
+| relation metadata | `relation: { entity, kind: 'many2one'\|'one2many'\|'many2many', labelField? ('name'), inverseField? (o2m), via? (m2m junction entity), viaFields? ({own, related} junction columns, default `<own>_id`/`<related>_id`) }`. `entity` = Go route prefix, as everywhere. The widget derives from the kind; o2m needs `inverseField`, m2m needs `via` — enforced at registration. |
 | relation/search (m2o) | An autocomplete search bar querying the related entity's list (Go authorizes — the user only ever sees records they may read). A **link icon at the right** of the field opens a **wizard dialog** (search + grid, select to set) — v1 basic, improved in a later iteration. Selected record renders as a tag. |
+| create-from-search | All three relation kinds can create the aimed record in place: m2o/m2m dropdowns cap at **6 results** and append a 7th line "Create a new <entity>"; the o2m grid shows the same line under it. It opens a creation dialog rendering the target entity's registered form descriptor (fallback: one labelField text field) over a form store bound to `RelationOps.create` — seed defaults, on_change, computes, and store:false stripping apply exactly as on the entity's own form; Go authorizes the POST. The typed search text seeds the labelField; o2m presets and hides the `inverseField`; the created record then links like a pick (m2o FK set, m2m junction row, o2m grid row). |
 | relation tags (m2o/m2m) | Tag shows the related record's `labelField`; **on hover a cross appears on the tag's right side**; clicking it unlinks (m2o → null, m2m → junction row removed). |
 | relation/list (o2m) | The inverse side: records of another table whose `inverseField` column holds this record's id. v1 renders a read-only embedded grid (list filtered by the inverse FK); inline create/edit deferred. |
+| default | `default?: JsonValue` on the field: the seed value when a record lacks the field (new records, columns added later). A JSON literal, or the NAME of a registered field function (called with the seed draft) — never a function object (RSC rule). Omitted ⇒ the type's zero default: text `''`, number `0`, boolean `false`, date/relation `null` (`fieldZeroDefault`). Applied at draft seed BEFORE the compute pass (defaults feed computes), never overwrites present values (explicit `null` is a value), never dirties the form; virtual relations (o2m/m2m) seed nothing. |
 | compute | `registerFieldFunction({ entity, name, depends: string[], handler(draft) => value })`. Recomputed when any `depends` field changes in the draft; result written to the field. Dependency cycles ⇒ registration error. |
-| on_change | `registerOnChange({ entity, name, onChange: string[], handler(draft) => Partial<draft> })`. Fired when a listed field changes; the returned patch merges into the draft (may cascade compute, cycle-guarded). |
+| on_change | `registerOnChange({ entity, name, onChange: string[], handler(draft) => Partial<draft> })`. Fired when a listed field changes; the returned patch merges into the draft (may cascade compute, cycle-guarded). Fires on genuine edits only — and once, at seed, for a brand-new record (no id: its defaulted fields count as freshly "changed"). Loading an existing record or reconciling the draft after commit runs computes only, never on_change — otherwise a suggestion would silently overwrite a value the user set (or that Go just persisted). |
 | index | Go struct tag `db:"col,index"` (btree default) or `db:"col,index=gin"` etc. — metadata already parsed; migration emits `CREATE INDEX IF NOT EXISTS idx_<table>_<col> ON <table> USING <method> (<col>)`. |
 
 **Example — one field, everything on (the Odoo analogy):**
@@ -84,7 +87,7 @@ registerFieldFunction({ entity: 'crm', name: 'crm.rating',
 
 ---
 
-## Phase 1 — Widget architecture + text/number widgets + format settings
+## Phase 1 — Widget architecture + text/number widgets + format settings ✅ (implemented)
 
 **Claude Code prompt:**
 ```
@@ -109,7 +112,12 @@ percent and separator formatting against both separator configs; stars half-step
 **DoD:** existing views render unchanged (defaults); each widget proven by a store round-trip
 test; separators flip app-wide from Settings with no widget code change.
 
-## Phase 2 — Behavior layer: compute / depends / on_change / store, index DDL
+## Phase 2 — Behavior layer: compute / depends / on_change / store, index DDL ✅ (implemented)
+
+> Implementation note: the index DDL turned out to already exist end to end
+> (`internal/module/migration.go` `ensureIndexes`/`createIndex`, wired into the Go-module
+> load path) — Phase 2 refactored the DDL helpers onto the call-site `orm.Executor`
+> interface and added the missing per-method + idempotency tests.
 
 **Claude Code prompt:**
 ```
@@ -132,16 +140,28 @@ cascades a compute; cycle -> registration error; store:false never in the PUT bo
 per `store`; a tagged Go column materializes a real index of the right method in Postgres
 (verified via `make run-back-tests`).
 
-## Phase 3 — Core picture service + picture/signature widgets
+## Phase 3 — Core picture service + picture/signature widgets ✅ (implemented)
+
+> Implementation notes: the service invariant is ONE picture per (tenant, table,
+> record, field) anchor — POST replaces in place (unique index `uq_picture_anchor`
+> enforces it), so the picture-backed boolean always has exactly one object to
+> point at. Widgets reconcile the draft flag against the service on load (the
+> service is authoritative, per the pitfall below) and upload at interaction
+> time, which realizes the "upload first, then the record PUT" commit order.
+> On a record that has never been saved (no id → no anchor) both widgets render
+> a hint instead of an upload surface.
 
 **Claude Code prompt:**
 ```
 1. Backend (core/internal/pictures/, mounted like settings/auth): the picture table
-   (registered off the generic surface), S3 client from new eerp-config.json fields
-   (s3_endpoint, s3_bucket, s3_access_key, s3_secret_key, s3_region — path resolution
-   rules unchanged), the compose garage service (infra/garage/, already provisioned). Routes per the contracts table;
-   tenant-pinned; multipart within the existing body limit; DELETE removes object + row.
-   Table-driven tests against the dev Garage node (skipped without it).
+   (registered off the generic surface) and an S3 client reading the EXISTING s3_*
+   fields of eerp-config.json — the dev Garage node, its bucket, and the imported dev
+   key are already provisioned (compose `garage` service + `make garage-init`; see
+   infra/garage/README.md; in-network endpoint http://garage:3900 per
+   eerp-config.docker.json). Add the s3_* fields to types.Config. Routes per the
+   contracts table; tenant-pinned; multipart within the existing body limit; DELETE
+   removes object + row. Table-driven tests against the dev Garage node (skipped when
+   it is unreachable — same stance as TEST_API_BASE).
 2. BFF: a Next route handler proxies multipart upload to Go with the Bearer (browser
    never talks to Go); engine ApiClient gains uploadPicture/deletePicture helpers.
 3. Widgets: boolean/picture (thumbnail via GET stream, upload/replace/delete; field
@@ -154,7 +174,22 @@ backend upload/list/delete round-trip incl. tenant isolation.
 **DoD:** a signature drawn on a form lands in Garage with a `picture` row, the boolean commits
 `true`, reset clears all three; picture fields survive reload (thumbnail from the service).
 
-## Phase 4 — Relation widgets: search, wizard, tags, o2m/m2m
+## Phase 4 — Relation widgets: search, wizard, tags, o2m/m2m ✅ (implemented)
+
+> Implementation notes: the backend ListFilter existed but carried only
+> pagination — Phase 4 added the filter surface: `?filter[col]=v` (exact,
+> compared as text) and `?search[col]=v` (ILIKE containment), columns
+> whitelisted against the table meta in the handler (400) AND the repository
+> (the security boundary — column names become SQL identifiers). Relation
+> widgets reach other entities through **RelationOps** — entity-generic Server
+> Actions the shell mounts once via `RelationOpsProvider` in the root layout —
+> so every query re-enters Go's permission gate. The relation widget derives
+> from the kind (`many2one`→search, `one2many`→list, `many2many`→tags); o2m/m2m
+> fields are **virtual** (`isVirtualRelation`) and auto-stripped from commit
+> payloads. m2m junction columns default to `<own>_id`/`<related>_id`
+> (`viaFields` overrides). The DoD demo: `crm.contact_id` m2o + `tag`/`crm_tag`
+> m2m on the CRM form, and the inverse o2m embedded on the contact form —
+> verified end-to-end against the live backend.
 
 **Claude Code prompt:**
 ```
@@ -191,8 +226,9 @@ flowchart TD
 ```
 
 Phase 1 is the foundation; 2, 3, 4 parallelize after it (3 and 4 have independent backend
-tracks). The wizard dialog's second iteration (richer filtering, create-from-wizard) is
-deliberately **not** in this roadmap.
+tracks). The selection wizard's richer filtering is deliberately **not** in this roadmap;
+create-from-search (the contracts table's "create-from-search" row) landed as a post-Phase-4
+increment.
 
 ## Coordination
 

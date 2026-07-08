@@ -82,7 +82,16 @@ type Config struct {
 	// SeedDevAdmin, when true, seeds a development admin user on startup so login works
 	// out of the box. DEV ONLY — never enable in production.
 	SeedDevAdmin bool `json:"seed_dev_admin" needed:"false"`
-	DSN          string
+	// S3* configure the object store backing the picture service (Garage in dev —
+	// infra/garage/README.md). All empty = no object storage: the picture endpoints
+	// are simply not mounted. The endpoint carries an explicit scheme
+	// (http://127.0.0.1:3910 on the host, http://garage:3900 in compose).
+	S3Endpoint  string `json:"s3_endpoint" needed:"false"`
+	S3Region    string `json:"s3_region" needed:"false"`
+	S3Bucket    string `json:"s3_bucket" needed:"false"`
+	S3AccessKey string `json:"s3_access_key" needed:"false"`
+	S3SecretKey string `json:"s3_secret_key" needed:"false"`
+	DSN         string
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:

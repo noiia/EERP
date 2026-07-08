@@ -212,6 +212,11 @@ engine has a gap; fix it in Phases 1–3, not in the module.
 - **Alphabetical registration order is a landmine** — `crminheritdemo` > `crm` only by
   coincidence. Dependency-ordered manifests (Phase 3.2) are a prerequisite for correctness,
   not polish.
+- **Extension columns on another module's table must be nullable (pointer fields).** A
+  non-pointer field registers and migrates as `NOT NULL`, which makes it *required on every
+  create of the base table* — the generic handler 422s every writer that doesn't know the
+  extension exists, the base module's own form included. Pinned by
+  `crminheritdemo`'s `TestExtensionColumnsAreNullable`.
 - **Extensions target paths, so path changes are breaking changes.** Renaming a base route
   breaks extenders at build time (loudly — that is the design); note it in the base module's
   changelog discipline.

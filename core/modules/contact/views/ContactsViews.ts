@@ -23,7 +23,19 @@ const fields: ViewDescriptor['fields'] = [
   { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'company', label: 'Company', type: 'text' },
   { name: 'status', label: 'Status', type: 'text' },
-  { name: 'tenant_id', label: 'Tenant Id', type: 'relation' },
+]
+
+// Form-only: the inverse side of crm.contact_id — every CRM record pointing at
+// this contact, embedded read-only (relation/list). Virtual: never in the
+// contact's commit payload.
+const formFields: ViewDescriptor['fields'] = [
+  ...fields,
+  {
+    name: 'crm_records',
+    label: 'CRM records',
+    type: 'relation',
+    relation: { entity: 'crm', kind: 'one2many', inverseField: 'contact_id', labelField: 'name' },
+  },
 ]
 
 const dashboardView: ViewDescriptor = {
@@ -45,7 +57,7 @@ const listView: ViewDescriptor = {
 const formView: ViewDescriptor = {
   entity: 'contact',
   viewType: 'form',
-  fields,
+  fields: formFields,
   permissions: ['contact:contact:read'],
 }
 

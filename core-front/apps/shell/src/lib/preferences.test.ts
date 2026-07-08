@@ -10,7 +10,12 @@ vi.mock('@eerp/core-front/server', async (importOriginal) => {
   }
 })
 
-import { getMyLocalePreferences, setDefaultLocale, setMyPreferredLocale } from './preferences'
+import {
+  getMyLocalePreferences,
+  setDefaultLocale,
+  setMyPreferredLocale,
+  setWorkspaceNumberFormat,
+} from './preferences'
 
 beforeEach(() => {
   apiRequestMock.mockReset()
@@ -46,6 +51,18 @@ describe('locale preference actions', () => {
 
     await expect(setDefaultLocale('fr')).resolves.toEqual({ ok: true })
     expect(apiRequestMock).toHaveBeenCalledWith('PUT', '/settings/i18n', { default_locale: 'fr' })
+  })
+
+  it('saves the workspace number format via PUT /settings/format', async () => {
+    apiRequestMock.mockResolvedValue(undefined)
+
+    await expect(
+      setWorkspaceNumberFormat({ decimal_separator: ',', thousands_separator: ' ' }),
+    ).resolves.toEqual({ ok: true })
+    expect(apiRequestMock).toHaveBeenCalledWith('PUT', '/settings/format', {
+      decimal_separator: ',',
+      thousands_separator: ' ',
+    })
   })
 
   it('maps a failed save to { ok:false } carrying the envelope message', async () => {

@@ -172,3 +172,42 @@ msgstr "Enregistrement…"
 
 msgid "Create"
 msgstr "Créer"
+
+msgid "Formats"
+msgstr "Formats"
+
+msgid "How numbers display across the workspace, for everyone."
+msgstr "Comment les nombres s'affichent dans l'espace de travail, pour tout le monde."
+
+msgid "Decimal separator"
+msgstr "Séparateur décimal"
+
+msgid "Thousands separator"
+msgstr "Séparateur de milliers"
+
+msgid "Period"
+msgstr "Point"
+
+msgid "Comma"
+msgstr "Virgule"
+
+msgid "None"
+msgstr "Aucun"
+
+msgid "Space"
+msgstr "Espace"
+
+msgid "Apostrophe"
+msgstr "Apostrophe"
+
+msgid "Preview:"
+msgstr "Aperçu :"
+
+msgid "The decimal and thousands separators must differ."
+msgstr "Les séparateurs décimal et de milliers doivent être différents."
+
+msgid "Changing the workspace number format requires the settings:format:write permission."
+msgstr "Modifier le format des nombres de l'espace de travail nécessite la permission settings:format:write."
+
+msgid "Country"
+msgstr "Pays"

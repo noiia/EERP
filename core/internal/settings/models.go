@@ -15,6 +15,11 @@ import (
 // interface language. An empty (or absent) value means the source language.
 const DefaultLocaleKey = "i18n.default_locale"
 
+// NumberFormatKey is the app_settings key holding the tenant's number display
+// format, stored as JSON: {"decimal_separator":",","thousands_separator":" "}.
+// Absent (or unparsable) means the frontend's built-in default (1,234.56).
+const NumberFormatKey = "format.number"
+
 // AppSettings is one tenant-scoped setting. (tenant_id, key) is unique — the
 // settings module's Migrate creates the index — so writes are upserts.
 type AppSettings struct {
