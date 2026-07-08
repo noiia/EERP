@@ -68,7 +68,7 @@ export interface FieldDescriptor {
   /** Property name on the record and the form draft. */
   name: string
   /** Human label shown by the renderer. */
-  label: string
+  label?: string
   type: FieldType
   /**
    * Presentation decorator: how the value renders and edits (e.g. a number as
@@ -79,6 +79,18 @@ export interface FieldDescriptor {
   /** Widget tuning (e.g. { max: 5 } for stars). JSON-serializable only. */
   widgetOptions?: Record<string, JsonValue>
   required?: boolean
+  /**
+   * Seed value for the field when the record lacks it (new records, columns
+   * added after rows existed). Either a JSON literal, or the NAME of a field
+   * function registered via registerFieldFunction — called with the seed draft,
+   * its return value becomes the default. A name, never a function object (the
+   * RSC rule, same as `compute`). Omitted = the type's zero default: text `''`,
+   * number `0`, boolean `false`, date/relation `null` (see fieldZeroDefault).
+   * Pitfall: a literal string default that collides with a registered function
+   * name is resolved as the function — function names are namespaced
+   * ('<entity>.<what>'), so collisions don't happen by accident.
+   */
+  default?: JsonValue
   /**
    * Name of a registered field function (registerFieldFunction) computing this
    * field's value from the draft. A NAME, never a function — descriptors cross
@@ -96,6 +108,18 @@ export interface FieldDescriptor {
   store?: boolean
   /** Required on type 'relation': where the field points (see RelationDescriptor). */
   relation?: RelationDescriptor
+}
+
+/**
+ * Resolve a field's display label: the declared one, or the field name
+ * humanized (`contact_id` → "Contact id") when omitted. Every renderer/widget
+ * labels through this helper — the result is the gettext msgid, so a derived
+ * label simply renders verbatim until a module ships an explicit one.
+ */
+export function fieldLabel(field: FieldDescriptor): string {
+  if (field.label) return field.label
+  const words = field.name.replace(/_/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 /**
@@ -153,6 +177,26 @@ function resolveRelationWidget(field: FieldDescriptor): string {
 /** Validate every field's widget/type pair of a descriptor (see resolveWidget). */
 export function validateDescriptorWidgets<T>(descriptor: ViewDescriptor<T>): void {
   for (const field of descriptor.fields) resolveWidget(field)
+}
+
+/**
+ * The zero default a field seeds with when the record lacks it and the
+ * descriptor declares no `default`: the natural empty value of each data type.
+ * Relations default null on the m2o FK ("no target"); virtual relations
+ * (o2m/m2m) never seed — they have no column on this record.
+ */
+export function fieldZeroDefault(field: FieldDescriptor): JsonValue {
+  switch (field.type) {
+    case 'text':
+      return ''
+    case 'number':
+      return 0
+    case 'boolean':
+      return false
+    case 'date':
+    case 'relation':
+      return null
+  }
 }
 
 /**

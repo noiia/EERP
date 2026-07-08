@@ -19,7 +19,7 @@ import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models
 import type { SerializedError } from '../api/errors'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
-import type { FieldDescriptor, ViewDescriptor } from './descriptor'
+import { fieldLabel, type FieldDescriptor, type ViewDescriptor } from './descriptor'
 import { layout, tabularNums } from './tokens'
 import { fieldWidget } from './widgets'
 import {
@@ -238,7 +238,7 @@ function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewPr
   if (!hierarchical) {
     const columns: GridColDef[] = descriptor.fields.map((f) => ({
       field: f.name,
-      headerName: t(f.label),
+      headerName: t(fieldLabel(f)),
       flex: 1,
     }))
     // A formPath makes rows navigable: clicking one opens that record's form.

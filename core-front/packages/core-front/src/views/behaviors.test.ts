@@ -5,6 +5,7 @@ import {
   buildBehaviorPlan,
   registerFieldFunction,
   registerOnChange,
+  seedDefaults,
   stripUnstored,
 } from './behaviors'
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
@@ -164,6 +165,93 @@ describe('applyBehaviors', () => {
     })
     const plan = buildBehaviorPlan(descriptor([num('qty'), num('double', { compute: 'crm.double' })]))
     expect(applyBehaviors(plan, { qty: 3 }, null).double).toBe(6)
+  })
+})
+
+describe('seedDefaults', () => {
+  it('fills missing fields with the type zero defaults', () => {
+    const plan = buildBehaviorPlan(
+      descriptor([
+        { name: 'name', type: 'text' },
+        { name: 'qty', type: 'number' },
+        { name: 'active', type: 'boolean' },
+        { name: 'due', type: 'date' },
+        {
+          name: 'contact_id',
+          type: 'relation',
+          relation: { entity: 'contact', kind: 'many2one' },
+        },
+      ]),
+    )
+    expect(seedDefaults(plan, {})).toEqual({
+      name: '',
+      qty: 0,
+      active: false,
+      due: null,
+      contact_id: null,
+    })
+  })
+
+  it('a declared literal default wins over the zero default', () => {
+    const plan = buildBehaviorPlan(
+      descriptor([
+        { name: 'status', type: 'text', default: 'lead' },
+        { name: 'priority', type: 'number', default: 2 },
+      ]),
+    )
+    expect(seedDefaults(plan, {})).toEqual({ status: 'lead', priority: 2 })
+  })
+
+  it('a string default naming a registered function is called with the seed draft', () => {
+    registerFieldFunction({
+      entity: 'crm',
+      name: 'crm.defaultQty',
+      depends: [],
+      handler: (d) => (d.bulk ? 100 : 1),
+    })
+    const plan = buildBehaviorPlan(
+      descriptor([
+        { name: 'bulk', type: 'boolean' },
+        { name: 'qty', type: 'number', default: 'crm.defaultQty' },
+      ]),
+    )
+    expect(seedDefaults(plan, { bulk: true }).qty).toBe(100)
+    expect(seedDefaults(plan, {}).qty).toBe(1)
+  })
+
+  it('a string default matching no registered function stays a literal', () => {
+    const plan = buildBehaviorPlan(descriptor([{ name: 'status', type: 'text', default: 'lead' }]))
+    expect(seedDefaults(plan, {}).status).toBe('lead')
+  })
+
+  it('rejects a default function registered for another entity', () => {
+    registerFieldFunction({ entity: 'inventory', name: 'inv.d', depends: [], handler: () => 1 })
+    expect(() =>
+      buildBehaviorPlan(descriptor([{ name: 'qty', type: 'number', default: 'inv.d' }])),
+    ).toThrowError(/default function "inv\.d" belongs to entity "inventory", not "crm"/)
+  })
+
+  it('never overwrites values the record carries — an explicit null is a value', () => {
+    const plan = buildBehaviorPlan(
+      descriptor([
+        { name: 'name', type: 'text', default: 'x' },
+        { name: 'due', type: 'date' },
+      ]),
+    )
+    expect(seedDefaults(plan, { name: 'Ada', due: null })).toEqual({ name: 'Ada', due: null })
+  })
+
+  it('skips virtual relations — no column, no seed', () => {
+    const plan = buildBehaviorPlan(
+      descriptor([
+        {
+          name: 'tags',
+          type: 'relation',
+          relation: { entity: 'tag', kind: 'many2many', via: 'crm_tag' },
+        },
+      ]),
+    )
+    expect(seedDefaults(plan, {})).toEqual({})
   })
 })
 

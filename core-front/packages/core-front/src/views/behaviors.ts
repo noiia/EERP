@@ -1,4 +1,9 @@
-import { isVirtualRelation, type FieldDescriptor, type ViewDescriptor } from './descriptor'
+import {
+  fieldZeroDefault,
+  isVirtualRelation,
+  type FieldDescriptor,
+  type ViewDescriptor,
+} from './descriptor'
 
 // The field behavior layer (docs/roadmaps/field-widgets.md, Phase 2). Descriptors
 // stay DATA — they cross the RSC boundary, so a field references its compute
@@ -91,6 +96,12 @@ interface ComputedField {
   fn: FieldFunction
 }
 
+interface FieldDefault {
+  name: string
+  /** Produces the seed value; sees the (partially defaulted) seed draft. */
+  resolve: (draft: Readonly<DraftRecord>) => unknown
+}
+
 export interface BehaviorPlan {
   /** Computed fields in dependency order (a compute feeding another runs first). */
   computed: ComputedField[]
@@ -98,6 +109,8 @@ export interface BehaviorPlan {
   onChange: OnChangeHandler[]
   /** Names of store:false fields — stripped from every commit payload. */
   unstored: string[]
+  /** Per-field seed defaults (declared `default` or the type's zero value). */
+  defaults: FieldDefault[]
 }
 
 /**
@@ -156,7 +169,55 @@ export function buildBehaviorPlan<T>(descriptor: ViewDescriptor<T>): BehaviorPla
     unstored: descriptor.fields
       .filter((f) => f.store === false || isVirtualRelation(f))
       .map((f) => f.name),
+    defaults: buildDefaults(descriptor),
   }
+}
+
+/**
+ * Resolve every field's seed default once, at plan build. A declared `default`
+ * that is a string is first looked up in the function registry: registered →
+ * it's a function default (entity-checked, like compute); unregistered → a
+ * literal string. Virtual relations (o2m/m2m) get no default — no column.
+ */
+function buildDefaults<T>(descriptor: ViewDescriptor<T>): FieldDefault[] {
+  const defaults: FieldDefault[] = []
+  for (const field of descriptor.fields) {
+    if (isVirtualRelation(field)) continue
+    if (field.default === undefined) {
+      const zero = fieldZeroDefault(field)
+      defaults.push({ name: field.name, resolve: () => zero })
+      continue
+    }
+    const declared = field.default
+    const fn = typeof declared === 'string' ? behaviorRegistry.fieldFunction(declared) : undefined
+    if (fn) {
+      if (fn.entity !== descriptor.entity) {
+        throw new Error(
+          `field "${field.name}": default function "${fn.name}" belongs to entity ` +
+            `"${fn.entity}", not "${descriptor.entity}"`,
+        )
+      }
+      defaults.push({ name: field.name, resolve: (draft) => fn.handler(draft) })
+    } else {
+      defaults.push({ name: field.name, resolve: () => declared })
+    }
+  }
+  return defaults
+}
+
+/**
+ * Fill the seed draft's missing fields (strictly `undefined` — an explicit null
+ * from the server is a value) with their plan defaults. Runs BEFORE the seed
+ * compute pass, so defaulted inputs feed computes; runs on every seed (new
+ * record, edit, post-commit reconcile) and is a no-op for keys the record
+ * carries — server values are never overwritten. Pure: returns a new draft.
+ */
+export function seedDefaults(plan: BehaviorPlan, draft: DraftRecord): DraftRecord {
+  const next: DraftRecord = { ...draft }
+  for (const d of plan.defaults) {
+    if (next[d.name] === undefined) next[d.name] = d.resolve(next)
+  }
+  return next
 }
 
 /**

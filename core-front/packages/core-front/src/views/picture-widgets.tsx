@@ -19,6 +19,7 @@ import {
   type PictureMeta,
 } from '../api/pictures-client'
 import { useT } from '../i18n/translate'
+import { fieldLabel } from './descriptor'
 import type { WidgetProps } from './widgets'
 
 // Picture-backed boolean widgets (docs/roadmaps/field-widgets.md, Phase 3).
@@ -164,7 +165,7 @@ export function BooleanPictureWidget(props: WidgetProps) {
   }
 
   return (
-    <WidgetFrame label={t(field.label)} error={error}>
+    <WidgetFrame label={t(fieldLabel(field))} error={error}>
       {!anchor ? (
         <UnsavedRecordHint />
       ) : (
@@ -173,7 +174,7 @@ export function BooleanPictureWidget(props: WidgetProps) {
             <Box
               component="img"
               src={client.url(meta.id)}
-              alt={t(field.label)}
+              alt={t(fieldLabel(field))}
               sx={{ maxHeight: 96, maxWidth: 160, borderRadius: 1 }}
             />
           ) : null}
@@ -270,7 +271,7 @@ export function BooleanSignatureWidget(props: WidgetProps) {
   }
 
   return (
-    <WidgetFrame label={t(field.label)} error={error}>
+    <WidgetFrame label={t(fieldLabel(field))} error={error}>
       {!anchor ? (
         <UnsavedRecordHint />
       ) : (
@@ -279,7 +280,7 @@ export function BooleanSignatureWidget(props: WidgetProps) {
             <Box
               component="img"
               src={client.url(meta.id)}
-              alt={t(field.label)}
+              alt={t(fieldLabel(field))}
               sx={{
                 width: SIGNATURE_WIDTH,
                 maxWidth: '100%',
@@ -296,7 +297,7 @@ export function BooleanSignatureWidget(props: WidgetProps) {
               width={SIGNATURE_WIDTH}
               height={SIGNATURE_HEIGHT}
               role="img"
-              aria-label={t(field.label)}
+              aria-label={t(fieldLabel(field))}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}

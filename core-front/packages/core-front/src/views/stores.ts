@@ -1,7 +1,13 @@
 import type { StoreApi } from 'zustand'
 import { createStore, useStore } from 'zustand'
 import { ApiError, toApiError } from '../api/errors'
-import { applyBehaviors, buildBehaviorPlan, stripUnstored, type DraftRecord } from './behaviors'
+import {
+  applyBehaviors,
+  buildBehaviorPlan,
+  seedDefaults,
+  stripUnstored,
+  type DraftRecord,
+} from './behaviors'
 import type { ViewDescriptor } from './descriptor'
 
 // Per-view client stores. Each is SEEDED with server-fetched initialData and never
@@ -72,12 +78,14 @@ export function createFormStore<T extends HasId>(
   initial: Partial<T> = {},
 ): FormStoreApi<T> {
   // Resolve compute/on_change/store behaviors once (throws on cycles or unknown
-  // function names — a module bug, not a runtime condition). Seeds run the full
-  // compute pass so display-only (store:false) values exist before any edit,
-  // WITHOUT marking the form dirty.
+  // function names — a module bug, not a runtime condition). Seeding first fills
+  // missing fields with their defaults (declared `default` or the type's zero
+  // value — defaults feed the computes), then runs the full compute pass so
+  // display-only (store:false) values exist before any edit, WITHOUT marking
+  // the form dirty.
   const plan = buildBehaviorPlan(descriptor)
   const seed = (record: Partial<T>): Partial<T> =>
-    applyBehaviors(plan, { ...record } as DraftRecord, null) as Partial<T>
+    applyBehaviors(plan, seedDefaults(plan, { ...record } as DraftRecord), null) as Partial<T>
 
   return createStore<FormState<T>>((set, get) => ({
     draft: seed(initial),

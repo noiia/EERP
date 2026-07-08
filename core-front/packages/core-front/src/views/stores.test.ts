@@ -238,4 +238,38 @@ describe('createFormStore behaviors', () => {
       /lines\.subtotal" is not registered/,
     )
   })
+
+  it('seeds a NEW record with field defaults — zero values, declared, and function — clean', () => {
+    registerFieldFunction({
+      entity: 'lines',
+      name: 'lines.defaultQty',
+      depends: [],
+      handler: () => 3,
+    })
+    const withDefaults: ViewDescriptor<Line> = {
+      ...behaviorDescriptor,
+      fields: [
+        { name: 'qty', label: 'Qty', type: 'number', default: 'lines.defaultQty' },
+        { name: 'price', label: 'Price', type: 'number' },
+        { name: 'subtotal', label: 'Subtotal', type: 'number', compute: 'lines.subtotal', store: false },
+        { name: 'country', label: 'Country', type: 'text', default: 'FR' },
+        { name: 'vat_rate', label: 'VAT', type: 'number' },
+      ],
+    }
+    const { actions } = lineActions()
+    const store = createFormStore(withDefaults, actions, {})
+    const { draft, dirty } = store.getState()
+    expect(draft.qty).toBe(3) // function default
+    expect(draft.price).toBe(0) // number zero default
+    expect(draft.country).toBe('FR') // declared literal default
+    expect(draft.subtotal).toBe(0) // defaults fed the seed compute pass
+    expect(dirty).toBe(false)
+  })
+
+  it('defaults never clobber loaded record values', () => {
+    const { actions } = lineActions()
+    const store = createFormStore(behaviorDescriptor, actions, { id: '1', qty: 2, price: 10 })
+    expect(store.getState().draft.qty).toBe(2)
+    expect(store.getState().draft.country).toBe('') // absent column still defaults
+  })
 })

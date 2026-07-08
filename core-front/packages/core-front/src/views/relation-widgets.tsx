@@ -13,7 +13,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { useT } from '../i18n/translate'
-import type { FieldDescriptor, RelationDescriptor } from './descriptor'
+import { fieldLabel, type FieldDescriptor, type RelationDescriptor } from './descriptor'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
 import type { WidgetProps } from './widgets'
 
@@ -266,7 +266,7 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
     }
   }, [ops, selectedId, rel.entity, labelField])
 
-  if (!ops) return <MissingOpsHint label={t(field.label)} />
+  if (!ops) return <MissingOpsHint label={t(fieldLabel(field))} />
 
   const pick = (record: RelationRecord) => {
     setSelectedLabel(labelOf(record, labelField))
@@ -276,7 +276,7 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
   return (
     <Box>
       <Typography variant="caption" color="text.secondary" component="legend">
-        {t(field.label)}
+        {t(fieldLabel(field))}
       </Typography>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         {selectedId ? (
@@ -385,8 +385,8 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
     // Load once per anchor — links then evolve through add/unlink below.
   }, [ops, via, recordId, rel.entity, cols.own, cols.related])
 
-  if (!ops) return <MissingOpsHint label={t(field.label)} />
-  if (!recordId) return <UnsavedHint label={t(field.label)} />
+  if (!ops) return <MissingOpsHint label={t(fieldLabel(field))} />
+  if (!recordId) return <UnsavedHint label={t(fieldLabel(field))} />
 
   const linkedIds = new Set(links.map((l) => l.related.id))
 
@@ -413,7 +413,7 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
   return (
     <Box>
       <Typography variant="caption" color="text.secondary" component="legend">
-        {t(field.label)}
+        {t(fieldLabel(field))}
       </Typography>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
         {links.map((link) => (
@@ -480,13 +480,13 @@ export function RelationListWidget({ field, recordId }: WidgetProps) {
     }
   }, [ops, rel.entity, inverseField, recordId])
 
-  if (!ops) return <MissingOpsHint label={t(field.label)} />
-  if (!recordId) return <UnsavedHint label={t(field.label)} />
+  if (!ops) return <MissingOpsHint label={t(fieldLabel(field))} />
+  if (!recordId) return <UnsavedHint label={t(fieldLabel(field))} />
 
   return (
     <Box>
       <Typography variant="caption" color="text.secondary" component="legend">
-        {t(field.label)}
+        {t(fieldLabel(field))}
       </Typography>
       {/* v1 is read-only by design: inline create/edit is a later iteration. */}
       <DataGrid

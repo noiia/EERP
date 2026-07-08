@@ -9,7 +9,7 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
-import { resolveWidget, type FieldDescriptor } from './descriptor'
+import { fieldLabel, resolveWidget, type FieldDescriptor } from './descriptor'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
 import { RelationListWidget, RelationSearchWidget, RelationTagsWidget } from './relation-widgets'
 import { useNumberFormat } from './format-store'
@@ -44,7 +44,7 @@ function TextSimpleWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
-      label={t(field.label)}
+      label={t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -58,7 +58,7 @@ function TextLongWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
-      label={t(field.label)}
+      label={t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -76,7 +76,7 @@ function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
-      label={t(field.label)}
+      label={t(fieldLabel(field))}
       type="date"
       required={field.required}
       disabled={disabled}
@@ -95,7 +95,7 @@ function BooleanSwitchWidget({ field, value, onChange, disabled }: WidgetProps) 
   return (
     <FormControlLabel
       control={<Switch checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />}
-      label={t(field.label)}
+      label={t(fieldLabel(field))}
       disabled={disabled}
     />
   )
@@ -163,7 +163,7 @@ function NumberInput({
   const t = useT()
   return (
     <TextField
-      label={t(field.label)}
+      label={t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -209,7 +209,7 @@ function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
   return (
     <Box>
       <Typography variant="caption" color="text.secondary" component="legend">
-        {t(field.label)}
+        {t(fieldLabel(field))}
       </Typography>
       <Rating
         max={max}
@@ -311,7 +311,7 @@ function PhoneWidget({ field, value, onChange, disabled }: WidgetProps) {
         ))}
       </TextField>
       <TextField
-        label={t(field.label)}
+        label={t(fieldLabel(field))}
         required={field.required}
         disabled={disabled}
         fullWidth
