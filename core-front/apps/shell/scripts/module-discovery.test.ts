@@ -230,20 +230,22 @@ describe('renderManifest', () => {
 })
 
 describe('renderClientManifest', () => {
-  it('emits bare side-effect imports only — no server barrel, no registrations', () => {
+  it('mirrors the server manifest through the CLIENT barrel — never the server one', () => {
     // fromDir must resolve inside the test: `repo` is (re)created per test by beforeEach.
     const fromDir = join(repo, 'apps', 'shell', 'src', 'generated')
     const manifest = renderClientManifest(discoverModuleViews(repo, readConfig(repo)), fromDir)
-    // Same views, but as side-effect imports the browser bundle can evaluate:
-    // the views files' registerFieldFunction/registerOnChange calls populate the
-    // CLIENT behavior registry (the server manifest never enters that bundle).
-    expect(manifest).toContain("import '../../../../mods/demo/views/DemoViews'")
+    // Same views, evaluated in the browser bundle: import-time behavior
+    // registrations run, and each FrontModule registers with the CLIENT
+    // moduleRegistry (the create wizard resolves form descriptors from it).
+    expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front'")
+    expect(manifest).toContain("import m0 from '../../../../mods/demo/views/DemoViews'")
+    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true })')
     expect(manifest).not.toContain('@eerp/core-front/server')
-    expect(manifest).not.toContain('register(')
   })
 
-  it('emits an import-free manifest when no module has views', () => {
+  it('emits a registration-free manifest when no module has views', () => {
     const manifest = renderClientManifest([], join(repo, 'apps', 'shell', 'src', 'generated'))
-    expect(manifest).not.toContain('import ')
+    expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front'")
+    expect(manifest).not.toContain('register(')
   })
 })

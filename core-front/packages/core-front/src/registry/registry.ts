@@ -108,6 +108,11 @@ export class ModuleRegistry {
   private readonly entries: RegisteredModule[] = []
 
   register(module: FrontModule, options: RegisterOptions = {}): this {
+    // Idempotent by module name: the server manifest and the client manifest
+    // (ModulesInit) both evaluate during SSR, where the two barrels resolve to
+    // this same registry instance — the second registration of a name is the
+    // same manifest running again, not a new module, so it is skipped.
+    if (this.entries.some((e) => e.module.name === module.name)) return this
     // Fail loud at registration (build/boot), not at render: a widget the field
     // type forbids, an unregistered compute name, or a compute cycle is a module
     // bug, named module + route + field. Views files register their field
@@ -189,6 +194,24 @@ export class ModuleRegistry {
       if (pages.length > 0) result.push({ module: module.name, pages })
     }
     return result
+  }
+
+  /**
+   * The first registered form-view descriptor over an entity, or null. The
+   * relation widgets' create-from-search wizard renders this as the creation
+   * form of the aimed table — the entity's own module already declared how the
+   * record is edited, so creating it reuses the same descriptor. Entities with
+   * no form view (e.g. a bare tag table) get the caller's fallback instead.
+   */
+  formDescriptorFor(entity: string): ViewDescriptor | null {
+    for (const { module } of this.entries) {
+      for (const route of module.routes) {
+        if (route.descriptor.viewType === 'form' && route.descriptor.entity === entity) {
+          return route.descriptor
+        }
+      }
+    }
+    return null
   }
 
   /**

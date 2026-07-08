@@ -50,6 +50,24 @@ describe('ModuleRegistry', () => {
     expect(registry.buildRegistry().get('/misc')?.permission).toBeUndefined()
   })
 
+  it('is idempotent by module name — both manifests may evaluate during SSR', () => {
+    const registry = new ModuleRegistry()
+    registry.register(crm, { appMode: true })
+    // The client manifest re-registering the same module is a no-op: routes are
+    // not duplicated and the first registration's metadata (appMode) stands.
+    registry.register(crm)
+    expect([...registry.buildRegistry().keys()]).toEqual(['/crm/contacts', '/crm/contacts/:id'])
+    expect(registry.menu()).toHaveLength(1)
+  })
+
+  it('resolves the first registered form descriptor for an entity', () => {
+    const registry = new ModuleRegistry().register(crm)
+    expect(registry.formDescriptorFor('crm')).toBe(formDescriptor)
+    // Unknown entities (or entities with no form view) resolve to null — the
+    // relation create wizard then falls back to its one-field labelField form.
+    expect(registry.formDescriptorFor('tag')).toBeNull()
+  })
+
   it('rejects a descriptor whose widget the field type forbids, naming module and route', () => {
     const bad: FrontModule = {
       name: 'broken',
