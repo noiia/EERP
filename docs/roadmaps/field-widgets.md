@@ -51,8 +51,9 @@ today has nowhere to live.
 
 | Concern | Contract |
 | --- | --- |
-| FieldDescriptor v2 | `{ name, label?, type, widget?, widgetOptions?, required?, readOnly?, states?, compute?, store?, relation? }` — all JSON-serializable. `label?` optional: omitted, the engine humanizes `name` via `fieldLabel()` (`contact_id` → "Contact id"); the result is the gettext msgid either way. `store?: boolean` default `true`; `compute?: string` (registered function name). |
-| Widget matrix | boolean: `switch` (default) · `picture` · `signature` — text: `simple` (default) · `long` (multiline) — number: `float` (default) · `int` · `percent` · `stars` · `phone` — relation: `search` (default, many2one) · `tags` (many2many) · `list` (one2many) — date: unchanged. Anything else ⇒ registration error. |
+| FieldDescriptor v2 | `{ name, label?, type, widget?, widgetOptions?, required?, readOnly?, states?, compute?, store?, relation?, selection? }` — all JSON-serializable. `label?` optional: omitted, the engine humanizes `name` via `fieldLabel()` (`contact_id` → "Contact id"); the result is the gettext msgid either way. `store?: boolean` default `true`; `compute?: string` (registered function name). |
+| Widget matrix | boolean: `switch` (default) · `picture` · `signature` — text: `simple` (default) · `long` (multiline) — number: `float` (default) · `int` · `percent` · `stars` · `phone` — relation: `search` (default, many2one) · `tags` (many2many) · `list` (one2many) — selection: `select` (the only entry — a dropdown) — date: unchanged. Anything else ⇒ registration error. |
+| type/selection | `selection: { options: string[] }` is REQUIRED and must be non-empty (registration error otherwise, same tier as the relation block). A closed value list rendered as a dropdown (`widget: 'select'`); each option's display goes through `t()` (a msgid, like a field label) while the stored/onChange value stays the raw option string. No `default` declared ⇒ `fieldZeroDefault` seeds the FIRST option — a selection has no natural empty value, so "first in the list" is the type's own zero default, overridable exactly like any other type's `default`. |
 | number/float | Default widget; formatted `%.2f` (`widgetOptions.decimals` overrides), separators from settings. |
 | number/int | Integer input/display, thousands separator from settings. |
 | number/percent | Value stored as ratio 0..1 by default (`widgetOptions.base: 'ratio'\|'percent'`), displayed `× 100` with `%`. |
@@ -64,11 +65,12 @@ today has nowhere to live.
 | Picture service | Core `picture` table: `id, tenant_id, table_name, record_id, field, object_key, mime, size, created_at…` (off the generic CRUD surface). Routes: `POST /api/v1/pictures` (multipart) · `GET /api/v1/pictures/:id` (stream) · `GET /api/v1/pictures?table&record&field` · `DELETE /api/v1/pictures/:id`; permissions `pictures:pictures:read\|write` from the route; respects the existing body-size limit. Storage is **already provisioned**: the `s3_*` fields sit in `eerp-config.json` (host endpoint `:3910`) and `eerp-config.docker.json` (`http://garage:3900`), backed by the compose `garage` service — bootstrap with `make garage-init`, details in `infra/garage/README.md`. |
 | relation metadata | `relation: { entity, kind: 'many2one'\|'one2many'\|'many2many', labelField? ('name'), inverseField? (o2m), via? (m2m junction entity), viaFields? ({own, related} junction columns, default `<own>_id`/`<related>_id`) }`. `entity` = Go route prefix, as everywhere. The widget derives from the kind; o2m needs `inverseField`, m2m needs `via` — enforced at registration. |
 | relation/search (m2o) | An autocomplete search bar querying the related entity's list (Go authorizes — the user only ever sees records they may read). A **link icon at the right** of the field opens a **wizard dialog** (search + grid, select to set) — v1 basic, improved in a later iteration. Selected record renders as a tag. |
+| create-from-search | All three relation kinds can create the aimed record in place: m2o/m2m dropdowns cap at **6 results** and append a 7th line "Create a new <entity>"; the o2m grid shows the same line under it. It opens a creation dialog rendering the target entity's registered form descriptor (fallback: one labelField text field) over a form store bound to `RelationOps.create` — seed defaults, on_change, computes, and store:false stripping apply exactly as on the entity's own form; Go authorizes the POST. The typed search text seeds the labelField; o2m presets and hides the `inverseField`; the created record then links like a pick (m2o FK set, m2m junction row, o2m grid row). |
 | relation tags (m2o/m2m) | Tag shows the related record's `labelField`; **on hover a cross appears on the tag's right side**; clicking it unlinks (m2o → null, m2m → junction row removed). |
 | relation/list (o2m) | The inverse side: records of another table whose `inverseField` column holds this record's id. v1 renders a read-only embedded grid (list filtered by the inverse FK); inline create/edit deferred. |
 | default | `default?: JsonValue` on the field: the seed value when a record lacks the field (new records, columns added later). A JSON literal, or the NAME of a registered field function (called with the seed draft) — never a function object (RSC rule). Omitted ⇒ the type's zero default: text `''`, number `0`, boolean `false`, date/relation `null` (`fieldZeroDefault`). Applied at draft seed BEFORE the compute pass (defaults feed computes), never overwrites present values (explicit `null` is a value), never dirties the form; virtual relations (o2m/m2m) seed nothing. |
 | compute | `registerFieldFunction({ entity, name, depends: string[], handler(draft) => value })`. Recomputed when any `depends` field changes in the draft; result written to the field. Dependency cycles ⇒ registration error. |
-| on_change | `registerOnChange({ entity, name, onChange: string[], handler(draft) => Partial<draft> })`. Fired when a listed field changes; the returned patch merges into the draft (may cascade compute, cycle-guarded). |
+| on_change | `registerOnChange({ entity, name, onChange: string[], handler(draft) => Partial<draft> })`. Fired when a listed field changes; the returned patch merges into the draft (may cascade compute, cycle-guarded). Fires on genuine edits only — and once, at seed, for a brand-new record (no id: its defaulted fields count as freshly "changed"). Loading an existing record or reconciling the draft after commit runs computes only, never on_change — otherwise a suggestion would silently overwrite a value the user set (or that Go just persisted). |
 | index | Go struct tag `db:"col,index"` (btree default) or `db:"col,index=gin"` etc. — metadata already parsed; migration emits `CREATE INDEX IF NOT EXISTS idx_<table>_<col> ON <table> USING <method> (<col>)`. |
 
 **Example — one field, everything on (the Odoo analogy):**
@@ -224,8 +226,9 @@ flowchart TD
 ```
 
 Phase 1 is the foundation; 2, 3, 4 parallelize after it (3 and 4 have independent backend
-tracks). The wizard dialog's second iteration (richer filtering, create-from-wizard) is
-deliberately **not** in this roadmap.
+tracks). The selection wizard's richer filtering is deliberately **not** in this roadmap;
+create-from-search (the contracts table's "create-from-search" row) landed as a post-Phase-4
+increment.
 
 ## Coordination
 
