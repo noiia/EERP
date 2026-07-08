@@ -10,16 +10,26 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListFilter carries pagination parameters for list queries.
+// ListFilter carries pagination and row-filter parameters for list queries.
+// Column keys in Equals/Matches MUST name registered columns — the repository
+// validates them against the table meta before they touch SQL (they are
+// identifiers, not bindable values). Values are always bound as parameters.
 type ListFilter struct {
 	Page     int
 	PageSize int
+	// Equals keeps rows whose column equals the value exactly (relation
+	// scoping: o2m inverse lists, junction reads). Compared as text, so uuid
+	// and other scalar columns filter uniformly.
+	Equals map[string]string
+	// Matches keeps rows whose column contains the value case-insensitively
+	// (ILIKE %v%) — the autocomplete search path.
+	Matches map[string]string
 }
 
 // repoLayer is the interface Service requires from the repository layer.
 // Defined at the call-site (here) per Go convention — not in the repository.
 type repoLayer interface {
-	FindAll(ctx context.Context, page, pageSize int) ([]map[string]any, int, error)
+	FindAll(ctx context.Context, f ListFilter) ([]map[string]any, int, error)
 	FindByID(ctx context.Context, id any) (map[string]any, error)
 	Create(ctx context.Context, data map[string]any) (map[string]any, error)
 	Update(ctx context.Context, id any, data map[string]any) (map[string]any, error)
@@ -43,7 +53,7 @@ func NewService(repo *Repository, meta registry.TableMeta) *Service {
 
 // List returns a paginated list and total count.
 func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, int, error) {
-	return s.repo.FindAll(ctx, f.Page, f.PageSize)
+	return s.repo.FindAll(ctx, f)
 }
 
 // GetByID returns the row with the given id, excluding soft-deleted rows.

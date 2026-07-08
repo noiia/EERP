@@ -109,6 +109,8 @@ orm.Transact(ctx, db, func(tx *orm.Tx) error {
 
 Struct tags use `db:"column_name"`, with optional `,pk` and `,softdelete` modifiers. Metadata is resolved once at `MustRepo` construction via `core/orm/internal/cache` — zero reflection at query time.
 
+The generic list endpoint (`GET /api/v1/{table}`) accepts, besides `page`/`page_size`, row filters: `filter[<column>]=<value>` (exact match, compared as text) and `search[<column>]=<text>` (case-insensitive containment) — the relation widgets' scoping and autocomplete surface. Columns are whitelisted against the table meta in the handler (friendly 400) **and** in the repository (the security boundary — column names become SQL identifiers); values are always bound as parameters.
+
 ## Configuration
 
 `eerp-config.json` at the repo root is the dev config. Required fields include `module_root` (array of paths), `db_*` connection settings. The backend is started with:

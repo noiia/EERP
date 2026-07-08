@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -74,8 +75,46 @@ func (r *Repository) tenantCondition(ctx context.Context) (query.Condition, bool
 	return query.NewCondition(tenantColumn+" = $1", tid), true, nil
 }
 
-// FindAll returns a paginated slice of rows and the total non-deleted count.
-func (r *Repository) FindAll(ctx context.Context, page, pageSize int) ([]map[string]any, int, error) {
+// ErrUnknownColumn is returned when a list filter names a column the table
+// does not have. Column names end up as SQL identifiers, so the whitelist
+// check is a security boundary, not a convenience.
+var ErrUnknownColumn = errors.New("crud: unknown filter column")
+
+// filterConditions turns the validated Equals/Matches maps into WHERE
+// predicates. Columns are compared as text (cast) so uuid/int/text scalars
+// filter uniformly — relation scoping and autocomplete target small result
+// sets, so the lost index use is an accepted v1 tradeoff. Keys are iterated
+// sorted for deterministic SQL (stable tests, stable statement cache).
+func (r *Repository) filterConditions(f ListFilter) ([]query.Condition, error) {
+	appendConds := func(conds []query.Condition, m map[string]string, pattern string) ([]query.Condition, error) {
+		for _, col := range sortedKeys(m) {
+			if !r.meta.HasField(col) {
+				return nil, fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+			}
+			conds = append(conds, query.NewCondition(fmt.Sprintf(pattern, col), m[col]))
+		}
+		return conds, nil
+	}
+
+	conds, err := appendConds(nil, f.Equals, "%s::text = $1")
+	if err != nil {
+		return nil, err
+	}
+	return appendConds(conds, f.Matches, "%s::text ILIKE '%%' || $1 || '%%'")
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// FindAll returns a paginated slice of rows and the total count of rows that
+// match the filter (non-deleted, tenant-scoped).
+func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]any, int, error) {
 	b := query.Select[struct{}](r.meta.StructMeta)
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
@@ -85,12 +124,20 @@ func (r *Repository) FindAll(ctx context.Context, page, pageSize int) ([]map[str
 	} else if ok {
 		b = b.Where(cond)
 	}
+	filters, err := r.filterConditions(f)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, cond := range filters {
+		b = b.Where(cond)
+	}
 
 	total, err := b.Count(ctx, r.db)
 	if err != nil {
 		return nil, 0, fmt.Errorf("crud: count %s: %w", r.meta.TableName, err)
 	}
 
+	page, pageSize := f.Page, f.PageSize
 	if page < 1 {
 		page = 1
 	}

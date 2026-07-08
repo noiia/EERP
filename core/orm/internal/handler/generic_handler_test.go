@@ -260,3 +260,74 @@ func TestMeta_SoftDelete_False_ForHardItem(t *testing.T) {
 		t.Error("hardItem has no DeletedAt — SoftDelete should be false")
 	}
 }
+
+func TestList_FilterAndSearchParams(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+			gotFilter = f
+			return nil, 0, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet,
+		"/api/v1/items?filter%5Bid%5D=abc&search%5Bname%5D=ada&page=2", "")
+
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if got := gotFilter.Equals["id"]; got != "abc" {
+		t.Errorf("Equals[id] = %q, want abc", got)
+	}
+	if got := gotFilter.Matches["name"]; got != "ada" {
+		t.Errorf("Matches[name] = %q, want ada", got)
+	}
+	if gotFilter.Page != 2 {
+		t.Errorf("page = %d, want 2 (pagination must coexist with filters)", gotFilter.Page)
+	}
+}
+
+func TestList_UnknownFilterColumnIs400(t *testing.T) {
+	called := false
+	svc := &mockSvc{
+		list: func(_ context.Context, _ crud.ListFilter) ([]map[string]any, int, error) {
+			called = true
+			return nil, 0, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+
+	for _, target := range []string{
+		"/api/v1/items?filter%5Bnope%5D=x",
+		"/api/v1/items?search%5Bnope%5D=x",
+	} {
+		_, c, _ := newEchoRequest(http.MethodGet, target, "")
+		err := h.List(c)
+		var httpErr *echo.HTTPError
+		if !errors.As(err, &httpErr) || httpErr.Code != http.StatusBadRequest {
+			t.Errorf("%s: err = %v, want 400 HTTPError", target, err)
+		}
+	}
+	if called {
+		t.Error("service must not be reached with an unknown filter column")
+	}
+}
+
+func TestList_EmptyFilterValueIgnored(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+			gotFilter = f
+			return nil, 0, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items?search%5Bname%5D=", "")
+
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if len(gotFilter.Matches) != 0 {
+		t.Errorf("empty search value must be ignored, got %v", gotFilter.Matches)
+	}
+}
