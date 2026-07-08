@@ -461,6 +461,23 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
                 ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
                 : labelOf(o, labelField)
             }
+            // The synthetic create row renders in the theme's PRIMARY color —
+            // the same accent a color="primary" Button uses — so it reads as
+            // an action among the plain-text record options, not a record.
+            renderOption={(props, option) => {
+              const { key, ...optionProps } = props
+              return (
+                <li key={key} {...optionProps}>
+                  {isCreateOption(option) ? (
+                    <Typography component="span" color="primary">
+                      {t('Create a new')} {t(entityDisplayName(rel.entity))}
+                    </Typography>
+                  ) : (
+                    labelOf(option, labelField)
+                  )}
+                </li>
+              )
+            }}
             isOptionEqualToValue={(o, v) => o.id === v.id}
             onOpen={prefill}
             onInputChange={(_e, text, reason) => {
@@ -618,6 +635,21 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
               ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
               : labelOf(o, labelField)
           }
+          // See the m2o search widget: same primary-colored create row.
+          renderOption={(props, option) => {
+            const { key, ...optionProps } = props
+            return (
+              <li key={key} {...optionProps}>
+                {isCreateOption(option) ? (
+                  <Typography component="span" color="primary">
+                    {t('Create a new')} {t(entityDisplayName(rel.entity))}
+                  </Typography>
+                ) : (
+                  labelOf(option, labelField)
+                )}
+              </li>
+            )
+          }}
           isOptionEqualToValue={(o, v) => o.id === v.id}
           onOpen={prefill}
           onInputChange={(_e, text, reason) => {
@@ -705,7 +737,15 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
         hideFooter
         disableRowSelectionOnClick
       />
-      <Button size="small" onClick={() => setCreateOpen(true)} disabled={disabled} sx={{ mt: 0.5 }}>
+      {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
+          rather than relying on the Button default staying primary. */}
+      <Button
+        size="small"
+        color="primary"
+        onClick={() => setCreateOpen(true)}
+        disabled={disabled}
+        sx={{ mt: 0.5 }}
+      >
         {t('Create a new')} {t(entityDisplayName(rel.entity))}
       </Button>
       {createOpen ? (

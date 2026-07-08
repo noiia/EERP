@@ -35,7 +35,7 @@ function titleize(slug: string): string {
 }
 
 /** A 100×100 square link tile with a centered label (and an optional icon above it). */
-function SquareTile({ href, label, icon }: { href: string; label: string; icon?: ReactNode }) {
+function SquareTile({ href, label, icon }: { href: string; label: string; icon?: ReactNode}) {
   return (
     <Card variant="outlined" sx={{ width: TILE_SIZE, height: TILE_SIZE }}>
       <CardActionArea
@@ -85,14 +85,20 @@ export default function Menu({ menu }: MenuProps) {
         }}
       >
         {menu.map((module) => (
-          <SquareTile
-            key={module.name}
-            href={module.routes[0].path}
-            label={t(titleize(module.name))}
-          />
+          <div>
+            <SquareTile
+              key={module.name}
+              href={module.routes[0].path}
+              label={t(titleize(module.name))}
+            />
+            <p style={{textAlign: 'center'}}>{t(titleize(module.name))}</p>
+          </div>
         ))}
         {/* Settings is a built-in shell application, always available. */}
-        <SquareTile href="/settings" label={t('Settings')} icon={<SettingsIcon />} />
+        <div>
+          <SquareTile href="/settings" label={t('Settings')} icon={<SettingsIcon />} />
+          <p style={{textAlign: 'center'}}>{t('Settings')}</p>
+        </div>
       </Box>
     </Container>
   )

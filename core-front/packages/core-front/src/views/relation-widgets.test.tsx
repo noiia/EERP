@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
+import Typography from '@mui/material/Typography'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { EntityListOptions } from '../api/list-options'
 import type { FieldDescriptor } from './descriptor'
@@ -300,5 +301,61 @@ describe('relation/list (one2many)', () => {
   it('shows a hint before the record exists', () => {
     renderWidget(listField, stubOps(), { recordId: null })
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
+  })
+})
+
+describe('create-from-search: primary color', () => {
+  // The dropdown create rows are <Typography color="primary">: MUI bakes the
+  // resolved color into a dynamic css-hash class (no static "colorPrimary"
+  // utility class for Typography in this MUI version), so comparing against a
+  // same-render reference Typography's computed color is the reliable check —
+  // it resolves under whatever theme is active (this suite has no
+  // AppThemeProvider; the app's real ThemeProvider carries the same prop
+  // through to the same resolution).
+  function primaryReferenceColor() {
+    const { container, unmount } = render(
+      <Typography component="span" color="primary">
+        ref
+      </Typography>,
+    )
+    const color = getComputedStyle(container.querySelector('span')!).color
+    unmount()
+    return color
+  }
+
+  it('the m2o dropdown create row matches the primary text color', async () => {
+    const reference = primaryReferenceColor()
+    const ops = stubOps()
+    renderWidget(searchField, ops)
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    const createOption = await screen.findByText('Create a new Contact')
+    expect(getComputedStyle(createOption).color).toBe(reference)
+  })
+
+  it('the m2m dropdown create row matches the primary text color', async () => {
+    const reference = primaryReferenceColor()
+    const ops = stubOps({
+      list: vi.fn(async (entity: string, _o?: EntityListOptions) =>
+        entity === 'crm_tag' ? [] : companies,
+      ),
+    })
+    renderWidget(tagsField, ops)
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    const createOption = await screen.findByText('Create a new Tag')
+    expect(getComputedStyle(createOption).color).toBe(reference)
+  })
+
+  it('the o2m "Create a new" button carries MUI\'s primary-color class', async () => {
+    // Button resolves color through CSS custom properties (--variant-textColor)
+    // that jsdom's computed-style engine doesn't fully thread through — the
+    // reliable check here is Button's own static "CSS API" class, which MUI
+    // documents as stable: MuiButton-colorPrimary is present iff color="primary".
+    renderWidget(listField, stubOps())
+    const button = await screen.findByRole('button', { name: 'Create a new Crm' })
+    expect(button.className).toContain('MuiButton-colorPrimary')
   })
 })
