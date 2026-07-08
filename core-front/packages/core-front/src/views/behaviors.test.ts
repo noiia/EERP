@@ -166,6 +166,34 @@ describe('applyBehaviors', () => {
     const plan = buildBehaviorPlan(descriptor([num('qty'), num('double', { compute: 'crm.double' })]))
     expect(applyBehaviors(plan, { qty: 3 }, null).double).toBe(6)
   })
+
+  it('changed = null NEVER fires on_change — a compute-only pass', () => {
+    // Regression: loading an existing record (or the post-commit reconcile)
+    // must not let an on_change re-derive a value the user already set —
+    // e.g. re-suggesting `score` from `status` would silently overwrite
+    // whatever star rating was actually saved.
+    registerOnChange({
+      entity: 'crm',
+      name: 'crm.scoreFromStatus',
+      onChange: ['status'],
+      handler: (d) => ({ score: d.status === 'customer' ? 3 : 1 }),
+    })
+    const plan = buildBehaviorPlan(descriptor([num('status'), num('score')]))
+    const next = applyBehaviors(plan, { status: 'customer', score: 0 }, null)
+    expect(next.score).toBe(0) // untouched — not re-suggested
+  })
+
+  it('an explicit changed key list DOES fire on_change, unlike null', () => {
+    registerOnChange({
+      entity: 'crm',
+      name: 'crm.scoreFromStatus',
+      onChange: ['status'],
+      handler: (d) => ({ score: d.status === 'customer' ? 3 : 1 }),
+    })
+    const plan = buildBehaviorPlan(descriptor([num('status'), num('score')]))
+    const next = applyBehaviors(plan, { status: 'customer', score: 0 }, ['status'])
+    expect(next.score).toBe(3)
+  })
 })
 
 describe('seedDefaults', () => {

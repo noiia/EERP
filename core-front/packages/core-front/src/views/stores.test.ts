@@ -272,4 +272,51 @@ describe('createFormStore behaviors', () => {
     expect(store.getState().draft.qty).toBe(2)
     expect(store.getState().draft.country).toBe('') // absent column still defaults
   })
+
+  it('regression: an on_change-suggested value the user overrides survives commit reconcile', async () => {
+    // The exact reported bug: crm.scoreFromStatus suggests `score` from
+    // `status`, but stars are editable — the user may set a DIFFERENT value.
+    // The post-commit reconcile re-seeds the draft from what Go returned; if
+    // that re-seed fired on_change again, the suggestion would silently
+    // stomp the value that was just saved.
+    registerOnChange({
+      entity: 'lines',
+      name: 'lines.scoreFromCountry',
+      onChange: ['country'],
+      handler: (d) => ({ vat_rate: d.country === 'FR' ? 0.2 : 0.5 }),
+    })
+    const update = vi.fn(async (id: string, body: Partial<Line>) => ({ id, ...body }) as Line)
+    const create = vi.fn(async (body: Partial<Line>) => ({ id: 'new', ...body }) as Line)
+    const actions: EntityActions<Line> = { create, update }
+
+    const store = createFormStore(behaviorDescriptor, actions, { id: '1', country: 'FR', vat_rate: 0.2 })
+    // The user picks a value the suggestion would NOT have chosen.
+    store.getState().setField('vat_rate', 0.99)
+    expect(store.getState().draft.vat_rate).toBe(0.99)
+
+    await store.getState().commit()
+    // Go echoes back exactly what was sent (country unchanged) — the reconcile
+    // must not re-run the country->vat_rate suggestion and overwrite 0.99.
+    expect(store.getState().draft.vat_rate).toBe(0.99)
+  })
+
+  it('a genuinely NEW record (no id) DOES get the on_change suggestion at seed', () => {
+    registerOnChange({
+      entity: 'lines',
+      name: 'lines.vatFromCountry',
+      onChange: ['country'],
+      handler: (d) => ({ vat_rate: d.country === 'FR' ? 0.2 : 0 }),
+    })
+    const withCountryDefault: ViewDescriptor<Line> = {
+      ...behaviorDescriptor,
+      fields: behaviorDescriptor.fields.map((f) =>
+        f.name === 'country' ? { ...f, default: 'FR' } : f,
+      ),
+    }
+    const { actions } = lineActions()
+    const store = createFormStore(withCountryDefault, actions, {})
+    expect(store.getState().draft.country).toBe('FR')
+    expect(store.getState().draft.vat_rate).toBe(0.2)
+    expect(store.getState().dirty).toBe(false)
+  })
 })

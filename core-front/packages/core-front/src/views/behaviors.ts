@@ -225,8 +225,18 @@ export function seedDefaults(plan: BehaviorPlan, draft: DraftRecord): DraftRecor
  * on_change handlers once each (their patches join the changed set), then run the
  * compute plan — a computed field recomputes when its depends intersect the changed
  * set, and its own change propagates to downstream computes. Pure: returns a new
- * draft. `changed = null` means "everything" (initial seed: compute all fields so
- * display-only values exist before the first edit).
+ * draft.
+ *
+ * `changed = null` is a COMPUTE-ONLY pass: every computed field recomputes
+ * unconditionally (so store:false display values exist before the first edit,
+ * and survive re-seeding an existing record / the post-commit reconcile), but
+ * on_change handlers never fire. on_change reacts to the user changing a
+ * field — loading a record that already has a value, or re-seeding with what
+ * Go just returned, is not an edit, and firing here would silently overwrite a
+ * value the user explicitly set (or that was just saved) with a fresh
+ * suggestion. A brand-new record's initial suggestions come from
+ * createFormStore passing the full defaulted key set instead of null — the
+ * same code path as if the user had just filled in every default.
  */
 export function applyBehaviors(
   plan: BehaviorPlan,
@@ -236,14 +246,16 @@ export function applyBehaviors(
   const next: DraftRecord = { ...draft }
   const changedSet = changed === null ? null : new Set(changed)
 
-  for (const handler of plan.onChange) {
-    if (changedSet !== null && !handler.onChange.some((k) => changedSet.has(k))) continue
-    const patch = handler.handler(next)
-    if (!patch) continue
-    for (const [key, value] of Object.entries(patch)) {
-      if (next[key] !== value) {
-        next[key] = value
-        changedSet?.add(key)
+  if (changedSet !== null) {
+    for (const handler of plan.onChange) {
+      if (!handler.onChange.some((k) => changedSet.has(k))) continue
+      const patch = handler.handler(next)
+      if (!patch) continue
+      for (const [key, value] of Object.entries(patch)) {
+        if (next[key] !== value) {
+          next[key] = value
+          changedSet.add(key)
+        }
       }
     }
   }

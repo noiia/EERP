@@ -80,12 +80,25 @@ export function createFormStore<T extends HasId>(
   // Resolve compute/on_change/store behaviors once (throws on cycles or unknown
   // function names — a module bug, not a runtime condition). Seeding first fills
   // missing fields with their defaults (declared `default` or the type's zero
-  // value — defaults feed the computes), then runs the full compute pass so
-  // display-only (store:false) values exist before any edit, WITHOUT marking
-  // the form dirty.
+  // value — defaults feed the computes).
   const plan = buildBehaviorPlan(descriptor)
-  const seed = (record: Partial<T>): Partial<T> =>
-    applyBehaviors(plan, seedDefaults(plan, { ...record } as DraftRecord), null) as Partial<T>
+  const seed = (record: Partial<T>): Partial<T> => {
+    const defaulted = seedDefaults(plan, { ...record } as DraftRecord)
+    // A record with an id already has real, possibly user-set values — loading
+    // it for edit, or re-seeding it after commit with what Go just returned,
+    // must NOT re-fire on_change (it would silently overwrite, e.g., a
+    // manually chosen star rating with a fresh status-derived suggestion).
+    // `null` runs the compute-only pass instead: display-only (store:false)
+    // values still repopulate, without marking the form dirty.
+    //
+    // A record with no id is genuinely new: pass every defaulted key as
+    // "changed", the same code path a real edit takes, so on_change
+    // suggestions apply to the freshly defaulted values (e.g. status's
+    // literal default seeding an initial score).
+    const hasId = (record as Partial<HasId>).id != null
+    const changed = hasId ? null : Object.keys(defaulted)
+    return applyBehaviors(plan, defaulted, changed) as Partial<T>
+  }
 
   return createStore<FormState<T>>((set, get) => ({
     draft: seed(initial),
