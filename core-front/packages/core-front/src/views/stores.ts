@@ -8,7 +8,7 @@ import {
   stripUnstored,
   type DraftRecord,
 } from './behaviors'
-import type { ViewDescriptor } from './descriptor'
+import { requiredMissing, type ViewDescriptor } from './descriptor'
 
 // Per-view client stores. Each is SEEDED with server-fetched initialData and never
 // fetches on mount — the server owns data + caching, the client owns interaction
@@ -117,6 +117,21 @@ export function createFormStore<T extends HasId>(
       })),
     commit: async () => {
       const { draft } = get()
+      // Required (static `required` or a states.required condition, among
+      // currently VISIBLE fields — Phase 2) blocks commit client-side, the
+      // same validation Go's generic handler runs server-side, surfaced
+      // through the same error slot the renderer already displays.
+      const missing = requiredMissing(descriptor, draft as Record<string, unknown>)
+      if (missing.length > 0) {
+        set({
+          error: new ApiError({
+            code: 'VALIDATION_ERROR',
+            message: `Missing required field(s): ${missing.join(', ')}`,
+            status: 0,
+          }),
+        })
+        return null
+      }
       const id = (draft as Partial<HasId>).id
       // store:false fields never reach Go — they have no column.
       const payload = stripUnstored(draft, plan.unstored)

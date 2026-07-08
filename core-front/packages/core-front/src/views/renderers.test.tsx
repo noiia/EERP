@@ -65,6 +65,37 @@ describe('EntityView', () => {
     expect(save).toBeEnabled()
   })
 
+  it('an explicit layout groups/reorders the form — normalizeLayout drives it, not fields declaration order', () => {
+    const laidOut: ViewDescriptor<Contact & { email: string }> = {
+      entity: 'crm',
+      viewType: 'form',
+      // Declared name-then-email...
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'email', label: 'Email', type: 'text' },
+      ],
+      // ...but the layout puts email first, inside a titled section.
+      layout: [
+        {
+          kind: 'section',
+          title: 'Contact',
+          children: [{ kind: 'field', name: 'email' }, { kind: 'field', name: 'name' }],
+        },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={laidOut}
+        initialData={[]}
+        actions={noopActions as unknown as EntityActions<Contact & { email: string }>}
+      />,
+    )
+    expect(screen.getByText('Contact')).toBeInTheDocument()
+    const inputs = screen.getAllByRole('textbox')
+    expect(inputs[0]).toBe(screen.getByLabelText('Email'))
+    expect(inputs[1]).toBe(screen.getByLabelText('Name'))
+  })
+
   it('offers Reset once dirty, and resetting re-disables Save', () => {
     render(<EntityView descriptor={formDescriptor} initialData={[]} actions={noopActions} />)
 

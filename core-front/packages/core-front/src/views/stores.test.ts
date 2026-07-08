@@ -80,6 +80,67 @@ describe('createFormStore', () => {
     expect(store.getState().error?.code).toBe('INTERNAL_ERROR')
     expect(store.getState().dirty).toBe(true)
   })
+
+  it('blocks commit on a missing required field — client-side, before the action ever runs', async () => {
+    const requiredDescriptor: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [{ name: 'name', label: 'Name', type: 'text', required: true }],
+    }
+    const a = actions()
+    const store = createFormStore(requiredDescriptor, a, {})
+    // Dirty via an unrelated field-less path: force dirty without setting name.
+    store.setState({ dirty: true })
+
+    const result = await store.getState().commit()
+    expect(result).toBeNull()
+    expect(a.create).not.toHaveBeenCalled()
+    expect(store.getState().error?.code).toBe('VALIDATION_ERROR')
+    expect(store.getState().error?.message).toContain('name')
+  })
+
+  it('a states.required condition blocks exactly like static required once it holds', async () => {
+    const conditionalDescriptor: ViewDescriptor<Contact & { status?: string; comment?: string }> = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'status', label: 'Status', type: 'text' },
+        {
+          name: 'comment',
+          label: 'Comment',
+          type: 'text',
+          states: { required: { field: 'status', op: 'eq', value: 'lost' } },
+        },
+      ],
+    }
+    const create = vi.fn(async (body) => ({ id: 'new', name: '', ...body }))
+    const store = createFormStore(conditionalDescriptor, { create, update: vi.fn() } as never, {})
+
+    store.getState().setField('name', 'Ada')
+    store.getState().setField('status', 'lost')
+    const blocked = await store.getState().commit()
+    expect(blocked).toBeNull()
+    expect(create).not.toHaveBeenCalled()
+
+    store.getState().setField('comment', 'lost to a competitor')
+    const saved = await store.getState().commit()
+    expect(saved).not.toBeNull()
+    expect(create).toHaveBeenCalled()
+  })
+
+  it('required is satisfied — commit proceeds and the action runs', async () => {
+    const requiredDescriptor: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [{ name: 'name', label: 'Name', type: 'text', required: true }],
+    }
+    const a = actions()
+    const store = createFormStore(requiredDescriptor, a, {})
+    store.getState().setField('name', 'Ada')
+
+    const result = await store.getState().commit()
+    expect(result).not.toBeNull()
+    expect(a.create).toHaveBeenCalledWith({ name: 'Ada' })
+  })
 })
 
 describe('createTreeStore', () => {

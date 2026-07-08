@@ -19,9 +19,9 @@ import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models
 import type { SerializedError } from '../api/errors'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
-import { fieldLabel, type FieldDescriptor, type ViewDescriptor } from './descriptor'
+import { fieldLabel, layoutFieldOrder, normalizeLayout, type ViewDescriptor } from './descriptor'
+import { LayoutForm } from './layout-renderer'
 import { layout, tabularNums } from './tokens'
-import { fieldWidget } from './widgets'
 import {
   createDashboardStore,
   createFormStore,
@@ -111,37 +111,6 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
 
 // --- form ---
 
-function FieldInput({
-  field,
-  value,
-  onChange,
-  entity,
-  recordId,
-}: {
-  field: FieldDescriptor
-  value: unknown
-  onChange: (value: unknown) => void
-  entity: string
-  recordId: string | null
-}) {
-  // Dispatch through the widget layer: the field's type picks the data shape,
-  // its (optional) widget decorator the control — descriptor labels stay gettext
-  // msgids translated inside each widget (widgets.tsx). Computed fields render
-  // inert: the behavior layer owns their value (behaviors.ts). entity + recordId
-  // give service-backed widgets (picture/signature) their anchor.
-  const Widget = fieldWidget(field)
-  return (
-    <Widget
-      field={field}
-      value={value}
-      onChange={onChange}
-      disabled={Boolean(field.compute)}
-      entity={entity}
-      recordId={recordId}
-    />
-  )
-}
-
 function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: EntityViewProps<T>) {
   const t = useT()
   const [store] = useState(() => createFormStore(descriptor, actions, initialData[0] ?? {}))
@@ -180,16 +149,13 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
                 error={{ code: error.code, message: error.message, requestId: error.requestId }}
               />
             ) : null}
-            {descriptor.fields.map((field) => (
-              <FieldInput
-                key={field.name}
-                field={field}
-                value={(draft as Record<string, unknown>)[field.name]}
-                onChange={(value) => setField(field.name as keyof T, value as T[keyof T])}
-                entity={descriptor.entity}
-                recordId={(draft as { id?: string }).id ?? null}
-              />
-            ))}
+            <LayoutForm
+              descriptor={descriptor}
+              draft={draft as Record<string, unknown>}
+              onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
+              entity={descriptor.entity}
+              recordId={(draft as { id?: string }).id ?? null}
+            />
           </Stack>
         </CardContent>
         <Divider />
@@ -236,11 +202,19 @@ function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewPr
   const hierarchical = (initialData as TreeNode[]).some((r) => r.parent_id != null)
   let view: React.ReactNode
   if (!hierarchical) {
-    const columns: GridColDef[] = descriptor.fields.map((f) => ({
-      field: f.name,
-      headerName: t(fieldLabel(f)),
-      flex: 1,
-    }))
+    // Column order comes from the normalized layout, not a raw fields read —
+    // for the common (no explicit `layout`) descriptor this is identical to
+    // fields declaration order (the "Tree columns keep using fields order"
+    // contract), but an explicit layout's field order now drives it too.
+    const fieldsByName = new Map(descriptor.fields.map((f) => [f.name, f]))
+    const columns: GridColDef[] = layoutFieldOrder(normalizeLayout(descriptor))
+      .map((name) => fieldsByName.get(name))
+      .filter((f) => f != null)
+      .map((f) => ({
+        field: f.name,
+        headerName: t(fieldLabel(f)),
+        flex: 1,
+      }))
     // A formPath makes rows navigable: clicking one opens that record's form.
     const { formPath } = descriptor
     view = (
@@ -274,7 +248,7 @@ function HierarchyTree<T extends HasId & TreeNode>({
 }) {
   const [store] = useState(() => createTreeStore(descriptor, initialData))
   const expanded = useStore(store, (s) => s.expanded)
-  const labelField = descriptor.fields[0]?.name
+  const labelField = layoutFieldOrder(normalizeLayout(descriptor))[0]
 
   const toItem = (node: T): TreeViewDefaultItemModelProperties => ({
     id: node.id,

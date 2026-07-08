@@ -78,6 +78,34 @@ export interface SelectionDescriptor {
   options: string[]
 }
 
+// ── declarative field states (docs/roadmaps/view-customization.md, Phase 2) ───
+// Modifiers that react to the record ITSELF — e.g. a status field flipping a
+// comment field visible — expressed as DATA, never a function (the RSC rule:
+// descriptors cross the server/client boundary as props). Mirrors Odoo's
+// attrs-as-data XML approach: `<field name="comment" attrs="{'invisible':
+// [('status','=','lead')]}"/>` becomes `states: { visible: { field: 'status',
+// op: 'ne', value: 'lead' } }`.
+
+export type ConditionOp = 'eq' | 'ne' | 'in' | 'set' | 'unset'
+
+/** A single comparison against another field's value in the same record/draft. */
+export interface FieldCondition {
+  field: string
+  op: ConditionOp
+  /** Required for 'eq'/'ne'/'in' (an array for 'in'); ignored for 'set'/'unset'. */
+  value?: JsonValue
+}
+
+export interface AllCondition {
+  all: Condition[]
+}
+
+export interface AnyCondition {
+  any: Condition[]
+}
+
+export type Condition = FieldCondition | AllCondition | AnyCondition
+
 export interface FieldDescriptor {
   /** Property name on the record and the form draft. */
   name: string
@@ -124,6 +152,24 @@ export interface FieldDescriptor {
   relation?: RelationDescriptor
   /** Required on type 'selection': the pickable values (see SelectionDescriptor). */
   selection?: SelectionDescriptor
+  /**
+   * Declarative modifiers reevaluated against the CURRENT DRAFT on every
+   * edit — they react to the user's OWN changes (e.g. a status field flips a
+   * comment field visible), no code involved. `visible: false` UNMOUNTS the
+   * field without touching its draft value (toggling it back on shows
+   * whatever was last set/loaded — it never resets). `readOnly: true` OR's
+   * into the widget's disabled state alongside the existing compute-disables
+   * rule. `required: true` blocks commit (see `requiredMissing`) exactly
+   * like the static `required` flag, but only while the field is visible —
+   * a hidden field can never block commit; the user has no way to fill in
+   * what they can't see. A future static `FieldDescriptor.readOnly`
+   * (app-store roadmap, not yet landed) will compose here: static wins.
+   */
+  states?: {
+    visible?: Condition
+    readOnly?: Condition
+    required?: Condition
+  }
 }
 
 /**
@@ -253,11 +299,186 @@ export function isVirtualRelation(field: FieldDescriptor): boolean {
   return field.type === 'relation' && field.relation != null && field.relation.kind !== 'many2one'
 }
 
+/** A field reads as "not filled in": absent, null, or the empty string. Shared
+ * by evaluateCondition's set/unset ops and requiredMissing's blank check —
+ * one definition of "empty" for the whole states layer. */
+function isUnset(value: unknown): boolean {
+  return value == null || value === ''
+}
+
+/**
+ * Evaluate a Condition against a record — typically the current form draft,
+ * so states react to the user's OWN edits live. Pure: no exceptions on a
+ * missing field (its value reads `undefined`, which correctly fails 'eq'/'in'
+ * and IS what 'unset' tests for) — a condition referencing a field that
+ * doesn't exist (yet) degrades to "off", never crashes the form.
+ */
+export function evaluateCondition(cond: Condition, record: Record<string, unknown>): boolean {
+  if ('all' in cond) return cond.all.every((c) => evaluateCondition(c, record))
+  if ('any' in cond) return cond.any.some((c) => evaluateCondition(c, record))
+  const value = record[cond.field]
+  switch (cond.op) {
+    case 'eq':
+      return value === cond.value
+    case 'ne':
+      return value !== cond.value
+    case 'in':
+      return Array.isArray(cond.value) && cond.value.includes(value as JsonValue)
+    case 'set':
+      return !isUnset(value)
+    case 'unset':
+      return isUnset(value)
+  }
+}
+
+/**
+ * Names of fields whose EFFECTIVE required (static `required`, OR
+ * `states.required` evaluated against `draft`) is true but whose draft value
+ * is unset — among fields that are currently VISIBLE. A hidden field never
+ * blocks: the user has no way to fill in what they can't see, so a required
+ * condition on an invisible field is inert by design (mirrors Odoo). Virtual
+ * relations (o2m/m2m) are skipped — they have no column on this record, so
+ * "required" has no meaning for them. Used by the form store to block commit.
+ */
+export function requiredMissing<T>(
+  descriptor: ViewDescriptor<T>,
+  draft: Record<string, unknown>,
+): string[] {
+  const missing: string[] = []
+  for (const field of descriptor.fields) {
+    if (isVirtualRelation(field)) continue
+    const visible = field.states?.visible ? evaluateCondition(field.states.visible, draft) : true
+    if (!visible) continue
+    const required =
+      field.required === true ||
+      (field.states?.required ? evaluateCondition(field.states.required, draft) : false)
+    if (!required) continue
+    if (isUnset(draft[field.name])) missing.push(field.name)
+  }
+  return missing
+}
+
+// ── layout tree (docs/roadmaps/view-customization.md, Phase 1) ────────────────
+// A ViewDescriptor's presentational structure, separate from its field REGISTRY
+// (`fields`, still the source of truth for name/type/widget/behaviors). The tree
+// is addressed by field name or an explicit node `id` — the anchors a future
+// view EXTENSION targets (Phase 3). JSON-only: no functions, ever — it crosses
+// the RSC boundary like every other descriptor piece.
+
+export type LayoutNodeKind = 'group' | 'row' | 'section'
+
+/**
+ * A structural node: `group` stacks its children vertically, `row` lays them
+ * out horizontally, `section` is a titled block. All three share this shape —
+ * the kind is purely a rendering hint, not a different data contract.
+ */
+export interface LayoutContainerNode {
+  kind: LayoutNodeKind
+  /** The anchor an extension's `move`/`addNode` operation targets. Must be
+   * unique across the WHOLE tree (registration error otherwise). */
+  id?: string
+  /** A heading, rendered above the children. A gettext msgid, like any other
+   * descriptor string — the extending module ships its own translation. */
+  title?: string
+  children: LayoutNode[]
+}
+
+/** A leaf: renders the named field's widget. `name` must exist in `fields`. */
+export interface LayoutFieldNode {
+  kind: 'field'
+  name: string
+}
+
+export type LayoutNode = LayoutContainerNode | LayoutFieldNode
+
+/**
+ * Resolve a descriptor's presentational structure: the declared `layout`,
+ * validated, or — when omitted — one implicit, untitled group wrapping every
+ * field in declaration order. That fallback is what makes the layout tree
+ * fully backward-compatible: a descriptor written before it existed resolves
+ * to exactly the flat order renderers already produced, so nothing needs to
+ * opt in. Renderers call this — never read `fields` for display order/grouping
+ * directly — so the WHOLE engine has one code path to keep consistent as
+ * later phases add `move`/`addNode` extension operations.
+ *
+ * Validates: every field-leaf name exists in `fields` (a dangling reference is
+ * a registration error, not a silently dropped node), no field-leaf appears
+ * twice, every declared node `id` is unique across the tree. Errors name the
+ * field or id.
+ */
+export function normalizeLayout<T>(descriptor: ViewDescriptor<T>): LayoutNode[] {
+  if (!descriptor.layout) {
+    return [
+      {
+        kind: 'group',
+        children: descriptor.fields.map((f): LayoutFieldNode => ({ kind: 'field', name: f.name })),
+      },
+    ]
+  }
+
+  const fieldNames = new Set(descriptor.fields.map((f) => f.name))
+  const seenFields = new Set<string>()
+  const seenIds = new Set<string>()
+
+  const visit = (node: LayoutNode): void => {
+    if (node.kind === 'field') {
+      if (!fieldNames.has(node.name)) {
+        throw new Error(`layout: field "${node.name}" is not declared in this view's fields`)
+      }
+      if (seenFields.has(node.name)) {
+        throw new Error(`layout: field "${node.name}" appears more than once in the layout`)
+      }
+      seenFields.add(node.name)
+      return
+    }
+    if (node.id) {
+      if (seenIds.has(node.id)) {
+        throw new Error(`layout: node id "${node.id}" is not unique`)
+      }
+      seenIds.add(node.id)
+    }
+    for (const child of node.children) visit(child)
+  }
+  for (const node of descriptor.layout) visit(node)
+
+  return descriptor.layout
+}
+
+/**
+ * Every field-leaf name in a normalized layout, in tree-walk order — the flat
+ * ORDER views that don't group/row (tree columns, a hierarchy's label field)
+ * still need. For the implicit (no explicit `layout`) case this is exactly
+ * `fields.map(f => f.name)`; an explicit layout can reorder without touching
+ * `fields` at all.
+ */
+export function layoutFieldOrder(layout: LayoutNode[]): string[] {
+  const names: string[] = []
+  const walk = (nodes: LayoutNode[]): void => {
+    for (const node of nodes) {
+      if (node.kind === 'field') names.push(node.name)
+      else walk(node.children)
+    }
+  }
+  walk(layout)
+  return names
+}
+
 export interface ViewDescriptor<T = Record<string, unknown>> {
   /** Maps straight to the Go route group, e.g. 'crm' -> GET /crm/. */
   entity: string
   viewType: ViewType
   fields: FieldDescriptor[]
+  /**
+   * Presentational structure over `fields`: a tree of groups/rows/sections
+   * containing field leaves, addressed by field NAME or an explicit node `id`
+   * — the anchor a view EXTENSION targets (docs/roadmaps/view-customization.md).
+   * Omitted ⇒ `normalizeLayout` synthesizes one implicit group wrapping every
+   * field in declaration order — full backward compatibility, every descriptor
+   * written before the layout tree existed renders unchanged. Renderers never
+   * read `fields` directly for display order/grouping; `normalizeLayout` is
+   * the single entry point.
+   */
+  layout?: LayoutNode[]
   /** Permissions required to view (server authorizes; client gates UI). */
   permissions?: string[]
   /**
