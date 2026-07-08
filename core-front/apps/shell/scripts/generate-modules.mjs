@@ -9,6 +9,7 @@ import {
   discoverFrom,
   discoverTranslationsFrom,
   findRepoRoot,
+  renderClientManifest,
   renderManifest,
   renderTranslationsManifest,
   translationsForDir,
@@ -27,6 +28,10 @@ const discovered = discoverFrom(scriptDir)
 const outFile = join(shellRoot, 'src', 'generated', 'generated-modules.ts')
 mkdirSync(dirname(outFile), { recursive: true })
 writeFileSync(outFile, renderManifest(discovered, dirname(outFile)))
+// The client twin: side-effect imports evaluating the views files in the browser
+// bundle (behavior registries are per-bundle — see renderClientManifest).
+const clientOutFile = join(shellRoot, 'src', 'generated', 'generated-modules.client.ts')
+writeFileSync(clientOutFile, renderClientManifest(discovered, dirname(clientOutFile)))
 
 const viewCount = discovered.reduce((n, m) => n + m.views.length, 0)
 console.log(`[generate-modules] ${viewCount} view(s) from ${discovered.length} module(s) -> ${outFile}`)

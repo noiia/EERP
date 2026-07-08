@@ -11,6 +11,7 @@ import {
   discoverTranslationsFrom,
   findRepoRoot,
   readConfig,
+  renderClientManifest,
   renderManifest,
   renderTranslationsManifest,
   toImportSpecifier,
@@ -225,5 +226,24 @@ describe('renderManifest', () => {
     const manifest = renderManifest([], fromDir)
     expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front/server'")
     expect(manifest).not.toContain('register(')
+  })
+})
+
+describe('renderClientManifest', () => {
+  it('emits bare side-effect imports only — no server barrel, no registrations', () => {
+    // fromDir must resolve inside the test: `repo` is (re)created per test by beforeEach.
+    const fromDir = join(repo, 'apps', 'shell', 'src', 'generated')
+    const manifest = renderClientManifest(discoverModuleViews(repo, readConfig(repo)), fromDir)
+    // Same views, but as side-effect imports the browser bundle can evaluate:
+    // the views files' registerFieldFunction/registerOnChange calls populate the
+    // CLIENT behavior registry (the server manifest never enters that bundle).
+    expect(manifest).toContain("import '../../../../mods/demo/views/DemoViews'")
+    expect(manifest).not.toContain('@eerp/core-front/server')
+    expect(manifest).not.toContain('register(')
+  })
+
+  it('emits an import-free manifest when no module has views', () => {
+    const manifest = renderClientManifest([], join(repo, 'apps', 'shell', 'src', 'generated'))
+    expect(manifest).not.toContain('import ')
   })
 })

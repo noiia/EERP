@@ -8,6 +8,7 @@ import { AppThemeProvider } from '../src/components/AppThemeProvider'
 import { AppTopBar } from '../src/components/AppTopBar'
 import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
+import { ModulesInit } from '../src/components/ModulesInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
 import { RelationOpsProvider } from '@eerp/core-front'
 import { getIdentity } from '../src/lib/session'
@@ -38,6 +39,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <AppRouterCacheProvider>
           <AppThemeProvider>
             <I18nInit />
+            <ModulesInit />
             <LocaleSync preferences={preferences} />
             <SessionHydrator identity={identity} />
             <AppTopBar identity={identity} nav={nav} />
