@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { EntityListOptions } from '../api/list-options'
 import type { FieldDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
@@ -105,10 +105,11 @@ describe('relation/search (many2one)', () => {
     fireEvent.change(input, { target: { value: 'ac' } })
 
     // Debounced server-side search (Go authorizes; no client re-filtering).
+    // 6 result rows — the create line is the dropdown's 7th entry.
     await waitFor(() =>
       expect(ops.list).toHaveBeenCalledWith('contact', {
         search: { name: 'ac' },
-        pageSize: 10,
+        pageSize: 6,
       }),
     )
     fireEvent.click(await screen.findByText('Acme'))
@@ -130,6 +131,33 @@ describe('relation/search (many2one)', () => {
     expect(onChange).toHaveBeenCalledWith(null)
     // Unlinked: back to the search input.
     expect(await screen.findByRole('combobox')).toBeInTheDocument()
+  })
+
+  it('create-from-search: the last option creates the record and sets the FK', async () => {
+    const created = { id: 'c-new', name: 'Initech' }
+    const ops = stubOps({ create: vi.fn(async () => created) })
+    const { onChange } = renderWidget(searchField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'Initech' } })
+
+    // The 7th line, under the (up to 6) result rows.
+    fireEvent.click(await screen.findByText('Create a new Contact'))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Create a new Contact')
+
+    // No form view is registered for 'contact' here → the labelField fallback
+    // form, prefilled with the typed search text.
+    const nameInput = within(dialog).getByDisplayValue('Initech')
+    fireEvent.change(nameInput, { target: { value: 'Initech Ltd' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(ops.create).toHaveBeenCalledWith('contact', expect.objectContaining({ name: 'Initech Ltd' })),
+    )
+    // The new record becomes the FK, exactly like a pick.
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('c-new'))
   })
 
   it('wizard: opens from the link icon, picking a row sets the value', async () => {
@@ -194,6 +222,37 @@ describe('relation/tags (many2many)', () => {
     expect(await screen.findByText('Globex')).toBeInTheDocument()
   })
 
+  it('create-from-search: the last option creates the tag AND its junction row', async () => {
+    const create = vi.fn(async (entity: string, body: Record<string, unknown>) =>
+      entity === 'tag' ? { id: 't-new', ...body } : { id: 'j-new', ...body },
+    )
+    const ops = stubOps({
+      list: vi.fn(async (entity: string, _o?: EntityListOptions) =>
+        entity === 'crm_tag' ? [] : companies,
+      ),
+      create,
+    })
+    renderWidget(tagsField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'vip' } })
+    fireEvent.click(await screen.findByText('Create a new Tag'))
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    // First the tag itself (labelField prefilled with the typed text), then the
+    // junction row linking it to this record.
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith('tag', expect.objectContaining({ name: 'vip' })),
+    )
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith('crm_tag', { crm_id: 'r1', tag_id: 't-new' }),
+    )
+    expect(await screen.findByText('vip')).toBeInTheDocument()
+  })
+
   it('shows a hint before the record exists', () => {
     renderWidget(tagsField, stubOps(), { recordId: null })
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
@@ -213,6 +272,29 @@ describe('relation/list (one2many)', () => {
     )
     expect(await screen.findByText('Acme')).toBeInTheDocument()
     expect(await screen.findByText('Globex')).toBeInTheDocument()
+  })
+
+  it('create line: creates with the inverse FK preset and hidden, row joins the grid', async () => {
+    const created = { id: 'n1', name: 'New deal', contact_id: 'r1' }
+    const ops = stubOps({ create: vi.fn(async () => created) })
+    renderWidget(listField, ops)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create a new Crm' }))
+    const dialog = await screen.findByRole('dialog')
+    // The context owns the link: the inverse FK is preset, never asked for.
+    expect(within(dialog).queryByText('contact_id')).not.toBeInTheDocument()
+
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'New deal' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(ops.create).toHaveBeenCalledWith(
+        'crm',
+        expect.objectContaining({ name: 'New deal', contact_id: 'r1' }),
+      ),
+    )
+    // The new record lands in the embedded list.
+    expect(await screen.findByText('New deal')).toBeInTheDocument()
   })
 
   it('shows a hint before the record exists', () => {

@@ -2,8 +2,10 @@
 import { useEffect, useRef, useState } from 'react'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
@@ -13,9 +15,16 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { useT } from '../i18n/translate'
-import { fieldLabel, type FieldDescriptor, type RelationDescriptor } from './descriptor'
+import { moduleRegistry } from '../registry'
+import {
+  fieldLabel,
+  type FieldDescriptor,
+  type RelationDescriptor,
+  type ViewDescriptor,
+} from './descriptor'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
-import type { WidgetProps } from './widgets'
+import { createFormStore, useFormDraft, useFormError } from './stores'
+import { fieldWidget, type WidgetProps } from './widgets'
 
 // Relation widgets (docs/roadmaps/field-widgets.md, Phase 4). All data flows
 // through RelationOps — bound Server Actions the host mounts once — so Go
@@ -39,8 +48,25 @@ function LinkIcon(props: React.ComponentProps<typeof SvgIcon>) {
 }
 
 const SEARCH_DEBOUNCE_MS = 250
-const SEARCH_PAGE_SIZE = 10
+// 6 result rows; the create-from-search line below them is the 7th.
+const SEARCH_PAGE_SIZE = 6
 const EMBED_PAGE_SIZE = 100
+
+/**
+ * The synthetic 7th dropdown option: "Create a new <entity>". A reserved id no
+ * real record can carry (UUIDs) marks it; picking it opens the creation wizard.
+ */
+const CREATE_OPTION_ID = '__create__'
+
+function isCreateOption(record: RelationRecord): boolean {
+  return record.id === CREATE_OPTION_ID
+}
+
+/** Humanize an entity/table name for display: 'crm_tag' → "Crm tag". */
+function entityDisplayName(entity: string): string {
+  const words = entity.replace(/_/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
 
 /** The related record's display text (labelField, falling back to its id). */
 function labelOf(record: RelationRecord, labelField: string): string {
@@ -163,6 +189,139 @@ function UnsavedHint({ label }: { label: string }) {
   )
 }
 
+// ── create-from-search wizard (all relation kinds) ───────────────────────────
+
+/**
+ * The creation form of the aimed table: the target entity's own registered
+ * form descriptor when one exists (its module already declared how the record
+ * is edited), else a minimal one-field form on the labelField — enough for
+ * bare lookup tables (tags) that never ship a view.
+ */
+function creationDescriptor(rel: RelationDescriptor): ViewDescriptor {
+  const registered = moduleRegistry.formDescriptorFor(rel.entity)
+  if (registered) return registered
+  const labelField = rel.labelField ?? 'name'
+  return {
+    entity: rel.entity,
+    viewType: 'form',
+    fields: [{ name: labelField, type: 'text', required: true }],
+  }
+}
+
+/**
+ *"Create a new <entity>" dialog. A real form store over the target's creation
+ * descriptor, bound to RelationOps.create — so seed defaults, on_change,
+ * computes, and store:false stripping all behave exactly as on the entity's
+ * own form, and Go authorizes the POST with the caller's session. `preset`
+ * seeds draft values the caller owns (the o2m inverse FK, the typed search
+ * text as the label); preset FK fields are hidden — the wizard never asks for
+ * what the context already decided. Mount only while open: each opening gets a
+ * fresh store, so drafts never leak between creations.
+ */
+function RelationCreateWizard({
+  rel,
+  ops,
+  preset = {},
+  hidden = [],
+  onClose,
+  onCreated,
+}: {
+  rel: RelationDescriptor
+  ops: RelationOps
+  preset?: Record<string, unknown>
+  hidden?: string[]
+  onClose: () => void
+  onCreated: (record: RelationRecord) => void
+}) {
+  const t = useT()
+  const [descriptor] = useState(() => creationDescriptor(rel))
+  const [store] = useState(() =>
+    createFormStore<RelationRecord>(
+      // Registry descriptors are ViewDescriptor<unknown-record>; the wizard's
+      // records are RelationRecords (id + open columns) — same runtime shape.
+      descriptor as ViewDescriptor<RelationRecord>,
+      {
+        create: (body) => ops.create(rel.entity, body as Record<string, unknown>),
+        update: () => {
+          throw new Error('unreachable: creation drafts have no id')
+        },
+      },
+      preset as Partial<RelationRecord>,
+    ),
+  )
+  const draft = useFormDraft(store)
+  const error = useFormError(store)
+  const [submitting, setSubmitting] = useState(false)
+  const hiddenSet = new Set(hidden)
+  const { setField } = store.getState()
+
+  async function submit() {
+    setSubmitting(true)
+    try {
+      const saved = await store.getState().commit()
+      if (saved) {
+        onCreated(saved)
+        onClose()
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <Box>
+        <DialogTitle>
+          {t('Create a new')} {t(entityDisplayName(rel.entity))}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.5} sx={{ pt: 1 }}>
+            {error ? (
+              <Typography variant="caption" color="error">
+                {error.message}
+              </Typography>
+            ) : null}
+            {descriptor.fields
+              .filter((f) => !hiddenSet.has(f.name))
+              .map((f) => {
+                const Widget = fieldWidget(f)
+                return (
+                  <Widget
+                    key={f.name}
+                    field={f}
+                    value={(draft as Record<string, unknown>)[f.name]}
+                    onChange={(value) => setField(f.name, value)}
+                    disabled={Boolean(f.compute)}
+                    entity={rel.entity}
+                    // No id yet: service-backed widgets (picture/signature) and
+                    // o2m/m2m render their unsaved-record hint, as on any new form.
+                    recordId={null}
+                  />
+                )
+              })}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={onClose} disabled={submitting}>
+            {t('Cancel')}
+          </Button>
+          <Button variant="contained" onClick={submit} disabled={submitting}>
+            {t('Create')}
+          </Button>
+        </DialogActions>
+      </Box>
+    </Dialog>
+  )
+}
+
+/**
+ * Append the create line as the dropdown's last option (the 7th — result rows
+ * are capped at SEARCH_PAGE_SIZE by the server query).
+ */
+function withCreateOption(options: RelationRecord[]): RelationRecord[] {
+  return [...options, { id: CREATE_OPTION_ID }]
+}
+
 // ── relation/search (many2one) ────────────────────────────────────────────────
 
 /**
@@ -243,6 +402,9 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
   const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  // The live input text — prefilled into the creation form's labelField.
+  const [inputText, setInputText] = useState('')
 
   const selectedId = typeof value === 'string' && value !== '' ? value : null
 
@@ -290,18 +452,29 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
           />
         ) : (
           <Autocomplete<RelationRecord>
-            options={options}
+            options={withCreateOption(options)}
             // Go already filtered server-side; re-filtering on the label would
             // hide records whose match is on another column.
             filterOptions={(x) => x}
-            getOptionLabel={(o) => labelOf(o, labelField)}
+            getOptionLabel={(o) =>
+              isCreateOption(o)
+                ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
+                : labelOf(o, labelField)
+            }
             isOptionEqualToValue={(o, v) => o.id === v.id}
             onOpen={prefill}
             onInputChange={(_e, text, reason) => {
-              if (reason === 'input') search(text)
+              // Only user typing counts: selecting an option fires a 'reset'
+              // that must not wipe the text before the wizard reads it.
+              if (reason === 'input') {
+                setInputText(text)
+                search(text)
+              }
             }}
             onChange={(_e, option) => {
-              if (option) pick(option)
+              if (!option) return
+              if (isCreateOption(option)) setCreateOpen(true)
+              else pick(option)
             }}
             disabled={disabled}
             fullWidth
@@ -326,6 +499,17 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
         rel={rel}
         ops={ops}
       />
+      {createOpen ? (
+        <RelationCreateWizard
+          rel={rel}
+          ops={ops}
+          // The typed search text seeds the new record's label.
+          preset={inputText ? { [labelField]: inputText } : {}}
+          onClose={() => setCreateOpen(false)}
+          // The freshly created record becomes the FK, exactly like a pick.
+          onCreated={pick}
+        />
+      ) : null}
     </Box>
   )
 }
@@ -354,6 +538,8 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
   const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
   const [links, setLinks] = useState<TagLink[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [inputText, setInputText] = useState('')
 
   // Links are junction rows: load them, then resolve each related record's label.
   useEffect(() => {
@@ -425,19 +611,29 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
           />
         ))}
         <Autocomplete<RelationRecord>
-          options={options.filter((o) => !linkedIds.has(o.id))}
+          options={withCreateOption(options.filter((o) => !linkedIds.has(o.id)))}
           filterOptions={(x) => x}
-          getOptionLabel={(o) => labelOf(o, labelField)}
+          getOptionLabel={(o) =>
+            isCreateOption(o)
+              ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
+              : labelOf(o, labelField)
+          }
           isOptionEqualToValue={(o, v) => o.id === v.id}
           onOpen={prefill}
           onInputChange={(_e, text, reason) => {
-            if (reason === 'input') search(text)
+            // 'reset' (option selected) must not wipe the text the wizard reads.
+            if (reason === 'input') {
+              setInputText(text)
+              search(text)
+            }
           }}
           // Selection immediately becomes a junction row; the input clears for
           // the next link (value stays null on purpose).
           value={null}
           onChange={(_e, option) => {
-            if (option) add(option)
+            if (!option) return
+            if (isCreateOption(option)) setCreateOpen(true)
+            else add(option)
           }}
           disabled={disabled}
           size="small"
@@ -450,19 +646,30 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
           {error}
         </Typography>
       ) : null}
+      {createOpen ? (
+        <RelationCreateWizard
+          rel={rel}
+          ops={ops}
+          preset={inputText ? { [labelField]: inputText } : {}}
+          onClose={() => setCreateOpen(false)}
+          // The freshly created record links immediately: one junction row.
+          onCreated={add}
+        />
+      ) : null}
     </Box>
   )
 }
 
 // ── relation/list (one2many) ──────────────────────────────────────────────────
 
-export function RelationListWidget({ field, recordId }: WidgetProps) {
+export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
   const inverseField = rel.inverseField as string // registration validated presence
   const labelField = rel.labelField ?? 'name'
   const [rows, setRows] = useState<RelationRecord[]>([])
+  const [createOpen, setCreateOpen] = useState(false)
 
   useEffect(() => {
     if (!ops || !recordId) return
@@ -488,7 +695,9 @@ export function RelationListWidget({ field, recordId }: WidgetProps) {
       <Typography variant="caption" color="text.secondary" component="legend">
         {t(fieldLabel(field))}
       </Typography>
-      {/* v1 is read-only by design: inline create/edit is a later iteration. */}
+      {/* Rows stay read-only (inline edit is a later iteration); creation goes
+          through the wizard line below — the inverse FK is preset, so the new
+          record lands in this list by construction. */}
       <DataGrid
         rows={rows}
         columns={relatedColumns(rows, labelField, t)}
@@ -496,6 +705,20 @@ export function RelationListWidget({ field, recordId }: WidgetProps) {
         hideFooter
         disableRowSelectionOnClick
       />
+      <Button size="small" onClick={() => setCreateOpen(true)} disabled={disabled} sx={{ mt: 0.5 }}>
+        {t('Create a new')} {t(entityDisplayName(rel.entity))}
+      </Button>
+      {createOpen ? (
+        <RelationCreateWizard
+          rel={rel}
+          ops={ops}
+          // The context decides the link: preset the inverse FK, never ask for it.
+          preset={{ [inverseField]: recordId }}
+          hidden={[inverseField]}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(record) => setRows((prev) => [...prev, record])}
+        />
+      ) : null}
     </Box>
   )
 }
