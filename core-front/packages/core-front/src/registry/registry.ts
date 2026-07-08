@@ -1,12 +1,16 @@
 import { buildBehaviorPlan } from '../views/behaviors'
-import { validateDescriptorWidgets, type ViewDescriptor } from '../views/descriptor'
+import { normalizeLayout, validateDescriptorWidgets, type ViewDescriptor } from '../views/descriptor'
+import { applyExtension, type ViewExtension } from './extensions'
 
 // The frontend module contract + registry. A module contributes DESCRIPTORS ONLY:
 // it default-exports a FrontModule listing routes, each a path + descriptor (+ optional
-// permission). The engine derives the server loader, the Zustand store, and the
-// renderer from the descriptor — modules never ship loaders/stores/renderers
-// (CONVENTIONS.md — Module FE contract). The build-time discovery (Phase 2) registers
-// every module's default export, then the catch-all route consumes buildRegistry().
+// permission), and optionally `extends` — view EXTENSIONS reshaping ANOTHER module's
+// (or its own) already-registered routes (docs/roadmaps/view-customization.md, Phase 3).
+// The engine derives the server loader, the Zustand store, and the renderer from the
+// RESOLVED descriptor — modules never ship loaders/stores/renderers (CONVENTIONS.md —
+// Module FE contract). The build-time discovery registers every module's default
+// export in `depends` topological order, then the catch-all route consumes
+// buildRegistry().
 
 export interface FrontRoute {
   /** App Router pathname this route serves, e.g. '/crm/contacts'. */
@@ -19,6 +23,9 @@ export interface FrontRoute {
 export interface FrontModule {
   name: string
   routes: FrontRoute[]
+  /** View extensions this module contributes over already-registered routes
+   * (its own or another module's) — see ViewExtension (extensions.ts). */
+  extends?: ViewExtension[]
 }
 
 /**
@@ -34,6 +41,15 @@ export interface RegisterOptions {
    * cross-module formPath targets), it just has no home-page entry.
    */
   appMode?: boolean
+  /**
+   * `module.json` `depends`: the OTHER modules this one declares a relationship to
+   * (the same field the Go loader reads). Discovery registers modules in `depends`
+   * topological order, so a module's extensions always find their target already
+   * registered. Also the input to the depends-coverage warning: `register()` warns
+   * (does not throw — this is a hygiene check, not a correctness gate) when a
+   * module's `extends` targets a path owned by a module absent from this list.
+   */
+  depends?: string[]
 }
 
 /** What the catch-all page resolves per path: the owning module + how to render it. */
@@ -104,8 +120,27 @@ interface RegisteredModule {
   appMode: boolean
 }
 
+/** Validate a descriptor at registration: widget/type pairs, the behavior plan
+ * (compute/on_change/defaults), and layout tree consistency (every field-leaf
+ * exists, no duplicates, unique ids) — the full "fail loud, not at render"
+ * contract, run identically for a base route and an extension's merged result. */
+function validateDescriptor(descriptor: ViewDescriptor): void {
+  validateDescriptorWidgets(descriptor)
+  buildBehaviorPlan(descriptor)
+  normalizeLayout(descriptor)
+}
+
 export class ModuleRegistry {
   private readonly entries: RegisteredModule[] = []
+  // The descriptor-content source of truth: base routes populate it on
+  // registration, then each module's `extends` REPLACES its target path's
+  // entry with the merged result — "ModuleRegistry applies all extensions for
+  // a path at registration" (the contracts table), so this map already IS the
+  // memo; buildRegistry()/menu()/etc. just read it. `entries` stays the
+  // source of truth for module identity/order (menu grouping, moduleNav) —
+  // the two structures serve different questions ("what did module X ship"
+  // vs. "what does path P resolve to right now").
+  private readonly resolvedRoutes = new Map<string, RouteConfig>()
 
   register(module: FrontModule, options: RegisterOptions = {}): this {
     // Idempotent by module name: the server manifest and the client manifest
@@ -113,40 +148,82 @@ export class ModuleRegistry {
     // this same registry instance — the second registration of a name is the
     // same manifest running again, not a new module, so it is skipped.
     if (this.entries.some((e) => e.module.name === module.name)) return this
+
     // Fail loud at registration (build/boot), not at render: a widget the field
-    // type forbids, an unregistered compute name, or a compute cycle is a module
-    // bug, named module + route + field. Views files register their field
-    // functions at import time, so they exist by the time the generated manifest
-    // registers the module.
+    // type forbids, an unregistered compute name, a compute cycle, or a broken
+    // layout anchor is a module bug, named module + route + field. Views files
+    // register their field functions at import time, so they exist by the time
+    // the generated manifest registers the module.
     for (const route of module.routes) {
       try {
-        validateDescriptorWidgets(route.descriptor)
-        buildBehaviorPlan(route.descriptor)
+        validateDescriptor(route.descriptor)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         throw new Error(`module "${module.name}", route "${route.path}": ${message}`)
       }
+      // Base registration (or a deliberate REPLACE of an existing path — "last
+      // wins", the blunt escape hatch `extends` exists to make unnecessary).
+      // A replace on a path an earlier module extended drops those extensions:
+      // a full descriptor swap is a new view, not a merge.
+      this.resolvedRoutes.set(route.path, {
+        module: module.name,
+        descriptor: route.descriptor,
+        permission: route.permission,
+      })
     }
+
     this.entries.push({ module, appMode: options.appMode === true })
+
+    // Extensions apply AFTER this module's own routes are registered, on top
+    // of whatever the target path currently resolves to (the base, or the
+    // result of earlier modules' extensions) — "extensions apply after the
+    // base and after earlier modules' extensions" (the contracts table).
+    // "Already-registered routes" means the target must exist NOW: a base
+    // module always registers before its extenders under `depends`
+    // topological discovery order, so this is a build-time invariant, not a
+    // runtime race.
+    for (const ext of module.extends ?? []) {
+      const current = this.resolvedRoutes.get(ext.path)
+      if (!current) {
+        throw new Error(`module "${module.name}" extends unknown path "${ext.path}"`)
+      }
+      // Hygiene warning, not a hard error: extending a path you don't declare
+      // a dependency on works (registration order already guarantees the
+      // target exists), but silently coupling to another module's view
+      // without recording that relationship in module.json is exactly the
+      // "alphabetical order is a landmine" pitfall in a new shape.
+      if (current.module !== module.name && !(options.depends ?? []).includes(current.module)) {
+        console.warn(
+          `[view-extension] module "${module.name}" extends path "${ext.path}" ` +
+            `(owned by module "${current.module}") without declaring "${current.module}" ` +
+            `in its module.json "depends"`,
+        )
+      }
+      let merged: ViewDescriptor
+      try {
+        merged = applyExtension(current.descriptor, ext.operations)
+        validateDescriptor(merged)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        throw new Error(`module "${module.name}" extending "${ext.path}": ${message}`)
+      }
+      this.resolvedRoutes.set(ext.path, {
+        module: current.module,
+        descriptor: merged,
+        permission: current.permission,
+      })
+    }
+
     return this
   }
 
   /**
-   * Flatten registered modules to a path -> RouteConfig map, preserving registration
-   * and route declaration order. A later route with the same path wins (last wins).
+   * The path -> RouteConfig map, already fully resolved (base + every
+   * applicable extension) at registration time — this is a cheap accessor,
+   * not a recomputation.
    */
   buildRegistry(): Map<string, RouteConfig> {
-    const map = new Map<string, RouteConfig>()
-    for (const { module } of this.entries) {
-      for (const route of module.routes) {
-        map.set(route.path, {
-          module: module.name,
-          descriptor: route.descriptor,
-          permission: route.permission,
-        })
-      }
-    }
-    return map
+    return new Map(this.resolvedRoutes)
   }
 
   /**
@@ -162,7 +239,19 @@ export class ModuleRegistry {
     const result: MenuModule[] = []
     for (const { module, appMode } of this.entries) {
       if (!appMode) continue
-      const routes = module.routes.filter((route) => !hasParam(route.path))
+      const routes: MenuRoute[] = []
+      for (const route of module.routes) {
+        if (hasParam(route.path)) continue
+        // Resolved descriptor — an extension may have reshaped this route
+        // since the module declared it. Falls back to the declared one in
+        // the (unreachable in practice) case a path was never resolved.
+        const resolved = this.resolvedRoutes.get(route.path)
+        routes.push({
+          path: route.path,
+          descriptor: resolved?.descriptor ?? route.descriptor,
+          permission: resolved?.permission ?? route.permission,
+        })
+      }
       if (routes.length > 0) result.push({ name: module.name, routes })
     }
     return result
@@ -200,14 +289,17 @@ export class ModuleRegistry {
    * The first registered form-view descriptor over an entity, or null. The
    * relation widgets' create-from-search wizard renders this as the creation
    * form of the aimed table — the entity's own module already declared how the
-   * record is edited, so creating it reuses the same descriptor. Entities with
-   * no form view (e.g. a bare tag table) get the caller's fallback instead.
+   * record is edited (extensions included — a record created this way carries
+   * whatever fields an extending module added), so creating it reuses the same
+   * RESOLVED descriptor. Entities with no form view (e.g. a bare tag table)
+   * get the caller's fallback instead.
    */
   formDescriptorFor(entity: string): ViewDescriptor | null {
     for (const { module } of this.entries) {
       for (const route of module.routes) {
-        if (route.descriptor.viewType === 'form' && route.descriptor.entity === entity) {
-          return route.descriptor
+        const resolved = this.resolvedRoutes.get(route.path)?.descriptor ?? route.descriptor
+        if (resolved.viewType === 'form' && resolved.entity === entity) {
+          return resolved
         }
       }
     }
@@ -222,9 +314,14 @@ export class ModuleRegistry {
   listViews(moduleName: string): MenuRoute[] {
     const module = this.entries.find((e) => e.module.name === moduleName)?.module
     if (!module) return []
-    return module.routes
-      .filter((route) => route.descriptor.viewType === 'tree')
-      .map((route) => ({ path: route.path, descriptor: route.descriptor, permission: route.permission }))
+    const result: MenuRoute[] = []
+    for (const route of module.routes) {
+      const resolved = this.resolvedRoutes.get(route.path)
+      const descriptor = resolved?.descriptor ?? route.descriptor
+      if (descriptor.viewType !== 'tree') continue
+      result.push({ path: route.path, descriptor, permission: resolved?.permission ?? route.permission })
+    }
+    return result
   }
 
   /**
