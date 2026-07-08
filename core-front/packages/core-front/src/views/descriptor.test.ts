@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   FIELD_WIDGETS,
+  fieldZeroDefault,
   isVirtualRelation,
   resolveWidget,
   validateDescriptorWidgets,
@@ -28,6 +29,14 @@ const relationField = (
   ...(widget ? { widget } : {}),
 })
 
+const selectionField = (options: string[], widget?: string): FieldDescriptor => ({
+  name: 'f',
+  label: 'F',
+  type: 'selection',
+  selection: { options },
+  ...(widget ? { widget } : {}),
+})
+
 describe('resolveWidget', () => {
   it('defaults to the first widget of each type', () => {
     expect(resolveWidget(field('text'))).toBe('simple')
@@ -38,7 +47,7 @@ describe('resolveWidget', () => {
 
   it('accepts every widget the matrix allows', () => {
     for (const [type, widgets] of Object.entries(FIELD_WIDGETS)) {
-      if (type === 'relation') continue // kind-driven — covered below
+      if (type === 'relation' || type === 'selection') continue // block-driven — covered below
       for (const widget of widgets) {
         expect(resolveWidget(field(type as FieldType, widget))).toBe(widget)
       }
@@ -57,6 +66,27 @@ describe('resolveWidget', () => {
         new RegExp(`"f".*"${widget}".*"${type}"`),
       )
     }
+  })
+})
+
+describe('resolveWidget — selection', () => {
+  it('defaults to select', () => {
+    expect(resolveWidget(selectionField(['incoming', 'won']))).toBe('select')
+  })
+
+  it('requires a non-empty options list', () => {
+    expect(() => resolveWidget(field('selection'))).toThrowError(
+      /requires a non-empty selection\.options list/,
+    )
+    expect(() => resolveWidget(selectionField([]))).toThrowError(
+      /requires a non-empty selection\.options list/,
+    )
+  })
+
+  it('rejects a widget the matrix forbids, naming field, type, and widget', () => {
+    expect(() => resolveWidget(selectionField(['incoming', 'won'], 'stars'))).toThrowError(
+      /"f".*"stars".*"selection"/,
+    )
   })
 })
 
@@ -87,6 +117,22 @@ describe('resolveWidget — relations', () => {
   })
 })
 
+describe('fieldZeroDefault', () => {
+  it('returns the natural empty value per type', () => {
+    expect(fieldZeroDefault(field('text'))).toBe('')
+    expect(fieldZeroDefault(field('number'))).toBe(0)
+    expect(fieldZeroDefault(field('boolean'))).toBe(false)
+    expect(fieldZeroDefault(field('date'))).toBeNull()
+    expect(fieldZeroDefault(relationField({ kind: 'many2one' }))).toBeNull()
+  })
+
+  it('a selection field has no "empty" — its zero default is the FIRST option', () => {
+    expect(fieldZeroDefault(selectionField(['incoming', 'running', 'won']))).toBe('incoming')
+    // Order is what governs it, not alphabetical or anything else.
+    expect(fieldZeroDefault(selectionField(['won', 'incoming']))).toBe('won')
+  })
+})
+
 describe('isVirtualRelation', () => {
   it('marks o2m/m2m virtual, m2o and scalars not', () => {
     expect(isVirtualRelation(relationField({ kind: 'one2many', inverseField: 'x' }))).toBe(true)
@@ -106,7 +152,12 @@ describe('validateDescriptorWidgets', () => {
   it('passes a descriptor with valid and defaulted widgets', () => {
     expect(() =>
       validateDescriptorWidgets(
-        descriptor([field('text'), field('number', 'stars'), field('boolean', 'switch')]),
+        descriptor([
+          field('text'),
+          field('number', 'stars'),
+          field('boolean', 'switch'),
+          selectionField(['incoming', 'won']),
+        ]),
       ),
     ).not.toThrow()
   })

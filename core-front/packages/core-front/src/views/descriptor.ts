@@ -5,7 +5,7 @@
 
 export type ViewType = 'form' | 'tree' | 'dashboard'
 
-export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean'
+export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean' | 'selection'
 
 /**
  * Descriptors cross the RSC boundary as props, so everything in them — widget
@@ -20,7 +20,9 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * boolean picture/signature are backed by the core picture service (the DB
  * column stores only the flag, the service owns the bytes — field true ⇔ a
  * picture exists on the anchor). Relation tags/list (Phase 4) will extend this
- * matrix.
+ * matrix. selection has exactly one widget (`select`, a dropdown) — the type
+ * exists to declare a closed value list (SelectionDescriptor), not to offer
+ * presentation variants.
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   text: ['simple', 'long', 'phone'],
@@ -28,6 +30,7 @@ export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   boolean: ['switch', 'picture', 'signature'],
   date: ['simple'],
   relation: ['search', 'tags', 'list'],
+  selection: ['select'],
 }
 
 export type RelationKind = 'many2one' | 'one2many' | 'many2many'
@@ -62,6 +65,17 @@ export interface RelationDescriptor {
    * `<related entity>_id` — declare explicitly when the junction deviates.
    */
   viaFields?: { own: string; related: string }
+}
+
+/**
+ * How a `selection` field's pickable values are declared. `options` is the
+ * closed list the user chooses from, IN ORDER — order matters twice: it is
+ * the dropdown's display order, and (absent an explicit `default` on the
+ * field) the FIRST entry is the field's default value (see fieldZeroDefault).
+ * JSON-only — this block crosses the RSC boundary.
+ */
+export interface SelectionDescriptor {
+  options: string[]
 }
 
 export interface FieldDescriptor {
@@ -108,6 +122,8 @@ export interface FieldDescriptor {
   store?: boolean
   /** Required on type 'relation': where the field points (see RelationDescriptor). */
   relation?: RelationDescriptor
+  /** Required on type 'selection': the pickable values (see SelectionDescriptor). */
+  selection?: SelectionDescriptor
 }
 
 /**
@@ -133,6 +149,7 @@ export function resolveWidget(field: FieldDescriptor): string {
     throw new Error(`field "${field.name}": unknown field type "${field.type}"`)
   }
   if (field.type === 'relation') return resolveRelationWidget(field)
+  if (field.type === 'selection') return resolveSelectionWidget(field)
   const widget = field.widget ?? allowed[0]
   if (!allowed.includes(widget)) {
     throw new Error(
@@ -174,6 +191,28 @@ function resolveRelationWidget(field: FieldDescriptor): string {
   return widget
 }
 
+/**
+ * Selection fields carry one invariant: a non-empty options list — the field
+ * declares a value picker, so an empty list has nothing to pick. Enforced at
+ * registration, like the relation block, so a broken descriptor fails the
+ * build, not the form.
+ */
+function resolveSelectionWidget(field: FieldDescriptor): string {
+  const sel = field.selection
+  if (!sel || sel.options.length === 0) {
+    throw new Error(`field "${field.name}": type 'selection' requires a non-empty selection.options list`)
+  }
+  const allowed = FIELD_WIDGETS.selection
+  const widget = field.widget ?? allowed[0]
+  if (!allowed.includes(widget)) {
+    throw new Error(
+      `field "${field.name}": widget "${widget}" is not allowed for type "selection" ` +
+        `(allowed: ${allowed.join(', ')})`,
+    )
+  }
+  return widget
+}
+
 /** Validate every field's widget/type pair of a descriptor (see resolveWidget). */
 export function validateDescriptorWidgets<T>(descriptor: ViewDescriptor<T>): void {
   for (const field of descriptor.fields) resolveWidget(field)
@@ -183,7 +222,11 @@ export function validateDescriptorWidgets<T>(descriptor: ViewDescriptor<T>): voi
  * The zero default a field seeds with when the record lacks it and the
  * descriptor declares no `default`: the natural empty value of each data type.
  * Relations default null on the m2o FK ("no target"); virtual relations
- * (o2m/m2m) never seed — they have no column on this record.
+ * (o2m/m2m) never seed — they have no column on this record. selection has no
+ * natural "empty" value — a closed list has no blank option — so its zero
+ * default is the FIRST declared option (resolveWidget already guarantees a
+ * non-empty list for any registered descriptor); an explicit `default`
+ * overrides it exactly like any other type.
  */
 export function fieldZeroDefault(field: FieldDescriptor): JsonValue {
   switch (field.type) {
@@ -193,6 +236,8 @@ export function fieldZeroDefault(field: FieldDescriptor): JsonValue {
       return 0
     case 'boolean':
       return false
+    case 'selection':
+      return field.selection?.options[0] ?? null
     case 'date':
     case 'relation':
       return null

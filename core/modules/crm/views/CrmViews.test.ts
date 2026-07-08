@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { behaviorRegistry, fieldLabel, validateDescriptorWidgets } from '@eerp/core-front'
+import {
+  behaviorRegistry,
+  fieldLabel,
+  fieldZeroDefault,
+  validateDescriptorWidgets,
+} from '@eerp/core-front'
 import crm from './CrmViews'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
@@ -95,6 +100,11 @@ describe('crm FrontModule', () => {
     expect(byName.get('deals')?.widget).toBe('int')
     expect(byName.get('notes')?.widget).toBe('long')
     expect(byName.get('score')?.widgetOptions).toEqual({ max: 3 })
+    expect(byName.get('status')?.type).toBe('selection')
+    expect(byName.get('status')?.widget).toBeUndefined() // defaults to 'select'
+    expect(byName.get('status')?.selection).toEqual({
+      options: ['incoming', 'running', 'won', 'lost', 'closed'],
+    })
   })
 
   it('lets notes omit its label — the engine humanizes the field name', () => {
@@ -104,11 +114,14 @@ describe('crm FrontModule', () => {
     expect(fieldLabel(notes!)).toBe('Notes')
   })
 
-  it('samples both default styles: a literal on status, a function on satisfaction', () => {
+  it('samples both default styles: a type-implicit default on status, a function on satisfaction', () => {
     const form = crm.routes.find((r) => r.path === '/crm/:id')
     const byName = new Map(form?.descriptor.fields.map((f) => [f.name, f]))
-    // Literal: new records seed as leads.
-    expect(byName.get('status')?.default).toBe('lead')
+    // status declares NO explicit `default` — a selection field's own rule
+    // (fieldZeroDefault) seeds the first option, 'incoming', for every new
+    // record.
+    expect(byName.get('status')?.default).toBeUndefined()
+    expect(fieldZeroDefault(byName.get('status')!)).toBe('incoming')
     // Function (by NAME — descriptors stay data): registered and returning 50%.
     expect(byName.get('satisfaction')?.default).toBe('crm.defaultSatisfaction')
     const fn = behaviorRegistry.fieldFunction('crm.defaultSatisfaction')
@@ -123,9 +136,11 @@ describe('crm FrontModule', () => {
       .onChangeFor('crm')
       .find((h) => h.name === 'crm.scoreFromStatus')
     expect(handler?.onChange).toEqual(['status'])
-    expect(handler?.handler({ status: 'lead' })).toEqual({ score: 1 })
-    expect(handler?.handler({ status: 'Customer' })).toEqual({ score: 3 })
-    expect(handler?.handler({ status: 'churned' })).toEqual({ score: 0 })
+    expect(handler?.handler({ status: 'incoming' })).toEqual({ score: 1 })
+    expect(handler?.handler({ status: 'running' })).toEqual({ score: 2 })
+    expect(handler?.handler({ status: 'won' })).toEqual({ score: 3 })
+    expect(handler?.handler({ status: 'lost' })).toEqual({ score: 0 })
+    expect(handler?.handler({ status: 'closed' })).toEqual({ score: 0 })
     expect(handler?.handler({})).toEqual({ score: 0 })
 
     // Editable on purpose: an on_change suggestion, NOT a compute — a compute

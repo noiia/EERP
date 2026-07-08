@@ -70,6 +70,38 @@ function TextLongWidget({ field, value, onChange, disabled }: WidgetProps) {
   )
 }
 
+// ── selection ─────────────────────────────────────────────────────────────────
+
+/**
+ * A closed-list dropdown (Odoo's Selection field, transposed). Options are
+ * declared data (field.selection.options), never hardcoded here — the widget
+ * only renders the list the descriptor gives it. Each option's DISPLAY goes
+ * through t() (a msgid, like a field label); the stored/onChange value stays
+ * the raw option string, untranslated — the same "source string = value"
+ * split as everywhere else in the engine.
+ */
+function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const options = field.selection?.options ?? []
+  return (
+    <TextField
+      select
+      label={t(fieldLabel(field))}
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      value={typeof value === 'string' && options.includes(value) ? value : ''}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {options.map((option) => (
+        <MenuItem key={option} value={option}>
+          {t(option)}
+        </MenuItem>
+      ))}
+    </TextField>
+  )
+}
+
 // ── date (stock input moved out of the renderer) ──────────────────────────────
 
 function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
@@ -339,6 +371,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'boolean/picture': BooleanPictureWidget,
   'boolean/signature': BooleanSignatureWidget,
   'date/simple': DateWidget,
+  'selection/select': SelectionWidget,
   'relation/search': RelationSearchWidget,
   'relation/tags': RelationTagsWidget,
   'relation/list': RelationListWidget,

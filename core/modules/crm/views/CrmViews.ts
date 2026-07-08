@@ -16,6 +16,7 @@ export interface Crm {
   name: string
   email: string
   company?: string
+  /** One of the selection field's options: incoming/running/won/lost/closed. */
   status?: string
   contact_id?: string | null
   /** E.164 in a TEXT column (numeric columns lose the leading + / zeros). */
@@ -37,8 +38,19 @@ export interface Crm {
 // its function by NAME (`compute: 'crm.score'`) and the code registers here,
 // at import time, into the engine's client-side behavior registry.
 
-/** How each status scores; the suggestion's whole business logic. */
-const STATUS_SCORE: Record<string, number> = { lead: 1, prospect: 2, customer: 3 }
+/**
+ * How each status scores; the suggestion's whole business logic. `incoming`
+ * and `running` climb toward a `won` deal; `lost` and `closed` are terminal
+ * without a positive outcome, so both score 0 — a closure with no explicit
+ * win is not a 3-star deal by default.
+ */
+const STATUS_SCORE: Record<string, number> = {
+  incoming: 1,
+  running: 2,
+  won: 3,
+  lost: 0,
+  closed: 0,
+}
 
 // on_change (NOT compute — that's the editable-vs-derived line): a compute
 // would render the stars read-only; this patch only SUGGESTS a score whenever
@@ -101,12 +113,14 @@ const fields: ViewDescriptor['fields'] = [
   { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'company', label: 'Company', type: 'text' },
   {
-    // default as a VALUE: a new record seeds as a lead (and the seed compute
-    // pass turns that into score = 1 before the first edit).
+    // selection: a closed value list, dropdown widget. No explicit `default`
+    // — the type's own rule (fieldZeroDefault) seeds the FIRST option,
+    // 'incoming', for every new record; the seed pass then turns that into
+    // score = 1 via crm.scoreFromStatus, before the first edit.
     name: 'status',
     label: 'Status',
-    type: 'text',
-    default: 'lead',
+    type: 'selection',
+    selection: { options: ['incoming', 'running', 'won', 'lost', 'closed'] },
   },
   {
     // Editable stars (no compute — computed fields render disabled): hover

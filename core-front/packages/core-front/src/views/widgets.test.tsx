@@ -190,6 +190,32 @@ describe('phone', () => {
   })
 })
 
+describe('selection', () => {
+  const statusField: FieldDescriptor = {
+    name: 'status',
+    label: 'Status',
+    type: 'selection',
+    selection: { options: ['incoming', 'running', 'won', 'lost', 'closed'] },
+  }
+
+  it('shows the current value and offers every declared option', () => {
+    renderWidget(statusField, 'running')
+    const select = screen.getByLabelText('Status')
+    expect(select).toHaveTextContent('running')
+    fireEvent.mouseDown(select)
+    for (const option of ['incoming', 'running', 'won', 'lost', 'closed']) {
+      expect(screen.getByRole('option', { name: option })).toBeInTheDocument()
+    }
+  })
+
+  it('picking an option emits its raw (untranslated) value', () => {
+    const { onChange } = renderWidget(statusField, 'incoming')
+    fireEvent.mouseDown(screen.getByLabelText('Status'))
+    fireEvent.click(screen.getByRole('option', { name: 'won' }))
+    expect(onChange).toHaveBeenCalledWith('won')
+  })
+})
+
 describe('date', () => {
   it('date renders a date input and emits ISO strings', () => {
     const { onChange } = renderWidget({ name: 'due', label: 'Due', type: 'date' }, '2026-07-07')
