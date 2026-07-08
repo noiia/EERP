@@ -14,6 +14,7 @@ import (
 	"core/internal/common"
 	authmw "core/internal/middleware"
 	"core/internal/module"
+	"core/internal/pictures"
 	"core/internal/settings"
 	"core/internal/types"
 	_ "core/modules/all"
@@ -176,6 +177,26 @@ func main() {
 	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
 	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
 	settingsGroup.PUT("/format", settingsHandler.PutFormatSettings)
+
+	// ── Pictures ──────────────────────────────────────────────────────────────
+	// Dedicated binary-content endpoints (the picture table is off the generic
+	// CRUD surface). Mounted only when the config carries an object store —
+	// without s3_* the feature is absent, not broken. The permission middleware
+	// derives pictures:pictures:read|write|delete from the routes.
+	if pictures.S3Configured(configContent) {
+		objects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			common.Logger.Fatal("❌ Error building S3 object store", zap.Error(err))
+		}
+		picturesHandler := pictures.NewHandler(pictures.NewRepository(app.DB), objects)
+		picturesGroup := srv.Echo().Group("/api/v1/pictures", jwtMw, permMw)
+		picturesGroup.POST("", picturesHandler.Upload)
+		picturesGroup.GET("", picturesHandler.Find)
+		picturesGroup.GET("/:id", picturesHandler.Get)
+		picturesGroup.DELETE("/:id", picturesHandler.Delete)
+	} else {
+		common.Logger.Warn("⚠️  s3_* not configured — picture endpoints disabled")
+	}
 
 	// ── Users / roles administration ──────────────────────────────────────────
 	// The auth tables are excluded from the generic CRUD surface; these dedicated,
