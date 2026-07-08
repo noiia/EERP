@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
 import { resolveWidget, type FieldDescriptor } from './descriptor'
+import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
 import { useNumberFormat } from './format-store'
 import { tabularNums } from './tokens'
 
@@ -26,6 +27,14 @@ export interface WidgetProps {
   onChange: (value: unknown) => void
   /** Render inert (computed fields — the engine owns their value). */
   disabled?: boolean
+  /**
+   * Anchor context for service-backed widgets (picture/signature): the Go
+   * entity (= table) and the record's id. `recordId` is null until the record
+   * first saves — those widgets render a hint instead of an upload surface.
+   * Plain value widgets ignore both.
+   */
+  entity?: string
+  recordId?: string | null
 }
 
 // ── text ──────────────────────────────────────────────────────────────────────
@@ -344,6 +353,8 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'number/stars': NumberStarsWidget,
   'number/phone': PhoneWidget,
   'boolean/switch': BooleanSwitchWidget,
+  'boolean/picture': BooleanPictureWidget,
+  'boolean/signature': BooleanSignatureWidget,
   'date/simple': DateWidget,
   'relation/search': RelationSearchWidget,
 }

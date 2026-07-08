@@ -137,7 +137,16 @@ cascades a compute; cycle -> registration error; store:false never in the PUT bo
 per `store`; a tagged Go column materializes a real index of the right method in Postgres
 (verified via `make run-back-tests`).
 
-## Phase 3 — Core picture service + picture/signature widgets
+## Phase 3 — Core picture service + picture/signature widgets ✅ (implemented)
+
+> Implementation notes: the service invariant is ONE picture per (tenant, table,
+> record, field) anchor — POST replaces in place (unique index `uq_picture_anchor`
+> enforces it), so the picture-backed boolean always has exactly one object to
+> point at. Widgets reconcile the draft flag against the service on load (the
+> service is authoritative, per the pitfall below) and upload at interaction
+> time, which realizes the "upload first, then the record PUT" commit order.
+> On a record that has never been saved (no id → no anchor) both widgets render
+> a hint instead of an upload surface.
 
 **Claude Code prompt:**
 ```

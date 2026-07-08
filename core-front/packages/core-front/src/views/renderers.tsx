@@ -115,18 +115,30 @@ function FieldInput({
   field,
   value,
   onChange,
+  entity,
+  recordId,
 }: {
   field: FieldDescriptor
   value: unknown
   onChange: (value: unknown) => void
+  entity: string
+  recordId: string | null
 }) {
   // Dispatch through the widget layer: the field's type picks the data shape,
   // its (optional) widget decorator the control — descriptor labels stay gettext
   // msgids translated inside each widget (widgets.tsx). Computed fields render
-  // inert: the behavior layer owns their value (behaviors.ts).
+  // inert: the behavior layer owns their value (behaviors.ts). entity + recordId
+  // give service-backed widgets (picture/signature) their anchor.
   const Widget = fieldWidget(field)
   return (
-    <Widget field={field} value={value} onChange={onChange} disabled={Boolean(field.compute)} />
+    <Widget
+      field={field}
+      value={value}
+      onChange={onChange}
+      disabled={Boolean(field.compute)}
+      entity={entity}
+      recordId={recordId}
+    />
   )
 }
 
@@ -174,6 +186,8 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
                 field={field}
                 value={(draft as Record<string, unknown>)[field.name]}
                 onChange={(value) => setField(field.name as keyof T, value as T[keyof T])}
+                entity={descriptor.entity}
+                recordId={(draft as { id?: string }).id ?? null}
               />
             ))}
           </Stack>

@@ -17,13 +17,15 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * The widgets each field type may render as; the FIRST entry is the type's
  * default. `type` is the data type, `widget` the presentation — a descriptor
  * never needs one for the stock look (docs/roadmaps/field-widgets.md).
- * boolean picture/signature (Phase 3) and relation tags/list (Phase 4) will
- * extend this matrix.
+ * boolean picture/signature are backed by the core picture service (the DB
+ * column stores only the flag, the service owns the bytes — field true ⇔ a
+ * picture exists on the anchor). Relation tags/list (Phase 4) will extend this
+ * matrix.
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   text: ['simple', 'long', 'phone'],
   number: ['float', 'int', 'percent', 'stars', 'phone'],
-  boolean: ['switch'],
+  boolean: ['switch', 'picture', 'signature'],
   date: ['simple'],
   relation: ['search'],
 }

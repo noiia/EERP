@@ -2,6 +2,7 @@ import 'server-only'
 import { cookies } from 'next/headers'
 import { revalidateTag } from 'next/cache'
 import { parseError } from './errors'
+import type { PictureAnchor, PictureMeta } from './pictures-client'
 import {
   ACCESS_COOKIE,
   ACCESS_TTL_SECONDS,
@@ -102,7 +103,13 @@ async function authedFetch(
   if (token) headers.Authorization = `Bearer ${token}`
 
   const init: RequestInit & { next?: { tags: string[] } } = { method, headers }
-  if (body !== undefined) {
+  // Tag check instead of instanceof: the FormData parsed from an incoming Request
+  // (undici) and the ambient global are different constructors under test runners.
+  if (Object.prototype.toString.call(body) === '[object FormData]') {
+    // Multipart passthrough (picture uploads): fetch derives the boundary-carrying
+    // Content-Type itself — setting one manually would corrupt the body.
+    init.body = body as FormData
+  } else if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
     init.body = JSON.stringify(body)
   }
@@ -114,7 +121,16 @@ async function authedFetch(
   return fetch(`${baseUrl()}${path}`, init)
 }
 
-async function request<T>(method: Method, path: string, tags: string[] | null, body?: unknown): Promise<T> {
+// The session-semantics core shared by every Go call: Bearer from the cookie,
+// refresh-once on 401, clear-and-throw when the refresh doesn't stick. Returns
+// the (possibly non-OK) response so callers decide how to read the body — JSON
+// (request) or a raw stream (streamPicture).
+async function fetchWithRefresh(
+  method: Method,
+  path: string,
+  tags: string[] | null,
+  body?: unknown,
+): Promise<Response> {
   let res = await authedFetch(method, path, tags, body)
 
   if (res.status === 401) {
@@ -125,6 +141,11 @@ async function request<T>(method: Method, path: string, tags: string[] | null, b
       throw await parseError(res)
     }
   }
+  return res
+}
+
+async function request<T>(method: Method, path: string, tags: string[] | null, body?: unknown): Promise<T> {
+  const res = await fetchWithRefresh(method, path, tags, body)
 
   if (!res.ok) throw await parseError(res)
   if (res.status === 204) return undefined as T
@@ -190,4 +211,49 @@ export function createServerApiClient(): ServerApiClient {
  */
 export function apiRequest<T>(method: Method, path: string, body?: unknown): Promise<T> {
   return request<T>(method, path, null, body)
+}
+
+// ── Picture service (Go side of the BFF proxy) ───────────────────────────────
+// The /api/pictures BFF route handlers call these; the browser-facing half
+// (what widgets use) is src/api/pictures-client.ts on the client barrel.
+// Binary, per-tenant content — never cached, so every call bypasses the Data
+// Cache the way apiRequest does.
+
+/**
+ * Forward a multipart upload to Go. `form` carries table_name / record_id /
+ * field plus the `file` part — the BFF route passes the browser's FormData
+ * through untouched.
+ */
+export async function uploadPicture(form: FormData): Promise<PictureMeta> {
+  const res = await fetchWithRefresh('POST', '/pictures', null, form)
+  if (!res.ok) throw await parseError(res)
+  return (await res.json()) as PictureMeta
+}
+
+/** Resolve an anchor to its picture metadata; null when the field has none. */
+export async function findPicture(anchor: PictureAnchor): Promise<PictureMeta | null> {
+  const query = new URLSearchParams({
+    table: anchor.table,
+    record: anchor.recordId,
+    field: anchor.field,
+  })
+  const res = await fetchWithRefresh('GET', `/pictures?${query}`, null)
+  if (res.status === 404) return null
+  if (!res.ok) throw await parseError(res)
+  return (await res.json()) as PictureMeta
+}
+
+/**
+ * Fetch a picture's bytes from Go. Returns the raw Response so the BFF route
+ * can stream body + content type back to the browser without buffering.
+ */
+export async function streamPicture(id: string): Promise<Response> {
+  const res = await fetchWithRefresh('GET', `/pictures/${id}`, null)
+  if (!res.ok) throw await parseError(res)
+  return res
+}
+
+export async function deletePicture(id: string): Promise<void> {
+  const res = await fetchWithRefresh('DELETE', `/pictures/${id}`, null)
+  if (!res.ok) throw await parseError(res)
 }
