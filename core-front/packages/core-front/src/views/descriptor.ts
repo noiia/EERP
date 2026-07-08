@@ -27,7 +27,41 @@ export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   number: ['float', 'int', 'percent', 'stars', 'phone'],
   boolean: ['switch', 'picture', 'signature'],
   date: ['simple'],
-  relation: ['search'],
+  relation: ['search', 'tags', 'list'],
+}
+
+export type RelationKind = 'many2one' | 'one2many' | 'many2many'
+
+/**
+ * Each relation kind renders as exactly one widget in v1; the kind therefore
+ * doubles as the field's default widget (a relation never falls back to the
+ * matrix's first entry).
+ */
+export const RELATION_KIND_WIDGETS: Record<RelationKind, string> = {
+  many2one: 'search',
+  one2many: 'list',
+  many2many: 'tags',
+}
+
+/**
+ * How a relation field points at another entity. `entity` is the Go route
+ * prefix, as everywhere. JSON-only — this block crosses the RSC boundary.
+ */
+export interface RelationDescriptor {
+  /** The related entity (its generic CRUD route prefix = its table name). */
+  entity: string
+  kind: RelationKind
+  /** The related record's display field (tags, autocomplete rows). Default 'name'. */
+  labelField?: string
+  /** one2many: the FK column ON THE RELATED entity that points back at this record. */
+  inverseField?: string
+  /** many2many: the junction entity holding one row per link. */
+  via?: string
+  /**
+   * many2many: the junction's FK columns. Defaults to `<own entity>_id` /
+   * `<related entity>_id` — declare explicitly when the junction deviates.
+   */
+  viaFields?: { own: string; related: string }
 }
 
 export interface FieldDescriptor {
@@ -55,9 +89,13 @@ export interface FieldDescriptor {
   /**
    * Whether the value persists to the DB column on commit. Default true.
    * `store: false` = display-only (typically with `compute`): stripped from the
-   * commit payload and expected absent in server data.
+   * commit payload and expected absent in server data. one2many/many2many
+   * relation fields are display-only regardless — the links live on the other
+   * side (inverse FK / junction rows), never in a column of this record.
    */
   store?: boolean
+  /** Required on type 'relation': where the field points (see RelationDescriptor). */
+  relation?: RelationDescriptor
 }
 
 /**
@@ -70,6 +108,7 @@ export function resolveWidget(field: FieldDescriptor): string {
   if (!allowed) {
     throw new Error(`field "${field.name}": unknown field type "${field.type}"`)
   }
+  if (field.type === 'relation') return resolveRelationWidget(field)
   const widget = field.widget ?? allowed[0]
   if (!allowed.includes(widget)) {
     throw new Error(
@@ -80,9 +119,49 @@ export function resolveWidget(field: FieldDescriptor): string {
   return widget
 }
 
+/**
+ * Relation fields carry extra invariants: the relation block is mandatory, the
+ * widget must match the kind (1:1 in v1 — the kind is the default), o2m needs
+ * the inverse FK column, m2m the junction entity. All enforced at registration
+ * so a broken descriptor fails the build, not the form.
+ */
+function resolveRelationWidget(field: FieldDescriptor): string {
+  const rel = field.relation
+  if (!rel) {
+    throw new Error(`field "${field.name}": type 'relation' requires a relation block`)
+  }
+  const expected = RELATION_KIND_WIDGETS[rel.kind]
+  if (!expected) {
+    throw new Error(`field "${field.name}": unknown relation kind "${rel.kind}"`)
+  }
+  const widget = field.widget ?? expected
+  if (widget !== expected) {
+    throw new Error(
+      `field "${field.name}": widget "${widget}" does not match relation kind ` +
+        `"${rel.kind}" (expected "${expected}")`,
+    )
+  }
+  if (rel.kind === 'one2many' && !rel.inverseField) {
+    throw new Error(`field "${field.name}": one2many relations require inverseField`)
+  }
+  if (rel.kind === 'many2many' && !rel.via) {
+    throw new Error(`field "${field.name}": many2many relations require via (junction entity)`)
+  }
+  return widget
+}
+
 /** Validate every field's widget/type pair of a descriptor (see resolveWidget). */
 export function validateDescriptorWidgets<T>(descriptor: ViewDescriptor<T>): void {
   for (const field of descriptor.fields) resolveWidget(field)
+}
+
+/**
+ * True for fields whose value never persists on THIS record: o2m/m2m relations
+ * (links live on the inverse side / junction). Folded into the behavior plan's
+ * unstored set alongside explicit store:false fields.
+ */
+export function isVirtualRelation(field: FieldDescriptor): boolean {
+  return field.type === 'relation' && field.relation != null && field.relation.kind !== 'many2one'
 }
 
 export interface ViewDescriptor<T = Record<string, unknown>> {

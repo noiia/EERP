@@ -86,6 +86,29 @@ describe('ServerApiClient', () => {
     )
   })
 
+  it('encodes list options as filter[]/search[] query params', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, []))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createServerApiClient().list('contact', {
+      filter: { crm_id: 'r1' },
+      search: { name: 'ada' },
+      pageSize: 10,
+    })
+
+    const [url] = fetchMock.mock.calls[0] as unknown as [string]
+    const query = new URL(url).searchParams
+    expect(url.startsWith('http://api.test/api/v1/contact?')).toBe(true)
+    expect(query.get('filter[crm_id]')).toBe('r1')
+    expect(query.get('search[name]')).toBe('ada')
+    expect(query.get('page_size')).toBe('10')
+    // Filtered reads still join the entity's cache tag (mutations revalidate them).
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ next: { tags: ['contact'] } }),
+    )
+  })
+
   it('unwraps the paginated { data } envelope from the list endpoint', async () => {
     vi.stubGlobal(
       'fetch',

@@ -190,7 +190,7 @@ describe('phone', () => {
   })
 })
 
-describe('date and relation stubs', () => {
+describe('date', () => {
   it('date renders a date input and emits ISO strings', () => {
     const { onChange } = renderWidget({ name: 'due', label: 'Due', type: 'date' }, '2026-07-07')
     const input = screen.getByLabelText('Due')
@@ -198,9 +198,7 @@ describe('date and relation stubs', () => {
     fireEvent.change(input, { target: { value: '2026-08-01' } })
     expect(onChange).toHaveBeenCalledWith('2026-08-01')
   })
-
-  it('relation renders the picker stub', () => {
-    renderWidget({ name: 'owner', label: 'Owner', type: 'relation' }, '')
-    expect(screen.getByLabelText('Owner')).toBeInTheDocument()
-  })
 })
+
+// Relation widgets (search/tags/list) are covered in relation-widgets.test.tsx —
+// they need the relation block + RelationOps, not the bare-field harness here.

@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
 import { resolveWidget, type FieldDescriptor } from './descriptor'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
+import { RelationListWidget, RelationSearchWidget, RelationTagsWidget } from './relation-widgets'
 import { useNumberFormat } from './format-store'
 import { tabularNums } from './tokens'
 
@@ -84,24 +85,6 @@ function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
       value={(value as string) ?? ''}
       onChange={(e) => onChange(e.target.value)}
     />
-  )
-}
-
-// ── relation (Phase 1 stub — the search/tags/list widgets are Phase 4) ────────
-
-function RelationSearchWidget({ field, value, onChange, disabled }: WidgetProps) {
-  const t = useT()
-  return (
-    <TextField
-      select
-      label={t(field.label)}
-      required={field.required}
-      disabled={disabled}
-      value={(value as string) ?? ''}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <MenuItem value="">—</MenuItem>
-    </TextField>
   )
 }
 
@@ -357,6 +340,8 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'boolean/signature': BooleanSignatureWidget,
   'date/simple': DateWidget,
   'relation/search': RelationSearchWidget,
+  'relation/tags': RelationTagsWidget,
+  'relation/list': RelationListWidget,
 }
 
 /**

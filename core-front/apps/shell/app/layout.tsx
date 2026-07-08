@@ -9,8 +9,15 @@ import { AppTopBar } from '../src/components/AppTopBar'
 import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { SessionHydrator } from '../src/components/SessionHydrator'
+import { RelationOpsProvider } from '@eerp/core-front'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
+import {
+  createRelationRecord,
+  getRecord,
+  listRecords,
+  removeRelationRecord,
+} from '../src/lib/relation-actions'
 
 export const metadata = {
   title: 'EERP',
@@ -34,7 +41,19 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <LocaleSync preferences={preferences} />
             <SessionHydrator identity={identity} />
             <AppTopBar identity={identity} nav={nav} />
-            {children}
+            {/* Relation widgets' app-wide data path: entity-generic Server Action
+                references — every relation query re-enters Go's permission gate
+                with the caller's session. */}
+            <RelationOpsProvider
+              ops={{
+                list: listRecords,
+                get: getRecord,
+                create: createRelationRecord,
+                remove: removeRelationRecord,
+              }}
+            >
+              {children}
+            </RelationOpsProvider>
           </AppThemeProvider>
         </AppRouterCacheProvider>
       </body>

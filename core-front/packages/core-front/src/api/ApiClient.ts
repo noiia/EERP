@@ -2,7 +2,10 @@ import 'server-only'
 import { cookies } from 'next/headers'
 import { revalidateTag } from 'next/cache'
 import { parseError } from './errors'
+import type { EntityListOptions } from './list-options'
 import type { PictureAnchor, PictureMeta } from './pictures-client'
+
+export type { EntityListOptions } from './list-options'
 import {
   ACCESS_COOKIE,
   ACCESS_TTL_SECONDS,
@@ -154,8 +157,23 @@ async function request<T>(method: Method, path: string, tags: string[] | null, b
   return (text ? (JSON.parse(text) as T) : (undefined as T))
 }
 
+function listQuery(options?: EntityListOptions): string {
+  if (!options) return ''
+  const params = new URLSearchParams()
+  for (const [col, value] of Object.entries(options.filter ?? {})) {
+    params.set(`filter[${col}]`, value)
+  }
+  for (const [col, value] of Object.entries(options.search ?? {})) {
+    params.set(`search[${col}]`, value)
+  }
+  if (options.page) params.set('page', String(options.page))
+  if (options.pageSize) params.set('page_size', String(options.pageSize))
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
 export interface ServerApiClient {
-  list<T>(entity: string): Promise<T[]>
+  list<T>(entity: string, options?: EntityListOptions): Promise<T[]>
   get<T>(entity: string, id: string): Promise<T>
   create<T>(entity: string, body: unknown): Promise<T>
   update<T>(entity: string, id: string, body: unknown): Promise<T>
@@ -167,8 +185,10 @@ class ServerApiClientImpl implements ServerApiClient {
   // Go's ORM server mounts list/create at `/{entity}` (no trailing slash) and the
   // rest at `/{entity}/{id}`. List returns a paginated envelope { data, total, ... };
   // single-record endpoints return the record object directly.
-  async list<T>(entity: string): Promise<T[]> {
-    const body = await request<unknown>('GET', `/${entity}`, [entity])
+  async list<T>(entity: string, options?: EntityListOptions): Promise<T[]> {
+    // Filtered variants cache under their own URL key but share the entity tag,
+    // so every mutation of the entity revalidates them too.
+    const body = await request<unknown>('GET', `/${entity}${listQuery(options)}`, [entity])
     if (Array.isArray(body)) return body as T[]
     const data = (body as { data?: unknown } | null)?.data
     return Array.isArray(data) ? (data as T[]) : []

@@ -62,7 +62,7 @@ today has nowhere to live.
 | boolean/picture | Field value = "image exists". Upload/replace/delete through the picture service; widget shows thumbnail or upload affordance. |
 | boolean/signature | Drawable canvas; non-empty drawing ⇒ field `true`; on "done" the canvas exports PNG → picture service; a **reset button** deletes the picture and sets `false`. |
 | Picture service | Core `picture` table: `id, tenant_id, table_name, record_id, field, object_key, mime, size, created_at…` (off the generic CRUD surface). Routes: `POST /api/v1/pictures` (multipart) · `GET /api/v1/pictures/:id` (stream) · `GET /api/v1/pictures?table&record&field` · `DELETE /api/v1/pictures/:id`; permissions `pictures:pictures:read\|write` from the route; respects the existing body-size limit. Storage is **already provisioned**: the `s3_*` fields sit in `eerp-config.json` (host endpoint `:3910`) and `eerp-config.docker.json` (`http://garage:3900`), backed by the compose `garage` service — bootstrap with `make garage-init`, details in `infra/garage/README.md`. |
-| relation metadata | `relation: { entity, kind: 'many2one'\|'one2many'\|'many2many', labelField? ('name'), inverseField? (o2m), via? (m2m junction entity) }`. `entity` = Go route prefix, as everywhere. |
+| relation metadata | `relation: { entity, kind: 'many2one'\|'one2many'\|'many2many', labelField? ('name'), inverseField? (o2m), via? (m2m junction entity), viaFields? ({own, related} junction columns, default `<own>_id`/`<related>_id`) }`. `entity` = Go route prefix, as everywhere. The widget derives from the kind; o2m needs `inverseField`, m2m needs `via` — enforced at registration. |
 | relation/search (m2o) | An autocomplete search bar querying the related entity's list (Go authorizes — the user only ever sees records they may read). A **link icon at the right** of the field opens a **wizard dialog** (search + grid, select to set) — v1 basic, improved in a later iteration. Selected record renders as a tag. |
 | relation tags (m2o/m2m) | Tag shows the related record's `labelField`; **on hover a cross appears on the tag's right side**; clicking it unlinks (m2o → null, m2m → junction row removed). |
 | relation/list (o2m) | The inverse side: records of another table whose `inverseField` column holds this record's id. v1 renders a read-only embedded grid (list filtered by the inverse FK); inline create/edit deferred. |
@@ -171,7 +171,22 @@ backend upload/list/delete round-trip incl. tenant isolation.
 **DoD:** a signature drawn on a form lands in Garage with a `picture` row, the boolean commits
 `true`, reset clears all three; picture fields survive reload (thumbnail from the service).
 
-## Phase 4 — Relation widgets: search, wizard, tags, o2m/m2m
+## Phase 4 — Relation widgets: search, wizard, tags, o2m/m2m ✅ (implemented)
+
+> Implementation notes: the backend ListFilter existed but carried only
+> pagination — Phase 4 added the filter surface: `?filter[col]=v` (exact,
+> compared as text) and `?search[col]=v` (ILIKE containment), columns
+> whitelisted against the table meta in the handler (400) AND the repository
+> (the security boundary — column names become SQL identifiers). Relation
+> widgets reach other entities through **RelationOps** — entity-generic Server
+> Actions the shell mounts once via `RelationOpsProvider` in the root layout —
+> so every query re-enters Go's permission gate. The relation widget derives
+> from the kind (`many2one`→search, `one2many`→list, `many2many`→tags); o2m/m2m
+> fields are **virtual** (`isVirtualRelation`) and auto-stripped from commit
+> payloads. m2m junction columns default to `<own>_id`/`<related>_id`
+> (`viaFields` overrides). The DoD demo: `crm.contact_id` m2o + `tag`/`crm_tag`
+> m2m on the CRM form, and the inverse o2m embedded on the contact form —
+> verified end-to-end against the live backend.
 
 **Claude Code prompt:**
 ```

@@ -1,4 +1,4 @@
-import type { FieldDescriptor, ViewDescriptor } from './descriptor'
+import { isVirtualRelation, type FieldDescriptor, type ViewDescriptor } from './descriptor'
 
 // The field behavior layer (docs/roadmaps/field-widgets.md, Phase 2). Descriptors
 // stay DATA — they cross the RSC boundary, so a field references its compute
@@ -151,7 +151,11 @@ export function buildBehaviorPlan<T>(descriptor: ViewDescriptor<T>): BehaviorPla
   return {
     computed: ordered,
     onChange: behaviorRegistry.onChangeFor(descriptor.entity),
-    unstored: descriptor.fields.filter((f) => f.store === false).map((f) => f.name),
+    // store:false fields plus virtual relations (o2m/m2m): neither has a column
+    // on this record, so neither may reach the commit payload.
+    unstored: descriptor.fields
+      .filter((f) => f.store === false || isVirtualRelation(f))
+      .map((f) => f.name),
   }
 }
 
