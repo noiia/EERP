@@ -65,8 +65,9 @@ func (r *Repository) FindByAnchor(ctx context.Context, tenantID uuid.UUID, table
 	return rows[0], nil
 }
 
-// Delete removes the metadata row (hard — Picture carries no soft-delete
-// column: the object is gone from the bucket, a tombstone would lie).
+// Delete removes the metadata row. HARD delete: Picture deliberately carries no
+// soft-delete column (see the model comment) — a tombstone would keep occupying
+// the unique anchor index while pointing at bytes gone from the bucket.
 func (r *Repository) Delete(ctx context.Context, tenantID, id uuid.UUID) error {
 	if _, err := r.FindInTenant(ctx, tenantID, id); err != nil {
 		return err
