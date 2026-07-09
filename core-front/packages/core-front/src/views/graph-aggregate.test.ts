@@ -208,37 +208,59 @@ describe('pieSlices', () => {
     { id: '4', status: null, amount: 10 }, // no group value -> skipped
   ]
 
-  it('counts records per group by default', () => {
-    expect(pieSlices(records, { groupByField: 'status', aggregate: 'count' })).toEqual([
-      { label: 'open', value: 2 },
-      { label: 'won', value: 1 },
+  it('sizes slices by record count per group, displayValue equal to count with no valueField', () => {
+    expect(pieSlices(records, { groupByField: 'status' })).toEqual([
+      { label: 'open', count: 2, displayValue: 2 },
+      { label: 'won', count: 1, displayValue: 1 },
     ])
   })
 
-  it('sums a valueField per group when given one, sorted descending by value', () => {
-    expect(pieSlices(records, { groupByField: 'status', valueField: 'amount', aggregate: 'sum' })).toEqual([
-      { label: 'won', value: 200 },
-      { label: 'open', value: 150 },
+  it('a valueField only changes displayValue (the tooltip) — slice SIZE stays count-based', () => {
+    // 'won' has the bigger amount SUM (200 vs 150) but FEWER records (1 vs 2) —
+    // sizing must follow record count, so 'open' (count 2) sorts/sizes first,
+    // not 'won'. This is the exact bug report this test guards against: two
+    // groups with one record each must always render as EQUAL slices, no
+    // matter how their valueField sums compare.
+    expect(pieSlices(records, { groupByField: 'status', valueField: 'amount' })).toEqual([
+      { label: 'open', count: 2, displayValue: 150 },
+      { label: 'won', count: 1, displayValue: 200 },
     ])
   })
 
-  it('sorts slices descending by value', () => {
-    const slices = pieSlices(records, { groupByField: 'status', valueField: 'amount', aggregate: 'sum' })
-    expect(slices[0]?.label).toBe('won')
+  it('two groups with one record each are exactly equal-sized slices, regardless of their valueField values', () => {
+    const twoCompanies: Deal[] = [
+      { id: '1', status: 'Acme', amount: 3 },
+      { id: '2', status: 'Michel Corp.', amount: 2 },
+    ]
+    const slices = pieSlices(twoCompanies, { groupByField: 'status', valueField: 'amount' })
+    expect(slices.map((s) => s.count)).toEqual([1, 1])
+    // The differing amounts still show up as the displayed (tooltip) value.
+    expect(slices.find((s) => s.label === 'Acme')?.displayValue).toBe(3)
+    expect(slices.find((s) => s.label === 'Michel Corp.')?.displayValue).toBe(2)
   })
 
-  it('folds groups past MAX_PIE_SLICES into one OTHER_LABEL slice, keeping the largest individually', () => {
-    const many: Deal[] = Array.from({ length: MAX_PIE_SLICES + 3 }, (_, i) => ({
-      id: String(i),
-      status: `g${i}`,
-      amount: i + 1, // distinct sizes, ascending
-    }))
-    const slices = pieSlices(many, { groupByField: 'status', valueField: 'amount', aggregate: 'sum' })
+  it('sorts slices descending by count', () => {
+    const slices = pieSlices(records, { groupByField: 'status', valueField: 'amount' })
+    expect(slices[0]?.label).toBe('open')
+  })
+
+  it('folds groups past MAX_PIE_SLICES into one OTHER_LABEL slice, keeping the largest COUNTS individually', () => {
+    const many: Deal[] = []
+    for (let i = 0; i < MAX_PIE_SLICES + 3; i++) {
+      // Group i has (i + 1) records — distinct counts, so "largest kept" is
+      // meaningful (unlike all-equal-count groups, where sort order would
+      // just reflect insertion order).
+      for (let j = 0; j <= i; j++) {
+        many.push({ id: `${i}-${j}`, status: `g${i}` })
+      }
+    }
+    const slices = pieSlices(many, { groupByField: 'status' })
     expect(slices).toHaveLength(MAX_PIE_SLICES)
     expect(slices[slices.length - 1]?.label).toBe(OTHER_LABEL)
-    // 11 groups total, top (MAX_PIE_SLICES - 1) = 7 kept individually (amounts
-    // 11..5), the remaining 4 smallest (amounts 4,3,2,1) fold together = 10.
-    expect(slices[slices.length - 1]?.value).toBe(10)
+    // 11 groups with counts 1..11. Top (MAX_PIE_SLICES - 1) = 7 kept
+    // individually (counts 11..5), the remaining 4 smallest (counts 4,3,2,1)
+    // fold together = 10.
+    expect(slices[slices.length - 1]?.count).toBe(10)
   })
 })
 

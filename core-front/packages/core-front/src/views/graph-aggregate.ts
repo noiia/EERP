@@ -140,7 +140,16 @@ export function xySeries<T>(
 
 export interface PieSlice {
   label: string
-  value: number
+  /** Slice SIZE — always the record COUNT for this group. Two groups with the
+   * same number of records always render as equally-sized slices, regardless
+   * of `valueField` — grouping is a categorical split, not a value-weighted
+   * one (a company with one $3 deal and a company with one $2 deal are each
+   * "one company," not "3 parts vs 2 parts" of the pie). */
+  count: number
+  /** What the tooltip shows: `valueField`'s SUM for this group when
+   * configured, otherwise the same as `count` (nothing else to show). Purely
+   * a display annotation — never affects slice size. */
+  displayValue: number
 }
 
 /** Sentinel label for the folded "everything past the palette's slot count"
@@ -153,34 +162,39 @@ export const OTHER_LABEL = ' other'
  * distinct group folds into OTHER_LABEL rather than reusing a hue. */
 export const MAX_PIE_SLICES = 8
 
-/** pie widget config: one slice per distinct `groupByField` value, sized by
- * `valueField`'s aggregate (default: count of records in that group). Slices
- * beyond MAX_PIE_SLICES-1 fold into one OTHER_LABEL slice, ranked by value so
- * the folded slices are always the smallest ones. */
-export function pieSlices<T>(
-  records: T[],
-  config: { groupByField: string; valueField?: string; aggregate: 'sum' | 'count' },
-): PieSlice[] {
-  const groups = new Map<string, number[]>()
+/**
+ * pie widget config: one EQUALLY-SIZED-BY-DEFAULT slice per distinct
+ * `groupByField` value — size is always the group's record count, so a pie
+ * is always "what share of records fall in each group," never accidentally
+ * value-weighted. `valueField` (optional) adds a displayed SUM per slice
+ * (the tooltip), independent of sizing — picking one field to group by and a
+ * different field to also show never secretly changes which slice is
+ * bigger. Slices beyond MAX_PIE_SLICES-1 fold into one OTHER_LABEL slice,
+ * ranked by count so the folded slices are always the smallest groups.
+ */
+export function pieSlices<T>(records: T[], config: { groupByField: string; valueField?: string }): PieSlice[] {
+  const groups = new Map<string, { count: number; sum: number }>()
   for (const record of records) {
     const raw = (record as Record<string, unknown>)[config.groupByField]
     if (raw == null || raw === '') continue
     const label = String(raw)
-    const value = config.valueField
-      ? toNumber((record as Record<string, unknown>)[config.valueField])
-      : 1
-    if (value == null) continue
-    const bucketValues = groups.get(label) ?? []
-    bucketValues.push(value)
-    groups.set(label, bucketValues)
+    const entry = groups.get(label) ?? { count: 0, sum: 0 }
+    entry.count += 1
+    if (config.valueField) {
+      const v = toNumber((record as Record<string, unknown>)[config.valueField])
+      if (v != null) entry.sum += v
+    }
+    groups.set(label, entry)
   }
   const slices = Array.from(groups.entries())
-    .map(([label, values]) => ({ label, value: aggregate(values, config.aggregate) }))
-    .sort((a, b) => b.value - a.value)
+    .map(([label, { count, sum }]) => ({ label, count, displayValue: config.valueField ? sum : count }))
+    .sort((a, b) => b.count - a.count)
   if (slices.length <= MAX_PIE_SLICES) return slices
   const kept = slices.slice(0, MAX_PIE_SLICES - 1)
-  const folded = slices.slice(MAX_PIE_SLICES - 1).reduce((total, s) => total + s.value, 0)
-  return [...kept, { label: OTHER_LABEL, value: folded }]
+  const folded = slices.slice(MAX_PIE_SLICES - 1)
+  const foldedCount = folded.reduce((total, s) => total + s.count, 0)
+  const foldedDisplay = folded.reduce((total, s) => total + s.displayValue, 0)
+  return [...kept, { label: OTHER_LABEL, count: foldedCount, displayValue: foldedDisplay }]
 }
 
 /** stat widget config: one aggregate over `field` (or record count, for

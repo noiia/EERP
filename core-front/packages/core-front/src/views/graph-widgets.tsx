@@ -388,13 +388,16 @@ export function XyWidgetBody<T extends HasId>({
   )
 }
 
-// ── pie (donut, categorical hues in fixed order + a legend) ────────────────
+// ── pie (donut, categorical hues in fixed order + a legend) — slices are
+// ALWAYS sized by record count per group (equal groups render as equal
+// slices); an optional valueField only annotates the tooltip, it never skews
+// slice size (docs/roadmaps/list-view-modes.md's Phase 5.2 fix). ──────────
 
 function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) => string }) {
   const t = useT()
   const palette = useGraphPalette()
   const [containerRef, { width, height }] = useElementSize<HTMLDivElement>({ width: 200, height: 84 })
-  const total = slices.reduce((sum, s) => sum + s.value, 0)
+  const total = slices.reduce((sum, s) => sum + s.count, 0)
 
   // The donut scales with whichever dimension is tighter (a short-wide tile
   // is height-bound, a narrow-tall one is width-bound) — never a fixed
@@ -426,7 +429,7 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
           >
             <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
               {slices.map((slice, i) => {
-                const length = (slice.value / total) * circumference
+                const length = (slice.count / total) * circumference
                 const dashoffset = -offset
                 offset += length
                 const color =
@@ -443,7 +446,7 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
                     strokeDasharray={`${length} ${circumference - length}`}
                     strokeDashoffset={dashoffset}
                   >
-                    <title>{`${slice.label === OTHER_LABEL ? t('Other') : slice.label}: ${format(slice.value)}`}</title>
+                    <title>{`${slice.label === OTHER_LABEL ? t('Other') : slice.label}: ${format(slice.displayValue)}`}</title>
                   </circle>
                 )
               })}
@@ -484,18 +487,14 @@ export function PieWidgetBody<T extends HasId>({
   recordTotal: number | undefined
 }) {
   const { format } = useNumberFormat()
-  const config = tile.config as { groupByField?: string; valueField?: string; aggregate?: 'sum' | 'count' }
-  if (!config.groupByField || !config.aggregate) return <NoData />
-  const slices = pieSlices(records, {
-    groupByField: config.groupByField,
-    valueField: config.valueField,
-    aggregate: config.aggregate,
-  })
+  const config = tile.config as { groupByField?: string; valueField?: string }
+  if (!config.groupByField) return <NoData />
+  const slices = pieSlices(records, { groupByField: config.groupByField, valueField: config.valueField })
   return (
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
       <PartialDataBadge shown={records.length} total={recordTotal} />
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
-        <PieChart slices={slices} format={(v) => format(v, { decimals: config.aggregate === 'count' ? 0 : 1 })} />
+        <PieChart slices={slices} format={(v) => format(v, { decimals: config.valueField ? 1 : 0 })} />
       </Box>
     </Stack>
   )

@@ -211,7 +211,7 @@ describe('GraphWidgetBody: pie', () => {
   it('renders one slice per group with a legend entry each', () => {
     render(
       <GraphWidgetBody
-        tile={tile({ type: 'pie', config: { groupByField: 'status', aggregate: 'count' } })}
+        tile={tile({ type: 'pie', config: { groupByField: 'status' } })}
         descriptor={descriptor}
         records={records}
         recordTotal={3}
@@ -221,6 +221,27 @@ describe('GraphWidgetBody: pie', () => {
     expect(chart.querySelectorAll('circle')).toHaveLength(2) // open, won
     expect(screen.getByText('open')).toBeInTheDocument()
     expect(screen.getByText('won')).toBeInTheDocument()
+  })
+
+  it('a valueField never changes slice size — only the tooltip — even when its sums differ a lot', () => {
+    // 'open' has 2 records (amounts 100+50=150), 'won' has 1 record (amount
+    // 200) — a bigger SUM but fewer records. Slices must still split 2:1 by
+    // record count, never 150:200 by amount (the exact bug this guards).
+    render(
+      <GraphWidgetBody
+        tile={tile({ type: 'pie', config: { groupByField: 'status', valueField: 'amount' } })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    const chart = screen.getByRole('img', { name: 'Pie chart' })
+    const circles = Array.from(chart.querySelectorAll('circle'))
+    const lengths = circles.map((c) => Number(c.getAttribute('stroke-dasharray')!.split(' ')[0]))
+    // 'open' (count 2) sorts/sizes first; its arc is exactly twice 'won's (count 1).
+    expect(lengths[0]! / lengths[1]!).toBeCloseTo(2, 5)
+    expect(circles[0]!.querySelector('title')?.textContent).toBe('open: 150.0')
+    expect(circles[1]!.querySelector('title')?.textContent).toBe('won: 200.0')
   })
 })
 

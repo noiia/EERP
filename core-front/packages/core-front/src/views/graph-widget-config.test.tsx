@@ -190,7 +190,7 @@ describe('WidgetConfigDialog: xy', () => {
 })
 
 describe('WidgetConfigDialog: pie', () => {
-  it('defaults to counting records when no value field is picked', async () => {
+  it('produces a config with just groupByField when no value field is picked', async () => {
     const onSubmit = vi.fn()
     render(
       <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={onSubmit} />,
@@ -201,23 +201,27 @@ describe('WidgetConfigDialog: pie', () => {
     expect(onSubmit).toHaveBeenCalledWith({
       type: 'pie',
       title: '',
-      config: { groupByField: 'status', aggregate: 'count' },
+      config: { groupByField: 'status' },
     })
   })
 
-  it('switches to summing a value field once one is picked', async () => {
+  // No 'aggregate' in either config below: slice SIZE is always record count
+  // (docs/roadmaps/list-view-modes.md Phase 5.2) — a value field only adds a
+  // displayed sum to the tooltip, so the dialog never needs to ask "sum or
+  // count?" for it.
+  it('adds valueField (display-only) to the config once one is picked', async () => {
     const onSubmit = vi.fn()
     render(
       <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={onSubmit} />,
     )
     await pickWidgetType('pie')
     await pickSelect('Group by field', 'Status')
-    await pickSelect('Value field', 'Amount')
+    await pickSelect('Value field (shown in tooltip only)', 'Amount')
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     expect(onSubmit).toHaveBeenCalledWith({
       type: 'pie',
       title: '',
-      config: { groupByField: 'status', valueField: 'amount', aggregate: 'sum' },
+      config: { groupByField: 'status', valueField: 'amount' },
     })
   })
 })

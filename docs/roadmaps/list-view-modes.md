@@ -98,7 +98,7 @@ calendar, chart, or drag-resize-grid code exists anywhere in the repo today).
 | Graph canvas (Phase 4.6) | `react-grid-layout` (RGL) v2 drives the canvas: `gridConfig.cols = Math.max(4, Math.round(containerWidth / GRID_UNIT))`, measured via RGL's own `useContainerWidth()` — the canvas is now a **responsive column grid sized to its container** (which is itself already bounded by RootLayout's page inset — see `core-front/CLAUDE.md`), not a free-form surface sized to the tiles' bounding box. `compactor={verticalCompactor}` runs unconditionally (view and edit mode alike): tiles auto-stack with no gaps/overlaps, resolving on every render, not just after a drag. |
 | Graph edit mode | An "Edit" toggle top-right of the graph toolbar (one level below the mode switcher), visible only to a session holding `settings:views:write` (client-side display gating, like `CreateBar` — Go re-authorizes the PUT regardless). View mode: tiles render read-only via RGL with `dragConfig.enabled`/`resizeConfig.enabled` both `false`. Edit mode: every tile is draggable (`dragConfig.handle`, a header) and resizable (`resizeConfig.handles: ['se']`, RGL's own bottom-right handle), floored per-`type` at `TILE_MIN_SIZE[type]` (not a uniform floor), plus a "Hide" (×) button and a "+ Add widget" button below the canvas that opens a type + title dialog. Hiding a tile is **non-destructive**: it sets `Tile.hidden = true` (excluded from the rendered/RGL-managed grid and from collision/compaction) and appears as a restorable chip in a "Hidden widgets" row below the canvas — clicking a chip sets `hidden = false`, restoring the tile at its last-known geometry. Changes stay in a local draft (mirrors the form store's `dirty`/`commit` shape) until **Save** (`PUT .../graph`, reverting to view mode on success, keeping the draft and surfacing the error on rejection) or **Cancel** (discards the draft, reverts to the last saved layout, including any hide/restore/move/resize made since). |
 | Widget: xy | `config: { xField, yField, seriesField?, aggregate?: 'sum'\|'avg'\|'count', bucket?: 'day'\|'week'\|'month' }`. A smoothed line of `yField`, bucketed by `xField` (a date field), with Y-axis gridlines/numeric ticks and localized X-axis bucket labels. `seriesField` (optional, a selection/text/boolean field) splits the chart into one colored line per distinct value (e.g. a status column) instead of a single implicit series — a legend renders only when there's more than one series. The chart is sized 1:1 to its OWN measured tile pixels (`useElementSize`/`ResizeObserver`), never a fixed literal, so resizing a tile visibly resizes its chart. |
-| Widget: pie | `config: { groupByField, valueField?, aggregate?: 'sum'\|'count' }` (default `count`). One slice per distinct value of `groupByField`. |
+| Widget: pie | `config: { groupByField, valueField? }` — no `aggregate`. One slice per distinct value of `groupByField`, ALWAYS sized by that group's record count (equal groups render as equal slices, full stop). `valueField` is display-only: when set, its SUM per group appears in the tooltip, but never influences slice size — picking a field to show never secretly reweights the chart (Phase 5.2; see Pitfalls). |
 | Widget: stat | `config: { field, aggregate: 'mean'\|'median'\|'sum'\|'count' }` — a single big-number tile. Mean and median are the SAME widget type with a different `aggregate`, not two widget kinds (mirrors the widget/type split in `docs/roadmaps/field-widgets.md`). |
 | Widget: list | `config: { filterField, filterValue, displayFields: string[] }`. Reuses the existing `filter[col]=value` list-endpoint contract (field-widgets Phase 4) — no new backend surface. |
 | Aggregation, v1 | Computed **client-side** over the entity's already-fetched page (capped `page_size`, same records the list/kanban/calendar modes use). Documented v1 limitation, same posture as field-widgets' "server-side recompute out of scope for v1": a future `GET /api/v1/{entity}/aggregate` endpoint is the v2 fix for large tables — flagged in the UI (a "partial data" badge), not silently wrong. |
@@ -612,6 +612,41 @@ the empty space around a fixed-size element; an xy tile configured with a series
 one colored line + legend entry per distinct value; stat and pie content is centered, never
 pinned to one corner, at any tile size.
 
+## Phase 5.2 — Pie fix: slices are always count-sized, never value-weighted ✅ (implemented)
+
+> Reported as a bug during review: grouping by `company` with `valueField: score`, one company
+> scoring 3 and another scoring 2, rendered a 60/40 pie (proportional to the SCORE SUM per
+> group) — mathematically correct for "sum-weighted slices," but not what a "pie of companies"
+> should mean when each company is a single, equally-weighted group. Verified live before
+> concluding anything: the raw SVG `stroke-dasharray` values were exactly 3/5 and 2/5 of the
+> circumference, confirming the arithmetic was internally consistent with the OLD documented
+> contract ("sized by valueField's aggregate") — not a calculation bug, a design mismatch. Given
+> the choice between "keep value-weighted sizing" and "always size by count, value field is
+> label-only," the equal-slices reading is what was chosen.
+>
+> Implementation notes:
+>
+> - **`pieSlices()` now returns `{ label, count, displayValue }`, not `{ label, value }`.** `count`
+>   is ALWAYS the number of records in that group and is the ONLY thing that determines slice
+>   size — two groups with the same record count always render as equal slices, full stop, no
+>   matter what `valueField` sums to in each. `displayValue` is what the tooltip shows: `valueField`'s
+>   SUM per group when configured, otherwise the same as `count` (there's nothing else to show).
+>   This is a strict behavior change, not an additive one — the old `aggregate: 'sum'|'count'`
+>   config key is gone; `PieWidgetBody`/`WidgetConfigDialog` no longer read or write it (a stored
+>   tile with a leftover `aggregate` key round-trips harmlessly — Go's `config` stays opaque, the
+>   frontend just ignores the key).
+> - **The dialog's "Value field" relabels to "Value field (shown in tooltip only)"**, plus a caption
+>   under it ("Slices are always sized by how many records fall in each group") — the exact
+>   confusion that produced the bug report was a silent one; the fix pairs the behavior change
+>   with wording that says so at the point of configuration, not just in this doc.
+> - **Folding past `MAX_PIE_SLICES` now ranks by count, not by value** — same fold mechanics
+>   (largest kept individually, smallest folded into `OTHER_LABEL`), just re-keyed to the metric
+>   that now actually drives slice size.
+
+**DoD:** two groups with one record each render as EXACTLY equal-sized slices regardless of how
+their `valueField` sums compare (the reported scenario: a 3-score company and a 2-score company
+split 50/50, not 60/40); the differing values still surface in each slice's tooltip.
+
 ---
 
 ## Build order
@@ -624,6 +659,7 @@ flowchart TD
     P4 --> P5[Phase 5: Graph widgets]
     P4 --> P46[Phase 4.6: migrate canvas to react-grid-layout]
     P5 --> P51[Phase 5.1: multi-series xy, responsive sizing, centering]
+    P5 --> P52[Phase 5.2: pie fix - count-sized slices]
 ```
 
 Phases 2 and 3 parallelize once Phase 1 lands and share the drag-to-PATCH logic (write it once,
@@ -631,6 +667,9 @@ Phase 3 reuses it). Phase 5 cannot start before Phase 4's canvas/persistence exi
 parallelizes with (or follows) Phase 5 — it replaces the canvas's drag/resize engine, not the
 widget bodies Phase 5 shipped, which it leaves untouched. Phase 5.1 is a widget-body-only
 refinement of Phase 5 (config stays backward compatible) and is independent of Phase 4.6.
+Phase 5.2 is a pie-only behavior fix (its `aggregate` config key is dropped, not backward
+compatible in the sense of being read anymore, though old stored values still round-trip inertly)
+and is independent of both 4.6 and 5.1.
 
 ## Coordination
 
@@ -709,3 +748,12 @@ refinement of Phase 5 (config stays backward compatible) and is independent of P
   render the ref'd element on every branch, and put the "nothing to show yet" content INSIDE or
   ALONGSIDE it, never in its place. Neither jsdom's `ResizeObserver` stub nor the unit tests catch
   this — only a real browser does (see both phases' "known trade-off" notes).
+- **A group's "value field" is a DISPLAY annotation, never a sizing weight, in any widget that
+  groups records** (pie, Phase 5.2 — and keep this in mind for any future grouped widget). It's
+  tempting to let picking a value field also change what a chart "means" (count of records vs.
+  sum of some amount) as a two-for-one config, but that's exactly the confusion Phase 5.2 fixed:
+  a user who groups by `company` and separately picks `score` to LOOK AT expects the pie to still
+  answer "how many records per company," not silently switch to "which company's score sums
+  highest." If a future widget needs genuinely value-weighted sizing, make that an explicit,
+  separately-labeled choice (e.g. a "Size by" selector) — never an implicit side effect of merely
+  picking a field to display.

@@ -12,6 +12,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import { TILE_TYPES, type TileType } from '../api/graph'
 import { fieldLabel, type JsonValue, type ViewDescriptor } from './descriptor'
 import type { FullAggregate, NumericAggregate } from './graph-aggregate'
@@ -141,10 +142,11 @@ export function WidgetConfigDialog<T extends HasId>({
             : { xField, yField, aggregate: xyAggregate, bucket },
         }
       case 'pie':
+        // No aggregate here on purpose: slices are always sized by record
+        // count per group (docs/roadmaps/list-view-modes.md Phase 5.2) —
+        // valueField, if picked, only adds a displayed sum to the tooltip.
         if (!groupByField) return { error: t('Pick a field to group by.') }
-        return valueField
-          ? { config: { groupByField, valueField, aggregate: 'sum' } }
-          : { config: { groupByField, aggregate: 'count' } }
+        return { config: valueField ? { groupByField, valueField } : { groupByField } }
       case 'stat': {
         if (!statField) return { error: t('Pick a field.') }
         if (statAggregate !== 'count' && fieldsByName.get(statField)?.type !== 'number') {
@@ -296,14 +298,14 @@ export function WidgetConfigDialog<T extends HasId>({
                 </Select>
               </FormControl>
               <FormControl fullWidth>
-                <InputLabel id="graph-pie-value">{t('Value field')}</InputLabel>
+                <InputLabel id="graph-pie-value">{t('Value field (shown in tooltip only)')}</InputLabel>
                 <Select
                   labelId="graph-pie-value"
-                  label={t('Value field')}
+                  label={t('Value field (shown in tooltip only)')}
                   value={valueField || NO_VALUE_FIELD}
                   onChange={(e) => setValueField(e.target.value === NO_VALUE_FIELD ? '' : e.target.value)}
                 >
-                  <MenuItem value={NO_VALUE_FIELD}>{t('None (count records)')}</MenuItem>
+                  <MenuItem value={NO_VALUE_FIELD}>{t('None')}</MenuItem>
                   {numberFields.map((f) => (
                     <MenuItem key={f.name} value={f.name}>
                       {t(fieldLabel(f))}
@@ -311,6 +313,9 @@ export function WidgetConfigDialog<T extends HasId>({
                   ))}
                 </Select>
               </FormControl>
+              <Typography variant="caption" color="text.secondary">
+                {t('Slices are always sized by how many records fall in each group.')}
+              </Typography>
             </>
           ) : null}
 
