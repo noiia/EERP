@@ -3,5 +3,7 @@
 // are NOT re-exported here — they reach consumers through the package `server.ts`
 // barrel so importing them into a Client Component is a build error.
 export * from './errors'
+export * from './graph'
 export * from './list-options'
 export * from './pictures-client'
+export * from './view-fields'

@@ -42,6 +42,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Workspace default language, plus the translations modules provide.',
   },
   {
+    path: '/settings/views',
+    title: 'Views',
+    description: "Which field powers each list's Kanban and Calendar display modes.",
+  },
+  {
     path: '/settings/users',
     title: 'Users',
     description: 'User accounts and roles of the workspace.',

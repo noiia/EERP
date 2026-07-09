@@ -1,6 +1,7 @@
 import 'server-only'
 import { ApiError, serializeError, type SerializedError } from '../api/errors'
 import { createServerApiClient, type ServerApiClient } from '../api/ApiClient'
+import { EMPTY_VIEW_FIELDS, type ViewFieldsConfig } from '../api/view-fields'
 import type { ViewDescriptor } from './descriptor'
 import { EntityView } from './renderers'
 import type { EntityActions, HasId, Widget } from './stores'
@@ -13,6 +14,14 @@ import type { EntityActions, HasId, Widget } from './stores'
 export interface LoadedView<T> {
   initialData: T[]
   error: SerializedError | null
+  /**
+   * Go's server-side row count, when known (tree/dashboard-list views only —
+   * form loads a single record and has no "total"). Graph mode's aggregate
+   * widgets (docs/roadmaps/list-view-modes.md, Phase 5) compare this against
+   * `initialData.length` to detect a page_size-truncated fetch rather than
+   * silently aggregating a partial set.
+   */
+  total?: number
 }
 
 export interface LoadViewOptions {
@@ -33,9 +42,29 @@ export async function loadView<T extends HasId>(
       if (!recordId || recordId === 'new') return { initialData: [], error: null }
       return { initialData: [await api.get<T>(descriptor.entity, recordId)], error: null }
     }
-    return { initialData: await api.list<T>(descriptor.entity), error: null }
+    const { records, total } = await api.listWithTotal<T>(descriptor.entity)
+    return { initialData: records, error: null, total }
   } catch (e) {
     if (e instanceof ApiError) return { initialData: [], error: serializeError(e) }
+    throw e
+  }
+}
+
+/**
+ * The entity's Kanban/Calendar field config, for the list view's display-mode
+ * switcher (docs/roadmaps/list-view-modes.md). An unreadable config (session
+ * hiccup, missing settings:views:read) degrades to the empty/unconfigured
+ * state rather than failing the whole view — Kanban/Calendar just stay
+ * disabled, same posture as an unconfigured entity.
+ */
+export async function loadViewFields(
+  entity: string,
+  api: ServerApiClient = createServerApiClient(),
+): Promise<ViewFieldsConfig> {
+  try {
+    return await api.getViewFields(entity)
+  } catch (e) {
+    if (e instanceof ApiError) return EMPTY_VIEW_FIELDS
     throw e
   }
 }
@@ -92,12 +121,16 @@ export async function EntityViewServer<T extends HasId>({
   listViews,
 }: EntityViewServerProps<T>) {
   const client = api ?? createServerApiClient()
-  const { initialData, error } = await loadView(descriptor, client, { recordId })
+  const { initialData, error, total } = await loadView(descriptor, client, { recordId })
   // A dashboard rolls the module's list views up into count blocks; other views ignore it.
   const widgets =
     descriptor.viewType === 'dashboard' && listViews?.length
       ? await loadDashboardWidgets(listViews, client)
       : undefined
+  // The display-mode switcher (List/Kanban/Calendar/Graph) only applies to tree
+  // views; other viewTypes never read this.
+  const viewFields =
+    descriptor.viewType === 'tree' ? await loadViewFields(descriptor.entity, client) : undefined
   return (
     <EntityView
       descriptor={descriptor}
@@ -105,6 +138,8 @@ export async function EntityViewServer<T extends HasId>({
       actions={actions}
       error={error}
       widgets={widgets}
+      viewFields={viewFields}
+      recordTotal={total}
     />
   )
 }

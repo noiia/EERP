@@ -36,6 +36,15 @@ describe('SettingsHub', () => {
     )
   })
 
+  it('ships Views as a default section, linked from the hub', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/views')).toBe(true)
+    render(<SettingsHub />)
+    expect(screen.getByRole('link', { name: /^views/i })).toHaveAttribute(
+      'href',
+      '/settings/views',
+    )
+  })
+
   it('ships Users as a default section, linked from the hub', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/users')).toBe(true)
     render(<SettingsHub />)

@@ -26,6 +26,32 @@ const SourceLocale = "source"
 // (and injection payloads) out of the column.
 var localeTagPattern = regexp.MustCompile(`^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8}){0,3}$`)
 
+// entitySlugPattern restricts the {entity} path param to the snake_case shape
+// Go module route prefixes use (core-front/CLAUDE.md: "entity = the Go route
+// prefix"). It only ever becomes part of an app_settings KEY, never SQL, but
+// junk here would just produce an unreachable setting no frontend page could
+// address.
+var entitySlugPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// fieldNamePattern is the same sanity floor applied to a referenced field
+// name. The backend does not know an entity's descriptor fields — Settings ->
+// Views only ever offers real fields, sourced client-side from the registered
+// ViewDescriptor — this just keeps junk out of the stored config.
+var fieldNamePattern = entitySlugPattern
+
+// tileIDPattern accepts client-generated tile ids (typically a UUID or a
+// short random slug) — looser than entitySlugPattern since a tile id is not
+// itself a DB identifier or a field name, just an opaque key inside the
+// stored layout.
+var tileIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// graphTileTypes is the closed set of Graph tile kinds (docs/roadmaps/
+// list-view-modes.md, contracts table). Widget BODIES (the actual chart/stat
+// rendering) are a Phase 5 frontend concern; the backend only ever stores and
+// validates the tile's shape and type, never its `config` contents — that
+// stays opaque JSON the frontend interprets per type.
+var graphTileTypes = map[string]bool{"xy": true, "pie": true, "stat": true, "list": true}
+
 // ── Call-site interfaces (defined here, not at implementation) ────────────────
 
 type userPreferenceStore interface {
@@ -211,6 +237,196 @@ func (h *Handler) PutFormatSettings(c echo.Context) error {
 	}
 	if err := h.store.Set(c.Request().Context(), identity.TenantID, NumberFormatKey, string(value)); err != nil {
 		return fmt.Errorf("settings: set number format: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// viewFieldsConfig is both the stored value of a ViewFieldsKey(entity) setting
+// and the request/response body of GET|PUT /settings/views/:entity/fields.
+type viewFieldsConfig struct {
+	KanbanStatusField *string `json:"kanban_status_field"`
+	CalendarDateField *string `json:"calendar_date_field"`
+}
+
+// GetViewFieldsSettings handles GET /api/v1/settings/views/:entity/fields —
+// which field, if any, the workspace has designated as entity's Kanban status
+// field and Calendar date field (docs/roadmaps/list-view-modes.md). An
+// unconfigured entity returns nulls, not a 404: it's a normal state (the
+// frontend's mode switcher just keeps Kanban/Calendar disabled), not an error.
+// Mounted behind the permission middleware, which derives settings:views:read.
+func (h *Handler) GetViewFieldsSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, ViewFieldsKey(entity))
+	if err != nil {
+		return fmt.Errorf("settings: get view fields for %s: %w", entity, err)
+	}
+
+	var resp viewFieldsConfig
+	if ok && raw != "" {
+		// An unparsable stored value degrades to the empty config rather than
+		// failing the read — same posture as GetMyPreferences' number format.
+		_ = json.Unmarshal([]byte(raw), &resp)
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutViewFieldsSettings handles PUT /api/v1/settings/views/:entity/fields.
+// Mounted behind the permission middleware, which derives settings:views:write
+// from the route.
+func (h *Handler) PutViewFieldsSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	var req viewFieldsConfig
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if req.KanbanStatusField != nil && !fieldNamePattern.MatchString(*req.KanbanStatusField) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			"kanban_status_field must be a lowercase snake_case field name.")
+	}
+	if req.CalendarDateField != nil && !fieldNamePattern.MatchString(*req.CalendarDateField) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			"calendar_date_field must be a lowercase snake_case field name.")
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal view fields for %s: %w", entity, err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, ViewFieldsKey(entity), string(value)); err != nil {
+		return fmt.Errorf("settings: set view fields for %s: %w", entity, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// graphTile is one tile of an entity's Graph mode layout. Coordinates are
+// integer grid units — one unit is 30px on the frontend (GRID_UNIT), a
+// constant the backend never needs to know. `Config` stays opaque: the
+// backend stores and round-trips it without interpreting it (Phase 5's
+// per-type shapes are a frontend concern).
+type graphTile struct {
+	ID     string          `json:"id"`
+	X      int             `json:"x"`
+	Y      int             `json:"y"`
+	W      int             `json:"w"`
+	H      int             `json:"h"`
+	Type   string          `json:"type"`
+	Title  *string         `json:"title,omitempty"`
+	Config json.RawMessage `json:"config"`
+}
+
+// graphLayout is both the stored value of a ViewGraphKey(entity) setting and
+// the request/response body of GET|PUT /settings/views/:entity/graph.
+type graphLayout struct {
+	Tiles []graphTile `json:"tiles"`
+}
+
+// validateGraphLayout applies the shape-level checks the contracts table
+// requires (id, non-negative/non-zero geometry, closed type set, duplicate
+// ids) — never the tile's `config` contents, which stay opaque JSON.
+func validateGraphLayout(layout graphLayout) error {
+	seen := make(map[string]bool, len(layout.Tiles))
+	for _, tile := range layout.Tiles {
+		if !tileIDPattern.MatchString(tile.ID) {
+			return fmt.Errorf("tile id %q must be 1-64 letters, digits, - or _", tile.ID)
+		}
+		if seen[tile.ID] {
+			return fmt.Errorf("duplicate tile id %q", tile.ID)
+		}
+		seen[tile.ID] = true
+		if tile.X < 0 || tile.Y < 0 {
+			return fmt.Errorf("tile %q: x/y must be >= 0", tile.ID)
+		}
+		if tile.W < 1 || tile.H < 1 {
+			return fmt.Errorf("tile %q: w/h must be >= 1", tile.ID)
+		}
+		if !graphTileTypes[tile.Type] {
+			return fmt.Errorf("tile %q: type %q is not one of xy, pie, stat, list", tile.ID, tile.Type)
+		}
+		if tile.Title != nil && len(*tile.Title) > 200 {
+			return fmt.Errorf("tile %q: title exceeds 200 characters", tile.ID)
+		}
+	}
+	return nil
+}
+
+// GetGraphLayoutSettings handles GET /api/v1/settings/views/:entity/graph —
+// entity's saved Graph mode tile layout (docs/roadmaps/list-view-modes.md).
+// An unconfigured entity returns an empty tile list, not a 404: a blank
+// canvas is a normal state. Mounted behind the permission middleware, which
+// derives settings:views:read.
+func (h *Handler) GetGraphLayoutSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, ViewGraphKey(entity))
+	if err != nil {
+		return fmt.Errorf("settings: get graph layout for %s: %w", entity, err)
+	}
+
+	resp := graphLayout{Tiles: []graphTile{}}
+	if ok && raw != "" {
+		// An unparsable stored value degrades to an empty canvas rather than
+		// failing the read — same posture as the view-fields/preferences reads.
+		var parsed graphLayout
+		if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+			resp = parsed
+			if resp.Tiles == nil {
+				resp.Tiles = []graphTile{}
+			}
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutGraphLayoutSettings handles PUT /api/v1/settings/views/:entity/graph.
+// Mounted behind the permission middleware, which derives
+// settings:views:write from the route.
+func (h *Handler) PutGraphLayoutSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	var req graphLayout
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if err := validateGraphLayout(req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+	}
+	// A tile with no config in the request body unmarshals its RawMessage as
+	// nil; normalize to an empty object so every stored tile round-trips a
+	// valid JSON value, never a missing key.
+	for i, tile := range req.Tiles {
+		if len(tile.Config) == 0 {
+			req.Tiles[i].Config = json.RawMessage("{}")
+		}
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal graph layout for %s: %w", entity, err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, ViewGraphKey(entity), string(value)); err != nil {
+		return fmt.Errorf("settings: set graph layout for %s: %w", entity, err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

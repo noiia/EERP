@@ -1,8 +1,6 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Alert from '@mui/material/Alert'
-import AlertTitle from '@mui/material/AlertTitle'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -12,16 +10,30 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
 import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
+import Tooltip from '@mui/material/Tooltip'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import type { SerializedError } from '../api/errors'
+import {
+  availableDisplayModes,
+  EMPTY_VIEW_FIELDS,
+  type DisplayMode,
+  type ViewFieldsConfig,
+} from '../api/view-fields'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
+import { CalendarRenderer } from './calendar-renderer'
 import { fieldLabel, layoutFieldOrder, normalizeLayout, type ViewDescriptor } from './descriptor'
+import { ErrorAlert } from './error-alert'
+import { GraphRenderer } from './graph-renderer'
+import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
 import { layout, tabularNums } from './tokens'
+import { useUiStore } from './ui-store'
 import {
   createDashboardStore,
   createFormStore,
@@ -51,20 +63,15 @@ export interface EntityViewProps<T extends HasId> {
   /** Dashboard seed + refresh (only meaningful for viewType 'dashboard'). */
   widgets?: Widget[]
   onRefresh?: () => Promise<Widget[]>
-}
-
-function ErrorAlert({ error }: { error: SerializedError }) {
-  return (
-    <Alert severity="error">
-      <AlertTitle>{error.code}</AlertTitle>
-      {error.message}
-      {error.requestId ? (
-        <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
-          request: {error.requestId}
-        </Typography>
-      ) : null}
-    </Alert>
-  )
+  /** Kanban status field / Calendar date field config (tree views only —
+   * docs/roadmaps/list-view-modes.md). Absent/undefined behaves as
+   * unconfigured (Kanban/Calendar disabled), never a render error. */
+  viewFields?: ViewFieldsConfig
+  /** Go's total row count for this entity (tree views only), when known —
+   * Graph mode's aggregate widgets (Phase 5) use it to detect a
+   * page_size-truncated `initialData` instead of silently aggregating a
+   * partial set. Undefined is treated as "unknown", not "complete". */
+  recordTotal?: number
 }
 
 /** Top-level dispatcher: render a load error, otherwise the renderer for the viewType. */
@@ -193,50 +200,161 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
   )
 }
 
-// --- tree (hierarchy) with a flat DataGrid fallback ---
+// --- tree (hierarchy) with a flat DataGrid fallback, plus Kanban/Calendar/Graph modes ---
 
-function TreeRenderer<T extends HasId>({ descriptor, initialData }: EntityViewProps<T>) {
+const MODE_LABELS: Record<DisplayMode, string> = {
+  list: 'List',
+  kanban: 'Kanban',
+  calendar: 'Calendar',
+  graph: 'Graph',
+}
+
+/**
+ * Top-right of the list content: switches between List (the DataGrid/tree
+ * this renderer has always shown) and Kanban/Calendar/Graph (docs/roadmaps/
+ * list-view-modes.md). Kanban/Calendar disable themselves — with a tooltip
+ * pointing at Settings -> Views — until an admin configures the matching
+ * field; Graph is always enabled (an empty canvas needs no configuration).
+ * The choice persists per entity in useUiStore, so leaving and returning to
+ * a view keeps the last mode.
+ */
+function DisplayModeSwitcher({
+  entity,
+  mode,
+  onChange,
+  availability,
+}: {
+  entity: string
+  mode: DisplayMode
+  onChange: (mode: DisplayMode) => void
+  availability: Record<DisplayMode, boolean>
+}) {
+  const t = useT()
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        value={mode}
+        onChange={(_event, next: DisplayMode | null) => {
+          if (next) onChange(next)
+        }}
+        aria-label={t('Display mode')}
+      >
+        {(['list', 'kanban', 'calendar', 'graph'] as const).map((candidate) => {
+          const enabled = availability[candidate]
+          const button = (
+            <ToggleButton key={candidate} value={candidate} disabled={!enabled} data-entity={entity}>
+              {t(MODE_LABELS[candidate])}
+            </ToggleButton>
+          )
+          if (enabled) return button
+          // A disabled MuiButtonBase swallows pointer events, so the tooltip
+          // needs a non-disabled wrapper to still receive them.
+          return (
+            <Tooltip key={candidate} title={t('Configure in Settings → Views')}>
+              <span>{button}</span>
+            </Tooltip>
+          )
+        })}
+      </ToggleButtonGroup>
+    </Box>
+  )
+}
+
+function TreeRenderer<T extends HasId>({
+  descriptor,
+  initialData,
+  actions,
+  viewFields = EMPTY_VIEW_FIELDS,
+  recordTotal,
+}: EntityViewProps<T>) {
   const t = useT()
   const router = useRouter()
-  // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
-  const hierarchical = (initialData as TreeNode[]).some((r) => r.parent_id != null)
-  let view: React.ReactNode
-  if (!hierarchical) {
-    // Column order comes from the normalized layout, not a raw fields read —
-    // for the common (no explicit `layout`) descriptor this is identical to
-    // fields declaration order (the "Tree columns keep using fields order"
-    // contract), but an explicit layout's field order now drives it too.
-    const fieldsByName = new Map(descriptor.fields.map((f) => [f.name, f]))
-    const columns: GridColDef[] = layoutFieldOrder(normalizeLayout(descriptor))
-      .map((name) => fieldsByName.get(name))
-      .filter((f) => f != null)
-      .map((f) => ({
-        field: f.name,
-        headerName: t(fieldLabel(f)),
-        flex: 1,
-      }))
-    // A formPath makes rows navigable: clicking one opens that record's form.
-    const { formPath } = descriptor
-    view = (
-      <Box sx={{ width: '100%' }}>
-        <DataGrid
-          rows={initialData}
-          columns={columns}
-          autoHeight
-          onRowClick={
-            formPath
-              ? (params) => router.push(formPath.replace(':id', String(params.id)))
-              : undefined
-          }
-          sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
-        />
-      </Box>
+  const mode = useUiStore((s) => s.viewMode[descriptor.entity] ?? 'list')
+  const setViewMode = useUiStore((s) => s.setViewMode)
+  const availability = availableDisplayModes(viewFields)
+
+  let content: React.ReactNode
+  if (mode === 'kanban' && viewFields.kanbanStatusField) {
+    content = (
+      <KanbanRenderer
+        descriptor={descriptor}
+        initialData={initialData}
+        actions={actions}
+        statusField={viewFields.kanbanStatusField}
+      />
+    )
+  } else if (mode === 'calendar' && viewFields.calendarDateField) {
+    content = (
+      <CalendarRenderer
+        descriptor={descriptor}
+        initialData={initialData}
+        actions={actions}
+        dateField={viewFields.calendarDateField}
+      />
+    )
+  } else if (mode === 'graph') {
+    content = (
+      <GraphRenderer
+        descriptor={descriptor}
+        records={initialData}
+        recordTotal={recordTotal ?? initialData.length}
+      />
     )
   } else {
-    view = <HierarchyTree descriptor={descriptor} initialData={initialData as (T & TreeNode)[]} />
+    // 'list' (default), and the safe fallback if 'kanban'/'calendar' are
+    // somehow reached with no configured field (the switcher disables those
+    // buttons, so this is defensive, not a normal path).
+    // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
+    const hierarchical = (initialData as TreeNode[]).some((r) => r.parent_id != null)
+    if (!hierarchical) {
+      // Column order comes from the normalized layout, not a raw fields read —
+      // for the common (no explicit `layout`) descriptor this is identical to
+      // fields declaration order (the "Tree columns keep using fields order"
+      // contract), but an explicit layout's field order now drives it too.
+      const fieldsByName = new Map(descriptor.fields.map((f) => [f.name, f]))
+      const columns: GridColDef[] = layoutFieldOrder(normalizeLayout(descriptor))
+        .map((name) => fieldsByName.get(name))
+        .filter((f) => f != null)
+        .map((f) => ({
+          field: f.name,
+          headerName: t(fieldLabel(f)),
+          flex: 1,
+        }))
+      // A formPath makes rows navigable: clicking one opens that record's form.
+      const { formPath } = descriptor
+      content = (
+        <Box sx={{ width: '100%' }}>
+          <DataGrid
+            rows={initialData}
+            columns={columns}
+            autoHeight
+            onRowClick={
+              formPath
+                ? (params) => router.push(formPath.replace(':id', String(params.id)))
+                : undefined
+            }
+            sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
+          />
+        </Box>
+      )
+    } else {
+      content = <HierarchyTree descriptor={descriptor} initialData={initialData as (T & TreeNode)[]} />
+    }
   }
   // No CreateBar here: for tree views the host page renders it on the title row.
-  return view
+  return (
+    <Box>
+      <DisplayModeSwitcher
+        entity={descriptor.entity}
+        mode={mode}
+        onChange={(next) => setViewMode(descriptor.entity, next)}
+        availability={availability}
+      />
+      {content}
+    </Box>
+  )
 }
 
 function HierarchyTree<T extends HasId & TreeNode>({

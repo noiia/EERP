@@ -1,0 +1,194 @@
+import { describe, expect, it } from 'vitest'
+import {
+  aggregate,
+  bucketKey,
+  MAX_PIE_SLICES,
+  OTHER_LABEL,
+  pieSlices,
+  statValue,
+  toNumber,
+  xyPoints,
+} from './graph-aggregate'
+
+describe('toNumber', () => {
+  it('accepts a finite number as-is', () => {
+    expect(toNumber(42)).toBe(42)
+    expect(toNumber(-3.5)).toBe(-3.5)
+  })
+  it('parses a numeric string', () => {
+    expect(toNumber('42')).toBe(42)
+    expect(toNumber('  3.5  ')).toBe(3.5)
+  })
+  it('rejects non-numeric, NaN, Infinity, null, undefined, empty string', () => {
+    expect(toNumber('abc')).toBeNull()
+    expect(toNumber('')).toBeNull()
+    expect(toNumber(NaN)).toBeNull()
+    expect(toNumber(Infinity)).toBeNull()
+    expect(toNumber(null)).toBeNull()
+    expect(toNumber(undefined)).toBeNull()
+  })
+})
+
+describe('aggregate', () => {
+  it('count is the length, ignoring values', () => {
+    expect(aggregate([1, 2, 3], 'count')).toBe(3)
+    expect(aggregate([], 'count')).toBe(0)
+  })
+  it('sum adds', () => {
+    expect(aggregate([1, 2, 3], 'sum')).toBe(6)
+    expect(aggregate([], 'sum')).toBe(0)
+  })
+  it('avg and mean are the same math', () => {
+    expect(aggregate([1, 2, 3, 4], 'avg')).toBe(2.5)
+    expect(aggregate([1, 2, 3, 4], 'mean')).toBe(2.5)
+    expect(aggregate([], 'mean')).toBe(0)
+  })
+  it('median sorts for the real middle value, odd count', () => {
+    expect(aggregate([5, 1, 3], 'median')).toBe(3)
+  })
+  it('median averages the two middles on an even count', () => {
+    expect(aggregate([1, 2, 3, 4], 'median')).toBe(2.5)
+  })
+  it('median is unaffected by input order (proves it sorts, not indexes blindly)', () => {
+    expect(aggregate([100, 1, 2, 3, 4], 'median')).toBe(3)
+  })
+  it('median of empty is 0', () => {
+    expect(aggregate([], 'median')).toBe(0)
+  })
+})
+
+describe('bucketKey', () => {
+  it('day returns the date unchanged', () => {
+    expect(bucketKey('2024-03-15', 'day')).toBe('2024-03-15')
+  })
+  it('month truncates to year-month', () => {
+    expect(bucketKey('2024-03-15', 'month')).toBe('2024-03')
+  })
+  it('week buckets to that week\'s Monday', () => {
+    // 2024-03-15 is a Friday; Monday of that week is 2024-03-11.
+    expect(bucketKey('2024-03-15', 'week')).toBe('2024-03-11')
+    // A Monday buckets to itself.
+    expect(bucketKey('2024-03-11', 'week')).toBe('2024-03-11')
+    // A Sunday belongs to the PRECEDING Monday's week, not the next one.
+    expect(bucketKey('2024-03-17', 'week')).toBe('2024-03-11')
+  })
+  it('handles a week bucket that crosses a month boundary', () => {
+    // 2024-03-01 is a Friday; that week's Monday is 2024-02-26.
+    expect(bucketKey('2024-03-01', 'week')).toBe('2024-02-26')
+  })
+  it('returns null for a non-date string', () => {
+    expect(bucketKey('not-a-date', 'day')).toBeNull()
+    expect(bucketKey('', 'month')).toBeNull()
+  })
+})
+
+interface Deal {
+  id: string
+  closed_at?: string | null
+  amount?: number | null
+  status?: string | null
+}
+
+describe('xyPoints', () => {
+  const records: Deal[] = [
+    { id: '1', closed_at: '2024-01-05', amount: 100 },
+    { id: '2', closed_at: '2024-01-20', amount: 50 },
+    { id: '3', closed_at: '2024-02-10', amount: 200 },
+    { id: '4', closed_at: null, amount: 999 }, // no date -> skipped
+    { id: '5', closed_at: '2024-02-11', amount: null }, // no y value -> skipped
+  ]
+
+  it('buckets and aggregates yField per xField bucket, sorted chronologically', () => {
+    expect(
+      xyPoints(records, { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' }),
+    ).toEqual([
+      { bucket: '2024-01', value: 150 },
+      { bucket: '2024-02', value: 200 },
+    ])
+  })
+
+  it('supports avg and count aggregates', () => {
+    expect(
+      xyPoints(records, { xField: 'closed_at', yField: 'amount', aggregate: 'avg', bucket: 'month' }),
+    ).toEqual([
+      { bucket: '2024-01', value: 75 },
+      { bucket: '2024-02', value: 200 },
+    ])
+    expect(
+      xyPoints(records, { xField: 'closed_at', yField: 'amount', aggregate: 'count', bucket: 'month' }),
+    ).toEqual([
+      { bucket: '2024-01', value: 2 },
+      { bucket: '2024-02', value: 1 },
+    ])
+  })
+
+  it('skips records with no date or no numeric y value', () => {
+    const points = xyPoints(records, { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'day' })
+    expect(points.reduce((n, p) => n + p.value, 0)).toBe(350) // 100+50+200, never 999
+  })
+
+  it('returns an empty array when nothing matches', () => {
+    expect(xyPoints([], { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'day' })).toEqual([])
+  })
+})
+
+describe('pieSlices', () => {
+  const records: Deal[] = [
+    { id: '1', status: 'open', amount: 100 },
+    { id: '2', status: 'open', amount: 50 },
+    { id: '3', status: 'won', amount: 200 },
+    { id: '4', status: null, amount: 10 }, // no group value -> skipped
+  ]
+
+  it('counts records per group by default', () => {
+    expect(pieSlices(records, { groupByField: 'status', aggregate: 'count' })).toEqual([
+      { label: 'open', value: 2 },
+      { label: 'won', value: 1 },
+    ])
+  })
+
+  it('sums a valueField per group when given one, sorted descending by value', () => {
+    expect(pieSlices(records, { groupByField: 'status', valueField: 'amount', aggregate: 'sum' })).toEqual([
+      { label: 'won', value: 200 },
+      { label: 'open', value: 150 },
+    ])
+  })
+
+  it('sorts slices descending by value', () => {
+    const slices = pieSlices(records, { groupByField: 'status', valueField: 'amount', aggregate: 'sum' })
+    expect(slices[0]?.label).toBe('won')
+  })
+
+  it('folds groups past MAX_PIE_SLICES into one OTHER_LABEL slice, keeping the largest individually', () => {
+    const many: Deal[] = Array.from({ length: MAX_PIE_SLICES + 3 }, (_, i) => ({
+      id: String(i),
+      status: `g${i}`,
+      amount: i + 1, // distinct sizes, ascending
+    }))
+    const slices = pieSlices(many, { groupByField: 'status', valueField: 'amount', aggregate: 'sum' })
+    expect(slices).toHaveLength(MAX_PIE_SLICES)
+    expect(slices[slices.length - 1]?.label).toBe(OTHER_LABEL)
+    // 11 groups total, top (MAX_PIE_SLICES - 1) = 7 kept individually (amounts
+    // 11..5), the remaining 4 smallest (amounts 4,3,2,1) fold together = 10.
+    expect(slices[slices.length - 1]?.value).toBe(10)
+  })
+})
+
+describe('statValue', () => {
+  const records: Deal[] = [
+    { id: '1', amount: 10 },
+    { id: '2', amount: 20 },
+    { id: '3', amount: 30 },
+    { id: '4', amount: null },
+  ]
+
+  it('count ignores the field entirely — every record counts', () => {
+    expect(statValue(records, { field: 'amount', aggregate: 'count' })).toBe(4)
+  })
+
+  it('mean/median/sum skip non-numeric values', () => {
+    expect(statValue(records, { field: 'amount', aggregate: 'sum' })).toBe(60)
+    expect(statValue(records, { field: 'amount', aggregate: 'mean' })).toBe(20)
+    expect(statValue(records, { field: 'amount', aggregate: 'median' })).toBe(20)
+  })
+})

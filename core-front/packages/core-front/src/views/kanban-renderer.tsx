@@ -1,0 +1,114 @@
+'use client'
+import { useState } from 'react'
+import Box from '@mui/material/Box'
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
+import { useT } from '../i18n/translate'
+import type { ViewDescriptor } from './descriptor'
+import { ErrorAlert } from './error-alert'
+import { orderedFields } from './layout-fields'
+import type { EntityActions, HasId } from './stores'
+import { useOptimisticFieldMove } from './use-optimistic-field-move'
+
+// Kanban display mode (docs/roadmaps/list-view-modes.md, Phase 2): columns from
+// the configured status field's declared selection.options, cards draggable
+// between them. Renders the SAME already-fetched records TreeRenderer's list
+// mode does — no new fetch, no new route. Drag/PATCH/revert mechanics live in
+// useOptimisticFieldMove, shared with CalendarRenderer (Phase 3).
+
+/** Sentinel column for records whose status field is null/unset — never
+ * silently dropped from the board. */
+const NO_STATUS = '__no_status__'
+
+export interface KanbanRendererProps<T extends HasId> {
+  descriptor: ViewDescriptor<T>
+  initialData: T[]
+  actions: EntityActions<T>
+  /** The entity's configured Kanban status field name (a 'selection' field). */
+  statusField: string
+}
+
+export function KanbanRenderer<T extends HasId>({
+  descriptor,
+  initialData,
+  actions,
+  statusField,
+}: KanbanRendererProps<T>) {
+  const t = useT()
+  const { records, error, moveField } = useOptimisticFieldMove(initialData, actions, statusField)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+
+  const statusDescriptor = descriptor.fields.find((f) => f.name === statusField)
+  const options = statusDescriptor?.selection?.options ?? []
+  // Label field + up to 3 more, skipping the status field itself (redundant
+  // with the column a card is already sorted into).
+  const cardFields = orderedFields(descriptor, { exclude: [statusField], limit: 4 })
+  const columns = [...options, NO_STATUS]
+
+  function statusOf(record: T): string {
+    const raw = (record as Record<string, unknown>)[statusField]
+    return typeof raw === 'string' && raw !== '' ? raw : NO_STATUS
+  }
+
+  return (
+    <Box>
+      {error ? <ErrorAlert error={error} /> : null}
+      <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1, alignItems: 'flex-start' }}>
+        {columns.map((column) => {
+          const label = column === NO_STATUS ? t('No status') : column
+          const cards = records.filter((r) => statusOf(r) === column)
+          return (
+            <Box
+              key={column}
+              role="group"
+              aria-label={label}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (draggingId) void moveField(draggingId, column === NO_STATUS ? null : column)
+              }}
+              sx={{
+                minWidth: 240,
+                flex: '0 0 240px',
+                bgcolor: 'action.hover',
+                borderRadius: 1,
+                p: 1,
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ mb: 1, px: 0.5 }}>
+                {label} ({cards.length})
+              </Typography>
+              <Stack spacing={1}>
+                {cards.map((record) => (
+                  <Card
+                    key={record.id}
+                    data-testid={`kanban-card-${record.id}`}
+                    variant="outlined"
+                    draggable
+                    onDragStart={() => setDraggingId(record.id)}
+                    onDragEnd={() => setDraggingId(null)}
+                    sx={{ cursor: 'grab' }}
+                  >
+                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                      {cardFields.map((f, i) => (
+                        <Typography
+                          key={f.name}
+                          variant={i === 0 ? 'body2' : 'caption'}
+                          sx={{ display: 'block', fontWeight: i === 0 ? 600 : 400 }}
+                        >
+                          {String((record as Record<string, unknown>)[f.name] ?? '')}
+                        </Typography>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ))}
+              </Stack>
+            </Box>
+          )
+        })}
+      </Box>
+    </Box>
+  )
+}

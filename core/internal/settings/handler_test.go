@@ -80,6 +80,25 @@ func serve(t *testing.T, h echo.HandlerFunc, method, target, body string, identi
 
 func strPtr(s string) *string { return &s }
 
+// serveWithParam is serve plus a single Echo path param, for routes like
+// /settings/views/:entity/fields that serve() (no router match) can't set on
+// its own.
+func serveWithParam(t *testing.T, h echo.HandlerFunc, method, target, body string, identity auth.Identity, paramName, paramValue string) *httptest.ResponseRecorder {
+	t.Helper()
+	e := echo.New()
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(auth.SetIdentity(req.Context(), identity))
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames(paramName)
+	c.SetParamValues(paramValue)
+	if err := h(c); err != nil {
+		e.HTTPErrorHandler(err, c)
+	}
+	return rec
+}
+
 // ── GET /me/preferences ───────────────────────────────────────────────────────
 
 func TestGetMyPreferences(t *testing.T) {
@@ -333,6 +352,326 @@ func TestPutFormatSettings(t *testing.T) {
 			}
 			if store.gotKey != NumberFormatKey {
 				t.Errorf("key = %q, want %q", store.gotKey, NumberFormatKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
+// ── GET /settings/views/:entity/fields ────────────────────────────────────────
+
+func TestGetViewFieldsSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name         string
+		entity       string
+		store        *stubStore
+		wantStatus   int
+		wantKanban   any
+		wantCalendar any
+	}{
+		{
+			name:         "unconfigured entity reads as nulls, not a 404",
+			entity:       "crm",
+			store:        &stubStore{},
+			wantStatus:   http.StatusOK,
+			wantKanban:   nil,
+			wantCalendar: nil,
+		},
+		{
+			name:   "configured entity",
+			entity: "crm",
+			store: &stubStore{values: map[string]string{
+				ViewFieldsKey("crm"): `{"kanban_status_field":"status","calendar_date_field":"due_date"}`,
+			}},
+			wantStatus:   http.StatusOK,
+			wantKanban:   "status",
+			wantCalendar: "due_date",
+		},
+		{
+			name:         "unparsable stored value degrades to nulls",
+			entity:       "crm",
+			store:        &stubStore{values: map[string]string{ViewFieldsKey("crm"): "{not json"}},
+			wantStatus:   http.StatusOK,
+			wantKanban:   nil,
+			wantCalendar: nil,
+		},
+		{
+			name:       "junk entity rejected",
+			entity:     "../../etc",
+			store:      &stubStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store)
+			rec := serveWithParam(t, h.GetViewFieldsSettings, http.MethodGet,
+				"/settings/views/"+tt.entity+"/fields", "", identity, "entity", tt.entity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+
+			var resp map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp["kanban_status_field"] != tt.wantKanban {
+				t.Errorf("kanban_status_field = %v, want %v", resp["kanban_status_field"], tt.wantKanban)
+			}
+			if resp["calendar_date_field"] != tt.wantCalendar {
+				t.Errorf("calendar_date_field = %v, want %v", resp["calendar_date_field"], tt.wantCalendar)
+			}
+		})
+	}
+}
+
+// ── PUT /settings/views/:entity/fields ────────────────────────────────────────
+
+func TestPutViewFieldsSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		entity     string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantKey    string
+		wantValue  string
+	}{
+		{
+			name:       "set both fields",
+			entity:     "crm",
+			body:       `{"kanban_status_field":"status","calendar_date_field":"due_date"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    "views.crm.fields",
+			wantValue:  `{"kanban_status_field":"status","calendar_date_field":"due_date"}`,
+		},
+		{
+			name:       "clear both fields",
+			entity:     "crm",
+			body:       `{"kanban_status_field":null,"calendar_date_field":null}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    "views.crm.fields",
+			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null}`,
+		},
+		{
+			name:       "junk entity rejected",
+			entity:     "../../etc",
+			body:       `{}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "junk kanban field rejected",
+			entity:     "crm",
+			body:       `{"kanban_status_field":"status; DROP TABLE crm"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "junk calendar field rejected",
+			entity:     "crm",
+			body:       `{"calendar_date_field":"../etc"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store)
+			rec := serveWithParam(t, h.PutViewFieldsSettings, http.MethodPut,
+				"/settings/views/"+tt.entity+"/fields", tt.body, identity, "entity", tt.entity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotTenant != identity.TenantID {
+				t.Errorf("tenant = %s, want the caller's %s", store.gotTenant, identity.TenantID)
+			}
+			if store.gotKey != tt.wantKey {
+				t.Errorf("key = %q, want %q", store.gotKey, tt.wantKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
+// ── GET /settings/views/:entity/graph ─────────────────────────────────────────
+
+func TestGetGraphLayoutSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		entity     string
+		store      *stubStore
+		wantStatus int
+		wantTiles  any
+	}{
+		{
+			name:       "unconfigured entity reads as an empty canvas, not a 404",
+			entity:     "crm",
+			store:      &stubStore{},
+			wantStatus: http.StatusOK,
+			wantTiles:  []any{},
+		},
+		{
+			name:   "configured entity",
+			entity: "crm",
+			store: &stubStore{values: map[string]string{
+				ViewGraphKey("crm"): `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"stat","config":{"field":"amount"}}]}`,
+			}},
+			wantStatus: http.StatusOK,
+			wantTiles: []any{
+				map[string]any{"id": "t1", "x": 0.0, "y": 0.0, "w": 6.0, "h": 6.0, "type": "stat", "config": map[string]any{"field": "amount"}},
+			},
+		},
+		{
+			name:       "unparsable stored value degrades to an empty canvas",
+			entity:     "crm",
+			store:      &stubStore{values: map[string]string{ViewGraphKey("crm"): "{not json"}},
+			wantStatus: http.StatusOK,
+			wantTiles:  []any{},
+		},
+		{
+			name:       "junk entity rejected",
+			entity:     "../../etc",
+			store:      &stubStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store)
+			rec := serveWithParam(t, h.GetGraphLayoutSettings, http.MethodGet,
+				"/settings/views/"+tt.entity+"/graph", "", identity, "entity", tt.entity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+
+			var resp map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if !reflect.DeepEqual(resp["tiles"], tt.wantTiles) {
+				t.Errorf("tiles = %#v, want %#v", resp["tiles"], tt.wantTiles)
+			}
+		})
+	}
+}
+
+// ── PUT /settings/views/:entity/graph ─────────────────────────────────────────
+
+func TestPutGraphLayoutSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		entity     string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantValue  string
+	}{
+		{
+			name:       "saves a valid tile, normalizing an absent config to {}",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"stat"}]}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"stat","config":{}}]}`,
+		},
+		{
+			name:       "saves an empty tile list (Cancel/clear)",
+			entity:     "crm",
+			body:       `{"tiles":[]}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"tiles":[]}`,
+		},
+		{
+			name:       "junk entity rejected",
+			entity:     "../../etc",
+			body:       `{"tiles":[]}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "junk tile id rejected",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"../etc","x":0,"y":0,"w":1,"h":1,"type":"stat"}]}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "duplicate tile id rejected",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":1,"h":1,"type":"stat"},{"id":"t1","x":1,"y":1,"w":1,"h":1,"type":"pie"}]}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "negative x rejected",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"t1","x":-1,"y":0,"w":1,"h":1,"type":"stat"}]}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "zero width rejected",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":0,"h":1,"type":"stat"}]}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "unknown tile type rejected",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":1,"h":1,"type":"bar"}]}`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store)
+			rec := serveWithParam(t, h.PutGraphLayoutSettings, http.MethodPut,
+				"/settings/views/"+tt.entity+"/graph", tt.body, identity, "entity", tt.entity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotTenant != identity.TenantID {
+				t.Errorf("tenant = %s, want the caller's %s", store.gotTenant, identity.TenantID)
+			}
+			if store.gotKey != ViewGraphKey(tt.entity) {
+				t.Errorf("key = %q, want %q", store.gotKey, ViewGraphKey(tt.entity))
 			}
 			if store.gotValue != tt.wantValue {
 				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)

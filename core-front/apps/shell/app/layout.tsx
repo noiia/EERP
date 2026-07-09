@@ -10,9 +10,10 @@ import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { ModulesInit } from '../src/components/ModulesInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
-import { RelationOpsProvider } from '@eerp/core-front'
+import { GraphOpsProvider, RelationOpsProvider } from '@eerp/core-front'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
+import { getEntityGraphLayout, setEntityGraphLayout } from '../src/lib/graph-actions'
 import {
   createRelationRecord,
   getRecord,
@@ -54,7 +55,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 remove: removeRelationRecord,
               }}
             >
-              {children}
+              {/* Graph mode's app-wide data path: entity-generic Server Action
+                  references over the tenant-scoped settings endpoint — every
+                  read/save re-enters Go's permission gate with the caller's
+                  session (docs/roadmaps/list-view-modes.md, Phase 4). */}
+              <GraphOpsProvider ops={{ get: getEntityGraphLayout, save: setEntityGraphLayout }}>
+                {children}
+              </GraphOpsProvider>
             </RelationOpsProvider>
           </AppThemeProvider>
         </AppRouterCacheProvider>
