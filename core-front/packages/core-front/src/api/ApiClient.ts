@@ -4,8 +4,10 @@ import { revalidateTag } from 'next/cache'
 import { parseError } from './errors'
 import type { EntityListOptions } from './list-options'
 import type { PictureAnchor, PictureMeta } from './pictures-client'
+import type { ViewFieldsConfig } from './view-fields'
 
 export type { EntityListOptions } from './list-options'
+export type { ViewFieldsConfig } from './view-fields'
 import {
   ACCESS_COOKIE,
   ACCESS_TTL_SECONDS,
@@ -179,6 +181,19 @@ export interface ServerApiClient {
   update<T>(entity: string, id: string, body: unknown): Promise<T>
   /** Soft delete by default (ADR-003) — archives the record server-side. */
   remove(entity: string, id: string): Promise<void>
+  /**
+   * entity's Kanban status field / Calendar date field, as configured from
+   * Settings -> Views (docs/roadmaps/list-view-modes.md, ADR-006). Never
+   * cached (tenant-wide settings, like preferences) — always a fresh read.
+   */
+  getViewFields(entity: string): Promise<ViewFieldsConfig>
+  /**
+   * Like list(), but also returns Go's `total` row count — the tree view's
+   * loader uses this (not list()) so Graph mode's aggregate widgets (Phase 5,
+   * docs/roadmaps/list-view-modes.md) can tell a full fetch from a
+   * page_size-truncated one, without a second request.
+   */
+  listWithTotal<T>(entity: string, options?: EntityListOptions): Promise<{ records: T[]; total: number }>
 }
 
 class ServerApiClientImpl implements ServerApiClient {
@@ -186,12 +201,26 @@ class ServerApiClientImpl implements ServerApiClient {
   // rest at `/{entity}/{id}`. List returns a paginated envelope { data, total, ... };
   // single-record endpoints return the record object directly.
   async list<T>(entity: string, options?: EntityListOptions): Promise<T[]> {
+    const { records } = await this.listWithTotal<T>(entity, options)
+    return records
+  }
+
+  async listWithTotal<T>(
+    entity: string,
+    options?: EntityListOptions,
+  ): Promise<{ records: T[]; total: number }> {
     // Filtered variants cache under their own URL key but share the entity tag,
     // so every mutation of the entity revalidates them too.
     const body = await request<unknown>('GET', `/${entity}${listQuery(options)}`, [entity])
-    if (Array.isArray(body)) return body as T[]
-    const data = (body as { data?: unknown } | null)?.data
-    return Array.isArray(data) ? (data as T[]) : []
+    if (Array.isArray(body)) return { records: body as T[], total: body.length }
+    const envelope = body as { data?: unknown; total?: unknown } | null
+    const data = envelope?.data
+    const records = Array.isArray(data) ? (data as T[]) : []
+    // A bare-array response (no envelope) has no `total` — records.length is
+    // the only honest answer, same as the paginated envelope's own total
+    // being exactly what Go counted server-side.
+    const total = typeof envelope?.total === 'number' ? envelope.total : records.length
+    return { records, total }
   }
 
   get<T>(entity: string, id: string): Promise<T> {
@@ -213,6 +242,18 @@ class ServerApiClientImpl implements ServerApiClient {
   async remove(entity: string, id: string): Promise<void> {
     await request<void>('DELETE', `/${entity}/${id}`, [entity])
     revalidateTag(entity, REVALIDATE_PROFILE)
+  }
+
+  async getViewFields(entity: string): Promise<ViewFieldsConfig> {
+    const raw = await request<{ kanban_status_field: string | null; calendar_date_field: string | null }>(
+      'GET',
+      `/settings/views/${entity}/fields`,
+      null,
+    )
+    return {
+      kanbanStatusField: raw.kanban_status_field ?? null,
+      calendarDateField: raw.calendar_date_field ?? null,
+    }
   }
 }
 

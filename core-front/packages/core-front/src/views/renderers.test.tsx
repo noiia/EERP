@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // The flat list navigates to a record's form on row click via the App Router.
 const pushMock = vi.fn()
@@ -8,8 +8,10 @@ vi.mock('next/navigation', () => ({
 }))
 
 import type { ViewDescriptor } from './descriptor'
+import { GraphOpsProvider } from './graph-ops'
 import { CreateBar, EntityView } from './renderers'
 import { useSessionStore, type Identity } from './session-store'
+import { useUiStore } from './ui-store'
 import type { EntityActions } from './stores'
 
 function identityWith(permissions: string[]): Identity {
@@ -19,6 +21,7 @@ function identityWith(permissions: string[]): Identity {
 beforeEach(() => {
   pushMock.mockClear()
   useSessionStore.setState({ identity: null })
+  useUiStore.setState({ viewMode: {} })
 })
 
 interface Contact {
@@ -153,6 +156,185 @@ describe('EntityView', () => {
     )
     fireEvent.click(screen.getByText('Ada'))
     expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  describe('display-mode switcher (Kanban/Calendar/Graph)', () => {
+    const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+
+    it('defaults to List, with Kanban/Calendar disabled until configured, Graph always enabled', () => {
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'List', pressed: true })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Kanban' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Calendar' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Graph' })).toBeEnabled()
+      // The List mode itself is unaffected — still the same grid as before.
+      expect(screen.getByRole('grid')).toBeInTheDocument()
+    })
+
+    it('enables Kanban/Calendar once their field is configured', () => {
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+          viewFields={{ kanbanStatusField: 'status', calendarDateField: 'due_date' }}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Kanban' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Calendar' })).toBeEnabled()
+    })
+
+    it('switching to Kanban with a configured status field renders real columns, not a placeholder', () => {
+      const dealDescriptor: ViewDescriptor<Contact & { status?: string | null }> = {
+        entity: 'crm',
+        viewType: 'tree',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text' },
+          { name: 'status', label: 'Status', type: 'selection', selection: { options: ['open', 'won'] } },
+        ],
+      }
+      render(
+        <EntityView
+          descriptor={dealDescriptor}
+          initialData={[{ id: '1', name: 'Ada', status: 'open' }]}
+          actions={noopActions as unknown as EntityActions<Contact & { status?: string | null }>}
+          viewFields={{ kanbanStatusField: 'status', calendarDateField: null }}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Kanban' }))
+      expect(screen.queryByText(/Kanban view is coming soon/)).not.toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'open' })).toHaveTextContent('Ada')
+    })
+
+    it('switching to Calendar with a configured date field renders a real month grid, not a placeholder', () => {
+      const taskDescriptor: ViewDescriptor<Contact & { due_date?: string | null }> = {
+        entity: 'crm',
+        viewType: 'tree',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text' },
+          { name: 'due_date', label: 'Due date', type: 'date' },
+        ],
+      }
+      render(
+        <EntityView
+          descriptor={taskDescriptor}
+          initialData={[{ id: '1', name: 'Ada', due_date: null }]}
+          actions={noopActions as unknown as EntityActions<Contact & { due_date?: string | null }>}
+          viewFields={{ kanbanStatusField: null, calendarDateField: 'due_date' }}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Calendar' }))
+      expect(screen.queryByText(/Calendar view is coming soon/)).not.toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Ada')
+    })
+
+    it('switching to Graph (always enabled) swaps the content, not the grid — inert with no GraphOpsProvider', () => {
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      // No GraphOpsProvider mounted in this test tree — same inert-not-crashing
+      // posture RelationOps takes for a host with no relation wiring.
+      expect(screen.getByText(/Graph layouts are not available/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Graph', pressed: true })).toBeInTheDocument()
+    })
+
+    it('switching to Graph with a GraphOpsProvider renders the real canvas, not the placeholder', async () => {
+      const get = vi.fn(async () => ({ tiles: [] }))
+      render(
+        <GraphOpsProvider ops={{ get, save: vi.fn(async () => ({ ok: true }) as const) }}>
+          <EntityView
+            descriptor={treeDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={noopActions}
+          />
+        </GraphOpsProvider>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
+      await waitFor(() => expect(get).toHaveBeenCalledWith('crm'))
+      expect(screen.queryByText(/Graph layouts are not available/)).not.toBeInTheDocument()
+    })
+
+    it('a Kanban drag is reflected in Graph mode without a page reload', async () => {
+      // Regression guard: Graph used to read the page's ORIGINAL initialData
+      // snapshot, unaffected by a Kanban/Calendar drag done in the same
+      // client session (no navigation) — switching to Graph afterward showed
+      // stale data until the next real page load. TreeRenderer now lifts a
+      // single `liveRecords` state every mode reads from and Kanban/Calendar
+      // report their optimistic updates back into it.
+      const dealDescriptor: ViewDescriptor<Contact & { status?: string | null }> = {
+        entity: 'crm',
+        viewType: 'tree',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text' },
+          { name: 'status', label: 'Status', type: 'selection', selection: { options: ['open', 'won'] } },
+        ],
+      }
+      const update = vi.fn(
+        async (id: string, b: Partial<Contact & { status?: string | null }>) =>
+          ({ id, name: 'Ada', ...b }) as Contact & { status?: string | null },
+      )
+      const actions: EntityActions<Contact & { status?: string | null }> = {
+        create: vi.fn(async (b) => ({ id: 'x', name: '', ...b }) as Contact & { status?: string | null }),
+        update,
+      }
+      const get = vi.fn(async () => ({
+        tiles: [{ id: 't1', x: 0, y: 0, w: 6, h: 6, type: 'pie' as const, config: { groupByField: 'status' } }],
+      }))
+      render(
+        <GraphOpsProvider ops={{ get, save: vi.fn(async () => ({ ok: true }) as const) }}>
+          <EntityView
+            descriptor={dealDescriptor}
+            initialData={[{ id: '1', name: 'Ada', status: 'open' }]}
+            actions={actions}
+            viewFields={{ kanbanStatusField: 'status', calendarDateField: null }}
+          />
+        </GraphOpsProvider>,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Kanban' }))
+      fireEvent.dragStart(screen.getByTestId('kanban-card-1'))
+      fireEvent.dragOver(screen.getByRole('group', { name: 'won' }))
+      fireEvent.drop(screen.getByRole('group', { name: 'won' }))
+      await waitFor(() => expect(update).toHaveBeenCalledWith('1', { status: 'won' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
+      await waitFor(() => expect(get).toHaveBeenCalledWith('crm'))
+      expect(screen.getByText('won')).toBeInTheDocument()
+      expect(screen.queryByText('open')).not.toBeInTheDocument()
+    })
+
+    it('persists the chosen mode per entity across remounts (useUiStore)', () => {
+      const { unmount } = render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
+      unmount()
+
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Graph', pressed: true })).toBeInTheDocument()
+    })
   })
 
   describe('Create button', () => {

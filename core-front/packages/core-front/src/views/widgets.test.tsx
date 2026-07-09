@@ -224,6 +224,15 @@ describe('date', () => {
     fireEvent.change(input, { target: { value: '2026-08-01' } })
     expect(onChange).toHaveBeenCalledWith('2026-08-01')
   })
+
+  it('strips a full RFC3339 timestamp (a real Go time.Time column) down to a bare date', () => {
+    // A native date input's value MUST be exactly 'YYYY-MM-DD' or the browser
+    // silently renders it blank — a Go time.Time column round-trips as
+    // "2026-07-07T00:00:00Z", not a bare date (the exact bug this guards).
+    renderWidget({ name: 'due', label: 'Due', type: 'date' }, '2026-07-07T00:00:00Z')
+    const input = screen.getByLabelText('Due') as HTMLInputElement
+    expect(input.value).toBe('2026-07-07')
+  })
 })
 
 // Relation widgets (search/tags/list) are covered in relation-widgets.test.tsx —

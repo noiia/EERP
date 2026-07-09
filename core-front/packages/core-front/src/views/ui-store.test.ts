@@ -30,3 +30,21 @@ describe('useUiStore palette', () => {
     expect(useUiStore.getState().theme).toBe('dark')
   })
 })
+
+describe('useUiStore viewMode', () => {
+  it('defaults to no stored mode per entity', () => {
+    expect(useUiStore.getState().viewMode).toEqual({})
+  })
+
+  it('sets a mode for one entity without touching others', () => {
+    useUiStore.getState().setViewMode('crm', 'kanban')
+    useUiStore.getState().setViewMode('contact', 'calendar')
+    expect(useUiStore.getState().viewMode).toEqual({ crm: 'kanban', contact: 'calendar' })
+  })
+
+  it('overwrites a previously set mode for the same entity', () => {
+    useUiStore.getState().setViewMode('crm', 'kanban')
+    useUiStore.getState().setViewMode('crm', 'graph')
+    expect(useUiStore.getState().viewMode.crm).toBe('graph')
+  })
+})

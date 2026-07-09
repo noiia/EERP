@@ -50,7 +50,12 @@ export default async function ModulePage({ params }: ModulePageProps) {
     route.descriptor.viewType === 'dashboard' ? dashboardListViews(route.module) : undefined
 
   return (
-    <Container sx={{ py: 4 }}>
+    // maxWidth={false}: RootLayout's pageInsetX/pageInsetY (10% of the viewport per
+    // axis) is already the page's width bound — MUI's own default "lg" (1200px) cap
+    // would just re-narrow list/kanban/calendar/graph views a second time, wasting
+    // the space the inset was meant to hand them. Forms don't need this override:
+    // FormRenderer self-limits to layout.formMaxWidth regardless of the container.
+    <Container maxWidth={false} sx={{ py: 4 }}>
       <Stack spacing={3}>
         {/* The title is computed here (RSC) but the locale is client state, so the
             <T> leaf translates it at the client boundary. Tree views carry their

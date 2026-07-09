@@ -86,6 +86,33 @@ describe('ServerApiClient', () => {
     )
   })
 
+  it('listWithTotal surfaces the paginated envelope\'s total row count', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(200, { data: [{ id: '1' }], total: 500, page: 1, page_size: 20 })),
+    )
+    await expect(createServerApiClient().listWithTotal('crm')).resolves.toEqual({
+      records: [{ id: '1' }],
+      total: 500,
+    })
+  })
+
+  it('listWithTotal falls back to records.length when the response is a bare array (no total)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [{ id: '1' }, { id: '2' }])))
+    await expect(createServerApiClient().listWithTotal('crm')).resolves.toEqual({
+      records: [{ id: '1' }, { id: '2' }],
+      total: 2,
+    })
+  })
+
+  it('list() discards the total, matching its existing T[] contract', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(200, { data: [{ id: '1' }], total: 500, page: 1, page_size: 20 })),
+    )
+    await expect(createServerApiClient().list('crm')).resolves.toEqual([{ id: '1' }])
+  })
+
   it('encodes list options as filter[]/search[] query params', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, []))
     vi.stubGlobal('fetch', fetchMock)
@@ -216,6 +243,22 @@ describe('ServerApiClient', () => {
 
     await expect(createServerApiClient().remove('crm', '1')).resolves.toBeUndefined()
     expect(revalidateTagMock).toHaveBeenCalledWith('crm', 'max')
+  })
+
+  it('reads Kanban/Calendar field config, never caching (tenant-wide settings)', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { kanban_status_field: 'status', calendar_date_field: null }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient().getViewFields('crm')).resolves.toEqual({
+      kanbanStatusField: 'status',
+      calendarDateField: null,
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }]
+    expect(url).toBe('http://api.test/api/v1/settings/views/crm/fields')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
   })
 
   it('apiRequest GETs stay out of the Data Cache (session-scoped, never shared)', async () => {

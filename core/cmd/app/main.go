@@ -173,10 +173,17 @@ func main() {
 	meGroup.PUT("/preferences", settingsHandler.PutMyPreferences)
 
 	// Tenant-wide settings: JWT + permission middleware (PUT /settings/i18n
-	// derives settings:i18n:write, PUT /settings/format settings:format:write).
+	// derives settings:i18n:write, PUT /settings/format settings:format:write,
+	// GET|PUT /settings/views/:entity/fields and .../graph settings:views:read|write
+	// — the Kanban/Calendar field config and Graph tile layout from
+	// docs/roadmaps/list-view-modes.md).
 	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
 	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
 	settingsGroup.PUT("/format", settingsHandler.PutFormatSettings)
+	settingsGroup.GET("/views/:entity/fields", settingsHandler.GetViewFieldsSettings)
+	settingsGroup.PUT("/views/:entity/fields", settingsHandler.PutViewFieldsSettings)
+	settingsGroup.GET("/views/:entity/graph", settingsHandler.GetGraphLayoutSettings)
+	settingsGroup.PUT("/views/:entity/graph", settingsHandler.PutGraphLayoutSettings)
 
 	// ── Pictures ──────────────────────────────────────────────────────────────
 	// Dedicated binary-content endpoints (the picture table is off the generic

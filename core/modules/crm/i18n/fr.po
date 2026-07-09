@@ -19,3 +19,52 @@ msgstr "Société"
 
 msgid "Status"
 msgstr "Statut"
+
+msgid "Score"
+msgstr "Score"
+
+msgid "Crm picture"
+msgstr "Photo CRM"
+
+msgid "Signed"
+msgstr "Signé"
+
+msgid "Phone"
+msgstr "Téléphone"
+
+msgid "Satisfaction"
+msgstr "Satisfaction"
+
+msgid "Deals"
+msgstr "Affaires"
+
+msgid "Notes"
+msgstr "Notes"
+
+msgid "Display name"
+msgstr "Nom d'affichage"
+
+msgid "Contact"
+msgstr "Contact"
+
+msgid "Tags"
+msgstr "Étiquettes"
+
+# status field.selection.options — each option's DISPLAY goes through t()
+# (widgets.tsx's SelectionWidget); the stored value stays the raw English
+# option string.
+
+msgid "incoming"
+msgstr "Entrant"
+
+msgid "running"
+msgstr "En cours"
+
+msgid "won"
+msgstr "Gagné"
+
+msgid "lost"
+msgstr "Perdu"
+
+msgid "closed"
+msgstr "Fermé"

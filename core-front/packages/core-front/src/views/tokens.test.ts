@@ -26,6 +26,13 @@ describe('design tokens', () => {
     expect(layout.gridRowHeight).toBeGreaterThan(0)
   })
 
+  it('exposes a single page-content inset, one value per axis', () => {
+    // RootLayout applies these ONCE, around everything but the top bar — a view
+    // (list/form/dashboard) must never re-derive its own width/margin constant.
+    expect(layout.pageInsetX).toBe('5vw')
+    expect(layout.pageInsetY).toBe('5vh')
+  })
+
   it('withAlpha expands hex (incl. shorthand) to rgba', () => {
     expect(withAlpha('#1E293B', 0.5)).toBe('rgba(30, 41, 59, 0.5)')
     expect(withAlpha('#fff', 0.12)).toBe('rgba(255, 255, 255, 0.12)')

@@ -23,7 +23,9 @@ export default async function UserAccountsPage() {
   } as unknown as EntityActions<AnyRecord>
 
   return (
-    <Container sx={{ py: 4 }}>
+    // maxWidth={false}: the page's width bound is RootLayout's pageInsetX/pageInsetY
+    // inset, not MUI's own default "lg" cap — see [...module]/page.tsx's note.
+    <Container maxWidth={false} sx={{ py: 4 }}>
       <Stack spacing={3}>
         {/* Title row carries the Create button (right side); CreateBar hides
             itself without users:users:write. */}

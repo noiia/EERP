@@ -20,6 +20,24 @@ const DefaultLocaleKey = "i18n.default_locale"
 // Absent (or unparsable) means the frontend's built-in default (1,234.56).
 const NumberFormatKey = "format.number"
 
+// ViewFieldsKey returns the app_settings key holding entity's Kanban/Calendar
+// field configuration (docs/roadmaps/list-view-modes.md), stored as JSON:
+// {"kanban_status_field":"status","calendar_date_field":"due_date"}. One key
+// per entity — unlike DefaultLocaleKey/NumberFormatKey, which are tenant-wide
+// singletons, this setting is inherently per-entity, so the key is computed
+// rather than a fixed constant. Absent means neither mode is configured yet.
+func ViewFieldsKey(entity string) string {
+	return "views." + entity + ".fields"
+}
+
+// ViewGraphKey returns the app_settings key holding entity's Graph mode tile
+// layout (docs/roadmaps/list-view-modes.md, Phase 4), stored as JSON:
+// {"tiles":[{"id":...,"x":0,"y":0,"w":6,"h":6,"type":"stat","config":{}}]}.
+// Same per-entity shape as ViewFieldsKey; absent means an empty canvas.
+func ViewGraphKey(entity string) string {
+	return "views." + entity + ".graph"
+}
+
 // AppSettings is one tenant-scoped setting. (tenant_id, key) is unique — the
 // settings module's Migrate creates the index — so writes are upserts.
 type AppSettings struct {

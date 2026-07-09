@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { DisplayMode } from '../api/view-fields'
 import { DEFAULT_PALETTE, type BrandColorKey, type ThemePalette } from './palette'
 
 // Cross-cutting UI state, persisted to localStorage so preferences survive reloads.
@@ -16,6 +17,10 @@ export interface UiState {
   palette: ThemePalette
   sidebarOpen: boolean
   lastRoute: string | null
+  /** The list view display-mode switcher's last choice, per entity (List by
+   * default — docs/roadmaps/list-view-modes.md). Purely a UI preference, so it
+   * lives here rather than as server state. */
+  viewMode: Record<string, DisplayMode>
   setTheme: (theme: ThemeMode) => void
   /** Override a single brand color (live theming). */
   setPaletteColor: (key: BrandColorKey, value: string) => void
@@ -26,6 +31,7 @@ export interface UiState {
   toggleSidebar: () => void
   setSidebar: (open: boolean) => void
   setLastRoute: (route: string | null) => void
+  setViewMode: (entity: string, mode: DisplayMode) => void
 }
 
 export const useUiStore = create<UiState>()(
@@ -35,6 +41,7 @@ export const useUiStore = create<UiState>()(
       palette: DEFAULT_PALETTE,
       sidebarOpen: true,
       lastRoute: null,
+      viewMode: {},
       setTheme: (theme) => set({ theme }),
       setPaletteColor: (key, value) =>
         set((state) => ({ palette: { ...state.palette, [key]: value } })),
@@ -43,6 +50,8 @@ export const useUiStore = create<UiState>()(
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebar: (sidebarOpen) => set({ sidebarOpen }),
       setLastRoute: (lastRoute) => set({ lastRoute }),
+      setViewMode: (entity, mode) =>
+        set((state) => ({ viewMode: { ...state.viewMode, [entity]: mode } })),
     }),
     {
       name: 'eerp-ui',
