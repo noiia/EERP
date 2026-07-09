@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter'
+import Box from '@mui/material/Box'
 import { moduleRegistry } from '@eerp/core-front/server'
 // Side-effect import: registers every discovered module so the top-bar nav can resolve
 // each module's main pages (same manifest the catch-all route and landing menu import).
@@ -10,7 +11,7 @@ import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { ModulesInit } from '../src/components/ModulesInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
-import { GraphOpsProvider, RelationOpsProvider } from '@eerp/core-front'
+import { GraphOpsProvider, RelationOpsProvider, layout } from '@eerp/core-front'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
 import { getEntityGraphLayout, setEntityGraphLayout } from '../src/lib/graph-actions'
@@ -60,7 +61,15 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   read/save re-enters Go's permission gate with the caller's
                   session (docs/roadmaps/list-view-modes.md, Phase 4). */}
               <GraphOpsProvider ops={{ get: getEntityGraphLayout, save: setEntityGraphLayout }}>
-                {children}
+                {/* The ONE page-content inset, applied once here — everything below
+                    the top bar (list/form/dashboard/settings, any view) sits inside
+                    it, never against or past the screen edge. overflowX: 'auto' is
+                    the single containment mechanism for a wide inner surface (e.g.
+                    Graph's canvas, sized off its own tiles): it scrolls WITHIN this
+                    box, never bleeds past it — no per-view width hack needed. */}
+                <Box sx={{ px: layout.pageInsetX, py: layout.pageInsetY, overflowX: 'auto' }}>
+                  {children}
+                </Box>
               </GraphOpsProvider>
             </RelationOpsProvider>
           </AppThemeProvider>

@@ -344,6 +344,9 @@ function TreeRenderer<T extends HasId>({
     }
   }
   // No CreateBar here: for tree views the host page renders it on the title row.
+  // Width/overflow containment is RootLayout's job now (one page-wide inset around
+  // everything but the top bar — see the `pageInsetX`/`pageInsetY` tokens), not this
+  // renderer's — a view-specific fix here would just be a second, competing mechanism.
   return (
     <Box>
       <DisplayModeSwitcher
