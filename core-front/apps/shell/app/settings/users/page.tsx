@@ -24,7 +24,9 @@ export default async function UsersSettingsPage() {
   } as unknown as EntityActions<AnyRecord>
 
   return (
-    <Container sx={{ py: 4 }}>
+    // maxWidth={false}: the page's width bound is RootLayout's pageInsetX/pageInsetY
+    // inset, not MUI's own default "lg" cap — see [...module]/page.tsx's note.
+    <Container maxWidth={false} sx={{ py: 4 }}>
       <Stack spacing={3}>
         <Typography variant="h4" component="h1">
           <T text="Users" />

@@ -62,7 +62,9 @@ export default function SettingsHub({
   // in apps/shell/i18n/*.po, so the hub localizes without touching SETTINGS_SECTIONS.
   const t = useT()
   return (
-    <Container sx={{ py: 6 }}>
+    // maxWidth={false}: matches Menu.tsx (the same card-grid shape) — the page's
+    // width bound is RootLayout's pageInsetX/pageInsetY inset, not MUI's own "lg" cap.
+    <Container maxWidth={false} sx={{ py: 6 }}>
       <Stack spacing={1} sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1">
           {t('Settings')}
