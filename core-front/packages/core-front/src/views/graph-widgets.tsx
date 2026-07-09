@@ -13,6 +13,7 @@ import {
   pieSlices,
   statValue,
   xySeries,
+  type BarMode,
   type BucketGranularity,
   type FullAggregate,
   type NumericAggregate,
@@ -353,6 +354,218 @@ function XyChart({
   )
 }
 
+// ── bar (grouped or stacked — one bar per bucket, or one segment per series
+// stacked within it) reuses xySeries()/niceTicks() exactly like XyChart, just
+// rendering <rect> bars instead of a smoothed line. ─────────────────────────
+
+function BarChart({
+  series,
+  bucket,
+  mode,
+  format,
+}: {
+  series: XySeries[]
+  bucket: BucketGranularity
+  mode: BarMode
+  format: (v: number) => string
+}) {
+  const t = useT()
+  const palette = useGraphPalette()
+  const locale = useI18nStore((s) => s.locale) ?? undefined
+  const [chartRef, { width, height }] = useElementSize<HTMLDivElement>({ width: 260, height: 120 })
+
+  const hasData = series.some((s) => s.points.length > 0)
+  const showLegend = series.length > 1 && hasData
+
+  const buckets = Array.from(new Set(series.flatMap((s) => s.points.map((p) => p.bucket)))).sort()
+  const valueByBucket = new Map(
+    buckets.map((b) => [b, series.map((s) => s.points.find((p) => p.bucket === b)?.value ?? 0)]),
+  )
+
+  const maxValue =
+    mode === 'stacked'
+      ? Math.max(0, ...buckets.map((b) => valueByBucket.get(b)!.reduce((sum, v) => sum + v, 0)))
+      : Math.max(0, ...series.flatMap((s) => s.points.map((p) => p.value)))
+  const ticks = niceTicks(maxValue)
+  const domainMax = ticks[ticks.length - 1] || 1
+
+  const legendHeight = showLegend ? 22 : 0
+  const innerW = Math.max(1, width - AXIS_PADDING.left - AXIS_PADDING.right)
+  const innerH = Math.max(1, height - legendHeight - AXIS_PADDING.top - AXIS_PADDING.bottom)
+
+  const groupWidth = buckets.length > 0 ? innerW / buckets.length : innerW
+  const groupPadding = groupWidth * 0.15
+  const usableGroupWidth = Math.max(1, groupWidth - groupPadding * 2)
+  const barGap = mode === 'grouped' && series.length > 1 ? 2 : 0
+  const barWidth =
+    mode === 'grouped'
+      ? Math.max(1, (usableGroupWidth - barGap * (series.length - 1)) / Math.max(1, series.length))
+      : usableGroupWidth
+
+  const xForGroup = (i: number) => AXIS_PADDING.left + i * groupWidth + groupPadding
+  const yForValue = (v: number) => AXIS_PADDING.top + innerH - (v / domainMax) * innerH
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}>
+      <Box ref={chartRef} sx={{ flex: 1, minHeight: 0, width: '100%' }}>
+        {!hasData ? (
+          <NoData />
+        ) : (
+          <svg
+            width={width}
+            height={height}
+            role="img"
+            aria-label={t(mode === 'stacked' ? 'Stacked bar chart' : 'Bar chart')}
+          >
+            {/* Y-axis gridlines + numeric labels. */}
+            {ticks.map((tick) => {
+              const y = yForValue(tick)
+              return (
+                <g key={tick}>
+                  <line
+                    x1={AXIS_PADDING.left}
+                    y1={y}
+                    x2={width - AXIS_PADDING.right}
+                    y2={y}
+                    stroke={palette.chrome.baseline}
+                    strokeWidth={1}
+                    opacity={tick === 0 ? 1 : 0.5}
+                  />
+                  <text x={AXIS_PADDING.left - 8} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={palette.chrome.mutedInk}>
+                    {format(tick)}
+                  </text>
+                </g>
+              )
+            })}
+            {/* X-axis bucket labels. */}
+            {buckets.map((bucketKeyValue, i) => (
+              <text
+                key={bucketKeyValue}
+                x={AXIS_PADDING.left + i * groupWidth + groupWidth / 2}
+                y={height - legendHeight - 6}
+                textAnchor="middle"
+                fontSize={10}
+                fill={palette.chrome.mutedInk}
+              >
+                {formatBucketLabel(bucketKeyValue, bucket, locale)}
+              </text>
+            ))}
+            {/* One bar per series per bucket — side-by-side (grouped) or
+                stacked segments (stacked). */}
+            {buckets.map((bucketKeyValue, bucketIndex) => {
+              const values = valueByBucket.get(bucketKeyValue)!
+              if (mode === 'stacked') {
+                let stackTop = 0
+                return (
+                  <g key={bucketKeyValue}>
+                    {values.map((v, seriesIndex) => {
+                      const yTop = yForValue(stackTop + v)
+                      const yBottom = yForValue(stackTop)
+                      stackTop += v
+                      if (v === 0) return null
+                      const color = colorFor(seriesIndex, palette.categorical)
+                      return (
+                        <rect
+                          key={series[seriesIndex]!.label || seriesIndex}
+                          x={xForGroup(bucketIndex)}
+                          y={yTop}
+                          width={barWidth}
+                          height={Math.max(0, yBottom - yTop)}
+                          fill={color}
+                        >
+                          <title>{`${series[seriesIndex]!.label ? `${series[seriesIndex]!.label} — ` : ''}${bucketKeyValue}: ${format(v)}`}</title>
+                        </rect>
+                      )
+                    })}
+                  </g>
+                )
+              }
+              return (
+                <g key={bucketKeyValue}>
+                  {values.map((v, seriesIndex) => {
+                    if (v === 0) return null
+                    const x = xForGroup(bucketIndex) + seriesIndex * (barWidth + barGap)
+                    const y = yForValue(v)
+                    const color = colorFor(seriesIndex, palette.categorical)
+                    return (
+                      <rect
+                        key={series[seriesIndex]!.label || seriesIndex}
+                        x={x}
+                        y={y}
+                        width={barWidth}
+                        height={Math.max(0, innerH - (y - AXIS_PADDING.top))}
+                        fill={color}
+                      >
+                        <title>{`${series[seriesIndex]!.label ? `${series[seriesIndex]!.label} — ` : ''}${bucketKeyValue}: ${format(v)}`}</title>
+                      </rect>
+                    )
+                  })}
+                </g>
+              )
+            })}
+          </svg>
+        )}
+      </Box>
+      {showLegend ? (
+        <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', px: `${AXIS_PADDING.left}px`, minHeight: legendHeight }}>
+          {series.map((s, i) => (
+            <Stack key={s.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '2px',
+                  flexShrink: 0,
+                  bgcolor: colorFor(i, palette.categorical),
+                }}
+              />
+              <Typography variant="caption" noWrap color="text.secondary">
+                {s.label}
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
+      ) : null}
+    </Box>
+  )
+}
+
+export function BarWidgetBody<T extends HasId>({
+  tile,
+  records,
+  recordTotal,
+}: {
+  tile: Tile
+  records: T[]
+  recordTotal: number | undefined
+}) {
+  const { format } = useNumberFormat()
+  const config = tile.config as {
+    xField?: string
+    yField?: string
+    seriesField?: string
+    mode?: BarMode
+    aggregate?: NumericAggregate
+    bucket?: BucketGranularity
+  }
+  if (!config.xField || !config.yField || !config.aggregate || !config.bucket) return <NoData />
+  const series = xySeries(records, {
+    xField: config.xField,
+    yField: config.yField,
+    seriesField: config.seriesField,
+    aggregate: config.aggregate,
+    bucket: config.bucket,
+  })
+  return (
+    <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
+      <PartialDataBadge shown={records.length} total={recordTotal} />
+      <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
+        <BarChart series={series} bucket={config.bucket} mode={config.mode ?? 'grouped'} format={(v) => format(v, { decimals: 1 })} />
+      </Box>
+    </Stack>
+  )
+}
+
 export function XyWidgetBody<T extends HasId>({
   tile,
   records,
@@ -582,6 +795,8 @@ export function GraphWidgetBody<T extends HasId>({
       return <StatWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
     case 'xy':
       return <XyWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
+    case 'bar':
+      return <BarWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
     case 'pie':
       return <PieWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
     case 'list':

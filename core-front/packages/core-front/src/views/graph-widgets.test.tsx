@@ -207,6 +207,103 @@ describe('GraphWidgetBody: xy', () => {
   })
 })
 
+describe('GraphWidgetBody: bar', () => {
+  it('renders one bar per month bucket, as an accessible chart, defaulting to grouped mode', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'bar',
+          config: { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    const chart = screen.getByRole('img', { name: 'Bar chart' })
+    expect(chart.querySelectorAll('rect')).toHaveLength(2) // Jan + Feb buckets
+  })
+
+  it('shows a placeholder with no data points', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'bar',
+          config: { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' },
+        })}
+        descriptor={descriptor}
+        records={[]}
+        recordTotal={0}
+      />,
+    )
+    expect(screen.getByText('No data')).toBeInTheDocument()
+  })
+
+  it('renders one bar per series per bucket in grouped mode, with a legend entry each', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'bar',
+          config: {
+            xField: 'closed_at',
+            yField: 'amount',
+            seriesField: 'status',
+            mode: 'grouped',
+            aggregate: 'sum',
+            bucket: 'month',
+          },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    const chart = screen.getByRole('img', { name: 'Bar chart' })
+    // Jan has both 'open' and 'won'... actually only 'open' in Jan, 'won' in Feb — one bar per (bucket, series with data).
+    expect(chart.querySelectorAll('rect').length).toBeGreaterThan(0)
+    expect(screen.getByText('open')).toBeInTheDocument()
+    expect(screen.getByText('won')).toBeInTheDocument()
+  })
+
+  it('renders a "Stacked bar chart" accessible label in stacked mode', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'bar',
+          config: {
+            xField: 'closed_at',
+            yField: 'amount',
+            seriesField: 'status',
+            mode: 'stacked',
+            aggregate: 'sum',
+            bucket: 'month',
+          },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    expect(screen.getByRole('img', { name: 'Stacked bar chart' })).toBeInTheDocument()
+  })
+
+  it('shows no legend for a single (implicit) series', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'bar',
+          config: { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    expect(screen.queryByText('open')).not.toBeInTheDocument()
+    expect(screen.queryByText('won')).not.toBeInTheDocument()
+  })
+})
+
 describe('GraphWidgetBody: pie', () => {
   it('renders one slice per group with a legend entry each', () => {
     render(

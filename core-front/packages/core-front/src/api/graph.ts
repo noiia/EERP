@@ -8,9 +8,9 @@ import type { JsonValue } from '../views/descriptor'
  * literal — every drag/resize/CSS computation imports this constant instead. */
 export const GRID_UNIT = 30
 
-export type TileType = 'xy' | 'pie' | 'stat' | 'list'
+export type TileType = 'xy' | 'bar' | 'pie' | 'stat' | 'list'
 
-export const TILE_TYPES: readonly TileType[] = ['xy', 'pie', 'stat', 'list']
+export const TILE_TYPES: readonly TileType[] = ['xy', 'bar', 'pie', 'stat', 'list']
 
 /**
  * A Graph canvas tile. `x`/`y`/`w`/`h` are integer GRID_UNIT multiples, not

@@ -50,7 +50,7 @@ var tileIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // rendering) are a Phase 5 frontend concern; the backend only ever stores and
 // validates the tile's shape and type, never its `config` contents — that
 // stays opaque JSON the frontend interprets per type.
-var graphTileTypes = map[string]bool{"xy": true, "pie": true, "stat": true, "list": true}
+var graphTileTypes = map[string]bool{"xy": true, "bar": true, "pie": true, "stat": true, "list": true}
 
 // ── Call-site interfaces (defined here, not at implementation) ────────────────
 
@@ -356,7 +356,7 @@ func validateGraphLayout(layout graphLayout) error {
 			return fmt.Errorf("tile %q: w/h must be >= 1", tile.ID)
 		}
 		if !graphTileTypes[tile.Type] {
-			return fmt.Errorf("tile %q: type %q is not one of xy, pie, stat, list", tile.ID, tile.Type)
+			return fmt.Errorf("tile %q: type %q is not one of xy, bar, pie, stat, list", tile.ID, tile.Type)
 		}
 		if tile.Title != nil && len(*tile.Title) > 200 {
 			return fmt.Errorf("tile %q: title exceeds 200 characters", tile.ID)

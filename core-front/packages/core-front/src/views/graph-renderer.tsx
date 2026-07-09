@@ -39,6 +39,7 @@ import type { HasId } from './stores'
 const TILE_MIN_SIZE: Record<TileType, { minW: number; minH: number }> = {
   stat: { minW: 2, minH: 2 },
   xy: { minW: 4, minH: 5 },
+  bar: { minW: 4, minH: 5 },
   pie: { minW: 5, minH: 5 },
   list: { minW: 4, minH: 4 },
 }

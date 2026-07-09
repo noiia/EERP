@@ -95,6 +95,11 @@ export function xyPoints<T>(
     .map(([bucket, values]) => ({ bucket, value: aggregate(values, config.aggregate) }))
 }
 
+/** bar widget config: side-by-side bars per bucket ('grouped'), or one bar per
+ * bucket split into stacked segments, one per series ('stacked'). Purely a
+ * layout choice — `xySeries()` produces the same data either way. */
+export type BarMode = 'grouped' | 'stacked'
+
 export interface XySeries {
   /** Empty string for the implicit single-series case (no `seriesField`) —
    * callers treat an empty label as "don't show a legend", not a real group. */

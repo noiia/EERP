@@ -617,6 +617,14 @@ func TestPutGraphLayoutSettings(t *testing.T) {
 			wantValue:  `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"stat","config":{}}]}`,
 		},
 		{
+			name:       "saves a valid bar tile",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"bar"}]}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"bar","config":{}}]}`,
+		},
+		{
 			name:       "saves an empty tile list (Cancel/clear)",
 			entity:     "crm",
 			body:       `{"tiles":[]}`,
@@ -665,7 +673,7 @@ func TestPutGraphLayoutSettings(t *testing.T) {
 		{
 			name:       "unknown tile type rejected",
 			entity:     "crm",
-			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":1,"h":1,"type":"bar"}]}`,
+			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":1,"h":1,"type":"scatter"}]}`,
 			wantStatus: http.StatusBadRequest,
 		},
 	}

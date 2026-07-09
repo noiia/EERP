@@ -189,6 +189,99 @@ describe('WidgetConfigDialog: xy', () => {
   })
 })
 
+describe('WidgetConfigDialog: bar', () => {
+  it('disables Add until both an x (date) and y (number) field are chosen', async () => {
+    render(
+      <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={vi.fn()} />,
+    )
+    await pickWidgetType('bar')
+    expect(screen.getByText('Pick a date field for X.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+
+    await pickSelect('X field (date)', 'Closed')
+    expect(screen.getByText('Pick a number field for Y.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+
+    await pickSelect('Y field (number)', 'Amount')
+    expect(screen.queryByText('Pick a number field for Y.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+  })
+
+  it('defaults to grouped mode when the mode is left unchanged', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={onSubmit} />,
+    )
+    await pickWidgetType('bar')
+    await pickSelect('X field (date)', 'Closed')
+    await pickSelect('Y field (number)', 'Amount')
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(onSubmit).toHaveBeenCalledWith({
+      type: 'bar',
+      title: '',
+      config: { xField: 'closed_at', yField: 'amount', mode: 'grouped', aggregate: 'sum', bucket: 'month' },
+    })
+  })
+
+  it('produces a stacked config when "stacked" is picked', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={onSubmit} />,
+    )
+    await pickWidgetType('bar')
+    await pickSelect('X field (date)', 'Closed')
+    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Bar mode', 'stacked')
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(onSubmit).toHaveBeenCalledWith({
+      type: 'bar',
+      title: '',
+      config: { xField: 'closed_at', yField: 'amount', mode: 'stacked', aggregate: 'sum', bucket: 'month' },
+    })
+  })
+
+  it('includes seriesField in the config when a series field is picked', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={onSubmit} />,
+    )
+    await pickWidgetType('bar')
+    await pickSelect('X field (date)', 'Closed')
+    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Series field (optional)', 'Status')
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(onSubmit).toHaveBeenCalledWith({
+      type: 'bar',
+      title: '',
+      config: {
+        xField: 'closed_at',
+        yField: 'amount',
+        seriesField: 'status',
+        mode: 'grouped',
+        aggregate: 'sum',
+        bucket: 'month',
+      },
+    })
+  })
+
+  it('re-configuring a bar tile seeds its existing mode', async () => {
+    render(
+      <WidgetConfigDialog
+        open
+        descriptor={descriptor}
+        initial={{
+          type: 'bar',
+          title: 'Deals by month',
+          config: { xField: 'closed_at', yField: 'amount', mode: 'stacked', aggregate: 'sum', bucket: 'month' },
+        }}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(screen.getByLabelText('Bar mode')).toHaveTextContent('stacked')
+  })
+})
+
 describe('WidgetConfigDialog: pie', () => {
   it('produces a config with just groupByField when no value field is picked', async () => {
     const onSubmit = vi.fn()

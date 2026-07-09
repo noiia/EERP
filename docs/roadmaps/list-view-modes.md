@@ -94,10 +94,11 @@ calendar, chart, or drag-resize-grid code exists anywhere in the repo today).
 | Kanban drag | Dropping a card on another column issues `PATCH { [kanbanStatusField]: newValue }` through the entity's existing update Server Action (the same one `FormRenderer`'s Save calls) — full permission/validation re-check by Go, no bypass. |
 | Calendar render | Month grid (v1 scope; week/day views are a later increment). Each record renders on the day read from `calendarDateField`. Records with no value in that field list in an "Unscheduled" side panel — never silently dropped. |
 | Calendar drag | Dropping a record on another day issues `PATCH { [calendarDateField]: newDate }`, same mutation path as Kanban. |
-| Graph layout | `app_settings` key `views.<entity>.graph` = `{ tiles: Tile[] }`. `GET/PUT /api/v1/settings/views/:entity/graph`, permissions `settings:views:read`/`settings:views:write` (same read/write split as the fields endpoint, both derived automatically from the route). `Tile = { id, x, y, w, h, type: 'xy'\|'pie'\|'stat'\|'list', title?, config: JsonValue, hidden?: boolean }` — `x/y/w/h` are integer grid units; `GRID_UNIT = 30` (px), the one place that number is a literal (now `gridConfig.rowHeight`, exact; column WIDTH is only approximately `GRID_UNIT`, derived from the measured container). Pure data, no functions; the Go handler validates every tile's shape (id, non-negative/non-zero geometry, closed type set, no duplicate ids) but never its opaque `config`, and round-trips `hidden` with no validation beyond its bool type (Phase 4.6). |
+| Graph layout | `app_settings` key `views.<entity>.graph` = `{ tiles: Tile[] }`. `GET/PUT /api/v1/settings/views/:entity/graph`, permissions `settings:views:read`/`settings:views:write` (same read/write split as the fields endpoint, both derived automatically from the route). `Tile = { id, x, y, w, h, type: 'xy'\|'bar'\|'pie'\|'stat'\|'list', title?, config: JsonValue, hidden?: boolean }` — `x/y/w/h` are integer grid units; `GRID_UNIT = 30` (px), the one place that number is a literal (now `gridConfig.rowHeight`, exact; column WIDTH is only approximately `GRID_UNIT`, derived from the measured container). Pure data, no functions; the Go handler validates every tile's shape (id, non-negative/non-zero geometry, closed type set, no duplicate ids) but never its opaque `config`, and round-trips `hidden` with no validation beyond its bool type (Phase 4.6). |
 | Graph canvas (Phase 4.6) | `react-grid-layout` (RGL) v2 drives the canvas: `gridConfig.cols = Math.max(4, Math.round(containerWidth / GRID_UNIT))`, measured via RGL's own `useContainerWidth()` — the canvas is now a **responsive column grid sized to its container** (which is itself already bounded by RootLayout's page inset — see `core-front/CLAUDE.md`), not a free-form surface sized to the tiles' bounding box. `compactor={verticalCompactor}` runs unconditionally (view and edit mode alike): tiles auto-stack with no gaps/overlaps, resolving on every render, not just after a drag. |
 | Graph edit mode | An "Edit" toggle top-right of the graph toolbar (one level below the mode switcher), visible only to a session holding `settings:views:write` (client-side display gating, like `CreateBar` — Go re-authorizes the PUT regardless). View mode: tiles render read-only via RGL with `dragConfig.enabled`/`resizeConfig.enabled` both `false`. Edit mode: every tile is draggable (`dragConfig.handle`, a header) and resizable (`resizeConfig.handles: ['se']`, RGL's own bottom-right handle), floored per-`type` at `TILE_MIN_SIZE[type]` (not a uniform floor), plus a "Hide" (×) button and a "+ Add widget" button below the canvas that opens a type + title dialog. Hiding a tile is **non-destructive**: it sets `Tile.hidden = true` (excluded from the rendered/RGL-managed grid and from collision/compaction) and appears as a restorable chip in a "Hidden widgets" row below the canvas — clicking a chip sets `hidden = false`, restoring the tile at its last-known geometry. Changes stay in a local draft (mirrors the form store's `dirty`/`commit` shape) until **Save** (`PUT .../graph`, reverting to view mode on success, keeping the draft and surfacing the error on rejection) or **Cancel** (discards the draft, reverts to the last saved layout, including any hide/restore/move/resize made since). |
 | Widget: xy | `config: { xField, yField, seriesField?, aggregate?: 'sum'\|'avg'\|'count', bucket?: 'day'\|'week'\|'month' }`. A smoothed line of `yField`, bucketed by `xField` (a date field), with Y-axis gridlines/numeric ticks and localized X-axis bucket labels. `seriesField` (optional, a selection/text/boolean field) splits the chart into one colored line per distinct value (e.g. a status column) instead of a single implicit series — a legend renders only when there's more than one series. The chart is sized 1:1 to its OWN measured tile pixels (`useElementSize`/`ResizeObserver`), never a fixed literal, so resizing a tile visibly resizes its chart. |
+| Widget: bar (Phase 5.3) | `config: { xField, yField, seriesField?, mode: 'grouped'\|'stacked', aggregate?: 'sum'\|'avg'\|'count', bucket?: 'day'\|'week'\|'month' }` — reuses `xySeries()` verbatim (identical bucketing/aggregation math to xy, just rendered as bars). `mode: 'grouped'` draws one bar per series side-by-side within each bucket; `'stacked'` draws one bar per bucket, split into stacked segments (one per series, in the same order as the legend). With no `seriesField`, both modes render identically (one bar per bucket). Same axes/gridlines/legend/responsive-sizing machinery as the xy widget (`AXIS_PADDING`, `niceTicks`, `useElementSize`). |
 | Widget: pie | `config: { groupByField, valueField? }` — no `aggregate`. One slice per distinct value of `groupByField`, ALWAYS sized by that group's record count (equal groups render as equal slices, full stop). `valueField` is display-only: when set, its SUM per group appears in the tooltip, but never influences slice size — picking a field to show never secretly reweights the chart (Phase 5.2; see Pitfalls). |
 | Widget: stat | `config: { field, aggregate: 'mean'\|'median'\|'sum'\|'count' }` — a single big-number tile. Mean and median are the SAME widget type with a different `aggregate`, not two widget kinds (mirrors the widget/type split in `docs/roadmaps/field-widgets.md`). |
 | Widget: list | `config: { filterField, filterValue, displayFields: string[] }`. Reuses the existing `filter[col]=value` list-endpoint contract (field-widgets Phase 4) — no new backend surface. |
@@ -649,6 +650,41 @@ split 50/50, not 60/40); the differing values still surface in each slice's tool
 
 ---
 
+## Phase 5.3 — New widget: bar chart (grouped + stacked) ✅ (implemented)
+
+> Added by request: a bar-chart widget type alongside xy/pie/stat/list, with two layout modes —
+> grouped (one bar per series, side-by-side within each bucket) and stacked (one bar per bucket,
+> split into stacked segments, one per series).
+>
+> Implementation notes:
+>
+> - **Zero new aggregate math.** `xySeries()` (already multi-series-aware since Phase 5.1) is
+>   reused verbatim — a bar tile buckets/aggregates `yField` by `xField`, optionally split by
+>   `seriesField`, exactly like an xy tile. The only new concept is `mode: 'grouped' | 'stacked'`,
+>   a pure layout choice with no effect on the underlying data (`BarMode`, defined in
+>   `graph-aggregate.ts` and imported by both the widget and the config dialog — the same
+>   single-source-of-truth-type pattern as `BucketGranularity`/`NumericAggregate`).
+> - **`BarChart` (`graph-widgets.tsx`) mirrors `XyChart`'s chrome** — same `AXIS_PADDING`, Y-axis
+>   gridlines/ticks via `niceTicks()`, localized X-axis bucket labels via `formatBucketLabel()`,
+>   legend (multi-series only), and `useElementSize`-driven responsive sizing — just rendering
+>   `<rect>` bars instead of a smoothed `<path>`. Grouped mode's Y domain is the max of any single
+>   series value; stacked mode's Y domain is the max of any bucket's SERIES SUM (a taller domain,
+>   since segments pile up) — computed independently per mode so neither ever clips or
+>   under-fills the axis.
+> - **The config dialog's bar form reuses the xy fields outright** (same X/Y/series/aggregate/
+>   bucket selects, same validation messages: "Pick a date field for X."/"Pick a number field for
+>   Y.") plus one addition, a "Bar mode" select (`grouped`/`stacked`, defaulting to `grouped`).
+> - **Backend:** `bar` added to Go's closed `graphTileTypes` set (`core/internal/settings/
+>   handler.go`) — the backend still never interprets `config`, so no other backend change was
+>   needed.
+
+**DoD:** a bar tile with no `seriesField` renders one bar per bucket in either mode (they look
+identical with a single implicit series); a bar tile with a `seriesField` renders side-by-side
+bars per bucket in `'grouped'` mode and stacked segments per bucket in `'stacked'` mode, with a
+legend entry per series either way; resizing the tile resizes the chart, same as xy/pie.
+
+---
+
 ## Build order
 
 ```mermaid
@@ -660,6 +696,7 @@ flowchart TD
     P4 --> P46[Phase 4.6: migrate canvas to react-grid-layout]
     P5 --> P51[Phase 5.1: multi-series xy, responsive sizing, centering]
     P5 --> P52[Phase 5.2: pie fix - count-sized slices]
+    P51 --> P53[Phase 5.3: bar widget - grouped and stacked]
 ```
 
 Phases 2 and 3 parallelize once Phase 1 lands and share the drag-to-PATCH logic (write it once,
@@ -669,7 +706,8 @@ widget bodies Phase 5 shipped, which it leaves untouched. Phase 5.1 is a widget-
 refinement of Phase 5 (config stays backward compatible) and is independent of Phase 4.6.
 Phase 5.2 is a pie-only behavior fix (its `aggregate` config key is dropped, not backward
 compatible in the sense of being read anymore, though old stored values still round-trip inertly)
-and is independent of both 4.6 and 5.1.
+and is independent of both 4.6 and 5.1. Phase 5.3 adds a new widget type (bar) built entirely on
+Phase 5.1's multi-series `xySeries()` — additive, no existing widget's config or behavior changes.
 
 ## Coordination
 

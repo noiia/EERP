@@ -15,7 +15,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { TILE_TYPES, type TileType } from '../api/graph'
 import { fieldLabel, type JsonValue, type ViewDescriptor } from './descriptor'
-import type { FullAggregate, NumericAggregate } from './graph-aggregate'
+import type { BarMode, FullAggregate, NumericAggregate } from './graph-aggregate'
 import { orderedFields } from './layout-fields'
 import { useT } from '../i18n/translate'
 import type { HasId } from './stores'
@@ -40,8 +40,9 @@ const BUCKET_OPTIONS = ['day', 'week', 'month'] as const
 const XY_AGGREGATE_OPTIONS: readonly NumericAggregate[] = ['sum', 'avg', 'count']
 /** Sentinel for pie's optional value field — '' can't be a Select value. */
 const NO_VALUE_FIELD = '__count__'
-/** Sentinel for xy's optional series field — '' can't be a Select value. */
+/** Sentinel for xy/bar's optional series field — '' can't be a Select value. */
 const NO_SERIES_FIELD = '__single__'
+const BAR_MODE_OPTIONS: readonly BarMode[] = ['grouped', 'stacked']
 
 function readString(config: Record<string, unknown>, key: string): string {
   const v = config[key]
@@ -75,6 +76,7 @@ export function WidgetConfigDialog<T extends HasId>({
   const [seriesField, setSeriesField] = useState('')
   const [xyAggregate, setXyAggregate] = useState<NumericAggregate>('sum')
   const [bucket, setBucket] = useState<'day' | 'week' | 'month'>('month')
+  const [barMode, setBarMode] = useState<BarMode>('grouped')
 
   const [groupByField, setGroupByField] = useState('')
   const [valueField, setValueField] = useState('')
@@ -103,6 +105,8 @@ export function WidgetConfigDialog<T extends HasId>({
     setXyAggregate(rawXyAgg === 'avg' || rawXyAgg === 'count' ? rawXyAgg : 'sum')
     const rawBucket = config.bucket
     setBucket(rawBucket === 'day' || rawBucket === 'week' ? rawBucket : 'month')
+    const rawBarMode = config.mode
+    setBarMode(rawBarMode === 'stacked' ? 'stacked' : 'grouped')
     setGroupByField(readString(config, 'groupByField'))
     setValueField(readString(config, 'valueField'))
     setStatField(readString(config, 'field'))
@@ -140,6 +144,14 @@ export function WidgetConfigDialog<T extends HasId>({
           config: seriesField
             ? { xField, yField, seriesField, aggregate: xyAggregate, bucket }
             : { xField, yField, aggregate: xyAggregate, bucket },
+        }
+      case 'bar':
+        if (!xField) return { error: t('Pick a date field for X.') }
+        if (!yField) return { error: t('Pick a number field for Y.') }
+        return {
+          config: seriesField
+            ? { xField, yField, seriesField, mode: barMode, aggregate: xyAggregate, bucket }
+            : { xField, yField, mode: barMode, aggregate: xyAggregate, bucket },
         }
       case 'pie':
         // No aggregate here on purpose: slices are always sized by record
@@ -199,7 +211,7 @@ export function WidgetConfigDialog<T extends HasId>({
           </FormControl>
           <TextField label={t('Title')} value={title} onChange={(e) => setTitle(e.target.value)} fullWidth />
 
-          {type === 'xy' ? (
+          {type === 'xy' || type === 'bar' ? (
             <>
               <FormControl fullWidth>
                 <InputLabel id="graph-xy-x">{t('X field (date)')}</InputLabel>
@@ -277,6 +289,23 @@ export function WidgetConfigDialog<T extends HasId>({
                   ))}
                 </Select>
               </FormControl>
+              {type === 'bar' ? (
+                <FormControl fullWidth>
+                  <InputLabel id="graph-bar-mode">{t('Bar mode')}</InputLabel>
+                  <Select
+                    labelId="graph-bar-mode"
+                    label={t('Bar mode')}
+                    value={barMode}
+                    onChange={(e) => setBarMode(e.target.value as BarMode)}
+                  >
+                    {BAR_MODE_OPTIONS.map((m) => (
+                      <MenuItem key={m} value={m}>
+                        {t(m)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
             </>
           ) : null}
 
