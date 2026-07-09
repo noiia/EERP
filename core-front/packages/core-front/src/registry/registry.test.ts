@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from '../views/descriptor'
 import { ModuleRegistry, type FrontModule } from './registry'
 
@@ -220,5 +220,188 @@ describe('ModuleRegistry.match', () => {
   it('returns null for an unregistered path', () => {
     expect(registry.match('/crm')).toBeNull()
     expect(registry.match('/crm/contacts/42/extra')).toBeNull()
+  })
+})
+
+describe('ModuleRegistry — view extensions (Phase 3)', () => {
+  it('a second module reshapes a base view without the base changing', () => {
+    const registry = new ModuleRegistry().register(crm)
+    const extender: FrontModule = {
+      name: 'crminheritdemo',
+      routes: [],
+      extends: [
+        {
+          path: '/crm/contacts/:id',
+          operations: [
+            { op: 'addField', field: { name: 'date', label: 'Date', type: 'date' }, target: 'name', position: 'after' },
+            { op: 'setField', name: 'date', patch: { required: true } },
+          ],
+        },
+      ],
+    }
+    registry.register(extender, { depends: ['crm'] })
+
+    const resolved = registry.buildRegistry().get('/crm/contacts/:id')
+    expect(resolved?.descriptor.fields.map((f) => f.name)).toEqual(['name', 'date'])
+    expect(resolved?.descriptor.fields.find((f) => f.name === 'date')?.required).toBe(true)
+    // The extender doesn't own the path — attribution stays with the base module.
+    expect(resolved?.module).toBe('crm')
+    // The original module-declared descriptor object is untouched (applyExtension is pure).
+    expect(formDescriptor.fields).toHaveLength(1)
+  })
+
+  it('extending an unknown path throws, naming the module and path', () => {
+    const registry = new ModuleRegistry()
+    const extender: FrontModule = {
+      name: 'ghost-extender',
+      routes: [],
+      extends: [{ path: '/nowhere', operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }] }],
+    }
+    expect(() => registry.register(extender)).toThrowError(
+      /module "ghost-extender" extends unknown path "\/nowhere"/,
+    )
+  })
+
+  it('a broken operation throws, wrapped with module + path context', () => {
+    const registry = new ModuleRegistry().register(crm)
+    const extender: FrontModule = {
+      name: 'crminheritdemo',
+      routes: [],
+      extends: [
+        { path: '/crm/contacts/:id', operations: [{ op: 'removeField', name: 'ghost' }] },
+      ],
+    }
+    expect(() => registry.register(extender, { depends: ['crm'] })).toThrowError(
+      /module "crminheritdemo" extending "\/crm\/contacts\/:id": removeField: field "ghost" not found/,
+    )
+  })
+
+  it('an extension over an already-extended view composes: A extends B extends base', () => {
+    const registry = new ModuleRegistry().register(crm)
+    registry.register(
+      {
+        name: 'moduleB',
+        routes: [],
+        extends: [
+          {
+            path: '/crm/contacts/:id',
+            operations: [{ op: 'addField', field: { name: 'date', label: 'Date', type: 'date' } }],
+          },
+        ],
+      },
+      { depends: ['crm'] },
+    )
+    registry.register(
+      {
+        name: 'moduleA',
+        routes: [],
+        extends: [
+          {
+            path: '/crm/contacts/:id',
+            operations: [
+              { op: 'addField', field: { name: 'comment', label: 'Comment', type: 'text' } },
+              { op: 'move', name: 'comment', target: 'date', position: 'before' },
+            ],
+          },
+        ],
+      },
+      { depends: ['moduleB'] },
+    )
+
+    const resolved = registry.buildRegistry().get('/crm/contacts/:id')
+    expect(resolved?.descriptor.fields.map((f) => f.name)).toEqual(['name', 'date', 'comment'])
+  })
+
+  it('warns when a module extends a path it does not declare as a dependency', () => {
+    const registry = new ModuleRegistry().register(crm)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    registry.register(
+      {
+        name: 'sloppy',
+        routes: [],
+        extends: [
+          { path: '/crm/contacts/:id', operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }] },
+        ],
+      },
+      // No `depends` declared at all.
+    )
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('module "sloppy" extends path "/crm/contacts/:id"'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('without declaring "crm"'))
+    warn.mockRestore()
+  })
+
+  it('declaring the dependency silences the warning', () => {
+    const registry = new ModuleRegistry().register(crm)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    registry.register(
+      {
+        name: 'polite',
+        routes: [],
+        extends: [
+          { path: '/crm/contacts/:id', operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }] },
+        ],
+      },
+      { depends: ['crm'] },
+    )
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('formDescriptorFor resolves the EXTENDED descriptor, not the original', () => {
+    const registry = new ModuleRegistry().register(crm)
+    registry.register(
+      {
+        name: 'crminheritdemo',
+        routes: [],
+        extends: [
+          {
+            path: '/crm/contacts/:id',
+            operations: [{ op: 'addField', field: { name: 'comment', label: 'Comment', type: 'text' } }],
+          },
+        ],
+      },
+      { depends: ['crm'] },
+    )
+    expect(registry.formDescriptorFor('crm')?.fields.map((f) => f.name)).toEqual(['name', 'comment'])
+  })
+
+  it('re-registering the SAME module (idempotency) does not re-apply its extensions', () => {
+    const registry = new ModuleRegistry().register(crm)
+    const extender: FrontModule = {
+      name: 'crminheritdemo',
+      routes: [],
+      extends: [
+        { path: '/crm/contacts/:id', operations: [{ op: 'addField', field: { name: 'date', label: 'Date', type: 'date' } }] },
+      ],
+    }
+    registry.register(extender, { depends: ['crm'] })
+    registry.register(extender, { depends: ['crm'] }) // e.g. server + client manifest both evaluating during SSR
+    expect(registry.buildRegistry().get('/crm/contacts/:id')?.descriptor.fields.map((f) => f.name)).toEqual([
+      'name',
+      'date',
+    ])
+  })
+
+  it('a REPLACE (duplicate direct route registration) drops prior extensions on that path', () => {
+    const registry = new ModuleRegistry().register(crm)
+    registry.register(
+      {
+        name: 'crminheritdemo',
+        routes: [],
+        extends: [
+          { path: '/crm/contacts/:id', operations: [{ op: 'addField', field: { name: 'date', label: 'Date', type: 'date' } }] },
+        ],
+      },
+      { depends: ['crm'] },
+    )
+    expect(registry.buildRegistry().get('/crm/contacts/:id')?.descriptor.fields).toHaveLength(2)
+
+    // A later module fully replacing the path — the blunt "last wins" escape
+    // hatch — is a NEW view, not a merge; the earlier extension doesn't carry over.
+    registry.register({
+      name: 'replacer',
+      routes: [{ path: '/crm/contacts/:id', descriptor: formDescriptor }],
+    })
+    expect(registry.buildRegistry().get('/crm/contacts/:id')?.descriptor.fields).toHaveLength(1)
   })
 })

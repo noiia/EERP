@@ -15,6 +15,7 @@ import {
   renderManifest,
   renderTranslationsManifest,
   toImportSpecifier,
+  topoSortModules,
   translationsForDir,
 } from './module-discovery.mjs'
 
@@ -247,5 +248,81 @@ describe('renderClientManifest', () => {
     const manifest = renderClientManifest([], join(repo, 'apps', 'shell', 'src', 'generated'))
     expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front'")
     expect(manifest).not.toContain('register(')
+  })
+
+  it('carries depends into the register() call — the registry checks it for the extension-coverage warning', () => {
+    const withDepends = [{ ...discoverModuleViews(repo, readConfig(repo))[0], depends: ['crm'] }]
+    const manifest = renderClientManifest(withDepends, join(repo, 'apps', 'shell', 'src', 'generated'))
+    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true, depends: ["crm"] })')
+  })
+})
+
+/** Write a module with a trivial view file, depending on the given module names. */
+function writeDependentModule(repo, name, dependsOn = []) {
+  const dir = join(repo, 'mods', name)
+  mkdirSync(join(dir, 'views'), { recursive: true })
+  writeFileSync(
+    join(dir, 'module.json'),
+    JSON.stringify({ name, depends: dependsOn, static_files: { views: [`${name}.ts`] } }),
+  )
+  writeFileSync(join(dir, 'views', `${name}.ts`), `export default { name: "${name}", routes: [] }`)
+}
+
+describe('topoSortModules', () => {
+  it('orders a straight chain: base before middle before leaf', () => {
+    const modules = [
+      { name: 'leaf', depends: ['middle'] },
+      { name: 'base', depends: [] },
+      { name: 'middle', depends: ['base'] },
+    ]
+    expect(topoSortModules(modules).map((m) => m.name)).toEqual(['base', 'middle', 'leaf'])
+  })
+
+  it('orders a diamond graph: base first, top last, left/right by name between them', () => {
+    const modules = [
+      { name: 'top', depends: ['left', 'right'] },
+      { name: 'right', depends: ['base'] },
+      { name: 'left', depends: ['base'] },
+      { name: 'base', depends: [] },
+    ]
+    expect(topoSortModules(modules).map((m) => m.name)).toEqual(['base', 'left', 'right', 'top'])
+  })
+
+  it('breaks ties by name when there is no ordering relation', () => {
+    const modules = [{ name: 'b', depends: [] }, { name: 'a', depends: [] }]
+    expect(topoSortModules(modules).map((m) => m.name)).toEqual(['a', 'b'])
+  })
+
+  it('a depends entry naming a module outside this discovery pass is not an error', () => {
+    const modules = [{ name: 'solo', depends: ['not-discovered'] }]
+    expect(() => topoSortModules(modules)).not.toThrow()
+    expect(topoSortModules(modules).map((m) => m.name)).toEqual(['solo'])
+  })
+
+  it('a dependency cycle is a build error naming the chain', () => {
+    const modules = [
+      { name: 'a', depends: ['b'] },
+      { name: 'b', depends: ['a'] },
+    ]
+    expect(() => topoSortModules(modules)).toThrowError(/dependency cycle: a -> b -> a/)
+  })
+})
+
+describe('discoverModuleViews — dependency ordering', () => {
+  it('registers a diamond depends graph in topological order, not alphabetical', () => {
+    // Alphabetically this would be base, left, right, top — same result here,
+    // so also prove the NON-alphabetical case below.
+    writeDependentModule(repo, 'zzz-base', [])
+    writeDependentModule(repo, 'aaa-dependent', ['zzz-base'])
+    const names = discoverModuleViews(repo, readConfig(repo)).map((m) => m.name)
+    // Alphabetically 'aaa-dependent' would sort BEFORE 'zzz-base' — topological
+    // order must still put the dependency first regardless.
+    expect(names.indexOf('zzz-base')).toBeLessThan(names.indexOf('aaa-dependent'))
+  })
+
+  it('a cycle across real module.json files fails discovery with an actionable message', () => {
+    writeDependentModule(repo, 'cyc-a', ['cyc-b'])
+    writeDependentModule(repo, 'cyc-b', ['cyc-a'])
+    expect(() => discoverModuleViews(repo, readConfig(repo))).toThrowError(/dependency cycle/)
   })
 })

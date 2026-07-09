@@ -7,6 +7,11 @@
     "author": "Edwin Lecomte",
     "description": "Demonstrates module inheritance: adds date and comment to the crm table without modifying the crm module.",
     "depends": ["crm"],
+    "static_files": {
+        "views": [
+            "CrmInheritViews.ts"
+        ]
+    },
     "is_service": false,
     "auto_install": false
 }

@@ -76,14 +76,58 @@ function walkForModuleJson(dir, found) {
 }
 
 /**
- * Discover every module declaring `static_files.views`. Returns one entry per module
- * (sorted by name for deterministic output), each carrying its absolute dir, the
- * resolved view files with their `@module/<name>/views/<file>` import specifiers, and
- * its `app_mode` flag (module.json `app_mode: true` = present the module as a full
- * application: a tile on the landing menu; default false = routes only, no tile).
- * Modules without frontend views (Go-only) are skipped, and so are deactivated
- * modules (`active: false`) — the backend doesn't serve them, so compiling their
- * views would produce dead routes. A missing `active` counts as active.
+ * Order modules so every dependency registers before its dependents — a view
+ * EXTENSION targeting another module's route needs that route already
+ * registered, and `module.json` `depends` is the declared relationship
+ * (docs/roadmaps/view-customization.md, Phase 3). A depends entry naming a
+ * module NOT in this discovery pass (Go-only, or simply absent) is not an
+ * error here — this function only orders what it found; the Go loader is the
+ * authority on whether a dependency exists at all. Ties (no ordering relation
+ * either way) break by name, for deterministic output across runs. A cycle
+ * is a build error naming the chain — unlike the Go loader, which orders by a
+ * manually-set `priority` integer (no computed graph, no cycle detection),
+ * this computes the order FROM the declared graph directly, so a broken
+ * dependency cycle fails loud here instead of silently registering in
+ * whatever order the filesystem walk happened to produce.
+ */
+export function topoSortModules(modules) {
+  const byName = new Map(modules.map((m) => [m.name, m]))
+  const state = new Map()
+  const ordered = []
+
+  function visit(mod, chain) {
+    if (state.get(mod.name) === 'done') return
+    if (state.get(mod.name) === 'visiting') {
+      throw new Error(
+        `[generate-modules] dependency cycle: ${[...chain, mod.name].join(' -> ')}`,
+      )
+    }
+    state.set(mod.name, 'visiting')
+    for (const dep of mod.depends ?? []) {
+      const depModule = byName.get(dep)
+      if (depModule) visit(depModule, [...chain, mod.name])
+    }
+    state.set(mod.name, 'done')
+    ordered.push(mod)
+  }
+
+  for (const mod of [...modules].sort((a, b) => a.name.localeCompare(b.name))) {
+    visit(mod, [])
+  }
+  return ordered
+}
+
+/**
+ * Discover every module declaring `static_files.views`. Returns one entry per module,
+ * in `depends` TOPOLOGICAL order (name as tie-break — topoSortModules), each carrying
+ * its absolute dir, the resolved view files with their import specifiers, its
+ * `app_mode` flag (module.json `app_mode: true` = present the module as a full
+ * application: a tile on the landing menu; default false = routes only, no tile), and
+ * its `depends` list (threaded into the generated manifest's registration options —
+ * the registry's depends-coverage warning needs it). Modules without frontend views
+ * (Go-only) are skipped, and so are deactivated modules (`active: false`) — the
+ * backend doesn't serve them, so compiling their views would produce dead routes. A
+ * missing `active` counts as active.
  */
 export function discoverModuleViews(repoRoot, config) {
   const roots = Array.isArray(config.module_root) ? config.module_root : []
@@ -110,12 +154,12 @@ export function discoverModuleViews(repoRoot, config) {
         .filter((v) => existsSync(v.sourceFile) && statSync(v.sourceFile).isFile())
 
       if (viewFiles.length === 0) continue
-      discovered.push({ name, moduleDir, appMode: meta.app_mode === true, views: viewFiles })
+      const depends = Array.isArray(meta.depends) ? meta.depends.filter((d) => typeof d === 'string') : []
+      discovered.push({ name, moduleDir, appMode: meta.app_mode === true, depends, views: viewFiles })
     }
   }
 
-  discovered.sort((a, b) => a.name.localeCompare(b.name))
-  return discovered
+  return topoSortModules(discovered)
 }
 
 /**
@@ -246,6 +290,21 @@ export function toImportSpecifier(fromDir, sourceFile) {
 }
 
 /**
+ * The `register(id, options)` call for one module — `options` omitted when
+ * both appMode is false and depends is empty (matches the pre-Phase-3 output
+ * for modules touching neither). `depends` rides along so the registry's
+ * extension-coverage warning (registry.ts) can check it at registration.
+ */
+function renderRegisterCall(r) {
+  const parts = []
+  if (r.appMode) parts.push('appMode: true')
+  if (r.depends.length > 0) parts.push(`depends: ${JSON.stringify(r.depends)}`)
+  return parts.length > 0
+    ? `moduleRegistry.register(${r.id}, { ${parts.join(', ')} })`
+    : `moduleRegistry.register(${r.id})`
+}
+
+/**
  * Render the generated manifest: static imports of each view's default-exported
  * FrontModule plus a register() call into the single shared ModuleRegistry. Static
  * (not dynamic) imports so the bundler tree-shakes normally. `fromDir` is the
@@ -264,21 +323,16 @@ export function renderManifest(discovered, fromDir) {
   for (const module of discovered) {
     for (const view of module.views) {
       const id = `m${i++}`
-      registrations.push({ id, appMode: module.appMode })
+      registrations.push({ id, appMode: module.appMode, depends: module.depends ?? [] })
       lines.push(`import ${id} from '${toImportSpecifier(fromDir, view.sourceFile)}'`)
     }
   }
 
   lines.push('')
-  // app_mode rides along from module.json: it is registration metadata (how the shell
-  // presents the module), not part of the FrontModule the views file exports.
-  for (const r of registrations) {
-    lines.push(
-      r.appMode
-        ? `moduleRegistry.register(${r.id}, { appMode: true })`
-        : `moduleRegistry.register(${r.id})`,
-    )
-  }
+  // app_mode + depends ride along from module.json: registration metadata (how
+  // the shell presents the module, what it declares depending on), not part of
+  // the FrontModule the views file exports.
+  for (const r of registrations) lines.push(renderRegisterCall(r))
   lines.push('')
   lines.push('export { moduleRegistry }')
   lines.push('')
@@ -313,19 +367,13 @@ export function renderClientManifest(discovered, fromDir) {
   for (const module of discovered) {
     for (const view of module.views) {
       const id = `m${i++}`
-      registrations.push({ id, appMode: module.appMode })
+      registrations.push({ id, appMode: module.appMode, depends: module.depends ?? [] })
       lines.push(`import ${id} from '${toImportSpecifier(fromDir, view.sourceFile)}'`)
     }
   }
 
   lines.push('')
-  for (const r of registrations) {
-    lines.push(
-      r.appMode
-        ? `moduleRegistry.register(${r.id}, { appMode: true })`
-        : `moduleRegistry.register(${r.id})`,
-    )
-  }
+  for (const r of registrations) lines.push(renderRegisterCall(r))
   lines.push('')
   return lines.join('\n')
 }

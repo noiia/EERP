@@ -22,9 +22,10 @@ import {
   type RelationDescriptor,
   type ViewDescriptor,
 } from './descriptor'
+import { LayoutForm } from './layout-renderer'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
 import { createFormStore, useFormDraft, useFormError } from './stores'
-import { fieldWidget, type WidgetProps } from './widgets'
+import type { WidgetProps } from './widgets'
 
 // Relation widgets (docs/roadmaps/field-widgets.md, Phase 4). All data flows
 // through RelationOps — bound Server Actions the host mounts once — so Go
@@ -281,24 +282,20 @@ function RelationCreateWizard({
                 {error.message}
               </Typography>
             ) : null}
-            {descriptor.fields
-              .filter((f) => !hiddenSet.has(f.name))
-              .map((f) => {
-                const Widget = fieldWidget(f)
-                return (
-                  <Widget
-                    key={f.name}
-                    field={f}
-                    value={(draft as Record<string, unknown>)[f.name]}
-                    onChange={(value) => setField(f.name, value)}
-                    disabled={Boolean(f.compute)}
-                    entity={rel.entity}
-                    // No id yet: service-backed widgets (picture/signature) and
-                    // o2m/m2m render their unsaved-record hint, as on any new form.
-                    recordId={null}
-                  />
-                )
-              })}
+            {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
+                walks the target descriptor's normalized layout tree, so a
+                registered form's grouping/rows render here too, not just a
+                flat field dump. `hidden` skips the preset inverse FK (o2m). */}
+            <LayoutForm
+              descriptor={descriptor}
+              draft={draft as Record<string, unknown>}
+              onFieldChange={(name, value) => setField(name, value)}
+              entity={rel.entity}
+              // No id yet: service-backed widgets (picture/signature) and
+              // o2m/m2m render their unsaved-record hint, as on any new form.
+              recordId={null}
+              hidden={hiddenSet}
+            />
           </Stack>
         </DialogContent>
         <DialogActions>

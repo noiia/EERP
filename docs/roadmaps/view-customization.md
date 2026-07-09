@@ -86,7 +86,31 @@ flowchart LR
 
 ---
 
-## Phase 1 — Layout tree + renderer refactor (`@eerp/core-front`)
+## Phase 1 — Layout tree + renderer refactor (`@eerp/core-front`) ✅ (implemented)
+
+> Implementation notes: `normalizeLayout` and `layoutFieldOrder` live in
+> `descriptor.ts` next to the other pure descriptor functions (no separate
+> module — the layout tree is descriptor data, same tier as `FieldDescriptor`).
+> The "single entry point" rule extends beyond the two renderers the prompt
+> named: the relation widgets' create-from-search wizard (a third place that
+> renders a `ViewDescriptor`'s fields, landed as a post-Phase-4 field-widgets
+> increment) goes through the SAME component — a new `layout-renderer.tsx`
+> exporting `LayoutForm`, shared by `FormRenderer` and `RelationCreateWizard`
+> so there is exactly one "walk a descriptor's fields for display" code path,
+> not two that could drift. `LayoutForm` also takes a `hidden` set (field names
+> to skip entirely) for the wizard's preset-inverse-FK case — orthogonal to the
+> layout tree itself, just a rendering-time filter. The implicit-group
+> fallback's `group` renders at the SAME spacing (2.5) the original flat
+> `FormRenderer` Stack used, which is what makes the "pixel-equivalent"
+> back-compat claim hold: MUI Stack spacing doesn't compound across nesting,
+> so one extra transparent wrapper produces byte-for-byte the same vertical
+> rhythm. The "type test" enforcing JSON-serializability is a runtime
+> `JSON.parse(JSON.stringify(...))` round-trip fixture exercising every node
+> kind, rather than a compile-time structural-assignability check against
+> `JsonValue` — TypeScript's structural typing doesn't cleanly accept a
+> strongly-typed discriminated union against an index-signature type even when
+> every field genuinely is JSON-safe, so the round trip is the practical
+> enforcement (anything that doesn't survive it isn't safe to hand an RSC).
 
 The structural prerequisite: nothing can move until position exists.
 
@@ -111,7 +135,30 @@ offending node.
 **DoD:** every existing view (crm, contact, settings/users) renders pixel-equivalent with no
 descriptor change; an explicit layout reorders/groups a form; validation messages are exact.
 
-## Phase 2 — Declarative field states
+## Phase 2 — Declarative field states ✅ (implemented)
+
+> Implementation notes: `evaluateCondition` and the new `requiredMissing`
+> helper live in `descriptor.ts` next to `normalizeLayout` — same tier, pure
+> descriptor-shape functions, no React. `states` are evaluated where Phase 1
+> made display order live: `layout-renderer.tsx`'s field-leaf branch, so
+> `FormRenderer` AND the relation create-from-search wizard both get
+> visible/readOnly for free from the one shared entry point — the prompt only
+> named FormRenderer, but "one code path" from Phase 1 pays off immediately.
+> "Reevaluate on every draft change" needed no extra plumbing: `LayoutForm`
+> already re-renders whenever the draft changes (the form store's Zustand
+> subscription), and states are evaluated inline per render — no memoization,
+> no staleness. `required` blocking lives in `createFormStore.commit()`
+> (stores.ts): a synthesized `ApiError` with code `VALIDATION_ERROR` (Go's own
+> convention, `crud.ValidateRequest`'s "missing required fields") reuses the
+> renderer's EXISTING error surface — no new UI. A hidden field's `required`
+> is inert (visible:false wins) — mirrors Odoo, and is the only way the
+> combinator stays escapable: an always-required-but-conditionally-hidden
+> field would otherwise be able to permanently block commit. Static
+> `FieldDescriptor.readOnly` (app-store roadmap) does not exist in the
+> codebase yet, so there is nothing to compose with today; `states.readOnly`
+> alone currently ORs into the compute-disables rule, and the composition
+> point is documented on the field so app-store's landing is a one-line change
+> here, not a redesign.
 
 **Claude Code prompt:**
 ```
@@ -129,7 +176,57 @@ Tests: op/combinator matrix; a field toggling on a draft edit; required blocking
 **DoD:** a descriptor toggles visibility/readOnly/required off record state with zero code;
 condition evaluation is pure and fully covered; serializability test guards the boundary.
 
-## Phase 3 🔺 — Inheritance engine + dependency-ordered discovery
+## Phase 3 🔺 — Inheritance engine + dependency-ordered discovery ✅ (implemented)
+
+> Implementation notes:
+>
+> - **`ViewExtension`/`Operation`/`applyExtension` live in a new `src/registry/extensions.ts`**,
+>   not inside `registry.ts` — a substantial, independently-testable concern (24 unit
+>   tests exercise `applyExtension` directly, no registry involved).
+> - **Resolution is EAGER, not lazily recomputed.** `ModuleRegistry` gained a second map,
+>   `resolvedRoutes: Map<path, RouteConfig>`, populated incrementally as each module
+>   registers: base routes write to it directly, then that module's own `extends` apply
+>   on top of whatever the target path currently holds (the base, or earlier modules'
+>   already-merged result) and overwrite the map entry. `buildRegistry()` (and `menu()`,
+>   `listViews()`, `formDescriptorFor()` — every accessor that returns a `descriptor`) is
+>   now a cheap read of this map, not a recomputation — this is the literal reading of
+>   "applies all extensions for a path AT REGISTRATION, memoized in buildRegistry()"
+>   rather than a lazy cache with invalidation, which would need to reason about when a
+>   later registration invalidates an earlier accessor's result.
+> - **`addNode` extracts-and-rehomes, not just references.** Its field-leaves must
+>   already exist (per the contract), but they'd collide with `normalizeLayout`'s
+>   duplicate-field check if left in their original spot — this operation is really "wrap
+>   these already-placed fields into a new container": each referenced field is removed
+>   from wherever it currently sits, then the whole new node (fields now living only
+>   inside it) is inserted at the target. This is what makes "reorganize a flat base view
+>   into a two-column layout" a single operation.
+> - **A target-less `addField`/`move` inserts INTO the edge container, not beside it.**
+>   For the common case — one implicit top-level group (the whole pre-Phase-3 form) — a
+>   target-less add naturally means "put it with everything else", not "create a stray
+>   top-level sibling next to the group". `insertAt` descends into the first/last
+>   top-level node when it's a container; only a bare top-level field leaf (a
+>   hand-authored flat layout with no wrapping group) falls back to a plain sibling
+>   insert.
+> - **The depends-coverage warning moved from codegen to the registry.** The prompt asks
+>   for a codegen-time warning, but `module-discovery.mjs` is a pure filesystem walker —
+>   it writes `import` statements for the bundler to resolve, it never actually executes
+>   a module's TypeScript, so it cannot see `.extends` without adding a TS-transpilation
+>   step to the discovery script (a disproportionate change for a hygiene warning).
+>   `RegisterOptions.depends` instead threads `module.json`'s `depends` through the
+>   generated `moduleRegistry.register(mN, { depends: [...] })` call, and
+>   `ModuleRegistry.register()` — which already knows exactly which module owns which
+>   path via `resolvedRoutes` — emits the `console.warn` there. The observable outcome
+>   (a warning during `next dev`/`next build`, when the generated manifest evaluates) is
+>   the same developer experience the prompt asks for; only the mechanism moved.
+> - **"Same rule as the Go loader" is aspirational, not literal.** The Go loader
+>   (`internal/module/load.go`) does not compute a topological sort from `depends` at
+>   all — it groups modules by a manually-set `priority` integer and loads same-priority
+>   modules concurrently, with no cycle detection. `depends` is read but not used for
+>   ordering server-side. `topoSortModules` (module-discovery.mjs) implements the REAL
+>   graph-based topological sort with cycle detection the prompt describes — matching
+>   the Go loader's INTENT (deps load before dependents) via a stronger mechanism than
+>   the Go loader currently has, not an identical one. Worth revisiting if the Go loader
+>   ever grows real depends-driven ordering, so both sides compute the same thing.
 
 The core of the roadmap; registry-only (renderers untouched by design).
 
@@ -156,7 +253,24 @@ dependency order for a diamond depends graph.
 changing; broken anchors fail the build with actionable messages; manifest order is
 dependency-driven and deterministic.
 
-## Phase 4 — crminheritdemo frontend + docs (the proof)
+## Phase 4 — crminheritdemo frontend + docs (the proof) ✅ (implemented)
+
+> Implementation notes: the normative example's `status == 'lead'` condition is stale
+> against the CURRENT `crm` module — by the time this phase landed, `status` had moved
+> from free text to a `selection` field over `incoming`/`running`/`won`/`lost`/`closed`
+> (a later increment of `docs/roadmaps/field-widgets.md`), with no `'lead'` option left.
+> `CrmInheritViews.ts` targets `status == 'incoming'` instead — the equivalent starting
+> state — and says so in a comment, rather than silently diverging from the doc's own
+> normative example without explanation. The extension applies the SAME four operations
+> to both `/crm/:id` and `/crm/list` (one `Operation[]` array, two `ViewExtension`
+> entries) — the `states.visible` condition is inert on the list (`TreeRenderer` never
+> reads `states`) but harmless to declare there too, and reusing one array keeps the two
+> views from drifting apart by accident. `crminheritdemo` sets neither `app_mode` nor a
+> menu entry — it ships `routes: []`, so there is nothing to navigate to directly; it
+> only reshapes routes `crm` already exposes. ADR-005 (`docs/adr/`) is the first ADR
+> file actually committed to the repo — ADR-003/004 were referenced by number in
+> `CONVENTIONS.md`/`CLAUDE.md` from earlier work but never captured as standalone files;
+> that gap is noted on ADR-005 itself for a future backfill.
 
 **Claude Code prompt:**
 ```
