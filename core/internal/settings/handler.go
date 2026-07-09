@@ -324,6 +324,10 @@ type graphTile struct {
 	Type   string          `json:"type"`
 	Title  *string         `json:"title,omitempty"`
 	Config json.RawMessage `json:"config"`
+	// Hidden is a non-destructive frontend UI toggle (hide/restore, replacing a
+	// destructive remove). omitempty + Go's false zero-value means a tile stored
+	// before this field existed unmarshals as visible, never silently hidden.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // graphLayout is both the stored value of a ViewGraphKey(entity) setting and

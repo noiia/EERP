@@ -27,6 +27,11 @@ export interface Tile {
   type: TileType
   title?: string
   config: JsonValue
+  /** Non-destructive hide (an editing-only affordance, restorable). Absent/false
+   * = visible. Deliberately named `hidden`, not `visible`: Go's zero-value for a
+   * missing bool is `false` — naming it `visible` would silently hide every tile
+   * stored before this field existed. */
+  hidden?: boolean
 }
 
 export interface GraphLayout {

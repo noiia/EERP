@@ -70,6 +70,18 @@ calendar, chart, or drag-resize-grid code exists anywhere in the repo today).
    made so far. Revisit if/when Graph needs collision-aware auto-layout a coordinate-only model
    can't express.
 
+   **Reversed again (Phase 4.6): Graph now needs exactly that** — collision-aware
+   auto-compaction plus a non-destructive hide/restore flow, which the hand-rolled
+   coordinate model genuinely can't express without reimplementing a bin-packer. `react-grid-layout`
+   v2.2.3 resolves both originally-cited blockers: React 19 is a satisfied peer
+   (`>=16.3.0`), and the jsdom-testability problem is solved not by avoiding the
+   library but by testing at the component boundary — mocking `react-grid-layout`'s
+   default export and `useContainerWidth` in `graph-renderer.test.tsx`, asserting the
+   props handed to it (`layout`, `gridConfig`, `dragConfig`, `resizeConfig`) and driving
+   `onLayoutChange` directly instead of simulating a real mouse drag through the
+   library's `react-draggable`/`getBoundingClientRect` internals, which jsdom cannot
+   compute. See Phase 4.6 below.
+
 ## Contracts
 
 | Concern | Contract |
@@ -82,8 +94,9 @@ calendar, chart, or drag-resize-grid code exists anywhere in the repo today).
 | Kanban drag | Dropping a card on another column issues `PATCH { [kanbanStatusField]: newValue }` through the entity's existing update Server Action (the same one `FormRenderer`'s Save calls) — full permission/validation re-check by Go, no bypass. |
 | Calendar render | Month grid (v1 scope; week/day views are a later increment). Each record renders on the day read from `calendarDateField`. Records with no value in that field list in an "Unscheduled" side panel — never silently dropped. |
 | Calendar drag | Dropping a record on another day issues `PATCH { [calendarDateField]: newDate }`, same mutation path as Kanban. |
-| Graph layout | `app_settings` key `views.<entity>.graph` = `{ tiles: Tile[] }`. `GET/PUT /api/v1/settings/views/:entity/graph`, permissions `settings:views:read`/`settings:views:write` (same read/write split as the fields endpoint, both derived automatically from the route). `Tile = { id, x, y, w, h, type: 'xy'\|'pie'\|'stat'\|'list', title?, config: JsonValue }` — `x/y/w/h` are integer grid units; `GRID_UNIT = 30` (px), the one place that number is a literal. The canvas is a free-form, absolutely-positioned, scrollable surface sized to the tiles' bounding box (not a reflowing column grid — see Phase 4's implementation notes for why "responsive column count" doesn't apply to a coordinate-addressed canvas). Pure data, no functions; the Go handler validates every tile's shape (id, non-negative/non-zero geometry, closed type set, no duplicate ids) but never its opaque `config`. |
-| Graph edit mode | An "Edit" toggle top-right of the graph toolbar (one level below the mode switcher), visible only to a session holding `settings:views:write` (client-side display gating, like `CreateBar` — Go re-authorizes the PUT regardless). View mode: tiles render read-only, no handles, no remove/add affordance. Edit mode: every tile gets a draggable header (move) and a corner resize handle, both snapped to `GRID_UNIT` and floored at a 2-unit minimum size, plus a remove (×) button and a "+ Add widget" tile that opens a type + title dialog. Changes stay in a local draft (mirrors the form store's `dirty`/`commit` shape) until **Save** (`PUT .../graph`, reverting to view mode on success, keeping the draft and surfacing the error on rejection) or **Cancel** (discards the draft, reverts to the last saved layout). |
+| Graph layout | `app_settings` key `views.<entity>.graph` = `{ tiles: Tile[] }`. `GET/PUT /api/v1/settings/views/:entity/graph`, permissions `settings:views:read`/`settings:views:write` (same read/write split as the fields endpoint, both derived automatically from the route). `Tile = { id, x, y, w, h, type: 'xy'\|'pie'\|'stat'\|'list', title?, config: JsonValue, hidden?: boolean }` — `x/y/w/h` are integer grid units; `GRID_UNIT = 30` (px), the one place that number is a literal (now `gridConfig.rowHeight`, exact; column WIDTH is only approximately `GRID_UNIT`, derived from the measured container). Pure data, no functions; the Go handler validates every tile's shape (id, non-negative/non-zero geometry, closed type set, no duplicate ids) but never its opaque `config`, and round-trips `hidden` with no validation beyond its bool type (Phase 4.6). |
+| Graph canvas (Phase 4.6) | `react-grid-layout` (RGL) v2 drives the canvas: `gridConfig.cols = Math.max(4, Math.round(containerWidth / GRID_UNIT))`, measured via RGL's own `useContainerWidth()` — the canvas is now a **responsive column grid sized to its container** (which is itself already bounded by RootLayout's page inset — see `core-front/CLAUDE.md`), not a free-form surface sized to the tiles' bounding box. `compactor={verticalCompactor}` runs unconditionally (view and edit mode alike): tiles auto-stack with no gaps/overlaps, resolving on every render, not just after a drag. |
+| Graph edit mode | An "Edit" toggle top-right of the graph toolbar (one level below the mode switcher), visible only to a session holding `settings:views:write` (client-side display gating, like `CreateBar` — Go re-authorizes the PUT regardless). View mode: tiles render read-only via RGL with `dragConfig.enabled`/`resizeConfig.enabled` both `false`. Edit mode: every tile is draggable (`dragConfig.handle`, a header) and resizable (`resizeConfig.handles: ['se']`, RGL's own bottom-right handle), floored per-`type` at `TILE_MIN_SIZE[type]` (not a uniform floor), plus a "Hide" (×) button and a "+ Add widget" button below the canvas that opens a type + title dialog. Hiding a tile is **non-destructive**: it sets `Tile.hidden = true` (excluded from the rendered/RGL-managed grid and from collision/compaction) and appears as a restorable chip in a "Hidden widgets" row below the canvas — clicking a chip sets `hidden = false`, restoring the tile at its last-known geometry. Changes stay in a local draft (mirrors the form store's `dirty`/`commit` shape) until **Save** (`PUT .../graph`, reverting to view mode on success, keeping the draft and surfacing the error on rejection) or **Cancel** (discards the draft, reverts to the last saved layout, including any hide/restore/move/resize made since). |
 | Widget: xy | `config: { xField, yField, aggregate?: 'sum'\|'avg'\|'count', bucket?: 'day'\|'week'\|'month' }`. Line/scatter of `yField`, bucketed by `xField` when it's a date field. |
 | Widget: pie | `config: { groupByField, valueField?, aggregate?: 'sum'\|'count' }` (default `count`). One slice per distinct value of `groupByField`. |
 | Widget: stat | `config: { field, aggregate: 'mean'\|'median'\|'sum'\|'count' }` — a single big-number tile. Mean and median are the SAME widget type with a different `aggregate`, not two widget kinds (mirrors the widget/type split in `docs/roadmaps/field-widgets.md`). |
@@ -371,6 +384,108 @@ affordance; Cancel discards an in-progress edit; Save persists and a reload rest
 drag and resize them, save, and reload to see the same layout; a read-only user sees the saved
 tiles with no edit affordance.
 
+## Phase 4.6 — Graph canvas: migrate to `react-grid-layout` ✅ (implemented)
+
+Architecture Decision #7 named its own exit condition — "revisit if/when Graph needs
+collision-aware auto-layout a coordinate-only model can't express." This phase is that
+revisit: the hand-rolled `mousedown`/`mousemove`/`mouseup` engine from Phase 4 is replaced
+by `react-grid-layout` (RGL) v2.2.3, while the tile-creation flow (`WidgetConfigDialog`,
+`GraphWidgetBody`, `graph-aggregate.ts`, Phase 5) is completely untouched.
+
+> Implementation notes:
+>
+> - **RGL's v2 config-object API is a close match for what this canvas already needed.**
+>   `gridConfig` (`cols`, `rowHeight`, `margin`, `containerPadding`), `dragConfig`
+>   (`enabled`, `handle`, `cancel`), `resizeConfig` (`enabled`, `handles`), and a
+>   `compactor` prop (`verticalCompactor`) replace the entire hand-rolled `DragState`/
+>   `beginDrag`/`window`-listener machinery in one pass. `Tile.x/y/w/h` were already
+>   integer grid-unit counts (not pixels) — directly compatible with RGL's `LayoutItem`
+>   shape, so the wire format barely changed (one new optional field, `hidden` — see
+>   below).
+> - **Canvas sizing inverts from tiles-bounding-box to container-width-derived.**
+>   `useContainerWidth({ measureBeforeMount: true })` (an RGL export, not a bespoke hook)
+>   measures the canvas's own wrapping `Box`, which already sits inside RootLayout's
+>   page inset (`core-front/CLAUDE.md`'s `pageInsetX`/`pageInsetY`) — `cols =
+>   Math.max(4, Math.round(containerWidth / GRID_UNIT))`. This is a genuine improvement,
+>   not just a refactor: Graph's canvas can no longer be independently wider than the
+>   page the way the old bounding-box-derived width could, closing the one overflow
+>   vector this session's page-inset work didn't already cover.
+> - **Per-type minimum sizes replace the old uniform `MIN_TILE_UNITS = 2` floor.**
+>   `TILE_MIN_SIZE: Record<TileType, {minW, minH}>` in `graph-renderer.tsx`, reverse
+>   engineered from each widget's actual rendered pixel dimensions in `graph-widgets.tsx`
+>   (`XyChart`'s fixed 96px-tall svg, `PieChart`'s 84px donut + legend column, a compact
+>   `DataGrid` needing a header + a row or two) — passed as `minW`/`minH` on each RGL
+>   `LayoutItem`, enforced by the library during resize rather than by our own clamping.
+> - **Hide/restore replaces destructive remove.** `Tile.hidden?: boolean` (frontend
+>   `api/graph.ts`; backend `graphTile.Hidden bool` `json:"hidden,omitempty"` in
+>   `core/internal/settings/handler.go`) — deliberately named `hidden`, not `visible`:
+>   Go's zero-value for a missing bool is `false`, so naming it `visible` would have
+>   silently hidden every tile stored before this field existed. Hidden tiles are
+>   filtered out of both RGL's `layout` array and its rendered children (never part of
+>   collision/compaction), and listed as chips in a "Hidden widgets" row below the
+>   canvas, editing-only; clicking a chip restores the tile at its last-known geometry.
+>   `applyRGLLayout()` (exported from `graph-renderer.tsx` for direct unit testing)
+>   merges RGL's reported positions back onto the full tile array by id — a tile absent
+>   from that report (because it's hidden and wasn't rendered) keeps its geometry
+>   untouched, never reset or dropped.
+> - **`compactor={verticalCompactor}` runs unconditionally**, in both view and edit
+>   mode — any layout saved before this migration with intentional gaps compacts
+>   upward the first time it renders post-migration. Deterministic and one-time in
+>   practice (a subsequent Save re-persists the compacted geometry); this is the entire
+>   point of the migration, not a bug.
+> - **Testing strategy shift, the accepted cost of this migration.** RGL's actual drag/
+>   resize (`react-draggable`/`react-resizable`) measure real DOM geometry
+>   (`getBoundingClientRect`), which jsdom always reports as a zero rect — the old
+>   pixel-delta `fireEvent.mouseDown/mouseMove/mouseUp` simulation has nothing left to
+>   drive. `graph-renderer.test.tsx` now mocks `react-grid-layout` at the component
+>   boundary (its default export and `useContainerWidth`), asserting the props handed to
+>   it (`gridConfig`, `dragConfig`, `resizeConfig`, per-tile `minW`/`minH`) and calling
+>   the captured `onLayoutChange` directly to simulate "a drag/resize just finished" —
+>   wrapped in React's `act()` since it's a direct function call, not a `fireEvent`.
+>   Real compaction/collision behavior is not unit-tested (the mock's `verticalCompactor`
+>   is an identity no-op); it's covered by manual real-browser verification instead.
+>   `applyRGLLayout` is also unit-tested standalone against hand-built fixtures — the
+>   cleanest way to pin "hidden tiles keep their geometry untouched" without going
+>   through the mocked component at all.
+> - **`ResizeObserver` has no jsdom implementation.** Neither `packages/core-front/src/
+>   test/setup.ts` nor `apps/shell/src/test/setup.ts` polyfilled it before this phase (RGL
+>   uses it internally, via `useContainerWidth`); both now install a minimal stub
+>   (`observe`/`unobserve`/`disconnect` no-ops) so any test that mounts something
+>   RGL-adjacent doesn't crash with "ResizeObserver is not defined" — `graph-renderer.
+>   test.tsx` itself doesn't rely on it (it mocks the whole module), but nothing else in
+>   the test suite should have to know that.
+
+**Claude Code prompt:**
+```
+In @eerp/core-front, migrate GraphRenderer's drag/resize engine to react-grid-layout v2:
+1. Add react-grid-layout@^2.2.3 + react-resizable@^3.1.3 (the version RGL itself depends
+   on) to packages/core-front's peerDependencies + devDependencies, and apps/shell's
+   dependencies — same convention as @mui/material. Import
+   'react-grid-layout/css/styles.css' + 'react-resizable/css/styles.css' in
+   apps/shell/app/layout.tsx (the first raw CSS imports in this codebase).
+2. api/graph.ts: add `hidden?: boolean` to Tile. core/internal/settings/handler.go: add
+   `Hidden bool` `json:"hidden,omitempty"` to graphTile, no new validation (opaque,
+   round-trips like Config).
+3. graph-renderer.tsx: replace the hand-rolled DragState/mousemove engine with
+   <ReactGridLayout> — gridConfig.cols from useContainerWidth(), gridConfig.rowHeight =
+   GRID_UNIT, dragConfig/resizeConfig.enabled = editing, compactor = verticalCompactor,
+   per-type TILE_MIN_SIZE as each LayoutItem's minW/minH. Replace the destructive remove
+   (×) button with hideTile/restoreTile (Tile.hidden), a "Hidden widgets" chip row in
+   edit mode. Keep WidgetConfigDialog/GraphWidgetBody/graph-aggregate.ts untouched.
+4. Add a ResizeObserver stub to both packages' vitest setup.ts.
+Tests: mock react-grid-layout's default export + useContainerWidth in
+graph-renderer.test.tsx; assert gridConfig/dragConfig/resizeConfig/minW/minH per tile
+type; drive onLayoutChange directly (wrapped in act()) instead of simulating mouse
+events; unit-test applyRGLLayout standalone (hidden tiles keep geometry untouched); test
+hide/restore chip flow end to end.
+```
+**DoD:** dragging/resizing a tile in a real browser snaps to the grid and persists;
+resizing the window changes the column count without overlaps (`verticalCompactor`
+resolves any gaps); hiding a tile removes it from the canvas and lists it as a
+restorable chip; restoring brings it back at its prior geometry; Save/Cancel/permission
+gating behave exactly as Phase 4; the full test suite (mocked-RGL-boundary strategy)
+and a real-browser verification pass both go green.
+
 ## Phase 5 — Graph widgets: XY plot, pie, mean/median stat, filtered list ✅ (implemented)
 
 > Implementation notes: the aggregate/bucket math lives in its own
@@ -465,10 +580,13 @@ flowchart TD
     P1 --> P3[Phase 3: Calendar]
     P1 --> P4[Phase 4: Graph scaffold 30px grid]
     P4 --> P5[Phase 5: Graph widgets]
+    P4 --> P46[Phase 4.6: migrate canvas to react-grid-layout]
 ```
 
 Phases 2 and 3 parallelize once Phase 1 lands and share the drag-to-PATCH logic (write it once,
-Phase 3 reuses it). Phase 5 cannot start before Phase 4's canvas/persistence exists.
+Phase 3 reuses it). Phase 5 cannot start before Phase 4's canvas/persistence exists. Phase 4.6
+parallelizes with (or follows) Phase 5 — it replaces the canvas's drag/resize engine, not the
+widget bodies Phase 5 shipped, which it leaves untouched.
 
 ## Coordination
 
@@ -519,15 +637,20 @@ Phase 3 reuses it). Phase 5 cannot start before Phase 4's canvas/persistence exi
   and can render on the wrong LOCAL day near a timezone boundary. Calendar's grid math uses the
   numeric `Date(year, month, day)` constructor throughout; keep doing that for any future
   date-field code (Graph's time-bucketed XY widget, Phase 5, will need the same discipline).
-- **Graph's move/resize drag also has no keyboard path in v1** — same gap as Kanban/Calendar,
-  same reason (a hand-rolled `mousedown`/`mousemove` drag, chosen for jsdom testability, has no
-  built-in keyboard equivalent). A future fix should give all three renderers ONE accessible
-  fallback mechanism, not three bespoke ones.
+- **Graph's move/resize drag also has no keyboard path in v1** — same gap as Kanban/Calendar.
+  Post-Phase-4.6 the reason is `react-grid-layout`'s own default behavior (its drag/resize is
+  mouse/touch-only out of the box), not a jsdom-testability tradeoff anymore — RGL does support
+  wiring a keyboard fallback (e.g. `isDraggable`/`isResizable` per item plus custom keydown
+  handling), just not by default. A future fix should still give all three renderers ONE
+  accessible fallback mechanism, not three bespoke ones.
 - **A tile's `config` is written as `{}` by the backend whenever the request omits it** — never
   `null`, never absent. Phase 5's per-type config editors can rely on `config` always being a
   present JSON object to spread/patch into, not something that needs a null-check first.
-- **The Graph canvas never measures real layout (`getBoundingClientRect`) — don't add it.** The
-  whole reason drag/resize is reliably testable in jsdom is that it only ever reads
-  `event.clientX`/`clientY` deltas. A future feature that seems to need real pixel measurement
-  (e.g. "snap to other tiles' edges") should look for a way to stay coordinate-only before
-  reaching for `getBoundingClientRect` — that's the line back to unreliable jsdom tests.
+- **(Superseded by Phase 4.6) The Graph canvas now DOES measure real layout, on purpose.**
+  Earlier phases avoided `getBoundingClientRect` specifically to keep drag/resize testable with
+  synthetic `clientX`/`clientY` events in jsdom. `react-grid-layout` measures real DOM geometry
+  internally (`react-draggable`, `useContainerWidth`'s `ResizeObserver`) — jsdom cannot compute
+  that, so `graph-renderer.test.tsx` no longer simulates mouse events at all; it mocks RGL's
+  default export and `useContainerWidth` at the component boundary instead (see Phase 4.6). Any
+  future Graph code should assume real layout measurement is already happening inside RGL, not
+  avoid triggering it — the old advice to "stay coordinate-only" no longer applies here.

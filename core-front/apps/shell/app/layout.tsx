@@ -5,6 +5,12 @@ import { moduleRegistry } from '@eerp/core-front/server'
 // Side-effect import: registers every discovered module so the top-bar nav can resolve
 // each module's main pages (same manifest the catch-all route and landing menu import).
 import '@/generated/generated-modules'
+// Graph mode's drag/resize engine (react-grid-layout, docs/roadmaps/list-view-modes.md
+// Phase 4.6) — the FIRST raw CSS imports in this codebase (everything else styles via
+// MUI's sx prop/Emotion). Next's App Router only allows global CSS imports from the
+// root layout, so these live here rather than next to graph-renderer.tsx itself.
+import 'react-grid-layout/css/styles.css'
+import 'react-resizable/css/styles.css'
 import { AppThemeProvider } from '../src/components/AppThemeProvider'
 import { AppTopBar } from '../src/components/AppTopBar'
 import { I18nInit } from '../src/components/I18nInit'
@@ -63,10 +69,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               <GraphOpsProvider ops={{ get: getEntityGraphLayout, save: setEntityGraphLayout }}>
                 {/* The ONE page-content inset, applied once here — everything below
                     the top bar (list/form/dashboard/settings, any view) sits inside
-                    it, never against or past the screen edge. overflowX: 'auto' is
-                    the single containment mechanism for a wide inner surface (e.g.
-                    Graph's canvas, sized off its own tiles): it scrolls WITHIN this
-                    box, never bleeds past it — no per-view width hack needed. */}
+                    it, never against or past the screen edge. Graph mode's canvas
+                    (react-grid-layout) measures ITS OWN container width to derive its
+                    column count, so it naturally sizes itself to whatever this inset
+                    provides — overflowX: 'auto' remains a defensive fallback for any
+                    other wide inner surface, never a per-view width hack. */}
                 <Box sx={{ px: layout.pageInsetX, py: layout.pageInsetY, overflowX: 'auto' }}>
                   {children}
                 </Box>

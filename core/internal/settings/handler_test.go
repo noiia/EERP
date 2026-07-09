@@ -553,6 +553,17 @@ func TestGetGraphLayoutSettings(t *testing.T) {
 			wantTiles:  []any{},
 		},
 		{
+			name:   "a hidden tile round-trips its hidden flag",
+			entity: "crm",
+			store: &stubStore{values: map[string]string{
+				ViewGraphKey("crm"): `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"stat","config":{},"hidden":true}]}`,
+			}},
+			wantStatus: http.StatusOK,
+			wantTiles: []any{
+				map[string]any{"id": "t1", "x": 0.0, "y": 0.0, "w": 6.0, "h": 6.0, "type": "stat", "config": map[string]any{}, "hidden": true},
+			},
+		},
+		{
 			name:       "junk entity rejected",
 			entity:     "../../etc",
 			store:      &stubStore{},
@@ -612,6 +623,14 @@ func TestPutGraphLayoutSettings(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 			wantSet:    true,
 			wantValue:  `{"tiles":[]}`,
+		},
+		{
+			name:       "a hidden tile persists its hidden flag",
+			entity:     "crm",
+			body:       `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"stat","hidden":true}]}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"tiles":[{"id":"t1","x":0,"y":0,"w":6,"h":6,"type":"stat","config":{},"hidden":true}]}`,
 		},
 		{
 			name:       "junk entity rejected",
