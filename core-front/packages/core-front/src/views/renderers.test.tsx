@@ -266,6 +266,55 @@ describe('EntityView', () => {
       expect(screen.queryByText(/Graph layouts are not available/)).not.toBeInTheDocument()
     })
 
+    it('a Kanban drag is reflected in Graph mode without a page reload', async () => {
+      // Regression guard: Graph used to read the page's ORIGINAL initialData
+      // snapshot, unaffected by a Kanban/Calendar drag done in the same
+      // client session (no navigation) — switching to Graph afterward showed
+      // stale data until the next real page load. TreeRenderer now lifts a
+      // single `liveRecords` state every mode reads from and Kanban/Calendar
+      // report their optimistic updates back into it.
+      const dealDescriptor: ViewDescriptor<Contact & { status?: string | null }> = {
+        entity: 'crm',
+        viewType: 'tree',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text' },
+          { name: 'status', label: 'Status', type: 'selection', selection: { options: ['open', 'won'] } },
+        ],
+      }
+      const update = vi.fn(
+        async (id: string, b: Partial<Contact & { status?: string | null }>) =>
+          ({ id, name: 'Ada', ...b }) as Contact & { status?: string | null },
+      )
+      const actions: EntityActions<Contact & { status?: string | null }> = {
+        create: vi.fn(async (b) => ({ id: 'x', name: '', ...b }) as Contact & { status?: string | null }),
+        update,
+      }
+      const get = vi.fn(async () => ({
+        tiles: [{ id: 't1', x: 0, y: 0, w: 6, h: 6, type: 'pie' as const, config: { groupByField: 'status' } }],
+      }))
+      render(
+        <GraphOpsProvider ops={{ get, save: vi.fn(async () => ({ ok: true }) as const) }}>
+          <EntityView
+            descriptor={dealDescriptor}
+            initialData={[{ id: '1', name: 'Ada', status: 'open' }]}
+            actions={actions}
+            viewFields={{ kanbanStatusField: 'status', calendarDateField: null }}
+          />
+        </GraphOpsProvider>,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Kanban' }))
+      fireEvent.dragStart(screen.getByTestId('kanban-card-1'))
+      fireEvent.dragOver(screen.getByRole('group', { name: 'won' }))
+      fireEvent.drop(screen.getByRole('group', { name: 'won' }))
+      await waitFor(() => expect(update).toHaveBeenCalledWith('1', { status: 'won' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
+      await waitFor(() => expect(get).toHaveBeenCalledWith('crm'))
+      expect(screen.getByText('won')).toBeInTheDocument()
+      expect(screen.queryByText('open')).not.toBeInTheDocument()
+    })
+
     it('persists the chosen mode per entity across remounts (useUiStore)', () => {
       const { unmount } = render(
         <EntityView

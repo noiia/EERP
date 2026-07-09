@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -28,6 +28,13 @@ export interface KanbanRendererProps<T extends HasId> {
   actions: EntityActions<T>
   /** The entity's configured Kanban status field name (a 'selection' field). */
   statusField: string
+  /**
+   * Reports this renderer's working record set (initialData + any in-flight
+   * optimistic edits) up to the shared TreeRenderer, so switching to another
+   * mode (e.g. Graph) without a page reload sees the same data instead of a
+   * stale snapshot from whenever the page last navigated.
+   */
+  onRecordsChange?: (records: T[]) => void
 }
 
 export function KanbanRenderer<T extends HasId>({
@@ -35,9 +42,13 @@ export function KanbanRenderer<T extends HasId>({
   initialData,
   actions,
   statusField,
+  onRecordsChange,
 }: KanbanRendererProps<T>) {
   const t = useT()
   const { records, error, moveField } = useOptimisticFieldMove(initialData, actions, statusField)
+  useEffect(() => {
+    onRecordsChange?.(records)
+  }, [records, onRecordsChange])
   const [draggingId, setDraggingId] = useState<string | null>(null)
 
   const statusDescriptor = descriptor.fields.find((f) => f.name === statusField)

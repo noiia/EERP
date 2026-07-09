@@ -77,6 +77,27 @@ describe('CalendarRenderer', () => {
     expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toHaveTextContent('Gamma')
   })
 
+  it('reports its working record set to onRecordsChange, including after an optimistic move', async () => {
+    const onRecordsChange = vi.fn()
+    render(
+      <CalendarRenderer
+        descriptor={descriptor}
+        initialData={records}
+        actions={actions}
+        dateField="due_date"
+        onRecordsChange={onRecordsChange}
+      />,
+    )
+    expect(onRecordsChange).toHaveBeenCalledWith(records)
+
+    drag('1', day20)
+    await waitFor(() =>
+      expect(onRecordsChange).toHaveBeenLastCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: '1', due_date: day20 })]),
+      ),
+    )
+  })
+
   it('dragging a scheduled record to another day PATCHes the date field', async () => {
     render(
       <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -275,31 +275,46 @@ function TreeRenderer<T extends HasId>({
   const setViewMode = useUiStore((s) => s.setViewMode)
   const availability = availableDisplayModes(viewFields)
 
+  // A single shared record set every mode reads from, instead of each mode
+  // rendering its own frozen copy of `initialData`. Kanban/Calendar's drags
+  // mutate records in place (optimistically, then via a real PATCH) without a
+  // page navigation — without this, switching to Graph (or back to List)
+  // afterward showed stale data until the next real reload, since Graph had
+  // no way to see a change Kanban/Calendar only ever reported to themselves.
+  // Re-synced from `initialData` on every prop change (a fresh navigation, or
+  // a revalidated Server Action reflecting through this page).
+  const [liveRecords, setLiveRecords] = useState(initialData)
+  useEffect(() => {
+    setLiveRecords(initialData)
+  }, [initialData])
+
   let content: React.ReactNode
   if (mode === 'kanban' && viewFields.kanbanStatusField) {
     content = (
       <KanbanRenderer
         descriptor={descriptor}
-        initialData={initialData}
+        initialData={liveRecords}
         actions={actions}
         statusField={viewFields.kanbanStatusField}
+        onRecordsChange={setLiveRecords}
       />
     )
   } else if (mode === 'calendar' && viewFields.calendarDateField) {
     content = (
       <CalendarRenderer
         descriptor={descriptor}
-        initialData={initialData}
+        initialData={liveRecords}
         actions={actions}
         dateField={viewFields.calendarDateField}
+        onRecordsChange={setLiveRecords}
       />
     )
   } else if (mode === 'graph') {
     content = (
       <GraphRenderer
         descriptor={descriptor}
-        records={initialData}
-        recordTotal={recordTotal ?? initialData.length}
+        records={liveRecords}
+        recordTotal={recordTotal ?? liveRecords.length}
       />
     )
   } else {
@@ -307,7 +322,7 @@ function TreeRenderer<T extends HasId>({
     // somehow reached with no configured field (the switcher disables those
     // buttons, so this is defensive, not a normal path).
     // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
-    const hierarchical = (initialData as TreeNode[]).some((r) => r.parent_id != null)
+    const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
     if (!hierarchical) {
       // Column order comes from the normalized layout, not a raw fields read —
       // for the common (no explicit `layout`) descriptor this is identical to
@@ -327,7 +342,7 @@ function TreeRenderer<T extends HasId>({
       content = (
         <Box sx={{ width: '100%' }}>
           <DataGrid
-            rows={initialData}
+            rows={liveRecords}
             columns={columns}
             autoHeight
             onRowClick={

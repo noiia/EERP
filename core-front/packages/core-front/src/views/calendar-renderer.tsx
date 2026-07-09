@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -48,6 +48,13 @@ export interface CalendarRendererProps<T extends HasId> {
   actions: EntityActions<T>
   /** The entity's configured Calendar date field name (a 'date' field). */
   dateField: string
+  /**
+   * Reports this renderer's working record set (initialData + any in-flight
+   * optimistic edits) up to the shared TreeRenderer, so switching to another
+   * mode (e.g. Graph) without a page reload sees the same data instead of a
+   * stale snapshot from whenever the page last navigated.
+   */
+  onRecordsChange?: (records: T[]) => void
 }
 
 export function CalendarRenderer<T extends HasId>({
@@ -55,9 +62,13 @@ export function CalendarRenderer<T extends HasId>({
   initialData,
   actions,
   dateField,
+  onRecordsChange,
 }: CalendarRendererProps<T>) {
   const t = useT()
   const { records, error, moveField } = useOptimisticFieldMove(initialData, actions, dateField)
+  useEffect(() => {
+    onRecordsChange?.(records)
+  }, [records, onRecordsChange])
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const now = new Date()
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() })

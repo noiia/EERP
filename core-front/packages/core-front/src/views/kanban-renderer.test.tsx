@@ -131,6 +131,27 @@ describe('KanbanRenderer', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('reports its working record set to onRecordsChange, including after an optimistic move', async () => {
+    const onRecordsChange = vi.fn()
+    render(
+      <KanbanRenderer
+        descriptor={descriptor}
+        initialData={records}
+        actions={actions}
+        statusField="status"
+        onRecordsChange={onRecordsChange}
+      />,
+    )
+    expect(onRecordsChange).toHaveBeenCalledWith(records)
+
+    drag('1', 'won')
+    await waitFor(() =>
+      expect(onRecordsChange).toHaveBeenLastCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: '1', status: 'won' })]),
+      ),
+    )
+  })
+
   it('reverts the card and surfaces the error when the write is rejected', async () => {
     update.mockRejectedValue(new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 }))
     render(
