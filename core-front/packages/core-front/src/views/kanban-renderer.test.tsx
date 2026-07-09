@@ -60,6 +60,20 @@ describe('KanbanRenderer', () => {
     expect(groups).toEqual(['open', 'won', 'lost', 'No status'])
   })
 
+  it('centers the column board when it is narrower than the screen, safely (never past an overflow)', () => {
+    render(
+      <KanbanRenderer
+        descriptor={descriptor}
+        initialData={records}
+        actions={actions}
+        statusField="status"
+      />,
+    )
+    // The board is the flex row that's the common ancestor of every column group.
+    const board = screen.getAllByRole('group')[0]!.parentElement!
+    expect(board).toHaveStyle({ display: 'flex', justifyContent: 'safe center' })
+  })
+
   it('sorts records into their column, including the unset ones into No status', () => {
     render(
       <KanbanRenderer

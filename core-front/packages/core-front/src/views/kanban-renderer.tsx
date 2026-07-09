@@ -55,7 +55,18 @@ export function KanbanRenderer<T extends HasId>({
   return (
     <Box>
       {error ? <ErrorAlert error={error} /> : null}
-      <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1, alignItems: 'flex-start' }}>
+      <Box
+        sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1, alignItems: 'flex-start' }}
+        // `justifyContent: 'safe center'` as an sx value gets silently dropped by
+        // MUI's system/emotion serialization (not a browser support gap — the
+        // declaration never reaches the generated CSS rule at all), so it's set via
+        // a plain inline style instead, which emotion never touches. 'safe' keeps
+        // the board left-aligned instead of centered once the columns overflow, so
+        // a status column can never become unreachable by scrolling left past a
+        // centered start — it only centers the common case (columns narrower than
+        // the board).
+        style={{ justifyContent: 'safe center' }}
+      >
         {columns.map((column) => {
           const label = column === NO_STATUS ? t('No status') : column
           const cards = records.filter((r) => statusOf(r) === column)
