@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
@@ -9,16 +9,19 @@ import type { Tile } from '../api/graph'
 import { useRelationOps, type RelationRecord } from './relation-ops'
 import {
   OTHER_LABEL,
+  niceTicks,
   pieSlices,
   statValue,
-  xyPoints,
+  xySeries,
+  type BucketGranularity,
   type FullAggregate,
   type NumericAggregate,
   type PieSlice,
-  type XyPoint,
+  type XySeries,
 } from './graph-aggregate'
 import { fieldLabel, type ViewDescriptor } from './descriptor'
 import { useNumberFormat } from './format-store'
+import { useI18nStore } from '../i18n/i18n-store'
 import { useT } from '../i18n/translate'
 import { useUiStore } from './ui-store'
 import type { HasId } from './stores'
@@ -69,6 +72,39 @@ function colorFor(index: number, palette: readonly string[]): string {
   return palette[index % palette.length]!
 }
 
+/**
+ * Tracks a ref'd element's OWN rendered pixel size (ResizeObserver), so a
+ * chart's SVG can be sized 1:1 to its real container instead of a fixed
+ * literal — the fix for "resize the tile and the chart stays the same size."
+ * Starts at `fallback` (a sane default, never 0×0) and stays there until the
+ * first real measurement arrives — jsdom's ResizeObserver stub (this repo's
+ * test setup) never actually fires, so component tests render at `fallback`
+ * forever, which is fine: real responsiveness is a real-browser concern (see
+ * the roadmap's testing-strategy notes on this same tradeoff for RGL). The
+ * caller must render the ref'd element UNCONDITIONALLY from the first render
+ * (never behind an early return): the observer attaches once, on mount, to
+ * whatever `ref.current` is at that moment — if that's still null because
+ * the element only appears on a later render, it never retries (the exact
+ * bug graph-renderer.tsx's own container hit earlier in this effort).
+ */
+function useElementSize<T extends HTMLElement>(
+  fallback: { width: number; height: number },
+): [RefObject<T | null>, { width: number; height: number }] {
+  const ref = useRef<T>(null)
+  const [size, setSize] = useState(fallback)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, size]
+}
+
 // ── shared bits ────────────────────────────────────────────────────────────
 
 const AGGREGATE_LABELS: Record<FullAggregate, string> = {
@@ -99,12 +135,16 @@ function PartialDataBadge({ shown, total }: { shown: number; total: number | und
   )
 }
 
+/** Centered within whatever space is available — every widget's "nothing to
+ * show" state renders the same way, regardless of how large the tile is. */
 function NoData() {
   const t = useT()
   return (
-    <Typography variant="caption" color="text.secondary">
-      {t('No data')}
-    </Typography>
+    <Box sx={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Typography variant="caption" color="text.secondary">
+        {t('No data')}
+      </Typography>
+    </Box>
   )
 }
 
@@ -125,67 +165,191 @@ export function StatWidgetBody<T extends HasId>({
   if (!config.field || !config.aggregate) return <NoData />
   const value = statValue(records, { field: config.field, aggregate: config.aggregate })
   return (
-    <Stack spacing={0.25} sx={{ height: '100%' }}>
+    <Stack spacing={0.25} sx={{ height: '100%', width: '100%' }}>
       <PartialDataBadge shown={records.length} total={recordTotal} />
-      <Typography variant="caption" color="text.secondary">
-        {t(AGGREGATE_LABELS[config.aggregate])}
-      </Typography>
-      <Typography variant="h5" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-        {format(value, { decimals: 2 })}
-      </Typography>
+      {/* Centered, not pinned to the top-left — a big resized tile shouldn't
+          leave the number stranded in one corner. */}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+        }}
+      >
+        <Typography variant="caption" color="text.secondary">
+          {t(AGGREGATE_LABELS[config.aggregate])}
+        </Typography>
+        <Typography variant="h3" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+          {format(value, { decimals: 2 })}
+        </Typography>
+      </Box>
     </Stack>
   )
 }
 
-// ── xy (line chart, one series — see dataviz: a single series needs no legend) ──
+// ── xy (line chart — one series, or one per distinct value of a "series"
+// field, e.g. a status column: docs/roadmaps/list-view-modes.md's Phase 5.1
+// multi-series upgrade). Axis gridlines/labels + a legend (multi-series only)
+// + smoothed lines, sized 1:1 to the tile's OWN measured pixels via
+// useElementSize — never a fixed literal, so resizing the tile visibly
+// resizes the chart instead of leaving it stranded at its original size. ──
 
-function XyChart({ points, format }: { points: XyPoint[]; format: (v: number) => string }) {
+/** 'YYYY-MM' or 'YYYY-MM-DD' bucket key → a short localized label ("août 25"
+ * for a month bucket, "10 août" for a day/week bucket) — never re-parsed via
+ * `new Date('YYYY-MM-DD')` (UTC-midnight parsing, the classic wrong-local-day
+ * bug this codebase's Calendar renderer already avoids); built from the
+ * numeric constructor throughout, same discipline as `bucketKey` itself. */
+function formatBucketLabel(bucket: string, granularity: BucketGranularity, locale: string | undefined): string {
+  const parts = bucket.split('-').map(Number)
+  if (granularity === 'month') {
+    const [y, m] = parts as [number, number]
+    return new Intl.DateTimeFormat(locale, { month: 'short', year: '2-digit' }).format(new Date(y, m - 1, 1))
+  }
+  const [y, m, d] = parts as [number, number, number]
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(y, m - 1, d))
+}
+
+/** A smooth (not straight-segment) path through `coords`, via a cubic Bézier
+ * per segment with horizontally-offset control points — a standard, simple
+ * "smooth line" construction (no full spline library needed) that reads as a
+ * curve without ever overshooting a data point's own y value. */
+function smoothPath(coords: { x: number; y: number }[]): string {
+  if (coords.length === 0) return ''
+  if (coords.length === 1) return `M ${coords[0]!.x},${coords[0]!.y}`
+  let d = `M ${coords[0]!.x},${coords[0]!.y}`
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p0 = coords[i]!
+    const p1 = coords[i + 1]!
+    const dx = (p1.x - p0.x) / 2
+    d += ` C ${p0.x + dx},${p0.y} ${p1.x - dx},${p1.y} ${p1.x},${p1.y}`
+  }
+  return d
+}
+
+const AXIS_PADDING = { top: 10, right: 12, bottom: 22, left: 34 }
+
+function XyChart({
+  series,
+  bucket,
+  format,
+}: {
+  series: XySeries[]
+  bucket: BucketGranularity
+  format: (v: number) => string
+}) {
   const t = useT()
   const palette = useGraphPalette()
-  if (points.length === 0) return <NoData />
+  const locale = useI18nStore((s) => s.locale) ?? undefined
+  const [chartRef, { width, height }] = useElementSize<HTMLDivElement>({ width: 260, height: 120 })
 
-  const width = 260
-  const height = 96
-  const padding = { top: 6, right: 6, bottom: 6, left: 6 }
-  const innerW = width - padding.left - padding.right
-  const innerH = height - padding.top - padding.bottom
-  const values = points.map((p) => p.value)
-  const min = Math.min(...values, 0)
-  const max = Math.max(...values, 0)
-  const range = max - min || 1
-  const xStep = points.length > 1 ? innerW / (points.length - 1) : 0
-  const coords = points.map((p, i) => ({
-    x: padding.left + (points.length > 1 ? i * xStep : innerW / 2),
-    y: padding.top + innerH - ((p.value - min) / range) * innerH,
-    point: p,
-  }))
-  const baselineY = padding.top + innerH - ((0 - min) / range) * innerH
-  const seriesColor = colorFor(0, palette.categorical)
+  const hasData = series.some((s) => s.points.length > 0)
+  const showLegend = series.length > 1 && hasData
+
+  // Shared X domain: every bucket that appears in ANY series, chronologically
+  // (bucket keys are 'YYYY-MM[-DD]', which sorts correctly as plain text).
+  const buckets = Array.from(new Set(series.flatMap((s) => s.points.map((p) => p.bucket)))).sort()
+  const allValues = series.flatMap((s) => s.points.map((p) => p.value))
+  const maxValue = Math.max(0, ...allValues)
+  const ticks = niceTicks(maxValue)
+  const domainMax = ticks[ticks.length - 1] || 1
+
+  const legendHeight = showLegend ? 22 : 0
+  const innerW = Math.max(1, width - AXIS_PADDING.left - AXIS_PADDING.right)
+  const innerH = Math.max(1, height - legendHeight - AXIS_PADDING.top - AXIS_PADDING.bottom)
+  const xForIndex = (i: number) =>
+    AXIS_PADDING.left + (buckets.length > 1 ? (i * innerW) / (buckets.length - 1) : innerW / 2)
+  const yForValue = (v: number) => AXIS_PADDING.top + innerH - (v / domainMax) * innerH
+
+  const bucketIndex = new Map(buckets.map((b, i) => [b, i]))
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-label={t('Line chart')}>
-      <line
-        x1={padding.left}
-        y1={baselineY}
-        x2={width - padding.right}
-        y2={baselineY}
-        stroke={palette.chrome.baseline}
-        strokeWidth={1}
-      />
-      <polyline
-        points={coords.map((c) => `${c.x},${c.y}`).join(' ')}
-        fill="none"
-        stroke={seriesColor}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {coords.map((c) => (
-        <circle key={c.point.bucket} cx={c.x} cy={c.y} r={4} fill={seriesColor}>
-          <title>{`${c.point.bucket}: ${format(c.point.value)}`}</title>
-        </circle>
-      ))}
-    </svg>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}>
+      <Box ref={chartRef} sx={{ flex: 1, minHeight: 0, width: '100%' }}>
+        {!hasData ? (
+          <NoData />
+        ) : (
+          <svg width={width} height={height} role="img" aria-label={t('Line chart')}>
+            {/* Y-axis gridlines + numeric labels. */}
+            {ticks.map((tick) => {
+              const y = yForValue(tick)
+              return (
+                <g key={tick}>
+                  <line
+                    x1={AXIS_PADDING.left}
+                    y1={y}
+                    x2={width - AXIS_PADDING.right}
+                    y2={y}
+                    stroke={palette.chrome.baseline}
+                    strokeWidth={1}
+                    opacity={tick === 0 ? 1 : 0.5}
+                  />
+                  <text x={AXIS_PADDING.left - 8} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={palette.chrome.mutedInk}>
+                    {format(tick)}
+                  </text>
+                </g>
+              )
+            })}
+            {/* X-axis bucket labels. */}
+            {buckets.map((bucketKeyValue, i) => (
+              <text
+                key={bucketKeyValue}
+                x={xForIndex(i)}
+                y={height - legendHeight - 6}
+                textAnchor="middle"
+                fontSize={10}
+                fill={palette.chrome.mutedInk}
+              >
+                {formatBucketLabel(bucketKeyValue, bucket, locale)}
+              </text>
+            ))}
+            {/* One smoothed line + point markers per series. */}
+            {series.map((s, seriesIndex) => {
+              if (s.points.length === 0) return null
+              const color = colorFor(seriesIndex, palette.categorical)
+              const coords = s.points.map((p) => ({
+                x: xForIndex(bucketIndex.get(p.bucket)!),
+                y: yForValue(p.value),
+                point: p,
+              }))
+              return (
+                <g key={s.label || seriesIndex}>
+                  <path d={smoothPath(coords)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" />
+                  {coords.map((c) => (
+                    <circle key={c.point.bucket} cx={c.x} cy={c.y} r={3.5} fill={color}>
+                      <title>{`${s.label ? `${s.label} — ` : ''}${c.point.bucket}: ${format(c.point.value)}`}</title>
+                    </circle>
+                  ))}
+                </g>
+              )
+            })}
+          </svg>
+        )}
+      </Box>
+      {showLegend ? (
+        <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', px: `${AXIS_PADDING.left}px`, minHeight: legendHeight }}>
+          {series.map((s, i) => (
+            <Stack key={s.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+              <Box
+                sx={{
+                  width: 10,
+                  height: 2,
+                  borderRadius: '1px',
+                  flexShrink: 0,
+                  bgcolor: colorFor(i, palette.categorical),
+                }}
+              />
+              <Typography variant="caption" noWrap color="text.secondary">
+                {s.label}
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
+      ) : null}
+    </Box>
   )
 }
 
@@ -202,20 +366,24 @@ export function XyWidgetBody<T extends HasId>({
   const config = tile.config as {
     xField?: string
     yField?: string
+    seriesField?: string
     aggregate?: NumericAggregate
-    bucket?: 'day' | 'week' | 'month'
+    bucket?: BucketGranularity
   }
   if (!config.xField || !config.yField || !config.aggregate || !config.bucket) return <NoData />
-  const points = xyPoints(records, {
+  const series = xySeries(records, {
     xField: config.xField,
     yField: config.yField,
+    seriesField: config.seriesField,
     aggregate: config.aggregate,
     bucket: config.bucket,
   })
   return (
-    <Stack spacing={0.5} sx={{ height: '100%' }}>
+    <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
       <PartialDataBadge shown={records.length} total={recordTotal} />
-      <XyChart points={points} format={(v) => format(v, { decimals: 1 })} />
+      <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
+        <XyChart series={series} bucket={config.bucket} format={(v) => format(v, { decimals: 1 })} />
+      </Box>
     </Stack>
   )
 }
@@ -225,68 +393,83 @@ export function XyWidgetBody<T extends HasId>({
 function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) => string }) {
   const t = useT()
   const palette = useGraphPalette()
+  const [containerRef, { width, height }] = useElementSize<HTMLDivElement>({ width: 200, height: 84 })
   const total = slices.reduce((sum, s) => sum + s.value, 0)
-  if (total <= 0) return <NoData />
 
-  const size = 84
-  const strokeWidth = 20
+  // The donut scales with whichever dimension is tighter (a short-wide tile
+  // is height-bound, a narrow-tall one is width-bound) — never a fixed
+  // literal, so resizing the tile visibly resizes the chart. Stroke width
+  // stays proportional (≈24% of the diameter) so a bigger donut doesn't read
+  // as a thin ring and a smaller one doesn't read as a solid disk.
+  const size = Math.max(32, Math.min(height, width * 0.55))
+  const strokeWidth = size * 0.24
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
   let offset = 0
 
   return (
-    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', minWidth: 0 }}>
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        role="img"
-        aria-label={t('Pie chart')}
-        style={{ flexShrink: 0 }}
-      >
-        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-          {slices.map((slice, i) => {
-            const length = (slice.value / total) * circumference
-            const dashoffset = -offset
-            offset += length
-            const color = slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical)
-            return (
-              <circle
-                key={slice.label}
-                cx={size / 2}
-                cy={size / 2}
-                r={radius}
-                fill="none"
-                stroke={color}
-                strokeWidth={strokeWidth}
-                strokeDasharray={`${length} ${circumference - length}`}
-                strokeDashoffset={dashoffset}
-              >
-                <title>{`${slice.label === OTHER_LABEL ? t('Other') : slice.label}: ${format(slice.value)}`}</title>
-              </circle>
-            )
-          })}
-        </g>
-      </svg>
-      <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-        {slices.map((slice, i) => (
-          <Stack key={slice.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <Box
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                flexShrink: 0,
-                bgcolor:
-                  slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical),
-              }}
-            />
-            <Typography variant="caption" noWrap color="text.secondary">
-              {slice.label === OTHER_LABEL ? t('Other') : slice.label}
-            </Typography>
+    <Box
+      ref={containerRef}
+      sx={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      {total <= 0 ? (
+        <NoData />
+      ) : (
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
+          <svg
+            width={size}
+            height={size}
+            viewBox={`0 0 ${size} ${size}`}
+            role="img"
+            aria-label={t('Pie chart')}
+            style={{ flexShrink: 0 }}
+          >
+            <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+              {slices.map((slice, i) => {
+                const length = (slice.value / total) * circumference
+                const dashoffset = -offset
+                offset += length
+                const color =
+                  slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical)
+                return (
+                  <circle
+                    key={slice.label}
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={`${length} ${circumference - length}`}
+                    strokeDashoffset={dashoffset}
+                  >
+                    <title>{`${slice.label === OTHER_LABEL ? t('Other') : slice.label}: ${format(slice.value)}`}</title>
+                  </circle>
+                )
+              })}
+            </g>
+          </svg>
+          <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+            {slices.map((slice, i) => (
+              <Stack key={slice.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                <Box
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    bgcolor:
+                      slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical),
+                  }}
+                />
+                <Typography variant="caption" noWrap color="text.secondary">
+                  {slice.label === OTHER_LABEL ? t('Other') : slice.label}
+                </Typography>
+              </Stack>
+            ))}
           </Stack>
-        ))}
-      </Stack>
+        </Stack>
+      )}
     </Box>
   )
 }
@@ -309,9 +492,11 @@ export function PieWidgetBody<T extends HasId>({
     aggregate: config.aggregate,
   })
   return (
-    <Stack spacing={0.5} sx={{ height: '100%' }}>
+    <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
       <PartialDataBadge shown={records.length} total={recordTotal} />
-      <PieChart slices={slices} format={(v) => format(v, { decimals: config.aggregate === 'count' ? 0 : 1 })} />
+      <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
+        <PieChart slices={slices} format={(v) => format(v, { decimals: config.aggregate === 'count' ? 0 : 1 })} />
+      </Box>
     </Stack>
   )
 }

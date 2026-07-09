@@ -97,7 +97,7 @@ calendar, chart, or drag-resize-grid code exists anywhere in the repo today).
 | Graph layout | `app_settings` key `views.<entity>.graph` = `{ tiles: Tile[] }`. `GET/PUT /api/v1/settings/views/:entity/graph`, permissions `settings:views:read`/`settings:views:write` (same read/write split as the fields endpoint, both derived automatically from the route). `Tile = { id, x, y, w, h, type: 'xy'\|'pie'\|'stat'\|'list', title?, config: JsonValue, hidden?: boolean }` — `x/y/w/h` are integer grid units; `GRID_UNIT = 30` (px), the one place that number is a literal (now `gridConfig.rowHeight`, exact; column WIDTH is only approximately `GRID_UNIT`, derived from the measured container). Pure data, no functions; the Go handler validates every tile's shape (id, non-negative/non-zero geometry, closed type set, no duplicate ids) but never its opaque `config`, and round-trips `hidden` with no validation beyond its bool type (Phase 4.6). |
 | Graph canvas (Phase 4.6) | `react-grid-layout` (RGL) v2 drives the canvas: `gridConfig.cols = Math.max(4, Math.round(containerWidth / GRID_UNIT))`, measured via RGL's own `useContainerWidth()` — the canvas is now a **responsive column grid sized to its container** (which is itself already bounded by RootLayout's page inset — see `core-front/CLAUDE.md`), not a free-form surface sized to the tiles' bounding box. `compactor={verticalCompactor}` runs unconditionally (view and edit mode alike): tiles auto-stack with no gaps/overlaps, resolving on every render, not just after a drag. |
 | Graph edit mode | An "Edit" toggle top-right of the graph toolbar (one level below the mode switcher), visible only to a session holding `settings:views:write` (client-side display gating, like `CreateBar` — Go re-authorizes the PUT regardless). View mode: tiles render read-only via RGL with `dragConfig.enabled`/`resizeConfig.enabled` both `false`. Edit mode: every tile is draggable (`dragConfig.handle`, a header) and resizable (`resizeConfig.handles: ['se']`, RGL's own bottom-right handle), floored per-`type` at `TILE_MIN_SIZE[type]` (not a uniform floor), plus a "Hide" (×) button and a "+ Add widget" button below the canvas that opens a type + title dialog. Hiding a tile is **non-destructive**: it sets `Tile.hidden = true` (excluded from the rendered/RGL-managed grid and from collision/compaction) and appears as a restorable chip in a "Hidden widgets" row below the canvas — clicking a chip sets `hidden = false`, restoring the tile at its last-known geometry. Changes stay in a local draft (mirrors the form store's `dirty`/`commit` shape) until **Save** (`PUT .../graph`, reverting to view mode on success, keeping the draft and surfacing the error on rejection) or **Cancel** (discards the draft, reverts to the last saved layout, including any hide/restore/move/resize made since). |
-| Widget: xy | `config: { xField, yField, aggregate?: 'sum'\|'avg'\|'count', bucket?: 'day'\|'week'\|'month' }`. Line/scatter of `yField`, bucketed by `xField` when it's a date field. |
+| Widget: xy | `config: { xField, yField, seriesField?, aggregate?: 'sum'\|'avg'\|'count', bucket?: 'day'\|'week'\|'month' }`. A smoothed line of `yField`, bucketed by `xField` (a date field), with Y-axis gridlines/numeric ticks and localized X-axis bucket labels. `seriesField` (optional, a selection/text/boolean field) splits the chart into one colored line per distinct value (e.g. a status column) instead of a single implicit series — a legend renders only when there's more than one series. The chart is sized 1:1 to its OWN measured tile pixels (`useElementSize`/`ResizeObserver`), never a fixed literal, so resizing a tile visibly resizes its chart. |
 | Widget: pie | `config: { groupByField, valueField?, aggregate?: 'sum'\|'count' }` (default `count`). One slice per distinct value of `groupByField`. |
 | Widget: stat | `config: { field, aggregate: 'mean'\|'median'\|'sum'\|'count' }` — a single big-number tile. Mean and median are the SAME widget type with a different `aggregate`, not two widget kinds (mirrors the widget/type split in `docs/roadmaps/field-widgets.md`). |
 | Widget: list | `config: { filterField, filterValue, displayFields: string[] }`. Reuses the existing `filter[col]=value` list-endpoint contract (field-widgets Phase 4) — no new backend surface. |
@@ -570,6 +570,48 @@ non-numeric field on a mean stat) is rejected in the dialog, not at render time.
 **DoD:** all four widget kinds render correctly against fixture data and the config dialogs let a
 user build them without editing code; the partial-data limitation is visible, not silent.
 
+## Phase 5.1 — Widget polish: multi-series xy, responsive sizing, centering ✅ (implemented)
+
+> Implementation notes:
+>
+> - **The xy widget gained axes, gridlines, a legend, and multi-series support**, matching a
+>   reference chart style provided during review. `xySeries()` (`graph-aggregate.ts`) generalizes
+>   `xyPoints()`: an optional `seriesField` (a selection/text/boolean field, e.g. a status column)
+>   splits records into one independently-bucketed series per distinct value; omitted, it's a
+>   single implicit series identical to calling `xyPoints` directly — a strict superset, no
+>   behavior change for existing tiles. `niceTicks()` picks round (1/2/5 × 10ⁿ) Y-axis values the
+>   same way any off-the-shelf chart axis does. X-axis bucket keys ('YYYY-MM[-DD]') render as
+>   short localized labels via `Intl.DateTimeFormat` (never `new Date('YYYY-MM-DD')` — the
+>   UTC-midnight parsing bug Calendar's own grid math already avoids; built from the numeric
+>   `Date(y, m-1, d)` constructor throughout, same discipline). Lines are smoothed via a simple
+>   per-segment cubic Bézier (horizontally-offset control points) — a deliberately small,
+>   dependency-free technique, not a full spline library. A legend renders only when there's more
+>   than one series (a single line needs no legend, per the original Phase 5 design).
+> - **Every widget is now sized to its OWN measured tile pixels, not a fixed literal** — the fix
+>   for "resize a tile and the chart inside stays the same size." `useElementSize()` (a small
+>   local `ResizeObserver` hook in `graph-widgets.tsx`) replaces `XyChart`/`PieChart`'s hardcoded
+>   `width`/`height`; the SVG's `viewBox` matches the container's real pixel size 1:1 (no
+>   `preserveAspectRatio` distortion to reason about). It starts at a sane, non-zero fallback size
+>   and stays there until the first real measurement arrives — jsdom's `ResizeObserver` stub
+>   (added this same effort for `react-grid-layout`'s `useContainerWidth`) never actually fires,
+>   so component tests render at the fallback forever, same accepted tradeoff as the RGL
+>   migration's testing strategy. The ref'd element renders UNCONDITIONALLY from the first render
+>   in both hooks, never behind an early return — `graph-renderer.tsx`'s own container hit exactly
+>   this bug earlier in the effort, so it's now a documented rule, not a one-off fix.
+> - **Stat and pie stopped being stuck to the top-left corner.** `StatWidgetBody`'s number now
+>   centers (both axes) in whatever space the tile gives it, at a larger variant (`h3`, up from
+>   `h5`) since resized tiles are often much bigger than the widget's old fixed footprint.
+>   `PieChart`'s donut+legend group centers too, and the donut's diameter and stroke width now
+>   scale with the tighter of the container's width/height (never a fixed 84px) — a bigger tile
+>   gets a visibly bigger donut, not a small one adrift in empty space.
+> - `NoData` (the shared "nothing to show" placeholder every widget falls back to) centers in its
+>   container the same way, so an unconfigured/empty tile of any size reads consistently.
+
+**DoD:** resizing a tile in edit mode visibly resizes the chart/number/donut inside it, not just
+the empty space around a fixed-size element; an xy tile configured with a series field renders
+one colored line + legend entry per distinct value; stat and pie content is centered, never
+pinned to one corner, at any tile size.
+
 ---
 
 ## Build order
@@ -581,12 +623,14 @@ flowchart TD
     P1 --> P4[Phase 4: Graph scaffold 30px grid]
     P4 --> P5[Phase 5: Graph widgets]
     P4 --> P46[Phase 4.6: migrate canvas to react-grid-layout]
+    P5 --> P51[Phase 5.1: multi-series xy, responsive sizing, centering]
 ```
 
 Phases 2 and 3 parallelize once Phase 1 lands and share the drag-to-PATCH logic (write it once,
 Phase 3 reuses it). Phase 5 cannot start before Phase 4's canvas/persistence exists. Phase 4.6
 parallelizes with (or follows) Phase 5 — it replaces the canvas's drag/resize engine, not the
-widget bodies Phase 5 shipped, which it leaves untouched.
+widget bodies Phase 5 shipped, which it leaves untouched. Phase 5.1 is a widget-body-only
+refinement of Phase 5 (config stays backward compatible) and is independent of Phase 4.6.
 
 ## Coordination
 
@@ -654,3 +698,14 @@ widget bodies Phase 5 shipped, which it leaves untouched.
   default export and `useContainerWidth` at the component boundary instead (see Phase 4.6). Any
   future Graph code should assume real layout measurement is already happening inside RGL, not
   avoid triggering it — the old advice to "stay coordinate-only" no longer applies here.
+- **A `ResizeObserver`/`useContainerWidth`-style ref MUST mount unconditionally, from the first
+  render — never behind an early `if (...) return null`.** Hit twice now: once in
+  `graph-renderer.tsx` (Phase 4.6, the canvas container) and again in `graph-widgets.tsx` (Phase
+  5.1, `useElementSize`'s chart/donut container). The observer attaches once, on mount, to
+  whatever `ref.current` is at that exact moment; if the ref-bearing element only enters the tree
+  on a LATER render (because an earlier one returned `null`/a placeholder instead), the observer
+  attaches to nothing and never retries — `mounted`/the measured size silently stays stuck at its
+  initial value forever, with no error to point at the cause. Both fixes were the same shape:
+  render the ref'd element on every branch, and put the "nothing to show yet" content INSIDE or
+  ALONGSIDE it, never in its place. Neither jsdom's `ResizeObserver` stub nor the unit tests catch
+  this — only a real browser does (see both phases' "known trade-off" notes).

@@ -140,6 +140,53 @@ describe('WidgetConfigDialog: xy', () => {
       config: { xField: 'closed_at', yField: 'amount', aggregate: 'avg', bucket: 'week' },
     })
   })
+
+  it('omits seriesField entirely when left as "None (single line)"', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={onSubmit} />,
+    )
+    await pickWidgetType('xy')
+    await pickSelect('X field (date)', 'Closed')
+    await pickSelect('Y field (number)', 'Amount')
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    const config = onSubmit.mock.calls[0]![0].config
+    expect(config).not.toHaveProperty('seriesField')
+  })
+
+  it('includes seriesField in the config when a series field is picked', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog open descriptor={descriptor} initial={null} onClose={vi.fn()} onSubmit={onSubmit} />,
+    )
+    await pickWidgetType('xy')
+    await pickSelect('X field (date)', 'Closed')
+    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Series field (optional)', 'Status')
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(onSubmit).toHaveBeenCalledWith({
+      type: 'xy',
+      title: '',
+      config: { xField: 'closed_at', yField: 'amount', seriesField: 'status', aggregate: 'sum', bucket: 'month' },
+    })
+  })
+
+  it('re-configuring an xy tile seeds its existing seriesField', async () => {
+    render(
+      <WidgetConfigDialog
+        open
+        descriptor={descriptor}
+        initial={{
+          type: 'xy',
+          title: 'Deal flow',
+          config: { xField: 'closed_at', yField: 'amount', seriesField: 'status', aggregate: 'sum', bucket: 'month' },
+        }}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(screen.getByLabelText('Series field (optional)')).toHaveTextContent('Status')
+  })
 })
 
 describe('WidgetConfigDialog: pie', () => {

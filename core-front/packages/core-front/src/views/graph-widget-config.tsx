@@ -39,6 +39,8 @@ const BUCKET_OPTIONS = ['day', 'week', 'month'] as const
 const XY_AGGREGATE_OPTIONS: readonly NumericAggregate[] = ['sum', 'avg', 'count']
 /** Sentinel for pie's optional value field — '' can't be a Select value. */
 const NO_VALUE_FIELD = '__count__'
+/** Sentinel for xy's optional series field — '' can't be a Select value. */
+const NO_SERIES_FIELD = '__single__'
 
 function readString(config: Record<string, unknown>, key: string): string {
   const v = config[key]
@@ -69,6 +71,7 @@ export function WidgetConfigDialog<T extends HasId>({
 
   const [xField, setXField] = useState('')
   const [yField, setYField] = useState('')
+  const [seriesField, setSeriesField] = useState('')
   const [xyAggregate, setXyAggregate] = useState<NumericAggregate>('sum')
   const [bucket, setBucket] = useState<'day' | 'week' | 'month'>('month')
 
@@ -94,6 +97,7 @@ export function WidgetConfigDialog<T extends HasId>({
     setTitle(initial?.title ?? '')
     setXField(readString(config, 'xField'))
     setYField(readString(config, 'yField'))
+    setSeriesField(readString(config, 'seriesField'))
     const rawXyAgg = config.aggregate
     setXyAggregate(rawXyAgg === 'avg' || rawXyAgg === 'count' ? rawXyAgg : 'sum')
     const rawBucket = config.bucket
@@ -131,7 +135,11 @@ export function WidgetConfigDialog<T extends HasId>({
       case 'xy':
         if (!xField) return { error: t('Pick a date field for X.') }
         if (!yField) return { error: t('Pick a number field for Y.') }
-        return { config: { xField, yField, aggregate: xyAggregate, bucket } }
+        return {
+          config: seriesField
+            ? { xField, yField, seriesField, aggregate: xyAggregate, bucket }
+            : { xField, yField, aggregate: xyAggregate, bucket },
+        }
       case 'pie':
         if (!groupByField) return { error: t('Pick a field to group by.') }
         return valueField
@@ -247,6 +255,22 @@ export function WidgetConfigDialog<T extends HasId>({
                   {BUCKET_OPTIONS.map((b) => (
                     <MenuItem key={b} value={b}>
                       {t(b)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
+                <InputLabel id="graph-xy-series">{t('Series field (optional)')}</InputLabel>
+                <Select
+                  labelId="graph-xy-series"
+                  label={t('Series field (optional)')}
+                  value={seriesField || NO_SERIES_FIELD}
+                  onChange={(e) => setSeriesField(e.target.value === NO_SERIES_FIELD ? '' : e.target.value)}
+                >
+                  <MenuItem value={NO_SERIES_FIELD}>{t('None (single line)')}</MenuItem>
+                  {groupableFields.map((f) => (
+                    <MenuItem key={f.name} value={f.name}>
+                      {t(fieldLabel(f))}
                     </MenuItem>
                   ))}
                 </Select>

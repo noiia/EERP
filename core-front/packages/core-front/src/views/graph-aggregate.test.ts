@@ -3,11 +3,13 @@ import {
   aggregate,
   bucketKey,
   MAX_PIE_SLICES,
+  niceTicks,
   OTHER_LABEL,
   pieSlices,
   statValue,
   toNumber,
   xyPoints,
+  xySeries,
 } from './graph-aggregate'
 
 describe('toNumber', () => {
@@ -129,6 +131,72 @@ describe('xyPoints', () => {
 
   it('returns an empty array when nothing matches', () => {
     expect(xyPoints([], { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'day' })).toEqual([])
+  })
+})
+
+describe('xySeries', () => {
+  const records: Deal[] = [
+    { id: '1', closed_at: '2024-01-05', amount: 100, status: 'won' },
+    { id: '2', closed_at: '2024-01-20', amount: 50, status: 'lost' },
+    { id: '3', closed_at: '2024-02-10', amount: 200, status: 'won' },
+    { id: '4', closed_at: '2024-02-11', amount: 999, status: null }, // no series value -> skipped
+  ]
+
+  it('with no seriesField, returns a single implicit series identical to xyPoints', () => {
+    const result = xySeries(records, { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' })
+    expect(result).toEqual([
+      {
+        label: '',
+        points: xyPoints(records, { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' }),
+      },
+    ])
+  })
+
+  it('with a seriesField, splits into one series per distinct value, each independently aggregated', () => {
+    const result = xySeries(records, {
+      xField: 'closed_at',
+      yField: 'amount',
+      seriesField: 'status',
+      aggregate: 'sum',
+      bucket: 'month',
+    })
+    expect(result).toEqual([
+      { label: 'lost', points: [{ bucket: '2024-01', value: 50 }] },
+      { label: 'won', points: [{ bucket: '2024-01', value: 100 }, { bucket: '2024-02', value: 200 }] },
+    ])
+  })
+
+  it('skips records with no value in seriesField, never a phantom series', () => {
+    const result = xySeries(records, {
+      xField: 'closed_at',
+      yField: 'amount',
+      seriesField: 'status',
+      aggregate: 'count',
+      bucket: 'month',
+    })
+    expect(result.every((s) => s.label !== '' && s.label !== 'null')).toBe(true)
+  })
+})
+
+describe('niceTicks', () => {
+  it('returns [0] for a non-positive max', () => {
+    expect(niceTicks(0)).toEqual([0])
+    expect(niceTicks(-5)).toEqual([0])
+  })
+
+  it('picks round (1/2/5 × 10^n) steps, starting at 0, covering max', () => {
+    const ticks = niceTicks(4)
+    expect(ticks[0]).toBe(0)
+    expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(4)
+    for (let i = 1; i < ticks.length; i++) {
+      expect(ticks[i]! - ticks[i - 1]!).toBeCloseTo(ticks[1]! - ticks[0]!)
+    }
+  })
+
+  it('scales sensibly for a much larger max, staying within a handful of ticks', () => {
+    const ticks = niceTicks(9500)
+    expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(9500)
+    expect(ticks.length).toBeLessThanOrEqual(6)
   })
 })
 

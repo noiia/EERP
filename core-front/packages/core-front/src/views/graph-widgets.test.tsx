@@ -141,6 +141,70 @@ describe('GraphWidgetBody: xy', () => {
     )
     expect(screen.getByText('No data')).toBeInTheDocument()
   })
+
+  it('draws Y-axis tick labels and X-axis bucket labels', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'xy',
+          config: { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    const chart = screen.getByRole('img', { name: 'Line chart' })
+    // Bucket keys ('2024-01'/'2024-02') render as short localized month labels,
+    // not the raw key — check the same Intl call the component itself uses.
+    const label = (d: Date) => new Intl.DateTimeFormat(undefined, { month: 'short', year: '2-digit' }).format(d)
+    const texts = Array.from(chart.querySelectorAll('text')).map((el) => el.textContent)
+    expect(texts).toContain(label(new Date(2024, 0, 1)))
+    expect(texts).toContain(label(new Date(2024, 1, 1)))
+    // At least one numeric Y-axis gridline label is present too (0 is always ticked).
+    expect(texts).toContain('0.0')
+  })
+
+  it('renders one line + legend entry per distinct seriesField value', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'xy',
+          config: {
+            xField: 'closed_at',
+            yField: 'amount',
+            seriesField: 'status',
+            aggregate: 'sum',
+            bucket: 'month',
+          },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    const chart = screen.getByRole('img', { name: 'Line chart' })
+    expect(chart.querySelectorAll('path')).toHaveLength(2) // 'open' and 'won' series
+    expect(screen.getByText('open')).toBeInTheDocument()
+    expect(screen.getByText('won')).toBeInTheDocument()
+  })
+
+  it('shows no legend for a single (implicit) series', () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'xy',
+          config: { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    // No series labels ('open'/'won') rendered as legend text when there's one line.
+    expect(screen.queryByText('open')).not.toBeInTheDocument()
+    expect(screen.queryByText('won')).not.toBeInTheDocument()
+  })
 })
 
 describe('GraphWidgetBody: pie', () => {
