@@ -29,8 +29,8 @@ describe('design tokens', () => {
   it('exposes a single page-content inset, one value per axis', () => {
     // RootLayout applies these ONCE, around everything but the top bar — a view
     // (list/form/dashboard) must never re-derive its own width/margin constant.
-    expect(layout.pageInsetX).toBe('10vw')
-    expect(layout.pageInsetY).toBe('10vh')
+    expect(layout.pageInsetX).toBe('5vw')
+    expect(layout.pageInsetY).toBe('5vh')
   })
 
   it('withAlpha expands hex (incl. shorthand) to rgba', () => {

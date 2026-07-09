@@ -100,10 +100,10 @@ export const layout = {
   gridHeaderHeight: 42,
   /** Page-content inset — applied once, around everything except the fixed top bar
    * (RootLayout), so no view (list, form, dashboard, settings) ever touches or crosses
-   * the screen edge. 10% of the viewport on each axis; horizontal is the one an
+   * the screen edge. 5% of the viewport on each axis; horizontal is the one an
    * overflowing child (e.g. Graph's canvas) must never be allowed to escape. */
-  pageInsetX: '10vw',
-  pageInsetY: '10vh',
+  pageInsetX: '5vw',
+  pageInsetY: '5vh',
 } as const
 
 /** Motion. Short, restrained; the theme also disables it under prefers-reduced-motion. */
