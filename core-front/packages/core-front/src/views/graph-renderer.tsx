@@ -314,12 +314,14 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
                       flex: 1,
                       minHeight: 0,
                       minWidth: 0,
-                      p: 0,
-                      // Just enough top clearance for the floating title (subtitle1 at
-                      // top:8) to stay legible instead of overlapping the widget's own
-                      // first line — everything else still fills the full tile.
+                      // A small inset on every side so chart content, a "No data"/"No
+                      // matching records" message, etc. never sit flush against the
+                      // tile's edges or rounded corners — top stays wider (30px) to
+                      // clear the floating title, per the fix above.
+                      px: 1,
+                      pb: 1,
                       pt: '30px',
-                      '&:last-child': { pb: 0 },
+                      '&:last-child': { pb: 1 },
                     }}
                   >
                     <GraphWidgetBody
