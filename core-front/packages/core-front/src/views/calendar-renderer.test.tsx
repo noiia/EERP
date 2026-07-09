@@ -59,6 +59,24 @@ describe('CalendarRenderer', () => {
     expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Beta')
   })
 
+  it('positions a record whose date field is a full RFC3339 timestamp (a real Go time.Time column), not just a bare date string', () => {
+    // A `time.Time` column round-trips as "2026-07-10T00:00:00Z", never a bare
+    // 'YYYY-MM-DD' — bucketing by the raw value would never match an
+    // isoDate() day key, silently dropping the record from BOTH the grid and
+    // Unscheduled (the exact bug this guards against).
+    const timestampRecords: Task[] = [{ id: '3', name: 'Gamma', due_date: `${day15}T00:00:00Z` }]
+    render(
+      <CalendarRenderer
+        descriptor={descriptor}
+        initialData={timestampRecords}
+        actions={actions}
+        dateField="due_date"
+      />,
+    )
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Gamma')
+    expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toHaveTextContent('Gamma')
+  })
+
   it('dragging a scheduled record to another day PATCHes the date field', async () => {
     render(
       <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,

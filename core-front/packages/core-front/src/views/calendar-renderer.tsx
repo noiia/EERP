@@ -65,9 +65,17 @@ export function CalendarRenderer<T extends HasId>({
   // Label field only — day cells are compact, unlike a Kanban card.
   const [labelField] = orderedFields(descriptor, { exclude: [dateField], limit: 1 })
 
+  // A 'date' field's stored value isn't always a bare 'YYYY-MM-DD' string — a
+  // real Go `time.Time` column round-trips as a full RFC3339 timestamp (e.g.
+  // "2026-07-10T00:00:00Z"). Bucketing by the raw value would never match an
+  // `isoDate()` day key, silently dropping every such record from BOTH the
+  // grid and the Unscheduled panel. Extract just the date prefix — never
+  // `new Date(...)` (local-timezone-shift pitfall, same discipline as
+  // graph-aggregate.ts's `bucketKey`).
   function dateOf(record: T): string | null {
     const raw = (record as Record<string, unknown>)[dateField]
-    return typeof raw === 'string' && raw !== '' ? raw : null
+    if (typeof raw !== 'string' || raw === '') return null
+    return /^\d{4}-\d{2}-\d{2}/.exec(raw)?.[0] ?? null
   }
 
   const byDay = new Map<string, T[]>()

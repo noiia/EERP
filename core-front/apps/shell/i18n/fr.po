@@ -211,3 +211,277 @@ msgstr "Modifier le format des nombres de l'espace de travail nécessite la perm
 
 msgid "Country"
 msgstr "Pays"
+
+# ── List display modes: List/Kanban/Calendar/Graph switcher + Settings → Views
+# (docs/roadmaps/list-view-modes.md) ──────────────────────────────────────────
+
+msgid "Display mode"
+msgstr "Mode d'affichage"
+
+msgid "Kanban"
+msgstr "Kanban"
+
+msgid "Calendar"
+msgstr "Calendrier"
+
+msgid "Graph"
+msgstr "Graphique"
+
+msgid "Configure in Settings → Views"
+msgstr "Configurer dans Paramètres → Vues"
+
+msgid "No status"
+msgstr "Aucun statut"
+
+msgid "Unscheduled"
+msgstr "Non planifié"
+
+msgid "Previous"
+msgstr "Précédent"
+
+msgid "Next"
+msgstr "Suivant"
+
+msgid "Previous month"
+msgstr "Mois précédent"
+
+msgid "Next month"
+msgstr "Mois suivant"
+
+msgid "Sun"
+msgstr "dim."
+
+msgid "Mon"
+msgstr "lun."
+
+msgid "Tue"
+msgstr "mar."
+
+msgid "Wed"
+msgstr "mer."
+
+msgid "Thu"
+msgstr "jeu."
+
+msgid "Fri"
+msgstr "ven."
+
+msgid "Sat"
+msgstr "sam."
+
+msgid "Graph layouts are not available in this deployment."
+msgstr "Les dispositions Graphique ne sont pas disponibles dans ce déploiement."
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "Edit"
+msgstr "Modifier"
+
+msgid "Configure widget"
+msgstr "Configurer le widget"
+
+msgid "Hide widget"
+msgstr "Masquer le widget"
+
+msgid "+ Add widget"
+msgstr "+ Ajouter un widget"
+
+msgid "Add widget"
+msgstr "Ajouter un widget"
+
+msgid "Hidden widgets:"
+msgstr "Widgets masqués :"
+
+msgid "Widget type"
+msgstr "Type de widget"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "X field (date)"
+msgstr "Champ X (date)"
+
+msgid "Y field (number)"
+msgstr "Champ Y (nombre)"
+
+msgid "Aggregate"
+msgstr "Agrégat"
+
+msgid "Bucket"
+msgstr "Intervalle"
+
+msgid "Series field (optional)"
+msgstr "Champ de série (optionnel)"
+
+msgid "None (single line)"
+msgstr "Aucun (ligne unique)"
+
+msgid "Bar mode"
+msgstr "Mode des barres"
+
+msgid "Group by field"
+msgstr "Regrouper par champ"
+
+msgid "Value field (shown in tooltip only)"
+msgstr "Champ de valeur (affiché dans l'infobulle uniquement)"
+
+msgid "Slices are always sized by how many records fall in each group."
+msgstr "Les parts sont toujours proportionnelles au nombre d'enregistrements de chaque groupe."
+
+msgid "Field"
+msgstr "Champ"
+
+msgid "Filter field"
+msgstr "Champ de filtre"
+
+msgid "Filter value"
+msgstr "Valeur du filtre"
+
+msgid "Columns to show"
+msgstr "Colonnes à afficher"
+
+msgid "Pick a date field for X."
+msgstr "Choisissez un champ date pour X."
+
+msgid "Pick a number field for Y."
+msgstr "Choisissez un champ nombre pour Y."
+
+msgid "Pick a field to group by."
+msgstr "Choisissez un champ de regroupement."
+
+msgid "Pick a field."
+msgstr "Choisissez un champ."
+
+msgid "Mean, median and sum need a number field."
+msgstr "La moyenne, la médiane et la somme nécessitent un champ numérique."
+
+msgid "Pick a field to filter on."
+msgstr "Choisissez un champ sur lequel filtrer."
+
+msgid "Enter a value to filter on."
+msgstr "Saisissez une valeur à filtrer."
+
+msgid "Pick at least one column to display."
+msgstr "Choisissez au moins une colonne à afficher."
+
+msgid "No data"
+msgstr "Aucune donnée"
+
+msgid "No matching records."
+msgstr "Aucun enregistrement correspondant."
+
+msgid "Related-record lookups are not available in this deployment."
+msgstr "Les recherches d'enregistrements liés ne sont pas disponibles dans ce déploiement."
+
+msgid "Line chart"
+msgstr "Graphique en courbes"
+
+msgid "Bar chart"
+msgstr "Graphique en barres"
+
+msgid "Stacked bar chart"
+msgstr "Graphique en barres empilées"
+
+msgid "Pie chart"
+msgstr "Graphique circulaire"
+
+msgid "Other"
+msgstr "Autre"
+
+# Aggregate display labels (stat widget) vs. the lowercase raw option values
+# the config dialog's Selects render (e.g. Aggregate: xy/stat) — two different
+# msgids per concept, same split as everywhere else in the engine (source
+# string = value, display goes through t()).
+
+msgid "Sum"
+msgstr "Somme"
+
+msgid "Average"
+msgstr "Moyenne"
+
+msgid "Mean"
+msgstr "Moyenne"
+
+msgid "Count"
+msgstr "Nombre"
+
+msgid "Median"
+msgstr "Médiane"
+
+msgid "sum"
+msgstr "somme"
+
+msgid "avg"
+msgstr "moyenne"
+
+msgid "mean"
+msgstr "moyenne"
+
+msgid "count"
+msgstr "nombre"
+
+msgid "median"
+msgstr "médiane"
+
+msgid "day"
+msgstr "jour"
+
+msgid "week"
+msgstr "semaine"
+
+msgid "month"
+msgstr "mois"
+
+msgid "grouped"
+msgstr "groupées"
+
+msgid "stacked"
+msgstr "empilées"
+
+# Graph tile types: the widget-type picker's options AND a tile's default
+# title fallback (t(tile.type)) share these same lowercase msgids.
+
+msgid "xy"
+msgstr "Courbe (X/Y)"
+
+msgid "bar"
+msgstr "Barres"
+
+msgid "pie"
+msgstr "Camembert"
+
+msgid "stat"
+msgstr "Statistique"
+
+msgid "list"
+msgstr "Liste"
+
+# ── Settings → Views (docs/adr/ADR-006) ───────────────────────────────────────
+
+msgid "Views"
+msgstr "Vues"
+
+msgid "Which field powers each list's Kanban and Calendar display modes."
+msgstr "Quel champ alimente les modes d'affichage Kanban et Calendrier de chaque liste."
+
+msgid "No list views are registered yet."
+msgstr "Aucune vue liste n'est encore enregistrée."
+
+msgid "Entity"
+msgstr "Entité"
+
+msgid "Kanban status field"
+msgstr "Champ de statut Kanban"
+
+msgid "Calendar date field"
+msgstr "Champ de date Calendrier"
+
+msgid "Status field"
+msgstr "Champ de statut"
+
+msgid "Date field"
+msgstr "Champ de date"
+
+msgid "Changing view field configuration requires the settings:views:write permission."
+msgstr "Modifier la configuration des champs de vue nécessite la permission settings:views:write."

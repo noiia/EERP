@@ -106,6 +106,12 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
 
 function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
+  // A native date input's value MUST be exactly 'YYYY-MM-DD' or the browser
+  // silently renders it blank. A real Go `time.Time` column round-trips as a
+  // full RFC3339 timestamp ("2026-07-10T00:00:00Z"), not a bare date — strip
+  // any time/zone suffix rather than passing it straight through.
+  const raw = typeof value === 'string' ? value : ''
+  const dateOnly = /^\d{4}-\d{2}-\d{2}/.exec(raw)?.[0] ?? ''
   return (
     <TextField
       label={t(fieldLabel(field))}
@@ -114,7 +120,7 @@ function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
       disabled={disabled}
       fullWidth
       slotProps={{ inputLabel: { shrink: true } }}
-      value={(value as string) ?? ''}
+      value={dateOnly}
       onChange={(e) => onChange(e.target.value)}
     />
   )
