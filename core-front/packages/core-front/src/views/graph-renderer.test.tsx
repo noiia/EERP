@@ -19,6 +19,10 @@ import { useSessionStore, type Identity } from './session-store'
 // real-browser verification pass in the roadmap doc instead.
 let capturedRGLProps: ReactGridLayoutProps | null = null
 
+// The measured container width GraphRenderer sees — mutable so tests can drive
+// the phone projection (< layout.phoneMaxWidth) as well as the desktop grid.
+const measured = vi.hoisted(() => ({ containerWidth: 900 }))
+
 vi.mock('react-grid-layout', () => ({
   __esModule: true,
   default: (props: ReactGridLayoutProps) => {
@@ -26,7 +30,7 @@ vi.mock('react-grid-layout', () => ({
     return <div data-testid="rgl-mock">{props.children}</div>
   },
   useContainerWidth: () => ({
-    width: 900,
+    width: measured.containerWidth,
     mounted: true,
     containerRef: { current: null },
     measureWidth: () => {},
@@ -74,6 +78,7 @@ describe('GraphRenderer', () => {
   beforeEach(() => {
     useSessionStore.setState({ identity: null })
     capturedRGLProps = null
+    measured.containerWidth = 900
   })
 
   it('renders an inert message with no crash when no GraphOpsProvider is mounted', () => {
@@ -333,6 +338,82 @@ describe('GraphRenderer', () => {
     // Still editing: Save/Cancel remain, the draft was not discarded.
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+  })
+
+  describe('phone projection (docs/roadmaps/responsive-displays.md, Phase 2)', () => {
+    // Two tiles whose (y, x) order DIFFERS from their array order, so the
+    // projection's sort is actually exercised: t-bottom is first in the saved
+    // array but sits lower on the canvas.
+    const bottomTile: Tile = { id: 't-bottom', x: 0, y: 6, w: 6, h: 6, type: 'stat', title: 'Bottom', config: {} }
+    const topTile: Tile = { id: 't-top', x: 0, y: 0, w: 6, h: 4, type: 'stat', title: 'Top', config: {} }
+    const hiddenTile: Tile = { id: 't-hidden', x: 6, y: 0, w: 6, h: 6, type: 'stat', hidden: true, config: {} }
+    const phoneOps = () => fakeOps({ get: vi.fn(async () => ({ tiles: [bottomTile, topTile, hiddenTile] })) })
+
+    it('below phoneMaxWidth renders a single-column stack ordered by (y, x) — no RGL mounted', async () => {
+      measured.containerWidth = 360
+      render(
+        <GraphOpsProvider ops={phoneOps()}>
+          <GraphRenderer descriptor={descriptor} records={[]} />
+        </GraphOpsProvider>,
+      )
+      await screen.findByTestId('graph-phone-stack')
+      expect(screen.queryByTestId('rgl-mock')).not.toBeInTheDocument()
+      expect(capturedRGLProps).toBeNull()
+
+      const ids = screen
+        .getAllByTestId(/^graph-tile-/)
+        .map((el) => el.getAttribute('data-testid'))
+      expect(ids).toEqual(['graph-tile-t-top', 'graph-tile-t-bottom'])
+      // Hidden tiles stay hidden in the projection too.
+      expect(screen.queryByTestId('graph-tile-t-hidden')).not.toBeInTheDocument()
+    })
+
+    it('sizes each projected tile h × GRID_UNIT tall, floored at the type minimum', async () => {
+      measured.containerWidth = 360
+      render(
+        <GraphOpsProvider ops={phoneOps()}>
+          <GraphRenderer descriptor={descriptor} records={[]} />
+        </GraphOpsProvider>,
+      )
+      // h=6 → 180px; topTile's h=4 exceeds stat's minH=2, so no flooring here.
+      expect(await screen.findByTestId('graph-tile-t-bottom')).toHaveStyle({ height: '180px' })
+      expect(screen.getByTestId('graph-tile-t-top')).toHaveStyle({ height: '120px' })
+    })
+
+    it('hides Edit even for a session with settings:views:write — the projection is read-only', async () => {
+      measured.containerWidth = 360
+      useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
+      render(
+        <GraphOpsProvider ops={phoneOps()}>
+          <GraphRenderer descriptor={descriptor} records={[]} />
+        </GraphOpsProvider>,
+      )
+      await screen.findByTestId('graph-phone-stack')
+      expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Hide widget' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '+ Add widget' })).not.toBeInTheDocument()
+    })
+
+    it('growing back past phoneMaxWidth restores the RGL grid path', async () => {
+      measured.containerWidth = 360
+      useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
+      const { rerender } = render(
+        <GraphOpsProvider ops={phoneOps()}>
+          <GraphRenderer descriptor={descriptor} records={[]} />
+        </GraphOpsProvider>,
+      )
+      await screen.findByTestId('graph-phone-stack')
+
+      measured.containerWidth = 900
+      rerender(
+        <GraphOpsProvider ops={phoneOps()}>
+          <GraphRenderer descriptor={descriptor} records={[]} />
+        </GraphOpsProvider>,
+      )
+      expect(await screen.findByTestId('rgl-mock')).toBeInTheDocument()
+      expect(screen.queryByTestId('graph-phone-stack')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    })
   })
 })
 

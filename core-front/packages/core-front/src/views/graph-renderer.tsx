@@ -18,6 +18,7 @@ import { ErrorAlert } from './error-alert'
 import { useGraphOps } from './graph-ops'
 import { GraphWidgetBody } from './graph-widgets'
 import { WidgetConfigDialog, type WidgetDraft } from './graph-widget-config'
+import { layout as layoutTokens } from './tokens'
 import type { HasId } from './stores'
 
 // Graph display mode (docs/roadmaps/list-view-modes.md, Phase 4.6): a
@@ -66,6 +67,94 @@ export function applyRGLLayout(tiles: Tile[], rglLayout: Layout): Tile[] {
     const item = byId.get(tl.id)
     return item ? { ...tl, x: item.x, y: item.y, w: item.w, h: item.h } : tl
   })
+}
+
+/**
+ * The visible tile chrome, shared by both canvas branches: an inset Card
+ * (5px from the outer cell on every side, so adjacent tiles keep a real gap
+ * the grid math never sees), a floating title, the editing-only ✎/× buttons,
+ * and the widget body. The PARENT positions it: on desktop the outer element
+ * is RGL's absolutely-positioned grid cell; in the phone projection it is a
+ * plain relatively-positioned Box with an explicit height.
+ */
+function GraphTileCard<T extends HasId>({
+  tile,
+  editing,
+  descriptor,
+  records,
+  recordTotal,
+  onConfigure,
+  onHide,
+}: {
+  tile: Tile
+  editing: boolean
+  descriptor: ViewDescriptor<T>
+  records: T[]
+  recordTotal: number | undefined
+  onConfigure?: () => void
+  onHide?: () => void
+}) {
+  const t = useT()
+  return (
+    <Card
+      variant="outlined"
+      sx={{
+        position: 'absolute',
+        inset: '5px',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        cursor: editing ? 'grab' : 'default',
+      }}
+    >
+      <Typography
+        variant="subtitle1"
+        noWrap
+        sx={{
+          position: 'absolute',
+          top: 8,
+          left: 12,
+          right: editing ? 64 : 12,
+          zIndex: 1,
+          fontWeight: 600,
+          pointerEvents: 'none',
+        }}
+      >
+        {tile.title || t(tile.type)}
+      </Typography>
+      {editing ? (
+        <Box
+          className="graph-tile-no-drag"
+          sx={{ position: 'absolute', top: 2, right: 2, zIndex: 2, display: 'flex' }}
+        >
+          <IconButton size="small" aria-label={t('Configure widget')} onClick={onConfigure}>
+            ✎
+          </IconButton>
+          <IconButton size="small" aria-label={t('Hide widget')} onClick={onHide}>
+            ×
+          </IconButton>
+        </Box>
+      ) : null}
+      <CardContent
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          // A small inset on every side so chart content, a "No data"/"No
+          // matching records" message, etc. never sit flush against the
+          // tile's edges or rounded corners — top stays wider (30px) to
+          // clear the floating title.
+          px: 1,
+          pb: 1,
+          pt: '30px',
+          '&:last-child': { pb: 1 },
+        }}
+      >
+        <GraphWidgetBody tile={tile} descriptor={descriptor} records={records} recordTotal={recordTotal} />
+      </CardContent>
+    </Card>
+  )
 }
 
 export interface GraphRendererProps<T extends HasId> {
@@ -187,6 +276,21 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
     minH: TILE_MIN_SIZE[tl.type].minH,
   }))
 
+  // Phone projection (docs/roadmaps/responsive-displays.md, Phase 2): below
+  // the phone width — measured on the canvas's OWN container, the same
+  // measurement RGL sizing uses, never the viewport — the canvas renders as a
+  // read-only single-column stack instead of mounting RGL at all. It is a
+  // PROJECTION of the saved layout, never a migration: it always renders from
+  // `saved` (not the draft), shows no toolbar, and has no code path that can
+  // write geometry — so a phone visit (or a mid-edit window shrink, which
+  // parks the untouched draft until the canvas is wide again) can never
+  // corrupt a desktop layout. Editing is desktop-only by design: native HTML5
+  // drag doesn't fire on touch anyway (see the roadmap's Pitfalls).
+  const phone = mounted && containerWidth > 0 && containerWidth < layoutTokens.phoneMaxWidth
+  const phoneTiles = (saved ?? [])
+    .filter((tl) => !tl.hidden)
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+
   const loading = saved == null // a settings read resolves fast; nothing to show yet.
   const notAvailable = !loading && !graphOps
   const ready = !loading && !notAvailable
@@ -209,26 +313,29 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
       {ready ? (
         <>
           {error ? <ErrorAlert error={error} /> : null}
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
-            {editing ? (
-              <>
-                <Button size="small" onClick={cancelEdit} disabled={saving}>
-                  {t('Cancel')}
+          {/* No toolbar in the phone projection: it is read-only by contract. */}
+          {!phone ? (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
+              {editing ? (
+                <>
+                  <Button size="small" onClick={cancelEdit} disabled={saving}>
+                    {t('Cancel')}
+                  </Button>
+                  <Button size="small" variant="contained" onClick={() => void saveEdit()} disabled={saving}>
+                    {saving ? t('Saving…') : t('Save')}
+                  </Button>
+                </>
+              ) : canEdit ? (
+                <Button size="small" onClick={startEdit}>
+                  {t('Edit')}
                 </Button>
-                <Button size="small" variant="contained" onClick={() => void saveEdit()} disabled={saving}>
-                  {saving ? t('Saving…') : t('Save')}
-                </Button>
-              </>
-            ) : canEdit ? (
-              <Button size="small" onClick={startEdit}>
-                {t('Edit')}
-              </Button>
-            ) : null}
-          </Box>
+              ) : null}
+            </Box>
+          ) : null}
         </>
       ) : null}
       <Box ref={containerRef} sx={{ position: 'relative', width: '100%' }}>
-        {ready && editing ? (
+        {ready && editing && !phone ? (
           <Box
             sx={{
               position: 'absolute',
@@ -243,7 +350,35 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
             }}
           />
         ) : null}
-        {ready && mounted ? (
+        {ready && mounted && phone ? (
+          // The phone projection: one full-width tile per row, ordered by
+          // (y, x) — top-to-bottom, left-to-right of the saved desktop layout.
+          // Each wrapper Box provides what RGL's grid cell provides on desktop
+          // (a positioned box with an explicit height) so the SAME inset
+          // GraphTileCard chrome works unchanged; widgets keep their own
+          // useElementSize responsiveness and just get a narrow, full-width box.
+          <Stack data-testid="graph-phone-stack">
+            {phoneTiles.map((tile) => (
+              <Box
+                key={tile.id}
+                data-testid={`graph-tile-${tile.id}`}
+                sx={{
+                  position: 'relative',
+                  height: Math.max(tile.h, TILE_MIN_SIZE[tile.type].minH) * GRID_UNIT,
+                }}
+              >
+                <GraphTileCard
+                  tile={tile}
+                  editing={false}
+                  descriptor={descriptor}
+                  records={records}
+                  recordTotal={recordTotal}
+                />
+              </Box>
+            ))}
+          </Stack>
+        ) : null}
+        {ready && mounted && !phone ? (
           <ReactGridLayout
             layout={rglLayout}
             width={containerWidth}
@@ -262,90 +397,33 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
               // onto (the full occupied grid cell, positioned absolute by RGL itself
               // — that alone already makes it a valid containing block, nothing extra
               // needed here) — kept bare (no border/radius/background) so the VISIBLE
-              // Card below can be inset 5px from it on every side, leaving a real
-              // empty gap between adjacent tiles that the grid math itself never sees
-              // (drag/resize/compaction still operate on the full, un-inset cell).
+              // Card inside GraphTileCard can be inset 5px from it on every side,
+              // leaving a real empty gap between adjacent tiles that the grid math
+              // itself never sees (drag/resize/compaction still operate on the full,
+              // un-inset cell).
               <Box key={tile.id} data-testid={`graph-tile-${tile.id}`}>
-                <Card
-                  variant="outlined"
-                  sx={{
-                    position: 'absolute',
-                    inset: '5px',
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    cursor: editing ? 'grab' : 'default',
-                  }}
-                >
-                  <Typography
-                    variant="subtitle1"
-                    noWrap
-                    sx={{
-                      position: 'absolute',
-                      top: 8,
-                      left: 12,
-                      right: editing ? 64 : 12,
-                      zIndex: 1,
-                      fontWeight: 600,
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {tile.title || t(tile.type)}
-                  </Typography>
-                  {editing ? (
-                    <Box
-                      className="graph-tile-no-drag"
-                      sx={{ position: 'absolute', top: 2, right: 2, zIndex: 2, display: 'flex' }}
-                    >
-                      <IconButton
-                        size="small"
-                        aria-label={t('Configure widget')}
-                        onClick={() => setDialogTarget(tile)}
-                      >
-                        ✎
-                      </IconButton>
-                      <IconButton size="small" aria-label={t('Hide widget')} onClick={() => hideTile(tile.id)}>
-                        ×
-                      </IconButton>
-                    </Box>
-                  ) : null}
-                  <CardContent
-                    sx={{
-                      flex: 1,
-                      minHeight: 0,
-                      minWidth: 0,
-                      // A small inset on every side so chart content, a "No data"/"No
-                      // matching records" message, etc. never sit flush against the
-                      // tile's edges or rounded corners — top stays wider (30px) to
-                      // clear the floating title, per the fix above.
-                      px: 1,
-                      pb: 1,
-                      pt: '30px',
-                      '&:last-child': { pb: 1 },
-                    }}
-                  >
-                    <GraphWidgetBody
-                      tile={tile}
-                      descriptor={descriptor}
-                      records={records}
-                      recordTotal={recordTotal}
-                    />
-                  </CardContent>
-                </Card>
+                <GraphTileCard
+                  tile={tile}
+                  editing={editing}
+                  descriptor={descriptor}
+                  records={records}
+                  recordTotal={recordTotal}
+                  onConfigure={() => setDialogTarget(tile)}
+                  onHide={() => hideTile(tile.id)}
+                />
               </Box>
             ))}
           </ReactGridLayout>
         ) : null}
       </Box>
 
-      {ready && editing ? (
+      {ready && editing && !phone ? (
         <Button variant="outlined" sx={{ mt: 1 }} onClick={() => setDialogTarget('new')}>
           {t('+ Add widget')}
         </Button>
       ) : null}
 
-      {ready && editing && hiddenTiles.length > 0 ? (
+      {ready && editing && !phone && hiddenTiles.length > 0 ? (
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mt: 1, alignItems: 'center' }}>
           <Typography variant="caption" color="text.secondary">
             {t('Hidden widgets:')}

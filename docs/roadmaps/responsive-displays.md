@@ -211,7 +211,25 @@ breakpoint (assert sx output or snapshot at both sizes); i18n untouched.
 readable labels; desktop is pixel-equivalent to today (minus the duplicate label); no
 horizontal scroll on any audited page; the key warning is gone from the console.
 
-## Phase 2 — Graph mode: phone projection (one tile per row)
+## Phase 2 — Graph mode: phone projection (one tile per row) ✅ (implemented)
+
+> Implementation notes: landed as designed, with one structural addition — the tile
+> chrome (inset Card, floating title, editing-only ✎/× buttons, widget body) was
+> extracted into a shared `GraphTileCard` component so the projection and the RGL grid
+> render the SAME chrome instead of a copy; the projection's wrapper Box simply provides
+> what RGL's grid cell provides on desktop (a positioned box with an explicit height).
+> The projection renders from `saved`, never the draft: a mid-edit window shrink hides
+> the whole toolbar and parks the untouched draft until the canvas is wide again — no
+> code path in the phone branch can write geometry. Tests drive the branch by making the
+> mocked `useContainerWidth` width mutable (`vi.hoisted` state): below `phoneMaxWidth`
+> assert no RGL, `(y, x)` tile order, `h × GRID_UNIT` heights, no Edit even with the
+> write permission; then flip the width back and assert the RGL path returns. Verified
+> in a real browser at 360×740: five tiles stacked full-width (stat/xy/bar/pie/list all
+> rendering their live widgets), no Edit, `scrollWidth = 360`; widening the window
+> restores the grid and the Edit toggle. One transient worth knowing: the very first
+> frame after switching to Graph can briefly render the desktop branch until the
+> container measurement lands — cosmetic only, the projection settles within a beat and
+> nothing writes during it.
 
 > Design notes: the branch lives in `GraphRenderer`, which already measures its container
 > for RGL (`useContainerWidth`). `containerWidth < layout.phoneMaxWidth` ⇒ render the
