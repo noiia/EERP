@@ -1,0 +1,408 @@
+# Responsive displays & the form notebook — build roadmap
+
+> **Goal:** make every display surface genuinely usable on a phone, and reshape the record
+> form into a full-width, two-column layout with an Odoo-style **notebook** (tabbed pages)
+> as the *default* rendering of any form. Concretely: the application landing menu collapses
+> to compact 50px tiles, two per row, on phone screens; Graph mode stacks its tiles one per
+> row instead of a grid; and the form gains a header (picture left, big title right), two
+> field columns that collapse to one when narrow, and a notebook whose first page —
+> **Settings**, holding the entity's long-text `comment`-style fields — ships by default,
+> with more pages addable both by module developers (as easily as any view) and by end users
+> at runtime, without ever leaving the record.
+
+Related: [view-customization.md](view-customization.md) (the layout tree and view
+extensions this roadmap builds on), [list-view-modes.md](list-view-modes.md) (Graph mode),
+[field-widgets.md](field-widgets.md) (the picture/long widgets the new form chrome
+promotes), [ADR-005](../adr/ADR-005-frontend-view-inheritance.md),
+[ADR-006](../adr/ADR-006-runtime-configurable-view-fields.md).
+
+## Why it exists / what problem it solves
+
+Every display today is desktop-first, with exactly one hardcoded shape:
+
+- **The application menu** (`apps/shell/app/Menu.tsx`) renders fixed `100×100` tiles in a
+  flex row with a literal `70px` gap, spanning `66.6667vw` on desktop. On a phone the tiles
+  keep their desktop size and wrap arbitrarily; nothing adapts. (The tile list also carries
+  a real React key bug — `key` sits on the inner `SquareTile`, not the mapped wrapper `div`
+  — visible as a console warning on every load.)
+- **Graph mode** (`graph-renderer.tsx`) derives its column count from the measured container
+  width (`cols = round(containerWidth / GRID_UNIT)`), so on a 360px phone a saved desktop
+  layout renders as a squeezed ~12-column grid of unreadably narrow tiles — technically
+  responsive, practically useless.
+- **The form** (`FormRenderer` in `renderers.tsx`) is a single centered column capped at
+  `layout.formMaxWidth` (560px). On a wide screen most of the viewport is empty; on a long
+  entity (crm's form renders 13+ fields) the user scrolls a narrow tube. There is no concept
+  of a header, of columns, or of tabbed pages — the layout tree
+  ([view-customization.md](view-customization.md) Phase 1) has `group`/`row`/`section`
+  container kinds, and `row` is a non-wrapping flex row that overflows on phones.
+
+The form ask is the biggest piece: an Odoo-style default form anatomy — picture top-left,
+big title beside it, two columns of fields, a notebook of pages underneath — that every
+entity gets **without declaring anything**, while staying fully compatible with the existing
+layout tree, view extensions, field states, and behaviors. "Notebook pages must be as easy
+to create and edit as the current views" pins the developer contract: a page is a layout
+node in a descriptor, addable by a view extension, never a bespoke registration API.
+
+## Architecture decisions (read first)
+
+1. **Responsiveness is CSS-first; JavaScript branches only where the render tree itself
+   must differ.** Anything expressible as `sx` breakpoint values or a CSS grid stays CSS
+   (SSR-safe, no hydration flash) — the menu tiles, the form columns, `row` stacking. Graph
+   is the one place the *component tree* changes shape on phone (grid engine vs. plain
+   stack), and it branches on its **own measured container width** (the `useContainerWidth`
+   measurement it already takes for RGL), never on `window` — consistent with how the canvas
+   already sizes itself, and immune to the "renderer inside a narrow dialog" problem.
+2. **"Phone" means the container/viewport is narrower than 600px** — MUI's `sm` breakpoint,
+   the boundary the codebase already uses (`Menu.tsx`'s `{ xs, md }` values). No custom
+   breakpoint system; a `phoneMaxWidth = 600` layout token names the number once for the
+   JS-side branches (Graph) so it can't drift from the CSS side.
+3. **The form's two columns are container-driven, not viewport-driven.** The same
+   `LayoutForm` renders inside the full-width form page *and* inside the relation widgets'
+   narrow create-from-search dialog. A viewport media query would render two crushed columns
+   inside that dialog; a CSS **container query** on the form's own width (two columns from
+   `2 × formMaxWidth`-ish up, one below) collapses correctly in both places for free. Fields
+   flow row-major into the grid — declaration order alternates left/right, which is exactly
+   the "each field stacked in left or right column" ask. If container queries prove awkward
+   to style through MUI, the fallback is the `useElementSize` measurement pattern
+   `graph-widgets.tsx` already established — but try CSS first.
+4. **The default form anatomy is synthesized, never stored.** `normalizeLayout` already
+   synthesizes an implicit group for descriptors without an explicit `layout`; this roadmap
+   upgrades that synthesis **for `viewType: 'form'` only** to: header row (picture widget
+   field + title field) → two-column group → notebook (Settings page holding the long-text
+   fields). `descriptor.layout` stays `undefined` — nothing is written back, no migration,
+   and a module that declares an explicit `layout` keeps exactly what it declared (it opted
+   out of the default by definition). Tree/kanban/calendar/dashboard views keep today's flat
+   implicit group — their field order (`layoutFieldOrder`) must not change. This decision
+   gets an ADR (ADR-007, Phase 3's DoD): it changes the default rendering of every form in
+   every deployment.
+5. **The notebook is a layout-tree citizen: two new node kinds, `notebook` and `page`.**
+   A `page` is a titled container legal only directly inside a `notebook`; a `notebook`'s
+   children are only `page`s (registration errors otherwise, same posture as every other
+   layout validation). Because pages are ordinary nodes with ordinary `id`s, the existing
+   extension operations already cover the developer story: `addNode` targeting the
+   notebook's id adds a page, `addField` targeting a page id (or a field inside a page)
+   drops a field onto it, `move` relocates fields between pages — **no new extension op**,
+   and "as easy to create and edit as the current views" is literally true because it *is*
+   the current views mechanism. The synthesized default nodes carry stable well-known ids
+   (`__form_header`, `__form_columns`, `__form_notebook`, `__page_settings`) so extensions
+   can target the default anatomy too.
+6. **Switching notebook pages is client-only state and panels stay mounted.** Tabs switch
+   with `display`-toggling (`keepMounted`), never unmount — the draft lives in the form
+   store either way, but keeping panels mounted means field states/computes/pictures on an
+   inactive page keep behaving and switching can never lose in-progress widget state. No
+   route change, no store change: "switch between pages without quitting the object" is a
+   `useState<number>` in the notebook node's renderer.
+7. **Runtime user-created pages are per-record DATA, not settings and not descriptor
+   state — a third category, and the pictures service is the precedent.** A user adding a
+   "Meeting notes" page to *one crm record* is neither workspace configuration
+   (`app_settings`, ADR-006's territory) nor developer-declared structure (ADR-005's). It is
+   record-anchored content, exactly like a picture: a small dedicated backend service
+   (`internal/notebook/`), a `notebook_page` table anchored on `(tenant, table, record)`,
+   tenant-pinned dedicated routes off the generic CRUD surface, permissions derived from the
+   route. Declared (descriptor) pages and stored (user) pages render in one tab strip —
+   declared pages hold fields, user pages hold a title + one long-text body — and only user
+   pages are creatable/renamable/deletable at runtime.
+8. **The phone projection of Graph never writes.** Below the phone width the canvas renders
+   a read-only single-column stack of the same tiles ordered by `(y, x)`; the Edit toggle
+   hides. Stored geometry is never remapped to the narrow shape — rotating the phone or
+   returning to desktop shows the saved layout untouched. (Native HTML5 drag doesn't fire on
+   touch anyway; a touch-editable canvas is explicitly out of scope — see Pitfalls.)
+
+## Contracts
+
+| Concern | Contract |
+| --- | --- |
+| Breakpoint | Phone = narrower than **600px** (MUI `sm`). CSS-first via `sx` breakpoint values / CSS grid / container queries; JS branching only in Graph, off its own measured container width. New layout token `layout.phoneMaxWidth = 600` names the number once. |
+| Application menu | ≥`sm`: today's 100×100 tiles, wrapping centered rows (unchanged look). `<sm`: tiles shrink to **50×50**, laid out **two per row** in a centered CSS grid, label rendered *below* each tile (the in-tile caption hides — it can't fit 50px), tap target stays ≥44px. Fix the `key`-on-wrong-element bug and the duplicated label (caption inside the tile *and* a `<p>` below it) in the same pass. |
+| Graph phone projection | Container `< phoneMaxWidth` ⇒ tiles render as a plain vertical stack, one per row, full container width, height `h × GRID_UNIT` (floored at the tile type's `TILE_MIN_SIZE.minH`), ordered by `(y, x)`. Hidden tiles stay hidden. Edit toggle hidden; RGL not mounted at all in this branch. Stored geometry is **never mutated** by the projection. Widgets keep their `useElementSize` responsiveness — they just get a narrow, full-width box. |
+| Form width | `viewType: 'form'` uses the **full width** inside RootLayout's page inset (`maxWidth: '100%'`); the 560px `formMaxWidth` cap is removed from `FormRenderer`. The token survives for the relation create-wizard dialog and as the column-width floor. |
+| Form header | Synthesized `row` (id `__form_header`): the descriptor's first `widget: 'picture'` boolean field on the left (rendered at avatar scale), then the **title field** — the first `text` field per the existing `orderedFields` label heuristic — rendered big (h3-scale input, label as placeholder) filling the rest of the row. New JSON-only rendering hint `LayoutFieldNode.variant?: 'title'` drives the big style; explicit layouts may use it too. Header stays side-by-side even on phone. |
+| Form columns | Synthesized `group` (id `__form_columns`) with new hint `LayoutContainerNode.columns?: number` — rendered as a CSS grid, **max 2 columns**, collapsing to 1 below the container-query threshold (the create wizard therefore always gets 1). Fields flow row-major (declaration order alternates left → right). All non-header, non-notebook fields land here. |
+| Layout `row` on phone | `kind: 'row'` stacks vertically below `sm` (flex-wrap) — applies to explicit layouts too (e.g. crminheritdemo's), which is the intended "fully responsive" behavior, not a regression. |
+| Notebook node | `{ kind: 'notebook', id?, children: Page[] }`, `{ kind: 'page', id?, title, children: LayoutNode[] }`. Validation at `normalizeLayout`/registration: `notebook` contains only `page`s, `page` appears only in a `notebook`, one `notebook` per form (v1). Rendered as MUI `Tabs` (scrollable when overflowing) + keep-mounted panels; active tab is client state. Pages/fields inside participate in states/behaviors/`hidden` exactly like any other node. |
+| Default form anatomy | `viewType: 'form'` + no explicit `layout` ⇒ `normalizeLayout` synthesizes: `__form_header` → `__form_columns` → `__form_notebook` containing `__page_settings` (title `'Settings'`) holding every long-text field (`widget: 'long'`) in declaration order — for crm that is `notes` plus the crminheritdemo-extended `comment`. No long-text field ⇒ the Settings page still renders (it is also the home of runtime user pages' tab strip). Explicit layouts are untouched. Extension application against a form descriptor materializes this synthesized tree first, so ops can target the well-known ids; a form-view `addField` with no target defaults into `__form_columns` (not top-level). |
+| Runtime notebook pages | Go: `internal/notebook/`, table `notebook_page` `(id, tenant_id, table_name, record_id, title, position, content, timestamps)`, one row per user page. Routes `GET|POST /api/v1/notebook-pages` (query `table`+`record`) and `PUT|DELETE /api/v1/notebook-pages/:id`, tenant-pinned, off the generic CRUD surface, permissions `notebook_pages:notebook_pages:*` derived from the route. Frontend: user pages render after declared pages in the same tab strip; a trailing **“+”** tab (write-permission-gated, disabled with a hint until the record has an id — the picture widgets' exact posture) creates one; user pages have an editable title and one long-text body saved through the service, never through the record's draft/commit. Declared pages are not deletable at runtime. |
+| i18n | Every new string (`'Settings'`, `'New page'`, hints…) goes through `t()` with `fr.po` entries in the same phase — including the synthesized page title, which is a msgid like any layout `title`. |
+
+**Example — what crm's form renders with no layout declared by anyone (after Phase 4):**
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ [picture]   Acme's project                        (title, h3) │
+├──────────────────────────────┬───────────────────────────────┤
+│ Email                        │ Company                       │
+│ Status                       │ Score                         │
+│ Signed                       │ Phone                         │
+│ Satisfaction                 │ Deals                         │
+│ Display name                 │ Contact                       │
+│ Tags                         │ Date (from crminheritdemo)    │
+├──────────────────────────────┴───────────────────────────────┤
+│ [ Settings ] [ Meeting notes ] [ + ]                          │
+│  Notes    (long)                                              │
+│  Comment  (long, from crminheritdemo)                         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+("Meeting notes" is a runtime user page from Phase 5; on a phone the two columns
+collapse to one and the header stays side-by-side.)
+
+## Build order
+
+```mermaid
+flowchart TD
+    P1[Phase 1: breakpoint token + responsive app menu] --> P2[Phase 2: Graph phone projection]
+    P1 --> P3[Phase 3: form shell - full width, header, columns + ADR-007]
+    P3 --> P4[Phase 4: notebook node + default form anatomy]
+    P4 --> P5[Phase 5: runtime user pages - notebook service]
+```
+
+Phases 2 and 3 parallelize once Phase 1 lands the breakpoint convention. Phase 4 needs
+Phase 3's synthesized-layout plumbing; Phase 5 needs Phase 4's notebook renderer. Phases
+1–2 are pure presentation (no backend); Phase 5 is the only one that touches Go.
+
+## Phase 1 — Breakpoint convention + responsive application menu
+
+The foundation everyone else cites, plus the smallest visible win. Adds
+`layout.phoneMaxWidth = 600` to `tokens.ts`, rebuilds `Menu.tsx`'s tile board as a
+responsive grid, and takes a one-pass audit that no display surface produces horizontal
+page scroll at 360px (the mode switcher, settings pages, and login are expected to already
+pass thanks to RootLayout's page inset — verify, don't assume).
+
+**Claude Code prompt:**
+```
+In @eerp/core-front and apps/shell:
+1. tokens.ts: add layout.phoneMaxWidth = 600 (px) with a docstring pinning it to MUI's sm
+   breakpoint — the ONE named number for phone-width JS branches; CSS keeps using sx
+   breakpoint values.
+2. apps/shell/app/Menu.tsx: rework the tile board — ≥sm keeps today's look (100×100 tiles,
+   centered wrapping rows); <sm renders a centered two-column CSS grid of 50×50 tiles,
+   in-tile caption hidden, label below each tile. Fix the React key placement (key belongs
+   on the mapped wrapper div) and drop the duplicated label (caption inside the tile AND a
+   <p> under it — keep exactly one, the below-tile label, at both sizes... at desktop the
+   in-tile caption may stay if the below-label is removed instead; pick one, not both).
+   Keep tap targets ≥44px.
+3. Audit at 360×640 (real browser, headless chrome): landing menu, a list view (all four
+   modes' switcher row), a settings page, login — no horizontal page scroll anywhere.
+Tests: Menu renders one label per tile with stable keys; grid/tile classes flip at the
+breakpoint (assert sx output or snapshot at both sizes); i18n untouched.
+```
+**DoD:** on a 360px viewport the landing menu shows compact 50px tiles two per row with
+readable labels; desktop is pixel-equivalent to today (minus the duplicate label); no
+horizontal scroll on any audited page; the key warning is gone from the console.
+
+## Phase 2 — Graph mode: phone projection (one tile per row)
+
+> Design notes: the branch lives in `GraphRenderer`, which already measures its container
+> for RGL (`useContainerWidth`). `containerWidth < layout.phoneMaxWidth` ⇒ render the
+> projection instead of mounting `ReactGridLayout` at all: visible tiles sorted by `(y, x)`,
+> each in the existing tile chrome (inset Card, floating title) at full container width and
+> `h × GRID_UNIT` height. The Edit toggle hides in this branch — native HTML5 drag doesn't
+> fire on touch, so an "editable" phone canvas would be a lie; widgets stay live and
+> responsive via their existing `useElementSize` sizing. The stored layout is never
+> remapped: this is a projection, not a migration (Architecture decision 8).
+
+**Claude Code prompt:**
+```
+In @eerp/core-front graph-renderer.tsx:
+1. When the measured container width < layout.phoneMaxWidth, skip ReactGridLayout and
+   render visible tiles as a vertical Stack ordered by (y, x): full width, height
+   h × GRID_UNIT (floor: TILE_MIN_SIZE[type].minH × GRID_UNIT), same Card chrome +
+   GraphWidgetBody, hidden tiles excluded. Hide the Edit toggle in this branch; saved
+   geometry must never be written from it.
+2. Keep the desktop path byte-identical. The RGL mock in graph-renderer.test.tsx keeps
+   working — add tests that mock useContainerWidth to a narrow width and assert: no RGL
+   mounted, tiles in (y,x) order, no Edit button, and that resizing back to wide restores
+   the RGL path.
+3. Update docs/roadmaps/list-view-modes.md (Graph contract rows + a pointer here) and
+   core-front/CLAUDE.md's Graph sentence with the phone projection.
+Verify in a real browser at 360px: tiles stack one per row, readable; rotate back to wide
+and the saved grid renders unchanged.
+```
+**DoD:** a phone-width Graph shows every visible tile stacked one per row, read-only, with
+live widgets; the desktop canvas and the saved layout are unchanged; tests cover both
+branches.
+
+## Phase 3 — Form shell: full width, header, two columns (+ ADR-007)
+
+> Design notes: three moves in one phase because they only make sense together —
+> (a) `FormRenderer` drops the 560px cap (`maxWidth: '100%'` inside the page inset);
+> (b) the layout tree gains the two JSON-only rendering hints
+> (`LayoutContainerNode.columns?: number`, `LayoutFieldNode.variant?: 'title'`) and
+> `layout-renderer.tsx` learns to render them (columns ⇒ container-query CSS grid capped at
+> 2, collapsing to 1 when the form box is narrow — which makes the create wizard correct
+> automatically; title ⇒ h3-scale input, label as placeholder); (c) `row` becomes
+> phone-safe (stacks below sm). The **synthesis** of header+columns for un-layouted forms
+> also lands here (notebook comes in Phase 4): `normalizeLayout` branches on
+> `viewType === 'form' && !layout` and emits `__form_header` + `__form_columns` from the
+> existing heuristics (first picture-widget field, first text field per `orderedFields`).
+> Tree/kanban/calendar synthesis is untouched — `layoutFieldOrder` for a TREE view must
+> return exactly today's order (pin with a test).
+>
+> Extension application (`applyExtension`) already materializes the implicit group before
+> applying ops; for form views it now materializes the richer default, and a form-view
+> `addField` with no explicit target defaults into `__form_columns`. crminheritdemo's
+> existing ops (anchored on `status`/`name`/`email` field anchors) keep working unchanged —
+> pin that with a registration test.
+>
+> This phase writes **ADR-007 — Default form anatomy: synthesized header/columns/notebook**
+> covering decisions 4–6 (the notebook part points at Phase 4 as "accepted, lands next").
+
+**Claude Code prompt:**
+```
+In @eerp/core-front:
+1. descriptor.ts: add LayoutContainerNode.columns?: number and LayoutFieldNode.variant?:
+   'title' (JSON-only hints, documented). normalizeLayout: for viewType 'form' with no
+   explicit layout, synthesize [__form_header row (picture-widget field + title-variant
+   first text field), __form_columns group (columns: 2, all remaining fields in declaration
+   order)] — all other viewTypes keep the flat implicit group (pin layoutFieldOrder
+   equality for tree views in a test).
+2. layout-renderer.tsx: render columns as a container-query CSS grid (max 2, min column
+   width ~formMaxWidth/2, 1 column when the form container is narrow — the create wizard
+   dialog must come out single-column); render variant 'title' as a large borderless-until-
+   focus input (typeScale.h3), label as placeholder; make kind 'row' wrap/stack below sm.
+3. renderers.tsx FormRenderer: maxWidth '100%' for form views; keep the Card + footer bar.
+4. registry/extensions.ts: materialize the form-view default tree before applying ops;
+   no-target addField on a form view appends into __form_columns. crminheritdemo still
+   registers and renders correctly (test).
+5. docs/adr/ADR-007-default-form-anatomy.md (decisions 4–6 of
+   docs/roadmaps/responsive-displays.md), + core-front/CLAUDE.md rows for the new hints and
+   default anatomy. fr.po for any new strings.
+Tests: synthesized anatomy for an un-layouted form (header ids, columns membership, title
+variant); explicit layouts untouched; wizard renders one column; row stacks at xs.
+Verify in a real browser: crm form fills the width, picture+big title header, two columns
+alternating fields, collapsing at phone width.
+```
+**DoD:** every un-layouted form renders header + two responsive columns full-width; the
+create wizard stays single-column; explicit layouts and every non-form view render exactly
+as before; ADR-007 merged.
+
+## Phase 4 — Notebook node + default Settings page
+
+> Design notes: adds the `notebook`/`page` node kinds, their validation, the tabbed
+> renderer (keep-mounted panels, scrollable tabs), and extends Phase 3's form synthesis
+> with `__form_notebook` / `__page_settings` holding the long-text (`widget: 'long'`)
+> fields — crm's `notes`, and crminheritdemo's `comment` once that extension marks it
+> `widget: 'long'` (do it in this phase: it is exactly the "string long" comment field the
+> ask names, and it proves an *extension-added* field lands on the default Settings page
+> with zero extra wiring). Pages are addressable layout nodes, so `addNode`/`addField`/
+> `move` against a page id already work — add one registration test proving a module can
+> `addNode` a new page onto `__form_notebook` and `addField` into it, which is the entire
+> "developers create pages as easily as views" story.
+
+**Claude Code prompt:**
+```
+In @eerp/core-front:
+1. descriptor.ts: add node kinds 'notebook' and 'page' (page: title + children; notebook:
+   children are pages only, pages legal only inside a notebook, at most one notebook per
+   layout — validation errors name the node). layoutFieldOrder walks into pages.
+2. layout-renderer.tsx: render notebook as MUI Tabs (variant scrollable) + keep-mounted
+   panels; active tab is local state; fields inside pages behave exactly like anywhere else
+   (states, hidden, behaviors).
+3. normalizeLayout (form synthesis): append __form_notebook with __page_settings (title
+   'Settings') containing every widget:'long' field in declaration order; those fields
+   leave __form_columns. Notebook renders even when the page has no long field.
+4. core/modules/crminheritdemo: set comment's widget to 'long' in the addField op — it must
+   land on the default Settings page.
+5. Extension test: a module addNode-ing { kind:'page', title:'Quality', children:[...] }
+   onto __form_notebook and addField-ing into it registers and renders as a second tab.
+6. Docs: this roadmap's phase check-off, core-front/CLAUDE.md (layout-tree row + Module FE
+   contract row), fr.po ('Settings' + new strings).
+Tests: validation rules; tab switching preserves a dirty draft on the inactive page;
+synthesized Settings page membership; the extension-added page.
+Verify in a real browser: crm form shows the notebook with Settings (Notes + Comment),
+switching tabs keeps unsaved edits, phone width renders tabs full-width single column.
+```
+**DoD:** every un-layouted form ships a notebook whose Settings page holds its long-text
+fields; a module adds a page with plain `extends` operations; switching pages never loses
+draft state; crm shows Notes + Comment under Settings with no crm code change.
+
+## Phase 5 — Runtime user pages: the notebook service
+
+> Design notes: the pictures service is the template, deliberately —
+> `internal/notebook/` mirrors `internal/pictures/` (tenant-pinned dedicated routes off the
+> generic CRUD surface, permissions derived from the route, one anchor per row) minus the
+> S3 leg: page content is text, it lives in the table. Frontend mirrors the RelationOps/
+> GraphOps pattern: a `NotebookOps` context the shell's root layout provides once (bound
+> Server Actions or BFF fetches — follow GraphOps, they are settings-shaped reads/writes
+> per record), and the notebook renderer appends stored pages + the “+” tab when ops are
+> present — absent ops (a host that never wired it), the declared pages render alone,
+> inert-not-crashing, the same posture RelationOps/GraphOps established. Page writes go
+> through the service directly and never dirty the record form.
+
+**Claude Code prompt:**
+```
+Backend (core/):
+1. internal/notebook/: notebook_page model (BaseModel + tenant_id, table_name, record_id,
+   title ≤200, position int, content text) with its migration; handlers GET|POST
+   /api/v1/notebook-pages (query table+record, tenant-pinned, list ordered by position,
+   POST validates table/record shape + title) and PUT|DELETE /api/v1/notebook-pages/:id
+   (tenant-checked). Permissions notebook_pages:notebook_pages:* derive from the route.
+   Table-driven tests incl. cross-tenant denial.
+Frontend (@eerp/core-front + apps/shell):
+2. NotebookOps context (list/create/update/remove) mirroring GraphOps; shell provides it
+   from the root layout via Server Actions hitting the new routes.
+3. Notebook renderer: after declared pages, one tab per stored page (editable title, one
+   long-text body, save + delete through NotebookOps, optimistic with revert-and-
+   ErrorAlert — reuse the established pattern); trailing "+" tab gated on the write
+   permission and disabled with a hint until the record has an id (picture-widget
+   posture). No NotebookOps provider ⇒ declared pages only.
+4. Docs: this roadmap, core/CLAUDE.md (new internal/ package row), core-front/CLAUDE.md,
+   fr.po.
+Tests: Go handler table tests; renderer with/without ops; create-on-new-record disabled;
+page save never dirties the form store.
+Verify in a real browser: create a page on a crm record, retitle it, write content, reload
+— it persists; a second record shows its own pages only.
+```
+**DoD:** a user on a saved record adds, renames, fills, and deletes their own notebook
+pages without leaving the form; pages are tenant- and record-scoped server-side; declared
+pages remain developer-owned; a deployment that never mounts the service loses nothing
+else.
+
+## Coordination
+
+- **[view-customization.md](view-customization.md) / ADR-005:** the notebook extends the
+  layout tree with two node kinds and two rendering hints — the extension *mechanism*
+  (operations, registration-time resolution) is untouched, which is the point: pages are
+  reachable by the ops that already exist. The synthesized-default materialization in
+  `applyExtension` is the one behavioral change there (form views only — Phase 3 pins the
+  rest).
+- **[list-view-modes.md](list-view-modes.md):** Phase 2 adds the Graph phone projection;
+  that roadmap's contract rows get a pointer here rather than a duplicate description.
+- **[field-widgets.md](field-widgets.md):** the header promotes the picture widget, the
+  notebook promotes `widget: 'long'`; neither widget changes contract.
+- **ADR-006 boundary:** runtime user pages are deliberately NOT `app_settings` — they are
+  per-record data (decision 7). ADR-007 must state this contrast explicitly so the
+  three-way split (descriptor / workspace settings / record data) stays legible.
+- **app-store roadmap:** untouched; a future `catalog` viewType would simply keep the flat
+  implicit-group synthesis like every non-form viewType.
+
+## Pitfalls (encode them)
+
+- **Never let the phone projection write Graph geometry.** The moment the narrow branch
+  feeds anything into `onLayoutChange`/save, rotating a phone silently destroys a desktop
+  layout. The projection must not mount RGL at all.
+- **Form synthesis must stay `viewType === 'form'`-scoped.** `layoutFieldOrder` over the
+  normalized layout drives tree column order and kanban/calendar card fields; changing the
+  implicit synthesis for those views reorders every list in production. Pin tree-view order
+  equality in a test *before* touching `normalizeLayout`.
+- **Viewport media queries are the wrong tool for the form columns** — the create wizard
+  renders the same `LayoutForm` inside a ~444px dialog on a 1920px screen. Container
+  queries (or measured container width) only.
+- **Keep notebook panels mounted.** Unmounting inactive tabs re-runs field mount effects
+  (pictures re-fetch, relation widgets re-query) and loses in-widget transient state;
+  `display: none` panels cost nothing at this scale. But remember the repo's own
+  ResizeObserver rule (list-view-modes Pitfalls): anything measuring itself inside a hidden
+  panel reads 0×0 until revealed — widgets must tolerate that (the `useElementSize`
+  fallback pattern already does).
+- **The title-variant field is still a real field** — required/states/computes apply; the
+  big style must not eat the error/required affordances (asterisk, invalid state).
+- **HTML5 DnD does not fire on touch devices.** Phone Graph is read-only by design;
+  Kanban/Calendar drag on touch is a pre-existing gap (documented in list-view-modes
+  Pitfalls) that this roadmap does not attempt — do not advertise phone drag anywhere.
+- **50px tiles flirt with the 44–48px minimum touch target** — keep the whole tile (not
+  just the icon) tappable and don't shrink below 50.
+- **`position` on `notebook_page` ships in v1 storage but not v1 UI** (pages append in
+  creation order) — the column exists so reorder never needs a migration, the same
+  future-proofing posture `Tile.hidden` took.
+- **Two sources of notebook tabs (declared + stored) must not collide on React keys or
+  ids** — namespace stored-page tab keys by row id, never by index or title.
