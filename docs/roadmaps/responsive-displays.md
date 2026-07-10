@@ -160,13 +160,34 @@ Phases 2 and 3 parallelize once Phase 1 lands the breakpoint convention. Phase 4
 Phase 3's synthesized-layout plumbing; Phase 5 needs Phase 4's notebook renderer. Phases
 1–2 are pure presentation (no backend); Phase 5 is the only one that touches Go.
 
-## Phase 1 — Breakpoint convention + responsive application menu
+## Phase 1 — Breakpoint convention + responsive application menu ✅ (implemented)
 
 The foundation everyone else cites, plus the smallest visible win. Adds
 `layout.phoneMaxWidth = 600` to `tokens.ts`, rebuilds `Menu.tsx`'s tile board as a
 responsive grid, and takes a one-pass audit that no display surface produces horizontal
 page scroll at 360px (the mode switcher, settings pages, and login are expected to already
 pass thanks to RootLayout's page inset — verify, don't assume).
+
+> Implementation notes: the tile board is one `Box` whose `sx` flips wholesale at `sm` —
+> CSS grid (`repeat(2, auto)`, centered, `gap: 3`) below, the original flex-wrap row
+> (70px gap, `66.6667vw` centered) above — no JS media query anywhere, per Architecture
+> decision 1. Tile size is a responsive constant (`TILE_SIZE = { xs: 50, sm: 100 }`).
+>
+> One addition beyond the contract's letter: hiding the in-tile caption at phone size
+> would leave icon-less module tiles as blank 50px squares (module tiles have no icon —
+> only the built-in Settings tile does), so the compact tile shows an `aria-hidden`
+> **monogram** (the label's first letter) instead. The label placement rule is: in-tile
+> caption from `sm` up, below-tile label under it — both exist in the DOM, CSS shows
+> exactly one per size. That also resolves the pre-existing duplicate label (the old
+> always-rendered `<p>` under every tile) and the React key warning (the `key` sat on the
+> inner `SquareTile` instead of the mapped wrapper).
+>
+> jsdom can't evaluate media queries, so `Menu.test.tsx` asserts structure (stable keys
+> via a console-error spy, one below-label per tile, monogram presence, link hrefs) and
+> the breakpoint *rendering* is verified by the real-browser audit: at 360×640, login /
+> landing menu / crm list (all four switcher modes visible) / settings all report
+> `scrollWidth === clientWidth === 360`; the phone tile's visible box is 48px (50 minus
+> the Card's 1px borders — still above the 44px touch floor) and back to ~100px at 1280.
 
 **Claude Code prompt:**
 ```

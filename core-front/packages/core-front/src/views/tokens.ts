@@ -104,6 +104,14 @@ export const layout = {
    * overflowing child (e.g. Graph's canvas) must never be allowed to escape. */
   pageInsetX: '5vw',
   pageInsetY: '5vh',
+  /** "Phone" boundary (px), pinned to MUI's `sm` breakpoint (600) so the CSS side
+   * (`sx` breakpoint values, which keep using `xs`/`sm` directly) and the JS side can
+   * never drift apart. The ONE named number for JavaScript phone-width branches —
+   * components that must change their render TREE below phone width (e.g. Graph's
+   * single-column projection) compare their own measured container width against this;
+   * anything expressible as pure CSS uses `sx` breakpoints instead
+   * (docs/roadmaps/responsive-displays.md, Architecture decisions 1–2). */
+  phoneMaxWidth: 600,
 } as const
 
 /** Motion. Short, restrained; the theme also disables it under prefers-reduced-motion. */
