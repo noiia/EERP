@@ -222,6 +222,19 @@ func main() {
 	notebookGroup.PUT("/:id", notebookHandler.Update)
 	notebookGroup.DELETE("/:id", notebookHandler.Delete)
 
+	// ── Module management (App Store) ────────────────────────────────────────
+	// Dedicated endpoints over module.json content (docs/roadmaps/app-store.md,
+	// Phase 1) — a virtual entity, never tenant-scoped (modules are
+	// workspace-wide, not per-tenant data). The manager re-walks module_root on
+	// every call (no snapshot/cache), so a PUT always patches what is actually
+	// on disk. The permission middleware derives modules:modules:read|write
+	// from the route.
+	modulesHandler := module.NewHandler(module.NewManager(configContent.ModuleRoot))
+	modulesGroup := srv.Echo().Group("/api/v1/modules", jwtMw, permMw)
+	modulesGroup.GET("", modulesHandler.List)
+	modulesGroup.GET("/:id", modulesHandler.Get)
+	modulesGroup.PUT("/:id", modulesHandler.Update)
+
 	// ── Users / roles administration ──────────────────────────────────────────
 	// The auth tables are excluded from the generic CRUD surface; these dedicated,
 	// field-whitelisting endpoints are the only HTTP path to them. The permission

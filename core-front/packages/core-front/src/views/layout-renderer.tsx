@@ -261,6 +261,14 @@ function NotebookNode({
   // Re-fetch whenever the anchor changes (a different record, or the ops
   // wiring itself). No recordId yet (a brand-new record) means no pages can
   // exist for it — skip the call entirely rather than querying a null anchor.
+  // A failed LIST degrades silently to "no stored pages" — same inert
+  // posture as no NotebookOpsProvider mounted at all — rather than an
+  // ErrorAlert: this is a background, supplementary fetch nobody asked for
+  // (unlike Add/Save/Delete below, which DO surface failures, because a
+  // user just took an action and needs to know it didn't work). A form over
+  // a virtual entity whose id isn't a UUID (e.g. the App Store's `modules`)
+  // is the concrete case this matters for — Go's anchor validation legitimately
+  // rejects it, and that must never look like the whole form is broken.
   useEffect(() => {
     if (!ops || !recordId) {
       setStoredPages([])
@@ -272,8 +280,8 @@ function NotebookNode({
       .then((found) => {
         if (!cancelled) setStoredPages(found)
       })
-      .catch((e: unknown) => {
-        if (!cancelled) setOpsError(serializeError(toApiError(e)))
+      .catch(() => {
+        if (!cancelled) setStoredPages([])
       })
     return () => {
       cancelled = true
@@ -420,7 +428,10 @@ function LayoutNodeView({
     const stateReadOnly = field.states?.readOnly
       ? evaluateCondition(field.states.readOnly, draft)
       : false
-    const disabled = Boolean(field.compute) || stateReadOnly
+    // Static readOnly (docs/roadmaps/app-store.md, Phase 2) OR's in alongside
+    // compute and the declarative states.readOnly — static wins, since
+    // nothing here can turn it back on.
+    const disabled = Boolean(field.compute) || field.readOnly === true || stateReadOnly
     if (node.variant === 'title') {
       return (
         <TitleField

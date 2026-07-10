@@ -237,3 +237,56 @@ describe('date', () => {
 
 // Relation widgets (search/tags/list) are covered in relation-widgets.test.tsx —
 // they need the relation block + RelationOps, not the bare-field harness here.
+
+// text/table (docs/roadmaps/app-store.md, Phase 2): a generic read-only
+// array-of-records display, not an editable widget — no onChange assertions
+// here, because the widget never calls it.
+describe('text/table', () => {
+  const tableField: FieldDescriptor = {
+    name: 'views',
+    label: 'Views',
+    type: 'text',
+    widget: 'table',
+    store: false,
+    widgetOptions: {
+      columns: [
+        { key: 'view', label: 'View' },
+        { key: 'file', label: 'File' },
+      ],
+    },
+  }
+
+  it('renders declared columns and one row per array entry, in order', () => {
+    renderWidget(tableField, [
+      { view: '/crm', file: 'CrmViews.ts' },
+      { view: '/crm/:id', file: 'CrmViews.ts' },
+    ])
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toEqual(['View', 'File'])
+    const rows = screen.getAllByRole('row').slice(1) // drop the header row
+    expect(rows.map((r) => r.textContent)).toEqual(['/crmCrmViews.ts', '/crm/:idCrmViews.ts'])
+  })
+
+  it('a row missing a declared column key renders an empty cell, never throws', () => {
+    expect(() => renderWidget(tableField, [{ view: '/crm' }])).not.toThrow()
+    const cells = screen.getAllByRole('cell')
+    expect(cells[0]).toHaveTextContent('/crm')
+    expect(cells[1]).toHaveTextContent('')
+  })
+
+  it('shows the empty-state caption for an empty array', () => {
+    renderWidget(tableField, [])
+    expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('honors a custom widgetOptions.emptyLabel', () => {
+    renderWidget({ ...tableField, widgetOptions: { ...tableField.widgetOptions, emptyLabel: 'None yet.' } }, [])
+    expect(screen.getByText('None yet.')).toBeInTheDocument()
+  })
+
+  it('a non-array value (e.g. undefined before the seed lands) degrades to the empty state', () => {
+    renderWidget(tableField, undefined)
+    expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
+  })
+})

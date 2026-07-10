@@ -6,10 +6,15 @@ import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
 import Rating from '@mui/material/Rating'
 import Switch from '@mui/material/Switch'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
-import { fieldLabel, resolveWidget, type FieldDescriptor } from './descriptor'
+import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
 import { RelationListWidget, RelationSearchWidget, RelationTagsWidget } from './relation-widgets'
 import { useNumberFormat } from './format-store'
@@ -67,6 +72,75 @@ function TextLongWidget({ field, value, onChange, disabled }: WidgetProps) {
       value={(value as string) ?? ''}
       onChange={(e) => onChange(e.target.value)}
     />
+  )
+}
+
+// ── table (docs/roadmaps/app-store.md, Phase 2) ───────────────────────────────
+
+/** widgetOptions.columns entry — declared, not inferred, like every other
+ * descriptor-driven presentation choice. */
+export interface TableWidgetColumn {
+  key: string
+  label: string
+}
+
+/**
+ * A generic read-only table: `value` is an array of plain records, rendered
+ * one row per entry against DECLARED columns (widgetOptions.columns) — never
+ * inferred from the data, so column order/labels are a descriptor concern
+ * like everywhere else. Not "the App Store's Views widget": any future field
+ * whose value is naturally a small list of records (too small to need
+ * pagination) reuses this. Always effectively read-only — no onChange is
+ * ever wired, not just a disabled affordance — because there is no editing
+ * surface here at all, just cells. A missing key on a given row reads as an
+ * empty cell rather than throwing (loosely-typed data, not a validated one).
+ */
+function TableWidget({ field, value }: WidgetProps) {
+  const t = useT()
+  const columns = Array.isArray(field.widgetOptions?.columns)
+    ? (field.widgetOptions.columns as unknown as TableWidgetColumn[])
+    : []
+  const rows = Array.isArray(value) ? (value as Record<string, JsonValue>[]) : []
+  // A declared emptyLabel is a msgid too (like col.label/fieldLabel) — always
+  // t()'d, never rendered raw.
+  const emptyLabel =
+    typeof field.widgetOptions?.emptyLabel === 'string'
+      ? field.widgetOptions.emptyLabel
+      : 'Nothing here yet.'
+
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary" component="legend">
+        {t(fieldLabel(field))}
+      </Typography>
+      {rows.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          {t(emptyLabel)}
+        </Typography>
+      ) : (
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              {columns.map((col) => (
+                <TableCell key={col.key}>{t(col.label)}</TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((row, i) => (
+              // Rows are anonymous records with no natural id, and this table
+              // never reorders — index-as-key is safe here.
+              <TableRow key={i}>
+                {columns.map((col) => {
+                  const cell = row[col.key]
+                  return <TableCell key={col.key}>{cell != null ? String(cell) : ''}</TableCell>
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </Box>
   )
 }
 
@@ -368,6 +442,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'text/simple': TextSimpleWidget,
   'text/long': TextLongWidget,
   'text/phone': PhoneWidget,
+  'text/table': TableWidget,
   'number/float': NumberFloatWidget,
   'number/int': NumberIntWidget,
   'number/percent': NumberPercentWidget,

@@ -284,3 +284,73 @@ msgstr ""
 
 msgid "Available once the record has been saved."
 msgstr ""
+
+#: @eerp/core-front widgets (text/table — docs/roadmaps/app-store.md, Phase 2)
+msgid "Nothing here yet."
+msgstr ""
+
+#: apps/shell/app/appstore (Phase 3) — the Activate/Deactivate button
+msgid "Activate"
+msgstr ""
+
+msgid "Deactivate"
+msgstr ""
+
+msgid "The App Store cannot deactivate itself."
+msgstr ""
+
+#: apps/shell/app/appstore (Phase 4) — the requires_restart notice after a
+#: successful Activate/Deactivate write, and the catalog's "recently changed"
+#: row badge (docs/roadmaps/app-store.md, Phase 4).
+msgid "Saved to module.json — takes effect after backend restart + frontend rebuild"
+msgstr ""
+
+msgid "Updated"
+msgstr ""
+
+#: core/modules/appstore/views/AppStoreViews.ts (Phase 3) — field labels and
+#: the Views/Reports table columns/caption; declared here since they cross
+#: through t() at render time (layout-renderer/TableWidget) like any other
+#: descriptor string, even though the module itself ships no i18n/ folder yet.
+#: "Name"/"Description" are already declared above (app/settings/users).
+msgid "Display name"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
+msgid "Author"
+msgstr ""
+
+msgid "Type"
+msgstr ""
+
+msgid "Icon"
+msgstr ""
+
+msgid "Active"
+msgstr ""
+
+msgid "App mode"
+msgstr ""
+
+msgid "Views"
+msgstr ""
+
+msgid "Reports"
+msgstr ""
+
+msgid "View"
+msgstr ""
+
+msgid "File"
+msgstr ""
+
+msgid "Kind"
+msgstr ""
+
+msgid "Report"
+msgstr ""
+
+msgid "Reports are not available yet."
+msgstr ""

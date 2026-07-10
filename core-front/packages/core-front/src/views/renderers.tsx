@@ -27,6 +27,7 @@ import {
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import { CalendarRenderer } from './calendar-renderer'
+import { CatalogRenderer } from './catalog-renderer'
 import { fieldLabel, layoutFieldOrder, normalizeLayout, type ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { GraphRenderer } from './graph-renderer'
@@ -84,6 +85,8 @@ export function EntityView<T extends HasId>(props: EntityViewProps<T>) {
       return <TreeRenderer {...props} />
     case 'dashboard':
       return <DashboardRenderer {...props} />
+    case 'catalog':
+      return <CatalogRenderer descriptor={props.descriptor} initialData={props.initialData} />
   }
 }
 
