@@ -3,6 +3,8 @@ import {
   FIELD_WIDGETS,
   FORM_COLUMNS_ID,
   FORM_HEADER_ID,
+  FORM_NOTEBOOK_ID,
+  PAGE_SETTINGS_ID,
   evaluateCondition,
   fieldZeroDefault,
   isVirtualRelation,
@@ -235,18 +237,33 @@ describe('normalizeLayout', () => {
   })
 })
 
-// docs/roadmaps/responsive-displays.md, Phase 3: the default anatomy for an
-// un-layouted `viewType: 'form'` descriptor — a header (picture + big title)
-// followed by a two-column group holding everything else. Every other view
-// type keeps the flat implicit group, pinned above.
+// docs/roadmaps/responsive-displays.md, Phases 3–4: the default anatomy for
+// an un-layouted `viewType: 'form'` descriptor — a header (picture + big
+// title), a two-column group holding most fields, and a notebook whose
+// Settings page holds the `widget: 'long'` ones. Every other view type
+// keeps the flat implicit group, pinned above. The notebook/Settings page
+// ALWAYS render (even with no long field — it's also where a record's own
+// runtime pages will live), so every test below expects exactly 3 top-level
+// nodes unless noted.
 describe('normalizeLayout — form view synthesis', () => {
   const textF = (name: string): FieldDescriptor => ({ name, label: name, type: 'text' })
+  const longF = (name: string): FieldDescriptor => ({
+    name,
+    label: name,
+    type: 'text',
+    widget: 'long',
+  })
   const pictureF = (name: string): FieldDescriptor => ({
     name,
     label: name,
     type: 'boolean',
     widget: 'picture',
   })
+  const emptySettingsPage = {
+    kind: 'notebook',
+    id: FORM_NOTEBOOK_ID,
+    children: [{ kind: 'page', id: PAGE_SETTINGS_ID, title: 'Settings', children: [] }],
+  }
 
   it('header = [picture, title(first text, variant "title")], columns = everything else, in declaration order', () => {
     const descriptor: ViewDescriptor = {
@@ -273,6 +290,7 @@ describe('normalizeLayout — form view synthesis', () => {
           { kind: 'field', name: 'company' },
         ],
       },
+      emptySettingsPage,
     ])
   })
 
@@ -296,8 +314,10 @@ describe('normalizeLayout — form view synthesis', () => {
       fields: [field('number'), field('boolean')],
     }
     const nodes = normalizeLayout(descriptor)
-    expect(nodes).toHaveLength(1)
+    // No header row, but columns + the always-present notebook still do.
+    expect(nodes).toHaveLength(2)
     expect(nodes[0]).toMatchObject({ kind: 'group', id: FORM_COLUMNS_ID })
+    expect(nodes[1]).toEqual(emptySettingsPage)
   })
 
   it('a picture field with NO text field still gets a header (picture only, no title)', () => {
@@ -351,6 +371,136 @@ describe('normalizeLayout — form view synthesis', () => {
         },
       ])
     }
+  })
+
+  // docs/roadmaps/responsive-displays.md, Phase 4: the notebook and its
+  // always-present Settings page.
+  describe('the synthesized notebook', () => {
+    it('every widget:"long" field lands on the Settings page, in declaration order, and leaves __form_columns', () => {
+      const descriptor: ViewDescriptor = {
+        entity: 'crm',
+        viewType: 'form',
+        fields: [textF('name'), field('number'), longF('notes'), textF('company'), longF('comment')],
+      }
+      const nodes = normalizeLayout(descriptor)
+      const columns = nodes.find((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
+      const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+      expect(columns).toMatchObject({
+        children: [{ kind: 'field', name: 'f' }, { kind: 'field', name: 'company' }],
+      })
+      expect(notebook).toEqual({
+        kind: 'notebook',
+        id: FORM_NOTEBOOK_ID,
+        children: [
+          {
+            kind: 'page',
+            id: PAGE_SETTINGS_ID,
+            title: 'Settings',
+            children: [{ kind: 'field', name: 'notes' }, { kind: 'field', name: 'comment' }],
+          },
+        ],
+      })
+    })
+
+    it('a widget:"long" field is never chosen as the title, even when it is the very first text field', () => {
+      const descriptor: ViewDescriptor = {
+        entity: 'crm',
+        viewType: 'form',
+        fields: [longF('bio'), textF('name')],
+      }
+      const nodes = normalizeLayout(descriptor)
+      const header = nodes.find((n) => n.kind !== 'field' && n.id === FORM_HEADER_ID)
+      expect(header).toEqual({
+        kind: 'row',
+        id: FORM_HEADER_ID,
+        children: [{ kind: 'field', name: 'name', variant: 'title' }],
+      })
+      const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+      expect(notebook).toMatchObject({
+        children: [{ children: [{ kind: 'field', name: 'bio' }] }],
+      })
+    })
+
+    it('no long field: the Settings page still renders, empty', () => {
+      const descriptor: ViewDescriptor = {
+        entity: 'crm',
+        viewType: 'form',
+        fields: [textF('name')],
+      }
+      const nodes = normalizeLayout(descriptor)
+      expect(nodes.at(-1)).toEqual(emptySettingsPage)
+    })
+  })
+})
+
+describe('normalizeLayout — notebook/page validation (explicit layouts)', () => {
+  const two: ViewDescriptor = {
+    entity: 'crm',
+    viewType: 'form',
+    fields: [field('text'), { ...field('text'), name: 'g' }],
+  }
+
+  it('accepts a well-formed notebook of pages', () => {
+    const layout: LayoutNode[] = [
+      {
+        kind: 'notebook',
+        id: 'nb',
+        children: [
+          { kind: 'page', id: 'p1', title: 'One', children: [{ kind: 'field', name: 'f' }] },
+          { kind: 'page', id: 'p2', title: 'Two', children: [{ kind: 'field', name: 'g' }] },
+        ],
+      },
+    ]
+    expect(normalizeLayout({ ...two, layout })).toBe(layout)
+  })
+
+  it('rejects a page with no title — it doubles as the tab label', () => {
+    const layout: LayoutNode[] = [
+      { kind: 'notebook', children: [{ kind: 'page', children: [{ kind: 'field', name: 'f' }] } as LayoutNode] },
+    ]
+    expect(() => normalizeLayout({ ...two, layout })).toThrowError(/requires a title/)
+  })
+
+  it('rejects a page that is not a direct child of a notebook (top-level)', () => {
+    const layout: LayoutNode[] = [
+      { kind: 'page', title: 'Stray', children: [{ kind: 'field', name: 'f' }] } as LayoutNode,
+    ]
+    expect(() => normalizeLayout({ ...two, layout })).toThrowError(
+      /must be a direct child of a "notebook"/,
+    )
+  })
+
+  it('rejects a page nested inside a group instead of a notebook', () => {
+    const layout: LayoutNode[] = [
+      {
+        kind: 'group',
+        children: [{ kind: 'page', title: 'Stray', children: [{ kind: 'field', name: 'f' }] } as LayoutNode],
+      },
+    ]
+    expect(() => normalizeLayout({ ...two, layout })).toThrowError(
+      /must be a direct child of a "notebook"/,
+    )
+  })
+
+  it('rejects a notebook with a non-page child', () => {
+    const layout: LayoutNode[] = [
+      {
+        kind: 'notebook',
+        id: 'nb',
+        children: [{ kind: 'field', name: 'f' } as LayoutNode],
+      },
+    ]
+    expect(() => normalizeLayout({ ...two, layout })).toThrowError(
+      /notebook "nb" may only contain "page" children, found "field"/,
+    )
+  })
+
+  it('rejects a second notebook anywhere in the tree', () => {
+    const layout: LayoutNode[] = [
+      { kind: 'notebook', id: 'nb1', children: [{ kind: 'page', title: 'A', children: [] }] },
+      { kind: 'notebook', id: 'nb2', children: [{ kind: 'page', title: 'B', children: [] }] },
+    ]
+    expect(() => normalizeLayout({ ...two, layout })).toThrowError(/at most one "notebook" node/)
   })
 })
 

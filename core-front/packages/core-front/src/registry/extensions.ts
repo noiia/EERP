@@ -1,5 +1,6 @@
 import {
   normalizeLayout,
+  PAGE_SETTINGS_ID,
   type FieldDescriptor,
   type LayoutFieldNode,
   type LayoutNode,
@@ -107,6 +108,11 @@ function isContainerIdMatch(node: LayoutNode, id: string): boolean {
   return node.kind !== 'field' && node.id === id
 }
 
+/** True when a node with this `id` exists anywhere in the tree (any depth). */
+function hasNodeId(nodes: LayoutNode[], id: string): boolean {
+  return nodes.some((n) => n.kind !== 'field' && (n.id === id || hasNodeId(n.children, id)))
+}
+
 /**
  * Remove the first node (depth-first, left-to-right) matching `matches` from
  * the tree. Returns the removed node (for `move`'s reinsertion) and the tree
@@ -151,6 +157,15 @@ function extract(
  * the edge is a bare field leaf (a hand-authored flat top-level layout with
  * no wrapping container) or the tree is empty, it inserts as a top-level
  * sibling instead — there is no container to descend into.
+ *
+ * A `notebook` can never BE that edge: its children must all be `page`
+ * nodes (docs/roadmaps/responsive-displays.md, Phase 4), so a bare field
+ * can't become its child. Scanning skips backward/forward past any
+ * notebook(s) sitting at the searched edge to find the nearest node that
+ * genuinely can take the new node — e.g. the synthesized form's
+ * `__form_columns` group, even though `__form_notebook` now sits after it
+ * as the last top-level node. This is a structural rule about the
+ * `notebook` node KIND, not form-specific knowledge leaking in here.
  * ('before'/'after' need an anchor and are rejected without one.)
  */
 function insertAt(
@@ -165,16 +180,27 @@ function insertAt(
       throw new Error(`${opLabel}: position "${position}" requires a target`)
     }
     if (nodes.length === 0) return [newNode]
-    const edgeIndex = position === 'first' ? 0 : nodes.length - 1
-    const edge = nodes[edgeIndex]
-    if (edge.kind === 'field') {
+    const step = position === 'first' ? 1 : -1
+    let edgeIndex = position === 'first' ? 0 : nodes.length - 1
+    while (edgeIndex >= 0 && edgeIndex < nodes.length && nodes[edgeIndex].kind === 'notebook') {
+      edgeIndex += step
+    }
+    if (edgeIndex < 0 || edgeIndex >= nodes.length) {
+      // Every top-level node is a notebook (a degenerate hand-authored
+      // layout) — nothing eligible to descend into; fall back to a plain
+      // top-level sibling insert at the true edge.
       return position === 'first' ? [newNode, ...nodes] : [...nodes, newNode]
     }
+    const edge = nodes[edgeIndex]
+    if (edge.kind === 'field') {
+      const result = [...nodes]
+      result.splice(position === 'first' ? edgeIndex : edgeIndex + 1, 0, newNode)
+      return result
+    }
     const children = position === 'first' ? [newNode, ...edge.children] : [...edge.children, newNode]
-    const updatedEdge = { ...edge, children }
-    return position === 'first'
-      ? [updatedEdge, ...nodes.slice(1)]
-      : [...nodes.slice(0, -1), updatedEdge]
+    const result = [...nodes]
+    result[edgeIndex] = { ...edge, children }
+    return result
   }
 
   if (position === 'first' || position === 'last') {
@@ -251,7 +277,23 @@ export function applyExtension<T>(
         fields = [...fields, op.field]
         const leaf: LayoutFieldNode = { kind: 'field', name: op.field.name }
         const position = op.position ?? (op.target !== undefined ? 'after' : 'last')
-        layout = insertAt(layout, leaf, op.target, position, `addField "${op.field.name}"`)
+        // A target-less `widget: 'long'` field defaults onto the synthesized
+        // form's Settings page instead of the generic top-level edge
+        // (docs/roadmaps/responsive-displays.md, Phase 4) — the SAME
+        // "just add it, I don't care where" ergonomics a plain field gets
+        // from `__form_columns`, so an extension marking a field `long`
+        // (e.g. crminheritdemo's `comment`) needs no extra wiring to land it
+        // on the notebook. Falls through to the ordinary target-less
+        // behavior when there's no Settings page to find (non-form views,
+        // or an explicit layout with no notebook).
+        const target =
+          op.target === undefined &&
+          op.field.type === 'text' &&
+          op.field.widget === 'long' &&
+          hasNodeId(layout, PAGE_SETTINGS_ID)
+            ? PAGE_SETTINGS_ID
+            : op.target
+        layout = insertAt(layout, leaf, target, position, `addField "${op.field.name}"`)
         break
       }
       case 'removeField': {

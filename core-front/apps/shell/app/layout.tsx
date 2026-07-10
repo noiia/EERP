@@ -17,10 +17,16 @@ import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { ModulesInit } from '../src/components/ModulesInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
-import { GraphOpsProvider, RelationOpsProvider, layout } from '@eerp/core-front'
+import { GraphOpsProvider, NotebookOpsProvider, RelationOpsProvider, layout } from '@eerp/core-front'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
 import { getEntityGraphLayout, setEntityGraphLayout } from '../src/lib/graph-actions'
+import {
+  createNotebookPage,
+  listNotebookPages,
+  removeNotebookPage,
+  updateNotebookPage,
+} from '../src/lib/notebook-actions'
 import {
   createRelationRecord,
   getRecord,
@@ -67,16 +73,29 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   read/save re-enters Go's permission gate with the caller's
                   session (docs/roadmaps/list-view-modes.md, Phase 4). */}
               <GraphOpsProvider ops={{ get: getEntityGraphLayout, save: setEntityGraphLayout }}>
-                {/* The ONE page-content inset, applied once here — everything below
-                    the top bar (list/form/dashboard/settings, any view) sits inside
-                    it, never against or past the screen edge. Graph mode's canvas
-                    (react-grid-layout) measures ITS OWN container width to derive its
-                    column count, so it naturally sizes itself to whatever this inset
-                    provides — overflowX: 'auto' remains a defensive fallback for any
-                    other wide inner surface, never a per-view width hack. */}
-                <Box sx={{ px: layout.pageInsetX, py: layout.pageInsetY, overflowX: 'auto' }}>
-                  {children}
-                </Box>
+                {/* A record's own runtime notebook pages (docs/roadmaps/
+                    responsive-displays.md, Phase 5) — per-record data, not
+                    per-entity settings, so its own context rather than folded
+                    into GraphOps. */}
+                <NotebookOpsProvider
+                  ops={{
+                    list: listNotebookPages,
+                    create: createNotebookPage,
+                    update: updateNotebookPage,
+                    remove: removeNotebookPage,
+                  }}
+                >
+                  {/* The ONE page-content inset, applied once here — everything below
+                      the top bar (list/form/dashboard/settings, any view) sits inside
+                      it, never against or past the screen edge. Graph mode's canvas
+                      (react-grid-layout) measures ITS OWN container width to derive its
+                      column count, so it naturally sizes itself to whatever this inset
+                      provides — overflowX: 'auto' remains a defensive fallback for any
+                      other wide inner surface, never a per-view width hack. */}
+                  <Box sx={{ px: layout.pageInsetX, py: layout.pageInsetY, overflowX: 'auto' }}>
+                    {children}
+                  </Box>
+                </NotebookOpsProvider>
               </GraphOpsProvider>
             </RelationOpsProvider>
           </AppThemeProvider>

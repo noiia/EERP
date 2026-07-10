@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { DEFAULT_NUMBER_FORMAT, useFormatStore } from './format-store'
 import { LayoutForm } from './layout-renderer'
+import { NotebookOpsProvider, type NotebookOps, type NotebookPageRecord } from './notebook-ops'
+import { useSessionStore, type Identity } from './session-store'
 
 // LayoutForm is the single entry point FormRenderer and the relation
 // create-from-search wizard both use — direct coverage here for grouping,
@@ -240,6 +242,222 @@ describe('LayoutForm — default form anatomy (viewType "form", no explicit layo
   })
 })
 
+// docs/roadmaps/responsive-displays.md, Phase 4: the synthesized notebook
+// and its always-present Settings page.
+describe('LayoutForm — the synthesized notebook', () => {
+  function longField(name: string): FieldDescriptor {
+    return { name, label: name.toUpperCase(), type: 'text', widget: 'long' }
+  }
+
+  it('renders a "Settings" tab holding the widget:"long" fields, even alongside the header/columns', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('name'), textField('email'), longField('notes')],
+    }
+    renderLayout(descriptor, { notes: 'hello' })
+    expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument()
+    // The columns field renders normally...
+    expect(screen.getByLabelText('EMAIL')).toBeInTheDocument()
+    // ...and the long field, moved onto the Settings page, still renders.
+    expect(screen.getByLabelText('NOTES')).toHaveValue('hello')
+  })
+
+  it('renders a Tab per page and switches which page is VISIBLE — but both stay mounted', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('name'), longField('notes')],
+      layout: [
+        {
+          kind: 'notebook',
+          children: [
+            { kind: 'page', title: 'First', children: [{ kind: 'field', name: 'name' }] },
+            { kind: 'page', title: 'Second', children: [{ kind: 'field', name: 'notes' }] },
+          ],
+        },
+      ],
+    }
+    renderLayout(descriptor, { name: 'Ada', notes: 'kept' })
+
+    // Both tabs exist; both fields are in the DOM from the start (never
+    // unmounted), the inactive one just hidden.
+    expect(screen.getByRole('tab', { name: 'First' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Second' })).toBeInTheDocument()
+    expect(screen.getByLabelText('NAME')).toBeInTheDocument()
+    expect(screen.getByLabelText('NOTES')).toBeInTheDocument()
+    expect(screen.getByLabelText('NOTES').closest('[hidden]')).not.toBeNull()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Second' }))
+    expect(screen.getByLabelText('NAME').closest('[hidden]')).not.toBeNull()
+    expect(screen.getByLabelText('NOTES').closest('[hidden]')).toBeNull()
+    // Still the SAME input, never remounted.
+    expect(screen.getByLabelText('NOTES')).toHaveValue('kept')
+  })
+
+  it('a notebook with no long field still renders — the Settings tab, empty', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('name')],
+    }
+    renderLayout(descriptor)
+    expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument()
+  })
+})
+
+// Runtime, per-record notebook pages (docs/roadmaps/responsive-displays.md,
+// Phase 5): the notebook renderer appends stored pages + a "+ Add page"
+// control after the declared ones, ONLY when a NotebookOpsProvider is
+// mounted — absent it (every earlier describe block in this file), the
+// notebook renders exactly as Phase 4 left it, proven above.
+describe('LayoutForm — runtime notebook pages (Phase 5)', () => {
+  const formDescriptor: ViewDescriptor = {
+    entity: 'crm',
+    viewType: 'form',
+    fields: [textField('name')],
+  }
+
+  function identityWith(permissions: string[]): Identity {
+    return { userId: 'u1', tenantId: 't1', roles: ['tester'], permissions }
+  }
+
+  function fakeOps(overrides: Partial<NotebookOps> = {}): NotebookOps {
+    return {
+      list: vi.fn(async () => []),
+      create: vi.fn(async (_table, _record, title) => ({
+        id: 'new-1',
+        title,
+        content: '',
+        position: 0,
+      })),
+      update: vi.fn(async (id, patch) => ({ id, position: 0, ...patch })),
+      remove: vi.fn(async () => undefined),
+      ...overrides,
+    }
+  }
+
+  function renderWithOps(
+    ops: NotebookOps,
+    {
+      recordId = 'rec-1',
+      onFieldChange = vi.fn<(name: string, value: unknown) => void>(),
+    }: { recordId?: string | null; onFieldChange?: (name: string, value: unknown) => void } = {},
+  ) {
+    render(
+      <NotebookOpsProvider ops={ops}>
+        <LayoutForm
+          descriptor={formDescriptor}
+          draft={{ name: 'Ada' }}
+          onFieldChange={onFieldChange}
+          entity="crm"
+          recordId={recordId}
+        />
+      </NotebookOpsProvider>,
+    )
+    return { onFieldChange }
+  }
+
+  beforeEach(() => {
+    useSessionStore.setState({ identity: null })
+  })
+
+  it('no NotebookOpsProvider: no stored tabs, no add control — exactly Phase 4 behavior', () => {
+    renderLayout(formDescriptor)
+    expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add page/i })).not.toBeInTheDocument()
+  })
+
+  it('lists stored pages as extra tabs after the declared ones, labeled with their OWN (untranslated) title', async () => {
+    const ops = fakeOps({
+      list: vi.fn(async () => [
+        { id: 'p1', title: 'Meeting notes', content: 'hello', position: 0 } as NotebookPageRecord,
+      ]),
+    })
+    renderWithOps(ops)
+    expect(await screen.findByRole('tab', { name: 'Meeting notes' })).toBeInTheDocument()
+    expect(ops.list).toHaveBeenCalledWith('crm', 'rec-1')
+  })
+
+  it('the add control is HIDDEN entirely without notebook_pages:notebook_pages:write', () => {
+    useSessionStore.setState({ identity: identityWith([]) })
+    renderWithOps(fakeOps())
+    expect(screen.queryByRole('button', { name: /add page/i })).not.toBeInTheDocument()
+  })
+
+  it('the add control is disabled with a hint until the record has an id — the picture-widget posture', () => {
+    useSessionStore.setState({ identity: identityWith(['notebook_pages:notebook_pages:write']) })
+    renderWithOps(fakeOps(), { recordId: null })
+    expect(screen.getByRole('button', { name: /add page/i })).toBeDisabled()
+  })
+
+  it('clicking "+ Add page" creates a page and switches the active tab to it', async () => {
+    useSessionStore.setState({ identity: identityWith(['notebook_pages:notebook_pages:write']) })
+    const ops = fakeOps()
+    renderWithOps(ops)
+
+    fireEvent.click(screen.getByRole('button', { name: /add page/i }))
+
+    expect(await screen.findByRole('tab', { name: 'New page' })).toBeInTheDocument()
+    expect(ops.create).toHaveBeenCalledWith('crm', 'rec-1', 'New page')
+    // The new page's own editor is now showing (its tab became active).
+    expect(await screen.findByLabelText('Title')).toHaveValue('New page')
+  })
+
+  it('editing and saving a stored page NEVER calls onFieldChange — it never dirties the record form', async () => {
+    useSessionStore.setState({ identity: identityWith(['notebook_pages:notebook_pages:write']) })
+    const ops = fakeOps({
+      list: vi.fn(async () => [
+        { id: 'p1', title: 'Notes', content: 'v1', position: 0 } as NotebookPageRecord,
+      ]),
+    })
+    const { onFieldChange } = renderWithOps(ops)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Notes' }))
+    fireEvent.change(await screen.findByLabelText('Content'), { target: { value: 'v2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(ops.update).toHaveBeenCalledWith('p1', { title: 'Notes', content: 'v2' }))
+    expect(onFieldChange).not.toHaveBeenCalled()
+  })
+
+  it('a failed save reverts the local edit and shows an error', async () => {
+    useSessionStore.setState({ identity: identityWith(['notebook_pages:notebook_pages:write']) })
+    const ops = fakeOps({
+      list: vi.fn(async () => [
+        { id: 'p1', title: 'Notes', content: 'v1', position: 0 } as NotebookPageRecord,
+      ]),
+      update: vi.fn(async () => {
+        throw new Error('write denied')
+      }),
+    })
+    renderWithOps(ops)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Notes' }))
+    fireEvent.change(await screen.findByLabelText('Content'), { target: { value: 'v2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await screen.findByText('write denied')
+    expect(screen.getByLabelText('Content')).toHaveValue('v1')
+  })
+
+  it('deleting a stored page removes its tab and falls back to the Settings tab', async () => {
+    useSessionStore.setState({ identity: identityWith(['notebook_pages:notebook_pages:write']) })
+    const ops = fakeOps({
+      list: vi.fn(async () => [
+        { id: 'p1', title: 'Notes', content: 'v1', position: 0 } as NotebookPageRecord,
+      ]),
+    })
+    renderWithOps(ops)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Notes' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Notes' })).not.toBeInTheDocument())
+    expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument()
+  })
+})
+
 // A controlled wrapper standing in for the form store: draft lives in React
 // state, onFieldChange writes back into it — the same "edit re-renders with
 // the new draft" cycle Zustand's subscription drives in the real form store.
@@ -263,6 +481,39 @@ function ControlledLayoutForm({
     />
   )
 }
+
+describe('LayoutForm — notebook tab switching preserves draft state', () => {
+  it('editing a field on one page, switching tabs, and switching back shows the edit — nothing was reset', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'notes', label: 'Notes', type: 'text', widget: 'long' },
+      ],
+      layout: [
+        {
+          kind: 'notebook',
+          children: [
+            { kind: 'page', title: 'First', children: [{ kind: 'field', name: 'name' }] },
+            { kind: 'page', title: 'Second', children: [{ kind: 'field', name: 'notes' }] },
+          ],
+        },
+      ],
+    }
+    render(<ControlledLayoutForm descriptor={descriptor} initialDraft={{}} />)
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ada' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Second' }))
+    fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'draft note' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'First' }))
+
+    // Both edits survived the round trip through the other tab.
+    expect(screen.getByLabelText('Name')).toHaveValue('Ada')
+    fireEvent.click(screen.getByRole('tab', { name: 'Second' }))
+    expect(screen.getByLabelText('Notes')).toHaveValue('draft note')
+  })
+})
 
 describe('LayoutForm — declarative states react to draft edits', () => {
   it('visible: false unmounts the field; toggling it back on shows the PRESERVED value', () => {

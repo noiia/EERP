@@ -3,6 +3,9 @@ import {
   behaviorRegistry,
   fieldLabel,
   fieldZeroDefault,
+  FORM_NOTEBOOK_ID,
+  ModuleRegistry,
+  normalizeLayout,
   validateDescriptorWidgets,
 } from '@eerp/core-front'
 import crm from './CrmViews'
@@ -48,10 +51,12 @@ describe('crm FrontModule', () => {
       'status',
       'score',
     ])
+    // 'signature' is NOT in this raw, un-extended base descriptor — it's
+    // added by crm's OWN `extends` (see the registry-level describe block
+    // below), the same way crminheritdemo adds fields to crm from outside.
     const form = crm.routes.find((r) => r.path === '/crm/:id')
     expect(form?.descriptor.fields.map((f) => f.name)).toEqual([
       'picture',
-      'signature',
       'name',
       'email',
       'company',
@@ -87,12 +92,10 @@ describe('crm FrontModule', () => {
 
   // ── widget showcase (docs/roadmaps/field-widgets.md) ────────────────────────
 
-  it('samples the Phase-1/3 widgets: signature, phone, percent, int, long', () => {
+  it('samples the Phase-1/3 widgets: phone, percent, int, long', () => {
     const form = crm.routes.find((r) => r.path === '/crm/:id')
     const byName = new Map(form?.descriptor.fields.map((f) => [f.name, f]))
     expect(byName.get('picture')?.widget).toBe('picture')
-    expect(byName.get('signature')?.widget).toBe('signature')
-    expect(byName.get('signature')?.type).toBe('boolean')
     expect(byName.get('phone')?.widget).toBe('phone')
     // TEXT column on purpose — E.164's leading + would not survive a numeric one.
     expect(byName.get('phone')?.type).toBe('text')
@@ -172,5 +175,49 @@ describe('crm FrontModule', () => {
     // Never clobbers what the user already typed.
     expect(handler?.handler({ company: 'Acme', email: 'ada@ada.io' })).toBeUndefined()
     expect(handler?.handler({ company: '' })).toBeUndefined()
+  })
+})
+
+// crm extends its OWN already-registered '/crm/:id' route (a module may
+// target a path it owns, not just another module's) to add a "Signature"
+// notebook page coded directly here — docs/roadmaps/responsive-displays.md,
+// Phase 4's "as easy to create as the current views" contract, demonstrated
+// by the entity's OWN module rather than a cross-module example.
+describe('crm — self-extended "Signature" notebook page (registry-level)', () => {
+  function register(): ModuleRegistry {
+    const registry = new ModuleRegistry()
+    registry.register(crm)
+    return registry
+  }
+
+  it('the RESOLVED /crm/:id form gains signature in its field REGISTRY (absent from the raw base)', () => {
+    const registry = register()
+    const resolved = registry.buildRegistry().get('/crm/:id')!
+    const byName = new Map(resolved.descriptor.fields.map((f) => [f.name, f]))
+    expect(byName.get('signature')?.widget).toBe('signature')
+    expect(byName.get('signature')?.type).toBe('boolean')
+  })
+
+  it('signature lands on its OWN "Signature" tab, not __form_columns', () => {
+    const registry = register()
+    const resolved = registry.buildRegistry().get('/crm/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    expect(notebook).toBeDefined()
+    if (notebook && notebook.kind !== 'field') {
+      const signaturePage = notebook.children.find((p) => p.kind !== 'field' && p.title === 'Signature')
+      expect(signaturePage).toBeDefined()
+      if (signaturePage && signaturePage.kind !== 'field') {
+        expect(signaturePage.children).toEqual([{ kind: 'field', name: 'signature' }])
+      }
+    }
+  })
+
+  it('/crm/list and /crm are untouched — the extension targets only :id', () => {
+    const registry = register()
+    expect(registry.buildRegistry().get('/crm/list')?.descriptor.fields.map((f) => f.name)).not.toContain(
+      'signature',
+    )
+    expect(registry.buildRegistry().get('/crm')?.descriptor.fields.map((f) => f.name)).not.toContain('signature')
   })
 })

@@ -266,3 +266,21 @@ msgstr ""
 #: @eerp/core-front widgets (phone country indicator)
 msgid "Country"
 msgstr ""
+
+#: @eerp/core-front layout-renderer (notebook — runtime pages, Phase 5 of
+#: docs/roadmaps/responsive-displays.md; reuses the existing "Title" msgid
+#: from the graph tile config, below)
+msgid "Content"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "+ Add page"
+msgstr ""
+
+msgid "New page"
+msgstr ""
+
+msgid "Available once the record has been saved."
+msgstr ""

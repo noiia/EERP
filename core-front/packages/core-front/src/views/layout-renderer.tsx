@@ -1,8 +1,15 @@
 'use client'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import { serializeError, toApiError, type SerializedError } from '../api/errors'
+import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import {
   evaluateCondition,
@@ -10,9 +17,12 @@ import {
   normalizeLayout,
   FORM_HEADER_ID,
   type FieldDescriptor,
+  type LayoutContainerNode,
   type LayoutNode,
   type ViewDescriptor,
 } from './descriptor'
+import { ErrorAlert } from './error-alert'
+import { useNotebookOps, type NotebookPageRecord } from './notebook-ops'
 import { layout as layoutTokens, typeScale } from './tokens'
 import { fieldWidget } from './widgets'
 
@@ -110,6 +120,271 @@ function TitleField({
   )
 }
 
+/**
+ * One RUNTIME (stored) page's editor — a user-created tab, as opposed to a
+ * declared `page` layout node (docs/roadmaps/responsive-displays.md, Phase
+ * 5). Mirrors the declared pages' "stay mounted, toggle `hidden`" posture
+ * (Architecture decision 6) via its OWN local title/content state, which is
+ * how a dirty edit here survives switching to another tab and back WITHOUT
+ * touching the record's form draft at all — `NotebookOps.update` is the only
+ * write path, so saving a page can never dirty the form store.
+ */
+function StoredPageEditor({
+  page,
+  hidden,
+  ops,
+  onSaved,
+  onDeleted,
+}: {
+  page: NotebookPageRecord
+  hidden: boolean
+  ops: NonNullable<ReturnType<typeof useNotebookOps>>
+  onSaved: (updated: NotebookPageRecord) => void
+  onDeleted: (id: string) => void
+}) {
+  const t = useT()
+  const [title, setTitle] = useState(page.title)
+  const [content, setContent] = useState(page.content)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<SerializedError | null>(null)
+  const dirty = title !== page.title || content !== page.content
+
+  const onSave = () => {
+    setBusy(true)
+    setError(null)
+    void ops
+      .update(page.id, { title, content })
+      .then(onSaved)
+      .catch((e: unknown) => {
+        setError(serializeError(toApiError(e)))
+        // Revert to the last known-good values — the same
+        // revert-and-ErrorAlert posture Kanban/Calendar's optimistic field
+        // move takes on a rejected write.
+        setTitle(page.title)
+        setContent(page.content)
+      })
+      .finally(() => setBusy(false))
+  }
+
+  const onDelete = () => {
+    setBusy(true)
+    setError(null)
+    void ops
+      .remove(page.id)
+      .then(() => onDeleted(page.id))
+      .catch((e: unknown) => {
+        setError(serializeError(toApiError(e)))
+        setBusy(false)
+      })
+  }
+
+  return (
+    <Box hidden={hidden}>
+      <Stack spacing={2}>
+        {error ? <ErrorAlert error={error} /> : null}
+        <TextField
+          label={t('Title')}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          disabled={busy}
+          fullWidth
+        />
+        <TextField
+          label={t('Content')}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          disabled={busy}
+          fullWidth
+          multiline
+          minRows={4}
+        />
+        <Stack direction="row" spacing={1}>
+          <Button variant="contained" size="small" disabled={busy || !dirty} onClick={onSave}>
+            {t('Save')}
+          </Button>
+          <Button color="error" size="small" disabled={busy} onClick={onDelete}>
+            {t('Delete')}
+          </Button>
+        </Stack>
+      </Stack>
+    </Box>
+  )
+}
+
+/**
+ * A `notebook` node (docs/roadmaps/responsive-displays.md, Phase 4): MUI
+ * `Tabs` (scrollable, so an overflowing tab strip never breaks layout) over
+ * `normalizeLayout`'s validated `page` children — each page's title doubles
+ * as its tab label. The active tab is local, ephemeral state: switching
+ * pages never touches the form draft, and every page's content stays
+ * MOUNTED at all times (`hidden`, never a conditional `{active === i && …}`)
+ * — an inactive page's fields keep their mount effects (pictures, relation
+ * widgets) alive and never lose in-progress state, and a dirty draft on one
+ * page survives switching to another and back (Architecture decision 6).
+ *
+ * Phase 5 appends RUNTIME pages after the declared ones, in the SAME tab
+ * strip, when a `NotebookOpsProvider` is mounted and the record has an id —
+ * absent either, the notebook renders its declared pages alone, inert, the
+ * same posture RelationOps/GraphOps take for a host with no wiring. Stored
+ * tab keys are namespaced (`s:` / `d:`) so a declared id can never collide
+ * with a stored row's UUID.
+ */
+function NotebookNode({
+  node,
+  fieldsByName,
+  draft,
+  onFieldChange,
+  entity,
+  recordId,
+  hidden,
+}: {
+  /** Validated by `normalizeLayout`: every child is a `page` (a titled
+   * container) — never anything else. */
+  node: LayoutContainerNode
+  fieldsByName: Map<string, FieldDescriptor>
+  draft: Record<string, unknown>
+  onFieldChange: (name: string, value: unknown) => void
+  entity: string
+  recordId: string | null
+  hidden?: ReadonlySet<string>
+}) {
+  const t = useT()
+  const [active, setActive] = useState(0)
+  const pages = node.children as LayoutContainerNode[]
+
+  const ops = useNotebookOps()
+  const canWrite = usePermission('notebook_pages:notebook_pages:write')
+  const [storedPages, setStoredPages] = useState<NotebookPageRecord[]>([])
+  const [addBusy, setAddBusy] = useState(false)
+  const [opsError, setOpsError] = useState<SerializedError | null>(null)
+
+  // Re-fetch whenever the anchor changes (a different record, or the ops
+  // wiring itself). No recordId yet (a brand-new record) means no pages can
+  // exist for it — skip the call entirely rather than querying a null anchor.
+  useEffect(() => {
+    if (!ops || !recordId) {
+      setStoredPages([])
+      return
+    }
+    let cancelled = false
+    ops
+      .list(entity, recordId)
+      .then((found) => {
+        if (!cancelled) setStoredPages(found)
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setOpsError(serializeError(toApiError(e)))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ops, entity, recordId])
+
+  const onAdd = () => {
+    if (!ops || !recordId) return
+    setAddBusy(true)
+    setOpsError(null)
+    const newIndex = pages.length + storedPages.length
+    ops
+      .create(entity, recordId, t('New page'))
+      .then((created) => {
+        setStoredPages((prev) => [...prev, created])
+        setActive(newIndex)
+      })
+      .catch((e: unknown) => setOpsError(serializeError(toApiError(e))))
+      .finally(() => setAddBusy(false))
+  }
+
+  const onPageSaved = (updated: NotebookPageRecord) => {
+    setStoredPages((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+  }
+
+  // Simplest safe behavior on delete: fall back to the first tab (declared
+  // Settings) rather than trying to keep some other stored page active
+  // through an index shift.
+  const onPageDeleted = (id: string) => {
+    setStoredPages((prev) => prev.filter((p) => p.id !== id))
+    setActive(0)
+  }
+
+  // Hidden entirely without the write permission (CreateBar's posture);
+  // disabled with a hint until the record has an id (the picture widgets'
+  // exact posture) when the permission IS granted.
+  const showAdd = ops != null && canWrite
+  const addButton = (
+    <Button size="small" disabled={addBusy || !recordId} onClick={onAdd}>
+      {t('+ Add page')}
+    </Button>
+  )
+
+  return (
+    <Box>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', mb: 2 }}
+      >
+        <Tabs
+          value={active}
+          onChange={(_event, value: number) => setActive(value)}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{ flexGrow: 1, minHeight: 0, borderBottom: 0 }}
+        >
+          {pages.map((page, i) => (
+            <Tab key={`d:${page.id ?? i}`} label={t(page.title ?? '')} />
+          ))}
+          {storedPages.map((page) => (
+            // Stored titles are user data, never translated (msgids are
+            // static developer strings; a record's own page title is not).
+            <Tab key={`s:${page.id}`} label={page.title} />
+          ))}
+        </Tabs>
+        {showAdd ? (
+          recordId ? (
+            addButton
+          ) : (
+            <Tooltip title={t('Available once the record has been saved.')}>
+              <span>{addButton}</span>
+            </Tooltip>
+          )
+        ) : null}
+      </Stack>
+      {opsError ? <ErrorAlert error={opsError} /> : null}
+      {pages.map((page, i) => (
+        <Box key={`d:${page.id ?? i}`} hidden={active !== i}>
+          <Stack spacing={2.5}>
+            {page.children.map((child, j) => (
+              <LayoutNodeView
+                key={child.kind === 'field' ? child.name : (child.id ?? j)}
+                node={child}
+                fieldsByName={fieldsByName}
+                draft={draft}
+                onFieldChange={onFieldChange}
+                entity={entity}
+                recordId={recordId}
+                hidden={hidden}
+              />
+            ))}
+          </Stack>
+        </Box>
+      ))}
+      {ops
+        ? storedPages.map((page, i) => (
+            <StoredPageEditor
+              key={`s:${page.id}`}
+              page={page}
+              hidden={active !== pages.length + i}
+              ops={ops}
+              onSaved={onPageSaved}
+              onDeleted={onPageDeleted}
+            />
+          ))
+        : null}
+    </Box>
+  )
+}
+
 function LayoutNodeView({
   node,
   fieldsByName,
@@ -165,6 +440,25 @@ function LayoutNodeView({
         disabled={disabled}
         entity={entity}
         recordId={recordId}
+      />
+    )
+  }
+
+  // `notebook` renders its `page` children itself (each needs its own tab +
+  // visibility toggle, not the flat concatenated `children` every other
+  // container kind uses below) — handled before that generic computation so
+  // a notebook never pays for building an unused children array, and never
+  // falls through to a kind-agnostic renderer that knows nothing about tabs.
+  if (node.kind === 'notebook') {
+    return (
+      <NotebookNode
+        node={node}
+        fieldsByName={fieldsByName}
+        draft={draft}
+        onFieldChange={onFieldChange}
+        entity={entity}
+        recordId={recordId}
+        hidden={hidden}
       />
     )
   }

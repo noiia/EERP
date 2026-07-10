@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { FORM_HEADER_ID, layoutFieldOrder, ModuleRegistry, normalizeLayout } from '@eerp/core-front'
+import {
+  FORM_COLUMNS_ID,
+  FORM_HEADER_ID,
+  FORM_NOTEBOOK_ID,
+  PAGE_SETTINGS_ID,
+  layoutFieldOrder,
+  ModuleRegistry,
+  normalizeLayout,
+} from '@eerp/core-front'
 
 // This module's tsconfig mirrors contact/crm's — ES2022 lib only, no `dom`/`node` —
 // so the ambient `console` global isn't declared. A minimal local shim, rather than
@@ -41,19 +49,25 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(names).toContain('comment')
   })
 
-  it('date lands right after status and comment at the very end — in DISPLAY (layout) order', () => {
+  it('date lands right after status in DISPLAY (layout) order', () => {
+    // comment's own placement (on the Settings page) is pinned by the
+    // dedicated Settings-page test below, precisely rather than by "the very
+    // last field overall" — crm now codes its OWN extra notebook page
+    // ("Internal", views/CrmViews.ts), appended after Settings, so comment
+    // is no longer the last field in the fully flattened order. That's an
+    // expected consequence of crm's own anatomy growing another page, not a
+    // regression in this module's `date` placement.
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm/:id')!
     const order = layoutFieldOrder(normalizeLayout(resolved.descriptor))
     expect(order[order.indexOf('status') + 1]).toBe('date')
-    expect(order[order.length - 1]).toBe('comment')
   })
 
-  it('email moves before name in LAYOUT order — CrmViews.ts\'s own fields[] declaration is untouched', () => {
+  it('email moves to sit immediately after date in LAYOUT order — CrmViews.ts\'s own fields[] declaration is untouched', () => {
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm/:id')!
     const order = layoutFieldOrder(normalizeLayout(resolved.descriptor))
-    expect(order.indexOf('email')).toBeLessThan(order.indexOf('name'))
+    expect(order[order.indexOf('date') + 1]).toBe('email')
   })
 
   it('comment carries the hide-while-incoming state', () => {
@@ -68,14 +82,14 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(registry.buildRegistry().get('/crm/:id')?.module).toBe('crm')
   })
 
-  it('/crm/list is ALSO extended — date/comment columns, email/name reordered', () => {
+  it('/crm/list is ALSO extended — date/comment columns, email reordered to sit after date', () => {
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm/list')!
     const names = resolved.descriptor.fields.map((f) => f.name)
     expect(names).toContain('date')
     expect(names).toContain('comment')
     const order = layoutFieldOrder(normalizeLayout(resolved.descriptor))
-    expect(order.indexOf('email')).toBeLessThan(order.indexOf('name'))
+    expect(order[order.indexOf('date') + 1]).toBe('email')
   })
 
   it('the dashboard (/crm) is untouched — the extension targets only :id and list', () => {
@@ -84,24 +98,51 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(resolved.descriptor.fields.map((f) => f.name)).not.toContain('date')
   })
 
-  it('email ends up co-located with the picture/title fields in the synthesized form HEADER — a visible, expected consequence of the default form anatomy (docs/roadmaps/responsive-displays.md, Phase 3), not a broken move', () => {
-    // crm's form declares a picture-widget field, so the default anatomy
-    // gives it a header row (picture + 'name', the first text field, as the
-    // big title). crminheritdemo's `move email before name` op was written
-    // before that anatomy existed, targeting 'name' wherever it lives — it
-    // still resolves (searches the whole tree), it just now lands 'email' as
-    // a sibling INSIDE that header row instead of in the flat body. The
-    // relative order this module actually cares about (email before name)
-    // still holds; this test additionally pins WHERE that now happens.
+  it('email lands in __form_columns immediately after date, NOT in the header — retargeted so the header stays just picture+title', () => {
+    // crminheritdemo's `move email` op originally targeted 'name' (the title
+    // field), which put email INSIDE the synthesized header row alongside
+    // the picture and the big title — three side-by-side items that
+    // crowded the header at phone width (flagged, not fixed, when Phase 3
+    // landed — see docs/roadmaps/responsive-displays.md). The op now
+    // targets 'date' instead (itself inserted right after 'status' in
+    // __form_columns via the 'date' addField above), so email joins the
+    // two-column body instead — the header keeps exactly its intended two
+    // items.
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm/:id')!
     const nodes = normalizeLayout(resolved.descriptor)
+
     const header = nodes.find((n) => n.kind !== 'field' && n.id === FORM_HEADER_ID)
     expect(header).toBeDefined()
     if (header && header.kind !== 'field') {
-      const names = header.children.map((c) => (c.kind === 'field' ? c.name : c.id))
-      expect(names).toContain('email')
-      expect(names.indexOf('email')).toBeLessThan(names.indexOf('name'))
+      const headerNames = header.children.map((c) => (c.kind === 'field' ? c.name : c.id))
+      expect(headerNames).toEqual(['picture', 'name'])
+    }
+
+    const columns = nodes.find((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
+    expect(columns).toBeDefined()
+    if (columns && columns.kind !== 'field') {
+      const columnNames = columns.children.map((c) => (c.kind === 'field' ? c.name : c.id))
+      expect(columnNames[columnNames.indexOf('date') + 1]).toBe('email')
+    }
+  })
+
+  it('comment (widget: long, extension-added) lands on the default form\'s Settings page — zero extra wiring beyond declaring widget: "long" (docs/roadmaps/responsive-displays.md, Phase 4)', () => {
+    const registry = registerBoth()
+    const resolved = registry.buildRegistry().get('/crm/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    expect(notebook).toBeDefined()
+    if (notebook && notebook.kind !== 'field') {
+      const settings = notebook.children.find((p) => p.kind !== 'field' && p.id === PAGE_SETTINGS_ID)
+      expect(settings).toBeDefined()
+      if (settings && settings.kind !== 'field') {
+        const names = settings.children.map((c) => (c.kind === 'field' ? c.name : c.id))
+        // crm's own `notes` (widget: long) plus this module's extension-added
+        // `comment` (also widget: long) — both land here with no extra
+        // wiring on either side.
+        expect(names).toEqual(['notes', 'comment'])
+      }
     }
   })
 

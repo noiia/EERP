@@ -294,6 +294,82 @@ describe('applyExtension — form views materialize the synthesized default anat
   })
 })
 
+// docs/roadmaps/responsive-displays.md, Phase 4: the notebook + Settings
+// page a form-view extension can already reach with the EXISTING ops — no
+// new extension API needed, because pages are ordinary addressable nodes.
+describe('applyExtension — the notebook (Phase 4)', () => {
+  const formBase: ViewDescriptor = {
+    entity: 'crm',
+    viewType: 'form',
+    fields: [field('name'), field('email'), field('status')],
+  }
+
+  it('a target-less widget:"long" addField lands on the Settings page, not __form_columns', () => {
+    const result = apply(
+      [{ op: 'addField', field: field('bio', { widget: 'long' }) }],
+      formBase,
+    )
+    const top = normalizeLayout(result)
+    const notebook = top.find((n) => n.kind !== 'field' && n.id === '__form_notebook')
+    const columns = top.find((n) => n.kind !== 'field' && n.id === '__form_columns')
+    expect(notebook).toBeDefined()
+    if (notebook && notebook.kind !== 'field') {
+      const settings = notebook.children.find((p) => p.kind !== 'field' && p.id === '__page_settings')
+      expect(settings).toMatchObject({ children: [{ kind: 'field', name: 'bio' }] })
+    }
+    if (columns && columns.kind !== 'field') {
+      expect(columns.children.some((c) => c.kind === 'field' && c.name === 'bio')).toBe(false)
+    }
+  })
+
+  it('a module can addNode a new page onto __form_notebook and addField into it — the entire "pages are as easy to create as views" story, no new extension op', () => {
+    const result = apply(
+      [
+        {
+          op: 'addNode',
+          node: { kind: 'page', id: 'quality', title: 'Quality', children: [] },
+          target: '__form_notebook',
+          position: 'last',
+        },
+        { op: 'addField', field: field('audit_notes'), target: 'quality', position: 'last' },
+      ],
+      formBase,
+    )
+    const top = normalizeLayout(result)
+    const notebook = top.find((n) => n.kind !== 'field' && n.id === '__form_notebook')
+    expect(notebook).toBeDefined()
+    if (notebook && notebook.kind !== 'field') {
+      expect(notebook.children).toHaveLength(2) // Settings (built-in) + Quality (added)
+      const quality = notebook.children.find((p) => p.kind !== 'field' && p.id === 'quality')
+      expect(quality).toMatchObject({
+        kind: 'page',
+        title: 'Quality',
+        children: [{ kind: 'field', name: 'audit_notes' }],
+      })
+    }
+  })
+
+  it('a page with no title is rejected even when added via addNode — the same validation any hand-authored layout gets', () => {
+    // applyExtension's OWN throws are addField/removeField/etc.'s specific
+    // checks (name collisions, missing targets); the notebook/page
+    // STRUCTURAL rules are `normalizeLayout`'s, applied uniformly whether a
+    // layout was hand-authored or assembled by an extension — so `apply`
+    // itself succeeds here, and the next `normalizeLayout` call is what throws.
+    const result = apply(
+      [
+        {
+          op: 'addNode',
+          node: { kind: 'page', id: 'blank', children: [] },
+          target: '__form_notebook',
+          position: 'last',
+        },
+      ],
+      formBase,
+    )
+    expect(() => normalizeLayout(result)).toThrowError(/requires a title/)
+  })
+})
+
 describe('applyExtension — operation order and chaining', () => {
   it('operations apply IN ORDER — later ops see earlier ops\' results', () => {
     const result = apply([

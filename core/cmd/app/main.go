@@ -14,6 +14,7 @@ import (
 	"core/internal/common"
 	authmw "core/internal/middleware"
 	"core/internal/module"
+	"core/internal/notebook"
 	"core/internal/pictures"
 	"core/internal/settings"
 	"core/internal/types"
@@ -204,6 +205,22 @@ func main() {
 	} else {
 		common.Logger.Warn("⚠️  s3_* not configured — picture endpoints disabled")
 	}
+
+	// ── Notebook pages ────────────────────────────────────────────────────────
+	// Runtime, per-record notebook pages (docs/roadmaps/responsive-displays.md,
+	// Phase 5) — the third category ADR-007 names alongside descriptor structure
+	// and workspace app_settings. Dedicated, tenant-pinned endpoints off the
+	// generic CRUD surface, mirroring the picture service's shape minus the
+	// object-storage leg (page content is text, stored in the row). No external
+	// dependency to gate on, so — unlike pictures — this mounts unconditionally.
+	// The permission middleware derives notebook_pages:notebook_pages:read|write|delete
+	// from the route.
+	notebookHandler := notebook.NewHandler(notebook.NewRepository(app.DB))
+	notebookGroup := srv.Echo().Group("/api/v1/notebook_pages", jwtMw, permMw)
+	notebookGroup.GET("", notebookHandler.List)
+	notebookGroup.POST("", notebookHandler.Create)
+	notebookGroup.PUT("/:id", notebookHandler.Update)
+	notebookGroup.DELETE("/:id", notebookHandler.Delete)
 
 	// ── Users / roles administration ──────────────────────────────────────────
 	// The auth tables are excluded from the generic CRUD surface; these dedicated,

@@ -121,7 +121,7 @@ node in a descriptor, addable by a view extension, never a bespoke registration 
 | Layout `row` on phone | `kind: 'row'` stacks vertically below `sm` (flex-wrap) — applies to explicit layouts too (e.g. crminheritdemo's), which is the intended "fully responsive" behavior, not a regression. |
 | Notebook node | `{ kind: 'notebook', id?, children: Page[] }`, `{ kind: 'page', id?, title, children: LayoutNode[] }`. Validation at `normalizeLayout`/registration: `notebook` contains only `page`s, `page` appears only in a `notebook`, one `notebook` per form (v1). Rendered as MUI `Tabs` (scrollable when overflowing) + keep-mounted panels; active tab is client state. Pages/fields inside participate in states/behaviors/`hidden` exactly like any other node. |
 | Default form anatomy | `viewType: 'form'` + no explicit `layout` ⇒ `normalizeLayout` synthesizes: `__form_header` → `__form_columns` → `__form_notebook` containing `__page_settings` (title `'Settings'`) holding every long-text field (`widget: 'long'`) in declaration order — for crm that is `notes` plus the crminheritdemo-extended `comment`. No long-text field ⇒ the Settings page still renders (it is also the home of runtime user pages' tab strip). Explicit layouts are untouched. Extension application against a form descriptor materializes this synthesized tree first, so ops can target the well-known ids; a form-view `addField` with no target defaults into `__form_columns` (not top-level). |
-| Runtime notebook pages | Go: `internal/notebook/`, table `notebook_page` `(id, tenant_id, table_name, record_id, title, position, content, timestamps)`, one row per user page. Routes `GET|POST /api/v1/notebook-pages` (query `table`+`record`) and `PUT|DELETE /api/v1/notebook-pages/:id`, tenant-pinned, off the generic CRUD surface, permissions `notebook_pages:notebook_pages:*` derived from the route. Frontend: user pages render after declared pages in the same tab strip; a trailing **“+”** tab (write-permission-gated, disabled with a hint until the record has an id — the picture widgets' exact posture) creates one; user pages have an editable title and one long-text body saved through the service, never through the record's draft/commit. Declared pages are not deletable at runtime. |
+| Runtime notebook pages | Go: `internal/notebook/`, table `notebook_page` `(id, tenant_id, table_name, record_id, title, position, content, timestamps)`, one row per user page. Routes `GET/POST /api/v1/notebook_pages` (query `table`+`record`) and `PUT/DELETE /api/v1/notebook_pages/:id`, tenant-pinned, off the generic CRUD surface, permissions `notebook_pages:notebook_pages:*` derived from the route — the route is underscored (not hyphenated) precisely so the existing, unmodified permission-derivation mechanism produces this permission verbatim. Frontend: user pages render after declared pages in the same tab strip; a trailing `+ Add page` control (a plain `Button` beside `Tabs`, not a `Tab` — `Tabs` clones its immediate children, which fights a `Tooltip`-wrapped `Tab`; HIDDEN entirely without the write permission, `CreateBar`'s posture; DISABLED with a hint until the record has an id — the picture widgets' exact posture) creates one; user pages have an editable title and one long-text body saved through `NotebookOps`, never through the record's draft/commit. Declared pages are not deletable at runtime. |
 | i18n | Every new string (`'Settings'`, `'New page'`, hints…) goes through `t()` with `fr.po` entries in the same phase — including the synthesized page title, which is a msgid like any layout `title`. |
 
 **Example — what crm's form renders with no layout declared by anyone (after Phase 4):**
@@ -313,7 +313,9 @@ branches.
 > predating this anatomy, not a defect in the header/title-variant mechanism itself; a
 > header with just its intended two items (picture + title) doesn't have this problem.
 > Not fixed here — flagged for whoever next touches `crminheritdemo`'s ops, since the
-> real fix is retargeting that `move`, not the anatomy.
+> real fix is retargeting that `move`, not the anatomy. (Resolved in Phase 4: the op
+> now targets this module's OWN `date` field instead of `name`, so the header goes
+> back to its intended two items — see Phase 4's notes below.)
 
 > Design notes: three moves in one phase because they only make sense together —
 > (a) `FormRenderer` drops the 560px cap (`maxWidth: '100%'` inside the page inset);
@@ -367,7 +369,86 @@ alternating fields, collapsing at phone width.
 create wizard stays single-column; explicit layouts and every non-form view render exactly
 as before; ADR-007 merged.
 
-## Phase 4 — Notebook node + default Settings page
+## Phase 4 — Notebook node + default Settings page ✅ (implemented)
+
+> Implementation notes: landed as designed, plus one real bug found and fixed along the
+> way. `notebook`/`page` reuse the existing `LayoutContainerNode` shape (no new
+> interfaces) with `normalizeLayout`'s `visit()` tracking `parentKind` and a
+> `notebookCount` closure variable to enforce: a `page` is a direct child of a
+> `notebook` (never top-level, never nested in a group/row/section), every `page`
+> declares a `title` (it doubles as its tab label), a `notebook`'s children are ALL
+> `page`s, and at most one `notebook` per layout. `layoutFieldOrder` needed zero
+> changes — its generic `else walk(node.children)` branch already descends into any
+> container kind, notebooks and pages included.
+>
+> **The bug:** Phase 3's "a target-less `addField` lands in `__form_columns`" worked
+> because `__form_columns` was the LAST top-level node at the time. Appending
+> `__form_notebook` after it broke that — `insertAt`'s target-less path blindly grabbed
+> the literal last node, tried to insert a bare field into the notebook, and hit the
+> "notebook children must be pages" validation error. Fixed by having `insertAt` scan
+> backward (or forward, for `'first'`) past any `notebook` node to find the nearest
+> node that can actually take a field child — a structural rule about the `notebook`
+> KIND, not form-specific knowledge leaking into the generic extension engine. Caught
+> by the existing Phase 3 registration test failing immediately, plus three more in
+> `registry.test.ts` exercising the same target-less path against fixture form
+> descriptors.
+>
+> **The "zero extra wiring" claim, made real:** a target-less `widget: 'long'`
+> `addField` needed its OWN small rule in `applyExtension` (not `insertAt` — this one
+> IS about `long`, a real semantic default) to default onto the Settings page
+> (`hasNodeId(layout, PAGE_SETTINGS_ID)` before falling back to ordinary target-less
+> behavior) instead of `__form_columns`. `crminheritdemo`'s `comment` field gained
+> `widget: 'long'` and now lands on the Settings page (alongside crm's own `notes`) with
+> no target/position change to its `addField` op at all — pinned by a new test in
+> `CrmInheritViews.test.ts`. A title-field refinement fell out of the same work: the
+> title-candidate search now excludes `widget: 'long'` fields (a multi-line note is
+> never good header material), tested with a field ordered first.
+>
+> **Phase 3's flagged header crowding, actually fixed here:** `crminheritdemo`'s `move`
+> op is retargeted — `{ name: 'email', target: 'date', position: 'after' }` instead of
+> `{ target: 'name', position: 'before' }`. `'date'` (this same module's OWN
+> `addField`, right above) lives in `__form_columns`, so `email` now joins it there
+> instead of crowding into `__form_header` alongside the picture and title. The header
+> goes back to its intended two items; `email` keeps a stable, meaningful position
+> (immediately after the `date` field this module also added) instead of an arbitrary
+> one. `CrmInheritViews.test.ts` drops its old "email co-located with the header"
+> assertions for the actual new shape (header is exactly `['picture', 'name']`;
+> `__form_columns` has `email` immediately after `date`) — the module's real lesson
+> for extension authors: an anchor field can move out from under you as the default
+> anatomy evolves (Phase 3 moved `name` into the header), so anchor a `move` on
+> something under YOUR OWN control when the target's future home isn't guaranteed.
+>
+> `NotebookNode` (`layout-renderer.tsx`) renders MUI `Tabs` (scrollable) + one `Box`
+> per page with the native `hidden` attribute toggling visibility — deliberately never
+> a conditional `{active === i && …}` unmount, so pictures/relation widgets on an
+> inactive page keep their mount effects alive and a dirty draft on one page survives
+> switching to another and back (tested directly: edit page one, switch to page two,
+> edit it, switch back — both edits present). `hidden` doesn't stop
+> `getByLabelText`/`getByPlaceholderText` from finding elements in jsdom (unlike
+> `getByRole`, which excludes inert content by default) — worth knowing before reaching
+> for a different test strategy.
+>
+> One workflow reminder that cost real debugging time: a downstream workspace package
+> (`crminheritdemo`, `crm`, `contact`) importing `@eerp/core-front` resolves the BUILT
+> `dist/`, not the engine's live source — a `pnpm build` in `packages/core-front` is
+> required before `crminheritdemo`'s own test suite reflects a `descriptor.ts` change,
+> exactly the same rule already pinned for the dev server in `list-view-modes.md`, now
+> reconfirmed for module-package test suites too.
+>
+> Verified in a real browser (rebuilt `core-back`/`core-front` Docker images off the
+> current source, logged in as the dev admin): crm's form renders the full anatomy —
+> picture + big title header, two alternating columns, then a single **Settings** tab
+> holding `Notes`. `Comment` (crminheritdemo's extension-added, `widget: 'long'`) is
+> correctly ABSENT until `status` is changed away from `incoming` — its own `states.visible`
+> rule, not a synthesis bug — and appears in the same Settings panel, alongside Notes, the
+> moment `status` flips to `running`, with no separate tab (a page holds fields; it doesn't
+> partition by field, so an extension-added long field just joins whichever page it lands
+> on). At 360×740 the header stays side-by-side, the two columns collapse to one, the tab
+> strip renders full-width, a draft typed into `Notes` survives the resize (same store, only
+> CSS changed), and `scrollWidth === clientWidth === 360` — no horizontal scroll.
+> Tab-switching-preserves-an-inactive-page's-draft itself (needs a second page, which no
+> registered module declares yet — that's Phase 5's runtime pages) is exercised by
+> `layout-renderer.test.tsx`'s direct two-page test instead, per the note above.
 
 > Design notes: adds the `notebook`/`page` node kinds, their validation, the tabbed
 > renderer (keep-mounted panels, scrollable tabs), and extends Phase 3's form synthesis
@@ -407,7 +488,80 @@ switching tabs keeps unsaved edits, phone width renders tabs full-width single c
 fields; a module adds a page with plain `extends` operations; switching pages never loses
 draft state; crm shows Notes + Comment under Settings with no crm code change.
 
-## Phase 5 — Runtime user pages: the notebook service
+## Phase 5 — Runtime user pages: the notebook service ✅ (implemented)
+
+> Implementation notes: landed as designed, with one deliberate departure from the
+> contract's literal route spelling — `/api/v1/notebook_pages` (underscore), not
+> `/api/v1/notebook-pages` (hyphen). `derivePermissionFromRoute` (the middleware every
+> other dedicated service — pictures, users, roles, settings — already relies on) names
+> the resource from the route's static segments verbatim; a hyphenated route would derive
+> `notebook-pages:notebook-pages:*`, not the `notebook_pages:notebook_pages:*` this
+> phase's own contract row names, and every other multi-word resource in this codebase
+> (`crm_tag`, `app_settings`) is already underscored, never hyphenated. Underscore wins:
+> it's what makes the existing, unmodified permission-derivation mechanism produce the
+> permission the contract actually specifies, with zero special-casing.
+>
+> `internal/notebook/` mirrors `internal/pictures/` almost exactly (`Repository` tenant-
+> pins every query; `Handler` whitelists table/title/content as the only writable
+> surface) minus the object-storage leg and the one-per-anchor invariant — MULTIPLE
+> pages share an anchor, so `ListByAnchor` returns all of them (sorted by `Position` in
+> Go, not SQL — a handful of rows per record makes an `ORDER BY` not worth a query-builder
+> dependency the rest of the repo doesn't use for this simple a case) and `Create` assigns
+> `Position` as the anchor's current page count, so pages always append in creation
+> order. `NotebookPage` DOES carry `model.BaseModel`'s soft-delete column — the opposite
+> choice from `Picture`, and for the opposite reason: nothing here enforces a
+> one-per-anchor uniqueness a tombstone could violate, so a soft-deleted page is
+> harmless, unlike a soft-deleted picture. `core/modules/notebook/` registers the table
+> `WithExcluded()` (schema migrates, generic CRUD never sees it) and adds the one index
+> auto-migration can't derive: a plain (non-unique) `(tenant_id, table_name, record_id)`
+> index for the anchor lookup. Cross-tenant denial is proven the same way
+> `admin_handler_test.go` already proves it for users/roles — a foreign-tenant row
+> behaves exactly like a missing one (the repository's tenant-pinned `FindInTenant`
+> returns `orm.ErrNotFound`), so the handler's 404 path IS the cross-tenant test; no
+> separate live-DB integration suite was needed for that guarantee. 21 new Go tests.
+>
+> `NotebookOps` (`notebook-ops.tsx`) is graph-ops.tsx's structure verbatim — a context,
+> a provider, a hook returning `null` with no provider mounted. The notebook renderer
+> (`layout-renderer.tsx`'s `NotebookNode`) fetches stored pages via `ops.list(entity,
+> recordId)` in a `useEffect` keyed on `[ops, entity, recordId]`, skipping the call
+> entirely when `recordId` is `null` (a brand-new record can't have pages yet). Declared
+> pages (from the layout tree) and stored pages (from the service) render in the SAME
+> `Tabs` strip, keys namespaced `d:`/`s:` per this roadmap's own Pitfall so a declared id
+> can never collide with a stored row's UUID. Each stored page gets its own
+> `StoredPageEditor` — mirroring the declared pages' keep-mounted posture (every stored
+> page stays rendered, `hidden` toggling which one shows) via ITS OWN local
+> title/content `useState`, which is how a dirty edit on one page survives switching to
+> another and back without touching the record's form draft at all: `NotebookOps` is the
+> only write path a page ever takes, so saving one is structurally incapable of dirtying
+> the form (pinned by a test asserting `onFieldChange` is never called across an edit +
+> save cycle). Save/delete are optimistic with revert-and-`ErrorAlert` on rejection — the
+> exact pattern `use-optimistic-field-move.ts` established for Kanban/Calendar.
+>
+> The trailing add control renders as a plain `Button` next to (not inside) the `Tabs`,
+> not a literal MUI `Tab` — `Tabs` clones its immediate children to inject selection
+> props, and a `Tooltip`-wrapped `Tab` (needed for the disabled-with-hint state) would
+> receive those props on the wrong element. It is HIDDEN entirely without
+> `notebook_pages:notebook_pages:write` (`CreateBar`'s posture: no permission, no
+> affordance at all) and, when the permission IS granted, DISABLED with the exact
+> `Tooltip`-wrapped-`span` + "Available once the record has been saved." hint the
+> picture widgets already use for the same "no id yet" state — reusing that literal
+> string rather than inventing a near-duplicate. 8 new frontend tests (declared-only
+> with no provider; stored tabs list with untranslated titles; hidden without
+> permission; disabled-with-hint without an id; create-and-switch-to-it; save-never-
+> dirties-the-form; revert-on-failed-save; delete-falls-back-to-Settings).
+>
+> Verified against the real stack (rebuilt `core-back`/`core-front` Docker images,
+> logged in as the dev admin, and hit the routes directly with `curl` too, not just
+> through the browser): created a page on crm's "Acme's project" record via `+ Add
+> page`, renamed it "Meeting notes", wrote content, saved (the notebook page's OWN Save
+> disabled itself once clean; the record form's separate Save/Reset footer stayed
+> untouched — confirming the no-dirty guarantee end to end, not just in the unit test);
+> reloaded the page and the tab, title, and content all survived; opened a SECOND crm
+> record ("Michel") and it showed only its own `Settings` tab — no cross-record leakage.
+> On a brand-new (`/crm/new`, no id yet) record the `+ Add page` control renders
+> disabled with the hint tooltip on hover, exactly as designed. `curl`-level checks
+> against `/api/v1/notebook_pages` directly confirmed create/update/list/delete and that
+> a second record's anchor query returns an empty list, independent of the UI.
 
 > Design notes: the pictures service is the template, deliberately —
 > `internal/notebook/` mirrors `internal/pictures/` (tenant-pinned dedicated routes off the

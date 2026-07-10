@@ -23,10 +23,14 @@ const operations: Operation[] = [
   // column would 422 every write from crm's OWN form, which has no idea
   // this extension exists.
   { op: 'addField', field: { name: 'date', label: 'Date', type: 'date' }, target: 'status', position: 'after' },
-  { op: 'addField', field: { name: 'comment', label: 'Comment', type: 'text' } },
+  // widget: 'long' — the "string long" comment field the notebook roadmap names
+  // (docs/roadmaps/responsive-displays.md, Phase 4): with no target, it lands
+  // on the default form's Settings page with zero extra wiring, proving an
+  // EXTENSION-added field reaches the notebook exactly like a base field does.
+  { op: 'addField', field: { name: 'comment', label: 'Comment', type: 'text', widget: 'long' } },
   // Reorders the form/list without touching CrmViews.ts's field declaration
   // order at all — the layout tree (not `fields[]`) is what moves.
-  { op: 'move', name: 'email', target: 'name', position: 'before' },
+  { op: 'move', name: 'email', target: 'date', position: 'after' },
   // States apply live against the draft (Phase 2) — meaningful on the form
   // (FormRenderer/LayoutForm evaluate them), inert-but-harmless on the list
   // (TreeRenderer never reads `states`, only column order/presence).

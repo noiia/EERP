@@ -1,8 +1,10 @@
 import {
+  FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerOnChange,
   type DraftRecord,
   type FrontModule,
+  type Operation,
   type ViewDescriptor,
 } from '@eerp/core-front'
 
@@ -29,7 +31,9 @@ export interface Crm {
   score?: number | null
   /** true ⇔ a picture exists on this record's picture anchor (picture service). */
   picture?: boolean | null
-  /** Same contract as picture, on the signature anchor (canvas-drawn PNG). */
+  /** Same contract as picture, on the signature anchor (canvas-drawn PNG) —
+   * lives under its OWN notebook tab (see `signaturePageOperations` below),
+   * not the two-column body. */
   signature?: boolean | null
 }
 
@@ -146,15 +150,6 @@ const formFields: ViewDescriptor['fields'] = [
     type: 'boolean',
     widget: 'picture',
   },
-  {
-    // Same service contract as picture, drawn instead of uploaded: any stroke
-    // flips the flag true, "done" exports the canvas PNG onto the signature
-    // anchor, reset deletes the picture and commits false.
-    name: 'signature',
-    label: 'Signed',
-    type: 'boolean',
-    widget: 'signature',
-  },
   ...fields,
   {
     // TEXT column on purpose: E.164 keeps its leading + (the widget normalizes;
@@ -233,6 +228,43 @@ const formView: ViewDescriptor = {
   permissions: ['crm:contacts:read'],
 }
 
+// A notebook page coded directly IN this module, as opposed to
+// crminheritdemo's cross-module example or Phase 5's runtime, user-created
+// pages: `signature` is a real column (model.go) — its own dedicated tab,
+// not the two-column body, but still committed the ordinary way, through the
+// record's own PUT. It renders ONLY on the crm FORM, never on `/crm/list` or
+// the `/crm` dashboard, because the extension below targets `/crm/:id` alone
+// (docs/roadmaps/responsive-displays.md, Phase 4). A page's fields still
+// have to exist in `fields[]` first — `addField` with no target lands it in
+// `__form_columns` (the default anatomy's normal body) — then `addNode`
+// EXTRACTS it from there into the new page, so it ends up living in exactly
+// one place, never duplicated (see `AddNodeOp`'s own doc comment in
+// `registry/extensions.ts`).
+const signaturePageOperations: Operation[] = [
+  {
+    op: 'addField',
+    field: {
+      // Same service contract as picture, drawn instead of uploaded: any
+      // stroke flips the flag true, "done" exports the canvas PNG onto the
+      // signature anchor, reset deletes the picture and commits false.
+      name: 'signature',
+      label: 'Signed',
+      type: 'boolean',
+      widget: 'signature',
+    },
+  },
+  {
+    op: 'addNode',
+    node: {
+      kind: 'page',
+      title: 'Signature',
+      children: [{ kind: 'field', name: 'signature' }],
+    },
+    target: FORM_NOTEBOOK_ID,
+    position: 'last',
+  },
+]
+
 const crm: FrontModule = {
   name: 'crm',
   routes: [
@@ -240,6 +272,11 @@ const crm: FrontModule = {
     { path: '/crm/list', descriptor: listView, permission: 'crm:contacts:read' },
     { path: '/crm/:id', descriptor: formView, permission: 'crm:contacts:read' },
   ],
+  // A module may extend its OWN already-registered route, not just another
+  // module's — ModuleRegistry.register() applies `extends` right after this
+  // SAME call's `routes`, so the target already exists (registry.ts skips
+  // the depends-coverage warning for self-targeting, too).
+  extends: [{ path: '/crm/:id', operations: signaturePageOperations }],
 }
 
 export default crm

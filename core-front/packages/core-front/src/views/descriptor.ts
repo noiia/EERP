@@ -365,12 +365,17 @@ export function requiredMissing<T>(
 // view EXTENSION targets (Phase 3). JSON-only: no functions, ever — it crosses
 // the RSC boundary like every other descriptor piece.
 
-export type LayoutNodeKind = 'group' | 'row' | 'section'
+export type LayoutNodeKind = 'group' | 'row' | 'section' | 'notebook' | 'page'
 
 /**
  * A structural node: `group` stacks its children vertically, `row` lays them
- * out horizontally, `section` is a titled block. All three share this shape —
- * the kind is purely a rendering hint, not a different data contract.
+ * out horizontally, `section` is a titled block, `notebook` is a tabbed
+ * container whose children must ALL be `page` nodes (a titled tab's content
+ * — legal only directly inside a `notebook`), one per tab
+ * (docs/roadmaps/responsive-displays.md, Phase 4). All five share this same
+ * shape — the kind is purely a rendering hint plus, for `notebook`/`page`, an
+ * extra pair of structural rules `normalizeLayout` enforces at registration
+ * time (never a different data contract).
  */
 export interface LayoutContainerNode {
   kind: LayoutNodeKind
@@ -378,7 +383,9 @@ export interface LayoutContainerNode {
    * unique across the WHOLE tree (registration error otherwise). */
   id?: string
   /** A heading, rendered above the children. A gettext msgid, like any other
-   * descriptor string — the extending module ships its own translation. */
+   * descriptor string — the extending module ships its own translation.
+   * MANDATORY on a `page` node — it's also that page's tab label — and
+   * validated as such (registration error, not a blank tab). */
   title?: string
   /**
    * Rendering hint (docs/roadmaps/responsive-displays.md, Phase 3): lay the
@@ -415,32 +422,45 @@ export type LayoutNode = LayoutContainerNode | LayoutFieldNode
  * default anatomy by id, exactly like any hand-authored node id. */
 export const FORM_HEADER_ID = '__form_header'
 export const FORM_COLUMNS_ID = '__form_columns'
+/** The synthesized notebook (docs/roadmaps/responsive-displays.md, Phase 4)
+ * and its always-present first tab. */
+export const FORM_NOTEBOOK_ID = '__form_notebook'
+export const PAGE_SETTINGS_ID = '__page_settings'
 
 /**
  * The default `viewType: 'form'` anatomy (docs/roadmaps/responsive-displays.md,
- * Phase 3): a header row — the first `widget: 'picture'` boolean field, then
- * the first `text` field rendered big via `variant: 'title'` — followed by a
- * two-column group holding every other field, in declaration order. Either
+ * Phases 3–4): a header row — the first `widget: 'picture'` boolean field,
+ * then the first plain (non-`long`) `text` field rendered big via `variant:
+ * 'title'` — followed by a two-column group holding every other field
+ * EXCEPT `widget: 'long'` ones, and a notebook whose first ("Settings") page
+ * holds those long-text fields instead, in declaration order. Either header
  * half is omitted if the form has nothing for it (no picture field ⇒ no
- * picture in the header; no text field ⇒ no title, and if NEITHER exists the
- * header row itself is omitted rather than rendering empty). Synthesized
- * fresh on every call, never written back to `descriptor.layout` — an entity
- * gets this anatomy for free the moment it declares no explicit `layout`, and
- * a module opts out simply by declaring one.
+ * picture; no eligible text field ⇒ no title; NEITHER ⇒ the header row
+ * itself is omitted rather than rendering empty) — the notebook and its
+ * Settings page always render, even with zero long fields, since the
+ * Settings page is also where a record's own runtime-created pages will
+ * live (a later phase). A `long` field is deliberately never title
+ * candidate material — a multi-line note doesn't belong as a form's big
+ * single-line heading. Synthesized fresh on every call, never written back
+ * to `descriptor.layout` — an entity gets this anatomy for free the moment
+ * it declares no explicit `layout`, and a module opts out simply by
+ * declaring one.
  */
 function synthesizeFormLayout(fields: FieldDescriptor[]): LayoutNode[] {
   const pictureField = fields.find((f) => f.type === 'boolean' && f.widget === 'picture')
-  const titleField = fields.find((f) => f.type === 'text')
+  const titleField = fields.find((f) => f.type === 'text' && f.widget !== 'long')
+  const longFields = fields.filter((f) => f.type === 'text' && f.widget === 'long')
   const headerNames = new Set(
     [pictureField?.name, titleField?.name].filter((name): name is string => name != null),
   )
+  const longNames = new Set(longFields.map((f) => f.name))
 
   const headerChildren: LayoutNode[] = []
   if (pictureField) headerChildren.push({ kind: 'field', name: pictureField.name })
   if (titleField) headerChildren.push({ kind: 'field', name: titleField.name, variant: 'title' })
 
   const columnsChildren: LayoutFieldNode[] = fields
-    .filter((f) => !headerNames.has(f.name))
+    .filter((f) => !headerNames.has(f.name) && !longNames.has(f.name))
     .map((f) => ({ kind: 'field', name: f.name }))
 
   const nodes: LayoutNode[] = []
@@ -448,6 +468,18 @@ function synthesizeFormLayout(fields: FieldDescriptor[]): LayoutNode[] {
     nodes.push({ kind: 'row', id: FORM_HEADER_ID, children: headerChildren })
   }
   nodes.push({ kind: 'group', id: FORM_COLUMNS_ID, columns: 2, children: columnsChildren })
+  nodes.push({
+    kind: 'notebook',
+    id: FORM_NOTEBOOK_ID,
+    children: [
+      {
+        kind: 'page',
+        id: PAGE_SETTINGS_ID,
+        title: 'Settings',
+        children: longFields.map((f): LayoutFieldNode => ({ kind: 'field', name: f.name })),
+      },
+    ],
+  })
   return nodes
 }
 
@@ -467,8 +499,14 @@ function synthesizeFormLayout(fields: FieldDescriptor[]): LayoutNode[] {
  *
  * Validates: every field-leaf name exists in `fields` (a dangling reference is
  * a registration error, not a silently dropped node), no field-leaf appears
- * twice, every declared node `id` is unique across the tree. Errors name the
- * field or id.
+ * twice, every declared node `id` is unique across the tree. Also validates
+ * the notebook/page structural rules (docs/roadmaps/responsive-displays.md,
+ * Phase 4): a `page` must be a direct child of a `notebook` (never top-level,
+ * never nested in a group/row/section), a `page` must declare a `title` (it
+ * doubles as the tab label — a blank tab is a registration error, not a
+ * silent one), a `notebook`'s children must ALL be `page` nodes, and at most
+ * one `notebook` exists anywhere in the tree (v1). Errors name the field,
+ * id, or offending kind.
  */
 export function normalizeLayout<T>(descriptor: ViewDescriptor<T>): LayoutNode[] {
   if (!descriptor.layout) {
@@ -484,8 +522,9 @@ export function normalizeLayout<T>(descriptor: ViewDescriptor<T>): LayoutNode[] 
   const fieldNames = new Set(descriptor.fields.map((f) => f.name))
   const seenFields = new Set<string>()
   const seenIds = new Set<string>()
+  let notebookCount = 0
 
-  const visit = (node: LayoutNode): void => {
+  const visit = (node: LayoutNode, parentKind: LayoutNodeKind | null): void => {
     if (node.kind === 'field') {
       if (!fieldNames.has(node.name)) {
         throw new Error(`layout: field "${node.name}" is not declared in this view's fields`)
@@ -502,9 +541,31 @@ export function normalizeLayout<T>(descriptor: ViewDescriptor<T>): LayoutNode[] 
       }
       seenIds.add(node.id)
     }
-    for (const child of node.children) visit(child)
+    const label = node.id ? `"${node.id}"` : `(no id)`
+    if (node.kind === 'page') {
+      if (parentKind !== 'notebook') {
+        throw new Error(`layout: a "page" node ${label} must be a direct child of a "notebook" node`)
+      }
+      if (!node.title) {
+        throw new Error(`layout: a "page" node ${label} requires a title (it is also its tab label)`)
+      }
+    }
+    if (node.kind === 'notebook') {
+      notebookCount += 1
+      if (notebookCount > 1) {
+        throw new Error(`layout: at most one "notebook" node is allowed per layout, found a second ${label}`)
+      }
+      for (const child of node.children) {
+        if (child.kind !== 'page') {
+          throw new Error(
+            `layout: notebook ${label} may only contain "page" children, found "${child.kind}"`,
+          )
+        }
+      }
+    }
+    for (const child of node.children) visit(child, node.kind)
   }
-  for (const node of descriptor.layout) visit(node)
+  for (const node of descriptor.layout) visit(node, null)
 
   return descriptor.layout
 }

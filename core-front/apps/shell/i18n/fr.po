@@ -485,3 +485,20 @@ msgstr "Champ de date"
 
 msgid "Changing view field configuration requires the settings:views:write permission."
 msgstr "Modifier la configuration des champs de vue nécessite la permission settings:views:write."
+
+# ── Runtime notebook pages (docs/roadmaps/responsive-displays.md, Phase 5) ──
+
+msgid "Content"
+msgstr "Contenu"
+
+msgid "Delete"
+msgstr "Supprimer"
+
+msgid "+ Add page"
+msgstr "+ Ajouter une page"
+
+msgid "New page"
+msgstr "Nouvelle page"
+
+msgid "Available once the record has been saved."
+msgstr "Disponible une fois l'enregistrement sauvegardé."

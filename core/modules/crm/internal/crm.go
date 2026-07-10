@@ -40,7 +40,10 @@ type CRM struct {
 	// Picture and Signature are the flag columns behind the boolean/picture and
 	// boolean/signature widgets on the CRM form: true ⇔ a picture row exists on
 	// the (crm, record, <field>) anchor; the picture service owns the bytes.
-	// Pointers = nullable for the same reason as Score.
+	// Pointers = nullable for the same reason as Score. Signature also backs a
+	// notebook page coded directly in views/CrmViews.ts (docs/roadmaps/
+	// responsive-displays.md, Phase 4) — its own tab instead of the two-column
+	// body; no schema change needed for that, since the column already exists.
 	Picture   *bool `db:"picture"`
 	Signature *bool `db:"signature"`
 }
