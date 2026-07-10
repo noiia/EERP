@@ -261,7 +261,59 @@ and the saved grid renders unchanged.
 live widgets; the desktop canvas and the saved layout are unchanged; tests cover both
 branches.
 
-## Phase 3 — Form shell: full width, header, two columns (+ ADR-007)
+## Phase 3 — Form shell: full width, header, two columns (+ ADR-007) ✅ (implemented)
+
+> Implementation notes: landed as designed. `descriptor.ts` exports `FORM_HEADER_ID`/
+> `FORM_COLUMNS_ID` as real constants (not string literals duplicated at each call
+> site) — `normalizeLayout` uses them to build the synthesized tree, `layout-renderer.tsx`
+> uses `FORM_HEADER_ID` to except the header row from phone-stacking, and
+> `crminheritdemo`'s test suite imports `FORM_HEADER_ID` to pin where its `move email
+> before name` op now lands (see below). The container-query grid needed two nested
+> `Box`es (`containerType: 'inline-size'` on an outer wrapper, `@container (min-width:
+> …)` on the inner grid) since a container query can't target the element that
+> establishes it — this makes the whole thing self-contained wherever `LayoutForm`
+> renders, with zero cooperation needed from `FormRenderer` or the relation wizard.
+> `TitleField` is a thin wrapper around a `variant="standard"` `TextField` (placeholder
+> instead of a floating label, `sx` targeting `.MuiInputBase-input` for the h3 scale) —
+> deliberately not a new widget dispatch, so required/disabled/error still work exactly
+> as they do on every other field.
+>
+> One real consequence, expected and pinned rather than avoided:
+> `crminheritdemo`'s pre-existing `move email before name` op (written before this
+> anatomy existed) now inserts `email` as a sibling INSIDE `__form_header`, next to the
+> title, instead of into the flat body it used to join — because `'name'` (the anchor
+> it targets) is now the title field living there. The relative-order guarantee the
+> extension actually cares about (`email` before `name`) still holds; a new test in
+> `CrmInheritViews.test.ts` pins exactly where that now happens, and ADR-007 documents
+> it as an intended consequence of changing the default anatomy, not a regression.
+> Existing test suites across `descriptor.test.ts`, `layout-renderer.test.tsx`,
+> `renderers.test.tsx`, and `extensions.test.ts` needed their `viewType: 'form'`
+> fixtures (that were only ever exercising the GENERIC flat-fallback behavior, written
+> before form views were special) switched to `viewType: 'tree'` — the fixtures were
+> testing the shared mechanism, not form-specific behavior, so this is a fixture
+> correction, not a coverage loss; a new dedicated describe block in each file covers
+> the actual form-anatomy synthesis. No new translatable strings were introduced
+> (`TitleField`'s placeholder reuses each field's existing label), so no `fr.po` change
+> was needed this phase.
+>
+> Verified in a real browser: crm's form (a picture field + `name` as title + a dozen
+> other fields) renders full-width with the picture and big title side by side, the
+> remaining fields in two alternating columns, collapsing to one column at phone width
+> while the header stays side-by-side; directly measuring the columns group's
+> `gridTemplateColumns` confirmed `571px 571px` (2 columns) at a 1400px viewport and a
+> single `368px` track at 500px, driven purely by the container query — no viewport
+> media query involved, so the relation wizard's ~552–600px dialog (measured: exactly
+> 600px, a `Dialog maxWidth="sm"` Paper) reliably collapses too.
+>
+> One live observation worth recording, not a bug: crm's header row ends up with
+> THREE items, not two — `crminheritdemo`'s `move email before name` (decision 2's
+> pinned consequence) puts `email` in `__form_header` alongside the picture and the
+> title. At phone width three side-by-side non-stacking items is genuinely crowded
+> (the title visibly truncates) — an accepted consequence of that specific extension
+> predating this anatomy, not a defect in the header/title-variant mechanism itself; a
+> header with just its intended two items (picture + title) doesn't have this problem.
+> Not fixed here — flagged for whoever next touches `crminheritdemo`'s ops, since the
+> real fix is retargeting that `move`, not the anatomy.
 
 > Design notes: three moves in one phase because they only make sense together —
 > (a) `FormRenderer` drops the 560px cap (`maxWidth: '100%'` inside the page inset);

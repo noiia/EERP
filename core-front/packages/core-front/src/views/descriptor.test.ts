@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   FIELD_WIDGETS,
+  FORM_COLUMNS_ID,
+  FORM_HEADER_ID,
   evaluateCondition,
   fieldZeroDefault,
   isVirtualRelation,
@@ -176,9 +178,13 @@ describe('validateDescriptorWidgets', () => {
 })
 
 describe('normalizeLayout', () => {
+  // viewType 'tree' (not 'form'): this block is about the GENERIC flat
+  // fallback shared by every non-form view — the form-specific header/
+  // two-column default (docs/roadmaps/responsive-displays.md, Phase 3) has
+  // its own describe block below.
   const three: ViewDescriptor = {
     entity: 'crm',
-    viewType: 'form',
+    viewType: 'tree',
     fields: [field('text'), { ...field('text'), name: 'g' }, { ...field('text'), name: 'h' }],
   }
 
@@ -229,11 +235,130 @@ describe('normalizeLayout', () => {
   })
 })
 
-describe('layoutFieldOrder', () => {
-  it('matches fields declaration order for the implicit fallback', () => {
-    const three: ViewDescriptor = {
+// docs/roadmaps/responsive-displays.md, Phase 3: the default anatomy for an
+// un-layouted `viewType: 'form'` descriptor — a header (picture + big title)
+// followed by a two-column group holding everything else. Every other view
+// type keeps the flat implicit group, pinned above.
+describe('normalizeLayout — form view synthesis', () => {
+  const textF = (name: string): FieldDescriptor => ({ name, label: name, type: 'text' })
+  const pictureF = (name: string): FieldDescriptor => ({
+    name,
+    label: name,
+    type: 'boolean',
+    widget: 'picture',
+  })
+
+  it('header = [picture, title(first text, variant "title")], columns = everything else, in declaration order', () => {
+    const descriptor: ViewDescriptor = {
       entity: 'crm',
       viewType: 'form',
+      fields: [pictureF('photo'), textF('name'), textF('email'), field('number'), textF('company')],
+    }
+    expect(normalizeLayout(descriptor)).toEqual([
+      {
+        kind: 'row',
+        id: FORM_HEADER_ID,
+        children: [
+          { kind: 'field', name: 'photo' },
+          { kind: 'field', name: 'name', variant: 'title' },
+        ],
+      },
+      {
+        kind: 'group',
+        id: FORM_COLUMNS_ID,
+        columns: 2,
+        children: [
+          { kind: 'field', name: 'email' },
+          { kind: 'field', name: 'f' },
+          { kind: 'field', name: 'company' },
+        ],
+      },
+    ])
+  })
+
+  it('no picture field: header holds only the title', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textF('name'), textF('email')],
+    }
+    expect(normalizeLayout(descriptor)[0]).toEqual({
+      kind: 'row',
+      id: FORM_HEADER_ID,
+      children: [{ kind: 'field', name: 'name', variant: 'title' }],
+    })
+  })
+
+  it('no text field: no title, and — since nothing else is header material — no header row at all', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [field('number'), field('boolean')],
+    }
+    const nodes = normalizeLayout(descriptor)
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0]).toMatchObject({ kind: 'group', id: FORM_COLUMNS_ID })
+  })
+
+  it('a picture field with NO text field still gets a header (picture only, no title)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [pictureF('photo'), field('number')],
+    }
+    expect(normalizeLayout(descriptor)[0]).toEqual({
+      kind: 'row',
+      id: FORM_HEADER_ID,
+      children: [{ kind: 'field', name: 'photo' }],
+    })
+  })
+
+  it('only the FIRST text field becomes the title; later text fields land in columns', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textF('name'), textF('nickname')],
+    }
+    const columns = normalizeLayout(descriptor).find((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
+    expect(columns).toMatchObject({ children: [{ kind: 'field', name: 'nickname' }] })
+  })
+
+  it('an explicit layout on a form view is returned as-is — no synthesis', () => {
+    const layout: LayoutNode[] = [{ kind: 'group', children: [{ kind: 'field', name: 'name' }] }]
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textF('name')],
+      layout,
+    }
+    expect(normalizeLayout(descriptor)).toBe(layout)
+  })
+
+  it('every other view type keeps the flat implicit group even with a picture/text mix', () => {
+    for (const viewType of ['tree', 'dashboard'] as const) {
+      const descriptor: ViewDescriptor = {
+        entity: 'crm',
+        viewType,
+        fields: [pictureF('photo'), textF('name')],
+      }
+      expect(normalizeLayout(descriptor)).toEqual([
+        {
+          kind: 'group',
+          children: [
+            { kind: 'field', name: 'photo' },
+            { kind: 'field', name: 'name' },
+          ],
+        },
+      ])
+    }
+  })
+})
+
+describe('layoutFieldOrder', () => {
+  it('matches fields declaration order for the implicit fallback (tree view)', () => {
+    const three: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'tree',
       fields: [field('text'), { ...field('text'), name: 'g' }, { ...field('text'), name: 'h' }],
     }
     expect(layoutFieldOrder(normalizeLayout(three))).toEqual(['f', 'g', 'h'])

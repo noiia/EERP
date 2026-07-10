@@ -6,9 +6,13 @@ function field(name: string, extra: Partial<FieldDescriptor> = {}): FieldDescrip
   return { name, label: name.toUpperCase(), type: 'text', ...extra }
 }
 
+// viewType 'tree' (not 'form') on purpose: these tests exercise the extension
+// MECHANISM itself, agnostic to view type — 'form' would trigger the
+// header/two-column default synthesis (docs/roadmaps/responsive-displays.md,
+// Phase 3), which has its own dedicated describe block below.
 const base: ViewDescriptor = {
   entity: 'crm',
-  viewType: 'form',
+  viewType: 'tree',
   fields: [field('name'), field('email'), field('status')],
 }
 
@@ -248,6 +252,45 @@ describe('applyExtension — setDescriptor', () => {
     expect(result.formPath).toBe('/crm/:id')
     expect(result.createPermission).toBe('crm:contacts:write')
     expect(result.entity).toBe('crm') // untouched
+  })
+})
+
+describe('applyExtension — form views materialize the synthesized default anatomy first', () => {
+  // docs/roadmaps/responsive-displays.md, Phase 3: applyExtension always
+  // normalizes the layout before applying ops, so a form-view extension sees
+  // (and can target) the header/two-column default, not a flat group.
+  const formBase: ViewDescriptor = {
+    entity: 'crm',
+    viewType: 'form',
+    fields: [field('name'), field('email'), field('status')],
+  }
+
+  it('a no-target addField lands inside __form_columns, not top-level', () => {
+    const result = apply([{ op: 'addField', field: field('comment') }], formBase)
+    const top = normalizeLayout(result)
+    const columns = top.find((n) => n.kind !== 'field' && n.id === '__form_columns')
+    expect(columns).toBeDefined()
+    if (columns && columns.kind !== 'field') {
+      expect(columns.children.some((c) => c.kind === 'field' && c.name === 'comment')).toBe(true)
+    }
+    // Never at the top level alongside the header/columns nodes.
+    expect(top.some((n) => n.kind === 'field' && n.name === 'comment')).toBe(false)
+  })
+
+  it('an addField anchored on a field living in __form_columns still resolves (recursive target search)', () => {
+    // 'status' is neither the picture nor the title (title = first text
+    // field = 'name'), so it lives inside __form_columns, one level deep —
+    // insertAt's target search must still find it there.
+    const result = apply(
+      [{ op: 'addField', field: field('date', { type: 'date' }), target: 'status', position: 'after' }],
+      formBase,
+    )
+    const top = normalizeLayout(result)
+    const columns = top.find((n) => n.kind !== 'field' && n.id === '__form_columns')
+    if (columns && columns.kind !== 'field') {
+      const names = columns.children.map((c) => (c.kind === 'field' ? c.name : c.id))
+      expect(names.indexOf('date')).toBe(names.indexOf('status') + 1)
+    }
   })
 })
 

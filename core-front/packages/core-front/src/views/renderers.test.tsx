@@ -64,7 +64,10 @@ describe('EntityView', () => {
     const save = screen.getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled()
 
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ada' } })
+    // 'name' is the only text field, so the default form anatomy renders it
+    // as the big TITLE field (placeholder label, not a boxed one) —
+    // docs/roadmaps/responsive-displays.md, Phase 3.
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Ada' } })
     expect(save).toBeEnabled()
   })
 
@@ -106,7 +109,7 @@ describe('EntityView', () => {
     const reset = screen.getByRole('button', { name: 'Reset' })
     expect(reset).toBeDisabled()
 
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ada' } })
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Ada' } })
     expect(reset).toBeEnabled()
     expect(save).toBeEnabled()
 

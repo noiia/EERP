@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutFieldOrder, ModuleRegistry, normalizeLayout } from '@eerp/core-front'
+import { FORM_HEADER_ID, layoutFieldOrder, ModuleRegistry, normalizeLayout } from '@eerp/core-front'
 
 // This module's tsconfig mirrors contact/crm's — ES2022 lib only, no `dom`/`node` —
 // so the ambient `console` global isn't declared. A minimal local shim, rather than
@@ -82,6 +82,27 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm')!
     expect(resolved.descriptor.fields.map((f) => f.name)).not.toContain('date')
+  })
+
+  it('email ends up co-located with the picture/title fields in the synthesized form HEADER — a visible, expected consequence of the default form anatomy (docs/roadmaps/responsive-displays.md, Phase 3), not a broken move', () => {
+    // crm's form declares a picture-widget field, so the default anatomy
+    // gives it a header row (picture + 'name', the first text field, as the
+    // big title). crminheritdemo's `move email before name` op was written
+    // before that anatomy existed, targeting 'name' wherever it lives — it
+    // still resolves (searches the whole tree), it just now lands 'email' as
+    // a sibling INSIDE that header row instead of in the flat body. The
+    // relative order this module actually cares about (email before name)
+    // still holds; this test additionally pins WHERE that now happens.
+    const registry = registerBoth()
+    const resolved = registry.buildRegistry().get('/crm/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const header = nodes.find((n) => n.kind !== 'field' && n.id === FORM_HEADER_ID)
+    expect(header).toBeDefined()
+    if (header && header.kind !== 'field') {
+      const names = header.children.map((c) => (c.kind === 'field' ? c.name : c.id))
+      expect(names).toContain('email')
+      expect(names.indexOf('email')).toBeLessThan(names.indexOf('name'))
+    }
   })
 
   it("crm's own module object is never mutated — applyExtension is pure", () => {

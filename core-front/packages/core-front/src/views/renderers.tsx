@@ -32,7 +32,7 @@ import { ErrorAlert } from './error-alert'
 import { GraphRenderer } from './graph-renderer'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
-import { layout, tabularNums } from './tokens'
+import { tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
 import {
   createDashboardStore,
@@ -146,7 +146,13 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
       component="form"
       onSubmit={onSubmit}
       aria-busy={submitting}
-      sx={{ maxWidth: layout.formMaxWidth }}
+      // Full width inside RootLayout's page inset (docs/roadmaps/
+      // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
+      // sense for a single flat column but wastes most of a wide screen now
+      // that the default anatomy is a header + two responsive columns.
+      // layout.formMaxWidth survives as the relation wizard's dialog width
+      // and the columns' container-query floor.
+      sx={{ maxWidth: '100%' }}
     >
       <Card>
         <CardContent sx={{ p: 3 }}>

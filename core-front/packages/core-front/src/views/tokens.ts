@@ -112,6 +112,17 @@ export const layout = {
    * anything expressible as pure CSS uses `sx` breakpoints instead
    * (docs/roadmaps/responsive-displays.md, Architecture decisions 1–2). */
   phoneMaxWidth: 600,
+  /** Container-query threshold (px) below which a form's two-column group
+   * (`LayoutContainerNode.columns`) collapses to one. Deliberately a CSS
+   * CONTAINER query keyed off this width, never a viewport media query: the
+   * same `LayoutForm` renders both the full-width form page and the relation
+   * wizard's ~552px-wide dialog content, and only the wizard should ever
+   * collapse — a viewport query can't tell those two apart
+   * (docs/roadmaps/responsive-displays.md, Architecture decision 3). Set
+   * comfortably above the wizard's dialog content width (`Dialog
+   * maxWidth="sm"` ≈ 600px Paper minus padding ≈ 552px) so it reliably stays
+   * single-column there. */
+  formTwoColumnMinWidth: 640,
 } as const
 
 /** Motion. Short, restrained; the theme also disables it under prefers-reduced-motion. */

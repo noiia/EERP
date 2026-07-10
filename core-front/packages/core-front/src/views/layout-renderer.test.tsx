@@ -34,9 +34,13 @@ function renderLayout(descriptor: ViewDescriptor, draft: Record<string, unknown>
 
 describe('LayoutForm', () => {
   it('implicit layout (no descriptor.layout): renders every field in declaration order', () => {
+    // viewType 'tree' (not 'form'): this is the GENERIC flat-fallback used by
+    // every non-form view — the form-specific header/two-column default
+    // (docs/roadmaps/responsive-displays.md, Phase 3) has its own describe
+    // block below.
     const descriptor: ViewDescriptor = {
       entity: 'crm',
-      viewType: 'form',
+      viewType: 'tree',
       fields: [textField('first'), textField('second'), textField('third')],
     }
     renderLayout(descriptor)
@@ -119,7 +123,7 @@ describe('LayoutForm', () => {
   it('`hidden` skips a field leaf entirely — used by the o2m create wizard for its preset inverse FK', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',
-      viewType: 'form',
+      viewType: 'tree',
       fields: [textField('visible'), textField('inverse_fk')],
     }
     const onFieldChange = vi.fn()
@@ -140,7 +144,7 @@ describe('LayoutForm', () => {
   it('edits route through onFieldChange with the field name and new value', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',
-      viewType: 'form',
+      viewType: 'tree',
       fields: [textField('name')],
     }
     const { onFieldChange } = renderLayout(descriptor, { name: 'Ada' })
@@ -158,6 +162,81 @@ describe('LayoutForm', () => {
     }
     renderLayout(descriptor, { total: 42 })
     expect(screen.getByLabelText('Total')).toBeDisabled()
+  })
+})
+
+// docs/roadmaps/responsive-displays.md, Phase 3: the DEFAULT anatomy for an
+// un-layouted `viewType: 'form'` descriptor — header (picture + big title)
+// then a two-column group holding everything else. Only forms with no
+// explicit `layout` get this; an explicit layout (any viewType) is untouched,
+// pinned above.
+describe('LayoutForm — default form anatomy (viewType "form", no explicit layout)', () => {
+  it('the first text field renders BIG (title variant, placeholder label, no boxed TextField)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('name'), textField('email')],
+    }
+    renderLayout(descriptor, { name: 'Ada' })
+    // No floating/boxed label for the title field...
+    expect(screen.queryByLabelText('NAME')).not.toBeInTheDocument()
+    // ...instead a placeholder-labeled input carrying the value.
+    expect(screen.getByPlaceholderText('NAME')).toHaveValue('Ada')
+    // The second text field still renders normally (boxed label).
+    expect(screen.getByLabelText('EMAIL')).toBeInTheDocument()
+  })
+
+  it('a boolean `widget: picture` field joins the title field in the header, both before every other field', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [
+        { name: 'picture', label: 'Picture', type: 'boolean', widget: 'picture' },
+        textField('name'),
+        textField('email'),
+      ],
+    }
+    renderLayout(descriptor)
+    // The picture widget renders its own frame/label (covered in
+    // picture-widgets tests) — here we only need proof it mounted at all,
+    // alongside the title field, and that 'email' (a plain column field)
+    // still renders through the normal widget path.
+    expect(screen.getByText('Picture')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('NAME')).toBeInTheDocument()
+    expect(screen.getByLabelText('EMAIL')).toBeInTheDocument()
+  })
+
+  it('no text field at all: no title, no header — every field lands in the columns group', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [{ name: 'total', label: 'Total', type: 'number' }],
+    }
+    renderLayout(descriptor, { total: 42 })
+    expect(screen.getByLabelText('Total')).toBeInTheDocument()
+  })
+
+  it('required still applies to the title field — the big style does not eat the affordance', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [{ name: 'name', label: 'Name', type: 'text', required: true }],
+    }
+    renderLayout(descriptor)
+    expect(screen.getByPlaceholderText('Name')).toBeRequired()
+  })
+
+  it('an EXPLICIT layout on a form view is untouched — no synthesized header/columns', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('name'), textField('email')],
+      layout: [{ kind: 'group', children: [{ kind: 'field', name: 'name' }, { kind: 'field', name: 'email' }] }],
+    }
+    renderLayout(descriptor)
+    // Both render through the NORMAL (boxed-label) widget path — no title variant.
+    expect(screen.getByLabelText('NAME')).toBeInTheDocument()
+    expect(screen.getByLabelText('EMAIL')).toBeInTheDocument()
   })
 })
 
@@ -189,7 +268,7 @@ describe('LayoutForm — declarative states react to draft edits', () => {
   it('visible: false unmounts the field; toggling it back on shows the PRESERVED value', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',
-      viewType: 'form',
+      viewType: 'tree',
       fields: [
         { name: 'status', label: 'Status', type: 'text' },
         {

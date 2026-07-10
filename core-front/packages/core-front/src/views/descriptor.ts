@@ -380,6 +380,16 @@ export interface LayoutContainerNode {
   /** A heading, rendered above the children. A gettext msgid, like any other
    * descriptor string — the extending module ships its own translation. */
   title?: string
+  /**
+   * Rendering hint (docs/roadmaps/responsive-displays.md, Phase 3): lay the
+   * children out as a CSS grid of up to this many columns instead of the
+   * kind's normal stack/row, collapsing to a single column when the
+   * container itself is narrow (a CSS container query, keyed off the
+   * container's OWN measured width — never a viewport media query, so the
+   * SAME node renders correctly full-width on the form page and inside the
+   * relation wizard's narrow dialog). JSON-only, like every other hint here.
+   */
+  columns?: number
   children: LayoutNode[]
 }
 
@@ -387,19 +397,73 @@ export interface LayoutContainerNode {
 export interface LayoutFieldNode {
   kind: 'field'
   name: string
+  /**
+   * Rendering hint (docs/roadmaps/responsive-displays.md, Phase 3): `'title'`
+   * renders this field big (a placeholder-labeled, borderless-until-focus
+   * input) instead of its normal boxed appearance — the form header's name
+   * field, or any explicit layout that wants the same treatment. The field
+   * is still fully real: required/states/compute all apply unchanged.
+   */
+  variant?: 'title'
 }
 
 export type LayoutNode = LayoutContainerNode | LayoutFieldNode
 
+/** Well-known ids of the nodes `normalizeLayout` synthesizes for an
+ * un-layouted `viewType: 'form'` descriptor — stable across calls so
+ * extensions (and, one render layer up, the renderer itself) can target the
+ * default anatomy by id, exactly like any hand-authored node id. */
+export const FORM_HEADER_ID = '__form_header'
+export const FORM_COLUMNS_ID = '__form_columns'
+
+/**
+ * The default `viewType: 'form'` anatomy (docs/roadmaps/responsive-displays.md,
+ * Phase 3): a header row — the first `widget: 'picture'` boolean field, then
+ * the first `text` field rendered big via `variant: 'title'` — followed by a
+ * two-column group holding every other field, in declaration order. Either
+ * half is omitted if the form has nothing for it (no picture field ⇒ no
+ * picture in the header; no text field ⇒ no title, and if NEITHER exists the
+ * header row itself is omitted rather than rendering empty). Synthesized
+ * fresh on every call, never written back to `descriptor.layout` — an entity
+ * gets this anatomy for free the moment it declares no explicit `layout`, and
+ * a module opts out simply by declaring one.
+ */
+function synthesizeFormLayout(fields: FieldDescriptor[]): LayoutNode[] {
+  const pictureField = fields.find((f) => f.type === 'boolean' && f.widget === 'picture')
+  const titleField = fields.find((f) => f.type === 'text')
+  const headerNames = new Set(
+    [pictureField?.name, titleField?.name].filter((name): name is string => name != null),
+  )
+
+  const headerChildren: LayoutNode[] = []
+  if (pictureField) headerChildren.push({ kind: 'field', name: pictureField.name })
+  if (titleField) headerChildren.push({ kind: 'field', name: titleField.name, variant: 'title' })
+
+  const columnsChildren: LayoutFieldNode[] = fields
+    .filter((f) => !headerNames.has(f.name))
+    .map((f) => ({ kind: 'field', name: f.name }))
+
+  const nodes: LayoutNode[] = []
+  if (headerChildren.length > 0) {
+    nodes.push({ kind: 'row', id: FORM_HEADER_ID, children: headerChildren })
+  }
+  nodes.push({ kind: 'group', id: FORM_COLUMNS_ID, columns: 2, children: columnsChildren })
+  return nodes
+}
+
 /**
  * Resolve a descriptor's presentational structure: the declared `layout`,
- * validated, or — when omitted — one implicit, untitled group wrapping every
- * field in declaration order. That fallback is what makes the layout tree
- * fully backward-compatible: a descriptor written before it existed resolves
- * to exactly the flat order renderers already produced, so nothing needs to
- * opt in. Renderers call this — never read `fields` for display order/grouping
- * directly — so the WHOLE engine has one code path to keep consistent as
- * later phases add `move`/`addNode` extension operations.
+ * validated, or — when omitted — a synthesized default. For `viewType:
+ * 'form'` that default is the header/two-column anatomy above; every other
+ * view type keeps the original flat, untitled group wrapping every field in
+ * declaration order (unchanged — `layoutFieldOrder` for a tree/kanban/
+ * calendar/dashboard view must stay pixel-identical to before this existed).
+ * That fallback is what makes the layout tree fully backward-compatible: a
+ * descriptor written before it existed resolves to exactly the flat order
+ * renderers already produced, so nothing needs to opt in. Renderers call
+ * this — never read `fields` for display order/grouping directly — so the
+ * WHOLE engine has one code path to keep consistent as later phases add
+ * `move`/`addNode` extension operations.
  *
  * Validates: every field-leaf name exists in `fields` (a dangling reference is
  * a registration error, not a silently dropped node), no field-leaf appears
@@ -408,6 +472,7 @@ export type LayoutNode = LayoutContainerNode | LayoutFieldNode
  */
 export function normalizeLayout<T>(descriptor: ViewDescriptor<T>): LayoutNode[] {
   if (!descriptor.layout) {
+    if (descriptor.viewType === 'form') return synthesizeFormLayout(descriptor.fields)
     return [
       {
         kind: 'group',
