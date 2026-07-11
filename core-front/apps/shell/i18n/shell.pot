@@ -354,3 +354,36 @@ msgstr ""
 
 msgid "Reports are not available yet."
 msgstr ""
+
+#: app/settings/SettingsHub.tsx src/components/DeveloperSettings.tsx
+msgid "Developer"
+msgstr ""
+
+#: app/settings/SettingsHub.tsx
+msgid "Seed the workspace with fake data for testing."
+msgstr ""
+
+#: src/components/DeveloperSettings.tsx
+msgid "Tools for testing the software against realistic data."
+msgstr ""
+
+msgid "Seed demo data"
+msgstr ""
+
+msgid "Creates a batch of fake contacts, CRM opportunities, and tags through the normal entity API, for exercising the UI with realistic-looking data."
+msgstr ""
+
+msgid "Seeding…"
+msgstr ""
+
+msgid "Seeding demo data is only available outside production."
+msgstr ""
+
+msgid "Results"
+msgstr ""
+
+msgid "created"
+msgstr ""
+
+msgid "failed"
+msgstr ""
