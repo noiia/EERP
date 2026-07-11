@@ -3,6 +3,7 @@ import { moduleRegistry } from '@eerp/core-front/server'
 // registry before we read the menu (same manifest the catch-all route imports).
 import '@/generated/generated-modules'
 import { activeModuleNames } from '@/lib/module-state'
+import { requireAuth } from '@/lib/session'
 import Menu from './Menu'
 
 // Landing route. Anonymous users are redirected to /login (requireAuth). A signed-in
@@ -21,6 +22,7 @@ import Menu from './Menu'
 // module's tile is filtered out HERE, from the live Go-sourced active state,
 // not baked into the build.
 export default async function HomePage() {
+  await requireAuth()
   const active = await activeModuleNames()
   const menu = moduleRegistry.menu().filter((m) => active.has(m.name))
   return <Menu menu={menu} />
