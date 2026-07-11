@@ -71,6 +71,45 @@ func TestManagerList(t *testing.T) {
 			t.Errorf("id = %v, want \"crm\"", crm["id"])
 		}
 	})
+
+	t.Run("module_dir is annotated", func(t *testing.T) {
+		crm, ok := byName["crm"]
+		if !ok {
+			t.Fatal("crm missing from List")
+		}
+		wantDir := filepath.Join(root, "crm")
+		if crm["module_dir"] != wantDir {
+			t.Errorf("module_dir = %v, want %v", crm["module_dir"], wantDir)
+		}
+	})
+}
+
+func TestManagerList_ExcludesAppstore(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureModule(t, root, "crm", nil)
+	writeFixtureModule(t, root, appstoreModuleName, nil)
+
+	mgr := NewManager([]string{root})
+	records, err := mgr.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("len(records) = %d, want 1 (appstore excluded)", len(records))
+	}
+	if records[0]["name"] != "crm" {
+		t.Errorf("records[0] name = %v, want crm", records[0]["name"])
+	}
+
+	t.Run("Get still resolves appstore directly", func(t *testing.T) {
+		record, err := mgr.Get(context.Background(), appstoreModuleName)
+		if err != nil {
+			t.Fatalf("Get(appstore): %v", err)
+		}
+		if record["name"] != appstoreModuleName {
+			t.Errorf("name = %v, want %v", record["name"], appstoreModuleName)
+		}
+	})
 }
 
 func TestManagerGet(t *testing.T) {
@@ -85,6 +124,10 @@ func TestManagerGet(t *testing.T) {
 		}
 		if record["display_name"] != "CRM" {
 			t.Errorf("display_name = %v, want CRM", record["display_name"])
+		}
+		wantDir := filepath.Join(root, "crm")
+		if record["module_dir"] != wantDir {
+			t.Errorf("module_dir = %v, want %v", record["module_dir"], wantDir)
 		}
 	})
 

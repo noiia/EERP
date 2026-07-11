@@ -29,8 +29,9 @@ export interface AppStoreModule {
   /** Seeded server-side by the hand-built host page (apps/shell/app/appstore/
    * [id]/page.tsx), never computed client-side — see the Views notebook page
    * Pitfall in the roadmap (a compute here would pull the server-only
-   * moduleRegistry into the client bundle). */
-  views?: { view: string; file: string; kind: 'Created' | 'Edited' }[]
+   * moduleRegistry into the client bundle). filepath joins Go's module_dir
+   * (manager.go) with the conventional views/ subfolder. */
+  views?: { route: string; filename: string; filepath: string; status: 'Created' | 'Inherited' }[]
   reports?: Record<string, unknown>[]
 }
 
@@ -94,9 +95,10 @@ const viewsField: FieldDescriptor = {
   store: false,
   widgetOptions: {
     columns: [
-      { key: 'view', label: 'View' },
-      { key: 'file', label: 'File' },
-      { key: 'kind', label: 'Kind' },
+      { key: 'route', label: 'Route' },
+      { key: 'filename', label: 'Filename' },
+      { key: 'filepath', label: 'Filepath' },
+      { key: 'status', label: 'Status' },
     ],
   },
 }

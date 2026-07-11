@@ -1,23 +1,27 @@
 # App Store module — build roadmap
 
 > **Goal:** a module (`appstore`) that acts as the application store of the ERP: it lists every
-> detected module as a catalog (icon + name + description), opens a form on the `module.json`
-> content, and lets an authorized user activate/deactivate it. The form is **read-only for data**
-> — every `module.json` field, `app_mode` included, renders for inspection only. The **one**
-> write affordance is a dedicated **Activate / Deactivate button**, not a field edit, and it
-> **writes the change back to the module's `module.json` file** so both the backend loader and
-> the frontend discovery pick it up on the next restart/rebuild. The form's notebook (docs/
-> roadmaps/responsive-displays.md) carries two documentation pages: **Views** — every view path
-> the module creates or edits, with the source file behind each — and **Reports**, a placeholder
+> detected module (except itself — see Phase 5) as a catalog (icon + name + description), opens a
+> form on the `module.json` content, and lets an authorized user activate/deactivate/reload it
+> **live, with no backend restart or frontend rebuild** (Phase 5, `docs/adr/ADR-009-live-module-lifecycle.md`).
+> The form is **read-only for data** — every `module.json` field, `app_mode` included, renders for
+> inspection only. The write affordances are dedicated **Activate/Deactivate**, **Reload**, and
+> **Logs** buttons, not field edits; Activate/Deactivate and Reload write the change back to the
+> module's `module.json` file too (after the live change already took effect), so a later rebuild
+> still reflects the same state. The form's notebook (docs/roadmaps/responsive-displays.md)
+> carries two documentation pages: **Views** — every view route the module creates or edits, its
+> real filename/filepath, and whether it was created or inherited — and **Reports**, a placeholder
 > for a later, separate development.
 
 ## Why it exists / what problem it solves
 
 Today `active` and `app_mode` are flipped by hand-editing `module.json` files on disk. That is
 invisible to non-developers, error-prone (the `contact` NOT_FOUND incident came from a manual
-edit), and unauditable. The store makes module lifecycle a first-class, permissioned UI concern
-— while deliberately **not** promising hot reload: v1 writes config; activation still happens at
-the next backend restart + frontend rebuild, exactly like an edit on disk would.
+edit), and unauditable. The store makes module lifecycle a first-class, permissioned UI concern.
+Phases 1-4 shipped it as a config editor only — activation happened at the next backend restart +
+frontend rebuild, exactly like a manual edit would. Phase 5 (`ADR-009`) replaced that with a live,
+in-process gate: the same button now takes effect immediately, for any module already known at the
+last frontend build.
 
 It is also the proof-case for three engine gaps worth closing generically: a **catalog** view type
 (icon/title/subtitle list — any future "directory of things" reuses it), **read-only form
@@ -39,9 +43,11 @@ exactly the lifecycle switch this store exists to make safe and auditable; every
    `internal/auth` and `internal/settings`. The **frontend** of the store, however, IS a regular
    module folder with descriptors only — proving the module pipeline on a non-DB entity.
 2. **List from the backend scan, never from the frontend registry.** The store must show
-   deactivated modules (that is the point of a store) — but frontend discovery drops
-   `active: false` modules by design. So the catalog data comes from Go's detector walk of
-   `module_root`, which sees every `module.json` regardless of `active`.
+   deactivated modules (that is the point of a store). So the catalog data comes from Go's
+   detector walk of `module_root`, which sees every `module.json` regardless of `active` — the
+   backend record is also the source of truth the frontend's own live-gating reads from (Phase 5),
+   not a build-time snapshot. (Frontend discovery itself stopped dropping `active: false` modules
+   in Phase 5 too — see `ADR-009` Decision 5 — but the catalog was never sourced from there.)
 3. **The writer patches raw JSON, never marshals `types.Module`.** `module.json` carries fields
    the Go struct does not know (`app_mode` is frontend-only; future fields will follow).
    Round-tripping through the struct would silently drop them. The writer reads the file into
@@ -51,9 +57,11 @@ exactly the lifecycle switch this store exists to make safe and auditable; every
    set the precedent: dedicated, tenant-agnostic handlers that return the generic list envelope
    (`{ data, total, ... }`) so the engine's `ApiClient` needs no special case. `id` = module
    `name` (the detector already resolves names uniquely across roots).
-5. **Restart semantics are explicit, not hidden.** Every successful `PUT` response carries
-   `requires_restart: true` and the UI surfaces a "pending restart/rebuild" notice. No hot
-   reload in v1 (that is the V2.0.0 registry's job).
+5. ~~**Restart semantics are explicit, not hidden.**~~ **Superseded in Phase 5** (`ADR-009`):
+   `PUT` no longer carries `requires_restart` at all — the runtime gate flips before the response
+   even returns, so there's nothing pending to disclose. True zero-build hot-*install* of a module
+   discovery has never seen remains the deferred V2.0.0 registry's job; toggling/reloading an
+   already-known module does not.
 6. **The ONLY writable field is `active`, and it is not even a form field — it is a button.**
    Every other `module.json` key, `app_mode` included, renders `readOnly: true` for display.
    `active`'s CURRENT value also renders read-only alongside the rest (so the form always shows
@@ -94,20 +102,22 @@ exactly the lifecycle switch this store exists to make safe and auditable; every
 
 | Concern | Contract |
 | --- | --- |
-| Backend routes | `GET /api/v1/modules` (list, generic envelope) · `GET /api/v1/modules/:id` · `PUT /api/v1/modules/:id` — `:id` = module `name`. Mounted with `jwtMw + permMw`. |
+| Backend routes | `GET /api/v1/modules` (list, generic envelope, excludes the `appstore` module itself — Phase 5) · `GET /api/v1/modules/:id` (resolves `appstore` too) · `PUT /api/v1/modules/:id` (activate/deactivate) · `POST /api/v1/modules/:id/reload` (Phase 5) · `GET /api/v1/modules/:id/logs` (Phase 5) — `:id` = module `name`. Mounted with `jwtMw + permMw`. |
 | Permissions | Derived from the route (flat case): `modules:modules:read` / `modules:modules:write`. |
-| Record shape | `{ id, name, display_name, description, version, author, type, icon, active, app_mode, depends, priority, is_service }` — read straight from each `module.json` (raw map), `id` mirrors `name`. Every field renders read-only in the form (decision 6); `active`'s value is included for display like the rest. |
-| Writable field | **`active` only** (boolean). The PUT body accepts exactly `{ "active": bool }`; any other key is rejected with `VALIDATION_ERROR` — whitelist, fail closed. `app_mode` is no longer writable through this API at all (decision 6) — changing it stays a manual `module.json` edit, same as every other non-lifecycle key. |
+| Record shape | `{ id, name, display_name, description, version, author, type, icon, active, app_mode, depends, priority, is_service, module_dir }` — read straight from each `module.json` (raw map) plus `module_dir` (Phase 5 — the directory the file was found in, annotated on `List`/`Get` only, never persisted back by `Patch`). Every field renders read-only in the form (decision 6); `active`'s value is included for display like the rest. |
+| Writable field | **`active` only** (boolean), via `PUT`. The body accepts exactly `{ "active": bool }`; any other key is rejected with `VALIDATION_ERROR` — whitelist, fail closed. `app_mode` is no longer writable through this API at all (decision 6). Reload (Phase 5) is a separate action, not a field. |
 | Activate/Deactivate control | A `Button` rendered by the HOST page beside the form (never inside `LayoutForm`), labeled "Activate" when `active` is currently false, "Deactivate" when true; gated on `modules:modules:write` (hidden without it, `CreateBar`'s posture); disabled mid-flight; on the appstore module's OWN record, `active` is currently `true` and this button is disabled with a hint (mirrors the backend's self-protection). Its own Server Action calls `PUT /api/v1/modules/:id { active: !current }` directly — it does not go through the record's form store/commit at all. |
-| Write behavior | Raw-JSON patch of the module's `module.json`, atomic write (`.tmp` + `rename`), serialized by a mutex. Response: updated record + `requires_restart: true`. |
+| Reload control (Phase 5) | A `Button` beside Activate/Deactivate, hidden entirely for `type: "go"` modules (their code is compiled into the backend binary — no binary to hot-swap, see `ADR-009` Decision 4) and without `modules:modules:write`. Calls `POST /api/v1/modules/:id/reload`. |
+| Logs control (Phase 5) | A `Button` opening a Dialog listing every recorded activate/deactivate/reload run, grouped by operation and sorted newest-first, each entry showing a `+Nms`/`+Ns` offset from its run's start. Gated on `modules:modules:read`. Calls `GET /api/v1/modules/:id/logs`. |
+| Write behavior | `SetActive`/`Reload` (`internal/module/runtime.go`) flip the in-memory active gate (or re-instantiate the WASM binary) FIRST, then persist to `module.json` via the same atomic write (`.tmp` + `rename`, serialized by a mutex) `Manager.Patch` always used. Response: the updated record, live already. |
 | Self-protection | `PUT` refuses `active: false` for the `appstore` module itself (`VALIDATION_ERROR`) — the store must not brick its own UI. |
 | Icon | New **optional** `module.json` field `icon` (short string — emoji in v1, e.g. `"🧩"`). Missing icon → the catalog renders a letter Avatar from `display_name`. The Go decoder is lenient, so the field is backward-compatible everywhere. |
-| Catalog item | Left: 40px icon/Avatar. Right of it: `display_name` at **14px bold** (`fontSize: 14, fontWeight: 700`); beneath it `description` at **12px regular**, `text.secondary`, single line ellipsized. Whole row clickable → `formPath`. |
+| Catalog item | Left: 40px icon/Avatar. Right of it: `display_name` at **14px bold** (`fontSize: 14, fontWeight: 700`); beneath it `description` at **12px regular**, `text.secondary`, single line ellipsized. Whole row clickable → `formPath`. The App Store's own row never appears (Phase 5) — it manages other apps, it isn't one to install/manage. |
 | Frontend entity | `entity: 'modules'` (maps 1:1 to the Go route prefix, per the descriptor-entity rule in `core-front/CLAUDE.md`). |
 | Table widget | `widget: 'table'` on a `type: 'text'`, `store: false` field; `widgetOptions.columns: { key, label }[]`; the field's VALUE (seeded, never computed — decision 8) is `Record<string, JsonValue>[]`. Renders a borderless MUI `Table`, one row per array entry, an empty-state caption (`widgetOptions.emptyLabel`, default "Nothing here yet.") when the array is empty. Read-only by construction — there is no write path for a table field, ever. |
-| Views notebook page | First page in the form's notebook (`addNode`, `position: 'first'` on `FORM_NOTEBOOK_ID` — decision 7). One row per path the viewed module's `FrontModule` **creates** (`routes`) or **edits** (`extends`), columns `View` (the path, e.g. `/crm/:id`), `File` (the `static_files.views` entry the route's/extension's default export came from, e.g. `CrmViews.ts`), `Kind` (`Created` or `Edited`). Sourced from `moduleRegistry`, server-side, per decision 7 — never a client `compute`. |
+| Views notebook page | First page in the form's notebook (`addNode`, `position: 'first'` on `FORM_NOTEBOOK_ID` — decision 7). One row per path the viewed module's `FrontModule` **creates** (`routes`) or **edits** (`extends`), columns `Route` (the path, e.g. `/crm/:id`), `Filename` (the `static_files.views` entry the route's/extension's default export came from, e.g. `CrmViews.ts`), `Filepath` (Phase 5 — `module_dir` joined with the conventional `views/` subfolder, e.g. `core/modules/crm/views/CrmViews.ts`), `Status` (`Created` or `Inherited` — renamed from `Kind`'s `Created`/`Edited` in Phase 5). Sourced from `moduleRegistry` + Go's `module_dir`, server-side, per decision 7 — never a client `compute`. |
 | Reports notebook page | Second page, same table shape (`Report`, `File` columns) — ships with zero rows and the "Reports are not available yet." caption in THIS roadmap (decision 9); a later, separate development wires real data. |
-| Effect of a change | On disk immediately; live after backend restart + frontend rebuild. The UI must say so. |
+| Effect of a change | Live immediately — the runtime gate flips before the `PUT`/`POST` response returns (Phase 5, `ADR-009`). `module.json` is written after, for durability and so a later rebuild agrees. |
 
 ## Data flow
 
@@ -116,24 +126,25 @@ sequenceDiagram
     participant B as Browser
     participant N as Next service (RSC + BFF)
     participant G as Go backend
-    participant R as moduleRegistry (build-time, in-process)
+    participant R as Registry (in-process runtime gate)
     participant FS as module.json files
     B->>N: GET /appstore (cookie)
     N->>G: GET /api/v1/modules (Bearer, tag:modules)
-    G->>FS: walk module_root, read every module.json (incl. active:false)
+    G->>FS: walk module_root, read every module.json (incl. active:false, excl. appstore itself)
     G-->>N: { data: [modules...], total }
     N-->>B: catalog HTML (icon / 14px bold name / 12px description)
     B->>N: click row → /appstore/contact
     N->>G: GET /api/v1/modules/contact
-    G-->>N: module.json content (readOnly data)
-    N->>R: resolve contact's routes/extends -> [{view, file, kind}] (decision 7)
+    G-->>N: module.json content + module_dir (readOnly data)
+    N->>R: resolve contact's routes/extends -> [{route, filename, filepath, status}] (decision 7 + Phase 5)
     N-->>B: form HTML (all fields readOnly) + Views table + inert Reports table
     B->>N: click "Deactivate" (the dedicated button, NOT a field edit)
     N->>G: PUT /api/v1/modules/contact { active: false }
-    G->>FS: patch raw JSON, atomic write
-    G-->>N: record + requires_restart: true
+    G->>R: SetActive: flip the live gate FIRST — contact's routes 403 from here on
+    G->>FS: THEN patch raw JSON, atomic write
+    G-->>N: updated record (no requires_restart — already live)
     N->>N: revalidateTag('modules')
-    N-->>B: re-render + "pending restart/rebuild" notice
+    N-->>B: re-render, tile/route gated live, no rebuild
 ```
 
 ---
@@ -474,6 +485,78 @@ merged with the code.
 
 ---
 
+## Phase 5 — Live lifecycle, operation logs, real Views file identity ✅ (implemented)
+
+Closes the gap Phase 4's own DoD left open ("after `make rebuild-and-run` the change is live"):
+activate/deactivate/reload now take effect immediately, backend and frontend, for any module
+already known at the last frontend build. Full rationale in
+`docs/adr/ADR-009-live-module-lifecycle.md`; this section is the roadmap-level summary.
+
+**What changed:**
+
+1. **The App Store no longer lists itself.** `Manager.List` (`manager.go`) excludes the
+   `appstore` record — it manages other apps, it isn't one to install/manage. `Get`/`Patch` still
+   resolve it directly. (Settings was never listed either — it has no `module.json`.)
+2. **`internal/module/runtime.go`'s `Registry` replaces the one-shot `LoadModules`/`LoadGoModules`
+   boot pair.** Every discovered module — WASM and Go, active or not — loads at boot; `active`
+   became a live, in-memory gate (`IsTableActive`/`ActiveGateMiddleware`, one extra middleware on
+   the existing `RegisterRoutes` call) rather than a load-time filter. `SetActive` flips the gate,
+   then persists to `module.json` — file state changes at the END of the operation, not the start.
+   Table ownership (which module's active flag gates which route) is attributed from data that
+   already existed: which module's migration/`Register()` call first created a given table.
+3. **`POST /api/v1/modules/:id/reload`** re-instantiates a WASM module's (possibly replaced)
+   binary with no restart — genuinely "upgradable directly on run." For a Go-type module (every
+   module in this repo, today) there's no binary to hot-swap, so `Reload` re-validates schema
+   registration and logs that constraint instead of pretending; the frontend's Reload button
+   hides itself for `type: "go"` modules entirely rather than offering a button that can't do what
+   its label says.
+4. **`GET /api/v1/modules/:id/logs`** backs a new Logs wizard: every activate/deactivate/reload
+   run's backend- and DB-level steps, recorded via `OpLogger` into a new `module_operation_log`
+   table (created the same way module-owned tables are, off the generic CRUD surface, same posture
+   as `internal/notebook`/`internal/pictures`), grouped by `operation_id` and shown with a `+Nms`
+   offset from each run's start.
+5. **Frontend discovery stopped skipping `active: false`.** Every module's views/tiles compile in
+   regardless of `active` (`module-discovery.mjs`); a new `apps/shell/src/lib/module-state.ts`
+   reads the live, Go-sourced active state and gates the landing menu tile
+   (`app/page.tsx`) and the catch-all route (`app/[...module]/page.tsx`) the same way the backend
+   gates data access. The boundary this does NOT remove: a module folder that didn't exist at the
+   last frontend build still needs one rebuild to be discovered at all.
+6. **The Views table shows real file identity, not just route metadata.** Columns renamed/added:
+   `Route` (unchanged, the path), `Filename` (unchanged, just relabeled), `Filepath` (new — Go's
+   `module_dir`, annotated on `List`/`Get` only so `Patch` never persists it back into
+   `module.json`, joined with the conventional `views/` subfolder), `Status` (renamed from `Kind`,
+   `Created`/`Inherited` replacing `Created`/`Edited`).
+
+**Verified:** `go test ./internal/module/...` (62 tests, including the new `Registry`
+active-gate/self-protection/unknown-module coverage and the `module_dir`/appstore-exclusion
+`Manager` coverage) and the full backend suite (464 tests, 38 packages) green;
+`pnpm -r test` (frontend: 517 + 185 + 7 + 16 + 11 + 13 = 749 tests across the workspace) and
+`pnpm -r typecheck` green; `gofmt`/`prettier --check` clean on every touched file.
+
+> **Follow-up fixes (same phase, found once the live gate actually shipped):**
+>
+> 1. **`core/modules/contact`'s `FrontModule.name` didn't match `module.json`'s `"name"`** —
+>    flagged as a known, deliberately-unfixed inconsistency back in Phase 3 (`'contacts'` plural
+>    vs. `'contact'` singular), it meant `moduleViewRows`'s module-name lookup never matched, so
+>    `/appstore/contact`'s Views tab always showed "Nothing here yet." even though the module has
+>    three real routes. Renamed `ContactsViews.ts`'s `FrontModule.name` to `'contact'` — route
+>    PATHS stay plural (`/contacts`, `/contacts/list`, `/contacts/:id`, unaffected), only the
+>    registry identity string changed; the landing tile label (`Menu.tsx` titleizes
+>    `module.name`) now reads "Contact" instead of "Contacts", matching the module's own
+>    `display_name`.
+> 2. **Deactivating a module didn't hide it from Settings → Views or the top-bar nav.** Phase 5
+>    made frontend discovery compile every module regardless of `active` specifically so the
+>    landing menu and catch-all route COULD gate live — but two other `moduleRegistry` readers
+>    were missed in that pass: `app/settings/views/page.tsx` (`treeViewEntities()`, the
+>    Kanban-status-field/Calendar-date-field picker) and `app/layout.tsx` (`moduleNav()`, the
+>    top-bar's per-module Dashboard/List/Settings tabs). Both now filter on the same
+>    `activeModuleNames()` live read the landing menu uses — `treeViewEntities()` gained a
+>    `module` field (the owning module, from `RouteConfig.module`) so its caller has something to
+>    filter on; `layout.tsx`'s nav fetch is skipped entirely for an anonymous visitor (no session
+>    to authenticate the `/api/v1/modules` read with).
+
+---
+
 ## Build order
 
 ```mermaid
@@ -481,6 +564,7 @@ flowchart TD
     P1[Phase 1: Go modules API 🔺] --> P3[Phase 3: appstore module folder + host page]
     P2[Phase 2: engine catalog + readOnly + table widget] --> P3
     P3 --> P4[Phase 4: Activate/Deactivate wiring + integration + ADR]
+    P4 --> P5[Phase 5: live lifecycle + operation logs + real Views identity]
 ```
 
 Phases 1 and 2 are independent — parallelize. Phase 3 is the one phase with real host-page code
@@ -494,8 +578,12 @@ Activate button end up bespoke, an engine gap leaked out of Phase 2.
   surfaces as `NOT_FOUND` on the view (see the descriptor-entity rule in `core-front/CLAUDE.md`).
 - **Never serialize `types.Module` back to disk** — it drops `app_mode`, `icon`, and any future
   frontend-only key. Raw map patch only.
-- **The catalog must not read the frontend registry** — the registry no longer contains
-  `active: false` modules, which are exactly the ones a store exists to re-activate.
+- **The catalog must not read the frontend registry** — even though the registry stopped
+  skipping `active: false` modules in Phase 5, it still only knows about frontend-relevant
+  metadata (routes, `app_mode`) and has no live `active` STATE of its own (Registry.Boot only
+  reads `active` once, at the last backend boot, into the runtime gate — the registry a build
+  compiles is even more static than that). The catalog's `active` column has to come from Go's
+  own live read, the same one the request-time gate itself consults.
 - **The Views/Reports table values must NEVER be a `compute`.** `moduleRegistry`'s data lives
   behind the `server-only` barrel (`@eerp/core-front/server`); a views file's `compute` handler
   runs in the BROWSER too (the form store recomputes on every render) — importing the server
@@ -507,11 +595,24 @@ Activate button end up bespoke, an engine gap leaked out of Phase 2.
   is `readOnly`, so the form is never dirty and Save can never fire — that is correct, not a bug
   to route around by secretly making `active` editable again. The button's Server Action is
   independent of `createFormStore`/`commit()` entirely.
-- Deactivating a module whose views are currently open produces dead routes **only after the
-  next rebuild** — until then nothing changes. That asymmetry is the `requires_restart` notice's
-  whole job; do not fake liveness.
+- ~~Deactivating a module whose views are currently open produces dead routes only after the next
+  rebuild~~ — **no longer true since Phase 5**: deactivation gates the route live, in the same
+  request cycle as the `PUT`. Reactivating an already-known module is equally instant.
 - JSON rewrite normalizes formatting; keep `module.json` files free of hand-formatting you care
   about (they already are).
 - **The Reports page is a placeholder, not a stub to "finish while you're in there."** Wiring a
   real data source for it is explicitly out of scope for this roadmap (decision 9) — leave it
   empty with its caption; a future, separate roadmap owns the actual reporting feature.
+- **(Phase 5) Never inject `module_dir` inside the shared `readModuleJSON`/`find` path.** `Get`
+  and `List` annotate it on their own return value; `Patch` reuses the same `find()` internally
+  and writes its `raw` map straight back to disk — annotating there would permanently pollute
+  `module.json` with a computed value, the exact "never round-trip a computed field" mistake this
+  roadmap already warns against for `types.Module`.
+- **(Phase 5) A shared `wasmtime.Store` cannot be safely reused across a `Reload`.** Give every
+  module its own `Store` (and its own fresh `WasiConfig` — `SetWasi` takes ownership of the one
+  it's given, so the same config can't be handed to two stores). Reusing one shared store, as the
+  pre-Phase-5 code did, leaks the old instance's memory on every reload with no way to reclaim it.
+- **(Phase 5) `Reload` cannot make a Go-type module's code change.** Its code is compiled into the
+  same backend binary serving the request — only a rebuild+restart changes it, a Go-language
+  constraint no endpoint can route around. Don't offer the Reload button for `type: "go"` modules;
+  showing it and having it silently do nothing meaningful is worse than not showing it.

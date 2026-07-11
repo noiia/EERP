@@ -3,8 +3,11 @@ import contacts from './ContactsViews'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('contacts FrontModule', () => {
-  it('is named "contacts" and exposes the dashboard, list, and form routes', () => {
-    expect(contacts.name).toBe('contacts')
+  it('is named "contact" (matches module.json, not the plural route paths) and exposes the dashboard, list, and form routes', () => {
+    // FrontModule.name must match module.json's "name" ("contact", singular) — it's the
+    // identity moduleViewRows/moduleNav/the App Store's Views tab key lookups on, distinct
+    // from the route PATHS below (which stay plural, unrelated to this identity string).
+    expect(contacts.name).toBe('contact')
     expect(contacts.routes.map((r) => r.path)).toEqual([
       '/contacts',
       '/contacts/list',

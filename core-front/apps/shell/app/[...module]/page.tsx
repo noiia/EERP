@@ -8,6 +8,7 @@ import { CreateBar, T, type EntityActions, type ViewDescriptor } from '@eerp/cor
 // Side-effect import: registers every discovered module's FrontModule into the shared
 // registry before we resolve the route. Regenerated at build time (gitignored).
 import '@/generated/generated-modules'
+import { activeModuleNames } from '@/lib/module-state'
 import { requireAuth } from '@/lib/session'
 import { createRecord, removeRecord, updateRecord } from './actions'
 import {
@@ -36,6 +37,14 @@ export default async function ModulePage({ params }: ModulePageProps) {
   const match = resolveModuleRoute(segments)
   if (!match) notFound()
   const { route, params: routeParams } = match
+
+  // Discovery now compiles every module's routes regardless of module.json
+  // `active` (docs/roadmaps/app-store.md, live lifecycle) — a deactivated
+  // module's route still exists in the running build, so it's blocked HERE,
+  // from the live Go-sourced active state, the same one gates the module's
+  // API access on the backend.
+  const active = await activeModuleNames()
+  if (!active.has(route.module)) notFound()
 
   const { entity } = route.descriptor
   // Bound Server Actions are serializable references the client form store can call.

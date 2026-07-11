@@ -34,7 +34,12 @@ const formFields: ViewDescriptor['fields'] = [
     name: 'crm_records',
     label: 'CRM records',
     type: 'relation',
-    relation: { entity: 'crm', kind: 'one2many', inverseField: 'contact_id', labelField: 'name' },
+    relation: {
+      entity: 'crm',
+      kind: 'one2many',
+      inverseField: 'contact_id',
+      labelField: 'name',
+    },
   },
 ]
 
@@ -62,7 +67,7 @@ const formView: ViewDescriptor = {
 }
 
 const contacts: FrontModule = {
-  name: 'contacts',
+  name: 'contact',
   routes: [
     { path: '/contacts', descriptor: dashboardView },
     { path: '/contacts/list', descriptor: listView },

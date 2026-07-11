@@ -56,10 +56,16 @@ func NewManager(moduleRoots []string) *Manager {
 }
 
 // List returns one raw record per module.json found under the configured
-// roots, INCLUDING active:false ones — the whole reason a store exists.
+// roots, INCLUDING active:false ones — the whole reason a store exists. The
+// App Store module itself is excluded: it manages other apps, it isn't one
+// to install/manage — direct lookups by id (Get/Patch) still resolve it.
 func (m *Manager) List(_ context.Context) ([]map[string]any, error) {
 	var records []map[string]any
-	err := m.walk(func(_ string, raw map[string]any) error {
+	err := m.walk(func(path string, raw map[string]any) error {
+		if name, _ := raw["name"].(string); name == appstoreModuleName {
+			return nil
+		}
+		raw["module_dir"] = filepath.Dir(path)
 		records = append(records, raw)
 		return nil
 	})
@@ -69,10 +75,19 @@ func (m *Manager) List(_ context.Context) ([]map[string]any, error) {
 	return records, nil
 }
 
-// Get returns the module.json record whose "name" key equals id.
+// Get returns the module.json record whose "name" key equals id, annotated
+// with module_dir (the directory the module.json was found in — used by the
+// frontend to resolve a view file's real filesystem path). This annotation is
+// added here and in List only, never inside readModuleJSON/find directly —
+// Patch reuses find() too, and must never write a computed field back into
+// module.json.
 func (m *Manager) Get(_ context.Context, id string) (map[string]any, error) {
-	raw, _, err := m.find(id)
-	return raw, err
+	raw, path, err := m.find(id)
+	if err != nil {
+		return nil, err
+	}
+	raw["module_dir"] = filepath.Dir(path)
+	return raw, nil
 }
 
 // Patch applies changes to id's module.json, restricted to
@@ -117,6 +132,28 @@ func applyPatch(raw, changes map[string]any, moduleName string) error {
 		raw[key] = b
 	}
 	return nil
+}
+
+// validateActiveChange checks a PUT body against writableModuleFields before
+// the Handler ever touches the runtime gate, extracting the boolean "active"
+// value Registry.SetActive needs. Registry.SetActive's own call into
+// Manager.Patch re-validates the same rules — this earlier check just lets
+// the handler fail closed without flipping anything first.
+func validateActiveChange(changes map[string]any) (bool, *ValidationError) {
+	for key := range changes {
+		if !writableModuleFields[key] {
+			return false, &ValidationError{Message: fmt.Sprintf("%q is not a writable field.", key)}
+		}
+	}
+	value, ok := changes["active"]
+	if !ok {
+		return false, &ValidationError{Message: `"active" is required.`}
+	}
+	b, ok := value.(bool)
+	if !ok {
+		return false, &ValidationError{Message: `"active" must be a boolean.`}
+	}
+	return b, nil
 }
 
 // walk visits every module.json under every configured root, decoded raw.

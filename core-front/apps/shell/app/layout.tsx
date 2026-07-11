@@ -17,7 +17,13 @@ import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { ModulesInit } from '../src/components/ModulesInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
-import { GraphOpsProvider, NotebookOpsProvider, RelationOpsProvider, layout } from '@eerp/core-front'
+import {
+  GraphOpsProvider,
+  NotebookOpsProvider,
+  RelationOpsProvider,
+  layout,
+} from '@eerp/core-front'
+import { activeModuleNames } from '../src/lib/module-state'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
 import { getEntityGraphLayout, setEntityGraphLayout } from '../src/lib/graph-actions'
@@ -46,7 +52,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // applies them to the client i18n store. Anonymous visitors keep the local state.
   const preferences = identity ? await getMyLocalePreferences() : null
   // Per-module main pages for the top-bar nav (plain data → client AppTopBar).
-  const nav = moduleRegistry.moduleNav()
+  // Discovery compiles every module regardless of `active` (ADR-009), so a
+  // deactivated module's nav entries are filtered out HERE, from the live
+  // Go-sourced active state — skipped entirely for an anonymous visitor
+  // (no session to authenticate the /api/v1/modules read with, and nothing
+  // renders the nav without an identity anyway).
+  const activeSet = identity ? await activeModuleNames() : new Set<string>()
+  const nav = identity ? moduleRegistry.moduleNav().filter((m) => activeSet.has(m.module)) : []
   return (
     <html lang="en">
       <body>

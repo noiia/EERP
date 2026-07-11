@@ -13,7 +13,9 @@ import '@/generated/generated-modules'
 import { requireAuth } from '@/lib/session'
 import { createRecord, removeRecord, updateRecord } from '../../[...module]/actions'
 import { ActivateButton } from './ActivateButton'
+import { LogsButton } from './LogsButton'
 import { moduleViewRows } from './module-views'
+import { ReloadButton } from './ReloadButton'
 
 // The App Store's ONE hand-built page (docs/roadmaps/app-store.md, Phase 3) —
 // mirrors Settings → Views' "hand-built host page reusing the generic
@@ -24,7 +26,13 @@ import { moduleViewRows } from './module-views'
 // A real, static Next.js route (not the `[...module]` catch-all) is required
 // here specifically because that catch-all only ever fetches from Go.
 
-type ModuleRecord = { id: string; display_name: string; active: boolean } & Record<string, unknown>
+type ModuleRecord = {
+  id: string
+  display_name: string
+  active: boolean
+  type?: string
+  module_dir?: string
+} & Record<string, unknown>
 
 export default async function AppStoreFormPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -48,7 +56,7 @@ export default async function AppStoreFormPage({ params }: { params: Promise<{ i
   const staticFiles = record?.static_files as { views?: string[] } | undefined
   const file = staticFiles?.views?.[0] ?? ''
   const initialData = record
-    ? [{ ...record, views: file ? moduleViewRows(id, file) : [], reports: [] }]
+    ? [{ ...record, views: file ? moduleViewRows(id, file, record.module_dir) : [], reports: [] }]
     : []
 
   const actions = {
@@ -66,7 +74,13 @@ export default async function AppStoreFormPage({ params }: { params: Promise<{ i
           <Typography variant="h4" component="h1">
             {record?.display_name ?? id}
           </Typography>
-          {record ? <ActivateButton name={id} active={record.active} /> : null}
+          {record ? (
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+              <LogsButton name={id} />
+              <ReloadButton name={id} type={record.type} />
+              <ActivateButton name={id} active={record.active} />
+            </Stack>
+          ) : null}
         </Box>
         {descriptor ? (
           <EntityView

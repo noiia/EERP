@@ -33,7 +33,7 @@ describe('ActivateButton', () => {
 
   it('shows "Deactivate" for an active module and calls the action on click', async () => {
     useSessionStore.setState({ identity: identityWith(['modules:modules:write']) })
-    setModuleActiveMock.mockResolvedValue({ active: false, requiresRestart: true })
+    setModuleActiveMock.mockResolvedValue({ active: false })
     render(<ActivateButton name="crm" active={true} />)
 
     const button = screen.getByRole('button', { name: 'Deactivate' })
@@ -45,7 +45,7 @@ describe('ActivateButton', () => {
 
   it('shows "Activate" for an inactive module and toggles the other way', async () => {
     useSessionStore.setState({ identity: identityWith(['modules:modules:write']) })
-    setModuleActiveMock.mockResolvedValue({ active: true, requiresRestart: true })
+    setModuleActiveMock.mockResolvedValue({ active: true })
     render(<ActivateButton name="crm" active={false} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Activate' }))
@@ -84,29 +84,14 @@ describe('ActivateButton', () => {
     expect(refreshMock).not.toHaveBeenCalled()
   })
 
-  it('shows the requires_restart notice and badges the module on a successful write', async () => {
+  it('badges the module as recently changed on a successful write — no restart notice', async () => {
     useSessionStore.setState({ identity: identityWith(['modules:modules:write']) })
-    setModuleActiveMock.mockResolvedValue({ active: false, requiresRestart: true })
+    setModuleActiveMock.mockResolvedValue({ active: false })
     render(<ActivateButton name="crm" active={true} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }))
-    await waitFor(() =>
-      expect(
-        screen.getByText('Saved to module.json — takes effect after backend restart + frontend rebuild'),
-      ).toBeInTheDocument(),
-    )
-    expect(useRecentlyChangedStore.getState().ids.has('crm')).toBe(true)
-  })
-
-  it('does not show the requires_restart notice when the write omits it', async () => {
-    useSessionStore.setState({ identity: identityWith(['modules:modules:write']) })
-    setModuleActiveMock.mockResolvedValue({ active: false, requiresRestart: false })
-    render(<ActivateButton name="crm" active={true} />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }))
-    await waitFor(() => expect(refreshMock).toHaveBeenCalled())
-    expect(
-      screen.queryByText('Saved to module.json — takes effect after backend restart + frontend rebuild'),
-    ).not.toBeInTheDocument()
+    await waitFor(() => expect(useRecentlyChangedStore.getState().ids.has('crm')).toBe(true))
+    expect(screen.queryByText(/restart/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/rebuild/i)).not.toBeInTheDocument()
   })
 })

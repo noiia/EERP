@@ -118,9 +118,10 @@ describe('appstore — Views/Reports notebook pages (registry-level)', () => {
     expect(views?.widget).toBe('table')
     expect(views?.store).toBe(false)
     expect(views?.widgetOptions?.columns).toEqual([
-      { key: 'view', label: 'View' },
-      { key: 'file', label: 'File' },
-      { key: 'kind', label: 'Kind' },
+      { key: 'route', label: 'Route' },
+      { key: 'filename', label: 'Filename' },
+      { key: 'filepath', label: 'Filepath' },
+      { key: 'status', label: 'Status' },
     ])
 
     const reports = byName.get('reports')

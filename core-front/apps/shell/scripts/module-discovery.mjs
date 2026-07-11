@@ -125,9 +125,13 @@ export function topoSortModules(modules) {
  * application: a tile on the landing menu; default false = routes only, no tile), and
  * its `depends` list (threaded into the generated manifest's registration options —
  * the registry's depends-coverage warning needs it). Modules without frontend views
- * (Go-only) are skipped, and so are deactivated modules (`active: false`) — the
- * backend doesn't serve them, so compiling their views would produce dead routes. A
- * missing `active` counts as active.
+ * (Go-only) are skipped. Deactivated modules (`active: false`) are NOT skipped —
+ * every discovered module's views/tiles compile in regardless of `active`
+ * (docs/roadmaps/app-store.md, live lifecycle): the backend now gates a
+ * deactivated module's data access live, at request time, rather than never
+ * loading it — compiling its route too is what lets the frontend gate the
+ * same way (live, from the current active state — apps/shell/src/lib/
+ * module-state.ts) instead of needing a rebuild every time a module toggles.
  */
 export function discoverModuleViews(repoRoot, config) {
   const roots = Array.isArray(config.module_root) ? config.module_root : []
@@ -142,7 +146,6 @@ export function discoverModuleViews(repoRoot, config) {
       } catch {
         continue
       }
-      if (meta?.active === false) continue
       const views = meta?.static_files?.views
       if (!Array.isArray(views) || views.length === 0) continue
 
@@ -199,8 +202,9 @@ export function translationsForDir(name, dir) {
  * e.g. for entity labels other modules' views render. Locale = the .po basename
  * ('i18n/fr.po' -> 'fr'); the module never declares locales in module.json, dropping
  * a .po in the folder is the whole contract (mirrors .wasm auto-discovery).
- * Deactivated modules (`active: false`) contribute nothing — an uninstalled module's
- * strings have no surface to appear on.
+ * Deactivated modules (`active: false`) are NOT skipped, same reasoning as
+ * discoverModuleViews above: a module reactivated at runtime needs its
+ * strings available immediately, without a rebuild.
  */
 export function discoverModuleTranslations(repoRoot, config) {
   const roots = Array.isArray(config.module_root) ? config.module_root : []
@@ -215,7 +219,6 @@ export function discoverModuleTranslations(repoRoot, config) {
       } catch {
         continue
       }
-      if (meta?.active === false) continue
       const moduleDir = dirname(moduleJsonPath)
       const name = typeof meta.name === 'string' && meta.name ? meta.name : basename(moduleDir)
       const translations = translationsForDir(name, moduleDir)

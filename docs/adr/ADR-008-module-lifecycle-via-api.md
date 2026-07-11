@@ -16,7 +16,15 @@ doesn't mistake any of them for oversights.
 
 ## Decisions
 
-### 1. File-write + restart, not hot reload
+### 1. File-write + restart, not hot reload — **superseded by [ADR-009](ADR-009-live-module-lifecycle.md)**
+
+> This decision described the original (Phases 1-4) design and is kept below
+> for historical context. It no longer reflects the current behavior:
+> `PUT /api/v1/modules/:id` now flips a live, in-process gate immediately
+> (`internal/module/runtime.go`'s `Registry.SetActive`) and only writes
+> `module.json` afterward — no restart, no `requires_restart` field. See
+> ADR-009 for the live-lifecycle design and why "hot reload" turned out to be
+> smaller in scope than this decision originally assumed.
 
 `Manager.Patch` (`core/internal/module/manager.go`) writes straight to the
 module's `module.json` on disk and returns immediately — it does not
@@ -129,10 +137,10 @@ place this information actually lives.
 
 ## Consequences
 
-- Deactivating a module from the App Store changes `module.json` on disk
-  immediately, but the module keeps running (WASM instance loaded, routes
-  mounted, frontend view registered) until the next `make rebuild-and-run` —
-  the notice on the button says exactly this so it isn't mistaken for a bug.
+- ~~Deactivating a module from the App Store changes `module.json` on disk
+  immediately, but the module keeps running... until the next
+  `make rebuild-and-run`~~ — **superseded by ADR-009**: deactivation now
+  gates the module's routes live, in the same request cycle as the `PUT`.
 - The App Store's own `active` flag has one extra guard the generic
   whitelist doesn't: it can be flipped to `false` for any *other* module by
   any caller with `modules:modules:write`, but never for itself.
@@ -140,12 +148,16 @@ place this information actually lives.
   `writableModuleFields` **and** writing the argument for why it's
   operational state rather than deployment metadata (Decision 4) — this ADR
   is where that argument should be recorded or contested.
-- Hot reload and a real Reports page are both explicitly out of scope here:
-  hot reload deferred to the v2 runtime module registry
-  (`core-front/CLAUDE.md`'s "Future — V2 runtime discovery" section); Reports
-  deferred to its own future roadmap once there's real reporting data to
-  show. The "Views" tab and the inert "Reports" tab both exist now so the
-  notebook shape doesn't need to change when Reports eventually ships.
+- ~~Hot reload... deferred to the v2 runtime module registry~~ —
+  **superseded by ADR-009**: activate/deactivate/reload are live for every
+  module already known to `module_root` at the last build; only a module
+  folder that didn't exist at that build still needs one rebuild to be
+  discovered at all (true zero-build hot-*install* of unseen code remains
+  the deferred v2 bundle-federation project). A real Reports page is still
+  out of scope, deferred to its own future roadmap once there's real
+  reporting data to show — the "Views" tab and the inert "Reports" tab both
+  exist now so the notebook shape doesn't need to change when Reports
+  eventually ships.
 
 ## Reference implementation
 
