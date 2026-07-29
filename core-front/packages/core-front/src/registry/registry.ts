@@ -165,7 +165,7 @@ export class ModuleRegistry {
         validateDescriptor(route.descriptor)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        throw new Error(`module "${module.name}", route "${route.path}": ${message}`)
+        throw new Error(`module "${module.name}", route "${route.path}": ${message}`, { cause: e })
       }
       // Base registration (or a deliberate REPLACE of an existing path — "last
       // wins", the blunt escape hatch `extends` exists to make unnecessary).
@@ -211,7 +211,7 @@ export class ModuleRegistry {
         validateDescriptor(merged)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        throw new Error(`module "${module.name}" extending "${ext.path}": ${message}`)
+        throw new Error(`module "${module.name}" extending "${ext.path}": ${message}`, { cause: e })
       }
       this.resolvedRoutes.set(ext.path, {
         module: current.module,
