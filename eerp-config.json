@@ -24,7 +24,7 @@
     "backend_version": "v1",
     "seed_dev_admin": true,
     "api_config_path": "api.yaml",
-    "s3_endpoint": "http://garage:3900",
+    "s3_endpoint": "http://127.0.0.1:3910",
     "s3_region": "garage",
     "s3_bucket": "eerp",
     "s3_access_key": "GKdeadbeefdeadbeefdeadbeef",

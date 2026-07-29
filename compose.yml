@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: poc
     ports:
-      - "5432"
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -25,8 +25,13 @@ services:
       - ./infra/garage/garage.toml:/etc/garage.toml:ro
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
-    expose:
-      - "3900" # S3 API
+    ports:
+      # Host 3910 (3900 is commonly taken by other garage instances); in-network
+      # clients still use garage:3900. Kept host-reachable (unlike core-back/core-front,
+      # which the api-gateway now fronts exclusively) because host-native dev tooling —
+      # `make run-back-tests`, a native `go run`/`go test` — talks to it directly via
+      # eerp-config.json's s3_endpoint, same as db's fixed 5432 mapping above.
+      - "3910:3900"
     healthcheck:
       test: ["CMD", "/garage", "status"]
       interval: 5s
