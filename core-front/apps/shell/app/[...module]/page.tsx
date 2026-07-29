@@ -64,7 +64,11 @@ export default async function ModulePage({ params }: ModulePageProps) {
     // would just re-narrow list/kanban/calendar/graph views a second time, wasting
     // the space the inset was meant to hand them. Forms don't need this override:
     // FormRenderer self-limits to layout.formMaxWidth regardless of the container.
-    <Container maxWidth={false} sx={{ py: 4 }}>
+    // pt: 0 for tree views only — RootLayout's own pageInsetY already pads above this
+    // Container, and stacking this Container's py on top of it left a top gap that
+    // read as oversized specifically on the compact title row + mode switcher a list
+    // view opens with. Forms/dashboards/catalog keep the full py.
+    <Container maxWidth={false} sx={{ py: 4, ...(route.descriptor.viewType === 'tree' ? { pt: 0 } : {}) }}>
       <Stack spacing={3}>
         {/* The title is computed here (RSC) but the locale is client state, so the
             <T> leaf translates it at the client boundary. Tree views carry their

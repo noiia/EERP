@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -65,6 +66,8 @@ export function CalendarRenderer<T extends HasId>({
   onRecordsChange,
 }: CalendarRendererProps<T>) {
   const t = useT()
+  const router = useRouter()
+  const { formPath } = descriptor
   const { records, error, moveField } = useOptimisticFieldMove(initialData, actions, dateField)
   useEffect(() => {
     onRecordsChange?.(records)
@@ -123,7 +126,11 @@ export function CalendarRenderer<T extends HasId>({
         draggable
         onDragStart={() => setDraggingId(record.id)}
         onDragEnd={() => setDraggingId(null)}
-        sx={{ cursor: 'grab' }}
+        // A real drag never fires click (the browser suppresses it once the pointer
+        // moves past the drag threshold), so a plain click here is unambiguously
+        // "clicked, didn't drag" — no separate bookkeeping needed.
+        onClick={formPath ? () => router.push(formPath.replace(':id', record.id)) : undefined}
+        sx={{ cursor: formPath ? 'pointer' : 'grab' }}
       >
         <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
           <Typography variant="caption" sx={{ display: 'block' }}>
@@ -193,21 +200,23 @@ export function CalendarRenderer<T extends HasId>({
           </Box>
         </Box>
 
-        <Box
-          role="group"
-          aria-label={t('Unscheduled')}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault()
-            if (draggingId) void moveField(draggingId, null)
-          }}
-          sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
-        >
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            {t('Unscheduled')} ({unscheduled.length})
-          </Typography>
-          <Stack spacing={0.5}>{unscheduled.map(dayCard)}</Stack>
-        </Box>
+        {unscheduled.length > 0 ? (
+          <Box
+            role="group"
+            aria-label={t('Unscheduled')}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              if (draggingId) void moveField(draggingId, null)
+            }}
+            sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
+          >
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              {t('Unscheduled')} ({unscheduled.length})
+            </Typography>
+            <Stack spacing={0.5}>{unscheduled.map(dayCard)}</Stack>
+          </Box>
+        ) : null}
       </Stack>
     </Box>
   )

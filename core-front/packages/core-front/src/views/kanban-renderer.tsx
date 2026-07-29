@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -45,6 +46,8 @@ export function KanbanRenderer<T extends HasId>({
   onRecordsChange,
 }: KanbanRendererProps<T>) {
   const t = useT()
+  const router = useRouter()
+  const { formPath } = descriptor
   const { records, error, moveField } = useOptimisticFieldMove(initialData, actions, statusField)
   useEffect(() => {
     onRecordsChange?.(records)
@@ -111,7 +114,11 @@ export function KanbanRenderer<T extends HasId>({
                     draggable
                     onDragStart={() => setDraggingId(record.id)}
                     onDragEnd={() => setDraggingId(null)}
-                    sx={{ cursor: 'grab' }}
+                    // A real drag never fires click (the browser suppresses it once the
+                    // pointer moves past the drag threshold), so a plain click here is
+                    // unambiguously "clicked, didn't drag" — no separate bookkeeping needed.
+                    onClick={formPath ? () => router.push(formPath.replace(':id', record.id)) : undefined}
+                    sx={{ cursor: formPath ? 'pointer' : 'grab' }}
                   >
                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                       {cardFields.map((f, i) => (

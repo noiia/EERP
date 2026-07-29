@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+// A card click (no drag) navigates to the record's form via the App Router.
+const pushMock = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
+}))
+
 import { CalendarRenderer } from './calendar-renderer'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
@@ -49,6 +56,7 @@ describe('CalendarRenderer', () => {
   beforeEach(() => {
     update = vi.fn(async (id: string, body: Partial<Task>) => ({ id, ...body }) as Task)
     actions = { create: vi.fn(async (b) => b as Task), update }
+    pushMock.mockReset()
   })
 
   it('positions a scheduled record on its day and lists a dateless one as Unscheduled', () => {
@@ -74,7 +82,9 @@ describe('CalendarRenderer', () => {
       />,
     )
     expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Gamma')
-    expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toHaveTextContent('Gamma')
+    // Not just absent from Unscheduled — with nothing left unscheduled, the whole
+    // panel is gone (see the dedicated "hides the Unscheduled panel" test below).
+    expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toBeInTheDocument()
   })
 
   it('reports its working record set to onRecordsChange, including after an optimistic move', async () => {
@@ -145,6 +155,40 @@ describe('CalendarRenderer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous month' }))
     expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+  })
+
+  it('clicking a card (no drag) navigates to its form when the descriptor has one', () => {
+    render(
+      <CalendarRenderer
+        descriptor={{ ...descriptor, formPath: '/tasks/:id' }}
+        initialData={records}
+        actions={actions}
+        dateField="due_date"
+      />,
+    )
+    fireEvent.click(screen.getByTestId('calendar-card-1'))
+    expect(pushMock).toHaveBeenCalledWith('/tasks/1')
+  })
+
+  it('does nothing on click when the descriptor has no formPath', () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.click(screen.getByTestId('calendar-card-1'))
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('hides the Unscheduled panel entirely when every record is scheduled', () => {
+    const allScheduled: Task[] = [{ id: '1', name: 'Alpha', due_date: day15 }]
+    render(
+      <CalendarRenderer
+        descriptor={descriptor}
+        initialData={allScheduled}
+        actions={actions}
+        dateField="due_date"
+      />,
+    )
+    expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toBeInTheDocument()
   })
 
   it('reverts the move and surfaces the error on a rejected write', async () => {

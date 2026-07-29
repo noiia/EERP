@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+// A card click (no drag) navigates to the record's form via the App Router.
+const pushMock = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
+}))
+
 import { KanbanRenderer } from './kanban-renderer'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
@@ -45,6 +52,7 @@ describe('KanbanRenderer', () => {
   beforeEach(() => {
     update = vi.fn(async (id: string, body: Partial<Deal>) => ({ id, ...body }) as Deal)
     actions = { create: vi.fn(async (body: Partial<Deal>) => body as Deal), update }
+    pushMock.mockReset()
   })
 
   it('renders one column per declared selection option, in order, plus a trailing No status column', () => {
@@ -150,6 +158,32 @@ describe('KanbanRenderer', () => {
         expect.arrayContaining([expect.objectContaining({ id: '1', status: 'won' })]),
       ),
     )
+  })
+
+  it('clicking a card (no drag) navigates to its form when the descriptor has one', () => {
+    render(
+      <KanbanRenderer
+        descriptor={{ ...descriptor, formPath: '/deals/:id' }}
+        initialData={records}
+        actions={actions}
+        statusField="status"
+      />,
+    )
+    fireEvent.click(screen.getByTestId('kanban-card-1'))
+    expect(pushMock).toHaveBeenCalledWith('/deals/1')
+  })
+
+  it('does nothing on click when the descriptor has no formPath', () => {
+    render(
+      <KanbanRenderer
+        descriptor={descriptor}
+        initialData={records}
+        actions={actions}
+        statusField="status"
+      />,
+    )
+    fireEvent.click(screen.getByTestId('kanban-card-1'))
+    expect(pushMock).not.toHaveBeenCalled()
   })
 
   it('reverts the card and surfaces the error when the write is rejected', async () => {
