@@ -10,7 +10,8 @@ vi.mock('@eerp/core-front/server', async (importOriginal) => {
   }
 })
 
-import { seedDemoData, seedingAllowed } from './dev-seed'
+import { seedDemoData } from './dev-seed'
+import { seedingAllowed } from './dev-seed-allowed'
 
 function callsFor(entity: string): unknown[][] {
   return createMock.mock.calls.filter(([e]) => e === entity)
