@@ -1,5 +1,10 @@
 import { buildBehaviorPlan } from '../views/behaviors'
-import { normalizeLayout, validateDescriptorWidgets, type ViewDescriptor } from '../views/descriptor'
+import {
+  normalizeLayout,
+  validateCatalogDescriptor,
+  validateDescriptorWidgets,
+  type ViewDescriptor,
+} from '../views/descriptor'
 import { applyExtension, type ViewExtension } from './extensions'
 
 // The frontend module contract + registry. A module contributes DESCRIPTORS ONLY:
@@ -126,6 +131,7 @@ interface RegisteredModule {
  * contract, run identically for a base route and an extension's merged result. */
 function validateDescriptor(descriptor: ViewDescriptor): void {
   validateDescriptorWidgets(descriptor)
+  validateCatalogDescriptor(descriptor)
   buildBehaviorPlan(descriptor)
   normalizeLayout(descriptor)
 }
@@ -159,7 +165,7 @@ export class ModuleRegistry {
         validateDescriptor(route.descriptor)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        throw new Error(`module "${module.name}", route "${route.path}": ${message}`)
+        throw new Error(`module "${module.name}", route "${route.path}": ${message}`, { cause: e })
       }
       // Base registration (or a deliberate REPLACE of an existing path — "last
       // wins", the blunt escape hatch `extends` exists to make unnecessary).
@@ -205,7 +211,7 @@ export class ModuleRegistry {
         validateDescriptor(merged)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        throw new Error(`module "${module.name}" extending "${ext.path}": ${message}`)
+        throw new Error(`module "${module.name}" extending "${ext.path}": ${message}`, { cause: e })
       }
       this.resolvedRoutes.set(ext.path, {
         module: current.module,
@@ -304,6 +310,19 @@ export class ModuleRegistry {
       }
     }
     return null
+  }
+
+  /**
+   * The paths a module's OWN `extends` targets — "which routes does this
+   * module EDIT, as opposed to create" (docs/roadmaps/app-store.md, Phase 3's
+   * Views notebook page: a route's `RouteConfig.module` stays the ORIGINAL
+   * registrant through every extension merge, so `buildRegistry()` entries
+   * alone already answer "created"; this is the other half). Empty for an
+   * unknown module or one with no `extends`.
+   */
+  extendedPaths(moduleName: string): string[] {
+    const module = this.entries.find((e) => e.module.name === moduleName)?.module
+    return module?.extends?.map((ext) => ext.path) ?? []
   }
 
   /**

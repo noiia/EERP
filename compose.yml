@@ -19,14 +19,19 @@ services:
   garage:
     image: dxflrs/garage:v2.3.0
     container_name: garage
+    environment:
+      RUST_LOG: garage=warn,garage_api_admin=warn
     volumes:
       - ./infra/garage/garage.toml:/etc/garage.toml:ro
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
     ports:
       # Host 3910 (3900 is commonly taken by other garage instances); in-network
-      # clients still use garage:3900.
-      - "3910:3900" # S3 API
+      # clients still use garage:3900. Kept host-reachable (unlike core-back/core-front,
+      # which the api-gateway now fronts exclusively) because host-native dev tooling —
+      # `make run-back-tests`, a native `go run`/`go test` — talks to it directly via
+      # eerp-config.json's s3_endpoint, same as db's fixed 5432 mapping above.
+      - "3910:3900"
     healthcheck:
       test: ["CMD", "/garage", "status"]
       interval: 5s
@@ -38,8 +43,8 @@ services:
     build:
       context: .
       dockerfile: core/Dockerfile
-    ports:
-      - "8081:8080"
+    expose:
+      - "8080"
     depends_on:
       db:
         condition: service_healthy
@@ -47,22 +52,61 @@ services:
   core-front:
     container_name: frontend
     build:
-      # Repo-root context so the build can read eerp-config.json + core/modules and
-      # discover the module views (mirrored under /app in the image).
       context: .
       dockerfile: core-front/Dockerfile
       args:
-        # BFF -> backend, baked at build time: the core-back service on its backend_port
-        # (8080). Inside the network the backend is the service name, NOT 127.0.0.1
-        # (which would be the frontend container itself).
-        API_BASE: "http://backend:8080"
-    ports:
-      - "3001:3000"
+        API_BASE: "http://core-back:8080"
+        API_VERSION: "1"
+    environment:
+      # The api-gateway terminates plain HTTP for now (no cert configured yet — see
+      # nginx.conf). A Secure session cookie set over that connection would be silently
+      # dropped by the browser, so login would succeed but never persist. Drop this once
+      # TLS termination is added to the gateway.
+      COOKIE_SECURE: "false"
+      # The standalone image always runs with NODE_ENV=production (next start requires
+      # it), even for this local/dev compose stack — so the Settings > Developer seed
+      # tool's NODE_ENV-derived guard would stay permanently disabled here otherwise.
+      # This stack is dev-only, so opt back in explicitly. Never set this against a real
+      # tenant deployment.
+      ALLOW_DEMO_SEED: "true"
+    expose:
+      - "3000"
     depends_on:
       db:
         condition: service_healthy
       core-back:
         condition: service_started
+
+  api-gateway:
+    image: nginx:1.31-alpine
+    container_name: api-gateway
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /run
+      - /tmp
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+      # - "443:443"
+    depends_on:
+      core-front:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   garage-meta:

@@ -8,19 +8,25 @@ import type { FieldDescriptor } from '@eerp/core-front'
 
 export interface ViewEntityFields {
   entity: string
+  /** The module that registered this entity's tree view — the caller filters
+   * on this against the live active state (module-state.ts); discovery no
+   * longer skips `active: false` modules (ADR-009), so this registry alone
+   * can no longer tell an active entity from a deactivated one. */
+  module: string
   kanbanFields: FieldDescriptor[]
   dateFields: FieldDescriptor[]
 }
 
 export function treeViewEntities(): ViewEntityFields[] {
   const seen = new Map<string, ViewEntityFields>()
-  for (const { descriptor } of moduleRegistry.buildRegistry().values()) {
+  for (const { module, descriptor } of moduleRegistry.buildRegistry().values()) {
     if (descriptor.viewType !== 'tree') continue
     // Two paths (e.g. a hierarchical view and a flat fallback) can point at
     // the same entity; the field config is per-entity, so the first wins.
     if (seen.has(descriptor.entity)) continue
     seen.set(descriptor.entity, {
       entity: descriptor.entity,
+      module,
       kanbanFields: descriptor.fields.filter((f) => f.type === 'selection'),
       dateFields: descriptor.fields.filter((f) => f.type === 'date'),
     })

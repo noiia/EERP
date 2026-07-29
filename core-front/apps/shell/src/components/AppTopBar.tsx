@@ -20,6 +20,7 @@ import LogoutIcon from '@mui/icons-material/Logout'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useSessionStore, useT, type Identity, type ModuleNav } from '@eerp/core-front'
+import { authBffUrl } from '@/lib/auth-url'
 
 // The persistent application top bar (shell chrome). Shown on every authenticated route:
 // left = the module breadcrumb (fil d'Ariane) derived from the path, rooted at the menu;
@@ -144,7 +145,7 @@ function UserMenu({ identity }: { identity: Identity }) {
 
   async function onLogout() {
     close()
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    await fetch(authBffUrl('logout'), { method: 'POST' }).catch(() => {})
     useSessionStore.getState().clear()
     router.push('/login')
     router.refresh()

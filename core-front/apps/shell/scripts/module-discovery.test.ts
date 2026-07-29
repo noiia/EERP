@@ -112,7 +112,7 @@ describe('discoverModuleViews', () => {
     expect(discoverModuleViews(repo, readConfig(repo))).toEqual([])
   })
 
-  it('skips a deactivated module (active: false), keeping a missing active as active', () => {
+  it('still compiles a deactivated module (active: false) — gated live, not at build time', () => {
     writeFileSync(
       join(repo, 'mods', 'demo', 'module.json'),
       JSON.stringify({
@@ -122,7 +122,7 @@ describe('discoverModuleViews', () => {
         static_files: { views: ['DemoViews.ts'] },
       }),
     )
-    expect(discoverModuleViews(repo, readConfig(repo))).toEqual([])
+    expect(discoverModuleViews(repo, readConfig(repo)).map((m) => m.name)).toEqual(['demo'])
   })
 
   it('carries app_mode through, defaulting to false when module.json omits it', () => {
@@ -155,12 +155,14 @@ describe('discoverModuleTranslations', () => {
     expect(discovered.map((b: { name: string }) => b.name)).toEqual(['goonly'])
   })
 
-  it('skips the translations of a deactivated module (active: false)', () => {
+  it('still finds the translations of a deactivated module (active: false)', () => {
     writeFileSync(
       join(repo, 'mods', 'goonly', 'module.json'),
       JSON.stringify({ name: 'goonly', active: false, static_files: {} }),
     )
-    expect(discoverModuleTranslations(repo, readConfig(repo))).toEqual([])
+    expect(discoverModuleTranslations(repo, readConfig(repo)).map((b: { name: string }) => b.name)).toEqual([
+      'goonly',
+    ])
   })
 
   it('degrades to an empty list when no config is reachable', () => {

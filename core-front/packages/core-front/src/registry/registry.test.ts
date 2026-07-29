@@ -196,6 +196,47 @@ describe('ModuleRegistry.listViews', () => {
   })
 })
 
+// docs/roadmaps/app-store.md, Phase 3: the App Store's Views notebook page
+// needs "which paths does this module EDIT" — the other half of "created"
+// (buildRegistry()'s own `module` field already answers that, since it stays
+// the ORIGINAL registrant through every extension merge).
+describe('ModuleRegistry.extendedPaths', () => {
+  it("returns the paths a module's own extends targets", () => {
+    const registry = new ModuleRegistry()
+      .register({
+        name: 'crm',
+        routes: [
+          { path: '/crm/:id', descriptor: formDescriptor },
+          { path: '/crm/list', descriptor: treeDescriptor },
+        ],
+      })
+      .register(
+        {
+          name: 'crminheritdemo',
+          routes: [],
+          extends: [
+            { path: '/crm/:id', operations: [] },
+            { path: '/crm/list', operations: [] },
+          ],
+        },
+        { depends: ['crm'] },
+      )
+    expect(registry.extendedPaths('crminheritdemo')).toEqual(['/crm/:id', '/crm/list'])
+  })
+
+  it('is empty for a module with no extends', () => {
+    const registry = new ModuleRegistry().register({
+      name: 'crm',
+      routes: [{ path: '/crm/:id', descriptor: formDescriptor }],
+    })
+    expect(registry.extendedPaths('crm')).toEqual([])
+  })
+
+  it('is empty for an unknown module', () => {
+    expect(new ModuleRegistry().extendedPaths('nope')).toEqual([])
+  })
+})
+
 describe('ModuleRegistry.match', () => {
   const registry = new ModuleRegistry().register({
     name: 'crm',

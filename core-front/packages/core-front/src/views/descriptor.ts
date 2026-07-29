@@ -3,7 +3,7 @@
 // from them (CONVENTIONS.md — Module FE contract). Adding an entity is a descriptor;
 // adding a view type is one store factory + one renderer + one loader path.
 
-export type ViewType = 'form' | 'tree' | 'dashboard'
+export type ViewType = 'form' | 'tree' | 'dashboard' | 'catalog'
 
 export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean' | 'selection'
 
@@ -22,10 +22,13 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * picture exists on the anchor). Relation tags/list (Phase 4) will extend this
  * matrix. selection has exactly one widget (`select`, a dropdown) — the type
  * exists to declare a closed value list (SelectionDescriptor), not to offer
- * presentation variants.
+ * presentation variants. text/table (docs/roadmaps/app-store.md, Phase 2) is
+ * the odd one out: its VALUE is an array of records, not a string — a
+ * deliberate simplification (no new FieldType) for a read-only, `store: false`
+ * field whose value is seeded server-side, never typed or edited.
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
-  text: ['simple', 'long', 'phone'],
+  text: ['simple', 'long', 'phone', 'table'],
   number: ['float', 'int', 'percent', 'stars', 'phone'],
   boolean: ['switch', 'picture', 'signature'],
   date: ['simple'],
@@ -153,17 +156,29 @@ export interface FieldDescriptor {
   /** Required on type 'selection': the pickable values (see SelectionDescriptor). */
   selection?: SelectionDescriptor
   /**
+   * Static, unconditional read-only (docs/roadmaps/app-store.md, Phase 2) —
+   * unlike `states.readOnly`, this never reevaluates against the draft; the
+   * field simply never accepts edits, for the descriptor's whole lifetime.
+   * OR's into the same disabled computation as `states.readOnly` and
+   * `compute`, so it composes with both: STATIC wins (there is no condition
+   * that can turn it back on). The intended use is a form over data the user
+   * may only inspect (the App Store's module.json fields) — as opposed to
+   * `compute`, which still WRITES a value (just a derived one) on commit,
+   * `readOnly: true` never writes anything at all, computed or not.
+   */
+  readOnly?: boolean
+  /**
    * Declarative modifiers reevaluated against the CURRENT DRAFT on every
    * edit — they react to the user's OWN changes (e.g. a status field flips a
    * comment field visible), no code involved. `visible: false` UNMOUNTS the
    * field without touching its draft value (toggling it back on shows
    * whatever was last set/loaded — it never resets). `readOnly: true` OR's
    * into the widget's disabled state alongside the existing compute-disables
-   * rule. `required: true` blocks commit (see `requiredMissing`) exactly
-   * like the static `required` flag, but only while the field is visible —
-   * a hidden field can never block commit; the user has no way to fill in
-   * what they can't see. A future static `FieldDescriptor.readOnly`
-   * (app-store roadmap, not yet landed) will compose here: static wins.
+   * rule and the static `FieldDescriptor.readOnly` above (static wins).
+   * `required: true` blocks commit (see `requiredMissing`) exactly like the
+   * static `required` flag, but only while the field is visible — a hidden
+   * field can never block commit; the user has no way to fill in what they
+   * can't see.
    */
   states?: {
     visible?: Condition
@@ -262,6 +277,33 @@ function resolveSelectionWidget(field: FieldDescriptor): string {
 /** Validate every field's widget/type pair of a descriptor (see resolveWidget). */
 export function validateDescriptorWidgets<T>(descriptor: ViewDescriptor<T>): void {
   for (const field of descriptor.fields) resolveWidget(field)
+}
+
+/**
+ * Validate a `viewType: 'catalog'` descriptor's `catalog` block: required,
+ * `title` mandatory, and every declared name (`icon`/`title`/`subtitle`)
+ * resolves against `fields` — exactly the "dangling reference is a
+ * registration error" discipline the layout tree already enforces for its
+ * own field leaves. A no-op for every other viewType.
+ */
+export function validateCatalogDescriptor<T>(descriptor: ViewDescriptor<T>): void {
+  if (descriptor.viewType !== 'catalog') return
+  const { catalog } = descriptor
+  if (!catalog) {
+    throw new Error(`viewType 'catalog' requires a "catalog" descriptor block`)
+  }
+  if (!catalog.title) {
+    throw new Error(`catalog.title is required`)
+  }
+  const fieldNames = new Set(descriptor.fields.map((f) => f.name))
+  const checkNamed = (key: 'icon' | 'title' | 'subtitle', name: string | undefined): void => {
+    if (name != null && !fieldNames.has(name)) {
+      throw new Error(`catalog.${key} "${name}" is not declared in this view's fields`)
+    }
+  }
+  checkNamed('title', catalog.title)
+  checkNamed('icon', catalog.icon)
+  checkNamed('subtitle', catalog.subtitle)
 }
 
 /**
@@ -589,11 +631,30 @@ export function layoutFieldOrder(layout: LayoutNode[]): string[] {
   return names
 }
 
+/**
+ * `viewType: 'catalog'`'s presentation: an icon/title/subtitle list, one row
+ * per record (docs/roadmaps/app-store.md, Phase 2 — the App Store's own
+ * module listing is its first user, but the type is generic: any future
+ * "directory of things" reuses it). Values are field NAMES, resolved against
+ * `ViewDescriptor.fields` at registration (validateCatalogDescriptor) exactly
+ * like a layout leaf — a typo'd name fails the build, not the render.
+ */
+export interface CatalogDescriptor {
+  /** Renders as-is if the record's value is a non-empty string (an emoji works
+   * well); falls back to the title's first letter otherwise. */
+  icon?: string
+  title: string
+  subtitle?: string
+}
+
 export interface ViewDescriptor<T = Record<string, unknown>> {
   /** Maps straight to the Go route group, e.g. 'crm' -> GET /crm/. */
   entity: string
   viewType: ViewType
   fields: FieldDescriptor[]
+  /** Required when viewType is 'catalog' (validateCatalogDescriptor enforces
+   * it); meaningless otherwise. */
+  catalog?: CatalogDescriptor
   /**
    * Presentational structure over `fields`: a tree of groups/rows/sections
    * containing field leaves, addressed by field NAME or an explicit node `id`

@@ -21,13 +21,21 @@ const routes = new Map([
   ],
   [
     '/crm/:id',
-    { module: 'crm', descriptor: { entity: 'crm', viewType: 'form', fields: [] }, permission: undefined },
+    {
+      module: 'crm',
+      descriptor: { entity: 'crm', viewType: 'form', fields: [] },
+      permission: undefined,
+    },
   ],
   [
     '/settings/users/roles',
     {
       module: 'users',
-      descriptor: { entity: 'roles', viewType: 'tree', fields: [{ name: 'name', label: 'Name', type: 'text' }] },
+      descriptor: {
+        entity: 'roles',
+        viewType: 'tree',
+        fields: [{ name: 'name', label: 'Name', type: 'text' }],
+      },
       permission: undefined,
     },
   ],
@@ -54,5 +62,12 @@ describe('treeViewEntities', () => {
     const roles = treeViewEntities().find((e) => e.entity === 'roles')
     expect(roles?.kanbanFields).toEqual([])
     expect(roles?.dateFields).toEqual([])
+  })
+
+  it('carries the owning module — the caller filters on this against live active state', () => {
+    const crm = treeViewEntities().find((e) => e.entity === 'crm')
+    const roles = treeViewEntities().find((e) => e.entity === 'roles')
+    expect(crm?.module).toBe('crm')
+    expect(roles?.module).toBe('users')
   })
 })

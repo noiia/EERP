@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import Typography from '@mui/material/Typography'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { EntityListOptions } from '../api/list-options'
 import type { FieldDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { fieldWidget, type WidgetProps } from './widgets'
@@ -183,7 +182,7 @@ describe('relation/tags (many2many)', () => {
 
   it('loads junction rows as tags and unlinks by deleting the junction row', async () => {
     const ops = stubOps({
-      list: vi.fn(async (entity: string, _o?: EntityListOptions) =>
+      list: vi.fn(async (entity: string) =>
         entity === 'crm_tag' ? junctions : companies,
       ),
     })
@@ -205,7 +204,7 @@ describe('relation/tags (many2many)', () => {
 
   it('adds a link by creating a junction row from the search input', async () => {
     const ops = stubOps({
-      list: vi.fn(async (entity: string, _o?: EntityListOptions) =>
+      list: vi.fn(async (entity: string) =>
         entity === 'crm_tag' ? [] : companies,
       ),
     })
@@ -228,7 +227,7 @@ describe('relation/tags (many2many)', () => {
       entity === 'tag' ? { id: 't-new', ...body } : { id: 'j-new', ...body },
     )
     const ops = stubOps({
-      list: vi.fn(async (entity: string, _o?: EntityListOptions) =>
+      list: vi.fn(async (entity: string) =>
         entity === 'crm_tag' ? [] : companies,
       ),
       create,
@@ -337,7 +336,7 @@ describe('create-from-search: primary color', () => {
   it('the m2m dropdown create row matches the primary text color', async () => {
     const reference = primaryReferenceColor()
     const ops = stubOps({
-      list: vi.fn(async (entity: string, _o?: EntityListOptions) =>
+      list: vi.fn(async (entity: string) =>
         entity === 'crm_tag' ? [] : companies,
       ),
     })

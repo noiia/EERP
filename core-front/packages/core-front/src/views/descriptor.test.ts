@@ -12,7 +12,9 @@ import {
   normalizeLayout,
   requiredMissing,
   resolveWidget,
+  validateCatalogDescriptor,
   validateDescriptorWidgets,
+  type CatalogDescriptor,
   type Condition,
   type FieldDescriptor,
   type FieldType,
@@ -176,6 +178,80 @@ describe('validateDescriptorWidgets', () => {
     expect(() =>
       validateDescriptorWidgets(descriptor([field('text'), field('number', 'long')])),
     ).toThrowError(/widget "long" is not allowed for type "number"/)
+  })
+})
+
+// docs/roadmaps/app-store.md, Phase 2: viewType 'catalog''s own registration
+// check — every OTHER viewType is a no-op (nothing here should ever affect a
+// form/tree/dashboard descriptor).
+describe('validateCatalogDescriptor', () => {
+  const catalogDescriptor = (
+    fields: FieldDescriptor[],
+    catalog: CatalogDescriptor | undefined,
+  ): ViewDescriptor => ({
+    entity: 'modules',
+    viewType: 'catalog',
+    fields,
+    catalog,
+  })
+
+  const fields: FieldDescriptor[] = [
+    { name: 'icon', label: 'Icon', type: 'text' },
+    { name: 'display_name', label: 'Display name', type: 'text' },
+    { name: 'description', label: 'Description', type: 'text' },
+  ]
+
+  it('passes a valid catalog block naming declared fields', () => {
+    expect(() =>
+      validateCatalogDescriptor(
+        catalogDescriptor(fields, { icon: 'icon', title: 'display_name', subtitle: 'description' }),
+      ),
+    ).not.toThrow()
+  })
+
+  it('title alone (icon/subtitle omitted) is valid', () => {
+    expect(() =>
+      validateCatalogDescriptor(catalogDescriptor(fields, { title: 'display_name' })),
+    ).not.toThrow()
+  })
+
+  it('throws when the catalog block is missing entirely', () => {
+    expect(() => validateCatalogDescriptor(catalogDescriptor(fields, undefined))).toThrowError(
+      /requires a "catalog" descriptor block/,
+    )
+  })
+
+  it('throws when title is missing', () => {
+    expect(() =>
+      validateCatalogDescriptor(catalogDescriptor(fields, { title: '' })),
+    ).toThrowError(/catalog.title is required/)
+  })
+
+  it('throws when title names an undeclared field', () => {
+    expect(() =>
+      validateCatalogDescriptor(catalogDescriptor(fields, { title: 'nope' })),
+    ).toThrowError(/catalog.title "nope" is not declared/)
+  })
+
+  it('throws when icon names an undeclared field', () => {
+    expect(() =>
+      validateCatalogDescriptor(
+        catalogDescriptor(fields, { icon: 'nope', title: 'display_name' }),
+      ),
+    ).toThrowError(/catalog.icon "nope" is not declared/)
+  })
+
+  it('throws when subtitle names an undeclared field', () => {
+    expect(() =>
+      validateCatalogDescriptor(
+        catalogDescriptor(fields, { title: 'display_name', subtitle: 'nope' }),
+      ),
+    ).toThrowError(/catalog.subtitle "nope" is not declared/)
+  })
+
+  it('is a no-op for every other viewType', () => {
+    const nonCatalog: ViewDescriptor = { entity: 'crm', viewType: 'form', fields: [] }
+    expect(() => validateCatalogDescriptor(nonCatalog)).not.toThrow()
   })
 })
 

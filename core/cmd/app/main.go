@@ -102,9 +102,6 @@ func main() {
 	defer app.Close()
 
 	engine := wasmtime.NewEngine()
-	store := wasmtime.NewStore(engine)
-	wasiCfg := wasmtime.NewWasiConfig()
-	store.SetWasi(wasiCfg)
 	linker := wasmtime.NewLinker(engine)
 
 	if err := linker.DefineWasi(); err != nil {
@@ -116,11 +113,14 @@ func main() {
 		common.Logger.Fatal("❌ FuncWrap error", zap.Error(err))
 	}
 
-	for _, err := range module.LoadModules(context.Background(), app.DB, store, linker, configContent.ModuleRoot) {
-		common.Logger.Error("❌ Error loading WASM module", zap.Error(err))
-	}
-	for _, err := range module.LoadGoModules(context.Background(), app.DB) {
-		common.Logger.Error("❌ Error loading Go module", zap.Error(err))
+	// moduleRuntime replaces the old one-shot LoadModules/LoadGoModules pair:
+	// it loads EVERY discovered module (WASM and Go, active or not) and keeps
+	// enough live state (which module owns which table, and whether it's
+	// currently active) to gate requests and flip modules on/off with no
+	// restart — see internal/module/runtime.go.
+	moduleRuntime := module.NewRegistry(engine, linker, app.DB, configContent.ModuleRoot)
+	for _, err := range moduleRuntime.Boot(context.Background()) {
+		common.Logger.Error("❌ Error loading module", zap.Error(err))
 	}
 
 	// DEV ONLY: seed an admin user so login works out of the box (gated by config).
@@ -222,6 +222,22 @@ func main() {
 	notebookGroup.PUT("/:id", notebookHandler.Update)
 	notebookGroup.DELETE("/:id", notebookHandler.Delete)
 
+	// ── Module management (App Store) ────────────────────────────────────────
+	// Dedicated endpoints over module.json content plus the live runtime
+	// registry (docs/roadmaps/app-store.md, docs/adr/ADR-008) — a virtual
+	// entity, never tenant-scoped (modules are workspace-wide, not per-tenant
+	// data). List/Get re-walk module_root on every call (no snapshot/cache);
+	// PUT/reload act on moduleRuntime first (live, no restart) and only then
+	// persist module.json. The permission middleware derives
+	// modules:modules:read|write from the route.
+	modulesHandler := module.NewHandler(module.NewManager(configContent.ModuleRoot), moduleRuntime)
+	modulesGroup := srv.Echo().Group("/api/v1/modules", jwtMw, permMw)
+	modulesGroup.GET("", modulesHandler.List)
+	modulesGroup.GET("/:id", modulesHandler.Get)
+	modulesGroup.PUT("/:id", modulesHandler.Update)
+	modulesGroup.POST("/:id/reload", modulesHandler.Reload)
+	modulesGroup.GET("/:id/logs", modulesHandler.Logs)
+
 	// ── Users / roles administration ──────────────────────────────────────────
 	// The auth tables are excluded from the generic CRUD surface; these dedicated,
 	// field-whitelisting endpoints are the only HTTP path to them. The permission
@@ -238,8 +254,13 @@ func main() {
 	rolesGroup.GET("/:id", adminHandler.GetRole)
 	rolesGroup.PUT("/:id", adminHandler.UpdateRole)
 
-	// Protected routes — JWT + permission middleware on the group.
-	srv.RegisterRoutes(ormserver.BuildHandlers(app), nil, jwtMw, permMw)
+	// Protected routes — JWT + permission middleware on the group, plus
+	// moduleRuntime's active-gate: a table owned by a deactivated module 403s
+	// here instead of ever reaching its generic CRUD handler. Every table this
+	// group serves comes from registry.All() (module-contributed schema —
+	// auth/pictures/notebook/settings are off this surface entirely), so one
+	// gate at the group level covers exactly the routes that need it.
+	srv.RegisterRoutes(ormserver.BuildHandlers(app), nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	for _, r := range srv.Routes() {
 		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))

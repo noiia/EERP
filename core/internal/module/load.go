@@ -15,15 +15,22 @@ import (
 	"go.uber.org/zap"
 )
 
-func loadModule(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *wasmtime.Linker, path string, name string) error {
+// loadModule instantiates path's WASM binary into store, runs its optional
+// _start/migrate exports, and returns the names of every table its migration
+// touches (used by Registry to attribute table ownership for the runtime
+// active-gate — see runtime.go). opLog is nilable: boot-time callers pass nil
+// and get today's zap-only behavior; Registry.Reload passes a real *OpLogger
+// so an operator can see each step of a live reload.
+func loadModule(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *wasmtime.Linker, path string, name string, opLog *OpLogger) ([]string, error) {
+	opLog.Log("backend", "info", fmt.Sprintf("instantiating %s from %s", name, path))
 	module, err := wasmtime.NewModuleFromFile(store.Engine, path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	instance, err := linker.Instantiate(store, module)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if start := instance.GetFunc(store, "_start"); start != nil {
@@ -33,27 +40,29 @@ func loadModule(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *
 				if code, ok := wasmErr.ExitStatus(); ok && code == 0 {
 					// normal exit — runtime initialised successfully
 				} else {
-					return fmt.Errorf("module %s: _start: %w", name, err)
+					return nil, fmt.Errorf("module %s: _start: %w", name, err)
 				}
 			} else {
-				return fmt.Errorf("module %s: _start: %w", name, err)
+				return nil, fmt.Errorf("module %s: _start: %w", name, err)
 			}
 		}
 	}
+
+	var tables []string
 
 	migrate := instance.GetFunc(store, "migrate")
 	migrateLen := instance.GetFunc(store, "migrate_len")
 	if migrate != nil && migrateLen != nil {
 		result, err := migrate.Call(store)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		ptr := result.(int32)
 
 		lenResult, err := migrateLen.Call(store)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		length := lenResult.(int32)
@@ -61,33 +70,43 @@ func loadModule(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *
 		// Read memory from WASM instance
 		memory := instance.GetExport(store, "memory").Memory()
 		if memory == nil {
-			return fmt.Errorf("memory export not found")
+			return nil, fmt.Errorf("memory export not found")
 		}
 
 		data := memory.UnsafeData(store)
 		if int(ptr)+int(length) > len(data) {
-			return fmt.Errorf("invalid pointer/length: ptr=%d, len=%d, memory_size=%d", ptr, length, len(data))
+			return nil, fmt.Errorf("invalid pointer/length: ptr=%d, len=%d, memory_size=%d", ptr, length, len(data))
 		}
 
 		migrationJSON := string(data[ptr : ptr+length])
 
 		var m types.Migration
 		if err := json.Unmarshal([]byte(migrationJSON), &m); err != nil {
-			return err
+			return nil, err
 		}
 
-		if err := applyMigration(ctx, db, name, m); err != nil {
-			return err
+		if err := applyMigration(ctx, db, name, m, opLog); err != nil {
+			return nil, err
 		}
 
 		if err := registerSchemas(m); err != nil {
-			return fmt.Errorf("module %s: register schema: %w", name, err)
+			return nil, fmt.Errorf("module %s: register schema: %w", name, err)
+		}
+
+		seen := map[string]struct{}{}
+		for _, op := range m.Operations {
+			if _, ok := seen[op.Table]; ok {
+				continue
+			}
+			seen[op.Table] = struct{}{}
+			tables = append(tables, op.Table)
 		}
 	}
 
 	common.Logger.Debug("🔌 Module chargé: ", zap.String("name", name))
+	opLog.Log("backend", "info", fmt.Sprintf("%s loaded", name))
 
-	return nil
+	return tables, nil
 }
 
 // baseModelFields are the standard columns every module table inherits.
@@ -161,7 +180,7 @@ func LoadModules(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker 
 				go func(mod types.Module) {
 					defer wg.Done()
 					common.Logger.Debug("Loading module:", zap.String("name", mod.Name), zap.Int("priority", mod.Priority))
-					if err := loadModule(ctx, db, store, linker, mod.WasmPath, mod.Name); err != nil {
+					if _, err := loadModule(ctx, db, store, linker, mod.WasmPath, mod.Name, nil); err != nil {
 						errMu.Lock()
 						errList = append(errList, err)
 						errMu.Unlock()

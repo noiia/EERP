@@ -1,6 +1,11 @@
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { backendApiBase, backendApiVersion, findRepoRoot, readConfig } from './scripts/module-discovery.mjs'
+import {
+  backendApiBase,
+  backendApiVersion,
+  findRepoRoot,
+  readConfig,
+} from './scripts/module-discovery.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -20,10 +25,12 @@ const projectRoot = repoRoot ?? workspaceRoot
 // Docker build arg) so deployments can point at the backend service without editing
 // the config. `||` (not `??`) so an empty value also falls back to the config.
 const apiBase = process.env.API_BASE || (config ? backendApiBase(config) : undefined)
-const apiVersion = process.env.API_VERSION || (config ? backendApiVersion(config) : undefined)
+// Falls back to '1' (matching bff.ts's own default) so the value baked into the client
+// bundle — and the rewrite below — is never undefined.
+const apiVersion = process.env.API_VERSION || (config ? backendApiVersion(config) : undefined) || '1'
 const serverEnv = {
   ...(apiBase ? { API_BASE: apiBase } : {}),
-  ...(apiVersion ? { API_VERSION: apiVersion } : {}),
+  API_VERSION: apiVersion,
 }
 
 /** @type {import('next').NextConfig} */
@@ -31,7 +38,19 @@ const nextConfig = {
   // Standalone output so the service ships as a self-contained `node server.js`.
   output: 'standalone',
   // Backend connection (BFF) resolved from the shared config; baked into the build.
+  // Values here are inlined into BOTH the server and client bundles (Next's `env` config
+  // behavior), which is how client components can build a versioned BFF URL from
+  // `process.env.API_VERSION` without a NEXT_PUBLIC_ prefix.
   env: serverEnv,
+  // The browser-facing auth BFF paths stay versioned (matching the Go API's own
+  // /api/v{N}/ shape, for a consistent surface through the api-gateway) but the actual
+  // route handler stays unversioned at /api/auth/* — that's where the HttpOnly session
+  // cookie gets set, and duplicating it per version would just be two copies to keep in
+  // sync. This rewrite is the seam between the two, driven by the same apiVersion the
+  // server-side Go client already uses.
+  async rewrites() {
+    return [{ source: `/api/v${apiVersion}/auth/:path*`, destination: '/api/auth/:path*' }]
+  },
   // Bundler + standalone trace rooted at the monorepo (see projectRoot above).
   outputFileTracingRoot: projectRoot,
   // The engine is a workspace package; let Next transpile it directly.

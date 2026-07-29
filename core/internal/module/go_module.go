@@ -36,6 +36,64 @@ func RegisterGoModule(m GoModule) {
 	goMu.Unlock()
 }
 
+// loadGoModule runs one Go module's Register() plus column-level
+// auto-migration, returning the names of tables it NEWLY CREATED (as opposed
+// to tables it merely extended with ExtendSchema, e.g. crminheritdemo adding
+// columns to crm's table). Registry uses this to attribute table ownership
+// for the runtime active-gate (runtime.go) — a table's owner is whichever
+// module's Register() call is what created it, not every module that ever
+// added a column to it.
+func loadGoModule(ctx context.Context, db *orm.DB, m GoModule) ([]string, error) {
+	// Column-level snapshot before Register() so we detect both new tables
+	// AND new columns added to existing tables by ExtendSchema.
+	before := columnSnapshot()
+
+	if err := m.Register(); err != nil {
+		return nil, fmt.Errorf("module %s: register: %w", m.Name(), err)
+	}
+
+	var newTables []string
+	for tableName, afterCols := range columnSnapshot() {
+		prevCols := before[tableName]
+
+		// Collect only the columns that are new since before Register().
+		var newFields []orm.MigrationField
+		allFields, _ := orm.MigrationFieldsForTable(tableName)
+		for _, f := range allFields {
+			if !prevCols[f.Column] {
+				newFields = append(newFields, f)
+			}
+		}
+		if len(newFields) == 0 {
+			continue
+		}
+
+		// New table: create it with BaseModel columns first, and record this
+		// module as its owner.
+		isNewTable := afterCols != nil && prevCols == nil
+		if isNewTable {
+			if err := ensureTable(ctx, db, tableName); err != nil {
+				return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
+			}
+			newTables = append(newTables, tableName)
+		}
+
+		// Add the new columns (idempotent, IF NOT EXISTS).
+		if err := ensureColumns(ctx, db, tableName, newFields); err != nil {
+			return newTables, fmt.Errorf("module %s: ensure columns %s: %w", m.Name(), tableName, err)
+		}
+	}
+
+	// Optional extra DDL (join tables, constraints, etc.).
+	if migrator, ok := m.(Migrator); ok {
+		if err := migrator.Migrate(ctx, db); err != nil {
+			return newTables, fmt.Errorf("module %s: migrate: %w", m.Name(), err)
+		}
+	}
+
+	return newTables, nil
+}
+
 // LoadGoModules applies migrations and registers ORM schemas for every
 // Go module that called RegisterGoModule. Call once after the DB is up,
 // before building HTTP handlers.
@@ -47,49 +105,8 @@ func LoadGoModules(ctx context.Context, db *orm.DB) []error {
 
 	var errs []error
 	for _, m := range mods {
-		// Column-level snapshot before Register() so we detect both new
-		// tables AND new columns added to existing tables by ExtendSchema.
-		before := columnSnapshot()
-
-		if err := m.Register(); err != nil {
-			errs = append(errs, fmt.Errorf("module %s: register: %w", m.Name(), err))
-			continue
-		}
-
-		for tableName, afterCols := range columnSnapshot() {
-			prevCols := before[tableName]
-
-			// Collect only the columns that are new since before Register().
-			var newFields []orm.MigrationField
-			allFields, _ := orm.MigrationFieldsForTable(tableName)
-			for _, f := range allFields {
-				if !prevCols[f.Column] {
-					newFields = append(newFields, f)
-				}
-			}
-			if len(newFields) == 0 {
-				continue
-			}
-
-			// New table: create it with BaseModel columns first.
-			if afterCols != nil && prevCols == nil {
-				if err := ensureTable(ctx, db, tableName); err != nil {
-					errs = append(errs, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err))
-					continue
-				}
-			}
-
-			// Add the new columns (idempotent, IF NOT EXISTS).
-			if err := ensureColumns(ctx, db, tableName, newFields); err != nil {
-				errs = append(errs, fmt.Errorf("module %s: ensure columns %s: %w", m.Name(), tableName, err))
-			}
-		}
-
-		// Optional extra DDL (join tables, constraints, etc.).
-		if migrator, ok := m.(Migrator); ok {
-			if err := migrator.Migrate(ctx, db); err != nil {
-				errs = append(errs, fmt.Errorf("module %s: migrate: %w", m.Name(), err))
-			}
+		if _, err := loadGoModule(ctx, db, m); err != nil {
+			errs = append(errs, err)
 		}
 	}
 

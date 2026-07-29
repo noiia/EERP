@@ -1,13 +1,11 @@
 'use client'
-import { createContext, useContext, type ReactNode } from 'react'
 import type { EntityListOptions } from '../api/list-options'
+import { createOpsContext } from './ops-context'
 
-// How relation widgets reach OTHER entities' data. The functions are bound
-// Server Action references the host provides once (root layout) — client code
-// never talks to Go, and Go authorizes every call from the session (the
-// autocomplete only ever surfaces records the user may read). Kept apart from
-// EntityActions on purpose: those are the view's own entity, pre-bound; these
-// are entity-generic, for the entities relation fields point at.
+// How relation widgets reach OTHER entities' data. Kept apart from EntityActions on
+// purpose: those are the view's own entity, pre-bound; these are entity-generic, for
+// the entities relation fields point at. See ops-context.tsx for the shared wiring
+// contract (host provides bound Server Actions once; null with no provider is inert).
 
 /** Related records are opaque to the engine beyond their id. */
 export interface RelationRecord {
@@ -24,24 +22,10 @@ export interface RelationOps {
   remove: (entity: string, id: string) => Promise<void>
 }
 
-const RelationOpsContext = createContext<RelationOps | null>(null)
+const relationOpsContext = createOpsContext<RelationOps>()
 
 /** Host wiring: mount once (root layout) with bound Server Action references. */
-export function RelationOpsProvider({
-  ops,
-  children,
-}: {
-  ops: RelationOps
-  children: ReactNode
-}) {
-  return <RelationOpsContext.Provider value={ops}>{children}</RelationOpsContext.Provider>
-}
+export const RelationOpsProvider = relationOpsContext.Provider
 
-/**
- * The relation widgets' data path. Null when the host mounted no provider —
- * widgets render an inert affordance instead of crashing (a host without
- * relation wiring simply has no live relation fields).
- */
-export function useRelationOps(): RelationOps | null {
-  return useContext(RelationOpsContext)
-}
+/** The relation widgets' data path — null when the host mounted no provider. */
+export const useRelationOps = relationOpsContext.useOps

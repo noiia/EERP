@@ -26,11 +26,23 @@ export interface SessionCookieOptions {
   maxAge: number
 }
 
-/** Flags applied to every session cookie write. Secure outside development only. */
+/**
+ * Flags applied to every session cookie write. Secure outside development only — UNLESS
+ * COOKIE_SECURE explicitly overrides it. NODE_ENV=production (set by the Docker image)
+ * means "this is a real build," not "this request arrived over TLS": a gateway that
+ * terminates plain HTTP in front of the frontend (no cert configured yet) still runs the
+ * production build, and a Secure cookie set over that connection is silently dropped by
+ * the browser — login appears to succeed but no session survives the next navigation.
+ * COOKIE_SECURE=false is how such a deployment opts out until TLS is added.
+ */
 export function sessionCookieOptions(maxAge: number): SessionCookieOptions {
+  const secure =
+    process.env.COOKIE_SECURE !== undefined
+      ? process.env.COOKIE_SECURE === 'true'
+      : process.env.NODE_ENV === 'production'
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure,
     sameSite: 'lax',
     path: '/',
     maxAge,

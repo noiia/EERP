@@ -1,0 +1,18 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "appstore",
+    "display_name": "App Store",
+    "icon": "🧩",
+    "app_mode": true,
+    "version": "0.0.1",
+    "author": "Edwin Lecomte",
+    "description": "Install and manage the workspace's applications",
+    "static_files": {
+        "views": [
+            "AppStoreViews.ts"
+        ]
+    },
+    "is_service": false,
+    "auto_install": false
+}

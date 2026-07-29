@@ -21,7 +21,11 @@ func bootstrapMigrationsTable(ctx context.Context, db *orm.DB) error {
 	return err
 }
 
-func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migration) error {
+// opLog is nilable: boot-time callers pass nil (today's zap-only behavior);
+// Registry.Reload passes a real *OpLogger so a live reload's DB-side steps
+// (table/column/index DDL, migration-version bookkeeping) are queryable
+// through the App Store's Logs wizard, tagged source "db".
+func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migration, opLog *OpLogger) error {
 	// Ensure every referenced table exists with BaseModel columns before
 	// running column additions — ALTER TABLE fails if the table is absent.
 	seen := map[string]struct{}{}
@@ -33,6 +37,7 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 		if err := ensureTable(ctx, db, op.Table); err != nil {
 			return fmt.Errorf("ensure table %s: %w", op.Table, err)
 		}
+		opLog.Log("db", "info", fmt.Sprintf("ensured table %s", op.Table))
 	}
 
 	var exists bool
@@ -45,6 +50,7 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 
 	if exists {
 		common.Logger.Warn("↪️ migration already applied:", zap.String("module : ", module), zap.Int("version : ", m.Version))
+		opLog.Log("db", "info", fmt.Sprintf("migration version %d already applied — skipped", m.Version))
 		return nil
 	}
 
@@ -61,15 +67,18 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 			if _, err := db.Exec(ctx, sql); err != nil {
 				return err
 			}
+			opLog.Log("db", "info", sql)
 			if op.Index {
 				if err := createIndex(ctx, db, op); err != nil {
 					return err
 				}
+				opLog.Log("db", "info", fmt.Sprintf("created index on %s(%s)", op.Table, op.Column))
 			}
 		case "create_index":
 			if err := createIndex(ctx, db, op); err != nil {
 				return err
 			}
+			opLog.Log("db", "info", fmt.Sprintf("created index on %s(%s)", op.Table, op.Column))
 		}
 	}
 
@@ -78,6 +87,7 @@ func applyMigration(ctx context.Context, db *orm.DB, module string, m types.Migr
 		module, m.Version,
 	)
 	common.Logger.Info("✅ Migration applied:", zap.String("module : ", module), zap.Int("version : ", m.Version))
+	opLog.Log("db", "info", fmt.Sprintf("migration version %d recorded", m.Version))
 	return err
 }
 

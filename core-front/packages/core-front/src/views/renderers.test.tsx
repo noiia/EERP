@@ -71,6 +71,63 @@ describe('EntityView', () => {
     expect(save).toBeEnabled()
   })
 
+  // docs/roadmaps/app-store.md, Phase 2: readOnly never blocks a commit — it
+  // just means that ONE field can't be the thing that makes the form dirty.
+  it('a readOnly field never blocks commit: editing another field alone enables Save and commits cleanly', async () => {
+    interface ModuleRecord {
+      id: string
+      display_name: string
+      version: string
+    }
+    const update = vi.fn(
+      async (id: string, body: Partial<ModuleRecord>) => ({ id, ...body }) as ModuleRecord,
+    )
+    const actions: EntityActions<ModuleRecord> = {
+      create: vi.fn(async (b) => b as ModuleRecord),
+      update,
+    }
+    const descriptor: ViewDescriptor<ModuleRecord> = {
+      entity: 'modules',
+      viewType: 'form',
+      fields: [
+        { name: 'display_name', label: 'Display name', type: 'text' },
+        { name: 'version', label: 'Version', type: 'text', readOnly: true },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={descriptor}
+        initialData={[{ id: 'crm', display_name: 'CRM', version: '0.0.1' }]}
+        actions={actions}
+      />,
+    )
+
+    const version = screen.getByLabelText('Version')
+    expect(version).toBeDisabled()
+    expect(version).toHaveValue('0.0.1')
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toBeDisabled()
+
+    // 'display_name' is the only non-readOnly text field, so it becomes the
+    // synthesized title field (placeholder-labeled) — same anatomy rule as
+    // the test above.
+    fireEvent.change(screen.getByPlaceholderText('Display name'), { target: { value: 'CRM v2' } })
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+
+    // The commit sends the WHOLE draft (readOnly doesn't strip a field from
+    // the payload, only from editing) — version round-trips UNCHANGED,
+    // because nothing ever touched it.
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith('crm', {
+        id: 'crm',
+        display_name: 'CRM v2',
+        version: '0.0.1',
+      }),
+    )
+  })
+
   it('an explicit layout groups/reorders the form — normalizeLayout drives it, not fields declaration order', () => {
     const laidOut: ViewDescriptor<Contact & { email: string }> = {
       entity: 'crm',

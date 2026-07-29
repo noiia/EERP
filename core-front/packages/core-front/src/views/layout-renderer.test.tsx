@@ -165,6 +165,50 @@ describe('LayoutForm', () => {
     renderLayout(descriptor, { total: 42 })
     expect(screen.getByLabelText('Total')).toBeDisabled()
   })
+
+  // docs/roadmaps/app-store.md, Phase 2: a static, unconditional read-only —
+  // unlike states.readOnly, this never reevaluates against the draft.
+  // viewType 'tree' (not 'form'): these are about the GENERIC disabled
+  // computation, not the form-specific title/header synthesis — a lone
+  // readOnly text field on a FORM view would become the synthesized title
+  // field instead (a real, sensible outcome, just not what's under test here).
+  it('a field with readOnly: true renders disabled, editing (never blocks commit) is just impossible', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'modules',
+      viewType: 'tree',
+      fields: [{ name: 'version', label: 'Version', type: 'text', readOnly: true }],
+    }
+    renderLayout(descriptor, { version: '0.0.1' })
+    const input = screen.getByLabelText('Version')
+    expect(input).toBeDisabled()
+    expect(input).toHaveValue('0.0.1')
+  })
+
+  it('readOnly composes with states.readOnly and compute — any one of the three disables', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'modules',
+      viewType: 'tree',
+      fields: [
+        { name: 'editable', label: 'Editable', type: 'text' },
+        { name: 'locked', label: 'Locked', type: 'text', readOnly: true },
+      ],
+    }
+    renderLayout(descriptor, { editable: 'a', locked: 'b' })
+    expect(screen.getByLabelText('Editable')).not.toBeDisabled()
+    expect(screen.getByLabelText('Locked')).toBeDisabled()
+  })
+
+  it('a readOnly boolean field keeps its Switch control, just disabled', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'modules',
+      viewType: 'tree',
+      fields: [{ name: 'app_mode', label: 'App mode', type: 'boolean', readOnly: true }],
+    }
+    renderLayout(descriptor, { app_mode: true })
+    const toggle = screen.getByRole('switch', { name: 'App mode' })
+    expect(toggle).toBeDisabled()
+    expect(toggle).toBeChecked()
+  })
 })
 
 // docs/roadmaps/responsive-displays.md, Phase 3: the DEFAULT anatomy for an
@@ -377,6 +421,22 @@ describe('LayoutForm — runtime notebook pages (Phase 5)', () => {
     renderWithOps(ops)
     expect(await screen.findByRole('tab', { name: 'Meeting notes' })).toBeInTheDocument()
     expect(ops.list).toHaveBeenCalledWith('crm', 'rec-1')
+  })
+
+  // docs/roadmaps/app-store.md, Phase 3: a virtual entity like `modules`
+  // keys records by NAME, not a UUID — Go's notebook_pages anchor validation
+  // legitimately rejects that, and the form must not look broken over it.
+  it('a rejected background LIST degrades silently to no stored pages — no ErrorAlert, declared pages still work', async () => {
+    const ops = fakeOps({
+      list: vi.fn(async () => {
+        throw new Error('record must be a UUID.')
+      }),
+    })
+    renderWithOps(ops)
+    await waitFor(() => expect(ops.list).toHaveBeenCalled())
+    expect(screen.queryByText(/record must be a UUID/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument()
   })
 
   it('the add control is HIDDEN entirely without notebook_pages:notebook_pages:write', () => {

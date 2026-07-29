@@ -27,6 +27,16 @@ import {
 // are single-use (rotation), so a double refresh would trip theft detection — every
 // concurrent 401 therefore shares ONE in-flight refresh. A failed refresh clears the
 // cookie and signals session-expired; callers (the host) redirect to /login.
+//
+// That reactive refresh can only run from a Route Handler/Server Action — Next
+// forbids writing cookies during a Server Component render, and `proxy.ts`
+// (apps/shell — Next's "middleware" file convention, renamed) is the one place that
+// runs ahead of every RSC render and CAN write cookies, so it proactively rotates the
+// session before render whenever the access cookie is missing. A 401 that still
+// reaches here from an RSC read (e.g. Go revoked the token mid-window) fails closed
+// instead of refreshing: spending Go's single-use refresh token without being able to
+// persist the rotated cookie would silently brick the next real refresh attempt,
+// which is worse than surfacing this one 401.
 
 function baseUrl(): string {
   const apiBase = process.env.API_BASE
@@ -41,6 +51,20 @@ let sessionExpiredHandler: SessionExpiredHandler | null = null
 /** Register what happens when the session can't be refreshed (host wires a redirect). */
 export function onSessionExpired(handler: SessionExpiredHandler | null): void {
   sessionExpiredHandler = handler
+}
+
+// True once cookies() confirms we're in a Route Handler/Server Action/middleware
+// (writes allowed) rather than a Server Component render (writes forbidden). Probed
+// via a throwaway delete rather than checked structurally — Next exposes no public
+// API for "can I write cookies right now," only the thrown error on an actual attempt.
+async function canWriteCookies(store: Awaited<ReturnType<typeof cookies>>): Promise<boolean> {
+  try {
+    store.delete('__eerp_cookie_probe')
+    return true
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('Cookies can only be modified')) return false
+    throw err
+  }
 }
 
 // Shared across all callers in the process: a single refresh round-trip absorbs
@@ -139,6 +163,13 @@ async function fetchWithRefresh(
   let res = await authedFetch(method, path, tags, body)
 
   if (res.status === 401) {
+    if (!(await canWriteCookies(await cookies()))) {
+      // RSC render: middleware already had its one legal chance to refresh ahead of
+      // this request. Refreshing again here could spend Go's single-use refresh
+      // token with no way to persist the rotation — fail closed instead of crashing
+      // or silently bricking the next real refresh.
+      throw await parseError(res)
+    }
     const refreshed = await refreshSession()
     if (refreshed) res = await authedFetch(method, path, tags, body)
     if (res.status === 401) {

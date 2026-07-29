@@ -4,6 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // reads the access token from it on every request and writes rotated tokens on refresh.
 const cookieJar = new Map<string, string>()
 
+// When true, the mocked store throws the same error Next.js throws for a
+// cookies().set()/delete() call made during a Server Component render (as opposed to
+// a Route Handler/Server Action) — simulates the RSC-render call path.
+let forbidCookieWrites = false
+const COOKIE_WRITE_FORBIDDEN =
+  'Cookies can only be modified in a Server Action or Route Handler. Read more: https://nextjs.org/docs/app/api-reference/functions/cookies#options'
+
 vi.mock('next/headers', () => ({
   cookies: async () => ({
     get: (name: string) => {
@@ -11,9 +18,11 @@ vi.mock('next/headers', () => ({
       return value === undefined ? undefined : { name, value }
     },
     set: (name: string, value: string) => {
+      if (forbidCookieWrites) throw new Error(COOKIE_WRITE_FORBIDDEN)
       cookieJar.set(name, value)
     },
     delete: (name: string) => {
+      if (forbidCookieWrites) throw new Error(COOKIE_WRITE_FORBIDDEN)
       cookieJar.delete(name)
     },
   }),
@@ -64,6 +73,7 @@ beforeEach(() => {
   cookieJar.clear()
   cookieJar.set('eerp_access', 'old')
   cookieJar.set('eerp_refresh', 'r1')
+  forbidCookieWrites = false
   revalidateTagMock.mockClear()
   process.env.API_BASE = 'http://api.test'
   delete process.env.API_VERSION
@@ -185,6 +195,29 @@ describe('ServerApiClient', () => {
     await expect(createServerApiClient().list('crm')).resolves.toEqual([{ id: '1' }])
     expect(cookieJar.get('eerp_access')).toBe('new')
     expect(cookieJar.get('eerp_refresh')).toBe('r2')
+  })
+
+  it('fails closed on a 401 during an RSC render instead of refreshing', async () => {
+    // Simulates a Server Component read (list()/get() called from a page/layout, not
+    // a Route Handler or Server Action): cookies() can't be written here, so a real
+    // refresh attempt would either throw on the write or spend Go's single-use
+    // refresh token with no way to persist the rotation. It should fail closed —
+    // surface the 401 as-is, never call /auth/refresh, never touch the cookies.
+    forbidCookieWrites = true
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const u = String(url)
+      if (u.endsWith('/auth/refresh')) throw new Error('must not be called during an RSC render')
+      return jsonResponse(401, { error: { code: 'TOKEN_EXPIRED', message: 'expired' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const err = await captureError(createServerApiClient().list('crm'))
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.code).toBe('TOKEN_EXPIRED')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    // Untouched — the mocked store never accepted a write either way.
+    expect(cookieJar.get('eerp_access')).toBe('old')
+    expect(cookieJar.get('eerp_refresh')).toBe('r1')
   })
 
   it('clears the cookie and signals session-expired when refresh fails', async () => {

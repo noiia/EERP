@@ -502,3 +502,97 @@ msgstr "Nouvelle page"
 
 msgid "Available once the record has been saved."
 msgstr "Disponible une fois l'enregistrement sauvegardé."
+
+msgid "Nothing here yet."
+msgstr "Rien ici pour le moment."
+
+# ── App Store (docs/roadmaps/app-store.md, Phases 2-3) ──────────────────────
+
+msgid "Activate"
+msgstr "Activer"
+
+msgid "Deactivate"
+msgstr "Désactiver"
+
+msgid "The App Store cannot deactivate itself."
+msgstr "L'App Store ne peut pas se désactiver lui-même."
+
+# ── App Store (docs/roadmaps/app-store.md, Phase 4) ─────────────────────────
+
+msgid "Saved to module.json — takes effect after backend restart + frontend rebuild"
+msgstr "Enregistré dans module.json — prend effet après redémarrage du backend + reconstruction du frontend"
+
+msgid "Updated"
+msgstr "Mis à jour"
+
+msgid "Display name"
+msgstr "Nom affiché"
+
+msgid "Version"
+msgstr "Version"
+
+msgid "Author"
+msgstr "Auteur"
+
+msgid "Type"
+msgstr "Type"
+
+msgid "Icon"
+msgstr "Icône"
+
+msgid "Active"
+msgstr "Actif"
+
+msgid "App mode"
+msgstr "Mode application"
+
+msgid "Views"
+msgstr "Vues"
+
+msgid "Reports"
+msgstr "Rapports"
+
+msgid "View"
+msgstr "Vue"
+
+msgid "File"
+msgstr "Fichier"
+
+msgid "Kind"
+msgstr "Type"
+
+msgid "Report"
+msgstr "Rapport"
+
+msgid "Reports are not available yet."
+msgstr "Les rapports ne sont pas encore disponibles."
+
+msgid "Developer"
+msgstr "Développeur"
+
+msgid "Seed the workspace with fake data for testing."
+msgstr "Peupler l'espace de travail avec des données fictives pour les tests."
+
+msgid "Tools for testing the software against realistic data."
+msgstr "Outils pour tester le logiciel avec des données réalistes."
+
+msgid "Seed demo data"
+msgstr "Générer des données de démonstration"
+
+msgid "Creates a batch of fake contacts, CRM opportunities, and tags through the normal entity API, for exercising the UI with realistic-looking data."
+msgstr "Crée un lot de contacts, d'opportunités CRM et d'étiquettes fictifs via l'API d'entités habituelle, pour tester l'interface avec des données réalistes."
+
+msgid "Seeding…"
+msgstr "Génération…"
+
+msgid "Seeding demo data is only available outside production."
+msgstr "La génération de données de démonstration n'est disponible qu'en dehors de la production."
+
+msgid "Results"
+msgstr "Résultats"
+
+msgid "created"
+msgstr "créé(s)"
+
+msgid "failed"
+msgstr "échoué(s)"

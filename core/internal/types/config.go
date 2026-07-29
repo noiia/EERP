@@ -1,20 +1,10 @@
 package types
 
 import (
-	"os"
 	"strconv"
 	"strings"
 	"time"
 )
-
-// EnvOrDefault returns the env var for key, or fallback when unset or empty.
-// Centralises all env-based overrides so callers never reimplement this pattern.
-func (Config) EnvOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
 
 // DefaultConfig returns a *Config with every optional field pre-filled with a
 // sensible development default.  Required fields (db credentials, module_root,
@@ -48,8 +38,6 @@ type Config struct {
 	MasterPassword    string        `json:"master_key" needed:"false"`
 	AccessTTLSeconds  int           `json:"access_ttl_seconds" needed:"false"`
 	RefreshTTLSeconds int           `json:"refresh_ttl_seconds" needed:"false"`
-	ContainerPool     int           `json:"container_pool" needed:"false"`
-	ThreadPool        int           `json:"thread_pool" needed:"false"`
 	DbName            string        `json:"db_name" needed:"false"`
 	DbPort            int           `json:"db_port" needed:"true"`
 	DbHost            string        `json:"db_host" needed:"true"`
