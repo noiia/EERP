@@ -56,6 +56,8 @@ RUN pnpm install --frozen-lockfile
 FROM base AS build
 ARG API_BASE
 ENV API_BASE=$API_BASE
+ARG API_VERSION
+ENV API_VERSION=$API_VERSION
 WORKDIR /app/core-front
 COPY --from=deps /app /app
 COPY core-front/ ./

@@ -9,6 +9,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useSessionStore } from '@eerp/core-front'
+import { authBffUrl } from '@/lib/auth-url'
 
 function LoginForm() {
   const router = useRouter()
@@ -23,7 +24,7 @@ function LoginForm() {
     setPending(true)
     setError(null)
 
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(authBffUrl('login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),

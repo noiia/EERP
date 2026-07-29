@@ -83,7 +83,7 @@ describe('AppTopBar', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /logout/i }))
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/login'))
-    expect(fetch).toHaveBeenCalledWith('/api/auth/logout', { method: 'POST' })
+    expect(fetch).toHaveBeenCalledWith('/api/v1/auth/logout', { method: 'POST' })
     expect(useSessionStore.getState().identity).toBeNull()
   })
 })
