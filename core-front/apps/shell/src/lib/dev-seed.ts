@@ -5,10 +5,25 @@ import { ApiError, createServerApiClient } from '@eerp/core-front/server'
 // records through the SAME generic entity API (POST /{entity}) any other write
 // in the app goes through — no dedicated backend route, Go authorizes each
 // create() call from the caller's own session exactly like a real user's write.
-// Never runs outside development (the NODE_ENV guard below): this is a bulk,
-// irreversible write and must never land in a real tenant. Only a UI affordance
-// exists to trigger this — no cron/API surface, so an admin has to be signed in
-// and on the Developer settings page to run it.
+// Never runs outside development (the seedingAllowed() guard below): this is a
+// bulk, irreversible write and must never land in a real tenant. Only a UI
+// affordance exists to trigger this — no cron/API surface, so an admin has to
+// be signed in and on the Developer settings page to run it.
+
+/**
+ * NODE_ENV alone can't tell "a real production deployment" apart from "a dev/local
+ * deployment running the production Next build" — the standalone Docker image (see
+ * core-front/Dockerfile) always sets NODE_ENV=production, since that's required for
+ * `next start` to run correctly, even when compose.yml is standing it up for local
+ * dev. ALLOW_DEMO_SEED lets such a deployment opt back in explicitly, the same way
+ * COOKIE_SECURE overrides the NODE_ENV-derived default in session-cookies.ts.
+ */
+export function seedingAllowed(): boolean {
+  if (process.env.ALLOW_DEMO_SEED !== undefined) {
+    return process.env.ALLOW_DEMO_SEED === 'true'
+  }
+  return process.env.NODE_ENV !== 'production'
+}
 
 export interface SeedEntityResult {
   entity: string
@@ -152,7 +167,7 @@ async function createMany<R extends { id: string }>(
  * order (contacts and tags before the CRM/crm_tag rows that reference them).
  */
 export async function seedDemoData(): Promise<SeedResult> {
-  if (process.env.NODE_ENV === 'production') {
+  if (!seedingAllowed()) {
     return { ok: false, message: 'Demo data seeding is disabled outside development.' }
   }
 

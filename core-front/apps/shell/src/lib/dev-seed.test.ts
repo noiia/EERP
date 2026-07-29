@@ -10,7 +10,7 @@ vi.mock('@eerp/core-front/server', async (importOriginal) => {
   }
 })
 
-import { seedDemoData } from './dev-seed'
+import { seedDemoData, seedingAllowed } from './dev-seed'
 
 function callsFor(entity: string): unknown[][] {
   return createMock.mock.calls.filter(([e]) => e === entity)
@@ -30,6 +30,28 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
+describe('seedingAllowed', () => {
+  it('falls back to NODE_ENV when ALLOW_DEMO_SEED is unset', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(seedingAllowed()).toBe(false)
+
+    vi.stubEnv('NODE_ENV', 'development')
+    expect(seedingAllowed()).toBe(true)
+  })
+
+  it('lets ALLOW_DEMO_SEED override a production NODE_ENV, e.g. the standalone Docker image', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('ALLOW_DEMO_SEED', 'true')
+    expect(seedingAllowed()).toBe(true)
+  })
+
+  it('lets ALLOW_DEMO_SEED=false override a non-production NODE_ENV', () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('ALLOW_DEMO_SEED', 'false')
+    expect(seedingAllowed()).toBe(false)
+  })
+})
+
 describe('seedDemoData', () => {
   it('refuses to run in production, without touching the API', async () => {
     vi.stubEnv('NODE_ENV', 'production')
@@ -39,6 +61,16 @@ describe('seedDemoData', () => {
       message: 'Demo data seeding is disabled outside development.',
     })
     expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('runs in production when ALLOW_DEMO_SEED=true (the dev-compose Docker override)', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('ALLOW_DEMO_SEED', 'true')
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    const outcome = await seedDemoData()
+    expect(outcome.ok).toBe(true)
+    expect(createMock).toHaveBeenCalled()
   })
 
   it('seeds contacts, tags, and CRM records, then links tags via crm_tag junction rows', async () => {

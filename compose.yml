@@ -58,6 +58,12 @@ services:
       # dropped by the browser, so login would succeed but never persist. Drop this once
       # TLS termination is added to the gateway.
       COOKIE_SECURE: "false"
+      # The standalone image always runs with NODE_ENV=production (next start requires
+      # it), even for this local/dev compose stack — so the Settings > Developer seed
+      # tool's NODE_ENV-derived guard would stay permanently disabled here otherwise.
+      # This stack is dev-only, so opt back in explicitly. Never set this against a real
+      # tenant deployment.
+      ALLOW_DEMO_SEED: "true"
     expose:
       - "3000"
     depends_on:
