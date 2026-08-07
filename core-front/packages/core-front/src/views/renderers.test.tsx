@@ -9,6 +9,7 @@ vi.mock('next/navigation', () => ({
 
 import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
+import { useRecordLabelStore } from './record-label-store'
 import { CreateBar, EntityView } from './renderers'
 import { useSessionStore, type Identity } from './session-store'
 import { useUiStore } from './ui-store'
@@ -22,6 +23,7 @@ beforeEach(() => {
   pushMock.mockClear()
   useSessionStore.setState({ identity: null })
   useUiStore.setState({ viewMode: {} })
+  useRecordLabelStore.setState({ id: null, label: null })
 })
 
 interface Contact {
@@ -69,6 +71,28 @@ describe('EntityView', () => {
     // docs/roadmaps/responsive-displays.md, Phase 3.
     fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Ada' } })
     expect(save).toBeEnabled()
+  })
+
+  it('reports the record\'s title-field value to record-label-store, for the shell breadcrumb', async () => {
+    render(
+      <EntityView
+        descriptor={formDescriptor}
+        initialData={[{ id: 'c1', name: 'Ada Lovelace' }]}
+        actions={noopActions}
+      />,
+    )
+    await waitFor(() =>
+      expect(useRecordLabelStore.getState()).toMatchObject({ id: 'c1', label: 'Ada Lovelace' }),
+    )
+
+    // Live: an edit to the title field itself updates the reported label too.
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Ada' } })
+    await waitFor(() => expect(useRecordLabelStore.getState().label).toBe('Ada'))
+  })
+
+  it('does not report a label for a brand-new record (no id yet)', () => {
+    render(<EntityView descriptor={formDescriptor} initialData={[]} actions={noopActions} />)
+    expect(useRecordLabelStore.getState()).toEqual({ id: null, label: null, setLabel: expect.any(Function) })
   })
 
   // docs/roadmaps/app-store.md, Phase 2: readOnly never blocks a commit — it

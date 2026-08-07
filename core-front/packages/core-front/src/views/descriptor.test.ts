@@ -12,6 +12,7 @@ import {
   normalizeLayout,
   requiredMissing,
   resolveWidget,
+  titleFieldName,
   validateCatalogDescriptor,
   validateDescriptorWidgets,
   type CatalogDescriptor,
@@ -602,6 +603,32 @@ describe('layoutFieldOrder', () => {
       },
     ]
     expect(layoutFieldOrder(layout)).toEqual(['a', 'b', 'c', 'd'])
+  })
+})
+
+describe('titleFieldName', () => {
+  it('finds the default form anatomy\'s synthesized title field (the first plain text field)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'notes', label: 'Notes', type: 'text', widget: 'long' },
+      ],
+    }
+    expect(titleFieldName(normalizeLayout(descriptor))).toBe('name')
+  })
+
+  it('finds an explicit layout\'s variant: title field regardless of position', () => {
+    const layout: LayoutNode[] = [
+      { kind: 'group', children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b', variant: 'title' }] },
+    ]
+    expect(titleFieldName(layout)).toBe('b')
+  })
+
+  it('returns null when no field carries the title variant', () => {
+    const layout: LayoutNode[] = [{ kind: 'group', children: [{ kind: 'field', name: 'a' }] }]
+    expect(titleFieldName(layout)).toBeNull()
   })
 })
 

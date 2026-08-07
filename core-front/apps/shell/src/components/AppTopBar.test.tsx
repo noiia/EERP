@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useSessionStore, type Identity, type ModuleNav } from '@eerp/core-front'
+import { useRecordLabelStore, useSessionStore, type Identity, type ModuleNav } from '@eerp/core-front'
 
 const pathnameMock = vi.fn<() => string>()
 const pushMock = vi.fn()
@@ -28,6 +28,7 @@ beforeEach(() => {
   pushMock.mockReset()
   refreshMock.mockReset()
   useSessionStore.getState().setIdentity(identity)
+  useRecordLabelStore.setState({ id: null, label: null })
   vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
 })
 afterEach(() => vi.unstubAllGlobals())
@@ -42,6 +43,33 @@ describe('AppTopBar', () => {
     // The current (last) crumb is plain text, not a link.
     expect(screen.queryByRole('link', { name: 'Contacts' })).not.toBeInTheDocument()
     expect(screen.getByText('Contacts')).toBeInTheDocument()
+  })
+
+  it('shows the record\'s real name on a form route once record-label-store reports it, instead of the raw id', () => {
+    pathnameMock.mockReturnValue('/crm/contacts/3fa85f64-5717-4562-b3fc-2c963f66afa6')
+    useRecordLabelStore.getState().setLabel('3fa85f64-5717-4562-b3fc-2c963f66afa6', 'Ada Lovelace')
+    render(<AppTopBar identity={identity} />)
+
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.queryByText('3fa85f64-5717-4562-b3fc-2c963f66afa6')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the titleized (garbled) id segment when record-label-store has no matching entry yet', () => {
+    pathnameMock.mockReturnValue('/crm/contacts/3fa85f64-5717-4562-b3fc-2c963f66afa6')
+    render(<AppTopBar identity={identity} />)
+
+    // The exact bug being fixed: with no record-label-store entry, the raw uuid
+    // segment gets run through the crumb titleizer and comes out garbled.
+    expect(screen.getByText('3fa85f64 5717 4562 B3fc 2c963f66afa6')).toBeInTheDocument()
+  })
+
+  it('ignores a stale record-label-store entry left over from a different record', () => {
+    pathnameMock.mockReturnValue('/crm/contacts/new-record-id')
+    useRecordLabelStore.getState().setLabel('some-other-id', 'Stale Name')
+    render(<AppTopBar identity={identity} />)
+
+    expect(screen.queryByText('Stale Name')).not.toBeInTheDocument()
+    expect(screen.getByText('New Record Id')).toBeInTheDocument()
   })
 
   it('shows the current module main pages next to the breadcrumb, marking the active one', () => {

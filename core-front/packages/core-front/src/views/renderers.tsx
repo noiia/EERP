@@ -28,11 +28,18 @@ import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import { CalendarRenderer } from './calendar-renderer'
 import { CatalogRenderer } from './catalog-renderer'
-import { fieldLabel, layoutFieldOrder, normalizeLayout, type ViewDescriptor } from './descriptor'
+import {
+  fieldLabel,
+  layoutFieldOrder,
+  normalizeLayout,
+  titleFieldName,
+  type ViewDescriptor,
+} from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { GraphRenderer } from './graph-renderer'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
+import { useRecordLabelStore } from './record-label-store'
 import { tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
 import {
@@ -133,6 +140,21 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
   // NOTE: the durable home for this is a `submitting` flag on the form store — a store-API
   // addition deliberately deferred so this pass stays renderer/theme-only.
   const [submitting, setSubmitting] = useState(false)
+
+  // Report this record's display name to the shell's breadcrumb (record-label-store),
+  // which otherwise only has the raw id from the URL to show. Keyed off the title
+  // field's OWN value (not the whole draft) so an edit to some other field doesn't
+  // spuriously re-fire this.
+  const recordId = (draft as { id?: string }).id
+  const layout = normalizeLayout(descriptor)
+  const titleField = titleFieldName(layout) ?? layoutFieldOrder(layout)[0]
+  const titleValue = titleField ? (draft as Record<string, unknown>)[titleField] : undefined
+  useEffect(() => {
+    if (!recordId) return
+    useRecordLabelStore
+      .getState()
+      .setLabel(recordId, typeof titleValue === 'string' && titleValue.trim() !== '' ? titleValue : null)
+  }, [recordId, titleValue])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()

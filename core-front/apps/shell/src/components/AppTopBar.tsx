@@ -19,7 +19,13 @@ import HomeIcon from '@mui/icons-material/Home'
 import LogoutIcon from '@mui/icons-material/Logout'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import SettingsIcon from '@mui/icons-material/Settings'
-import { useSessionStore, useT, type Identity, type ModuleNav } from '@eerp/core-front'
+import {
+  useRecordLabelStore,
+  useSessionStore,
+  useT,
+  type Identity,
+  type ModuleNav,
+} from '@eerp/core-front'
 import { authBffUrl } from '@/lib/auth-url'
 
 // The persistent application top bar (shell chrome). Shown on every authenticated route:
@@ -54,6 +60,11 @@ function crumbsFromPath(pathname: string): Crumb[] {
 function PathBreadcrumbs({ pathname }: { pathname: string }) {
   const t = useT()
   const crumbs = crumbsFromPath(pathname)
+  const lastSegment = pathname.split('/').filter(Boolean).at(-1)
+  // A form route's trailing crumb is otherwise the raw record id (it's just a URL
+  // segment) — FormRenderer reports the record's real title-field value here
+  // (record-label-store) the moment it mounts, so swap it in when it matches.
+  const recordLabel = useRecordLabelStore((s) => (s.id === lastSegment ? s.label : null))
   return (
     <Breadcrumbs
       aria-label="breadcrumb"
@@ -86,7 +97,9 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
       {crumbs.map((crumb, i) =>
         i === crumbs.length - 1 ? (
           <Typography key={crumb.href} variant="subtitle2" component="span" color="inherit">
-            {t(crumb.label)}
+            {/* The record's own name is never a translatable msgid, unlike every
+                other crumb segment (module/page slugs) — skip t() for it. */}
+            {recordLabel ?? t(crumb.label)}
           </Typography>
         ) : (
           <MuiLink key={crumb.href} component={Link} href={crumb.href} color="inherit" underline="hover">

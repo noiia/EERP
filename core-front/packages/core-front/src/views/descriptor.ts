@@ -632,6 +632,25 @@ export function layoutFieldOrder(layout: LayoutNode[]): string[] {
 }
 
 /**
+ * The layout's designated "big heading" field (`variant: 'title'`), if any —
+ * the same field a form's own header renders large. A host shell reuses this
+ * to show a record's real name in places that only have the layout tree to
+ * go on (e.g. the breadcrumb's trailing crumb, which otherwise has nothing
+ * but the raw id). `null` when no field carries the variant.
+ */
+export function titleFieldName(layout: LayoutNode[]): string | null {
+  for (const node of layout) {
+    if (node.kind === 'field') {
+      if (node.variant === 'title') return node.name
+      continue
+    }
+    const found = titleFieldName(node.children)
+    if (found) return found
+  }
+  return null
+}
+
+/**
  * `viewType: 'catalog'`'s presentation: an icon/title/subtitle list, one row
  * per record (docs/roadmaps/app-store.md, Phase 2 — the App Store's own
  * module listing is its first user, but the type is generic: any future
