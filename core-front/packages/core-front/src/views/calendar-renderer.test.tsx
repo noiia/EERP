@@ -191,6 +191,58 @@ describe('CalendarRenderer', () => {
     expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toBeInTheDocument()
   })
 
+  it('dropping a scheduled card outside the calendar asks to confirm before clearing its date', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.dragStart(screen.getByTestId('calendar-card-1'))
+    // No dragOver/drop on any drop target in between — a real "released outside
+    // the calendar" drag never fires our onDrop handlers at all.
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent(day15)
+    expect(screen.getByRole('dialog')).toHaveTextContent('Alpha')
+    expect(update).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove date' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: null }))
+  })
+
+  it('cancelling the confirm dialog leaves the date untouched', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.dragStart(screen.getByTestId('calendar-card-1'))
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
+
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('dropping an already-unscheduled card outside the calendar does not prompt (nothing to remove)', () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.dragStart(screen.getByTestId('calendar-card-2'))
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-2'))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('dropping on a real drop target (a day cell) never triggers the confirm dialog', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    drag('1', day20)
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day20 }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('reverts the move and surfaces the error on a rejected write', async () => {
     update.mockRejectedValue(new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 }))
     render(

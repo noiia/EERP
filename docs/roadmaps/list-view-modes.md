@@ -296,6 +296,17 @@ persists through the real update path and reverts cleanly on a rejected write.
 > `null` (the same "clear the value" semantics Kanban's "No status" column
 > already established) — Unscheduled is a real drop target, not just a
 > passive list.
+>
+> Dropping a scheduled record **outside the calendar entirely** (released
+> over neither a day cell nor the Unscheduled panel — desktop, another
+> widget, anywhere with no `onDrop` of ours) is NOT silently ignored and NOT
+> treated the same as an Unscheduled drop: a confirm dialog names the record
+> (its label field) and its current date, and the PATCH-to-`null` only fires
+> on explicit confirmation. Detection is a same-component ref (`droppedRef`,
+> set by the day-cell/Unscheduled `onDrop` handlers, read by the dragged
+> card's `onDragEnd`) rather than the HTML5 DnD `dataTransfer.dropEffect` —
+> jsdom's `DragEvent` doesn't populate `dataTransfer`, so a browser-API-only
+> check would be untestable; the ref works identically in both.
 
 **Claude Code prompt:**
 ```

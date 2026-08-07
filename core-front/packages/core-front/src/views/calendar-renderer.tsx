@@ -1,10 +1,16 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import Collapse from '@mui/material/Collapse'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
@@ -72,7 +78,12 @@ export function CalendarRenderer<T extends HasId>({
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
-  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragging, setDragging] = useState<T | null>(null)
+  // Set by a valid onDrop (day cell / Unscheduled) before onDragEnd fires; tells
+  // onDragEnd whether the drag landed on one of THIS component's own drop targets
+  // or was released somewhere outside it entirely (desktop, another panel, ...).
+  const droppedRef = useRef(false)
+  const [removeConfirm, setRemoveConfirm] = useState<{ id: string; label: string; date: string } | null>(null)
   const now = new Date()
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() })
 
@@ -124,8 +135,18 @@ export function CalendarRenderer<T extends HasId>({
         data-testid={`calendar-card-${record.id}`}
         variant="outlined"
         draggable
-        onDragStart={() => setDraggingId(record.id)}
-        onDragEnd={() => setDraggingId(null)}
+        onDragStart={() => {
+          droppedRef.current = false
+          setDragging(record)
+        }}
+        onDragEnd={() => {
+          const dropped = droppedRef.current
+          setDragging(null)
+          if (!dropped) {
+            const date = dateOf(record)
+            if (date) setRemoveConfirm({ id: record.id, label: label(record), date })
+          }
+        }}
         // A real drag never fires click (the browser suppresses it once the pointer
         // moves past the drag threshold), so a plain click here is unambiguously
         // "clicked, didn't drag" — no separate bookkeeping needed.
@@ -179,7 +200,8 @@ export function CalendarRenderer<T extends HasId>({
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault()
-                    if (draggingId) void moveField(draggingId, iso)
+                    droppedRef.current = true
+                    if (dragging) void moveField(dragging.id, iso)
                   }}
                   sx={{
                     minHeight: 72,
@@ -200,14 +222,15 @@ export function CalendarRenderer<T extends HasId>({
           </Box>
         </Box>
 
-        {unscheduled.length > 0 ? (
+        <Collapse in={unscheduled.length > 0} orientation="horizontal" unmountOnExit>
           <Box
             role="group"
             aria-label={t('Unscheduled')}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault()
-              if (draggingId) void moveField(draggingId, null)
+              droppedRef.current = true
+              if (dragging) void moveField(dragging.id, null)
             }}
             sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
           >
@@ -216,8 +239,29 @@ export function CalendarRenderer<T extends HasId>({
             </Typography>
             <Stack spacing={0.5}>{unscheduled.map(dayCard)}</Stack>
           </Box>
-        ) : null}
+        </Collapse>
       </Stack>
+
+      <Dialog open={removeConfirm != null} onClose={() => setRemoveConfirm(null)}>
+        <DialogTitle>{t('Remove date?')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {t('Remove')} {removeConfirm?.date} {t('from')} "{removeConfirm?.label}"?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemoveConfirm(null)}>{t('Cancel')}</Button>
+          <Button
+            color="error"
+            onClick={() => {
+              if (removeConfirm) void moveField(removeConfirm.id, null)
+              setRemoveConfirm(null)
+            }}
+          >
+            {t('Remove date')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
