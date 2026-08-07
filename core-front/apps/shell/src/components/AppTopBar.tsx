@@ -48,18 +48,32 @@ interface Crumb {
   href: string
 }
 
-/** Build cumulative breadcrumb links from a pathname (excluding the menu root). */
-function crumbsFromPath(pathname: string): Crumb[] {
+/**
+ * Build cumulative breadcrumb links from a pathname (excluding the menu root).
+ * A module's form route often sits directly off its own root — e.g. CRM's is
+ * '/crm/:id', a sibling of '/crm/list', not nested under it — so the raw path
+ * alone has no segment for "List" even though that's really the record's
+ * parent page. When the path is exactly that flat "/<module>/<id>" shape and
+ * the module declares a `list` main page (`nav`, the same data ModuleNav's
+ * own top-bar links use), splice a "List" crumb in between. Skipped when the
+ * module has no list page, or the path already IS the list page itself.
+ */
+function crumbsFromPath(pathname: string, nav: ModuleNav[]): Crumb[] {
   const segments = pathname.split('/').filter(Boolean)
-  return segments.map((segment, i) => ({
+  const crumbs = segments.map((segment, i) => ({
     label: titleize(segment),
     href: '/' + segments.slice(0, i + 1).join('/'),
   }))
+  if (segments.length !== 2) return crumbs
+
+  const listPage = nav.find((n) => n.module === segments[0])?.pages.find((p) => p.kind === 'list')
+  if (!listPage || listPage.path === pathname) return crumbs
+  return [crumbs[0], { label: 'List', href: listPage.path }, crumbs[1]]
 }
 
-function PathBreadcrumbs({ pathname }: { pathname: string }) {
+function PathBreadcrumbs({ pathname, nav }: { pathname: string; nav: ModuleNav[] }) {
   const t = useT()
-  const crumbs = crumbsFromPath(pathname)
+  const crumbs = crumbsFromPath(pathname, nav)
   const lastSegment = pathname.split('/').filter(Boolean).at(-1)
   // A form route's trailing crumb is otherwise the raw record id (it's just a URL
   // segment) — FormRenderer reports the record's real title-field value here
@@ -221,7 +235,7 @@ export function AppTopBar({
   return (
     <AppBar position="sticky">
       <Toolbar variant="dense">
-        <PathBreadcrumbs pathname={pathname} />
+        <PathBreadcrumbs pathname={pathname} nav={nav} />
         <ModuleNav nav={nav} pathname={pathname} />
         <Box sx={{ flexGrow: 1 }} />
         <UserMenu identity={identity} />

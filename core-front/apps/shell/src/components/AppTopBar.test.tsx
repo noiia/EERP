@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useRecordLabelStore, useSessionStore, type Identity, type ModuleNav } from '@eerp/core-front'
 
 const pathnameMock = vi.fn<() => string>()
@@ -70,6 +70,41 @@ describe('AppTopBar', () => {
 
     expect(screen.queryByText('Stale Name')).not.toBeInTheDocument()
     expect(screen.getByText('New Record Id')).toBeInTheDocument()
+  })
+
+  it('inserts a "List" crumb before a flat "/<module>/<id>" form route (CRM\'s shape: form is a sibling of list, not nested under it)', () => {
+    pathnameMock.mockReturnValue('/crm/42')
+    render(<AppTopBar identity={identity} nav={crmNav} />)
+
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    const listLink = breadcrumb.getByRole('link', { name: 'List' })
+    expect(listLink).toHaveAttribute('href', '/crm/list')
+    // Order: Menu > Crm > List > 42, with List sitting between the module and the record.
+    const crumbTexts = breadcrumb.getAllByText(/^(Crm|List|42)$/).map((el) => el.textContent)
+    expect(crumbTexts).toEqual(['Crm', 'List', '42'])
+  })
+
+  it('does not insert a "List" crumb when already on the list page itself', () => {
+    pathnameMock.mockReturnValue('/crm/list')
+    render(<AppTopBar identity={identity} nav={crmNav} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    // The trailing crumb is the plain-text current page, not a second "List" link.
+    expect(breadcrumb.queryByRole('link', { name: 'List' })).not.toBeInTheDocument()
+    expect(breadcrumb.getByText('List')).toBeInTheDocument()
+  })
+
+  it('does not insert a "List" crumb when the module declares no list page', () => {
+    pathnameMock.mockReturnValue('/appstore/42')
+    render(<AppTopBar identity={identity} nav={[]} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.queryByText('List')).not.toBeInTheDocument()
+  })
+
+  it('does not insert a "List" crumb for a path deeper than "/<module>/<id>"', () => {
+    pathnameMock.mockReturnValue('/crm/nested/42')
+    render(<AppTopBar identity={identity} nav={crmNav} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.queryByRole('link', { name: 'List' })).not.toBeInTheDocument()
   })
 
   it('shows the current module main pages next to the breadcrumb, marking the active one', () => {
