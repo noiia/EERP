@@ -146,6 +146,46 @@ describe('boolean/picture', () => {
     const { onChange } = renderWidget(pictureField, client, { value: true })
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(false))
   })
+
+  it('renders a ringed placeholder at the default size when there is no picture yet', async () => {
+    const client = stubClient()
+    renderWidget(pictureField, client)
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder).toHaveStyle({ width: '160px', height: '96px' })
+  })
+
+  it('sizes the placeholder from widgetOptions.width/height (module-declared, resizable)', async () => {
+    const client = stubClient()
+    const sizedField: FieldDescriptor = {
+      ...pictureField,
+      widgetOptions: { width: 240, height: 240 },
+    }
+    renderWidget(sizedField, client)
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder).toHaveStyle({ width: '240px', height: '240px' })
+  })
+
+  it('sizes the loaded thumbnail from the same widgetOptions, not a fixed size', async () => {
+    const client = stubClient({ find: vi.fn(async () => meta) })
+    const sizedField: FieldDescriptor = {
+      ...pictureField,
+      widgetOptions: { width: 240, height: 240 },
+    }
+    renderWidget(sizedField, client, { value: true })
+    const img = await screen.findByRole('img', { name: 'Photo' })
+    expect(img).toHaveStyle({ width: '240px', height: '240px' })
+  })
+
+  it('ignores non-numeric widgetOptions.width/height and falls back to the default size', async () => {
+    const client = stubClient()
+    const badField: FieldDescriptor = {
+      ...pictureField,
+      widgetOptions: { width: 'huge' as unknown as number },
+    }
+    renderWidget(badField, client)
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder).toHaveStyle({ width: '160px', height: '96px' })
+  })
 })
 
 describe('boolean/signature', () => {

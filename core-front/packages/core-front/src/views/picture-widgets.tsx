@@ -12,6 +12,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import type { Theme } from '@mui/material/styles'
 import {
   createPictureClient,
   type PictureAnchor,
@@ -19,7 +20,7 @@ import {
   type PictureMeta,
 } from '../api/pictures-client'
 import { useT } from '../i18n/translate'
-import { fieldLabel } from './descriptor'
+import { fieldLabel, type FieldDescriptor } from './descriptor'
 import type { WidgetProps } from './widgets'
 
 // Picture-backed boolean widgets (docs/roadmaps/field-widgets.md, Phase 3).
@@ -141,11 +142,35 @@ function UnsavedRecordHint() {
 // ── boolean/picture ───────────────────────────────────────────────────────────
 
 const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp'
+const DEFAULT_PICTURE_WIDTH = 160
+const DEFAULT_PICTURE_HEIGHT = 96
+
+/** The placeholder/thumbnail box size, tunable per field like every other
+ * widgetOptions (e.g. stars' `{ max: 5 }`) — `widgetOptions: { width, height }`
+ * in pixels, declared by the module that owns the field. Falls back to the
+ * size the widget has always rendered at when unset or not a number. */
+function pictureSize(field: FieldDescriptor): { width: number; height: number } {
+  const { width, height } = field.widgetOptions ?? {}
+  return {
+    width: typeof width === 'number' ? width : DEFAULT_PICTURE_WIDTH,
+    height: typeof height === 'number' ? height : DEFAULT_PICTURE_HEIGHT,
+  }
+}
+
+/** Shared "ring" framing for both the empty placeholder and the loaded
+ * thumbnail, so swapping between the two states doesn't jump the outline. */
+const PICTURE_RING_SX = {
+  border: 2,
+  borderColor: 'divider',
+  borderRadius: 1,
+  boxShadow: (theme: Theme) => `0 0 0 3px ${theme.palette.primary.main}22`,
+}
 
 export function BooleanPictureWidget(props: WidgetProps) {
   const t = useT()
   const { field, disabled } = props
   const { client, anchor, meta, busy, error, sync, run } = usePictureState(props)
+  const { width, height } = pictureSize(field)
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -175,9 +200,25 @@ export function BooleanPictureWidget(props: WidgetProps) {
               component="img"
               src={client.url(meta.id)}
               alt={t(fieldLabel(field))}
-              sx={{ maxHeight: 96, maxWidth: 160, borderRadius: 1 }}
+              sx={{ width, height, objectFit: 'cover', ...PICTURE_RING_SX }}
             />
-          ) : null}
+          ) : (
+            <Box
+              data-testid="picture-placeholder"
+              sx={{
+                width,
+                height,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                ...PICTURE_RING_SX,
+              }}
+            >
+              <Typography variant="caption" color="text.disabled">
+                {t('No image')}
+              </Typography>
+            </Box>
+          )}
           <Button component="label" variant="outlined" size="small" disabled={disabled || busy}>
             {meta ? t('Replace') : t('Upload')}
             <input hidden type="file" accept={PICTURE_ACCEPT} onChange={onFile} />
