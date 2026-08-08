@@ -77,6 +77,23 @@ services:
       core-back:
         condition: service_started
 
+  # Standalone PDF renderer (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Behind a
+  # profile so it doesn't load Chromium into every dev's `make run` before anything calls
+  # it (Phase 3+) — start explicitly with `docker compose --profile pdf up -d pdf-service`.
+  pdf-service:
+    container_name: pdf-service
+    profiles: ["pdf"]
+    build:
+      context: .
+      dockerfile: tools/pdf-service/Dockerfile
+    expose:
+      - "8090"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8090/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api-gateway:
     image: nginx:1.31-alpine
     container_name: api-gateway
