@@ -32,19 +32,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Brand colors and light/dark mode for the whole interface.',
   },
   {
-    path: '/settings/formats',
-    title: 'Formats',
-    description: 'How numbers display across the workspace, for everyone.',
-  },
-  {
     path: '/settings/translations',
     title: 'Translations',
     description: 'Workspace default language, plus the translations modules provide.',
   },
   {
-    path: '/settings/views',
-    title: 'Views',
-    description: "Which field powers each list's Kanban and Calendar display modes.",
+    path: '/settings/apps',
+    title: 'Apps',
+    description: 'Installed applications and their settings.',
   },
   {
     path: '/settings/users',

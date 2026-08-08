@@ -87,6 +87,7 @@ export default async function ModulePage({ params }: ModulePageProps) {
           actions={actions}
           recordId={routeParams.id}
           listViews={listViews}
+          module={route.module}
         />
       </Stack>
     </Container>

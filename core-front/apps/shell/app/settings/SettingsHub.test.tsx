@@ -36,13 +36,15 @@ describe('SettingsHub', () => {
     )
   })
 
-  it('ships Views as a default section, linked from the hub', () => {
-    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/views')).toBe(true)
+  it('ships Apps as a default section, linked from the hub (folds in the old Views/Formats pages)', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/apps')).toBe(true)
     render(<SettingsHub />)
-    expect(screen.getByRole('link', { name: /^views/i })).toHaveAttribute(
-      'href',
-      '/settings/views',
-    )
+    expect(screen.getByRole('link', { name: /^apps/i })).toHaveAttribute('href', '/settings/apps')
+  })
+
+  it('no longer ships the standalone Views/Formats sections', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/views')).toBe(false)
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/formats')).toBe(false)
   })
 
   it('ships Users as a default section, linked from the hub', () => {
