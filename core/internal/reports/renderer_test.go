@@ -16,10 +16,13 @@ func TestConfigured(t *testing.T) {
 		cfg  types.Config
 		want bool
 	}{
-		{"both set", types.Config{PDFServiceURL: "http://pdf-service:8090", FrontendBaseURL: "http://core-front:3000"}, true},
+		{"both set (HTTP)", types.Config{PDFServiceURL: "http://pdf-service:8090", FrontendBaseURL: "http://core-front:3000"}, true},
 		{"missing pdf service url", types.Config{FrontendBaseURL: "http://core-front:3000"}, false},
 		{"missing frontend base url", types.Config{PDFServiceURL: "http://pdf-service:8090"}, false},
 		{"neither set", types.Config{}, false},
+		{"nats url alone is enough (Phase 5)", types.Config{NatsURL: "nats://nats:4222", FrontendBaseURL: "http://core-front:3000"}, true},
+		{"nats url without frontend base url", types.Config{NatsURL: "nats://nats:4222"}, false},
+		{"both pdf_service_url and nats_url set", types.Config{PDFServiceURL: "http://pdf-service:8090", NatsURL: "nats://nats:4222", FrontendBaseURL: "http://core-front:3000"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

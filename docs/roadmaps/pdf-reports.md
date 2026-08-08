@@ -314,7 +314,61 @@ present in extracted text), not just "a PDF came back."
 **DoD:** a user can click "Export to PDF" on a real record and download a correct, styled
 PDF of it.
 
-## Phase 5 — NATS transport for multi-worker scaling (deferred until needed) ⬜
+## Phase 5 — NATS transport for multi-worker scaling ✅ (implemented)
+
+> Implementation notes: built ahead of an actually-observed bottleneck, at explicit request
+> — the "deferred until needed" framing below is the ORIGINAL v1 reasoning (ADR-010
+> decision 3), kept as-written since it's still the right default advice for a fresh
+> deployment; NATS is opt-in (`nats_url` unset by default in both `eerp-config.json` and
+> `eerp-config.docker.json` — the HTTP path from Phases 1-4 is untouched and stays the
+> default).
+>
+> `PDFRenderer` (`core/internal/reports/renderer.go`) is unchanged — `natsPDFRenderer`
+> (`nats_renderer.go`) satisfies the exact same interface as `httpPDFRenderer`, so
+> `GeneratePDF`/`DownloadPDF` needed literally zero changes; `main.go` picks NATS over HTTP
+> only when `nats_url` is set (NATS wins if both are). `tools/pdf-service`'s NATS worker
+> (`natsworker.go`) subscribes to `reports.render` in queue group `pdf-workers`, calling the
+> SAME `renderer.Renderer.Render` the HTTP handler calls — genuinely one render pipeline,
+> two front doors, coexisting (both start unconditionally; `NATS_URL` unset just skips the
+> subscribe). Success replies with raw PDF bytes; failure replies with an `X-Render-Error`
+> header rather than a JSON body, so the caller never has to sniff whether a reply "looks
+> like" a PDF.
+>
+> **The roadmap's original sketch (worker uploads to Garage directly, "whichever worker
+> completes it") was reconsidered during implementation** in favor of keeping Core as the
+> ONLY thing that ever talks to Garage, on both the upload and download side — the simpler,
+> more consistent design, and the one that actually delivers "zero core-side code change
+> beyond the transport swap" literally, not approximately. That does mean pdf-service has no
+> S3 credentials of its own and NATS reply payloads carry full PDF bytes rather than just an
+> object key — comfortably inside NATS's 1MB default `max_payload` for every report size
+> measured so far (10-60KB); nats-server only accepts `max_payload` from a config file, not
+> a CLI flag, so raising it later means mounting one into the `nats` compose service, not
+> just editing a command line.
+>
+> **"Redelivery," precisely:** core NATS (no JetStream) is at-most-once, not
+> at-least-once — a worker crash mid-render just times out the caller's `RequestWithContext`
+> (502, same as any other render failure), it doesn't replay the job server-side. What Phase
+> 5 actually delivers, and what the tests below prove, is that a crashed replica doesn't take
+> the QUEUE down — the survivor(s) keep serving every subsequent request, which is the
+> throughput-scaling promise Phase 5 exists for. Genuine persistent redelivery would mean
+> adopting JetStream, deliberately out of scope here as a second layer of complexity with no
+> demonstrated need yet.
+>
+> **Tests, real not mocked:** `tools/pdf-service/natsworker_test.go` and
+> `core/internal/reports/nats_renderer_test.go` both spin up a REAL, in-process NATS server
+> per test (`github.com/nats-io/nats-server/v2/test`, the same package the nats.go project's
+> own tests use — no Docker needed for CI) — `TestNATSWorker_QueueGroupLoadBalances` proves
+> 20 requests across 2 workers split with zero duplication and zero drops;
+> `TestNATSWorker_SurvivesAWorkerCrash` proves the survivor keeps answering after the other
+> is killed mid-stream. **Then verified again against real infra**, twice: (1) two real
+> `pdf-service` `go run` replicas + a real `nats-server` process + the real backend + real
+> Chrome — generated a report, killed one replica, generated again, got a correct 2-page PDF
+> from the survivor; (2) the actual persistent `docker compose` stack, rebuilt with all of
+> Phases 1-5's code (`docker compose build core-back core-front pdf-service`,
+> `--profile pdf up -d --scale pdf-service=2 nats pdf-service`, `up -d --no-deps core-back
+> core-front` to redeploy — never `down`) and exercised through the real `api-gateway` —
+> login, create a `crm` record, generate `crm.statement`, download, correct content. `nats`
+> + 2 `pdf-service` replicas are left running in the stack afterward as a live demonstration.
 
 **Claude Code prompt:**
 ```
@@ -340,12 +394,14 @@ flowchart TD
     P1[Phase 1: pdf-service skeleton] --> P3[Phase 3: core wiring + Garage delivery]
     P2[Phase 2: ReportDescriptor + print route] --> P3
     P3 --> P4[Phase 4: first real report + UI trigger]
-    P4 -.only if throughput is an observed bottleneck.-> P5[Phase 5: NATS transport]
+    P4 --> P5[Phase 5: NATS transport]
 ```
 
 Phases 1 and 2 are independent (Go backend vs. frontend) and parallelize; Phase 3 needs both
-done. Phase 5 is explicitly not scheduled — it's a documented, low-friction upgrade path, not
-a v1 deliverable (YAGNI, per ADR-010 decision 3).
+done. Phase 5 was originally scoped as YAGNI — build it only once throughput is an observed
+bottleneck (ADR-010 decision 3) — and was then built ahead of that signal, at explicit
+request; the opt-in design (`nats_url` unset by default) keeps that original reasoning intact
+for anyone who doesn't need it yet.
 
 ## Coordination
 

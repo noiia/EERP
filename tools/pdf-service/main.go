@@ -14,6 +14,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/nats-io/nats.go"
+
 	"pdf-service/renderer"
 )
 
@@ -32,6 +34,21 @@ func main() {
 		log.Fatalf("pdf-service: %v", err)
 	}
 	defer r.Close()
+
+	// NATS worker mode (docs/roadmaps/pdf-reports.md Phase 5) — optional,
+	// coexists with the HTTP server below. NATS_URL unset (the default)
+	// means this replica only ever serves HTTP, unchanged from Phase 1.
+	if natsURL := os.Getenv("NATS_URL"); natsURL != "" {
+		nc, err := nats.Connect(natsURL)
+		if err != nil {
+			log.Fatalf("pdf-service: connect nats %s: %v", natsURL, err)
+		}
+		defer nc.Close()
+		if _, err := runNATSWorker(nc, r); err != nil {
+			log.Fatalf("pdf-service: nats subscribe: %v", err)
+		}
+		log.Printf("pdf-service subscribed to %q (queue %q) at %s", renderSubject, workerQueueGroup, natsURL)
+	}
 
 	log.Printf("pdf-service listening on %s (chrome: %s)", addr, execPath)
 	log.Fatal(http.ListenAndServe(addr, newMux(r)))

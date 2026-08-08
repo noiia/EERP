@@ -80,19 +80,46 @@ services:
   # Standalone PDF renderer (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Behind a
   # profile so it doesn't load Chromium into every dev's `make run` before anything calls
   # it (Phase 3+) — start explicitly with `docker compose --profile pdf up -d pdf-service`.
+  # No container_name: Phase 5's NATS worker mode makes this service horizontally
+  # scalable (`docker compose --profile pdf up -d --scale pdf-service=N`) — a static
+  # name would collide across replicas. NATS_URL is always set here; nats (below) is
+  # in the same "pdf" profile, so it's always up alongside this. A single replica works
+  # fine either way — the HTTP server (Phase 1-4) never goes away, NATS is additive.
   pdf-service:
-    container_name: pdf-service
     profiles: ["pdf"]
     build:
       context: .
       dockerfile: tools/pdf-service/Dockerfile
+    environment:
+      NATS_URL: nats://nats:4222
     expose:
       - "8090"
+    depends_on:
+      nats:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8090/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Message broker fronting pdf-service replicas for horizontal scaling
+  # (docs/roadmaps/pdf-reports.md Phase 5) — only used when core's own config sets
+  # nats_url (unset by default: the HTTP path from Phase 1-4 keeps working with zero
+  # extra infra). Default max_payload (1MB) is plenty for the reports measured so far
+  # (10-60KB) — nats-server only takes max_payload from a config file, not a CLI flag,
+  # so raising it later means mounting one, not just editing this command.
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats
+    profiles: ["pdf"]
+    expose:
+      - "4222"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   api-gateway:
     image: nginx:1.31-alpine

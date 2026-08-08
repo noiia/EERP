@@ -23,12 +23,14 @@ type PDFRenderer interface {
 	Render(ctx context.Context, printURL string) ([]byte, error)
 }
 
-// Configured reports whether the config names a pdf-service and a frontend
-// address to build print URLs against — absent either, report generation is
-// simply not mounted (main.go), same "absent, not broken" posture as
-// pictures.S3Configured.
+// Configured reports whether the config names a way to reach a renderer —
+// pdf-service directly (PDFServiceURL) or via NATS (NatsURL, Phase 5) —
+// and a frontend address to build print URLs against. Absent both/either,
+// report generation is simply not mounted (main.go), same "absent, not
+// broken" posture as pictures.S3Configured.
 func Configured(cfg *types.Config) bool {
-	return strings.TrimSpace(cfg.PDFServiceURL) != "" && strings.TrimSpace(cfg.FrontendBaseURL) != ""
+	hasRenderer := strings.TrimSpace(cfg.PDFServiceURL) != "" || strings.TrimSpace(cfg.NatsURL) != ""
+	return hasRenderer && strings.TrimSpace(cfg.FrontendBaseURL) != ""
 }
 
 type httpPDFRenderer struct {

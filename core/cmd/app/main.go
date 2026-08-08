@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"core/internal/auth"
 	"core/internal/common"
@@ -25,6 +26,7 @@ import (
 	ormserver "core/orm/server"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
+	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
 
@@ -213,17 +215,43 @@ func main() {
 	// ── Reports (PDF generation) ─────────────────────────────────────────────
 	// Dedicated report-generation endpoints (docs/adr/ADR-010, docs/roadmaps/
 	// pdf-reports.md) — mounted only when both an object store (s3_*, shared
-	// with pictures) and pdf_service_url/frontend_base_url are configured;
-	// absent either, the feature is simply not mounted, same posture as
-	// pictures' own s3_* gate. GeneratePDF is deliberately NOT behind permMw
-	// (see its own doc comment); DownloadPDF is, since it's a flat route.
+	// with pictures) and a way to reach a renderer (pdf_service_url or
+	// nats_url, Phase 5) plus frontend_base_url are configured; absent
+	// either, the feature is simply not mounted, same posture as pictures'
+	// own s3_* gate. GeneratePDF is deliberately NOT behind permMw (see its
+	// own doc comment); DownloadPDF is, since it's a flat route.
 	if pictures.S3Configured(configContent) && reports.Configured(configContent) {
 		reportsObjects, err := pictures.NewS3Store(configContent)
 		if err != nil {
 			common.Logger.Fatal("❌ Error building S3 object store for reports", zap.Error(err))
 		}
+
+		// NATS wins if BOTH are set — nats_url is only ever set deliberately
+		// (to actually get multi-worker scaling), so it names real intent;
+		// pdf_service_url stays the zero-extra-infra default otherwise.
+		var pdfRenderer reports.PDFRenderer
+		if configContent.NatsURL != "" {
+			// RetryOnFailedConnect: a transient NATS outage at boot (e.g. the
+			// nats container is still starting) must not crash the whole API
+			// server for a feature that's supposed to degrade gracefully like
+			// every other reports dependency — Connect returns immediately,
+			// reconnecting in the background; a render attempted before the
+			// first successful connect just fails that one request (502).
+			nc, err := nats.Connect(configContent.NatsURL,
+				nats.RetryOnFailedConnect(true),
+				nats.MaxReconnects(-1),
+			)
+			if err != nil {
+				common.Logger.Fatal("❌ Error connecting to NATS for reports", zap.Error(err))
+			}
+			pdfRenderer = reports.NewNATSPDFRenderer(nc, 25*time.Second)
+			common.Logger.Info("reports: rendering via NATS", zap.String("nats_url", configContent.NatsURL))
+		} else {
+			pdfRenderer = reports.NewHTTPPDFRenderer(configContent.PDFServiceURL)
+		}
+
 		reportsHandler := reports.NewHandler(
-			reports.NewHTTPPDFRenderer(configContent.PDFServiceURL),
+			pdfRenderer,
 			reportsObjects,
 			tokenSvc,
 			permRepo,
@@ -233,7 +261,7 @@ func main() {
 		reportsGroup.POST("/:name/:id/pdf", reportsHandler.GeneratePDF)
 		reportsGroup.GET("/pdf", reportsHandler.DownloadPDF, permMw)
 	} else {
-		common.Logger.Warn("⚠️  s3_* / pdf_service_url / frontend_base_url not configured — report generation disabled")
+		common.Logger.Warn("⚠️  s3_* / pdf_service_url|nats_url / frontend_base_url not configured — report generation disabled")
 	}
 
 	// ── Notebook pages ────────────────────────────────────────────────────────

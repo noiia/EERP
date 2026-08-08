@@ -87,7 +87,14 @@ type Config struct {
 	// generation is simply not mounted, same posture as the picture service.
 	PDFServiceURL   string `json:"pdf_service_url" needed:"false"`
 	FrontendBaseURL string `json:"frontend_base_url" needed:"false"`
-	DSN             string
+	// NatsURL switches report rendering from a direct HTTP call to
+	// pdf-service onto NATS request-reply (docs/roadmaps/pdf-reports.md
+	// Phase 5) — N pdf-service replicas subscribed to the same queue group
+	// become competing consumers for free. Optional: PDFServiceURL alone is
+	// still a complete, valid setup; set this only once horizontal scaling
+	// is an actual need, not by default.
+	NatsURL string `json:"nats_url" needed:"false"`
+	DSN     string
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:
