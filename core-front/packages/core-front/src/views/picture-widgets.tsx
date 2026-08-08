@@ -131,15 +131,17 @@ function WidgetFrame({
   error,
   children,
 }: {
-  label: string
+  label: string | null
   error: string | null
   children: ReactNode
 }) {
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {label}
-      </Typography>
+      {label != null && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {label}
+        </Typography>
+      )}
       {children}
       {error ? (
         <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
@@ -222,7 +224,7 @@ export function BooleanPictureWidget(props: WidgetProps) {
   }
 
   return (
-    <WidgetFrame label={t(fieldLabel(field))} error={error}>
+    <WidgetFrame label={field.hideLabel ? null : t(fieldLabel(field))} error={error}>
       {!anchor ? (
         <UnsavedRecordHint />
       ) : (
@@ -344,7 +346,7 @@ export function BooleanSignatureWidget(props: WidgetProps) {
   }
 
   return (
-    <WidgetFrame label={t(fieldLabel(field))} error={error}>
+    <WidgetFrame label={field.hideLabel ? null : t(fieldLabel(field))} error={error}>
       {!anchor ? (
         <UnsavedRecordHint />
       ) : (

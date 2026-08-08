@@ -14,6 +14,7 @@ import { useT } from '../i18n/translate'
 import {
   evaluateCondition,
   fieldLabel,
+  isFieldVisible,
   normalizeLayout,
   FORM_HEADER_ID,
   type FieldDescriptor,
@@ -101,7 +102,7 @@ function TitleField({
   return (
     <TextField
       variant="standard"
-      placeholder={t(fieldLabel(field))}
+      placeholder={field.hideLabel ? undefined : t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -421,10 +422,10 @@ function LayoutNodeView({
     // Declarative states (Phase 2), reevaluated against the CURRENT draft on
     // every render — draft changes re-render this component (Zustand
     // subscription), so visibility/readOnly react to the user's own edits
-    // with zero extra plumbing. visible:false UNMOUNTS the field; its draft
-    // value is untouched, so toggling back on shows it unchanged.
-    const visible = field.states?.visible ? evaluateCondition(field.states.visible, draft) : true
-    if (!visible) return null
+    // with zero extra plumbing. Hidden (static `invisible` or `states.visible:
+    // false`) UNMOUNTS the field; its draft value is untouched, so toggling
+    // states.visible back on shows it unchanged.
+    if (!isFieldVisible(field, draft)) return null
     const stateReadOnly = field.states?.readOnly
       ? evaluateCondition(field.states.readOnly, draft)
       : false

@@ -232,6 +232,18 @@ describe('LayoutForm — default form anatomy (viewType "form", no explicit layo
     expect(screen.getByLabelText('EMAIL')).toBeInTheDocument()
   })
 
+  it('hideLabel on the title field suppresses its placeholder too', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [{ ...textField('name'), hideLabel: true }, textField('email')],
+    }
+    renderLayout(descriptor, { name: 'Ada' })
+    expect(screen.queryByPlaceholderText('NAME')).not.toBeInTheDocument()
+    // Still mounted and editable — hideLabel isn't invisible.
+    expect(screen.getByDisplayValue('Ada')).toBeInTheDocument()
+  })
+
   it('a boolean `widget: picture` field joins the title field in the header, both before every other field', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',
@@ -598,6 +610,29 @@ describe('LayoutForm — declarative states react to draft edits', () => {
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'lost' } })
     // Now visible — showing the value it had all along, never cleared.
     expect(screen.getByLabelText('Comment')).toHaveValue('kept')
+
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'won' } })
+    expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument()
+  })
+
+  it('invisible: true unmounts the field unconditionally, even when states.visible would hold', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'tree',
+      fields: [
+        { name: 'status', label: 'Status', type: 'text' },
+        {
+          name: 'comment',
+          label: 'Comment',
+          type: 'text',
+          invisible: true,
+          states: { visible: { field: 'status', op: 'eq', value: 'lost' } },
+        },
+      ],
+    }
+    render(<ControlledLayoutForm descriptor={descriptor} initialDraft={{ status: 'lost', comment: 'kept' }} />)
+    // states.visible holds (status === 'lost') but invisible wins regardless.
+    expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'won' } })
     expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument()

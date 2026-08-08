@@ -213,6 +213,13 @@ describe('boolean/picture', () => {
     const placeholder = await screen.findByTestId('picture-placeholder')
     expect(placeholder).toHaveStyle({ width: '160px', height: '96px' })
   })
+
+  it('hideLabel: true suppresses the label but still renders the placeholder', async () => {
+    const client = stubClient()
+    renderWidget({ ...pictureField, hideLabel: true }, client)
+    expect(screen.queryByText('Photo')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('picture-placeholder')).toBeInTheDocument()
+  })
 })
 
 describe('boolean/signature', () => {
@@ -287,5 +294,12 @@ describe('boolean/signature', () => {
     const client = stubClient()
     renderWidget(signatureField, client, { recordId: null })
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
+  })
+
+  it('hideLabel: true suppresses the label but still renders the canvas', () => {
+    const client = stubClient()
+    renderWidget({ ...signatureField, hideLabel: true }, client)
+    expect(screen.queryByText('Signature')).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Signature' })).toBeInTheDocument()
   })
 })

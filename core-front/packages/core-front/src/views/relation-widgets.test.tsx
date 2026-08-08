@@ -172,6 +172,13 @@ describe('relation/search (many2one)', () => {
     expect(onChange).toHaveBeenCalledWith('c2')
     await waitFor(() => expect(screen.queryByText('Select a record')).not.toBeInTheDocument())
   })
+
+  it('hideLabel: true suppresses the caption but the search input still works', async () => {
+    const ops = stubOps()
+    renderWidget({ ...searchField, hideLabel: true }, ops)
+    expect(screen.queryByText('Company')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toBeInTheDocument()
+  })
 })
 
 describe('relation/tags (many2many)', () => {
@@ -257,6 +264,15 @@ describe('relation/tags (many2many)', () => {
     renderWidget(tagsField, stubOps(), { recordId: null })
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
   })
+
+  it('hideLabel: true suppresses the caption but tags still render', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+    })
+    renderWidget({ ...tagsField, hideLabel: true }, ops)
+    expect(screen.queryByText('Tags')).not.toBeInTheDocument()
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+  })
 })
 
 describe('relation/list (one2many)', () => {
@@ -300,6 +316,13 @@ describe('relation/list (one2many)', () => {
   it('shows a hint before the record exists', () => {
     renderWidget(listField, stubOps(), { recordId: null })
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
+  })
+
+  it('hideLabel: true suppresses the caption but the embedded grid still loads', async () => {
+    const ops = stubOps()
+    renderWidget({ ...listField, hideLabel: true }, ops)
+    expect(screen.queryByText('CRM records')).not.toBeInTheDocument()
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
   })
 })
 

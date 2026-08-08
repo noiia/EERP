@@ -290,3 +290,47 @@ describe('text/table', () => {
     expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
   })
 })
+
+describe('hideLabel', () => {
+  it('text/simple: suppresses the label but still renders an editable input', () => {
+    renderWidget({ name: 'name', label: 'Name', type: 'text', hideLabel: true }, 'Ada')
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('Ada')
+  })
+
+  it('boolean/switch: suppresses the label but the switch stays interactive', () => {
+    const { onChange } = renderWidget({ name: 'ok', label: 'Ok', type: 'boolean', hideLabel: true }, false)
+    expect(screen.queryByText('Ok')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch'))
+    expect(onChange).toHaveBeenCalledWith(true)
+  })
+
+  it('number/stars: suppresses the caption legend but the rating still renders', () => {
+    renderWidget(
+      { name: 'score', label: 'Score', type: 'number', widget: 'stars', hideLabel: true },
+      1,
+    )
+    expect(screen.queryByText('Score')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('radio').length).toBeGreaterThan(0)
+  })
+
+  it('selection: suppresses the label but the dropdown still renders its options', () => {
+    renderWidget(
+      {
+        name: 'status',
+        label: 'Status',
+        type: 'selection',
+        hideLabel: true,
+        selection: { options: ['open', 'closed'] },
+      },
+      'open',
+    )
+    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toHaveTextContent('open')
+  })
+
+  it('without hideLabel, the label renders as usual (regression)', () => {
+    renderWidget({ name: 'name', label: 'Name', type: 'text' }, 'Ada')
+    expect(screen.getByLabelText('Name')).toBeInTheDocument()
+  })
+})

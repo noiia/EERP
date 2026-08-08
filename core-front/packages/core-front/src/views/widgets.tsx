@@ -49,7 +49,7 @@ function TextSimpleWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
-      label={t(fieldLabel(field))}
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -63,7 +63,7 @@ function TextLongWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   return (
     <TextField
-      label={t(fieldLabel(field))}
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -110,9 +110,11 @@ function TableWidget({ field, value }: WidgetProps) {
 
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {t(fieldLabel(field))}
-      </Typography>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {t(fieldLabel(field))}
+        </Typography>
+      )}
       {rows.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
           {t(emptyLabel)}
@@ -160,7 +162,7 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
   return (
     <TextField
       select
-      label={t(fieldLabel(field))}
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -188,7 +190,7 @@ function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
   const dateOnly = /^\d{4}-\d{2}-\d{2}/.exec(raw)?.[0] ?? ''
   return (
     <TextField
-      label={t(fieldLabel(field))}
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
       type="date"
       required={field.required}
       disabled={disabled}
@@ -207,7 +209,7 @@ function BooleanSwitchWidget({ field, value, onChange, disabled }: WidgetProps) 
   return (
     <FormControlLabel
       control={<Switch checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />}
-      label={t(fieldLabel(field))}
+      label={field.hideLabel ? '' : t(fieldLabel(field))}
       disabled={disabled}
     />
   )
@@ -275,7 +277,7 @@ function NumberInput({
   const t = useT()
   return (
     <TextField
-      label={t(fieldLabel(field))}
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
       required={field.required}
       disabled={disabled}
       fullWidth
@@ -320,9 +322,11 @@ function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
   const max = typeof field.widgetOptions?.max === 'number' ? field.widgetOptions.max : 3
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {t(fieldLabel(field))}
-      </Typography>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {t(fieldLabel(field))}
+        </Typography>
+      )}
       <Rating
         max={max}
         precision={0.5}
@@ -423,7 +427,7 @@ function PhoneWidget({ field, value, onChange, disabled }: WidgetProps) {
         ))}
       </TextField>
       <TextField
-        label={t(fieldLabel(field))}
+        label={field.hideLabel ? undefined : t(fieldLabel(field))}
         required={field.required}
         disabled={disabled}
         fullWidth

@@ -162,13 +162,15 @@ function relatedColumns(rows: RelationRecord[], labelField: string, t: (s: strin
   }))
 }
 
-function MissingOpsHint({ label }: { label: string }) {
+function MissingOpsHint({ label }: { label: string | null }) {
   const t = useT()
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {label}
-      </Typography>
+      {label != null && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {label}
+        </Typography>
+      )}
       <Typography variant="body2" color="text.secondary">
         {t('Relation data is not wired on this host.')}
       </Typography>
@@ -176,13 +178,15 @@ function MissingOpsHint({ label }: { label: string }) {
   )
 }
 
-function UnsavedHint({ label }: { label: string }) {
+function UnsavedHint({ label }: { label: string | null }) {
   const t = useT()
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {label}
-      </Typography>
+      {label != null && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {label}
+        </Typography>
+      )}
       <Typography variant="body2" color="text.secondary">
         {t('Available once the record has been saved.')}
       </Typography>
@@ -425,7 +429,7 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
     }
   }, [ops, selectedId, rel.entity, labelField])
 
-  if (!ops) return <MissingOpsHint label={t(fieldLabel(field))} />
+  if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
   const pick = (record: RelationRecord) => {
     setSelectedLabel(labelOf(record, labelField))
@@ -434,9 +438,11 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
 
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {t(fieldLabel(field))}
-      </Typography>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {t(fieldLabel(field))}
+        </Typography>
+      )}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         {selectedId ? (
           <RelationTag
@@ -585,8 +591,8 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
     // Load once per anchor — links then evolve through add/unlink below.
   }, [ops, via, recordId, rel.entity, cols.own, cols.related])
 
-  if (!ops) return <MissingOpsHint label={t(fieldLabel(field))} />
-  if (!recordId) return <UnsavedHint label={t(fieldLabel(field))} />
+  if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
+  if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
   const linkedIds = new Set(links.map((l) => l.related.id))
 
@@ -612,9 +618,11 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
 
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {t(fieldLabel(field))}
-      </Typography>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {t(fieldLabel(field))}
+        </Typography>
+      )}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
         {links.map((link) => (
           <RelationTag
@@ -716,14 +724,16 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
     }
   }, [ops, rel.entity, inverseField, recordId])
 
-  if (!ops) return <MissingOpsHint label={t(fieldLabel(field))} />
-  if (!recordId) return <UnsavedHint label={t(fieldLabel(field))} />
+  if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
+  if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" component="legend">
-        {t(fieldLabel(field))}
-      </Typography>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {t(fieldLabel(field))}
+        </Typography>
+      )}
       {/* Rows stay read-only (inline edit is a later iteration); creation goes
           through the wizard line below — the inverse FK is preset, so the new
           record lands in this list by construction. */}

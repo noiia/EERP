@@ -7,6 +7,7 @@ import {
   PAGE_SETTINGS_ID,
   evaluateCondition,
   fieldZeroDefault,
+  isFieldVisible,
   isVirtualRelation,
   layoutFieldOrder,
   normalizeLayout,
@@ -731,6 +732,36 @@ describe('evaluateCondition', () => {
   })
 })
 
+describe('isFieldVisible', () => {
+  it('true when neither invisible nor states.visible is declared', () => {
+    expect(isFieldVisible({ name: 'a', type: 'text' }, {})).toBe(true)
+  })
+
+  it('false when the static invisible flag is set, regardless of states.visible', () => {
+    expect(
+      isFieldVisible(
+        {
+          name: 'a',
+          type: 'text',
+          invisible: true,
+          states: { visible: { field: 'status', op: 'eq', value: 'won' } },
+        },
+        { status: 'won' },
+      ),
+    ).toBe(false)
+  })
+
+  it('follows states.visible when invisible is not set', () => {
+    const field: FieldDescriptor = {
+      name: 'a',
+      type: 'text',
+      states: { visible: { field: 'status', op: 'eq', value: 'won' } },
+    }
+    expect(isFieldVisible(field, { status: 'won' })).toBe(true)
+    expect(isFieldVisible(field, { status: 'lost' })).toBe(false)
+  })
+})
+
 describe('requiredMissing', () => {
   const descriptor = (fields: FieldDescriptor[]): ViewDescriptor => ({
     entity: 'crm',
@@ -774,6 +805,19 @@ describe('requiredMissing', () => {
     expect(requiredMissing(d, { status: 'won' })).toEqual([])
     // status IS 'lost' -> comment is visible -> required blocks.
     expect(requiredMissing(d, { status: 'lost' })).toEqual(['comment'])
+  })
+
+  it('a statically invisible field never blocks either, even if required and states.visible would hold', () => {
+    const d = descriptor([
+      {
+        name: 'comment',
+        type: 'text',
+        required: true,
+        invisible: true,
+        states: { visible: { field: 'status', op: 'eq', value: 'lost' } },
+      },
+    ])
+    expect(requiredMissing(d, { status: 'lost' })).toEqual([])
   })
 
   it('virtual relations (o2m/m2m) are never reported — they have no column to fill', () => {

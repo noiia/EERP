@@ -168,6 +168,26 @@ export interface FieldDescriptor {
    */
   readOnly?: boolean
   /**
+   * Static, unconditional visibility — the same "never rendered, for the
+   * descriptor's whole lifetime" posture `readOnly` has for edits. Unlike
+   * `states.visible` (a condition reevaluated against the draft), this never
+   * turns back on. Combines with `states.visible` exactly like `readOnly`
+   * combines with `states.readOnly`: either one hiding the field is enough
+   * (see `isFieldVisible`) — a field hidden either way still can't block
+   * commit via `required` (`requiredMissing` skips it), since the user has no
+   * way to fill in what they can't see.
+   */
+  invisible?: boolean
+  /**
+   * Suppresses the field's own label (the boxed TextField label, the
+   * FormControlLabel text, or the small caption a widget renders above
+   * itself) while still rendering the field itself — unlike `invisible`,
+   * which hides the whole field. For a field whose surrounding layout
+   * already names it (a section title, a single-field row), so the widget
+   * doesn't repeat it.
+   */
+  hideLabel?: boolean
+  /**
    * Declarative modifiers reevaluated against the CURRENT DRAFT on every
    * edit — they react to the user's OWN changes (e.g. a status field flips a
    * comment field visible), no code involved. `visible: false` UNMOUNTS the
@@ -374,13 +394,27 @@ export function evaluateCondition(cond: Condition, record: Record<string, unknow
 }
 
 /**
+ * Whether a field renders/counts at all: the static `invisible` flag OR's
+ * with the declarative `states.visible` condition — either one hiding the
+ * field is enough, and STATIC wins (no condition can turn it back on). The
+ * one definition of "visible" LayoutNodeView (rendering) and requiredMissing
+ * (commit validation) both read, so they can never disagree about a field
+ * `invisible: true` already unmounted.
+ */
+export function isFieldVisible(field: FieldDescriptor, draft: Record<string, unknown>): boolean {
+  if (field.invisible) return false
+  return field.states?.visible ? evaluateCondition(field.states.visible, draft) : true
+}
+
+/**
  * Names of fields whose EFFECTIVE required (static `required`, OR
  * `states.required` evaluated against `draft`) is true but whose draft value
- * is unset — among fields that are currently VISIBLE. A hidden field never
- * blocks: the user has no way to fill in what they can't see, so a required
- * condition on an invisible field is inert by design (mirrors Odoo). Virtual
- * relations (o2m/m2m) are skipped — they have no column on this record, so
- * "required" has no meaning for them. Used by the form store to block commit.
+ * is unset — among fields that are currently VISIBLE (isFieldVisible). A
+ * hidden field never blocks: the user has no way to fill in what they can't
+ * see, so a required condition on an invisible field is inert by design
+ * (mirrors Odoo). Virtual relations (o2m/m2m) are skipped — they have no
+ * column on this record, so "required" has no meaning for them. Used by the
+ * form store to block commit.
  */
 export function requiredMissing<T>(
   descriptor: ViewDescriptor<T>,
@@ -389,8 +423,7 @@ export function requiredMissing<T>(
   const missing: string[] = []
   for (const field of descriptor.fields) {
     if (isVirtualRelation(field)) continue
-    const visible = field.states?.visible ? evaluateCondition(field.states.visible, draft) : true
-    if (!visible) continue
+    if (!isFieldVisible(field, draft)) continue
     const required =
       field.required === true ||
       (field.states?.required ? evaluateCondition(field.states.required, draft) : false)
