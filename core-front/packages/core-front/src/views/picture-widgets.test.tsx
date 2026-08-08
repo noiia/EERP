@@ -41,6 +41,7 @@ function Harness({
   initialValue,
   recordId,
   sizeOverride,
+  disabled,
 }: {
   field: FieldDescriptor
   client: PictureClient
@@ -48,6 +49,7 @@ function Harness({
   initialValue: boolean
   recordId: string | null
   sizeOverride?: { width: number; height: number } | null
+  disabled?: boolean
 }) {
   const [value, setValue] = useState<unknown>(initialValue)
   const Widget = fieldWidget(field)
@@ -63,6 +65,7 @@ function Harness({
           }}
           entity="contact"
           recordId={recordId}
+          disabled={disabled}
         />
       </PictureSizeProvider>
     </PictureClientProvider>
@@ -79,6 +82,7 @@ function renderWidget(
     <Harness
       field={field}
       client={client}
+      disabled={props.disabled}
       onChange={onChange}
       initialValue={Boolean(props.value)}
       recordId={props.recordId !== undefined ? props.recordId : 'r1'}
@@ -109,12 +113,13 @@ describe('boolean/picture', () => {
     expect(client.find).not.toHaveBeenCalled()
   })
 
-  it('empty anchor: uploads a file and flips the flag true', async () => {
+  it('empty anchor: clicking the placeholder uploads a file and flips the flag true', async () => {
     const client = stubClient()
     const { onChange } = renderWidget(pictureField, client)
 
-    const upload = await screen.findByText('Upload')
-    const input = upload.parentElement!.querySelector('input[type="file"]')!
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder).toHaveAttribute('aria-label', 'Upload')
+    const input = placeholder.querySelector('input[type="file"]')!
     fireEvent.change(input, {
       target: { files: [new File(['png'], 'me.png', { type: 'image/png' })] },
     })
@@ -126,12 +131,12 @@ describe('boolean/picture', () => {
       'me.png',
     )
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(true))
-    // The stored picture now renders as a thumbnail with a Replace affordance.
+    // The stored picture now renders inside the same box, re-labeled to Replace.
     expect(await screen.findByRole('img', { name: 'Photo' })).toHaveAttribute(
       'src',
       '/api/pictures/p1',
     )
-    expect(screen.getByText('Replace')).toBeInTheDocument()
+    expect(screen.getByTestId('picture-placeholder')).toHaveAttribute('aria-label', 'Replace')
   })
 
   it('existing picture: shows the thumbnail and deletes back to false', async () => {
@@ -143,7 +148,34 @@ describe('boolean/picture', () => {
 
     await waitFor(() => expect(client.remove).toHaveBeenCalledWith('p1'))
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(false))
-    expect(screen.getByText('Upload')).toBeInTheDocument()
+    expect(screen.getByTestId('picture-placeholder')).toHaveAttribute('aria-label', 'Upload')
+  })
+
+  it('clicking an existing picture re-opens the file picker to replace it', async () => {
+    const client = stubClient({ find: vi.fn(async () => meta) })
+    renderWidget(pictureField, client, { value: true })
+
+    await screen.findByRole('img', { name: 'Photo' })
+    const placeholder = screen.getByTestId('picture-placeholder')
+    const input = placeholder.querySelector('input[type="file"]')!
+    fireEvent.change(input, {
+      target: { files: [new File(['png'], 'new.png', { type: 'image/png' })] },
+    })
+
+    await waitFor(() =>
+      expect(client.upload).toHaveBeenCalledWith(
+        { table: 'contact', recordId: 'r1', field: 'photo' },
+        expect.anything(),
+        'new.png',
+      ),
+    )
+  })
+
+  it('the file input is disabled while busy or read-only, so clicking the box does nothing', async () => {
+    const client = stubClient()
+    renderWidget(pictureField, client, { disabled: true })
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder.querySelector('input[type="file"]')).toBeDisabled()
   })
 
   it('reconciles a stale true flag when the service has no picture', async () => {
@@ -177,8 +209,12 @@ describe('boolean/picture', () => {
       widgetOptions: { width: 240, height: 240 },
     }
     renderWidget(sizedField, client, { value: true })
-    const img = await screen.findByRole('img', { name: 'Photo' })
-    expect(img).toHaveStyle({ width: '240px', height: '240px' })
+    await screen.findByRole('img', { name: 'Photo' })
+    // The box carries the pixel size; the img fills it at 100%/100%.
+    expect(screen.getByTestId('picture-placeholder')).toHaveStyle({
+      width: '240px',
+      height: '240px',
+    })
   })
 
   it('an admin-configured PictureSizeProvider override wins over widgetOptions', async () => {

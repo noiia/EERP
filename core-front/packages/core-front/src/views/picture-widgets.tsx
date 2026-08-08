@@ -11,6 +11,7 @@ import {
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
+import SvgIcon from '@mui/material/SvgIcon'
 import Typography from '@mui/material/Typography'
 import type { Theme } from '@mui/material/styles'
 import {
@@ -30,6 +31,17 @@ import type { WidgetProps } from './widgets'
 // what actually exists, so a failed upload can never leave a `true` without an
 // image. Uploads happen at interaction time — before the record PUT that
 // commits the boolean — which is exactly the mandated commit order.
+
+/** Material "file_download" glyph inlined — same call as relation-widgets.tsx's
+ * LinkIcon: one icon does not justify an @mui/icons-material dependency (the
+ * engine package doesn't have it; only apps/shell does). */
+function DownloadIcon(props: React.ComponentProps<typeof SvgIcon>) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+    </SvgIcon>
+  )
+}
 
 const PictureClientContext = createContext<PictureClient | null>(null)
 
@@ -223,40 +235,52 @@ export function BooleanPictureWidget(props: WidgetProps) {
     })
   }
 
+  const interactive = !(disabled || busy)
+
   return (
     <WidgetFrame label={field.hideLabel ? null : t(fieldLabel(field))} error={error}>
       {!anchor ? (
         <UnsavedRecordHint />
       ) : (
         <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-          {meta ? (
-            <Box
-              component="img"
-              src={client.url(meta.id)}
-              alt={t(fieldLabel(field))}
-              sx={{ width, height, objectFit: 'cover', ...PICTURE_RING_SX }}
+          {/* The box itself IS the upload/replace control — a <label> wrapping
+              the hidden file input, so clicking anywhere in it (the thumbnail
+              or the empty-state icon) opens the file picker. No separate
+              Upload/Replace button. */}
+          <Box
+            component="label"
+            data-testid="picture-placeholder"
+            aria-label={t(meta ? 'Replace' : 'Upload')}
+            sx={{
+              width,
+              height,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              cursor: interactive ? 'pointer' : 'default',
+              ...PICTURE_RING_SX,
+              ...(interactive ? { '&:hover': { borderColor: 'primary.main' } } : {}),
+            }}
+          >
+            {meta ? (
+              <Box
+                component="img"
+                src={client.url(meta.id)}
+                alt={t(fieldLabel(field))}
+                sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <DownloadIcon fontSize="large" sx={{ color: 'text.disabled' }} />
+            )}
+            <input
+              hidden
+              type="file"
+              accept={PICTURE_ACCEPT}
+              onChange={onFile}
+              disabled={!interactive}
             />
-          ) : (
-            <Box
-              data-testid="picture-placeholder"
-              sx={{
-                width,
-                height,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                ...PICTURE_RING_SX,
-              }}
-            >
-              <Typography variant="caption" color="text.disabled">
-                {t('No image')}
-              </Typography>
-            </Box>
-          )}
-          <Button component="label" variant="outlined" size="small" disabled={disabled || busy}>
-            {meta ? t('Replace') : t('Upload')}
-            <input hidden type="file" accept={PICTURE_ACCEPT} onChange={onFile} />
-          </Button>
+          </Box>
           {meta ? (
             <Button color="error" size="small" disabled={disabled || busy} onClick={onDelete}>
               {t('Delete')}
