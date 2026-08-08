@@ -19,6 +19,7 @@ import (
 	"core/internal/settings"
 	"core/internal/types"
 	_ "core/modules/all"
+	"core/modules/crminheritdemo"
 	"core/orm"
 	ormserver "core/orm/server"
 
@@ -263,6 +264,17 @@ func main() {
 	// auth/pictures/notebook/settings are off this surface entirely), so one
 	// gate at the group level covers exactly the routes that need it.
 	srv.RegisterRoutes(ormserver.BuildHandlers(app), nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── crminheritdemo: Create() override reference example ─────────────────
+	// Mounted AFTER the generic block above so Echo's router keeps THIS
+	// registration for POST /api/v1/crm — confirmed empirically, Echo takes
+	// the last Add() for an identical method+path, it does not panic or
+	// merge. GET/PUT/DELETE/restore on /api/v1/crm are untouched, still
+	// served by the generic handler; only Create is overridden. See
+	// modules/crminheritdemo/handler.go for the full explanation of why this
+	// is a hand-mounted route rather than a "hook" — no such hook exists.
+	crmInheritCreate := crminheritdemo.NewHandler(orm.MustRepo[crminheritdemo.CRM](app.DB))
+	srv.Echo().POST("/api/v1/crm", crmInheritCreate.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	for _, r := range srv.Routes() {
 		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))
