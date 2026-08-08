@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from './descriptor'
-import { loadDashboardWidgets, loadView, loadViewFields } from './loader'
+import { EntityViewServer, loadDashboardWidgets, loadPictureSize, loadView, loadViewFields } from './loader'
 import type { ServerApiClient } from '../api/ApiClient'
 import { ApiError } from '../api/errors'
 import { EMPTY_VIEW_FIELDS } from '../api/view-fields'
@@ -19,12 +19,18 @@ function fakeApi(overrides: Partial<ServerApiClient> = {}): ServerApiClient {
     update: vi.fn(),
     remove: vi.fn(),
     getViewFields: vi.fn(async () => EMPTY_VIEW_FIELDS),
+    getPictureSize: vi.fn(async () => null),
     ...overrides,
   } as ServerApiClient
 }
 
 const tree: ViewDescriptor<Crm> = { entity: 'crm', viewType: 'tree', fields: [] }
 const form: ViewDescriptor<Crm> = { entity: 'crm', viewType: 'form', fields: [] }
+const formWithPicture: ViewDescriptor<Crm> = {
+  entity: 'crm',
+  viewType: 'form',
+  fields: [{ name: 'photo', label: 'Photo', type: 'boolean', widget: 'picture' }],
+}
 
 describe('loadView', () => {
   it('lists records and the server total for a tree view', async () => {
@@ -90,6 +96,100 @@ describe('loadViewFields', () => {
       }) as never,
     })
     await expect(loadViewFields('crm', api)).resolves.toEqual(EMPTY_VIEW_FIELDS)
+  })
+})
+
+describe('loadPictureSize', () => {
+  it('prefers the module\'s own override over Base', async () => {
+    const api = fakeApi({
+      getPictureSize: vi.fn(async (module: string) =>
+        module === 'crm' ? { width: 300, height: 300 } : { width: 160, height: 96 },
+      ) as never,
+    })
+    await expect(loadPictureSize('crm', api)).resolves.toEqual({ width: 300, height: 300 })
+  })
+
+  it('falls back to Base when the module has no override', async () => {
+    const api = fakeApi({
+      getPictureSize: vi.fn(async (module: string) =>
+        module === 'base' ? { width: 200, height: 150 } : null,
+      ) as never,
+    })
+    await expect(loadPictureSize('crm', api)).resolves.toEqual({ width: 200, height: 150 })
+  })
+
+  it('is null when neither the module nor Base has a setting', async () => {
+    const api = fakeApi()
+    await expect(loadPictureSize('crm', api)).resolves.toBeNull()
+  })
+
+  it('degrades to null on an ApiError rather than failing the form', async () => {
+    const api = fakeApi({
+      getPictureSize: vi.fn(async () => {
+        throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
+      }) as never,
+    })
+    await expect(loadPictureSize('crm', api)).resolves.toBeNull()
+  })
+})
+
+describe('EntityViewServer', () => {
+  it('fetches the picture-size cascade for a form with a picture field and a known module', async () => {
+    const getPictureSize = vi.fn(async (module: string) =>
+      module === 'crm' ? { width: 300, height: 300 } : null,
+    )
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getPictureSize: getPictureSize as never })
+    const element = await EntityViewServer({
+      descriptor: formWithPicture,
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+      module: 'crm',
+    })
+    expect(getPictureSize).toHaveBeenCalledWith('crm')
+    expect(getPictureSize).toHaveBeenCalledWith('base')
+    expect(element.props.pictureSize).toEqual({ width: 300, height: 300 })
+  })
+
+  it('skips the fetch entirely when no module is given (e.g. Settings -> Users, outside the catch-all)', async () => {
+    const getPictureSize = vi.fn(async () => ({ width: 300, height: 300 }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getPictureSize: getPictureSize as never })
+    const element = await EntityViewServer({
+      descriptor: formWithPicture,
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+    })
+    expect(getPictureSize).not.toHaveBeenCalled()
+    expect(element.props.pictureSize).toBeUndefined()
+  })
+
+  it('skips the fetch when the descriptor has no picture-widget field', async () => {
+    const getPictureSize = vi.fn(async () => ({ width: 300, height: 300 }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getPictureSize: getPictureSize as never })
+    const element = await EntityViewServer({
+      descriptor: form,
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+      module: 'crm',
+    })
+    expect(getPictureSize).not.toHaveBeenCalled()
+    expect(element.props.pictureSize).toBeUndefined()
+  })
+
+  it('skips the fetch for a non-form view even with a module and a picture field declared', async () => {
+    const treeWithPicture: ViewDescriptor<Crm> = { ...formWithPicture, viewType: 'tree' }
+    const getPictureSize = vi.fn(async () => ({ width: 300, height: 300 }))
+    const api = fakeApi({ getPictureSize: getPictureSize as never })
+    const element = await EntityViewServer({
+      descriptor: treeWithPicture,
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      module: 'crm',
+    })
+    expect(getPictureSize).not.toHaveBeenCalled()
+    expect(element.props.pictureSize).toBeUndefined()
   })
 })
 

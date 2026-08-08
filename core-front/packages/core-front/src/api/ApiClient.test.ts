@@ -294,6 +294,25 @@ describe('ServerApiClient', () => {
     expect(init.next).toBeUndefined()
   })
 
+  it('reads a module\'s picture-size setting, never caching', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { size: { width: 200, height: 150 } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient().getPictureSize('crm')).resolves.toEqual({
+      width: 200,
+      height: 150,
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }]
+    expect(url).toBe('http://api.test/api/v1/settings/apps/crm/picture-size')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+  })
+
+  it('reads null when a module has no picture-size override configured', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { size: null })))
+    await expect(createServerApiClient().getPictureSize('crm')).resolves.toBeNull()
+  })
+
   it('apiRequest GETs stay out of the Data Cache (session-scoped, never shared)', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { preferred_locale: 'fr', default_locale: null }))
     vi.stubGlobal('fetch', fetchMock)

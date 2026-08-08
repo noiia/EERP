@@ -95,6 +95,27 @@ describe('EntityView', () => {
     expect(useRecordLabelStore.getState()).toEqual({ id: null, label: null, setLabel: expect.any(Function) })
   })
 
+  it('threads the pictureSize prop down to a boolean/picture field (Settings -> Apps override)', async () => {
+    const pictureDescriptor: ViewDescriptor<Contact> = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'photo', label: 'Photo', type: 'boolean', widget: 'picture' },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={pictureDescriptor}
+        initialData={[{ id: 'c1', name: 'Ada' }]}
+        actions={noopActions}
+        pictureSize={{ width: 300, height: 300 }}
+      />,
+    )
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder).toHaveStyle({ width: '300px', height: '300px' })
+  })
+
   // docs/roadmaps/app-store.md, Phase 2: readOnly never blocks a commit — it
   // just means that ONE field can't be the thing that makes the form dirty.
   it('a readOnly field never blocks commit: editing another field alone enables Save and commits cleanly', async () => {

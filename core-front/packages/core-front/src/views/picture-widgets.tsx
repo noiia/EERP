@@ -51,6 +51,26 @@ export function usePictureClient(): PictureClient {
 }
 
 /**
+ * The Settings -> Apps admin-configured box size for THIS form's owning
+ * module (already resolved server-side through the Base cascade — see
+ * loader.tsx's loadPictureSize), or null when no admin has configured
+ * anything at any level. FormRenderer mounts this once per form; a widget
+ * with no Provider above it (an isolated test, a form outside the module
+ * catch-all) reads null, same as "nothing configured".
+ */
+const PictureSizeContext = createContext<{ width: number; height: number } | null>(null)
+
+export function PictureSizeProvider({
+  size,
+  children,
+}: {
+  size: { width: number; height: number } | null | undefined
+  children: ReactNode
+}) {
+  return <PictureSizeContext.Provider value={size ?? null}>{children}</PictureSizeContext.Provider>
+}
+
+/**
  * The widget's service state: where the picture hangs (null until the record
  * first saves — no id, no anchor), the current picture, and load/IO plumbing.
  * Shared by both widgets; `sync` is called after every upload/delete so the
@@ -142,14 +162,25 @@ function UnsavedRecordHint() {
 // ── boolean/picture ───────────────────────────────────────────────────────────
 
 const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp'
-const DEFAULT_PICTURE_WIDTH = 160
-const DEFAULT_PICTURE_HEIGHT = 96
+/** The widget's innermost fallback, below both an admin's Settings -> Apps
+ * setting and a module author's widgetOptions — exported so that Settings ->
+ * Apps' own UI (PictureSizeSettings, apps/shell) can show an accurate "using
+ * the default" hint instead of duplicating this literal. */
+export const DEFAULT_PICTURE_WIDTH = 160
+export const DEFAULT_PICTURE_HEIGHT = 96
 
-/** The placeholder/thumbnail box size, tunable per field like every other
- * widgetOptions (e.g. stars' `{ max: 5 }`) — `widgetOptions: { width, height }`
- * in pixels, declared by the module that owns the field. Falls back to the
- * size the widget has always rendered at when unset or not a number. */
-function pictureSize(field: FieldDescriptor): { width: number; height: number } {
+/**
+ * The placeholder/thumbnail box size, in precedence order: an admin's runtime
+ * Settings -> Apps override (PictureSizeContext — resolved through the Base
+ * cascade, so it already reflects "this app's own setting, else Base")
+ * beats the module author's declared `widgetOptions: { width, height }`
+ * (same convention as stars' `{ max: 5 }`), which beats the widget's own
+ * hardcoded floor. */
+function pictureSize(
+  field: FieldDescriptor,
+  override: { width: number; height: number } | null,
+): { width: number; height: number } {
+  if (override) return override
   const { width, height } = field.widgetOptions ?? {}
   return {
     width: typeof width === 'number' ? width : DEFAULT_PICTURE_WIDTH,
@@ -170,7 +201,8 @@ export function BooleanPictureWidget(props: WidgetProps) {
   const t = useT()
   const { field, disabled } = props
   const { client, anchor, meta, busy, error, sync, run } = usePictureState(props)
-  const { width, height } = pictureSize(field)
+  const sizeOverride = useContext(PictureSizeContext)
+  const { width, height } = pictureSize(field, sizeOverride)
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]

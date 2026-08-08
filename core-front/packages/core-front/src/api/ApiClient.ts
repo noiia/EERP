@@ -219,6 +219,13 @@ export interface ServerApiClient {
    */
   getViewFields(entity: string): Promise<ViewFieldsConfig>
   /**
+   * A boolean/picture widget's configured box size, either the workspace-wide
+   * Base default (module: 'base') or one specific app's own override
+   * (Settings -> Apps) — `null` when unset at that level. Never cached, same
+   * posture as getViewFields.
+   */
+  getPictureSize(module: string): Promise<{ width: number; height: number } | null>
+  /**
    * Like list(), but also returns Go's `total` row count — the tree view's
    * loader uses this (not list()) so Graph mode's aggregate widgets (Phase 5,
    * docs/roadmaps/list-view-modes.md) can tell a full fetch from a
@@ -285,6 +292,15 @@ class ServerApiClientImpl implements ServerApiClient {
       kanbanStatusField: raw.kanban_status_field ?? null,
       calendarDateField: raw.calendar_date_field ?? null,
     }
+  }
+
+  async getPictureSize(module: string): Promise<{ width: number; height: number } | null> {
+    const raw = await request<{ size: { width: number; height: number } | null }>(
+      'GET',
+      `/settings/apps/${module}/picture-size`,
+      null,
+    )
+    return raw.size ?? null
   }
 }
 

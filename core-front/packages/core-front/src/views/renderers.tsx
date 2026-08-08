@@ -39,6 +39,7 @@ import { ErrorAlert } from './error-alert'
 import { GraphRenderer } from './graph-renderer'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
+import { PictureSizeProvider } from './picture-widgets'
 import { useRecordLabelStore } from './record-label-store'
 import { tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
@@ -80,6 +81,11 @@ export interface EntityViewProps<T extends HasId> {
    * page_size-truncated `initialData` instead of silently aggregating a
    * partial set. Undefined is treated as "unknown", not "complete". */
   recordTotal?: number
+  /** The boolean/picture widget's admin-configured box size (Settings ->
+   * Apps, form views only), already resolved through the Base cascade by
+   * loader.tsx's loadPictureSize. `null`/undefined means no admin setting at
+   * any level — the widget falls back to its own widgetOptions/default. */
+  pictureSize?: { width: number; height: number } | null
 }
 
 /** Top-level dispatcher: render a load error, otherwise the renderer for the viewType. */
@@ -128,7 +134,12 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
 
 // --- form ---
 
-function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: EntityViewProps<T>) {
+function FormRenderer<T extends HasId>({
+  descriptor,
+  initialData,
+  actions,
+  pictureSize,
+}: EntityViewProps<T>) {
   const t = useT()
   const [store] = useState(() => createFormStore(descriptor, actions, initialData[0] ?? {}))
   const draft = useFormDraft(store)
@@ -187,13 +198,15 @@ function FormRenderer<T extends HasId>({ descriptor, initialData, actions }: Ent
                 error={{ code: error.code, message: error.message, requestId: error.requestId }}
               />
             ) : null}
-            <LayoutForm
-              descriptor={descriptor}
-              draft={draft as Record<string, unknown>}
-              onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
-              entity={descriptor.entity}
-              recordId={(draft as { id?: string }).id ?? null}
-            />
+            <PictureSizeProvider size={pictureSize}>
+              <LayoutForm
+                descriptor={descriptor}
+                draft={draft as Record<string, unknown>}
+                onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
+                entity={descriptor.entity}
+                recordId={(draft as { id?: string }).id ?? null}
+              />
+            </PictureSizeProvider>
           </Stack>
         </CardContent>
         <Divider />

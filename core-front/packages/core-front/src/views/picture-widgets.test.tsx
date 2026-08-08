@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { PictureClient, PictureMeta } from '../api/pictures-client'
 import type { FieldDescriptor } from './descriptor'
-import { PictureClientProvider } from './picture-widgets'
+import { PictureClientProvider, PictureSizeProvider } from './picture-widgets'
 import { fieldWidget, type WidgetProps } from './widgets'
 
 // State-machine tests for the picture-backed boolean widgets, with the picture
@@ -40,27 +40,31 @@ function Harness({
   onChange,
   initialValue,
   recordId,
+  sizeOverride,
 }: {
   field: FieldDescriptor
   client: PictureClient
   onChange: (next: unknown) => void
   initialValue: boolean
   recordId: string | null
+  sizeOverride?: { width: number; height: number } | null
 }) {
   const [value, setValue] = useState<unknown>(initialValue)
   const Widget = fieldWidget(field)
   return (
     <PictureClientProvider client={client}>
-      <Widget
-        field={field}
-        value={value}
-        onChange={(next) => {
-          onChange(next)
-          setValue(next)
-        }}
-        entity="contact"
-        recordId={recordId}
-      />
+      <PictureSizeProvider size={sizeOverride}>
+        <Widget
+          field={field}
+          value={value}
+          onChange={(next) => {
+            onChange(next)
+            setValue(next)
+          }}
+          entity="contact"
+          recordId={recordId}
+        />
+      </PictureSizeProvider>
     </PictureClientProvider>
   )
 }
@@ -68,7 +72,7 @@ function Harness({
 function renderWidget(
   field: FieldDescriptor,
   client: PictureClient,
-  props: Partial<WidgetProps> = {},
+  props: Partial<WidgetProps> & { sizeOverride?: { width: number; height: number } | null } = {},
 ) {
   const onChange = vi.fn()
   const view = render(
@@ -78,6 +82,7 @@ function renderWidget(
       onChange={onChange}
       initialValue={Boolean(props.value)}
       recordId={props.recordId !== undefined ? props.recordId : 'r1'}
+      sizeOverride={props.sizeOverride}
     />,
   )
   return { onChange, view }
@@ -174,6 +179,28 @@ describe('boolean/picture', () => {
     renderWidget(sizedField, client, { value: true })
     const img = await screen.findByRole('img', { name: 'Photo' })
     expect(img).toHaveStyle({ width: '240px', height: '240px' })
+  })
+
+  it('an admin-configured PictureSizeProvider override wins over widgetOptions', async () => {
+    const client = stubClient()
+    const sizedField: FieldDescriptor = {
+      ...pictureField,
+      widgetOptions: { width: 240, height: 240 },
+    }
+    renderWidget(sizedField, client, { sizeOverride: { width: 400, height: 400 } })
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder).toHaveStyle({ width: '400px', height: '400px' })
+  })
+
+  it('with no PictureSizeProvider override, falls back to widgetOptions as before (regression)', async () => {
+    const client = stubClient()
+    const sizedField: FieldDescriptor = {
+      ...pictureField,
+      widgetOptions: { width: 240, height: 240 },
+    }
+    renderWidget(sizedField, client)
+    const placeholder = await screen.findByTestId('picture-placeholder')
+    expect(placeholder).toHaveStyle({ width: '240px', height: '240px' })
   })
 
   it('ignores non-numeric widgetOptions.width/height and falls back to the default size', async () => {

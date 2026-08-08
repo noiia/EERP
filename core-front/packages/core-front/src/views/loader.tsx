@@ -69,6 +69,28 @@ export async function loadViewFields(
   }
 }
 
+/**
+ * The boolean/picture widget's effective box size for a form's owning module
+ * (Settings -> Apps): that module's own override if it declared one, else the
+ * workspace-wide Base value, else `null` — "no admin setting at any level",
+ * which the widget then resolves against its own `widgetOptions`/hardcoded
+ * default (a lower-precedence tier this loader knows nothing about). An
+ * unreadable setting (session hiccup, missing settings:apps:read) degrades to
+ * null rather than failing the form, same posture as loadViewFields.
+ */
+export async function loadPictureSize(
+  module: string,
+  api: ServerApiClient = createServerApiClient(),
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const [override, base] = await Promise.all([api.getPictureSize(module), api.getPictureSize('base')])
+    return override ?? base
+  } catch (e) {
+    if (e instanceof ApiError) return null
+    throw e
+  }
+}
+
 /** A list view a dashboard rolls up into a block: its entity, heading, and link. */
 export interface DashboardListView {
   /** Drives the count query (api.list) — maps straight to the Go route group. */
@@ -111,6 +133,14 @@ export interface EntityViewServerProps<T extends HasId> {
   recordId?: string
   /** The owning module's list views — rolled up into blocks for a dashboard view. */
   listViews?: DashboardListView[]
+  /**
+   * The route's owning module (the catch-all already resolves this via
+   * `resolveModuleRoute`) — used only to fetch the Settings -> Apps picture-
+   * size cascade for a form view. Absent (e.g. the Settings -> Users pages,
+   * which reuse this engine outside the module catch-all) just skips that
+   * fetch, same as an entity with no picture field.
+   */
+  module?: string
 }
 
 export async function EntityViewServer<T extends HasId>({
@@ -119,6 +149,7 @@ export async function EntityViewServer<T extends HasId>({
   api,
   recordId,
   listViews,
+  module,
 }: EntityViewServerProps<T>) {
   const client = api ?? createServerApiClient()
   const { initialData, error, total } = await loadView(descriptor, client, { recordId })
@@ -131,6 +162,13 @@ export async function EntityViewServer<T extends HasId>({
   // views; other viewTypes never read this.
   const viewFields =
     descriptor.viewType === 'tree' ? await loadViewFields(descriptor.entity, client) : undefined
+  // Only a form with an actual picture field needs the size cascade — skip the
+  // round trips otherwise, same "only fetch what's needed" discipline as above.
+  const hasPictureField = descriptor.fields.some((f) => f.type === 'boolean' && f.widget === 'picture')
+  const pictureSize =
+    descriptor.viewType === 'form' && module && hasPictureField
+      ? await loadPictureSize(module, client)
+      : undefined
   return (
     <EntityView
       descriptor={descriptor}
@@ -140,6 +178,7 @@ export async function EntityViewServer<T extends HasId>({
       widgets={widgets}
       viewFields={viewFields}
       recordTotal={total}
+      pictureSize={pictureSize}
     />
   )
 }
