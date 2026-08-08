@@ -112,7 +112,7 @@ describe('EntityView', () => {
         pictureSize={{ width: 300, height: 300 }}
       />,
     )
-    const placeholder = await screen.findByTestId('picture-placeholder')
+    const placeholder = await screen.findByTestId('picture-tile')
     expect(placeholder).toHaveStyle({ width: '300px', height: '300px' })
   })
 

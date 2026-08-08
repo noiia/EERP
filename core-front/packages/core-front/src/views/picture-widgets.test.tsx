@@ -139,16 +139,32 @@ describe('boolean/picture', () => {
     expect(screen.getByTestId('picture-placeholder')).toHaveAttribute('aria-label', 'Replace')
   })
 
-  it('existing picture: shows the thumbnail and deletes back to false', async () => {
+  it('existing picture: shows the thumbnail and deletes back to false via the corner cross', async () => {
     const client = stubClient({ find: vi.fn(async () => meta) })
     const { onChange } = renderWidget(pictureField, client, { value: true })
 
     expect(await screen.findByRole('img', { name: 'Photo' })).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.click(screen.getByTestId('picture-delete'))
 
     await waitFor(() => expect(client.remove).toHaveBeenCalledWith('p1'))
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(false))
     expect(screen.getByTestId('picture-placeholder')).toHaveAttribute('aria-label', 'Upload')
+    // No picture left to delete — the cross is gone entirely, not just hidden.
+    expect(screen.queryByTestId('picture-delete')).not.toBeInTheDocument()
+  })
+
+  it('has no delete cross when there is no picture yet', async () => {
+    const client = stubClient()
+    renderWidget(pictureField, client)
+    await screen.findByTestId('picture-placeholder')
+    expect(screen.queryByTestId('picture-delete')).not.toBeInTheDocument()
+  })
+
+  it('has no delete cross while disabled — nothing to click even if a picture exists', async () => {
+    const client = stubClient({ find: vi.fn(async () => meta) })
+    renderWidget(pictureField, client, { value: true, disabled: true })
+    await screen.findByRole('img', { name: 'Photo' })
+    expect(screen.queryByTestId('picture-delete')).not.toBeInTheDocument()
   })
 
   it('clicking an existing picture re-opens the file picker to replace it', async () => {
@@ -187,7 +203,7 @@ describe('boolean/picture', () => {
   it('renders a ringed placeholder at the default size when there is no picture yet', async () => {
     const client = stubClient()
     renderWidget(pictureField, client)
-    const placeholder = await screen.findByTestId('picture-placeholder')
+    const placeholder = await screen.findByTestId('picture-tile')
     expect(placeholder).toHaveStyle({ width: '160px', height: '96px' })
   })
 
@@ -198,7 +214,7 @@ describe('boolean/picture', () => {
       widgetOptions: { width: 240, height: 240 },
     }
     renderWidget(sizedField, client)
-    const placeholder = await screen.findByTestId('picture-placeholder')
+    const placeholder = await screen.findByTestId('picture-tile')
     expect(placeholder).toHaveStyle({ width: '240px', height: '240px' })
   })
 
@@ -210,8 +226,9 @@ describe('boolean/picture', () => {
     }
     renderWidget(sizedField, client, { value: true })
     await screen.findByRole('img', { name: 'Photo' })
-    // The box carries the pixel size; the img fills it at 100%/100%.
-    expect(screen.getByTestId('picture-placeholder')).toHaveStyle({
+    // The tile carries the pixel size; the label box (and the img inside it)
+    // fills it at 100%/100%.
+    expect(screen.getByTestId('picture-tile')).toHaveStyle({
       width: '240px',
       height: '240px',
     })
@@ -224,7 +241,7 @@ describe('boolean/picture', () => {
       widgetOptions: { width: 240, height: 240 },
     }
     renderWidget(sizedField, client, { sizeOverride: { width: 400, height: 400 } })
-    const placeholder = await screen.findByTestId('picture-placeholder')
+    const placeholder = await screen.findByTestId('picture-tile')
     expect(placeholder).toHaveStyle({ width: '400px', height: '400px' })
   })
 
@@ -235,7 +252,7 @@ describe('boolean/picture', () => {
       widgetOptions: { width: 240, height: 240 },
     }
     renderWidget(sizedField, client)
-    const placeholder = await screen.findByTestId('picture-placeholder')
+    const placeholder = await screen.findByTestId('picture-tile')
     expect(placeholder).toHaveStyle({ width: '240px', height: '240px' })
   })
 
@@ -246,7 +263,7 @@ describe('boolean/picture', () => {
       widgetOptions: { width: 'huge' as unknown as number },
     }
     renderWidget(badField, client)
-    const placeholder = await screen.findByTestId('picture-placeholder')
+    const placeholder = await screen.findByTestId('picture-tile')
     expect(placeholder).toHaveStyle({ width: '160px', height: '96px' })
   })
 

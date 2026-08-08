@@ -10,6 +10,7 @@ import {
 } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import SvgIcon from '@mui/material/SvgIcon'
 import Typography from '@mui/material/Typography'
@@ -39,6 +40,15 @@ function DownloadIcon(props: React.ComponentProps<typeof SvgIcon>) {
   return (
     <SvgIcon {...props}>
       <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+    </SvgIcon>
+  )
+}
+
+/** Material "close" glyph inlined, same call as DownloadIcon above. */
+function CloseIcon(props: React.ComponentProps<typeof SvgIcon>) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
     </SvgIcon>
   )
 }
@@ -242,7 +252,21 @@ export function BooleanPictureWidget(props: WidgetProps) {
       {!anchor ? (
         <UnsavedRecordHint />
       ) : (
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+        // position:relative purely so the delete cross (a sibling of the
+        // label box below, not a descendant of it) can sit half outside its
+        // top-right corner without being clipped by that box's own
+        // overflow:hidden (needed there to clip the image to the rounded
+        // corners) — and so it never lands inside the <label>, which would
+        // otherwise also fire the file picker on click.
+        <Box
+          data-testid="picture-tile"
+          sx={{
+            position: 'relative',
+            width,
+            height,
+            '&:hover .picture-delete-icon': { opacity: 1 },
+          }}
+        >
           {/* The box itself IS the upload/replace control — a <label> wrapping
               the hidden file input, so clicking anywhere in it (the thumbnail
               or the empty-state icon) opens the file picker. No separate
@@ -252,8 +276,8 @@ export function BooleanPictureWidget(props: WidgetProps) {
             data-testid="picture-placeholder"
             aria-label={t(meta ? 'Replace' : 'Upload')}
             sx={{
-              width,
-              height,
+              width: '100%',
+              height: '100%',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -281,12 +305,30 @@ export function BooleanPictureWidget(props: WidgetProps) {
               disabled={!interactive}
             />
           </Box>
-          {meta ? (
-            <Button color="error" size="small" disabled={disabled || busy} onClick={onDelete}>
-              {t('Delete')}
-            </Button>
+          {meta && interactive ? (
+            <IconButton
+              className="picture-delete-icon"
+              data-testid="picture-delete"
+              aria-label={t('Delete')}
+              onClick={onDelete}
+              size="small"
+              sx={{
+                position: 'absolute',
+                top: -8,
+                right: -8,
+                width: 22,
+                height: 22,
+                bgcolor: 'error.light',
+                color: 'error.dark',
+                opacity: 0,
+                transition: 'opacity 120ms',
+                '&:hover': { bgcolor: 'error.light' },
+              }}
+            >
+              <CloseIcon sx={{ fontSize: 14 }} />
+            </IconButton>
           ) : null}
-        </Stack>
+        </Box>
       )}
     </WidgetFrame>
   )
