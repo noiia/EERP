@@ -120,9 +120,11 @@ function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
 }
 
 /**
- * A linked record rendered as a tag. The unlink cross sits on the tag's RIGHT
- * side and appears on hover (the spec'd affordance); activating it unlinks
- * (m2o -> null, m2m -> junction row removed).
+ * A linked record rendered as a tag. Idle: centered label, the unlink cross
+ * out of layout flow entirely (not just invisible) so the tag is exactly as
+ * wide as its text. On hover/keyboard focus: the label makes room on the
+ * right (padding transition) while the cross fades in over that space —
+ * activating it unlinks (m2o -> null, m2m -> junction row removed).
  */
 function RelationTag({
   label,
@@ -139,8 +141,19 @@ function RelationTag({
       size="small"
       onDelete={disabled ? undefined : onUnlink}
       sx={{
-        '& .MuiChip-deleteIcon': { opacity: 0, transition: 'opacity 120ms' },
-        '&:hover .MuiChip-deleteIcon, & .MuiChip-deleteIcon:focus-visible': { opacity: 1 },
+        position: 'relative',
+        '& .MuiChip-label': { textAlign: 'center', transition: 'padding-right 120ms' },
+        '& .MuiChip-deleteIcon': {
+          position: 'absolute',
+          top: '50%',
+          right: 4,
+          margin: 0,
+          transform: 'translateY(-50%)',
+          opacity: 0,
+          transition: 'opacity 120ms',
+        },
+        '&:hover .MuiChip-label, &:focus-within .MuiChip-label': { paddingRight: '20px' },
+        '&:hover .MuiChip-deleteIcon, &:focus-within .MuiChip-deleteIcon': { opacity: 1 },
       }}
     />
   )
