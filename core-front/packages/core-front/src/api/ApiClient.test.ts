@@ -352,4 +352,49 @@ describe('ServerApiClient', () => {
     await createServerApiClient().list('crm')
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/v2/crm', expect.anything())
   })
+
+  // createServerApiClient(tokenOverride) — the PDF print route's path (docs/adr/
+  // ADR-010): a Server Component rendering for pdf-service's headless Chrome has no
+  // session cookie at all, only a short-lived token Go minted into the URL.
+  describe('tokenOverride', () => {
+    it('sends the override as the Bearer token instead of reading the cookie', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, { id: '1' }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      await createServerApiClient('short-lived-token').get('contact', '1')
+
+      expect(authHeader(fetchMock.mock.calls[0]?.[1] as RequestInit)).toBe('Bearer short-lived-token')
+      // The cookie jar has 'old' seeded in beforeEach — proving the override
+      // wins, not just that some token was sent.
+    })
+
+    it('never reads the session cookie when an override is supplied', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, { id: '1' }))
+      vi.stubGlobal('fetch', fetchMock)
+      cookieJar.set('eerp_access', 'should-never-be-used')
+
+      await createServerApiClient('short-lived-token').get('contact', '1')
+
+      expect(authHeader(fetchMock.mock.calls[0]?.[1] as RequestInit)).toBe('Bearer short-lived-token')
+    })
+
+    it('fails closed on a 401 instead of attempting a cookie refresh', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(401, { error: { code: 'UNAUTHENTICATED' } }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const err = await captureError(createServerApiClient('expired-token').get('contact', '1'))
+      expect(err.code).toBe('UNAUTHENTICATED')
+      // Exactly one call — no refresh attempt, no retry.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('with no argument, behaves exactly like the cookie-bound client (default unchanged)', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, { id: '1' }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      await createServerApiClient().get('contact', '1')
+
+      expect(authHeader(fetchMock.mock.calls[0]?.[1] as RequestInit)).toBe('Bearer old')
+    })
+  })
 })

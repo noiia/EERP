@@ -119,15 +119,16 @@ const REVALIDATE_PROFILE = 'max'
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 // tags: the Data Cache tags for a GET, or null to force no-store — per-user and
-// per-tenant responses must never land in the shared cache.
+// per-tenant responses must never land in the shared cache. tokenOverride bypasses
+// the session cookie entirely (see fetchWithRefresh's own doc comment on why).
 async function authedFetch(
   method: Method,
   path: string,
   tags: string[] | null,
   body?: unknown,
+  tokenOverride?: string,
 ): Promise<Response> {
-  const store = await cookies()
-  const token = store.get(ACCESS_COOKIE)?.value
+  const token = tokenOverride ?? (await cookies()).get(ACCESS_COOKIE)?.value
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
 
@@ -159,10 +160,19 @@ async function fetchWithRefresh(
   path: string,
   tags: string[] | null,
   body?: unknown,
+  tokenOverride?: string,
 ): Promise<Response> {
-  let res = await authedFetch(method, path, tags, body)
+  let res = await authedFetch(method, path, tags, body, tokenOverride)
 
   if (res.status === 401) {
+    if (tokenOverride) {
+      // A caller-supplied token (e.g. the PDF print route's short-lived,
+      // query-param token — docs/adr/ADR-010) has no session cookie behind
+      // it and no refresh token to rotate. A 401 here means the token is
+      // simply invalid/expired — fail closed instead of touching any of the
+      // cookie-refresh machinery below, which doesn't apply to it.
+      throw await parseError(res)
+    }
     if (!(await canWriteCookies(await cookies()))) {
       // RSC render: middleware already had its one legal chance to refresh ahead of
       // this request. Refreshing again here could spend Go's single-use refresh
@@ -180,8 +190,14 @@ async function fetchWithRefresh(
   return res
 }
 
-async function request<T>(method: Method, path: string, tags: string[] | null, body?: unknown): Promise<T> {
-  const res = await fetchWithRefresh(method, path, tags, body)
+async function request<T>(
+  method: Method,
+  path: string,
+  tags: string[] | null,
+  body?: unknown,
+  tokenOverride?: string,
+): Promise<T> {
+  const res = await fetchWithRefresh(method, path, tags, body, tokenOverride)
 
   if (!res.ok) throw await parseError(res)
   if (res.status === 204) return undefined as T
@@ -235,6 +251,10 @@ export interface ServerApiClient {
 }
 
 class ServerApiClientImpl implements ServerApiClient {
+  // tokenOverride, when set, is used for EVERY call this instance makes instead
+  // of the session cookie — see createServerApiClient's doc comment.
+  constructor(private readonly tokenOverride?: string) {}
+
   // Go's ORM server mounts list/create at `/{entity}` (no trailing slash) and the
   // rest at `/{entity}/{id}`. List returns a paginated envelope { data, total, ... };
   // single-record endpoints return the record object directly.
@@ -249,7 +269,13 @@ class ServerApiClientImpl implements ServerApiClient {
   ): Promise<{ records: T[]; total: number }> {
     // Filtered variants cache under their own URL key but share the entity tag,
     // so every mutation of the entity revalidates them too.
-    const body = await request<unknown>('GET', `/${entity}${listQuery(options)}`, [entity])
+    const body = await request<unknown>(
+      'GET',
+      `/${entity}${listQuery(options)}`,
+      [entity],
+      undefined,
+      this.tokenOverride,
+    )
     if (Array.isArray(body)) return { records: body as T[], total: body.length }
     const envelope = body as { data?: unknown; total?: unknown } | null
     const data = envelope?.data
@@ -262,23 +288,23 @@ class ServerApiClientImpl implements ServerApiClient {
   }
 
   get<T>(entity: string, id: string): Promise<T> {
-    return request<T>('GET', `/${entity}/${id}`, [entity])
+    return request<T>('GET', `/${entity}/${id}`, [entity], undefined, this.tokenOverride)
   }
 
   async create<T>(entity: string, body: unknown): Promise<T> {
-    const created = await request<T>('POST', `/${entity}`, [entity], body)
+    const created = await request<T>('POST', `/${entity}`, [entity], body, this.tokenOverride)
     revalidateTag(entity, REVALIDATE_PROFILE)
     return created
   }
 
   async update<T>(entity: string, id: string, body: unknown): Promise<T> {
-    const updated = await request<T>('PUT', `/${entity}/${id}`, [entity], body)
+    const updated = await request<T>('PUT', `/${entity}/${id}`, [entity], body, this.tokenOverride)
     revalidateTag(entity, REVALIDATE_PROFILE)
     return updated
   }
 
   async remove(entity: string, id: string): Promise<void> {
-    await request<void>('DELETE', `/${entity}/${id}`, [entity])
+    await request<void>('DELETE', `/${entity}/${id}`, [entity], undefined, this.tokenOverride)
     revalidateTag(entity, REVALIDATE_PROFILE)
   }
 
@@ -287,6 +313,8 @@ class ServerApiClientImpl implements ServerApiClient {
       'GET',
       `/settings/views/${entity}/fields`,
       null,
+      undefined,
+      this.tokenOverride,
     )
     return {
       kanbanStatusField: raw.kanban_status_field ?? null,
@@ -299,14 +327,27 @@ class ServerApiClientImpl implements ServerApiClient {
       'GET',
       `/settings/apps/${module}/picture-size`,
       null,
+      undefined,
+      this.tokenOverride,
     )
     return raw.size ?? null
   }
 }
 
 /** Construct a request-scoped client bound to the current session cookie. */
-export function createServerApiClient(): ServerApiClient {
-  return new ServerApiClientImpl()
+/**
+ * Construct a request-scoped client. With no argument it's bound to the
+ * current session cookie (every existing call site). Pass an explicit
+ * `tokenOverride` for a request that has no session cookie at all — the ONE
+ * current caller is the PDF print route (docs/adr/ADR-010), reading a
+ * short-lived token Go minted into the URL's `?token=` query param, since a
+ * Server Component render cannot write cookies and pdf-service's headless
+ * Chrome carries no browser session to begin with. An overridden client
+ * never refreshes on 401 (see fetchWithRefresh) — there is no refresh token
+ * behind a scoped token, so a 401 just fails.
+ */
+export function createServerApiClient(tokenOverride?: string): ServerApiClient {
+  return new ServerApiClientImpl(tokenOverride)
 }
 
 /**

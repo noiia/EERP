@@ -16,6 +16,7 @@ import (
 	"core/internal/module"
 	"core/internal/notebook"
 	"core/internal/pictures"
+	"core/internal/reports"
 	"core/internal/settings"
 	"core/internal/types"
 	_ "core/modules/all"
@@ -207,6 +208,32 @@ func main() {
 		picturesGroup.DELETE("/:id", picturesHandler.Delete)
 	} else {
 		common.Logger.Warn("⚠️  s3_* not configured — picture endpoints disabled")
+	}
+
+	// ── Reports (PDF generation) ─────────────────────────────────────────────
+	// Dedicated report-generation endpoints (docs/adr/ADR-010, docs/roadmaps/
+	// pdf-reports.md) — mounted only when both an object store (s3_*, shared
+	// with pictures) and pdf_service_url/frontend_base_url are configured;
+	// absent either, the feature is simply not mounted, same posture as
+	// pictures' own s3_* gate. GeneratePDF is deliberately NOT behind permMw
+	// (see its own doc comment); DownloadPDF is, since it's a flat route.
+	if pictures.S3Configured(configContent) && reports.Configured(configContent) {
+		reportsObjects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			common.Logger.Fatal("❌ Error building S3 object store for reports", zap.Error(err))
+		}
+		reportsHandler := reports.NewHandler(
+			reports.NewHTTPPDFRenderer(configContent.PDFServiceURL),
+			reportsObjects,
+			tokenSvc,
+			permRepo,
+			configContent.FrontendBaseURL,
+		)
+		reportsGroup := srv.Echo().Group("/api/v1/reports", jwtMw)
+		reportsGroup.POST("/:name/:id/pdf", reportsHandler.GeneratePDF)
+		reportsGroup.GET("/pdf", reportsHandler.DownloadPDF, permMw)
+	} else {
+		common.Logger.Warn("⚠️  s3_* / pdf_service_url / frontend_base_url not configured — report generation disabled")
 	}
 
 	// ── Notebook pages ────────────────────────────────────────────────────────

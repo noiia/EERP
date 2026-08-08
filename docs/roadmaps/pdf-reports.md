@@ -179,7 +179,61 @@ registration validation tests; print-route readiness-marker test.
 document from a `ReportDescriptor` and real entity data, with `data-report-ready` present
 only once complete.
 
-## Phase 3 — Core wiring: mint print URL, call `pdf-service`, deliver via Garage ⬜
+## Phase 3 — Core wiring: mint print URL, call `pdf-service`, deliver via Garage ✅ (implemented)
+
+> Implementation notes: lives in `core/internal/reports` (`renderer.go`'s `PDFRenderer` +
+> `httpPDFRenderer` calling `pdf-service`'s `/render`; `handler.go`'s `GeneratePDF`/
+> `DownloadPDF`). Config gained `pdf_service_url` and `frontend_base_url` (the latter is new
+> territory — Go previously had zero reason to know the frontend's address, since every
+> other data flow is frontend-to-backend; both eerp-config.json and eerp-config.docker.json
+> got dev-appropriate values).
+>
+> **The roadmap prompt's "derive report:<name>:read from the route, same convention as
+> every other dedicated handler" turned out not to hold.** `PermissionMiddleware`'s
+> `derivePermissionFromRoute` only ever sees the compiled Echo route pattern
+> (`/api/v1/reports/:name/:id/pdf`), never `:name`'s runtime value — since `:name` sits
+> immediately after the route's first static segment, mechanical derivation would yield the
+> coarse `reports:reports:write`, not a report-specific permission. `GeneratePDF` mounts
+> behind `jwtMw` alone and checks `report:<name>:read` manually via
+> `PermissionRepository.Has`, against the actual requested name. `DownloadPDF` (a flat route,
+> `GET /api/v1/reports/pdf`) has no such problem and uses `permMw` normally, deriving
+> `reports:pdf:read`; tenant isolation on top of that is a key-prefix check
+> (`reports/<tenant>/...`), the same posture `internal/pictures`' `Get` takes toward its own
+> anchor's original write permission (never re-checked on download either).
+>
+> **Delivery has no presigned-URL or DB-row precedent to copy** — `internal/pictures`
+> streams bytes through Go with no URL scheme at all. Went stateless: no new metadata table
+> (nothing here needs pictures' `field true ⇔ row exists` invariant), a deterministic S3 key
+> (`reports/<tenant>/<name>/<id>/<unix-ts>.pdf`, reusing `pictures.ObjectStore`/`S3Configured`/
+> `NewS3Store` directly rather than duplicating an S3 client), and `download_url` is a
+> same-origin Go path (`/api/v1/reports/pdf?key=...`) that `DownloadPDF` streams — never a
+> presigned Garage URL, which would require Garage to be independently reachable by the
+> end user's browser, a production requirement this avoids entirely.
+>
+> **Closed the real gap Phase 2 flagged**, rather than deferring it further: `TokenService`
+> gained `IssueAccessWithTTL` (the existing `IssueAccess` now just calls it with the
+> configured session TTL — a pure refactor, covered by the existing 52 auth tests, all still
+> green) so `GeneratePDF` can mint a 60-second, report-scoped token — re-deriving permissions
+> fresh via `ForRoles` rather than copying the caller's own claim — and embed it in the print
+> URL's `?token=`. `createServerApiClient()` (`packages/core-front/src/api/ApiClient.ts`)
+> gained an optional `tokenOverride` param threaded through every method, bypassing the
+> cookie read entirely and failing closed (no refresh attempt — there's no refresh token
+> behind a scoped print token) on a 401; the print route now reads `searchParams.token` and
+> passes it through instead of relying on a cookie that was never going to exist for a
+> cookie-less `pdf-service` request.
+>
+> **Verified against the real stack, all three services on the host** (Go backend, the
+> already-built `pdf-service`, and the Next dev server, wired together via the
+> `pdf_service_url`/`frontend_base_url` config added above) — not mocks: logged in as the
+> seeded admin, created a real `contact`, temporarily registered the same throwaway
+> `contact.smoketest` report Phase 2 used, and drove the actual
+> `POST /api/v1/reports/contact.smoketest/<id>/pdf` → 201 with a real `download_url` →
+> `GET` that URL → a real PDF whose extracted text is `Globex Corp` / `globex@example.test` /
+> `Globex` plus a real `Page 1/1` footer. Also verified for real: a missing key 404s, an
+> unknown report name 502s (RENDER_FAILED — the print route's own `notFound()` starves
+> pdf-service's `WaitVisible` until its timeout, a slow-but-correct failure, not a crash),
+> and a request with no `Authorization` header 401s before ever reaching the handler. The
+> throwaway report was reverted afterward, same as Phase 2 — a real one is still Phase 4's.
 
 **Claude Code prompt:**
 ```

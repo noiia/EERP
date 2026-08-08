@@ -79,7 +79,15 @@ type Config struct {
 	S3Bucket    string `json:"s3_bucket" needed:"false"`
 	S3AccessKey string `json:"s3_access_key" needed:"false"`
 	S3SecretKey string `json:"s3_secret_key" needed:"false"`
-	DSN         string
+	// PDFServiceURL and FrontendBaseURL configure PDF report generation
+	// (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Go normally has no
+	// reason to reach the frontend — data flows the other way — but the
+	// report pipeline must hand pdf-service a print URL to navigate to, so it
+	// needs core-front's internal address. Both empty (or S3 unset) = report
+	// generation is simply not mounted, same posture as the picture service.
+	PDFServiceURL   string `json:"pdf_service_url" needed:"false"`
+	FrontendBaseURL string `json:"frontend_base_url" needed:"false"`
+	DSN             string
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:

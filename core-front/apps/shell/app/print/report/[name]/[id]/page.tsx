@@ -19,6 +19,15 @@ import '@/generated/generated-modules'
 // anonymous render with no cookie present, so this needs no special-casing
 // there either.
 //
+// This route's OWN outbound call to Go still needs a Bearer token, though —
+// Go authorizes every request unconditionally, network trust or not — and
+// pdf-service's headless Chrome carries no session cookie to supply one.
+// Phase 3 closes that gap: Go mints a short-lived, report-scoped access
+// token (60s TTL) and embeds it as this URL's `?token=`, which
+// createServerApiClient's tokenOverride param uses instead of the (absent)
+// cookie. A missing/expired/invalid token surfaces as notFound() below, the
+// same as a missing record — there's no user here to show an error to.
+//
 // Being a plain async Server Component IS the `data-report-ready` guarantee:
 // nothing below is returned to the caller until every await has resolved, so
 // the marker's presence on the returned tree is never premature. That's also
@@ -29,15 +38,18 @@ import '@/generated/generated-modules'
 
 interface PrintReportPageProps {
   params: Promise<{ name: string; id: string }>
+  searchParams: Promise<{ token?: string }>
 }
 
-export default async function PrintReportPage({ params }: PrintReportPageProps) {
+export default async function PrintReportPage({ params, searchParams }: PrintReportPageProps) {
   const { name, id } = await params
+  const { token } = await searchParams
 
   const descriptor = moduleRegistry.buildReportRegistry().get(name) as ReportDescriptor | undefined
   if (!descriptor) notFound()
+  if (!token) notFound()
 
-  const client = createServerApiClient()
+  const client = createServerApiClient(token)
   let record: Record<string, unknown> | null = null
   try {
     record = await client.get<Record<string, unknown>>(descriptor.entity, id)

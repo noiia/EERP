@@ -34,9 +34,17 @@ func NewTokenService(cfg *types.Config) *TokenService {
 }
 
 // IssueAccess issues a signed access token embedding user ID, tenant ID, roles,
-// and the role-derived permission codes (see Claims.Permissions).
+// and the role-derived permission codes (see Claims.Permissions), valid for the
+// configured access_ttl_seconds.
 func (t *TokenService) IssueAccess(user Users, roles []string, permissions []string) (string, error) {
-	ttl := t.accessTTL()
+	return t.IssueAccessWithTTL(user, roles, permissions, t.accessTTL())
+}
+
+// IssueAccessWithTTL is IssueAccess with an explicit expiry instead of the
+// configured access_ttl_seconds — for short-lived, narrowly-scoped tokens
+// (e.g. the PDF report pipeline's internal print URL, docs/adr/ADR-010) that
+// must not remain a valid credential for a full session.
+func (t *TokenService) IssueAccessWithTTL(user Users, roles []string, permissions []string, ttl time.Duration) (string, error) {
 	claims := Claims{
 		Sub:         user.ID,
 		Tenant:      user.TenantID,
