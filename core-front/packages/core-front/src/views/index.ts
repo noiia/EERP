@@ -4,6 +4,7 @@
 export * from './descriptor'
 export * from './report-descriptor'
 export * from './report-renderer'
+export * from './report-export-button'
 export * from './behaviors'
 export * from './stores'
 export * from './session-store'

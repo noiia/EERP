@@ -123,6 +123,13 @@ describe('ModuleRegistry reports', () => {
       /module "crm", report "crm.broken": a "field" node requires a name/,
     )
   })
+
+  it('reportForEntity resolves the first report over that entity, null otherwise', () => {
+    const registry = new ModuleRegistry()
+    registry.register({ ...crm, reports: [statement] })
+    expect(registry.reportForEntity('crm')).toBe(statement)
+    expect(registry.reportForEntity('tag')).toBeNull()
+  })
 })
 
 describe('ModuleRegistry.menu', () => {

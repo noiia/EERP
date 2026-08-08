@@ -1,0 +1,43 @@
+/* Print-report styling (docs/roadmaps/pdf-reports.md Phase 4) — the classes
+   ReportDescriptor authors reference via ReportNode.className. Plain CSS,
+   not Tailwind/MUI (neither is installed; ReportRenderer deliberately
+   renders plain DOM so a report stays lightweight for pdf-service to print).
+   Imported from the root layout (core-front/CLAUDE.md: Next's App Router
+   only allows global CSS imports from there) — class names are eerp-report-
+   prefixed specifically to stay collision-free with the rest of the app. */
+
+.eerp-report-header,
+.eerp-report-contact,
+.eerp-report-metrics,
+.eerp-report-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.eerp-report-header {
+  font-size: 1.25rem;
+  font-weight: 700;
+  border-bottom: 2px solid #222;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.eerp-report-contact,
+.eerp-report-metrics {
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.eerp-report-notes {
+  display: block;
+  white-space: pre-wrap;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.eerp-page-break {
+  page-break-before: always;
+}

@@ -6,11 +6,15 @@ import { moduleRegistry } from '@eerp/core-front/server'
 // each module's main pages (same manifest the catch-all route and landing menu import).
 import '@/generated/generated-modules'
 // Graph mode's drag/resize engine (react-grid-layout, docs/roadmaps/list-view-modes.md
-// Phase 4.6) — the FIRST raw CSS imports in this codebase (everything else styles via
-// MUI's sx prop/Emotion). Next's App Router only allows global CSS imports from the
-// root layout, so these live here rather than next to graph-renderer.tsx itself.
+// Phase 4.6) — among the first raw CSS imports in this codebase (everything else
+// styles via MUI's sx prop/Emotion). Next's App Router only allows global CSS imports
+// from the root layout, so these live here rather than next to graph-renderer.tsx itself.
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
+// PDF report styling (docs/roadmaps/pdf-reports.md Phase 4) — ReportRenderer renders
+// plain DOM (no MUI), so its ReportNode.className hooks need real CSS; eerp-report-
+// prefixed class names keep it collision-free with the rest of the app.
+import './print/report/report.css'
 import { AppThemeProvider } from '../src/components/AppThemeProvider'
 import { AppTopBar } from '../src/components/AppTopBar'
 import { I18nInit } from '../src/components/I18nInit'

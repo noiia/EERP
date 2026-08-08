@@ -3,8 +3,8 @@ import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { EntityViewServer } from '@eerp/core-front/server'
-import { CreateBar, T, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
+import { EntityViewServer, moduleRegistry } from '@eerp/core-front/server'
+import { CreateBar, ReportExportButton, T, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
 // Side-effect import: registers every discovered module's FrontModule into the shared
 // registry before we resolve the route. Regenerated at build time (gitignored).
 import '@/generated/generated-modules'
@@ -58,6 +58,12 @@ export default async function ModulePage({ params }: ModulePageProps) {
   const listViews =
     route.descriptor.viewType === 'dashboard' ? dashboardListViews(route.module) : undefined
 
+  // Export to PDF (docs/roadmaps/pdf-reports.md Phase 4): only a form route,
+  // over an entity with a registered report, viewing a REAL record (not the
+  // empty "new" draft — there's nothing saved yet to render).
+  const report = route.descriptor.viewType === 'form' ? moduleRegistry.reportForEntity(entity) : null
+  const canExport = report != null && routeParams.id != null && routeParams.id !== 'new'
+
   return (
     // maxWidth={false}: RootLayout's pageInsetX/pageInsetY (10% of the viewport per
     // axis) is already the page's width bound — MUI's own default "lg" (1200px) cap
@@ -80,6 +86,13 @@ export default async function ModulePage({ params }: ModulePageProps) {
           </Typography>
           {route.descriptor.viewType === 'tree' ? (
             <CreateBar descriptor={route.descriptor as ViewDescriptor<AnyRecord>} />
+          ) : null}
+          {canExport && report ? (
+            <ReportExportButton
+              reportName={report.name}
+              recordId={routeParams.id}
+              permission={report.permissions[0] ?? ''}
+            />
           ) : null}
         </Box>
         <EntityViewServer

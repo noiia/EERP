@@ -258,7 +258,47 @@ enforcement, tenant isolation, upload happy/error path.
 **DoD:** `POST /api/v1/reports/crm.statement/<id>/pdf` returns a working download URL for a
 real record, backed by a real `pdf-service` call and a real Garage upload.
 
-## Phase 4 — First real report + UI trigger ⬜
+## Phase 4 — First real report + UI trigger ✅ (implemented)
+
+> Implementation notes: `crm.statement` lives in `core/modules/crm/views/CrmViews.ts`
+> (`FrontModule.reports`) — header/company/status, contact details, and satisfaction/
+> deals/score sections, a `pageBreak`, then notes. No `table` node: Go's `GET /crm/:id`
+> carries no embedded array-valued field (relations resolve client-side only, Phase 2's own
+> finding) — a real relation table is future work once a report actually needs one.
+>
+> **Neither Tailwind nor MUI turned out to be installed in this frontend** — the "className
+> for Tailwind/MUI styling" plan from ADR-010 had nothing to attach to. `ReportRenderer`
+> deliberately renders plain DOM (no MUI components, no client hooks), so the fix was a
+> small plain-CSS file (`apps/shell/app/print/report/report.css`, `eerp-report-`-prefixed
+> classes to stay collision-free) imported from the root layout — Next's App Router only
+> allows global CSS imports there, per the existing react-grid-layout precedent in the same
+> file. Real styling, not a framework, proportional to one report.
+>
+> **The UI trigger needed a second BFF proxy layer, not just a button** — the browser can
+> never call Go directly (session lives in an httpOnly cookie Go can't read, and Go requires
+> a Bearer header regardless of network trust). Added `generateReportPDF`/`streamReportPDF`
+> to `ApiClient.ts` (same session-cookie path as the existing picture functions — NOT the
+> print route's separate `tokenOverride` path) and two Route Handlers,
+> `POST /api/reports/:name/:id` and `GET /api/reports/pdf`, mirroring `internal/pictures`'
+> own `/api/pictures` BFF shape exactly. The POST handler translates Go's own
+> `download_url` (a `/api/v1/...` path requiring a Bearer header) into this BFF's own proxy
+> path — the browser is never handed something it can't actually reach.
+> `ModuleRegistry.reportForEntity(entity)` (mirroring `formDescriptorFor`) lets the generic
+> catch-all decide whether to render `ReportExportButton` next to a form's title, exactly
+> where `CreateBar` sits for tree views — shown only for a real saved record (not the empty
+> `new` draft) with a matching registered report.
+>
+> **Verified twice against the live stack**, not just the roadmap's asked-for automated
+> test: (1) the new `TestGeneratePDF_EndToEnd` (`core/internal/reports/e2e_test.go`,
+> `//go:build integration`, gated on `TEST_API_BASE` — mirroring core-front's own
+> integration-test convention rather than inventing a new one) actually run against all
+> three live services — real login, a uniquely-named real `crm` record, real generation,
+> real download, and `github.com/ledongthuc/pdf` (new dependency — no existing Go PDF
+> text-extraction in this repo) confirming exactly 2 pages and the record's own name plus
+> its status in the extracted text; (2) separately, the actual browser-facing BFF path —
+> Next's own session cookie, `POST /api/reports/crm.statement/:id`, the translated
+> `download_url`, `GET` it — produced a real 2-page PDF with the record's real name/company/
+> status/email, proving `ReportExportButton`'s exact code path, not just the Go handler.
 
 **Claude Code prompt:**
 ```

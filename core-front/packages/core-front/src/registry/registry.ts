@@ -344,6 +344,20 @@ export class ModuleRegistry {
   }
 
   /**
+   * The first registered report over an entity, or null — same "first wins,
+   * null if none" shape as formDescriptorFor. The catch-all's form route uses
+   * this to decide whether to render an Export-to-PDF action: an entity with
+   * no report gets none, same posture a tree view with no formPath gets no
+   * Create button.
+   */
+  reportForEntity(entity: string): ReportDescriptor | null {
+    for (const report of this.resolvedReports.values()) {
+      if (report.entity === entity) return report
+    }
+    return null
+  }
+
+  /**
    * The paths a module's OWN `extends` targets — "which routes does this
    * module EDIT, as opposed to create" (docs/roadmaps/app-store.md, Phase 3's
    * Views notebook page: a route's `RouteConfig.module` stays the ORIGINAL

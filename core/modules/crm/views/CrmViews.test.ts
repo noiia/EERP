@@ -221,3 +221,36 @@ describe('crm — self-extended "Signature" notebook page (registry-level)', () 
     expect(registry.buildRegistry().get('/crm')?.descriptor.fields.map((f) => f.name)).not.toContain('signature')
   })
 })
+
+// docs/roadmaps/pdf-reports.md Phase 4 — the first real ReportDescriptor.
+describe('crm.statement report', () => {
+  it('is registered by name, over the crm entity, guarded by the read permission', () => {
+    const registry = new ModuleRegistry().register(crm)
+    const report = registry.buildReportRegistry().get('crm.statement')
+    expect(report).toBeDefined()
+    expect(report?.entity).toBe('crm')
+    expect(report?.permissions).toEqual(['crm:contacts:read'])
+  })
+
+  it('every field node names a real crm field the form/list views also declare', () => {
+    const report = crm.reports?.find((r) => r.name === 'crm.statement')
+    const knownFields = new Set(crm.routes.flatMap((r) => r.descriptor.fields.map((f) => f.name)))
+    const fieldNames: string[] = []
+    const walk = (nodes: NonNullable<typeof report>['layout']): void => {
+      for (const node of nodes) {
+        if (node.kind === 'field') fieldNames.push(node.name)
+        else if (node.kind === 'section') walk(node.children)
+      }
+    }
+    walk(report?.layout ?? [])
+    expect(fieldNames.length).toBeGreaterThan(0)
+    for (const name of fieldNames) {
+      expect(knownFields.has(name)).toBe(true)
+    }
+  })
+
+  it('contains a pageBreak, splitting the header/metrics from the notes section', () => {
+    const report = crm.reports?.find((r) => r.name === 'crm.statement')
+    expect(report?.layout.some((n) => n.kind === 'pageBreak')).toBe(true)
+  })
+})

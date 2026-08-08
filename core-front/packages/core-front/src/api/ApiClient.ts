@@ -406,3 +406,38 @@ export async function deletePicture(id: string): Promise<void> {
   const res = await fetchWithRefresh('DELETE', `/pictures/${id}`, null)
   if (!res.ok) throw await parseError(res)
 }
+
+// ── PDF reports (Go side of the BFF proxy) ───────────────────────────────────
+// The /api/reports BFF route handlers call these (docs/adr/ADR-010,
+// docs/roadmaps/pdf-reports.md Phase 4) — the same session-cookie path every
+// other write in this file uses; NOT the tokenOverride path, which is the
+// PRINT ROUTE's own separate, unauthenticated-by-cookie call back to Go.
+
+/**
+ * Trigger report generation. Go's response carries ITS OWN download_url (a
+ * Go API path, `/api/v1/reports/pdf?key=...`) — translated here to this
+ * BFF's own proxy path so the browser is handed something it can actually
+ * reach without an Authorization header of its own.
+ */
+export async function generateReportPDF(name: string, recordId: string): Promise<{ downloadURL: string }> {
+  const res = await fetchWithRefresh(
+    'POST',
+    `/reports/${encodeURIComponent(name)}/${encodeURIComponent(recordId)}/pdf`,
+    null,
+  )
+  if (!res.ok) throw await parseError(res)
+  const body = (await res.json()) as { download_url: string }
+  const key = new URL(body.download_url, 'http://internal').searchParams.get('key') ?? ''
+  return { downloadURL: `/api/reports/pdf?key=${encodeURIComponent(key)}` }
+}
+
+/**
+ * Fetch a generated report's bytes from Go. Returns the raw Response so the
+ * BFF route can stream body + content type back to the browser without
+ * buffering — same shape as streamPicture.
+ */
+export async function streamReportPDF(key: string): Promise<Response> {
+  const res = await fetchWithRefresh('GET', `/reports/pdf?key=${encodeURIComponent(key)}`, null)
+  if (!res.ok) throw await parseError(res)
+  return res
+}

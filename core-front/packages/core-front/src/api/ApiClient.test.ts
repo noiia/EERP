@@ -33,7 +33,7 @@ vi.mock('next/cache', () => ({
   revalidateTag: (tag: string, profile: unknown) => revalidateTagMock(tag, profile),
 }))
 
-import { apiRequest, createServerApiClient, onSessionExpired } from './ApiClient'
+import { apiRequest, createServerApiClient, generateReportPDF, onSessionExpired, streamReportPDF } from './ApiClient'
 import { ApiError } from './errors'
 
 function jsonResponse(status: number, body?: unknown): Response {
@@ -363,7 +363,8 @@ describe('ServerApiClient', () => {
 
       await createServerApiClient('short-lived-token').get('contact', '1')
 
-      expect(authHeader(fetchMock.mock.calls[0]?.[1] as RequestInit)).toBe('Bearer short-lived-token')
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(authHeader(init)).toBe('Bearer short-lived-token')
       // The cookie jar has 'old' seeded in beforeEach — proving the override
       // wins, not just that some token was sent.
     })
@@ -375,7 +376,8 @@ describe('ServerApiClient', () => {
 
       await createServerApiClient('short-lived-token').get('contact', '1')
 
-      expect(authHeader(fetchMock.mock.calls[0]?.[1] as RequestInit)).toBe('Bearer short-lived-token')
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(authHeader(init)).toBe('Bearer short-lived-token')
     })
 
     it('fails closed on a 401 instead of attempting a cookie refresh', async () => {
@@ -394,7 +396,62 @@ describe('ServerApiClient', () => {
 
       await createServerApiClient().get('contact', '1')
 
-      expect(authHeader(fetchMock.mock.calls[0]?.[1] as RequestInit)).toBe('Bearer old')
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(authHeader(init)).toBe('Bearer old')
     })
+  })
+})
+
+// generateReportPDF/streamReportPDF — the /api/reports BFF route handlers'
+// call-site (docs/roadmaps/pdf-reports.md Phase 4), same session-cookie path
+// as the picture functions above (not the print route's separate tokenOverride).
+describe('generateReportPDF', () => {
+  it('POSTs to Go and translates its download_url into this BFF\'s own proxy path', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(201, { download_url: '/api/v1/reports/pdf?key=reports%2Ft1%2Fcrm.statement%2Fr1%2F1.pdf' }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { downloadURL } = await generateReportPDF('crm.statement', 'r1')
+
+    expect(downloadURL).toBe('/api/reports/pdf?key=reports%2Ft1%2Fcrm.statement%2Fr1%2F1.pdf')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('http://api.test/api/v1/reports/crm.statement/r1/pdf')
+    expect(init.method).toBe('POST')
+    expect(authHeader(init)).toBe('Bearer old')
+  })
+
+  it('throws an ApiError on a Go failure (e.g. RENDER_FAILED)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(502, { error: { code: 'RENDER_FAILED', message: 'nope' } })),
+    )
+    const err = await captureError(generateReportPDF('crm.statement', 'r1'))
+    expect(err.code).toBe('RENDER_FAILED')
+  })
+})
+
+describe('streamReportPDF', () => {
+  it('GETs the key with the session Bearer and returns the raw response', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response('%PDF-bytes', { status: 200, headers: { 'Content-Type': 'application/pdf' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await streamReportPDF('reports/t1/x/y/1.pdf')
+    await expect(res.text()).resolves.toBe('%PDF-bytes')
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('http://api.test/api/v1/reports/pdf?key=reports%2Ft1%2Fx%2Fy%2F1.pdf')
+    expect(authHeader(init)).toBe('Bearer old')
+  })
+
+  it('throws an ApiError when the key is missing/foreign-tenant (Go 404s)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(404, { error: { code: 'NOT_FOUND', message: 'No such report.' } })),
+    )
+    const err = await captureError(streamReportPDF('nope'))
+    expect(err.code).toBe('NOT_FOUND')
   })
 })

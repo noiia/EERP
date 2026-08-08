@@ -5,6 +5,7 @@ import {
   type DraftRecord,
   type FrontModule,
   type Operation,
+  type ReportDescriptor,
   type ViewDescriptor,
 } from '@eerp/core-front'
 
@@ -146,6 +147,7 @@ const fields: ViewDescriptor['fields'] = [
 const formFields: ViewDescriptor['fields'] = [
   {
     name: 'picture',
+    hideLabel : true,
     label: 'Crm picture',
     type: 'boolean',
     widget: 'picture',
@@ -265,6 +267,57 @@ const signaturePageOperations: Operation[] = [
   },
 ]
 
+// crm.statement — the first real ReportDescriptor (docs/roadmaps/pdf-reports.md
+// Phase 4), proving the pipeline end to end on a real business document rather
+// than the throwaway fixtures Phases 2/3 verified against. className values are
+// the print stylesheet's hooks (apps/shell/app/print/report/report.css) — plain
+// CSS rather than Tailwind/MUI, since neither is installed in this frontend
+// (MUI ships React components, not utility classes; ReportRenderer deliberately
+// renders plain DOM, no MUI, so a report stays lightweight for pdf-service to
+// print). No `table` node: Go's GET /crm/:id response carries no embedded
+// array-valued field (tags is a many2many resolved lazily, client-side only,
+// per ADR-010's Phase 2 finding) — a real relation table is future work once a
+// report actually needs one, not a Phase 4 gap.
+const crmStatementReport: ReportDescriptor = {
+  name: 'crm.statement',
+  entity: 'crm',
+  permissions: ['crm:contacts:read'],
+  layout: [
+    {
+      kind: 'section',
+      className: 'eerp-report-header',
+      children: [
+        { kind: 'field', name: 'name' },
+        { kind: 'field', name: 'company' },
+        { kind: 'field', name: 'status' },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-contact',
+      children: [
+        { kind: 'field', name: 'email' },
+        { kind: 'field', name: 'phone' },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-metrics',
+      children: [
+        { kind: 'field', name: 'satisfaction', format: 'number' },
+        { kind: 'field', name: 'deals', format: 'number' },
+        { kind: 'field', name: 'score', format: 'number' },
+      ],
+    },
+    { kind: 'pageBreak' },
+    {
+      kind: 'section',
+      className: 'eerp-report-notes',
+      children: [{ kind: 'field', name: 'notes' }],
+    },
+  ],
+}
+
 const crm: FrontModule = {
   name: 'crm',
   routes: [
@@ -277,6 +330,7 @@ const crm: FrontModule = {
   // SAME call's `routes`, so the target already exists (registry.ts skips
   // the depends-coverage warning for self-targeting, too).
   extends: [{ path: '/crm/:id', operations: signaturePageOperations }],
+  reports: [crmStatementReport],
 }
 
 export default crm
