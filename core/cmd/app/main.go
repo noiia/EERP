@@ -185,6 +185,8 @@ func main() {
 	settingsGroup.PUT("/views/:entity/fields", settingsHandler.PutViewFieldsSettings)
 	settingsGroup.GET("/views/:entity/graph", settingsHandler.GetGraphLayoutSettings)
 	settingsGroup.PUT("/views/:entity/graph", settingsHandler.PutGraphLayoutSettings)
+	settingsGroup.GET("/apps/:module/picture-size", settingsHandler.GetPictureSizeSettings)
+	settingsGroup.PUT("/apps/:module/picture-size", settingsHandler.PutPictureSizeSettings)
 
 	// ── Pictures ──────────────────────────────────────────────────────────────
 	// Dedicated binary-content endpoints (the picture table is off the generic

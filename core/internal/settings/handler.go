@@ -435,6 +435,111 @@ func (h *Handler) PutGraphLayoutSettings(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// pictureSize is both the stored value of PictureSizeKey/ModulePictureSizeKey
+// and the request/response body of GET|PUT /settings/apps/:module/picture-size.
+type pictureSize struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// validatePictureSize keeps junk (and pathological layout values) out of the
+// column — generous bounds, since this only ever sizes a form thumbnail/box.
+func validatePictureSize(s pictureSize) error {
+	if s.Width < 16 || s.Width > 2000 {
+		return fmt.Errorf("width must be between 16 and 2000")
+	}
+	if s.Height < 16 || s.Height > 2000 {
+		return fmt.Errorf("height must be between 16 and 2000")
+	}
+	return nil
+}
+
+// pictureSizeKeyFor resolves which app_settings key a :module path segment
+// addresses: the literal "base" targets the workspace-wide default
+// (PictureSizeKey); any other module slug targets its own override
+// (ModulePictureSizeKey). The base-vs-override MERGE is a frontend concern
+// (Settings -> Apps fetches both and resolves precedence) — this handler, like
+// every other settings handler in this file, only ever reads/writes ONE key.
+func pictureSizeKeyFor(module string) string {
+	if module == "base" {
+		return PictureSizeKey
+	}
+	return ModulePictureSizeKey(module)
+}
+
+// GetPictureSizeSettings handles GET /api/v1/settings/apps/:module/picture-size
+// — the boolean/picture widget's box size, either the workspace-wide Base
+// default (module == "base") or one specific app's own override. Unset
+// returns {"size": null}, not a 404: "inheriting Base" (or, for Base itself,
+// "using the frontend's hardcoded default") is a normal state. Mounted behind
+// the permission middleware, which derives settings:apps:read from the route.
+func (h *Handler) GetPictureSizeSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	module := c.Param("module")
+	if !entitySlugPattern.MatchString(module) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "module must be a lowercase snake_case identifier.")
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, pictureSizeKeyFor(module))
+	if err != nil {
+		return fmt.Errorf("settings: get picture size for %s: %w", module, err)
+	}
+
+	resp := struct {
+		Size *pictureSize `json:"size"`
+	}{}
+	if ok && raw != "" {
+		// An unparsable stored value degrades to null rather than failing the
+		// read — same posture as every other settings GET in this file.
+		var size pictureSize
+		if err := json.Unmarshal([]byte(raw), &size); err == nil {
+			resp.Size = &size
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutPictureSizeSettings handles PUT /api/v1/settings/apps/:module/picture-size.
+// {"size": null} clears the module's own value back to "" — the same
+// "empty string means unset" convention PutI18nSettings already established
+// for DefaultLocaleKey — so a module can revert to inheriting Base (or Base
+// itself can revert to the frontend's hardcoded default) with no separate
+// delete endpoint. Mounted behind the permission middleware, which derives
+// settings:apps:write from the route.
+func (h *Handler) PutPictureSizeSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	module := c.Param("module")
+	if !entitySlugPattern.MatchString(module) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "module must be a lowercase snake_case identifier.")
+	}
+
+	var req struct {
+		Size *pictureSize `json:"size"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+
+	value := ""
+	if req.Size != nil {
+		if err := validatePictureSize(*req.Size); err != nil {
+			return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		}
+		marshaled, err := json.Marshal(req.Size)
+		if err != nil {
+			return fmt.Errorf("settings: marshal picture size for %s: %w", module, err)
+		}
+		value = string(marshaled)
+	}
+
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, pictureSizeKeyFor(module), value); err != nil {
+		return fmt.Errorf("settings: set picture size for %s: %w", module, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func errorJSON(c echo.Context, status int, code, msg string) error {

@@ -38,6 +38,22 @@ func ViewGraphKey(entity string) string {
 	return "views." + entity + ".graph"
 }
 
+// PictureSizeKey is the app_settings key holding the workspace-wide ("Base")
+// default box size for boolean/picture widgets, stored as JSON:
+// {"width":160,"height":96}. Absent means the frontend's own hardcoded
+// default (still below a field's own widgetOptions in precedence — see
+// core-front/packages/core-front/src/views/picture-widgets.tsx).
+const PictureSizeKey = "widgets.picture_size"
+
+// ModulePictureSizeKey returns the app_settings key holding a specific
+// module's OWN override of PictureSizeKey (Settings -> Apps). Absent means
+// "inherit the Base value" — the frontend resolves the cascade, this key
+// alone never encodes "unset vs falls back to X", same posture as
+// ViewFieldsKey/ViewGraphKey.
+func ModulePictureSizeKey(module string) string {
+	return "apps." + module + ".widgets.picture_size"
+}
+
 // AppSettings is one tenant-scoped setting. (tenant_id, key) is unique — the
 // settings module's Migrate creates the index — so writes are upserts.
 type AppSettings struct {

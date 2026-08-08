@@ -706,3 +706,179 @@ func TestPutGraphLayoutSettings(t *testing.T) {
 		})
 	}
 }
+
+// ── GET /settings/apps/:module/picture-size ───────────────────────────────────
+
+func TestGetPictureSizeSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		module     string
+		store      *stubStore
+		wantStatus int
+		wantSize   any // nil or map[string]any{"width":.., "height":..}
+	}{
+		{
+			name:       "unconfigured base reads as null, not a 404",
+			module:     "base",
+			store:      &stubStore{},
+			wantStatus: http.StatusOK,
+			wantSize:   nil,
+		},
+		{
+			name:   "configured base",
+			module: "base",
+			store: &stubStore{values: map[string]string{
+				PictureSizeKey: `{"width":200,"height":150}`,
+			}},
+			wantStatus: http.StatusOK,
+			wantSize:   map[string]any{"width": 200.0, "height": 150.0},
+		},
+		{
+			name:   "configured module override, independent of base",
+			module: "crm",
+			store: &stubStore{values: map[string]string{
+				PictureSizeKey:              `{"width":200,"height":150}`,
+				ModulePictureSizeKey("crm"): `{"width":300,"height":300}`,
+			}},
+			wantStatus: http.StatusOK,
+			wantSize:   map[string]any{"width": 300.0, "height": 300.0},
+		},
+		{
+			name:       "unconfigured module reads as null (frontend falls back to base)",
+			module:     "crm",
+			store:      &stubStore{values: map[string]string{PictureSizeKey: `{"width":200,"height":150}`}},
+			wantStatus: http.StatusOK,
+			wantSize:   nil,
+		},
+		{
+			name:       "unparsable stored value degrades to null",
+			module:     "base",
+			store:      &stubStore{values: map[string]string{PictureSizeKey: "{not json"}},
+			wantStatus: http.StatusOK,
+			wantSize:   nil,
+		},
+		{
+			name:       "junk module rejected",
+			module:     "../../etc",
+			store:      &stubStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store)
+			rec := serveWithParam(t, h.GetPictureSizeSettings, http.MethodGet,
+				"/settings/apps/"+tt.module+"/picture-size", "", identity, "module", tt.module)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+
+			var resp struct {
+				Size any `json:"size"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if !reflect.DeepEqual(resp.Size, tt.wantSize) {
+				t.Errorf("size = %#v, want %#v", resp.Size, tt.wantSize)
+			}
+		})
+	}
+}
+
+// ── PUT /settings/apps/:module/picture-size ───────────────────────────────────
+
+func TestPutPictureSizeSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		module     string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantKey    string
+		wantValue  string
+	}{
+		{
+			name:       "set base size",
+			module:     "base",
+			body:       `{"size":{"width":200,"height":150}}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    PictureSizeKey,
+			wantValue:  `{"width":200,"height":150}`,
+		},
+		{
+			name:       "set a module override",
+			module:     "crm",
+			body:       `{"size":{"width":300,"height":300}}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    ModulePictureSizeKey("crm"),
+			wantValue:  `{"width":300,"height":300}`,
+		},
+		{
+			name:       "clear a module override falls back to empty string (inherit base)",
+			module:     "crm",
+			body:       `{"size":null}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    ModulePictureSizeKey("crm"),
+			wantValue:  "",
+		},
+		{
+			name:       "width too small rejected",
+			module:     "crm",
+			body:       `{"size":{"width":1,"height":150}}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "height too large rejected",
+			module:     "crm",
+			body:       `{"size":{"width":200,"height":99999}}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "junk module rejected",
+			module:     "../../etc",
+			body:       `{"size":{"width":200,"height":150}}`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store)
+			rec := serveWithParam(t, h.PutPictureSizeSettings, http.MethodPut,
+				"/settings/apps/"+tt.module+"/picture-size", tt.body, identity, "module", tt.module)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotTenant != identity.TenantID {
+				t.Errorf("tenant = %s, want the caller's %s", store.gotTenant, identity.TenantID)
+			}
+			if store.gotKey != tt.wantKey {
+				t.Errorf("key = %q, want %q", store.gotKey, tt.wantKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
