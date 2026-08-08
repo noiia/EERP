@@ -4,6 +4,7 @@ Cargo.lock
 core/cmd/app/cache
 build
 graphify-out/
+/tools/bin/
 
 # Stray `go build ./cmd/app` binaries (anchored — a bare `app` also matched the
 # Next.js App Router directory core-front/apps/shell/app and excluded it from git).

@@ -28,6 +28,10 @@ make build
 
 # Full clean + rebuild + run
 make rebuild-and-run
+
+# Scaffold a new module (module.json/module.go + frontend views/package.json),
+# wire it into core/modules/all/all.go if -t go, and pnpm install to link it
+go run ./tools/eerp-init-module -p core/modules/<name> -t go   # or -t wasm
 ```
 
 Lint (from `core/`):
