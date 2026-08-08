@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from '../views/descriptor'
+import type { ReportDescriptor } from '../views/report-descriptor'
 import { ModuleRegistry, type FrontModule } from './registry'
 
 const formDescriptor: ViewDescriptor = {
@@ -83,6 +84,43 @@ describe('ModuleRegistry', () => {
     }
     expect(() => new ModuleRegistry().register(bad)).toThrowError(
       /module "broken", route "\/broken": field "rating"/,
+    )
+  })
+})
+
+describe('ModuleRegistry reports', () => {
+  const statement: ReportDescriptor = {
+    name: 'crm.statement',
+    entity: 'crm',
+    permissions: ['crm:crm:read'],
+    layout: [{ kind: 'field', name: 'name' }],
+  }
+
+  it('resolves a registered report by name, not by path', () => {
+    const registry = new ModuleRegistry()
+    registry.register({ ...crm, reports: [statement] })
+    expect(registry.buildReportRegistry().get('crm.statement')).toBe(statement)
+  })
+
+  it('is empty when a module declares no reports', () => {
+    const registry = new ModuleRegistry().register(crm)
+    expect(registry.buildReportRegistry().size).toBe(0)
+  })
+
+  it('is idempotent by module name, same as routes', () => {
+    const registry = new ModuleRegistry()
+    registry.register({ ...crm, reports: [statement] })
+    registry.register({ ...crm, reports: [statement] })
+    expect(registry.buildReportRegistry().size).toBe(1)
+  })
+
+  it('rejects a report descriptor with an invalid node, naming module and report', () => {
+    const bad: FrontModule = {
+      ...crm,
+      reports: [{ name: 'crm.broken', entity: 'crm', permissions: [], layout: [{ kind: 'field', name: '' }] }],
+    }
+    expect(() => new ModuleRegistry().register(bad)).toThrowError(
+      /module "crm", report "crm.broken": a "field" node requires a name/,
     )
   })
 })

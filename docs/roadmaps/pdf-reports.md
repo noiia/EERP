@@ -99,7 +99,58 @@ count, error paths); `httptest`-based handler test.
 **DoD:** `go run ./tools/pdf-service` serves `/render` and returns a real PDF for a local
 fixture URL; `docker compose up pdf-service` passes its healthcheck.
 
-## Phase 2 — `ReportDescriptor` + print-route interpreter (core-front) ⬜
+## Phase 2 — `ReportDescriptor` + print-route interpreter (core-front) ✅ (implemented)
+
+> Implementation notes: `ReportDescriptor`/`ReportNode`/`validateReportDescriptor` live in
+> `packages/core-front/src/views/report-descriptor.ts` (sibling to `descriptor.ts`, not
+> merged into it); `ReportRenderer` in `report-renderer.tsx` is deliberately NOT `'use
+> client'` and uses no hooks — a report is a read-only server snapshot, not a draft/dirty
+> client surface like `FormRenderer`. `ModuleRegistry` gained `FrontModule.reports?`, a
+> `resolvedReports` map, and `buildReportRegistry()` — reports resolve by NAME
+> (`ReportDescriptor.name`), not by path, since a report has no on-screen route of its own.
+>
+> Two things the research going in got wrong or underestimated, worth flagging: (1) there is
+> **no existing date formatter anywhere in the engine** to reuse (`DateWidget` only strips an
+> RFC3339 suffix for an `<input type="date">`) and **no server-side relation-label
+> resolution path** either (relations resolve client-side, lazily, via autocomplete) — both
+> aspirational in the original roadmap text. `ReportRenderer` ships its own minimal
+> `formatFieldValue` (number via the existing pure `formatNumber`; date/datetime via
+> `Date.prototype.toLocale*`, `ponytail:`-flagged as runtime-default-locale-only, no i18n
+> wiring — add `resolveEffectiveLocale()` if a report ever needs translated dates) and
+> `ReportTableNode.source` reads an already-embedded array field on the record rather than
+> resolving a relation itself, which is enough for the fixture-driven tests and is the
+> correctly-scoped v1 per the contract (`table.source` "a field name holding an array" —
+> resolving cross-entity relations into that array, if ever needed, is additive later work,
+> not a Phase 2 gap). (2) **there is only one root layout** (`app/layout.tsx`) and Next.js
+> nests every route under it — a print route rendering through it would carry the full
+> `AppTopBar`/nav chrome into the printed PDF. Rather than restructuring the whole `app/`
+> tree into route groups with parallel root layouts (a large, risky diff touching every
+> existing page), `AppTopBar` and the page-inset padding `Box` in `layout.tsx` got
+> `'@media print': { display: 'none' }` / `{ p: 0 }` sx overrides — `Page.printToPDF` always
+> applies print-media CSS, so the chrome renders in the DOM (harmless) but never in the PDF.
+> Confirmed in the emitted HTML (`@media print` present) and, further down, in an actual
+> printed PDF containing only the report content.
+>
+> **A real gap surfaced, explicitly Phase 3's to close, not Phase 2's:** the print route
+> reuses `createServerApiClient()` exactly as designed, which reads the session from a
+> cookie — but ADR-010 says pdf-service's request carries no browser session at all. Right
+> now, a cookie-less request to the print route fails its `client.get()` with Go's 401,
+> which the route's `catch` treats the same as "record not found" → clean `notFound()` (404,
+> not a hang or a 500) — verified directly with a real cookie-less `curl`. Phase 3's "mints
+> the internal print URL... short-lived signed token" is exactly the missing piece that lets
+> that call succeed; until then, the print route only actually works when handed a valid
+> session, which is what every verification below used.
+>
+> **Verified end to end against the real stack**, not just unit tests: logged into the
+> running dev stack as the seeded `admin@eerp.local`, created a real `contact` row via the
+> generic CRUD API, temporarily registered a throwaway report on the `contact` module,
+> confirmed `/print/report/contact.smoketest/<id>` returns 200 with `data-report-ready`
+> present and the real field values rendered, confirmed an unknown report name, an unknown
+> record id, AND a cookie-less request all 404 cleanly, then drove an actual headless Chrome
+> instance (cookie injected via `network.SetCookie`, mirroring how `pdf-service` would if
+> Phase 3 handed it one) against the live route and extracted the resulting PDF's text —
+> `Acme Corp` / `acme@example.test` / `Acme`, nothing from the app chrome. The throwaway
+> report was reverted afterward; shipping a real one is Phase 4's job.
 
 **Claude Code prompt:**
 ```

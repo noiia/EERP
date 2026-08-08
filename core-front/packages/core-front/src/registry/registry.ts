@@ -5,6 +5,7 @@ import {
   validateDescriptorWidgets,
   type ViewDescriptor,
 } from '../views/descriptor'
+import { validateReportDescriptor, type ReportDescriptor } from '../views/report-descriptor'
 import { applyExtension, type ViewExtension } from './extensions'
 
 // The frontend module contract + registry. A module contributes DESCRIPTORS ONLY:
@@ -31,6 +32,9 @@ export interface FrontModule {
   /** View extensions this module contributes over already-registered routes
    * (its own or another module's) — see ViewExtension (extensions.ts). */
   extends?: ViewExtension[]
+  /** PDF reports this module contributes (docs/roadmaps/pdf-reports.md) —
+   * resolved by NAME (not path) via buildReportRegistry(), unlike routes. */
+  reports?: ReportDescriptor[]
 }
 
 /**
@@ -147,6 +151,11 @@ export class ModuleRegistry {
   // the two structures serve different questions ("what did module X ship"
   // vs. "what does path P resolve to right now").
   private readonly resolvedRoutes = new Map<string, RouteConfig>()
+  // Report name -> descriptor, populated alongside resolvedRoutes at
+  // registration. Reports resolve by NAME, not path — a report has no
+  // App Router route of its own to match against, only the print route's
+  // :name param — so this is a separate map, not folded into resolvedRoutes.
+  private readonly resolvedReports = new Map<string, ReportDescriptor>()
 
   register(module: FrontModule, options: RegisterOptions = {}): this {
     // Idempotent by module name: the server manifest and the client manifest
@@ -176,6 +185,19 @@ export class ModuleRegistry {
         descriptor: route.descriptor,
         permission: route.permission,
       })
+    }
+
+    // Reports validate and register independently of routes/extends — they
+    // have no path to match, no layout-tree merge, no extension mechanism
+    // (v1 scope, docs/roadmaps/pdf-reports.md Phase 2).
+    for (const report of module.reports ?? []) {
+      try {
+        validateReportDescriptor(report)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        throw new Error(`module "${module.name}", report "${report.name}": ${message}`, { cause: e })
+      }
+      this.resolvedReports.set(report.name, report)
     }
 
     this.entries.push({ module, appMode: options.appMode === true })
@@ -230,6 +252,15 @@ export class ModuleRegistry {
    */
   buildRegistry(): Map<string, RouteConfig> {
     return new Map(this.resolvedRoutes)
+  }
+
+  /**
+   * The report name -> ReportDescriptor map, resolved at registration time —
+   * the print route reads this the same way the catch-all reads
+   * buildRegistry(), keyed by ReportDescriptor.name instead of a path.
+   */
+  buildReportRegistry(): Map<string, ReportDescriptor> {
+    return new Map(this.resolvedReports)
   }
 
   /**

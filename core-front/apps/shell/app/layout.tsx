@@ -68,7 +68,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <ModulesInit />
             <LocaleSync preferences={preferences} />
             <SessionHydrator identity={identity} />
-            <AppTopBar identity={identity} nav={nav} />
+            {/* Hidden when Chrome prints (tools/pdf-service's Page.printToPDF
+                always applies @media print, docs/adr/ADR-010) — a print
+                target under /print/report/... renders through this SAME root
+                layout (there is only one), so the report's PDF must not
+                include the app's own nav chrome. */}
+            <Box sx={{ '@media print': { display: 'none' } }}>
+              <AppTopBar identity={identity} nav={nav} />
+            </Box>
             {/* Relation widgets' app-wide data path: entity-generic Server Action
                 references — every relation query re-enters Go's permission gate
                 with the caller's session. */}
@@ -104,7 +111,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                       column count, so it naturally sizes itself to whatever this inset
                       provides — overflowX: 'auto' remains a defensive fallback for any
                       other wide inner surface, never a per-view width hack. */}
-                  <Box sx={{ px: layout.pageInsetX, py: layout.pageInsetY, overflowX: 'auto' }}>
+                  <Box
+                    sx={{
+                      px: layout.pageInsetX,
+                      py: layout.pageInsetY,
+                      overflowX: 'auto',
+                      '@media print': { p: 0, overflowX: 'visible' },
+                    }}
+                  >
                     {children}
                   </Box>
                 </NotebookOpsProvider>
