@@ -283,10 +283,13 @@ real record, backed by a real `pdf-service` call and a real Garage upload.
 > own `/api/pictures` BFF shape exactly. The POST handler translates Go's own
 > `download_url` (a `/api/v1/...` path requiring a Bearer header) into this BFF's own proxy
 > path — the browser is never handed something it can't actually reach.
-> `ModuleRegistry.reportForEntity(entity)` (mirroring `formDescriptorFor`) lets the generic
+> `ModuleRegistry.reportForEntity(entity)` (mirroring `formDescriptorFor`) let the generic
 > catch-all decide whether to render `ReportExportButton` next to a form's title, exactly
 > where `CreateBar` sits for tree views — shown only for a real saved record (not the empty
-> `new` draft) with a matching registered report.
+> `new` draft) with a matching registered report. **Superseded by Phase 6**: the button and
+> its automatic per-entity rendering are gone, replaced by the form actions menu
+> (`docs/adr/ADR-011`) — `crm.statement` currently has no menu entry (crm never declared
+> one), `sale.invoice` (below) is the first module to wire "Print" through it.
 >
 > **Verified twice against the live stack**, not just the roadmap's asked-for automated
 > test: (1) the new `TestGeneratePDF_EndToEnd` (`core/internal/reports/e2e_test.go`,
@@ -387,6 +390,87 @@ load-balanced across both, not duplicated; a worker crash mid-job doesn't lose t
 **DoD:** running N `pdf-service` replicas behind NATS linearly increases sustained
 throughput with no core-side code change beyond the transport swap.
 
+## Phase 6 — Print moved into the form actions menu ✅ (implemented)
+
+> Implementation notes: `ReportExportButton` (Phase 4) was an always-on button the catch-all
+> auto-rendered for any `viewType: 'form'` route whose entity had a registered report — the
+> only way to trigger a print, and one every report-bearing entity got identically, with no
+> room for a module to label or group it. `docs/adr/ADR-011` replaces it with a generic
+> options menu (`FormActionsMenu`) the catch-all now renders, by default, on **every** form
+> route (`apps/shell/app/[...module]/page.tsx`) — in the exact spot the page title used to
+> occupy; the title itself is dropped from forms, since the record's own name already renders
+> as the form's big title field (`FORM_HEADER_ID`), making the page-level title redundant.
+>
+> Printing is no longer special-cased: it is just the first thing a module puts in its menu.
+> `core/modules/sale/views/SaleViews.ts` registers `sale.printInvoice`
+> (`registerMenuAction`) — a handler calling the engine's `exportReportPDF(reportName,
+> recordId)`, the exact fetch-then-`window.open` logic `ReportExportButton` used to run
+> inline — and declares `formView.actions` as one `Print` submenu holding an `Invoice`
+> leaf. `crm.statement` gained no menu entry in this phase (crm's own views file wasn't
+> touched) — it's still fully generatable via `POST /api/v1/reports/crm.statement/:id/pdf`
+> directly, just with no UI trigger until `CrmViews.ts` adds one the same way.
+
+**DoD:** every form route shows one options button, by default, at the title's old spot;
+`sale`'s invoice form's Print > Invoice entry generates and opens the same PDF
+`ReportExportButton` used to, through the identical BFF path.
+
+## Phase 7 — Report layout settings: padding, colors, letterhead, page formats ✅ (implemented)
+
+> Implementation notes: adds a `report_page_format` entity (`core/modules/reportlayout`, a
+> plain generic-CRUD Go module with no `static_files.views` — its list/form live as a
+> hand-built Settings page, not a module-discovered `FrontModule`, the same posture as
+> Settings → Users) and a global `reports.layout` app_settings key (footer/address text,
+> `core/internal/settings`) mirroring `graphLayout`'s JSON-in-string shape. The print route
+> (`apps/shell/app/print/report/[name]/[id]/page.tsx`) resolves effective padding/colors/
+> footer/address/page-size via a new pure function, `resolveReportChrome`
+> (`packages/core-front/src/views/report-chrome.ts`): built-in defaults (100px padding, 4
+> neutral colors) overridden field-by-field by the named `report_page_format` row a
+> `ReportDescriptor.pageFormat` opts into — descriptor opt-in only, no export-time picker.
+> Global footer/address are always appended as fixed chrome below a report's own layout,
+> additive to whatever the descriptor already prints (`sale.invoice`'s own `legal_notice`/
+> issuer fields are untouched). Page size flows through CSS alone —
+> `tools/pdf-service/renderer/renderer.go` gained one line, `WithPreferCSSPageSize(true)`, so
+> Chrome honors an `@page { size }` rule the print route emits; no change to the pdf-service
+> HTTP contract or `core/internal/reports`. `report.css`'s five hardcoded colors became
+> `var(--eerp-report-*, <original literal>)` custom properties, so an unset override is a
+> pixel-identical no-op.
+>
+> Settings UI: the "Appearance" hub tile is relabeled "Global settings" (`SettingsHub.tsx`,
+> URL kept stable at `/settings/appearance`); its page now has two collapsible `Accordion`
+> sections — "Colors" (the original brand-palette editor, unchanged) and "Reports"
+> (`ReportsGlobalSettings` for footer/address + an embedded page-format table/Create button,
+> row click opens `/settings/appearance/page-formats/:id`). Two small, reusable engine widgets
+> landed in `packages/core-front/src/views/widgets.tsx`: `text/color` (a swatch + hex field,
+> the same visual as the Colors section, wired to the generic form draft) and
+> `selection/linked` (a dropdown that also patches sibling fields from
+> `widgetOptions.presets` — `WidgetProps` gained an `onChangeField` prop for this, threaded
+> through `layout-renderer.tsx`; deliberately NOT built on the `registerOnChange` behavior
+> registry, since that requires dual server/client bundle registration this hand-built
+> settings page has no path into). The page-format form uses `selection/linked` as a
+> "Standard size" preset (A4/A5/Letter/Legal, real ISO-216/imperial dimensions) that fills
+> width/height/unit, and `text/color` for all four color overrides.
+>
+> `AppTopBar.tsx`'s breadcrumb (`crumbsFromPath`, pure slug-titleizing with no registry
+> lookup) needed two small, explicit exceptions: a segment-label override
+> (`appearance` -> "Global settings", since the URL slug intentionally didn't rename with the
+> tile) and a skipped-segment set (`page-formats`, which has no page of its own — only its
+> `:id` child route is real).
+>
+> Verified: full Go (`go build`/`go vet`/`go test`, 525 tests) and frontend (`tsc --noEmit`
+> clean on both packages, 644 + 256 vitest tests) suites green; rebuilt both Docker images
+> (`--no-cache` for the frontend) and redeployed against the live `compose` stack — confirmed
+> the new `report_page_format` table/columns, the new `/api/v1/settings/reports/layout` and
+> `/api/v1/report_page_format*` routes, and both new page routes respond correctly
+> (307 login-redirect, unauthenticated) with no startup errors. **Not verified**: an actual
+> browser click-through of the new UI (create a page format, edit colors/preset, confirm the
+> generated PDF reflects an override) — no browser tool was available in that environment.
+
+**DoD:** a page format can be created from Settings → Global settings → Reports (table +
+form, color pickers, a standard-size preset selector) and, once a `ReportDescriptor` opts
+into it by name, its size/padding/colors/footer/address override the built-in defaults in
+the generated PDF; every report not opting in still gets the built-in 100px padding and any
+configured global footer/address.
+
 ## Build order
 
 ```mermaid
@@ -395,6 +479,8 @@ flowchart TD
     P2[Phase 2: ReportDescriptor + print route] --> P3
     P3 --> P4[Phase 4: first real report + UI trigger]
     P4 --> P5[Phase 5: NATS transport]
+    P4 --> P6[Phase 6: print via the form actions menu]
+    P2 --> P7[Phase 7: report layout settings]
 ```
 
 Phases 1 and 2 are independent (Go backend vs. frontend) and parallelize; Phase 3 needs both

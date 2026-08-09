@@ -54,6 +54,15 @@ func ModulePictureSizeKey(module string) string {
 	return "apps." + module + ".widgets.picture_size"
 }
 
+// ReportsLayoutKey is the app_settings key holding the workspace-wide PDF
+// report letterhead: a footer and an address text block stamped on every
+// generated report (docs/adr/ADR-011's Reports settings subsection), stored
+// as JSON: {"footer":"...","address":"..."}. Absent means both are empty —
+// the print pipeline simply renders no chrome, not an error. A
+// report_page_format row (core/modules/reportlayout) may override either
+// field per format; this key only ever holds the global default.
+const ReportsLayoutKey = "reports.layout"
+
 // AppSettings is one tenant-scoped setting. (tenant_id, key) is unique — the
 // settings module's Migrate creates the index — so writes are upserts.
 type AppSettings struct {

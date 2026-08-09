@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { ApiError, generateReportPDF } from '@eerp/core-front/server'
 
-// BFF proxy for report generation. The browser never talks to Go: the
-// ReportExportButton POSTs here, Next forwards with the session Bearer
-// (refresh-once semantics in the engine helpers), Go owns permission
-// enforcement, rendering, and storage (docs/adr/ADR-010).
+// BFF proxy for report generation. The browser never talks to Go: a form
+// actions menu action (docs/adr/ADR-011) POSTs here, Next forwards with the
+// session Bearer (refresh-once semantics in the engine helpers), Go owns
+// permission enforcement, rendering, and storage (docs/adr/ADR-010).
 
 function errorResponse(e: unknown): NextResponse {
   if (e instanceof ApiError) {

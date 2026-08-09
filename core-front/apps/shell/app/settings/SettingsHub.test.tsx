@@ -10,11 +10,11 @@ describe('SettingsHub', () => {
   it('lists the settings sections as links', () => {
     render(<SettingsHub />)
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
-    const link = screen.getByRole('link', { name: /appearance/i })
+    const link = screen.getByRole('link', { name: /global settings/i })
     expect(link).toHaveAttribute('href', '/settings/appearance')
   })
 
-  it('ships Appearance as a default section', () => {
+  it('ships Global settings (Colors + Reports, at the stable /settings/appearance path) as a default section', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/appearance')).toBe(true)
   })
 

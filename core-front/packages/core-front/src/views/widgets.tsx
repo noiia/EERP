@@ -15,6 +15,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
 import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
+import { isHexColor } from './palette'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
 import { RelationListWidget, RelationSearchWidget, RelationTagsWidget } from './relation-widgets'
 import { useNumberFormat } from './format-store'
@@ -41,6 +42,14 @@ export interface WidgetProps {
    */
   entity?: string
   recordId?: string | null
+  /**
+   * Set a SIBLING field's value directly (bypassing this widget's own
+   * `onChange`) — the same `setField` the form store already exposes to
+   * every other field, threaded down for the one legitimate case a widget
+   * needs it: SelectionLinkedWidget patching other fields from
+   * widgetOptions.presets. Every other widget ignores it.
+   */
+  onChangeField?: (name: string, value: unknown) => void
 }
 
 // ── text ──────────────────────────────────────────────────────────────────────
@@ -56,6 +65,58 @@ function TextSimpleWidget({ field, value, onChange, disabled }: WidgetProps) {
       value={(value as string) ?? ''}
       onChange={(e) => onChange(e.target.value)}
     />
+  )
+}
+
+/**
+ * A hex-color swatch + hex TextField, wired to the generic form draft instead
+ * of useUiStore (Settings -> Global settings -> Colors' AppearanceSettings.tsx
+ * edits the brand palette directly; this is the same visual pattern for an
+ * ordinary `type: 'text'` field, e.g. report_page_format's color overrides).
+ * An invalid hex string still round-trips through onChange as typed — the
+ * TextField just flags it — so a mid-edit value ("#12") isn't clobbered.
+ */
+function TextColorWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const raw = typeof value === 'string' ? value : ''
+  const valid = isHexColor(raw)
+  return (
+    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+      <Box
+        component="input"
+        type="color"
+        aria-label={`${fieldLabel(field)} swatch`}
+        value={valid ? raw : '#000000'}
+        disabled={disabled}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+        sx={{
+          width: 32,
+          height: 32,
+          p: 0,
+          border: 'none',
+          borderRadius: '50%',
+          background: 'none',
+          cursor: disabled ? 'default' : 'pointer',
+          overflow: 'hidden',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          boxShadow: (t) => `inset 0 0 0 1px ${t.palette.divider}`,
+          '&::-webkit-color-swatch-wrapper': { p: 0 },
+          '&::-webkit-color-swatch': { border: 'none', borderRadius: '50%' },
+          '&::-moz-color-swatch': { border: 'none', borderRadius: '50%' },
+        }}
+      />
+      <TextField
+        label={field.hideLabel ? undefined : t(fieldLabel(field))}
+        required={field.required}
+        disabled={disabled}
+        fullWidth
+        value={raw}
+        error={raw !== '' && !valid}
+        helperText={raw !== '' && !valid ? t('Enter a hex color, e.g. #1E293B') : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </Box>
   )
 }
 
@@ -168,6 +229,52 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
       fullWidth
       value={typeof value === 'string' && options.includes(value) ? value : ''}
       onChange={(e) => onChange(e.target.value)}
+    >
+      {options.map((option) => (
+        <MenuItem key={option} value={option}>
+          {t(option)}
+        </MenuItem>
+      ))}
+    </TextField>
+  )
+}
+
+/** widgetOptions.presets entry for SelectionLinkedWidget — a plain field-name
+ * -> value patch applied to SIBLING fields (never this field's own value,
+ * which onChange already handles) when that option is picked. */
+export type LinkedSelectionPresets = Record<string, Record<string, JsonValue>>
+
+/**
+ * Same closed-list dropdown as SelectionWidget, but picking an option ALSO
+ * patches sibling fields via onChangeField — e.g. report_page_format's
+ * "Standard size" selector setting width/height/unit together from
+ * widgetOptions.presets. An option with no matching preset key (e.g. a
+ * "Custom" entry meant to leave the sibling fields alone) is a no-op beyond
+ * the widget's own value. Generic: any descriptor can use this for any
+ * "pick a preset, patch other fields" need, not just page formats.
+ */
+function SelectionLinkedWidget({ field, value, onChange, onChangeField, disabled }: WidgetProps) {
+  const t = useT()
+  const options = field.selection?.options ?? []
+  const presets = (field.widgetOptions?.presets as unknown as LinkedSelectionPresets | undefined) ?? {}
+
+  function handleChange(option: string) {
+    onChange(option)
+    const patch = presets[option]
+    if (patch && onChangeField) {
+      for (const [name, patchValue] of Object.entries(patch)) onChangeField(name, patchValue)
+    }
+  }
+
+  return (
+    <TextField
+      select
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      value={typeof value === 'string' && options.includes(value) ? value : ''}
+      onChange={(e) => handleChange(e.target.value)}
     >
       {options.map((option) => (
         <MenuItem key={option} value={option}>
@@ -447,6 +554,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'text/long': TextLongWidget,
   'text/phone': PhoneWidget,
   'text/table': TableWidget,
+  'text/color': TextColorWidget,
   'number/float': NumberFloatWidget,
   'number/int': NumberIntWidget,
   'number/percent': NumberPercentWidget,
@@ -457,6 +565,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'boolean/signature': BooleanSignatureWidget,
   'date/simple': DateWidget,
   'selection/select': SelectionWidget,
+  'selection/linked': SelectionLinkedWidget,
   'relation/search': RelationSearchWidget,
   'relation/tags': RelationTagsWidget,
   'relation/list': RelationListWidget,

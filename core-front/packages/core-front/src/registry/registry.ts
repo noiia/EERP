@@ -5,6 +5,7 @@ import {
   validateDescriptorWidgets,
   type ViewDescriptor,
 } from '../views/descriptor'
+import { validateMenuActions } from '../views/menu-actions'
 import { validateReportDescriptor, type ReportDescriptor } from '../views/report-descriptor'
 import { applyExtension, type ViewExtension } from './extensions'
 
@@ -136,6 +137,7 @@ interface RegisteredModule {
 function validateDescriptor(descriptor: ViewDescriptor): void {
   validateDescriptorWidgets(descriptor)
   validateCatalogDescriptor(descriptor)
+  validateMenuActions(descriptor)
   buildBehaviorPlan(descriptor)
   normalizeLayout(descriptor)
 }

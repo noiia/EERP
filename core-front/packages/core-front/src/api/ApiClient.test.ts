@@ -33,7 +33,16 @@ vi.mock('next/cache', () => ({
   revalidateTag: (tag: string, profile: unknown) => revalidateTagMock(tag, profile),
 }))
 
-import { apiRequest, createServerApiClient, generateReportPDF, onSessionExpired, streamReportPDF } from './ApiClient'
+import {
+  apiRequest,
+  createServerApiClient,
+  findPicture,
+  generateReportPDF,
+  onSessionExpired,
+  resolvePictureDataURL,
+  streamPicture,
+  streamReportPDF,
+} from './ApiClient'
 import { ApiError } from './errors'
 
 function jsonResponse(status: number, body?: unknown): Response {
@@ -313,6 +322,26 @@ describe('ServerApiClient', () => {
     await expect(createServerApiClient().getPictureSize('crm')).resolves.toBeNull()
   })
 
+  it('reads the reports letterhead, never caching, including via a tokenOverride', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { footer: 'Thank you.', address: '1 Rue de la Paix' }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient('scoped-token').getReportsLayout()).resolves.toEqual({
+      footer: 'Thank you.',
+      address: '1 Rue de la Paix',
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit & { next?: unknown; headers: Record<string, string> },
+    ]
+    expect(url).toBe('http://api.test/api/v1/settings/reports/layout')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+    expect(init.headers.Authorization).toBe('Bearer scoped-token')
+  })
+
   it('apiRequest GETs stay out of the Data Cache (session-scoped, never shared)', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { preferred_locale: 'fr', default_locale: null }))
     vi.stubGlobal('fetch', fetchMock)
@@ -428,6 +457,63 @@ describe('generateReportPDF', () => {
     )
     const err = await captureError(generateReportPDF('crm.statement', 'r1'))
     expect(err.code).toBe('RENDER_FAILED')
+  })
+})
+
+// findPicture/streamPicture/resolvePictureDataURL — tokenOverride threading
+// is the print route's own need (docs/adr/ADR-011): no session cookie, only
+// Go's short-lived print token, the same one createServerApiClient already
+// takes for the record fetch itself.
+describe('findPicture with a tokenOverride', () => {
+  it('uses the override Bearer instead of the session cookie, and never refreshes on 401', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(401))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(findPicture({ table: 'invoice', recordId: 'r1', field: 'logo' }, 'print-token')).rejects.toThrow()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('http://api.test/api/v1/pictures?table=invoice&record=r1&field=logo')
+    expect(authHeader(init)).toBe('Bearer print-token')
+  })
+
+  it('returns null on 404 (no picture at that anchor) exactly like the cookie path', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404)))
+    await expect(findPicture({ table: 'invoice', recordId: 'r1', field: 'logo' }, 'print-token')).resolves.toBeNull()
+  })
+})
+
+describe('streamPicture with a tokenOverride', () => {
+  it('uses the override Bearer', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response('bytes', { status: 200, headers: { 'Content-Type': 'image/png' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await streamPicture('pic1', 'print-token')
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(authHeader(init)).toBe('Bearer print-token')
+  })
+})
+
+describe('resolvePictureDataURL', () => {
+  it('resolves an anchor to a base64 data: URL using the picture\'s own mime type', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { id: 'pic1', table_name: 'invoice', record_id: 'r1', field: 'logo', mime: 'image/png', size: 4 }))
+      .mockResolvedValueOnce(new Response('PNG!', { status: 200, headers: { 'Content-Type': 'image/png' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const url = await resolvePictureDataURL({ table: 'invoice', recordId: 'r1', field: 'logo' }, 'print-token')
+
+    expect(url).toBe(`data:image/png;base64,${Buffer.from('PNG!').toString('base64')}`)
+  })
+
+  it('returns null when the anchor has no picture (no logo uploaded)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404)))
+    const url = await resolvePictureDataURL({ table: 'invoice', recordId: 'r1', field: 'logo' }, 'print-token')
+    expect(url).toBeNull()
   })
 })
 

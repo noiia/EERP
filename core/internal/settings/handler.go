@@ -540,6 +540,68 @@ func (h *Handler) PutPictureSizeSettings(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// reportsLayoutMaxLen bounds footer/address so a workspace can't stuff an
+// unbounded blob into a value that gets stamped on every generated PDF.
+const reportsLayoutMaxLen = 5000
+
+// reportsLayout is both the stored value of ReportsLayoutKey and the
+// request/response body of GET|PUT /settings/reports/layout.
+type reportsLayout struct {
+	Footer  string `json:"footer"`
+	Address string `json:"address"`
+}
+
+// GetReportsLayoutSettings handles GET /api/v1/settings/reports/layout — the
+// workspace-wide footer/address text stamped on every generated PDF report.
+// Absent returns empty strings, not a 404: no letterhead configured yet is a
+// normal state. Mounted behind the permission middleware, which derives
+// settings:reports:read from the route.
+func (h *Handler) GetReportsLayoutSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, ReportsLayoutKey)
+	if err != nil {
+		return fmt.Errorf("settings: get reports layout: %w", err)
+	}
+
+	var resp reportsLayout
+	if ok && raw != "" {
+		// An unparsable stored value degrades to the empty layout rather than
+		// failing the read — same posture as every other settings GET here.
+		_ = json.Unmarshal([]byte(raw), &resp)
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutReportsLayoutSettings handles PUT /api/v1/settings/reports/layout.
+// Mounted behind the permission middleware, which derives
+// settings:reports:write from the route.
+func (h *Handler) PutReportsLayoutSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	var req reportsLayout
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if len(req.Footer) > reportsLayoutMaxLen {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("footer exceeds %d characters", reportsLayoutMaxLen))
+	}
+	if len(req.Address) > reportsLayoutMaxLen {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("address exceeds %d characters", reportsLayoutMaxLen))
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal reports layout: %w", err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, ReportsLayoutKey, string(value)); err != nil {
+		return fmt.Errorf("settings: set reports layout: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func errorJSON(c echo.Context, status int, code, msg string) error {

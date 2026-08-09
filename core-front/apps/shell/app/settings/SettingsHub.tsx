@@ -28,8 +28,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     path: '/settings/appearance',
-    title: 'Appearance',
-    description: 'Brand colors and light/dark mode for the whole interface.',
+    title: 'Global settings',
+    description: 'Colors, PDF report layout, and more.',
   },
   {
     path: '/settings/translations',

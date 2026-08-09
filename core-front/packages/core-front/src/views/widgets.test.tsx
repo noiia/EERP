@@ -8,12 +8,13 @@ import { fieldWidget, type WidgetProps } from './widgets'
 // fieldWidget(field) -> component; value in, onChange out (a store round-trip
 // in miniature — the form store itself is covered by renderers/stores tests).
 
-function renderWidget(field: FieldDescriptor, value: unknown) {
+function renderWidget(field: FieldDescriptor, value: unknown, extra?: Partial<WidgetProps>) {
   const onChange = vi.fn()
+  const onChangeField = vi.fn()
   const Widget = fieldWidget(field)
-  const props: WidgetProps = { field, value, onChange }
+  const props: WidgetProps = { field, value, onChange, onChangeField, ...extra }
   const view = render(<Widget {...props} />)
-  return { onChange, view }
+  return { onChange, onChangeField, view }
 }
 
 beforeEach(() => {
@@ -33,6 +34,45 @@ describe('text widgets', () => {
     renderWidget({ name: 'notes', label: 'Notes', type: 'text', widget: 'long' }, 'line')
     const input = screen.getByLabelText('Notes')
     expect(input.tagName).toBe('TEXTAREA')
+  })
+})
+
+describe('text/color', () => {
+  const colorField: FieldDescriptor = { name: 'accent', label: 'Accent', type: 'text', widget: 'color' }
+
+  it('renders the swatch and hex field seeded from the value', () => {
+    renderWidget(colorField, '#f2f2f2')
+    expect(screen.getByLabelText('Accent')).toHaveValue('#f2f2f2')
+    expect(screen.getByLabelText('Accent swatch')).toHaveValue('#f2f2f2')
+  })
+
+  it('typing in the hex field emits the raw typed value', () => {
+    const { onChange } = renderWidget(colorField, '#f2f2f2')
+    fireEvent.change(screen.getByLabelText('Accent'), { target: { value: '#123456' } })
+    expect(onChange).toHaveBeenCalledWith('#123456')
+  })
+
+  it('flags an invalid hex value', () => {
+    renderWidget(colorField, 'nope')
+    expect(screen.getByLabelText('Accent')).toHaveValue('nope')
+    expect(screen.getByText(/enter a hex color/i)).toBeInTheDocument()
+  })
+
+  it('still emits whatever is typed even while invalid, so a mid-edit value is never discarded', () => {
+    const { onChange } = renderWidget(colorField, 'nope')
+    fireEvent.change(screen.getByLabelText('Accent'), { target: { value: 'nope2' } })
+    expect(onChange).toHaveBeenCalledWith('nope2')
+  })
+
+  it('shows no error on an empty (unset) value', () => {
+    renderWidget(colorField, '')
+    expect(screen.queryByText(/enter a hex color/i)).not.toBeInTheDocument()
+  })
+
+  it('picking a color via the swatch emits its hex value', () => {
+    const { onChange } = renderWidget(colorField, '#f2f2f2')
+    fireEvent.change(screen.getByLabelText('Accent swatch'), { target: { value: '#00ff00' } })
+    expect(onChange).toHaveBeenCalledWith('#00ff00')
   })
 })
 
@@ -213,6 +253,53 @@ describe('selection', () => {
     fireEvent.mouseDown(screen.getByLabelText('Status'))
     fireEvent.click(screen.getByRole('option', { name: 'won' }))
     expect(onChange).toHaveBeenCalledWith('won')
+  })
+})
+
+describe('selection/linked', () => {
+  const presetField: FieldDescriptor = {
+    name: 'size_preset',
+    label: 'Standard size',
+    type: 'selection',
+    widget: 'linked',
+    selection: { options: ['Custom', 'A4', 'Letter'] },
+    widgetOptions: {
+      presets: {
+        A4: { width: 21, height: 29.7, unit: 'cm' },
+        Letter: { width: 8.5, height: 11, unit: 'in' },
+      },
+    },
+  }
+
+  it('behaves like a plain select for its own value', () => {
+    const { onChange } = renderWidget(presetField, 'Custom')
+    fireEvent.mouseDown(screen.getByLabelText('Standard size'))
+    fireEvent.click(screen.getByRole('option', { name: 'A4' }))
+    expect(onChange).toHaveBeenCalledWith('A4')
+  })
+
+  it('picking a preset patches every sibling field it declares', () => {
+    const { onChangeField } = renderWidget(presetField, 'Custom')
+    fireEvent.mouseDown(screen.getByLabelText('Standard size'))
+    fireEvent.click(screen.getByRole('option', { name: 'A4' }))
+    expect(onChangeField).toHaveBeenCalledWith('width', 21)
+    expect(onChangeField).toHaveBeenCalledWith('height', 29.7)
+    expect(onChangeField).toHaveBeenCalledWith('unit', 'cm')
+  })
+
+  it('an option with no matching preset (e.g. Custom) patches nothing', () => {
+    const { onChangeField } = renderWidget(presetField, 'A4')
+    fireEvent.mouseDown(screen.getByLabelText('Standard size'))
+    fireEvent.click(screen.getByRole('option', { name: 'Custom' }))
+    expect(onChangeField).not.toHaveBeenCalled()
+  })
+
+  it('does not throw when onChangeField is absent', () => {
+    const onChange = vi.fn()
+    const Widget = fieldWidget(presetField)
+    render(<Widget field={presetField} value="Custom" onChange={onChange} />)
+    fireEvent.mouseDown(screen.getByLabelText('Standard size'))
+    expect(() => fireEvent.click(screen.getByRole('option', { name: 'A4' }))).not.toThrow()
   })
 })
 

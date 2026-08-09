@@ -242,6 +242,13 @@ export interface ServerApiClient {
    */
   getPictureSize(module: string): Promise<{ width: number; height: number } | null>
   /**
+   * The workspace-wide PDF report letterhead (Settings -> Global settings ->
+   * Reports) — footer/address text stamped on every generated report unless
+   * a report_page_format row overrides it (report-chrome.ts). Never cached,
+   * same posture as getViewFields/getPictureSize; empty strings when unset.
+   */
+  getReportsLayout(): Promise<{ footer: string; address: string }>
+  /**
    * Like list(), but also returns Go's `total` row count — the tree view's
    * loader uses this (not list()) so Graph mode's aggregate widgets (Phase 5,
    * docs/roadmaps/list-view-modes.md) can tell a full fetch from a
@@ -332,6 +339,16 @@ class ServerApiClientImpl implements ServerApiClient {
     )
     return raw.size ?? null
   }
+
+  getReportsLayout(): Promise<{ footer: string; address: string }> {
+    return request<{ footer: string; address: string }>(
+      'GET',
+      '/settings/reports/layout',
+      null,
+      undefined,
+      this.tokenOverride,
+    )
+  }
 }
 
 /** Construct a request-scoped client bound to the current session cookie. */
@@ -379,14 +396,20 @@ export async function uploadPicture(form: FormData): Promise<PictureMeta> {
   return (await res.json()) as PictureMeta
 }
 
-/** Resolve an anchor to its picture metadata; null when the field has none. */
-export async function findPicture(anchor: PictureAnchor): Promise<PictureMeta | null> {
+/**
+ * Resolve an anchor to its picture metadata; null when the field has none.
+ * `tokenOverride` lets the PDF print route (no session cookie, see
+ * `createServerApiClient`'s doc comment) resolve pictures the same way it
+ * resolves the record itself — every other caller (the BFF route handlers)
+ * omits it and rides the normal session-cookie/refresh path.
+ */
+export async function findPicture(anchor: PictureAnchor, tokenOverride?: string): Promise<PictureMeta | null> {
   const query = new URLSearchParams({
     table: anchor.table,
     record: anchor.recordId,
     field: anchor.field,
   })
-  const res = await fetchWithRefresh('GET', `/pictures?${query}`, null)
+  const res = await fetchWithRefresh('GET', `/pictures?${query}`, null, undefined, tokenOverride)
   if (res.status === 404) return null
   if (!res.ok) throw await parseError(res)
   return (await res.json()) as PictureMeta
@@ -395,11 +418,29 @@ export async function findPicture(anchor: PictureAnchor): Promise<PictureMeta | 
 /**
  * Fetch a picture's bytes from Go. Returns the raw Response so the BFF route
  * can stream body + content type back to the browser without buffering.
+ * `tokenOverride`: see findPicture.
  */
-export async function streamPicture(id: string): Promise<Response> {
-  const res = await fetchWithRefresh('GET', `/pictures/${id}`, null)
+export async function streamPicture(id: string, tokenOverride?: string): Promise<Response> {
+  const res = await fetchWithRefresh('GET', `/pictures/${id}`, null, undefined, tokenOverride)
   if (!res.ok) throw await parseError(res)
   return res
+}
+
+/**
+ * Resolve a picture anchor straight to a `data:` URL, or null when the field
+ * has no picture — the print route's own need (docs/adr/ADR-011): a
+ * ReportImageNode's value must be usable as an `<img src>` by the time
+ * pdf-service's headless Chrome navigates to the print page, which carries
+ * no session of its own to fetch a `/pictures/:id` URL live. Inlining the
+ * bytes at render time sidesteps that entirely — no extra auth plumbing for
+ * Chrome, no separate network round trip during the print.
+ */
+export async function resolvePictureDataURL(anchor: PictureAnchor, tokenOverride?: string): Promise<string | null> {
+  const meta = await findPicture(anchor, tokenOverride)
+  if (!meta) return null
+  const res = await streamPicture(meta.id, tokenOverride)
+  const bytes = Buffer.from(await res.arrayBuffer())
+  return `data:${meta.mime};base64,${bytes.toString('base64')}`
 }
 
 export async function deletePicture(id: string): Promise<void> {

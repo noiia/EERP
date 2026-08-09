@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateReportDescriptor, type ReportDescriptor } from './report-descriptor'
+import { reportImageSources, validateReportDescriptor, type ReportDescriptor } from './report-descriptor'
 
 const valid: ReportDescriptor = {
   name: 'crm.statement',
@@ -74,5 +74,42 @@ describe('validateReportDescriptor', () => {
   it('accepts a bare pageBreak with no other content', () => {
     const bare: ReportDescriptor = { ...valid, layout: [{ kind: 'pageBreak' }] }
     expect(() => validateReportDescriptor(bare)).not.toThrow()
+  })
+
+  it('accepts a text node with content', () => {
+    const ok: ReportDescriptor = { ...valid, layout: [{ kind: 'text', text: 'Total HT' }] }
+    expect(() => validateReportDescriptor(ok)).not.toThrow()
+  })
+
+  it('rejects a text node with no text', () => {
+    const bad: ReportDescriptor = { ...valid, layout: [{ kind: 'text', text: '' }] }
+    expect(() => validateReportDescriptor(bad)).toThrowError(/"text" node requires text/)
+  })
+
+  it('accepts an image node with a source', () => {
+    const ok: ReportDescriptor = { ...valid, layout: [{ kind: 'image', source: 'logo' }] }
+    expect(() => validateReportDescriptor(ok)).not.toThrow()
+  })
+
+  it('rejects an image node with no source', () => {
+    const bad: ReportDescriptor = { ...valid, layout: [{ kind: 'image', source: '' }] }
+    expect(() => validateReportDescriptor(bad)).toThrowError(/"image" node requires a source/)
+  })
+})
+
+describe('reportImageSources', () => {
+  it('is empty for a layout with no image nodes', () => {
+    expect(reportImageSources(valid)).toEqual([])
+  })
+
+  it('collects an image node\'s source, including one nested in a section', () => {
+    const descriptor: ReportDescriptor = {
+      ...valid,
+      layout: [
+        { kind: 'image', source: 'logo' },
+        { kind: 'section', children: [{ kind: 'image', source: 'signature' }] },
+      ],
+    }
+    expect(reportImageSources(descriptor)).toEqual(['logo', 'signature'])
   })
 })

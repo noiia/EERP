@@ -1,6 +1,13 @@
 import { notFound } from 'next/navigation'
-import { ReportRenderer, type ReportDescriptor } from '@eerp/core-front'
-import { createServerApiClient, moduleRegistry } from '@eerp/core-front/server'
+import type { CSSProperties } from 'react'
+import {
+  resolveReportChrome,
+  ReportRenderer,
+  reportImageSources,
+  type ReportDescriptor,
+  type ReportPageFormatRow,
+} from '@eerp/core-front'
+import { createServerApiClient, moduleRegistry, resolvePictureDataURL } from '@eerp/core-front/server'
 // Side-effect import: registers every discovered module's reports into the
 // shared registry — the same manifest the catch-all route and the App Store
 // page import.
@@ -27,6 +34,13 @@ import '@/generated/generated-modules'
 // createServerApiClient's tokenOverride param uses instead of the (absent)
 // cookie. A missing/expired/invalid token surfaces as notFound() below, the
 // same as a missing record — there's no user here to show an error to.
+//
+// Padding/colors/page-size/footer/address (docs/roadmaps/pdf-reports.md's
+// Reports settings subsection) are resolved here, once, via the pure
+// resolveReportChrome — global reports.layout defaults, overridden per field
+// by a report_page_format row when descriptor.pageFormat names one. Neither
+// read can turn a printable record into a 404: chrome is additive styling on
+// top of ReportRenderer's own output, never required data.
 //
 // Being a plain async Server Component IS the `data-report-ready` guarantee:
 // nothing below is returned to the caller until every await has resolved, so
@@ -61,9 +75,51 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
   }
   if (!record) notFound()
 
+  // Picture-backed fields (docs/adr/ADR-011): `record[field]` is still the
+  // raw boolean flag (true ⇔ a picture exists on that anchor) — resolve each
+  // one declared by an `image` node into a `data:` URL now, inlined into the
+  // HTML this Server Component returns, so pdf-service's headless Chrome
+  // never needs its own auth to fetch the bytes at print time.
+  for (const field of reportImageSources(descriptor)) {
+    record[field] =
+      record[field] === true
+        ? await resolvePictureDataURL({ table: descriptor.entity, recordId: id, field }, token)
+        : null
+  }
+
+  // Effective chrome (docs/roadmaps/pdf-reports.md's Reports settings):
+  // global footer/address, plus size/padding/colors/footer/address from the
+  // named report_page_format row when the descriptor opts into one. Both
+  // reads degrade to "no override" on any failure (missing permission, no
+  // such format) — chrome is additive styling, never required data, so it
+  // must never turn a printable record into a 404.
+  const global = await client.getReportsLayout().catch(() => ({ footer: '', address: '' }))
+  const format = descriptor.pageFormat
+    ? await client
+        .list<ReportPageFormatRow>('report_page_format', { filter: { name: descriptor.pageFormat } })
+        .then((rows) => rows[0] ?? null)
+        .catch(() => null)
+    : null
+  const chrome = resolveReportChrome(global, format)
+
   return (
-    <div data-report-ready="">
-      <ReportRenderer descriptor={descriptor} record={record} />
+    <div
+      data-report-ready=""
+      style={
+        {
+          '--eerp-report-text': chrome.colors.text,
+          '--eerp-report-text-muted': chrome.colors.textMuted,
+          '--eerp-report-border': chrome.colors.border,
+          '--eerp-report-accent': chrome.colors.accent,
+        } as CSSProperties
+      }
+    >
+      {chrome.pageSizeCss && <style>{`@page { size: ${chrome.pageSizeCss}; }`}</style>}
+      <div className="eerp-report-content" style={{ padding: chrome.paddingPx }}>
+        <ReportRenderer descriptor={descriptor} record={record} />
+      </div>
+      {chrome.footer && <div className="eerp-report-chrome-footer">{chrome.footer}</div>}
+      {chrome.address && <div className="eerp-report-chrome-address">{chrome.address}</div>}
     </div>
   )
 }

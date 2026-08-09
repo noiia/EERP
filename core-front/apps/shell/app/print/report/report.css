@@ -20,7 +20,7 @@
 .eerp-report-header {
   font-size: 1.25rem;
   font-weight: 700;
-  border-bottom: 2px solid #222;
+  border-bottom: 2px solid var(--eerp-report-text, #222);
   padding-bottom: 0.75rem;
   margin-bottom: 0.5rem;
 }
@@ -28,16 +28,172 @@
 .eerp-report-contact,
 .eerp-report-metrics {
   font-size: 0.95rem;
-  color: #333;
+  color: var(--eerp-report-text-muted, #333);
 }
 
 .eerp-report-notes {
   display: block;
   white-space: pre-wrap;
   font-size: 0.95rem;
-  color: #333;
+  color: var(--eerp-report-text-muted, #333);
 }
 
 .eerp-page-break {
   page-break-before: always;
+}
+
+/* .eerp-report-content: the print route (page.tsx) applies its resolved
+   padding to this wrapper INLINE (100px by default, per-report_page_format
+   override) — no rule needed here. Distinct concern from Chrome's own page
+   margins (WithMarginTop/Bottom in pdf-service, reserved for the page-number
+   footer template): this is padding around the report's content, not the
+   printed page itself. */
+
+/* Global-letterhead chrome (docs/roadmaps/pdf-reports.md's Reports settings)
+   — the workspace-wide footer/address text, stamped BELOW whatever a
+   report's own descriptor/layout already prints. Distinct class names from
+   .eerp-report-footer (a descriptor's own layout, e.g. sale.invoice's legal
+   notice) so the two never collide. */
+.eerp-report-chrome-footer,
+.eerp-report-chrome-address {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 0.8rem;
+  color: var(--eerp-report-text-muted, #555);
+  white-space: pre-wrap;
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--eerp-report-border, #ccc);
+}
+
+/* sale.invoice (docs/adr/ADR-011) — a standard letterhead-style invoice
+   layout: logo + doc meta masthead, issuer/client two-column block, a
+   bordered item table, a right-aligned HT/TVA/TTC totals recap, and small
+   footer text. Neutral grays/black on purpose — the reference template this
+   was modeled on used green as ITS OWN brand color, not a structural cue. */
+
+.eerp-report-masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding-bottom: 1rem;
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.eerp-report-logo {
+  max-width: 160px;
+  max-height: 80px;
+  object-fit: contain;
+}
+
+.eerp-report-doc-meta {
+  text-align: right;
+  font-size: 0.95rem;
+  color: var(--eerp-report-text, #222);
+}
+
+.eerp-report-doc-meta > div {
+  margin-bottom: 0.25rem;
+}
+
+.eerp-report-parties {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem 0;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 0.95rem;
+  color: var(--eerp-report-text, #222);
+}
+
+.eerp-report-issuer,
+.eerp-report-client {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 45%;
+}
+
+.eerp-report-client {
+  text-align: right;
+}
+
+.eerp-report-subject {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.5rem 0;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 0.95rem;
+}
+
+/* Reusable bold caption for a text node standing next to a field's value
+   (Subject, payment rows, totals rows) — the section around them only lays
+   them out, so a label can be bold without its value inheriting it. */
+.eerp-report-label {
+  font-weight: 700;
+}
+
+.eerp-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 0.9rem;
+}
+
+.eerp-report-table th,
+.eerp-report-table td {
+  border: 1px solid var(--eerp-report-border, #ccc);
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+}
+
+.eerp-report-table th {
+  background: var(--eerp-report-accent, #f2f2f2);
+  font-weight: 700;
+}
+
+.eerp-report-totals {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  padding: 1rem 0;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 0.95rem;
+}
+
+.eerp-report-totals-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1.5rem;
+  min-width: 220px;
+}
+
+.eerp-report-totals-row > :first-child {
+  flex: 1;
+}
+
+.eerp-report-totals-row--grand {
+  font-weight: 700;
+  border-top: 1px solid var(--eerp-report-text, #222);
+  padding-top: 0.35rem;
+}
+
+.eerp-report-footer {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 0.8rem;
+  color: var(--eerp-report-text-muted, #555);
+}
+
+.eerp-report-footer p {
+  margin: 0 0 0.75rem;
+}
+
+.eerp-report-payment {
+  display: flex;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--eerp-report-text-muted, #333);
+  padding-bottom: 0.35rem;
 }

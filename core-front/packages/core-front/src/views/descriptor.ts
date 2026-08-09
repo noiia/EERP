@@ -25,15 +25,23 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * presentation variants. text/table (docs/roadmaps/app-store.md, Phase 2) is
  * the odd one out: its VALUE is an array of records, not a string — a
  * deliberate simplification (no new FieldType) for a read-only, `store: false`
- * field whose value is seeded server-side, never typed or edited.
+ * field whose value is seeded server-side, never typed or edited. text/color
+ * is a hex-string field rendered as a swatch + hex TextField, the same visual
+ * pattern Settings -> Global settings -> Colors uses for the brand palette
+ * (there it edits useUiStore directly; here it's a plain text field like any
+ * other). selection/linked (docs/roadmaps/pdf-reports.md's page-format
+ * presets) is a dropdown that ALSO patches sibling fields per
+ * widgetOptions.presets when an option is picked — a generic "apply a preset"
+ * mechanism, not specific to page formats; see widgets.tsx's
+ * SelectionLinkedWidget for the exact contract.
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
-  text: ['simple', 'long', 'phone', 'table'],
+  text: ['simple', 'long', 'phone', 'table', 'color'],
   number: ['float', 'int', 'percent', 'stars', 'phone'],
   boolean: ['switch', 'picture', 'signature'],
   date: ['simple'],
   relation: ['search', 'tags', 'list'],
-  selection: ['select'],
+  selection: ['select', 'linked'],
 }
 
 export type RelationKind = 'many2one' | 'one2many' | 'many2many'
@@ -684,6 +692,36 @@ export function titleFieldName(layout: LayoutNode[]): string | null {
 }
 
 /**
+ * The form actions menu (docs/adr/ADR-011): every `viewType: 'form'` route
+ * renders one options button, by default, at the top of the form — the same
+ * "structural chrome the engine always provides" posture CreateBar takes for
+ * tree views. Its content is this tree, declared on `ViewDescriptor.actions`:
+ * a flat list of leaves (`kind: 'action'`) and/or nested groups
+ * (`kind: 'submenu'`), a submenu's own children being more of either. Stays
+ * DATA, like every other descriptor piece — an action names its handler by
+ * NAME (`action: 'sale.printInvoice'`), never a function reference (the RSC
+ * boundary rule `compute`/`on_change` already follow — see menu-actions.ts's
+ * `registerMenuAction`). An empty/omitted `actions` still renders the
+ * button — the engine has no way to know in advance a module will never add
+ * one — just disabled, so there's nothing dead to click.
+ */
+export interface MenuActionNode {
+  kind: 'action'
+  label: string
+  /** A name registered via `registerMenuAction` for this SAME descriptor's
+   * entity — validated at registration (validateMenuActions), not at click. */
+  action: string
+}
+
+export interface MenuSubmenuNode {
+  kind: 'submenu'
+  label: string
+  children: MenuNode[]
+}
+
+export type MenuNode = MenuActionNode | MenuSubmenuNode
+
+/**
  * `viewType: 'catalog'`'s presentation: an icon/title/subtitle list, one row
  * per record (docs/roadmaps/app-store.md, Phase 2 — the App Store's own
  * module listing is its first user, but the type is generic: any future
@@ -735,6 +773,14 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * re-authorizes the POST regardless.
    */
   createPermission?: string
+  /**
+   * The form actions menu's content (see MenuNode). Meaningful on
+   * `viewType: 'form'` only — FormActionsMenu is the one renderer that reads
+   * it; other view types render no options button, so a value here is
+   * harmless-but-inert on them, same posture `createPermission` takes on a
+   * form. Omitted ⇒ the button still renders (disabled) — see MenuNode's doc.
+   */
+  actions?: MenuNode[]
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

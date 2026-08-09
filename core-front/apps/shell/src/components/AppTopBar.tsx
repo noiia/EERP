@@ -49,6 +49,24 @@ interface Crumb {
 }
 
 /**
+ * Per-segment label overrides — for the rare path segment whose tile/page was
+ * renamed without renaming the URL slug (SettingsHub.tsx's Appearance ->
+ * "Global settings" tile keeps the stable /settings/appearance path on
+ * purpose, so titleize()'s pure slug->title mapping never sees the rename).
+ */
+const SEGMENT_LABEL_OVERRIDES: Record<string, string> = {
+  appearance: 'Global settings',
+}
+
+/**
+ * Path segments that never correspond to a real page and so never earn a
+ * breadcrumb crumb — e.g. "page-formats" in /settings/appearance/page-formats/:id:
+ * the list lives embedded inline in /settings/appearance itself (no page.tsx
+ * of its own), only the trailing :id route is real.
+ */
+const SKIPPED_SEGMENTS = new Set(['page-formats'])
+
+/**
  * Build cumulative breadcrumb links from a pathname (excluding the menu root).
  * A module's form route often sits directly off its own root — e.g. CRM's is
  * '/crm/:id', a sibling of '/crm/list', not nested under it — so the raw path
@@ -61,14 +79,18 @@ interface Crumb {
 function crumbsFromPath(pathname: string, nav: ModuleNav[]): Crumb[] {
   const segments = pathname.split('/').filter(Boolean)
   const crumbs = segments.map((segment, i) => ({
-    label: titleize(segment),
+    label: SEGMENT_LABEL_OVERRIDES[segment] ?? titleize(segment),
     href: '/' + segments.slice(0, i + 1).join('/'),
   }))
-  if (segments.length !== 2) return crumbs
 
-  const listPage = nav.find((n) => n.module === segments[0])?.pages.find((p) => p.kind === 'list')
-  if (!listPage || listPage.path === pathname) return crumbs
-  return [crumbs[0], { label: 'List', href: listPage.path }, crumbs[1]]
+  let result = crumbs
+  if (segments.length === 2) {
+    const listPage = nav.find((n) => n.module === segments[0])?.pages.find((p) => p.kind === 'list')
+    if (listPage && listPage.path !== pathname) {
+      result = [crumbs[0], { label: 'List', href: listPage.path }, crumbs[1]]
+    }
+  }
+  return result.filter((c) => !SKIPPED_SEGMENTS.has(c.href.split('/').filter(Boolean).at(-1) ?? ''))
 }
 
 function PathBreadcrumbs({ pathname, nav }: { pathname: string; nav: ModuleNav[] }) {

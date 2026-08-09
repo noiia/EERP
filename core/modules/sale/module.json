@@ -1,0 +1,18 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "sale",
+    "display_name": "Sale",
+    "version": "0.0.1",
+    "author": "Edwin Lecomte",
+    "description": "Sale module — invoice management and PDF export",
+    "app_mode": true,
+    "depends": [],
+    "static_files": {
+        "views": [
+            "SaleViews.ts"
+        ]
+    },
+    "is_service": true,
+    "auto_install": true
+}

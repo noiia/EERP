@@ -130,6 +130,56 @@ func TestCreateIndex_FromMigrationOperation(t *testing.T) {
 	}
 }
 
+func TestEnsureColumns_NotNullGetsAZeroDefault(t *testing.T) {
+	// A required (non-pointer, non-PK) field's ADD COLUMN must carry a
+	// DEFAULT — otherwise it fails outright against a table that already has
+	// rows (the common case: a module adds a required field after its table
+	// has data). Nullable/PK columns get neither NOT NULL nor a default.
+	tests := []struct {
+		name  string
+		field orm.MigrationField
+		want  string
+	}{
+		{
+			name:  "required text column backfills empty string",
+			field: orm.MigrationField{Column: "issuer_name", SQLType: "TEXT", Nullable: false},
+			want:  "ALTER TABLE invoice ADD COLUMN IF NOT EXISTS issuer_name TEXT NOT NULL DEFAULT ''",
+		},
+		{
+			name:  "required boolean column backfills false",
+			field: orm.MigrationField{Column: "active", SQLType: "BOOLEAN", Nullable: false},
+			want:  "ALTER TABLE invoice ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT false",
+		},
+		{
+			name:  "required numeric column backfills zero",
+			field: orm.MigrationField{Column: "rank", SQLType: "INTEGER", Nullable: false},
+			want:  "ALTER TABLE invoice ADD COLUMN IF NOT EXISTS rank INTEGER NOT NULL DEFAULT 0",
+		},
+		{
+			name:  "nullable column gets no NOT NULL or default",
+			field: orm.MigrationField{Column: "reference", SQLType: "TEXT", Nullable: true},
+			want:  "ALTER TABLE invoice ADD COLUMN IF NOT EXISTS reference TEXT",
+		},
+		{
+			name:  "primary key gets no NOT NULL or default",
+			field: orm.MigrationField{Column: "code", SQLType: "UUID", Nullable: false, IsPK: true},
+			want:  "ALTER TABLE invoice ADD COLUMN IF NOT EXISTS code UUID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := &recordingExec{}
+			if err := ensureColumns(context.Background(), exec, "invoice", []orm.MigrationField{tt.field}); err != nil {
+				t.Fatalf("ensureColumns: %v", err)
+			}
+			if len(exec.sql) != 1 || exec.sql[0] != tt.want {
+				t.Fatalf("DDL = %v, want [%s]", exec.sql, tt.want)
+			}
+		})
+	}
+}
+
 func TestAutoMigrateTable_TableThenColumnsThenIndexes(t *testing.T) {
 	exec := &recordingExec{}
 	fields := []orm.MigrationField{

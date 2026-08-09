@@ -97,6 +97,13 @@ func (r *ChromeRenderer) Render(ctx context.Context, req RenderRequest) ([]byte,
 			WithHeaderTemplate(`<span></span>`).
 			WithFooterTemplate(`<div style="font-size:8px;width:100%;text-align:center;">Page <span class="pageNumber"></span>/<span class="totalPages"></span></div>`).
 			WithMarginTop(0.4).WithMarginBottom(0.6).
+			// Lets a report's own `@page { size: ... }` CSS rule (set by the
+			// print route from a report_page_format row) pick the paper
+			// dimensions instead of Chrome's US-Letter default — margins stay
+			// governed by the params above regardless (docs/roadmaps/
+			// pdf-reports.md's Reports settings: page size, never page margin,
+			// comes from CSS).
+			WithPreferCSSPageSize(true).
 			Do(ctx)
 		return err
 	}))

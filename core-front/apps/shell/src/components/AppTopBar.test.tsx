@@ -107,6 +107,29 @@ describe('AppTopBar', () => {
     expect(breadcrumb.queryByRole('link', { name: 'List' })).not.toBeInTheDocument()
   })
 
+  it('labels the /settings/appearance crumb "Global settings", not the titleized "Appearance" slug', () => {
+    pathnameMock.mockReturnValue('/settings/appearance')
+    render(<AppTopBar identity={identity} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByText('Global settings')).toBeInTheDocument()
+    expect(breadcrumb.queryByText('Appearance')).not.toBeInTheDocument()
+  })
+
+  it('omits the "page-formats" segment from a page format\'s breadcrumb (no page of its own — the list is embedded in Global settings)', () => {
+    pathnameMock.mockReturnValue('/settings/appearance/page-formats/42')
+    render(<AppTopBar identity={identity} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+
+    expect(breadcrumb.getByRole('link', { name: 'Global settings' })).toHaveAttribute(
+      'href',
+      '/settings/appearance',
+    )
+    expect(breadcrumb.queryByText('Page Formats')).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText(/page.?formats/i)).not.toBeInTheDocument()
+    // Trailing crumb is still the record (raw id, absent a record-label-store entry).
+    expect(breadcrumb.getByText('42')).toBeInTheDocument()
+  })
+
   it('shows the current module main pages next to the breadcrumb, marking the active one', () => {
     pathnameMock.mockReturnValue('/crm/list')
     render(<AppTopBar identity={identity} nav={crmNav} />)

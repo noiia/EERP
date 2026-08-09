@@ -130,6 +130,44 @@ describe('ReportRenderer', () => {
     expect(container.querySelectorAll('tbody tr')).toHaveLength(0)
   })
 
+  it('renders a text node\'s literal content, unlike a field node it never looks up the record', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'text', text: 'Total HT', className: 'label' }],
+    }
+    const { container } = render(<ReportRenderer descriptor={descriptor} record={{ text: 'ignored' }} />)
+    expect(screen.getByText('Total HT')).toBeInTheDocument()
+    expect(container.querySelector('.label')?.textContent).toBe('Total HT')
+  })
+
+  it('renders an image node as an <img> when the resolved record value is a non-empty string', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'image', source: 'logo', alt: 'Company logo' }],
+    }
+    render(<ReportRenderer descriptor={descriptor} record={{ logo: 'data:image/png;base64,AAAA' }} />)
+    const img = screen.getByAltText('Company logo')
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,AAAA')
+  })
+
+  it('renders nothing for an image node whose source is absent (no logo uploaded)', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'image', source: 'logo' }],
+    }
+    const { container } = render(<ReportRenderer descriptor={descriptor} record={{}} />)
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('renders nothing for an image node whose resolved value is still a boolean (not yet resolved)', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'image', source: 'logo' }],
+    }
+    const { container } = render(<ReportRenderer descriptor={descriptor} record={{ logo: true }} />)
+    expect(container.querySelector('img')).toBeNull()
+  })
+
   it('renders a pageBreak node with the print-target hook class', () => {
     const descriptor: ReportDescriptor = { ...baseDescriptor, layout: [{ kind: 'pageBreak' }] }
     const { container } = render(<ReportRenderer descriptor={descriptor} record={{}} />)

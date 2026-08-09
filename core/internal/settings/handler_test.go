@@ -882,3 +882,127 @@ func TestPutPictureSizeSettings(t *testing.T) {
 		})
 	}
 }
+
+// ── GET /settings/reports/layout ──────────────────────────────────────────────
+
+func TestGetReportsLayoutSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name        string
+		store       *stubStore
+		wantStatus  int
+		wantFooter  string
+		wantAddress string
+	}{
+		{
+			name:       "no letterhead configured reads as empty strings, not a 404",
+			store:      &stubStore{},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "configured letterhead",
+			store: &stubStore{values: map[string]string{
+				ReportsLayoutKey: `{"footer":"Thank you for your business.","address":"1 Rue de la Paix, Paris"}`,
+			}},
+			wantStatus:  http.StatusOK,
+			wantFooter:  "Thank you for your business.",
+			wantAddress: "1 Rue de la Paix, Paris",
+		},
+		{
+			name:       "unparsable stored value degrades to empty strings",
+			store:      &stubStore{values: map[string]string{ReportsLayoutKey: "{not json"}},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store)
+			rec := serve(t, h.GetReportsLayoutSettings, http.MethodGet, "/settings/reports/layout", "", identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+
+			var resp reportsLayout
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp.Footer != tt.wantFooter || resp.Address != tt.wantAddress {
+				t.Errorf("got %+v, want footer=%q address=%q", resp, tt.wantFooter, tt.wantAddress)
+			}
+		})
+	}
+}
+
+// ── PUT /settings/reports/layout ──────────────────────────────────────────────
+
+func TestPutReportsLayoutSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantValue  string
+	}{
+		{
+			name:       "saves footer and address",
+			body:       `{"footer":"Thank you.","address":"1 Rue de la Paix"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"footer":"Thank you.","address":"1 Rue de la Paix"}`,
+		},
+		{
+			name:       "saves an empty letterhead (clear)",
+			body:       `{"footer":"","address":""}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"footer":"","address":""}`,
+		},
+		{
+			name:       "footer over the length cap rejected",
+			body:       `{"footer":"` + strings.Repeat("a", reportsLayoutMaxLen+1) + `","address":""}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "address over the length cap rejected",
+			body:       `{"footer":"","address":"` + strings.Repeat("a", reportsLayoutMaxLen+1) + `"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "malformed body rejected",
+			body:       `not json`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store)
+			rec := serve(t, h.PutReportsLayoutSettings, http.MethodPut, "/settings/reports/layout", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotTenant != identity.TenantID {
+				t.Errorf("tenant = %s, want the caller's %s", store.gotTenant, identity.TenantID)
+			}
+			if store.gotKey != ReportsLayoutKey {
+				t.Errorf("key = %q, want %q", store.gotKey, ReportsLayoutKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}

@@ -1,0 +1,128 @@
+# Sale module — translation template. Copy to <locale>.po per language.
+msgid ""
+msgstr ""
+"Project-Id-Version: sale 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Company logo"
+msgstr ""
+
+msgid "Number"
+msgstr ""
+
+msgid "Customer"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Issue date"
+msgstr ""
+
+msgid "Due date"
+msgstr ""
+
+msgid "Due date:"
+msgstr ""
+
+msgid "Total"
+msgstr ""
+
+msgid "Subject"
+msgstr ""
+
+msgid "Subject:"
+msgstr ""
+
+msgid "Linked customer"
+msgstr ""
+
+msgid "Customer email"
+msgstr ""
+
+msgid "Billing address"
+msgstr ""
+
+msgid "Your company name"
+msgstr ""
+
+msgid "Your company address"
+msgstr ""
+
+msgid "Your company phone"
+msgstr ""
+
+msgid "Your company email"
+msgstr ""
+
+msgid "Currency"
+msgstr ""
+
+msgid "Reference"
+msgstr ""
+
+msgid "Line items"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Unit"
+msgstr ""
+
+msgid "Quantity"
+msgstr ""
+
+msgid "Unit price"
+msgstr ""
+
+msgid "VAT"
+msgstr ""
+
+msgid "Total (excl. tax)"
+msgstr ""
+
+msgid "No line items yet — add them via the API."
+msgstr ""
+
+msgid "Subtotal (excl. tax)"
+msgstr ""
+
+msgid "Discount (excl. tax)"
+msgstr ""
+
+msgid "Net subtotal (excl. tax)"
+msgstr ""
+
+msgid "Tax rate"
+msgstr ""
+
+msgid "Tax amount"
+msgstr ""
+
+msgid "Tax"
+msgstr ""
+
+msgid "Total (incl. tax)"
+msgstr ""
+
+msgid "Payment method"
+msgstr ""
+
+msgid "Payment method:"
+msgstr ""
+
+msgid "Payment terms"
+msgstr ""
+
+msgid "Payment terms:"
+msgstr ""
+
+msgid "Legal notice"
+msgstr ""
+
+msgid "Print"
+msgstr ""
+
+msgid "Invoice"
+msgstr ""

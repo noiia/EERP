@@ -13,5 +13,7 @@ import (
 	_ "core/modules/crminheritdemo"
 	_ "core/modules/notebook"
 	_ "core/modules/pictures"
+	_ "core/modules/reportlayout"
+	_ "core/modules/sale"
 	_ "core/modules/settings"
 )

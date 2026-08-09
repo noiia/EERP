@@ -449,6 +449,7 @@ function LayoutNodeView({
         field={field}
         value={draft[node.name]}
         onChange={(value) => onFieldChange(node.name, value)}
+        onChangeField={onFieldChange}
         disabled={disabled}
         entity={entity}
         recordId={recordId}

@@ -100,6 +100,13 @@ func reflectTypeToSQL(t reflect.Type) string {
 		return "REAL"
 	case reflect.Float64:
 		return "DOUBLE PRECISION"
+	case reflect.Slice, reflect.Map:
+		// A slice/map field (e.g. []map[string]any line items) has no scalar SQL
+		// type — store it as JSONB. The generic CRUD layer never materializes a
+		// typed Go value for these columns (it reads/writes map[string]any end
+		// to end via pgx's own jsonb<->any codec — see orm/internal/crud), so no
+		// further plumbing is needed beyond this DDL mapping.
+		return "JSONB"
 	default:
 		return "TEXT"
 	}

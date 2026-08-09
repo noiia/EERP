@@ -39,6 +39,15 @@ function ReportNodeView({ node, record }: { node: ReportNode; record: Record<str
       return <div className={node.className}>{formatFieldValue(record[node.name], node.format)}</div>
     case 'table':
       return <ReportTableView node={node} record={record} />
+    case 'text':
+      return <div className={node.className}>{node.text}</div>
+    case 'image': {
+      const value = record[node.source]
+      if (typeof value !== 'string' || value === '') return null
+      // Plain <img>, not next/image: this is a headless-Chromium print
+      // target, not an interactive page — no lazy-loading/CDN story applies.
+      return <img className={node.className} src={value} alt={node.alt ?? ''} />
+    }
     case 'pageBreak':
       // The print route's stylesheet owns page-break-before: always for this
       // class — ReportRenderer only names the hook, never inlines print CSS.

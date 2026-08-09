@@ -140,6 +140,27 @@ func autoMigrateTable(ctx context.Context, db orm.Executor, table string, fields
 	return ensureIndexes(ctx, db, table, fields)
 }
 
+// zeroSQLDefault returns the DEFAULT literal for a NOT NULL column of the
+// given SQL type, or "" when no sane zero value exists (e.g. UUID). Needed
+// because ADD COLUMN ... NOT NULL with no DEFAULT fails outright on a table
+// that already has rows — a required field added to a module's struct after
+// its table has data (the common case once a module ships) would otherwise
+// permanently wedge auto-migration on every restart.
+func zeroSQLDefault(sqlType string) string {
+	switch sqlType {
+	case "TEXT":
+		return "''"
+	case "BOOLEAN":
+		return "false"
+	case "INTEGER", "BIGINT", "REAL", "DOUBLE PRECISION":
+		return "0"
+	case "JSONB":
+		return "'{}'::jsonb"
+	default:
+		return ""
+	}
+}
+
 // ensureColumns issues ALTER TABLE ADD COLUMN IF NOT EXISTS for each field
 // that is not a BaseModel column. Idempotent — safe to call on extension.
 func ensureColumns(ctx context.Context, db orm.Executor, table string, fields []orm.MigrationField) error {
@@ -150,6 +171,9 @@ func ensureColumns(ctx context.Context, db orm.Executor, table string, fields []
 		notNull := ""
 		if !f.Nullable && !f.IsPK {
 			notNull = " NOT NULL"
+			if def := zeroSQLDefault(f.SQLType); def != "" {
+				notNull += " DEFAULT " + def
+			}
 		}
 		// #nosec G201 — table/column names come from module manifests, not user input.
 		sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s%s",
