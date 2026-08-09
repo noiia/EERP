@@ -8,6 +8,7 @@ package all
 import (
 	_ "core/modules/appstore"
 	_ "core/modules/auth"
+	_ "core/modules/company"
 	_ "core/modules/contact"
 	_ "core/modules/crm"
 	_ "core/modules/crminheritdemo"

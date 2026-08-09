@@ -16,17 +16,28 @@ export interface NumberFormatPreference {
   thousands_separator: string
 }
 
+/** The caller's current company (multi-company) — the minimal shape a
+ * switcher needs, not the full profile (address/phone/email, only the
+ * Company settings form itself needs those). */
+export interface ActiveCompanyRef {
+  id: string
+  name: string
+}
+
 /**
  * Server-owned language preferences, as returned by GET /me/preferences.
  * preferred_locale: null = inherit the workspace default, "source" = force the
  * source language, otherwise a locale tag. default_locale: null = source language.
  * number_format rides along (one round-trip seeds every client mirror); null =
- * the frontend's built-in default.
+ * the frontend's built-in default. active_company rides along too (multi-company)
+ * — never null once the backend has resolved it, since ResolveActive always
+ * bootstraps one; only absent if the read itself failed upstream.
  */
 export interface LocalePreferences {
   preferred_locale: string | null
   default_locale: string | null
   number_format?: NumberFormatPreference | null
+  active_company?: ActiveCompanyRef | null
 }
 
 /**

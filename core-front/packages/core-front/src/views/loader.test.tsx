@@ -38,9 +38,17 @@ describe('loadView', () => {
       listWithTotal: vi.fn(async () => ({ records: [{ id: '1', name: 'A' }], total: 1 })) as never,
     })
     const result = await loadView(tree, api)
-    expect(api.listWithTotal).toHaveBeenCalledWith('crm')
+    expect(api.listWithTotal).toHaveBeenCalledWith('crm', undefined)
     expect(result.initialData).toEqual([{ id: '1', name: 'A' }])
     expect(result.total).toBe(1)
+  })
+
+  it('passes listOptions through to the entity list fetch (e.g. a company_id filter)', async () => {
+    const api = fakeApi({
+      listWithTotal: vi.fn(async () => ({ records: [], total: 0 })) as never,
+    })
+    await loadView(tree, api, { listOptions: { filter: { company_id: 'co-1' } } })
+    expect(api.listWithTotal).toHaveBeenCalledWith('crm', { filter: { company_id: 'co-1' } })
   })
 
   it('preserves a total larger than the fetched page (a page_size-truncated read)', async () => {

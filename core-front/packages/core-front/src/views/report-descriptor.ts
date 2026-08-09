@@ -22,6 +22,15 @@ export interface ReportFieldNode {
   className?: string
   /** Built-in value formatter; omitted renders the raw value coerced to a string. */
   format?: 'number' | 'date' | 'datetime'
+  /**
+   * Multi-company: when the record's own `name` value is empty, the print
+   * route substitutes this field from the caller's active company profile
+   * instead (e.g. sale.invoice's issuer_name falling back to the active
+   * company's own name) — see report-chrome.ts's sibling resolution and
+   * reportCompanyFallbackFields() below. Absent means no fallback; the
+   * record's own value (however empty) always renders as-is.
+   */
+  companyFallback?: 'name' | 'address' | 'phone' | 'email'
 }
 
 /**
@@ -120,6 +129,28 @@ export function reportImageSources(descriptor: ReportDescriptor): string[] {
   }
   for (const node of descriptor.layout) visit(node)
   return sources
+}
+
+/**
+ * Every `field` node's (record field name, company field name) pair that
+ * opted into a company fallback, recursing into sections — mirrors
+ * reportImageSources' shape exactly. The print route is the one place that
+ * knows both the fetched record and the caller's active company, so it (not
+ * ReportRenderer) applies the fallback before rendering.
+ */
+export function reportCompanyFallbackFields(
+  descriptor: ReportDescriptor,
+): { recordField: string; companyField: string }[] {
+  const fields: { recordField: string; companyField: string }[] = []
+  const visit = (node: ReportNode): void => {
+    if (node.kind === 'field' && node.companyFallback) {
+      fields.push({ recordField: node.name, companyField: node.companyFallback })
+    } else if (node.kind === 'section') {
+      for (const child of node.children) visit(child)
+    }
+  }
+  for (const node of descriptor.layout) visit(node)
+  return fields
 }
 
 /**

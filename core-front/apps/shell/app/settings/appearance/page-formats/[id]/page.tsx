@@ -4,18 +4,24 @@ import Typography from '@mui/material/Typography'
 import { EntityViewServer } from '@eerp/core-front/server'
 import { T, type EntityActions } from '@eerp/core-front'
 import { requireAuth } from '@/lib/session'
-import { createRecord, removeRecord, updateRecord } from '../../../../[...module]/actions'
+import { removeRecord, updateRecord } from '../../../../[...module]/actions'
+import { createPageFormatForCompany } from '@/lib/report-settings'
+import { getMyLocalePreferences } from '@/lib/preferences'
 import { pageFormatFormDescriptor, type ReportPageFormatRecord } from '../descriptors'
 
 // Settings → Global settings → Reports → one page format: the edit form, or
 // ("new") the empty create form the Reports accordion's Create button opens.
+// Create tags the new row with the caller's active company (multi-company,
+// client-enforced scoping only — see appearance/page.tsx's own note).
 
 export default async function ReportPageFormatPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   await requireAuth(`/settings/appearance/page-formats/${id}`)
+  const preferences = await getMyLocalePreferences()
+  const activeCompanyId = preferences?.active_company?.id ?? ''
 
   const actions = {
-    create: createRecord.bind(null, 'report_page_format'),
+    create: createPageFormatForCompany.bind(null, activeCompanyId),
     update: updateRecord.bind(null, 'report_page_format'),
     remove: removeRecord.bind(null, 'report_page_format'),
   } as unknown as EntityActions<ReportPageFormatRecord>

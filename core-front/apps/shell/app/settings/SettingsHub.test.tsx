@@ -27,6 +27,12 @@ describe('SettingsHub', () => {
     )
   })
 
+  it('ships Company as a default section, linked from the hub', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/company')).toBe(true)
+    render(<SettingsHub />)
+    expect(screen.getByRole('link', { name: /^company/i })).toHaveAttribute('href', '/settings/company')
+  })
+
   it('ships Translations as a default section, linked from the hub', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/translations')).toBe(true)
     render(<SettingsHub />)

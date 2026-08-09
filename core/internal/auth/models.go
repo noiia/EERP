@@ -20,6 +20,10 @@ type Users struct {
 	// tenant default (app_settings "i18n.default_locale"); the reserved value
 	// "source" forces the untranslated source language.
 	PreferredLocale *string `db:"preferred_locale"`
+	// ActiveCompanyID is the caller's current company selection — nil until
+	// company.Repository.ResolveActive lazily bootstraps it on first touch of
+	// any company-scoped setting, same posture as PreferredLocale.
+	ActiveCompanyID *uuid.UUID `db:"active_company_id"`
 }
 
 // Role is a named set of permissions scoped to a tenant.

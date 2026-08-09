@@ -342,6 +342,31 @@ describe('ServerApiClient', () => {
     expect(init.headers.Authorization).toBe('Bearer scoped-token')
   })
 
+  it('reads the active company off /me/preferences, never caching, including via a tokenOverride', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { active_company: { id: 'co-1', name: 'Acme' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient('scoped-token').getMyActiveCompany()).resolves.toEqual({
+      id: 'co-1',
+      name: 'Acme',
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit & { next?: unknown; headers: Record<string, string> },
+    ]
+    expect(url).toBe('http://api.test/api/v1/me/preferences')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+    expect(init.headers.Authorization).toBe('Bearer scoped-token')
+  })
+
+  it('reads null when the active company is absent from the response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { active_company: null })))
+    await expect(createServerApiClient().getMyActiveCompany()).resolves.toBeNull()
+  })
+
   it('apiRequest GETs stay out of the Data Cache (session-scoped, never shared)', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { preferred_locale: 'fr', default_locale: null }))
     vi.stubGlobal('fetch', fetchMock)

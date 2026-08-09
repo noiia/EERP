@@ -63,11 +63,18 @@ func ModulePictureSizeKey(module string) string {
 // field per format; this key only ever holds the global default.
 const ReportsLayoutKey = "reports.layout"
 
-// AppSettings is one tenant-scoped setting. (tenant_id, key) is unique — the
-// settings module's Migrate creates the index — so writes are upserts.
+// AppSettings is one company-scoped setting. (tenant_id, company_id, key) is
+// unique — the settings module's Migrate creates the index — so writes are
+// upserts. CompanyID is nullable at the schema level even though the
+// application layer (company.Repository.ResolveActive, called by every
+// handler in this package) always resolves a real company before reading or
+// writing — a backfill-then-NOT-NULL migration isn't worth the risk for a
+// single-replica deployment; Migrate() backfills any pre-existing rows once,
+// at boot, before the new index is created.
 type AppSettings struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id,index"`
-	Key      string    `db:"key"`
-	Value    string    `db:"value"`
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	CompanyID *uuid.UUID `db:"company_id"`
+	Key       string     `db:"key"`
+	Value     string     `db:"value"`
 }

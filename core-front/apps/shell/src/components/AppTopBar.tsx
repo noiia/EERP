@@ -15,6 +15,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
+import BusinessIcon from '@mui/icons-material/Business'
 import HomeIcon from '@mui/icons-material/Home'
 import LogoutIcon from '@mui/icons-material/Logout'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
@@ -245,10 +246,15 @@ function UserMenu({ identity }: { identity: Identity }) {
 export function AppTopBar({
   identity,
   nav = [],
+  activeCompanyName = null,
 }: {
   identity: Identity | null
   /** Per-module main pages, resolved server-side from the registry (empty in isolation). */
   nav?: ModuleNav[]
+  /** The caller's current company (multi-company) — null while unresolved
+   * (e.g. an identity-less render) or genuinely absent (the preferences
+   * read failed upstream); the switcher just doesn't render either way. */
+  activeCompanyName?: string | null
 }) {
   const pathname = usePathname()
   // No bar before authentication (login page) or without a session.
@@ -260,6 +266,18 @@ export function AppTopBar({
         <PathBreadcrumbs pathname={pathname} nav={nav} />
         <ModuleNav nav={nav} pathname={pathname} />
         <Box sx={{ flexGrow: 1 }} />
+        {activeCompanyName && (
+          <MuiLink
+            component={Link}
+            href="/settings/company"
+            color="inherit"
+            underline="hover"
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 2 }}
+          >
+            <BusinessIcon fontSize="small" />
+            {activeCompanyName}
+          </MuiLink>
+        )}
         <UserMenu identity={identity} />
       </Toolbar>
     </AppBar>

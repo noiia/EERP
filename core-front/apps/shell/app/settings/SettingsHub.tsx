@@ -27,6 +27,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Your personal preferences, like the display language.',
   },
   {
+    path: '/settings/company',
+    title: 'Company',
+    description: 'The companies hosted on this workspace and their profiles.',
+  },
+  {
     path: '/settings/appearance',
     title: 'Global settings',
     description: 'Colors, PDF report layout, and more.',

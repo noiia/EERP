@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { reportCompanyFallbackFields } from '@eerp/core-front'
 import sale from './SaleViews'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
@@ -82,6 +83,15 @@ describe('sale FrontModule', () => {
       'unit_price',
       'vat_rate',
       'total_ht',
+    ])
+  })
+
+  it('falls back the printed issuer block to the active company profile when the invoice\'s own snapshot is blank (multi-company)', () => {
+    expect(reportCompanyFallbackFields(sale.reports![0])).toEqual([
+      { recordField: 'issuer_name', companyField: 'name' },
+      { recordField: 'issuer_address', companyField: 'address' },
+      { recordField: 'issuer_phone', companyField: 'phone' },
+      { recordField: 'issuer_email', companyField: 'email' },
     ])
   })
 

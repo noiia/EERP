@@ -143,6 +143,19 @@ describe('AppTopBar', () => {
     expect(dashboard).not.toHaveAttribute('aria-current')
   })
 
+  it('shows the active company name, linking to the company list', () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} activeCompanyName="Acme Corp" />)
+    const link = screen.getByRole('link', { name: /acme corp/i })
+    expect(link).toHaveAttribute('href', '/settings/company')
+  })
+
+  it('renders no company switcher when the active company is unknown', () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    const { container } = render(<AppTopBar identity={identity} />)
+    expect(container.querySelector('a[href="/settings/company"]')).not.toBeInTheDocument()
+  })
+
   it('shows no module nav for a route outside the registered modules', () => {
     pathnameMock.mockReturnValue('/settings')
     render(<AppTopBar identity={identity} nav={crmNav} />)

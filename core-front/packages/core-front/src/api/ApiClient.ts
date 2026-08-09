@@ -249,6 +249,13 @@ export interface ServerApiClient {
    */
   getReportsLayout(): Promise<{ footer: string; address: string }>
   /**
+   * The caller's active company (multi-company) — its id/name only (the
+   * `/me/preferences` response shape), never null once ResolveActive has
+   * bootstrapped one server-side; only absent if this read itself failed.
+   * Never cached, same posture as getReportsLayout.
+   */
+  getMyActiveCompany(): Promise<{ id: string; name: string } | null>
+  /**
    * Like list(), but also returns Go's `total` row count — the tree view's
    * loader uses this (not list()) so Graph mode's aggregate widgets (Phase 5,
    * docs/roadmaps/list-view-modes.md) can tell a full fetch from a
@@ -348,6 +355,17 @@ class ServerApiClientImpl implements ServerApiClient {
       undefined,
       this.tokenOverride,
     )
+  }
+
+  async getMyActiveCompany(): Promise<{ id: string; name: string } | null> {
+    const raw = await request<{ active_company: { id: string; name: string } | null }>(
+      'GET',
+      '/me/preferences',
+      null,
+      undefined,
+      this.tokenOverride,
+    )
+    return raw.active_company ?? null
   }
 }
 

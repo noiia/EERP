@@ -13,6 +13,7 @@ import (
 
 	"core/internal/auth"
 	"core/internal/common"
+	"core/internal/company"
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
@@ -168,7 +169,8 @@ func main() {
 	authGroup.POST("/logout", authHandler.Logout)
 
 	// ── Settings / preferences ────────────────────────────────────────────────
-	settingsHandler := settings.NewHandler(userRepo, settings.NewRepository(app.DB))
+	companyRepo := company.NewRepository(app.DB)
+	settingsHandler := settings.NewHandler(userRepo, settings.NewRepository(app.DB), companyRepo)
 
 	// Self-service routes: JWT only, no permission middleware. The identity in the
 	// token scopes every query to the caller's own record, so granting a dedicated
@@ -193,6 +195,15 @@ func main() {
 	settingsGroup.PUT("/apps/:module/picture-size", settingsHandler.PutPictureSizeSettings)
 	settingsGroup.GET("/reports/layout", settingsHandler.GetReportsLayoutSettings)
 	settingsGroup.PUT("/reports/layout", settingsHandler.PutReportsLayoutSettings)
+
+	// Company (multi-company): POST /company/:id/clone-settings copies every
+	// setting from company :id (the source) to target_company_id — a new
+	// company's create flow calls this once, right after creating the row,
+	// before switching into it. Permission derives to company:company:write
+	// from the route shape — the same permission creating a company itself
+	// needs, no custom check required.
+	companyGroup := srv.Echo().Group("/api/v1/company", jwtMw, permMw)
+	companyGroup.POST("/:id/clone-settings", settingsHandler.CloneCompanySettings)
 
 	// ── Pictures ──────────────────────────────────────────────────────────────
 	// Dedicated binary-content endpoints (the picture table is off the generic

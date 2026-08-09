@@ -14,7 +14,17 @@ import (
 type ReportPageFormat struct {
 	model.BaseModel
 	TenantID uuid.UUID `db:"tenant_id,index"`
-	Name     string    `db:"name"`
+	// CompanyID scopes a page format to one company (multi-company: docs
+	// roadmap). Nullable at the schema level like AppSettings.CompanyID —
+	// backfilled once at boot (module.go's Migrate) for pre-existing rows.
+	// Unlike app_settings, this table has no dedicated Go handler: scoping
+	// is enforced CLIENT-SIDE only (the Settings -> Company page-formats list
+	// passes filter[company_id], create sets it explicitly) — the same
+	// "no ORM-level second scoping column" boundary this feature accepts for
+	// business tables generally, applied here too since this table is reached
+	// through the same generic CRUD surface as any other entity.
+	CompanyID *uuid.UUID `db:"company_id"`
+	Name      string     `db:"name"`
 	// Width/Height are plain numbers in Unit's scale — CSS natively
 	// understands px/cm/in as length units, so no conversion is ever needed;
 	// the print route emits them straight into an `@page { size: <w><unit>

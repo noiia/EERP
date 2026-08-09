@@ -78,7 +78,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 layout (there is only one), so the report's PDF must not
                 include the app's own nav chrome. */}
             <Box sx={{ '@media print': { display: 'none' } }}>
-              <AppTopBar identity={identity} nav={nav} />
+              <AppTopBar identity={identity} nav={nav} activeCompanyName={preferences?.active_company?.name ?? null} />
             </Box>
             {/* Relation widgets' app-wide data path: entity-generic Server Action
                 references — every relation query re-enters Go's permission gate

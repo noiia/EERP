@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"core/internal/auth"
+	"core/internal/company"
 	"core/orm"
 
 	"github.com/google/uuid"
@@ -19,12 +20,15 @@ import (
 // ── Stubs ─────────────────────────────────────────────────────────────────────
 
 type stubUsers struct {
-	user      auth.Users
-	findErr   error
-	setErr    error
-	setCalled bool
-	gotUserID uuid.UUID
-	gotLocale *string
+	user               auth.Users
+	findErr            error
+	setErr             error
+	setCalled          bool
+	gotUserID          uuid.UUID
+	gotLocale          *string
+	setActiveCalled    bool
+	gotActiveCompanyID *uuid.UUID
+	setActiveErr       error
 }
 
 func (s *stubUsers) FindByID(_ context.Context, _ uuid.UUID) (auth.Users, error) {
@@ -38,28 +42,85 @@ func (s *stubUsers) SetPreferredLocale(_ context.Context, userID uuid.UUID, loca
 	return s.setErr
 }
 
-type stubStore struct {
-	// values holds per-key stored settings (GetMyPreferences reads several keys).
-	values    map[string]string
-	getErr    error
-	setErr    error
-	setCalled bool
-	gotTenant uuid.UUID
-	gotKey    string
-	gotValue  string
+func (s *stubUsers) SetActiveCompany(_ context.Context, userID uuid.UUID, companyID *uuid.UUID) error {
+	s.setActiveCalled = true
+	s.gotUserID = userID
+	s.gotActiveCompanyID = companyID
+	return s.setActiveErr
 }
 
-func (s *stubStore) Get(_ context.Context, _ uuid.UUID, key string) (string, bool, error) {
+// defaultStubCompanyID is the fixed company every stubCompanies resolves to
+// unless a test overrides it — most tests here care about key/value
+// threading, not company resolution itself, so a stable default keeps every
+// existing call site working unchanged.
+var defaultStubCompanyID = uuid.MustParse("00000000-0000-0000-0000-0000000000c0")
+
+type stubCompanies struct {
+	active     company.Company
+	resolveErr error
+	byID       map[uuid.UUID]company.Company
+	findErr    error
+}
+
+func (s *stubCompanies) ResolveActive(_ context.Context, _, _ uuid.UUID) (company.Company, error) {
+	if s.resolveErr != nil {
+		return company.Company{}, s.resolveErr
+	}
+	if s.active.ID == uuid.Nil {
+		c := company.Company{}
+		c.ID = defaultStubCompanyID
+		return c, nil
+	}
+	return s.active, nil
+}
+
+func (s *stubCompanies) FindByID(_ context.Context, _, id uuid.UUID) (company.Company, error) {
+	if s.findErr != nil {
+		return company.Company{}, s.findErr
+	}
+	if c, ok := s.byID[id]; ok {
+		return c, nil
+	}
+	return company.Company{}, orm.ErrNotFound
+}
+
+type stubStore struct {
+	// values holds per-key stored settings (GetMyPreferences reads several keys).
+	values     map[string]string
+	getErr     error
+	setErr     error
+	setCalled  bool
+	gotTenant  uuid.UUID
+	gotCompany uuid.UUID
+	gotKey     string
+	gotValue   string
+
+	cloneErr     error
+	cloneCalled  bool
+	gotCloneFrom uuid.UUID
+	gotCloneTo   uuid.UUID
+}
+
+func (s *stubStore) Get(_ context.Context, _, _ uuid.UUID, key string) (string, bool, error) {
 	value, ok := s.values[key]
 	return value, ok, s.getErr
 }
 
-func (s *stubStore) Set(_ context.Context, tenantID uuid.UUID, key, value string) error {
+func (s *stubStore) Set(_ context.Context, tenantID, companyID uuid.UUID, key, value string) error {
 	s.setCalled = true
 	s.gotTenant = tenantID
+	s.gotCompany = companyID
 	s.gotKey = key
 	s.gotValue = value
 	return s.setErr
+}
+
+func (s *stubStore) CloneCompanySettings(_ context.Context, tenantID, fromCompanyID, toCompanyID uuid.UUID) error {
+	s.cloneCalled = true
+	s.gotTenant = tenantID
+	s.gotCloneFrom = fromCompanyID
+	s.gotCloneTo = toCompanyID
+	return s.cloneErr
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -170,7 +231,7 @@ func TestGetMyPreferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(tt.users, tt.store)
+			h := newHandlerWith(tt.users, tt.store, &stubCompanies{})
 			rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
 
 			if rec.Code != tt.wantStatus {
@@ -222,7 +283,7 @@ func TestPutMyPreferences(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubUsers{setErr: tt.setErr}
-			h := newHandlerWith(users, &stubStore{})
+			h := newHandlerWith(users, &stubStore{}, &stubCompanies{})
 			rec := serve(t, h.PutMyPreferences, http.MethodPut, "/me/preferences", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -242,6 +303,165 @@ func TestPutMyPreferences(t *testing.T) {
 				t.Errorf("locale = %q, want nil", *users.gotLocale)
 			case tt.wantLocale != nil && (users.gotLocale == nil || *users.gotLocale != *tt.wantLocale):
 				t.Errorf("locale = %v, want %q", users.gotLocale, *tt.wantLocale)
+			}
+		})
+	}
+}
+
+func TestGetMyPreferences_ActiveCompany(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	companyID := uuid.New()
+	active := company.Company{Name: "Acme"}
+	active.ID = companyID
+
+	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{active: active})
+	rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got, ok := resp["active_company"].(map[string]any)
+	if !ok {
+		t.Fatalf("active_company = %v, want an object", resp["active_company"])
+	}
+	if got["id"] != companyID.String() {
+		t.Errorf("active_company.id = %v, want %s", got["id"], companyID)
+	}
+	if got["name"] != "Acme" {
+		t.Errorf("active_company.name = %v, want Acme", got["name"])
+	}
+}
+
+func TestPutMyPreferences_ActiveCompany(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	ownCompany := uuid.New()
+
+	tests := []struct {
+		name          string
+		body          string
+		companies     *stubCompanies
+		wantStatus    int
+		wantSetActive bool
+	}{
+		{
+			name:          "switches to a company the caller belongs to",
+			body:          `{"active_company_id":"` + ownCompany.String() + `"}`,
+			companies:     &stubCompanies{byID: map[uuid.UUID]company.Company{ownCompany: {}}},
+			wantStatus:    http.StatusNoContent,
+			wantSetActive: true,
+		},
+		{
+			name:          "rejects a company id the caller can't find (cross-tenant or unknown)",
+			body:          `{"active_company_id":"` + uuid.New().String() + `"}`,
+			companies:     &stubCompanies{},
+			wantStatus:    http.StatusBadRequest,
+			wantSetActive: false,
+		},
+		{
+			name:          "omitting active_company_id leaves it untouched",
+			body:          `{"preferred_locale":"fr"}`,
+			companies:     &stubCompanies{},
+			wantStatus:    http.StatusNoContent,
+			wantSetActive: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			users := &stubUsers{}
+			h := newHandlerWith(users, &stubStore{}, tt.companies)
+			rec := serve(t, h.PutMyPreferences, http.MethodPut, "/me/preferences", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if users.setActiveCalled != tt.wantSetActive {
+				t.Fatalf("SetActiveCompany called = %v, want %v", users.setActiveCalled, tt.wantSetActive)
+			}
+		})
+	}
+}
+
+// ── POST /company/:id/clone-settings ──────────────────────────────────────────
+
+func TestCloneCompanySettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	source := uuid.New()
+	target := uuid.New()
+
+	tests := []struct {
+		name       string
+		id         string
+		body       string
+		companies  *stubCompanies
+		store      *stubStore
+		wantStatus int
+		wantClone  bool
+	}{
+		{
+			name: "clones from source to target",
+			id:   source.String(),
+			body: `{"target_company_id":"` + target.String() + `"}`,
+			companies: &stubCompanies{byID: map[uuid.UUID]company.Company{
+				source: {}, target: {},
+			}},
+			store:      &stubStore{},
+			wantStatus: http.StatusNoContent,
+			wantClone:  true,
+		},
+		{
+			name:       "malformed id rejected",
+			id:         "not-a-uuid",
+			body:       `{"target_company_id":"` + target.String() + `"}`,
+			companies:  &stubCompanies{},
+			store:      &stubStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "source not the caller's company rejected",
+			id:         source.String(),
+			body:       `{"target_company_id":"` + target.String() + `"}`,
+			companies:  &stubCompanies{byID: map[uuid.UUID]company.Company{target: {}}},
+			store:      &stubStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "target not the caller's company rejected",
+			id:         source.String(),
+			body:       `{"target_company_id":"` + target.String() + `"}`,
+			companies:  &stubCompanies{byID: map[uuid.UUID]company.Company{source: {}}},
+			store:      &stubStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store, tt.companies)
+			rec := serveWithParam(t, h.CloneCompanySettings, http.MethodPost,
+				"/company/"+tt.id+"/clone-settings", tt.body, identity, "id", tt.id)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.store.cloneCalled != tt.wantClone {
+				t.Fatalf("CloneCompanySettings called = %v, want %v", tt.store.cloneCalled, tt.wantClone)
+			}
+			if !tt.wantClone {
+				return
+			}
+			if tt.store.gotTenant != identity.TenantID {
+				t.Errorf("tenant = %s, want the caller's %s", tt.store.gotTenant, identity.TenantID)
+			}
+			if tt.store.gotCloneFrom != source {
+				t.Errorf("clone from = %s, want %s", tt.store.gotCloneFrom, source)
+			}
+			if tt.store.gotCloneTo != target {
+				t.Errorf("clone to = %s, want %s", tt.store.gotCloneTo, target)
 			}
 		})
 	}
@@ -268,7 +488,7 @@ func TestPutI18nSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store)
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
 			rec := serve(t, h.PutI18nSettings, http.MethodPut, "/settings/i18n", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -335,7 +555,7 @@ func TestPutFormatSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store)
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
 			rec := serve(t, h.PutFormatSettings, http.MethodPut, "/settings/format", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -409,7 +629,7 @@ func TestGetViewFieldsSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store)
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
 			rec := serveWithParam(t, h.GetViewFieldsSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/fields", "", identity, "entity", tt.entity)
 
@@ -489,7 +709,7 @@ func TestPutViewFieldsSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store)
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
 			rec := serveWithParam(t, h.PutViewFieldsSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/fields", tt.body, identity, "entity", tt.entity)
 
@@ -573,7 +793,7 @@ func TestGetGraphLayoutSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store)
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
 			rec := serveWithParam(t, h.GetGraphLayoutSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/graph", "", identity, "entity", tt.entity)
 
@@ -681,7 +901,7 @@ func TestPutGraphLayoutSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store)
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
 			rec := serveWithParam(t, h.PutGraphLayoutSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/graph", tt.body, identity, "entity", tt.entity)
 
@@ -769,7 +989,7 @@ func TestGetPictureSizeSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store)
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
 			rec := serveWithParam(t, h.GetPictureSizeSettings, http.MethodGet,
 				"/settings/apps/"+tt.module+"/picture-size", "", identity, "module", tt.module)
 
@@ -857,7 +1077,7 @@ func TestPutPictureSizeSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store)
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
 			rec := serveWithParam(t, h.PutPictureSizeSettings, http.MethodPut,
 				"/settings/apps/"+tt.module+"/picture-size", tt.body, identity, "module", tt.module)
 
@@ -918,7 +1138,7 @@ func TestGetReportsLayoutSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store)
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
 			rec := serve(t, h.GetReportsLayoutSettings, http.MethodGet, "/settings/reports/layout", "", identity)
 
 			if rec.Code != tt.wantStatus {
@@ -982,7 +1202,7 @@ func TestPutReportsLayoutSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store)
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
 			rec := serve(t, h.PutReportsLayoutSettings, http.MethodPut, "/settings/reports/layout", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {

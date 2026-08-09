@@ -9,6 +9,7 @@ import (
 	"regexp"
 
 	"core/internal/auth"
+	"core/internal/company"
 	"core/orm"
 
 	"github.com/google/uuid"
@@ -57,11 +58,22 @@ var graphTileTypes = map[string]bool{"xy": true, "bar": true, "pie": true, "stat
 type userPreferenceStore interface {
 	FindByID(ctx context.Context, id uuid.UUID) (auth.Users, error)
 	SetPreferredLocale(ctx context.Context, userID uuid.UUID, locale *string) error
+	SetActiveCompany(ctx context.Context, userID uuid.UUID, companyID *uuid.UUID) error
 }
 
 type settingStore interface {
-	Get(ctx context.Context, tenantID uuid.UUID, key string) (string, bool, error)
-	Set(ctx context.Context, tenantID uuid.UUID, key, value string) error
+	Get(ctx context.Context, tenantID, companyID uuid.UUID, key string) (string, bool, error)
+	Set(ctx context.Context, tenantID, companyID uuid.UUID, key, value string) error
+	CloneCompanySettings(ctx context.Context, tenantID, fromCompanyID, toCompanyID uuid.UUID) error
+}
+
+// companyResolver resolves (and lazily bootstraps) the caller's active
+// company, and looks one up by id for cross-tenant validation. Every
+// handler below is company-scoped: settings live per-company, not per-
+// tenant, since a tenant may host several (multi-company).
+type companyResolver interface {
+	ResolveActive(ctx context.Context, tenantID, userID uuid.UUID) (company.Company, error)
+	FindByID(ctx context.Context, tenantID, id uuid.UUID) (company.Company, error)
 }
 
 // Handler serves the self-service preference endpoints and the tenant settings
@@ -69,18 +81,19 @@ type settingStore interface {
 // identity scopes every query to the caller), /settings/* mounts behind the
 // permission middleware as well (deriving settings:i18n:write for PUT /settings/i18n).
 type Handler struct {
-	users userPreferenceStore
-	store settingStore
+	users     userPreferenceStore
+	store     settingStore
+	companies companyResolver
 }
 
 // NewHandler constructs a settings Handler from concrete implementations.
-func NewHandler(users *auth.UserRepository, store *Repository) *Handler {
-	return &Handler{users: users, store: store}
+func NewHandler(users *auth.UserRepository, store *Repository, companies *company.Repository) *Handler {
+	return &Handler{users: users, store: store, companies: companies}
 }
 
 // newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(users userPreferenceStore, store settingStore) *Handler {
-	return &Handler{users: users, store: store}
+func newHandlerWith(users userPreferenceStore, store settingStore, companies companyResolver) *Handler {
+	return &Handler{users: users, store: store, companies: companies}
 }
 
 // ── Response / request types ──────────────────────────────────────────────────
@@ -95,6 +108,18 @@ type preferencesResponse struct {
 	// frontend's built-in default. Rides along with the preferences load so
 	// one round-trip seeds every client-side format mirror.
 	NumberFormat *numberFormat `json:"number_format"`
+	// ActiveCompany: the caller's current company (multi-company) — never
+	// null once resolved, since ResolveActive always bootstraps one. Rides
+	// along here so the top bar's company switcher needs no separate fetch.
+	ActiveCompany *activeCompanyRef `json:"active_company"`
+}
+
+// activeCompanyRef is the minimal company shape callers need to render a
+// switcher — name and id, not the full profile (address/phone/email, only
+// needed by the Company settings form itself).
+type activeCompanyRef struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }
 
 // numberFormat is both the stored value of NumberFormatKey and the request
@@ -129,17 +154,25 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 		return fmt.Errorf("preferences: find user: %w", err)
 	}
 
-	defaultLocale, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, DefaultLocaleKey)
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("preferences: resolve active company: %w", err)
+	}
+
+	defaultLocale, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, DefaultLocaleKey)
 	if err != nil {
 		return fmt.Errorf("preferences: read default locale: %w", err)
 	}
 
-	resp := preferencesResponse{PreferredLocale: user.PreferredLocale}
+	resp := preferencesResponse{
+		PreferredLocale: user.PreferredLocale,
+		ActiveCompany:   &activeCompanyRef{ID: active.ID, Name: active.Name},
+	}
 	if ok && defaultLocale != "" {
 		resp.DefaultLocale = &defaultLocale
 	}
 
-	rawFormat, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, NumberFormatKey)
+	rawFormat, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, NumberFormatKey)
 	if err != nil {
 		return fmt.Errorf("preferences: read number format: %w", err)
 	}
@@ -160,7 +193,8 @@ func (h *Handler) PutMyPreferences(c echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
-		PreferredLocale *string `json:"preferred_locale"`
+		PreferredLocale *string    `json:"preferred_locale"`
+		ActiveCompanyID *uuid.UUID `json:"active_company_id"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
@@ -170,11 +204,32 @@ func (h *Handler) PutMyPreferences(c echo.Context) error {
 			"preferred_locale must be null, \"source\", or a locale tag like \"fr\" or \"pt-BR\".")
 	}
 
+	if req.ActiveCompanyID != nil {
+		// The real cross-tenant-switch defense: FindByID 404s (via
+		// orm.ErrNotFound) for a company belonging to another tenant, the
+		// same shape as one that doesn't exist at all — a malicious caller
+		// learns nothing either way.
+		if _, err := h.companies.FindByID(c.Request().Context(), identity.TenantID, *req.ActiveCompanyID); err != nil {
+			if errors.Is(err, orm.ErrNotFound) {
+				return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "active_company_id is not a company you belong to.")
+			}
+			return fmt.Errorf("preferences: validate active company: %w", err)
+		}
+	}
+
 	if err := h.users.SetPreferredLocale(c.Request().Context(), identity.UserID, req.PreferredLocale); err != nil {
 		if errors.Is(err, orm.ErrNotFound) {
 			return errorJSON(c, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication required.")
 		}
 		return fmt.Errorf("preferences: set preferred locale: %w", err)
+	}
+	if req.ActiveCompanyID != nil {
+		if err := h.users.SetActiveCompany(c.Request().Context(), identity.UserID, req.ActiveCompanyID); err != nil {
+			if errors.Is(err, orm.ErrNotFound) {
+				return errorJSON(c, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication required.")
+			}
+			return fmt.Errorf("preferences: set active company: %w", err)
+		}
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -196,13 +251,18 @@ func (h *Handler) PutI18nSettings(c echo.Context) error {
 			"default_locale must be null or a locale tag like \"fr\" or \"pt-BR\".")
 	}
 
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
 	// null is stored as "" — the tenant default has no reserved "source" value,
 	// absent/empty already means the source language.
 	value := ""
 	if req.DefaultLocale != nil {
 		value = *req.DefaultLocale
 	}
-	if err := h.store.Set(c.Request().Context(), identity.TenantID, DefaultLocaleKey, value); err != nil {
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, DefaultLocaleKey, value); err != nil {
 		return fmt.Errorf("settings: set default locale: %w", err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -231,11 +291,16 @@ func (h *Handler) PutFormatSettings(c echo.Context) error {
 			"decimal_separator and thousands_separator must differ.")
 	}
 
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
 	value, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("settings: marshal number format: %w", err)
 	}
-	if err := h.store.Set(c.Request().Context(), identity.TenantID, NumberFormatKey, string(value)); err != nil {
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, NumberFormatKey, string(value)); err != nil {
 		return fmt.Errorf("settings: set number format: %w", err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -262,7 +327,12 @@ func (h *Handler) GetViewFieldsSettings(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
 	}
 
-	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, ViewFieldsKey(entity))
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, ViewFieldsKey(entity))
 	if err != nil {
 		return fmt.Errorf("settings: get view fields for %s: %w", entity, err)
 	}
@@ -300,11 +370,16 @@ func (h *Handler) PutViewFieldsSettings(c echo.Context) error {
 			"calendar_date_field must be a lowercase snake_case field name.")
 	}
 
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
 	value, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("settings: marshal view fields for %s: %w", entity, err)
 	}
-	if err := h.store.Set(c.Request().Context(), identity.TenantID, ViewFieldsKey(entity), string(value)); err != nil {
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ViewFieldsKey(entity), string(value)); err != nil {
 		return fmt.Errorf("settings: set view fields for %s: %w", entity, err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -378,7 +453,12 @@ func (h *Handler) GetGraphLayoutSettings(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
 	}
 
-	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, ViewGraphKey(entity))
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, ViewGraphKey(entity))
 	if err != nil {
 		return fmt.Errorf("settings: get graph layout for %s: %w", entity, err)
 	}
@@ -425,11 +505,16 @@ func (h *Handler) PutGraphLayoutSettings(c echo.Context) error {
 		}
 	}
 
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
 	value, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("settings: marshal graph layout for %s: %w", entity, err)
 	}
-	if err := h.store.Set(c.Request().Context(), identity.TenantID, ViewGraphKey(entity), string(value)); err != nil {
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ViewGraphKey(entity), string(value)); err != nil {
 		return fmt.Errorf("settings: set graph layout for %s: %w", entity, err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -481,7 +566,12 @@ func (h *Handler) GetPictureSizeSettings(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "module must be a lowercase snake_case identifier.")
 	}
 
-	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, pictureSizeKeyFor(module))
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, pictureSizeKeyFor(module))
 	if err != nil {
 		return fmt.Errorf("settings: get picture size for %s: %w", module, err)
 	}
@@ -534,7 +624,12 @@ func (h *Handler) PutPictureSizeSettings(c echo.Context) error {
 		value = string(marshaled)
 	}
 
-	if err := h.store.Set(c.Request().Context(), identity.TenantID, pictureSizeKeyFor(module), value); err != nil {
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, pictureSizeKeyFor(module), value); err != nil {
 		return fmt.Errorf("settings: set picture size for %s: %w", module, err)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -559,7 +654,12 @@ type reportsLayout struct {
 func (h *Handler) GetReportsLayoutSettings(c echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, ReportsLayoutKey)
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, ReportsLayoutKey)
 	if err != nil {
 		return fmt.Errorf("settings: get reports layout: %w", err)
 	}
@@ -592,12 +692,58 @@ func (h *Handler) PutReportsLayoutSettings(c echo.Context) error {
 			fmt.Sprintf("address exceeds %d characters", reportsLayoutMaxLen))
 	}
 
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
 	value, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("settings: marshal reports layout: %w", err)
 	}
-	if err := h.store.Set(c.Request().Context(), identity.TenantID, ReportsLayoutKey, string(value)); err != nil {
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ReportsLayoutKey, string(value)); err != nil {
 		return fmt.Errorf("settings: set reports layout: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// CloneCompanySettings handles POST /api/v1/company/:id/clone-settings —
+// copies every setting from the company named by :id (the source, normally
+// the caller's own active company at the moment they create a new one) to
+// target_company_id. Mounted behind the permission middleware, which
+// derives company:company:write from the route — the same permission
+// creating a company already requires. Both companies must belong to the
+// caller's own tenant (the same cross-tenant-probe defense PutMyPreferences
+// applies to active_company_id).
+func (h *Handler) CloneCompanySettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	sourceID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
+	}
+	var req struct {
+		TargetCompanyID uuid.UUID `json:"target_company_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+
+	if _, err := h.companies.FindByID(c.Request().Context(), identity.TenantID, sourceID); err != nil {
+		if errors.Is(err, orm.ErrNotFound) {
+			return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id is not a company you belong to.")
+		}
+		return fmt.Errorf("settings: validate clone source company: %w", err)
+	}
+	if _, err := h.companies.FindByID(c.Request().Context(), identity.TenantID, req.TargetCompanyID); err != nil {
+		if errors.Is(err, orm.ErrNotFound) {
+			return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "target_company_id is not a company you belong to.")
+		}
+		return fmt.Errorf("settings: validate clone target company: %w", err)
+	}
+
+	if err := h.store.CloneCompanySettings(c.Request().Context(), identity.TenantID, sourceID, req.TargetCompanyID); err != nil {
+		return fmt.Errorf("settings: clone company settings: %w", err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

@@ -67,6 +67,24 @@ func (r *UserRepository) SetPreferredLocale(ctx context.Context, userID uuid.UUI
 	return nil
 }
 
+// SetActiveCompany updates the user's active-company selection. nil clears
+// it (the caller falls back through company.Repository.ResolveActive's
+// bootstrap on next touch) — same shape as SetPreferredLocale.
+func (r *UserRepository) SetActiveCompany(ctx context.Context, userID uuid.UUID, companyID *uuid.UUID) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET active_company_id = $1, updated_at = now()
+		WHERE id = $2 AND deleted_at IS NULL
+	`, companyID, userID)
+	if err != nil {
+		return fmt.Errorf("user: set active company: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user: set active company: %w", orm.ErrNotFound)
+	}
+	return nil
+}
+
 // FindRoleNames returns the role names assigned to the given user.
 func (r *UserRepository) FindRoleNames(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	rows, err := r.db.Query(ctx, `

@@ -2,6 +2,7 @@ import 'server-only'
 import { ApiError, serializeError, type SerializedError } from '../api/errors'
 import { createServerApiClient, type ServerApiClient } from '../api/ApiClient'
 import { EMPTY_VIEW_FIELDS, type ViewFieldsConfig } from '../api/view-fields'
+import type { EntityListOptions } from '../api/list-options'
 import type { ViewDescriptor } from './descriptor'
 import { EntityView } from './renderers'
 import type { EntityActions, HasId, Widget } from './stores'
@@ -27,6 +28,15 @@ export interface LoadedView<T> {
 export interface LoadViewOptions {
   /** For a form view: the record id to edit. Absent / "new" means a create form. */
   recordId?: string
+  /**
+   * Server-side row filter/search for a tree/dashboard-list load — the same
+   * `filter[col]=`/`search[col]=` refinement the generic list endpoint
+   * already accepts (relation widgets use this today; a settings page
+   * scoping a list by the caller's active company, e.g.
+   * report_page_format's Settings -> Global settings -> Reports list, is
+   * the other use). Ignored for a form view (single-record fetch).
+   */
+  listOptions?: EntityListOptions
 }
 
 export async function loadView<T extends HasId>(
@@ -42,7 +52,7 @@ export async function loadView<T extends HasId>(
       if (!recordId || recordId === 'new') return { initialData: [], error: null }
       return { initialData: [await api.get<T>(descriptor.entity, recordId)], error: null }
     }
-    const { records, total } = await api.listWithTotal<T>(descriptor.entity)
+    const { records, total } = await api.listWithTotal<T>(descriptor.entity, options.listOptions)
     return { initialData: records, error: null, total }
   } catch (e) {
     if (e instanceof ApiError) return { initialData: [], error: serializeError(e) }
@@ -141,6 +151,8 @@ export interface EntityViewServerProps<T extends HasId> {
    * fetch, same as an entity with no picture field.
    */
   module?: string
+  /** Server-side row filter/search for a tree/dashboard list — see LoadViewOptions. */
+  listOptions?: EntityListOptions
 }
 
 export async function EntityViewServer<T extends HasId>({
@@ -150,9 +162,10 @@ export async function EntityViewServer<T extends HasId>({
   recordId,
   listViews,
   module,
+  listOptions,
 }: EntityViewServerProps<T>) {
   const client = api ?? createServerApiClient()
-  const { initialData, error, total } = await loadView(descriptor, client, { recordId })
+  const { initialData, error, total } = await loadView(descriptor, client, { recordId, listOptions })
   // A dashboard rolls the module's list views up into count blocks; other views ignore it.
   const widgets =
     descriptor.viewType === 'dashboard' && listViews?.length

@@ -265,11 +265,17 @@ const invoiceReport: ReportDescriptor = {
         {
           kind: 'section',
           className: 'eerp-report-issuer',
+          // companyFallback (multi-company): when an invoice's own issuer_*
+          // snapshot is blank, the print route fills it in from the printing
+          // user's active company profile instead — the invoice's own
+          // columns/form fields are UNCHANGED (still editable, still
+          // snapshotted on create); removing them as now-redundant is a
+          // deliberately separate, later pass.
           children: [
-            { kind: 'field', name: 'issuer_name' },
-            { kind: 'field', name: 'issuer_address' },
-            { kind: 'field', name: 'issuer_phone' },
-            { kind: 'field', name: 'issuer_email' },
+            { kind: 'field', name: 'issuer_name', companyFallback: 'name' },
+            { kind: 'field', name: 'issuer_address', companyFallback: 'address' },
+            { kind: 'field', name: 'issuer_phone', companyFallback: 'phone' },
+            { kind: 'field', name: 'issuer_email', companyFallback: 'email' },
           ],
         },
         {

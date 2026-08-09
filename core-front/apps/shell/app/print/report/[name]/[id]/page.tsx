@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import {
   resolveReportChrome,
   ReportRenderer,
+  reportCompanyFallbackFields,
   reportImageSources,
   type ReportDescriptor,
   type ReportPageFormatRow,
@@ -85,6 +86,25 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       record[field] === true
         ? await resolvePictureDataURL({ table: descriptor.entity, recordId: id, field }, token)
         : null
+  }
+
+  // Multi-company: fields opted into companyFallback (e.g. sale.invoice's
+  // issuer_name/address/phone/email) fall back to the printing user's
+  // active company profile when the record's own value is empty — never
+  // overwriting a value the record actually has. Same additive, never-404
+  // posture as the chrome reads below: a failed company lookup just leaves
+  // the record's own (possibly empty) fields as-is.
+  const fallbackFields = reportCompanyFallbackFields(descriptor)
+  if (fallbackFields.length > 0) {
+    const activeCompany = await client.getMyActiveCompany().catch(() => null)
+    const company = activeCompany
+      ? await client.get<Record<string, unknown>>('company', activeCompany.id).catch(() => null)
+      : null
+    if (company) {
+      for (const { recordField, companyField } of fallbackFields) {
+        if (!record[recordField]) record[recordField] = company[companyField] ?? ''
+      }
+    }
   }
 
   // Effective chrome (docs/roadmaps/pdf-reports.md's Reports settings):

@@ -1,5 +1,5 @@
 'use server'
-import { ApiError, apiRequest } from '@eerp/core-front/server'
+import { ApiError, apiRequest, createServerApiClient } from '@eerp/core-front/server'
 
 // Server Actions for Settings -> Global settings -> Reports: the workspace-wide
 // PDF report letterhead (footer/address). Same shape as app-settings.ts:
@@ -45,4 +45,20 @@ export async function setReportsLayout(layout: ReportsLayout): Promise<SaveResul
   } catch (e) {
     return failure(e, 'Could not save the reports letterhead.')
   }
+}
+
+/**
+ * Create a report_page_format row tagged with the caller's active company
+ * (multi-company: page formats aren't isolated at the ORM layer like
+ * app_settings is — company_id here is a plain column the generic CRUD
+ * surface writes as given, client-enforced scoping only, not a security
+ * boundary). Bound with `.bind(null, activeCompanyId)` into the page-format
+ * form's `actions.create` — same EntityActions<T>.create shape the generic
+ * createRecord fills for every other entity.
+ */
+export async function createPageFormatForCompany(
+  companyId: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  return createServerApiClient().create('report_page_format', { ...body, company_id: companyId })
 }

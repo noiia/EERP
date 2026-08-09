@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { reportImageSources, validateReportDescriptor, type ReportDescriptor } from './report-descriptor'
+import {
+  reportCompanyFallbackFields,
+  reportImageSources,
+  validateReportDescriptor,
+  type ReportDescriptor,
+} from './report-descriptor'
 
 const valid: ReportDescriptor = {
   name: 'crm.statement',
@@ -111,5 +116,29 @@ describe('reportImageSources', () => {
       ],
     }
     expect(reportImageSources(descriptor)).toEqual(['logo', 'signature'])
+  })
+})
+
+describe('reportCompanyFallbackFields', () => {
+  it('is empty for a layout with no companyFallback fields', () => {
+    expect(reportCompanyFallbackFields(valid)).toEqual([])
+  })
+
+  it('collects a field\'s companyFallback pairing, including one nested in a section', () => {
+    const descriptor: ReportDescriptor = {
+      ...valid,
+      layout: [
+        { kind: 'field', name: 'issuer_name', companyFallback: 'name' },
+        {
+          kind: 'section',
+          children: [{ kind: 'field', name: 'issuer_email', companyFallback: 'email' }],
+        },
+        { kind: 'field', name: 'subject' }, // no fallback — excluded
+      ],
+    }
+    expect(reportCompanyFallbackFields(descriptor)).toEqual([
+      { recordField: 'issuer_name', companyField: 'name' },
+      { recordField: 'issuer_email', companyField: 'email' },
+    ])
   })
 })
