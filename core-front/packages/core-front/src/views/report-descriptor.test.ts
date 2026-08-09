@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   reportCompanyFallbackFields,
   reportImageSources,
+  reportTableRelations,
   validateReportDescriptor,
   type ReportDescriptor,
 } from './report-descriptor'
@@ -100,6 +101,36 @@ describe('validateReportDescriptor', () => {
     const bad: ReportDescriptor = { ...valid, layout: [{ kind: 'image', source: '' }] }
     expect(() => validateReportDescriptor(bad)).toThrowError(/"image" node requires a source/)
   })
+
+  it('accepts a table node with a well-formed relation', () => {
+    const ok: ReportDescriptor = {
+      ...valid,
+      layout: [
+        {
+          kind: 'table',
+          source: 'lines',
+          columns: [{ name: 'quantity', label: 'Quantity' }],
+          relation: { entity: 'sale_line', inverseField: 'invoice_id' },
+        },
+      ],
+    }
+    expect(() => validateReportDescriptor(ok)).not.toThrow()
+  })
+
+  it('rejects a table relation missing entity or inverseField', () => {
+    const bad: ReportDescriptor = {
+      ...valid,
+      layout: [
+        {
+          kind: 'table',
+          source: 'lines',
+          columns: [{ name: 'quantity', label: 'Quantity' }],
+          relation: { entity: '', inverseField: 'invoice_id' },
+        },
+      ],
+    }
+    expect(() => validateReportDescriptor(bad)).toThrowError(/relation requires both entity and inverseField/)
+  })
 })
 
 describe('reportImageSources', () => {
@@ -139,6 +170,41 @@ describe('reportCompanyFallbackFields', () => {
     expect(reportCompanyFallbackFields(descriptor)).toEqual([
       { recordField: 'issuer_name', companyField: 'name' },
       { recordField: 'issuer_email', companyField: 'email' },
+    ])
+  })
+})
+
+describe('reportTableRelations', () => {
+  it('is empty for a table node with no relation', () => {
+    expect(reportTableRelations(valid)).toEqual([])
+  })
+
+  it('collects a table node\'s relation, including one nested in a section', () => {
+    const descriptor: ReportDescriptor = {
+      ...valid,
+      layout: [
+        {
+          kind: 'table',
+          source: 'lines',
+          columns: [{ name: 'quantity', label: 'Quantity' }],
+          relation: { entity: 'sale_line', inverseField: 'invoice_id' },
+        },
+        {
+          kind: 'section',
+          children: [
+            {
+              kind: 'table',
+              source: 'items',
+              columns: [{ name: 'name', label: 'Name' }],
+              relation: { entity: 'other_line', inverseField: 'parent_id' },
+            },
+          ],
+        },
+      ],
+    }
+    expect(reportTableRelations(descriptor)).toEqual([
+      { source: 'lines', entity: 'sale_line', inverseField: 'invoice_id' },
+      { source: 'items', entity: 'other_line', inverseField: 'parent_id' },
     ])
   })
 })

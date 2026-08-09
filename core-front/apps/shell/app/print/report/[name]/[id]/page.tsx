@@ -5,6 +5,7 @@ import {
   ReportRenderer,
   reportCompanyFallbackFields,
   reportImageSources,
+  reportTableRelations,
   type ReportDescriptor,
   type ReportPageFormatRow,
 } from '@eerp/core-front'
@@ -86,6 +87,23 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       record[field] === true
         ? await resolvePictureDataURL({ table: descriptor.entity, recordId: id, field }, token)
         : null
+  }
+
+  // Table rows that live in their own child table rather than an embedded
+  // array field (e.g. sale.invoice's line items, now real sale_line rows —
+  // see report-descriptor.ts's ReportTableNode.relation doc comment): fetch
+  // them scoped to this record and assign onto record[source], the same
+  // additive "resolve into the record object first" posture the picture
+  // fields above already use. A failed fetch leaves an empty table rather
+  // than turning a printable record into a 404.
+  for (const { source, entity, inverseField } of reportTableRelations(descriptor)) {
+    record[source] = await client
+      // pageSize 100: same "large enough, no real pagination UI here" cap
+      // relation-widgets.tsx's EMBED_PAGE_SIZE uses for embedded lists — a
+      // printed document silently dropping lines past a default page_size
+      // of 20 would be worse than a UI list truncating.
+      .list<Record<string, unknown>>(entity, { filter: { [inverseField]: id }, pageSize: 100 })
+      .catch(() => [])
   }
 
   // Multi-company: fields opted into companyFallback (e.g. sale.invoice's

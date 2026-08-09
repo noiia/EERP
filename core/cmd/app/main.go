@@ -23,6 +23,8 @@ import (
 	"core/internal/types"
 	_ "core/modules/all"
 	"core/modules/crminheritdemo"
+	"core/modules/sale"
+	"core/modules/warehouse"
 	"core/orm"
 	ormserver "core/orm/server"
 
@@ -343,6 +345,32 @@ func main() {
 	// is a hand-mounted route rather than a "hook" — no such hook exists.
 	crmInheritCreate := crminheritdemo.NewHandler(orm.MustRepo[crminheritdemo.CRM](app.DB))
 	srv.Echo().POST("/api/v1/crm", crmInheritCreate.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── warehouse: product_variant Create override ───────────────────────────
+	// Same reasoning as crminheritdemo above: only POST /api/v1/product_variant
+	// is overridden (defaults Name from the underlying Product) — GET/PUT/DELETE
+	// stay generic. See modules/warehouse/handler.go.
+	productVariantCreate := warehouse.NewHandler(
+		orm.MustRepo[warehouse.ProductVariant](app.DB),
+		orm.MustRepo[warehouse.Product](app.DB),
+	)
+	srv.Echo().POST("/api/v1/product_variant", productVariantCreate.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── sale: sale_line Create/Update/Delete overrides ───────────────────────
+	// Unlike crminheritdemo/warehouse above, THREE verbs are overridden here
+	// (GET stays generic) — every mutation needs to resolve the line's variant
+	// into a product-price/tax/unit snapshot and roll the invoice's totals back
+	// up. See modules/sale/handler.go.
+	saleLineHandler := sale.NewHandler(
+		orm.MustRepo[sale.SaleLine](app.DB),
+		orm.MustRepo[sale.Invoice](app.DB),
+		orm.MustRepo[warehouse.ProductVariant](app.DB),
+		orm.MustRepo[warehouse.Product](app.DB),
+	)
+	saleLineGroup := srv.Echo().Group("/api/v1/sale_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	saleLineGroup.POST("", saleLineHandler.Create)
+	saleLineGroup.PUT("/:id", saleLineHandler.Update)
+	saleLineGroup.DELETE("/:id", saleLineHandler.Delete)
 
 	for _, r := range srv.Routes() {
 		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))

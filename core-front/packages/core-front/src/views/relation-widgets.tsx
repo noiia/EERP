@@ -159,16 +159,28 @@ function RelationTag({
   )
 }
 
-/** Grid columns for related records: labelField first, then other scalars. */
-function relatedColumns(rows: RelationRecord[], labelField: string, t: (s: string) => string): GridColDef[] {
-  const hidden = new Set(['id', 'tenant_id', 'created_at', 'updated_at', 'deleted_at'])
+/**
+ * Grid columns for related records: labelField first, then other scalars.
+ * `extraHidden` drops columns that are redundant in context — a one2many
+ * grid's own inverse FK (e.g. sale_line's invoice_id, always the same value
+ * on every row of an invoice's line-items table) never earns a column.
+ */
+function relatedColumns(
+  rows: RelationRecord[],
+  labelField: string,
+  t: (s: string) => string,
+  extraHidden: string[] = [],
+): GridColDef[] {
+  const hidden = new Set(['id', 'tenant_id', 'created_at', 'updated_at', 'deleted_at', ...extraHidden])
   const keys = new Set<string>([labelField])
   for (const row of rows) {
     for (const key of Object.keys(row)) {
       if (!hidden.has(key)) keys.add(key)
     }
   }
-  return [...keys].slice(0, 4).map((key) => ({
+  // 6, not 4: a real line-items table (variant/quantity/unit/tax/price) has
+  // more than 4 meaningful scalar columns once the id-ish ones are hidden.
+  return [...keys].slice(0, 6).map((key) => ({
     field: key,
     headerName: key === labelField ? t('Name') : key,
     flex: 1,
@@ -752,7 +764,7 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
           record lands in this list by construction. */}
       <DataGrid
         rows={rows}
-        columns={relatedColumns(rows, labelField, t)}
+        columns={relatedColumns(rows, labelField, t, [inverseField])}
         autoHeight
         hideFooter
         disableRowSelectionOnClick

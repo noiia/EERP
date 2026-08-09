@@ -17,4 +17,5 @@ import (
 	_ "core/modules/reportlayout"
 	_ "core/modules/sale"
 	_ "core/modules/settings"
+	_ "core/modules/warehouse"
 )

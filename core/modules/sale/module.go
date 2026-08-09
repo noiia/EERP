@@ -60,24 +60,20 @@ type Invoice struct {
 	Status          string     `db:"status"` // "draft", "sent", "paid", "overdue", "cancelled"
 	Currency        string     `db:"currency"`
 	Reference       string     `db:"reference"` // customer PO / reference number
-	// Lines is the item table (Description/Unit/Quantity/Unit price/VAT/Total),
-	// stored as JSONB — the ORM has no editable-array form widget yet, so this
-	// is real, printable data (populated via the generic PUT/POST API, or a
-	// future editor) rather than a fake grid nobody can actually fill in.
-	// Each row: {"description","unit","quantity","unit_price","vat_rate","total_ht"}.
-	Lines *[]map[string]any `db:"lines"`
-	// Subtotal/Discount/NetSubtotal/TaxRate/TaxAmount/Total are the invoice's
-	// HT -> TVA -> TTC breakdown, each a REAL stored column rather than a
+	// Subtotal/Discount/NetSubtotal/TaxAmount/Total are the invoice's HT ->
+	// TVA -> TTC breakdown, each a REAL stored column rather than a
 	// compute:store:false field — the print pipeline reads the raw record,
 	// never the client compute registry, so a value it must show has to
-	// actually be a column (see views/SaleViews.ts: sale.calcTotal, an
-	// on_change that commits them the same way crm.scoreFromStatus commits
-	// Score). NetSubtotal = Subtotal - Discount; TaxAmount = NetSubtotal *
-	// TaxRate; Total = NetSubtotal + TaxAmount.
+	// actually be a column. Unlike before (a single manually-typed
+	// TaxRate), TaxAmount is now a ROLLUP over this invoice's SaleLine rows
+	// — "the tax amount, depending on each product's own tax and price" —
+	// recomputed server-side by sale_line's Create/Update/Delete overrides
+	// (see handler.go's recomputeTotals) every time a line changes, not by
+	// a frontend on_change: only the backend sees every sibling line.
+	// NetSubtotal = Subtotal - Discount; Total = NetSubtotal + TaxAmount.
 	Subtotal      *float64 `db:"subtotal"`
 	Discount      *float64 `db:"discount"`
 	NetSubtotal   *float64 `db:"net_subtotal"`
-	TaxRate       *float64 `db:"tax_rate"` // 0..1 ratio, displayed ×100 by the percent widget
 	TaxAmount     *float64 `db:"tax_amount"`
 	Total         *float64 `db:"total"`
 	PaymentMethod string   `db:"payment_method"`
@@ -89,10 +85,54 @@ type Invoice struct {
 	LegalNotice string `db:"legal_notice"`
 }
 
+// SaleLine is one row of an invoice's item table — the "table style
+// display" the invoice form and PDF report both render (see
+// views/SaleViews.ts, invoiceReport's 'lines' table). It replaces the old
+// Invoice.Lines JSONB blob with a real table so a line can point at an
+// actual product.
+//
+// VariantID (not ProductID) is the line's first/real column — a sale line
+// is always struck against a specific warehouse.ProductVariant, never a
+// bare warehouse.Product directly (see warehouse/module.go's doc comment on
+// ProductVariant for why: a variant is what "automatically" gets created
+// off a product the first time it's needed, and then stays around to be
+// reused). Unit/TaxRate/UnitPrice are SNAPSHOTS copied from the variant's
+// underlying Product at line-creation time (handler.go's Create override)
+// — same "capture at document time, don't live-join" contract as
+// Invoice.CustomerName: a line must keep reading correctly even if the
+// product's price changes later, and the PDF report reads raw columns,
+// never a live join.
+type SaleLine struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id"`
+	// InvoiceID is the parent FK — the one2many inverse field the invoice
+	// form's line-items table filters on (views/SaleViews.ts).
+	InvoiceID uuid.UUID `db:"invoice_id"`
+	// VariantID many2one -> warehouse.ProductVariant. First column per the
+	// request ("first column is product.variant many2one").
+	VariantID uuid.UUID `db:"variant_id"`
+	// VariantName is a display-only snapshot of the variant's own Name,
+	// same "don't live-join" reasoning as the other snapshots — it exists so
+	// the invoice form's embedded line-items table (a read-only grid over
+	// raw JSON rows, see views/SaleViews.ts) can show a product name instead
+	// of a bare variant_id uuid.
+	VariantName string  `db:"variant_name"`
+	Quantity    float64 `db:"quantity"`
+	// Unit/TaxRate/UnitPrice: snapshotted from the variant's Product on
+	// create (see handler.go). TaxRate is a 0..1 ratio; UnitPrice is
+	// "free taxes" (excl. tax), matching warehouse.Product's own fields.
+	Unit      string  `db:"unit"`
+	TaxRate   float64 `db:"tax_rate"`
+	UnitPrice float64 `db:"unit_price"`
+}
+
 type saleModule struct{}
 
 func (m *saleModule) Name() string { return "sale" }
 
 func (m *saleModule) Register() error {
-	return orm.Register[Invoice]()
+	if err := orm.Register[Invoice](); err != nil {
+		return err
+	}
+	return orm.Register[SaleLine]()
 }

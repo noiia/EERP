@@ -2,8 +2,6 @@ import {
   exportReportPDF,
   registerFieldFunction,
   registerMenuAction,
-  registerOnChange,
-  type DraftRecord,
   type FrontModule,
   type MenuNode,
   type ReportDescriptor,
@@ -11,23 +9,11 @@ import {
 } from '@eerp/core-front'
 
 // Sale frontend — DESCRIPTORS ONLY (same discipline as core/modules/crm's
-// CrmViews.ts). The dashboard has a single section, Invoice: one dashboard
-// tile derived from the entity's own tree view (DashboardRenderer renders
-// one card per tree view the module owns — there is no separate
-// "dashboard section" construct in the engine).
-//
-// `entity` is 'invoice' — the Go route prefix from module.go's
-// orm.Register[Invoice] (GET /api/v1/invoice) — NOT the module slug 'sale'.
-
-/** One row of the invoice's item table (Lines, a JSONB array — module.go). */
-export interface InvoiceLine {
-  description?: string
-  unit?: string
-  quantity?: number
-  unit_price?: number
-  vat_rate?: number
-  total_ht?: number
-}
+// CrmViews.ts). Two entities: 'invoice' (the document) and 'sale_line' (its
+// line items — a real child table now, see module.go's doc comments), the
+// same one2many master-detail shape core/modules/contact's contact/crm pair
+// already uses. Both `entity` names are the Go route prefixes from
+// module.go's orm.Register calls — NOT the module slug 'sale'.
 
 /** The Invoice record as served by Go's /invoice endpoints (BaseModel + business fields). */
 export interface Invoice {
@@ -51,17 +37,27 @@ export interface Invoice {
   status?: string
   currency?: string
   reference?: string
-  lines?: InvoiceLine[]
   subtotal?: number | null
   discount?: number | null
   net_subtotal?: number | null
-  /** 0..1 ratio; the percent widget displays it ×100. */
-  tax_rate?: number | null
   tax_amount?: number | null
   total?: number | null
   payment_method?: string
   payment_terms?: string
   legal_notice?: string
+}
+
+/** One sale_line row — a line item snapshotted from a product.variant. */
+export interface SaleLine {
+  id: string
+  invoice_id: string
+  variant_id: string
+  variant_name?: string
+  quantity: number
+  unit?: string
+  /** 0..1 ratio, snapshotted from the product; the percent widget displays it ×100. */
+  tax_rate?: number
+  unit_price?: number
 }
 
 // default as a FUNCTION (same name-not-function rule as compute): a new
@@ -71,26 +67,6 @@ registerFieldFunction({
   name: 'sale.defaultIssueDate',
   depends: [],
   handler: () => new Date().toISOString().slice(0, 10),
-})
-
-// on_change (not compute): the HT -> TVA -> TTC chain must land in real
-// committed columns, not store:false computes, because the PDF report reads
-// the raw record — never the client compute registry (see module.go).
-// Re-suggested whenever Subtotal/Discount/TaxRate change; the user stays
-// free to override any of the three results, exactly like
-// crm.scoreFromStatus's Score.
-registerOnChange({
-  entity: 'invoice',
-  name: 'sale.calcTotal',
-  onChange: ['subtotal', 'discount', 'tax_rate'],
-  handler: (draft: Readonly<DraftRecord>) => {
-    const subtotal = Number(draft.subtotal ?? 0)
-    const discount = Number(draft.discount ?? 0)
-    const taxRate = Number(draft.tax_rate ?? 0)
-    const netSubtotal = subtotal - discount
-    const taxAmount = netSubtotal * taxRate
-    return { net_subtotal: netSubtotal, tax_amount: taxAmount, total: netSubtotal + taxAmount }
-  },
 })
 
 // sale.printInvoice — the invoice form's Print > Invoice menu action
@@ -114,7 +90,7 @@ const fields: ViewDescriptor['fields'] = [
   },
   { name: 'issue_date', label: 'Issue date', type: 'date', default: 'sale.defaultIssueDate' },
   { name: 'due_date', label: 'Due date', type: 'date' },
-  { name: 'total', label: 'Total', type: 'number', widget: 'float' },
+  { name: 'total', label: 'Total', type: 'number', widget: 'float', readOnly: true },
 ]
 
 // Everything below renders on the FORM only (same split as crm's
@@ -137,9 +113,6 @@ const formFields: ViewDescriptor['fields'] = [
   },
   { name: 'customer_email', label: 'Customer email', type: 'text' },
   { name: 'customer_address', label: 'Billing address', type: 'text', widget: 'long' },
-  // Issuer* is the seller's own letterhead block (module.go's doc comment) —
-  // a per-invoice snapshot, since no workspace-wide "company profile"
-  // concept exists yet to default it from.
   {
     name: 'currency',
     label: 'Currency',
@@ -147,33 +120,24 @@ const formFields: ViewDescriptor['fields'] = [
     selection: { options: ['USD', 'EUR', 'GBP'] },
   },
   { name: 'reference', label: 'Reference', type: 'text' },
-  // Read-only display (TableWidget, docs/roadmaps/app-store.md Phase 2): the
-  // engine has no editable-array widget yet, so Lines is real, printable
-  // data (see module.go) with no in-form editor — populate via the generic
-  // PUT/POST API until one exists (docs/adr/ADR-011's Consequences).
+  // Real child table (core/modules/sale/module.go's SaleLine), not the old
+  // Lines JSONB blob — the invoice's line-items table. Adding/removing rows
+  // goes through the engine's one2many grid + create wizard
+  // (RelationListWidget); each mutation is a real POST/PUT/DELETE against
+  // /api/v1/sale_line, which is what recomputes subtotal/tax_amount/total
+  // below (see handler.go) — not a client-side compute.
   {
-    name: 'lines',
+    name: 'sale_lines',
     label: 'Line items',
-    type: 'text',
-    widget: 'table',
-    store: false,
-    widgetOptions: {
-      columns: [
-        { key: 'description', label: 'Description' },
-        { key: 'unit', label: 'Unit' },
-        { key: 'quantity', label: 'Quantity' },
-        { key: 'unit_price', label: 'Unit price' },
-        { key: 'vat_rate', label: 'VAT' },
-        { key: 'total_ht', label: 'Total (excl. tax)' },
-      ],
-      emptyLabel: 'No line items yet — add them via the API.',
-    },
+    type: 'relation',
+    relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id', labelField: 'variant_name' },
   },
-  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'float' },
+  // Subtotal/NetSubtotal/TaxAmount/Total are now rollups over sale_lines,
+  // computed server-side (handler.go's recomputeTotals) — never typed here.
+  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
   { name: 'discount', label: 'Discount (excl. tax)', type: 'number', widget: 'float' },
-  { name: 'net_subtotal', label: 'Net subtotal (excl. tax)', type: 'number', widget: 'float' },
-  { name: 'tax_rate', label: 'Tax rate', type: 'number', widget: 'percent' },
-  { name: 'tax_amount', label: 'Tax amount', type: 'number', widget: 'float' },
+  { name: 'net_subtotal', label: 'Net subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
+  { name: 'tax_amount', label: 'Tax amount', type: 'number', widget: 'float', readOnly: true },
   { name: 'payment_method', label: 'Payment method', type: 'text' },
   { name: 'payment_terms', label: 'Payment terms', type: 'text', widget: 'long' },
   { name: 'legal_notice', label: 'Legal notice', type: 'text', widget: 'long' },
@@ -183,7 +147,7 @@ const dashboardView: ViewDescriptor = {
   entity: 'invoice',
   viewType: 'dashboard',
   fields,
-  permissions: ['sale:invoices:read'],
+  permissions: ['invoice:invoice:read'],
 }
 
 const listView: ViewDescriptor = {
@@ -191,8 +155,8 @@ const listView: ViewDescriptor = {
   viewType: 'tree',
   fields,
   formPath: '/sale/:id',
-  createPermission: 'sale:invoices:write',
-  permissions: ['sale:invoices:read'],
+  createPermission: 'invoice:invoice:write',
+  permissions: ['invoice:invoice:read'],
 }
 
 // The invoice form's options menu (docs/adr/ADR-011): one submenu, Print,
@@ -209,8 +173,43 @@ const formView: ViewDescriptor = {
   entity: 'invoice',
   viewType: 'form',
   fields: formFields,
-  permissions: ['sale:invoices:read'],
+  permissions: ['invoice:invoice:read'],
   actions: formActions,
+}
+
+// sale_line's own descriptor — needed so the invoice form's one2many
+// create-wizard (RelationListWidget/RelationCreateWizard) has a form to
+// render: invoice_id is preset+hidden by the wizard's context (same
+// contact.crm_records/contact_id pattern), variant_id is the line's real
+// "product.variant many2one" first column, and unit/tax_rate/unit_price are
+// read-only because the backend snapshots them from the chosen variant's
+// product (core/modules/sale/handler.go) — never hand-typed.
+const saleLineFields: ViewDescriptor['fields'] = [
+  {
+    name: 'invoice_id',
+    label: 'Invoice',
+    type: 'relation',
+    required: true,
+    relation: { entity: 'invoice', kind: 'many2one', labelField: 'number' },
+  },
+  {
+    name: 'variant_id',
+    label: 'Product variant',
+    type: 'relation',
+    required: true,
+    relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' },
+  },
+  { name: 'quantity', label: 'Quantity', type: 'number', required: true },
+  { name: 'unit', label: 'Unit', type: 'text', readOnly: true },
+  { name: 'tax_rate', label: 'Tax', type: 'number', widget: 'percent', readOnly: true },
+  { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float', readOnly: true },
+]
+
+const saleLineFormView: ViewDescriptor = {
+  entity: 'sale_line',
+  viewType: 'form',
+  fields: saleLineFields,
+  permissions: ['sale_line:sale_line:read'],
 }
 
 /** One right-aligned "label / amount" row in the totals recap block. */
@@ -237,7 +236,7 @@ function totalsRow(label: string, field: string, grand = false): ReportDescripto
 const invoiceReport: ReportDescriptor = {
   name: 'sale.invoice',
   entity: 'invoice',
-  permissions: ['sale:invoices:read'],
+  permissions: ['invoice:invoice:read'],
   layout: [
     {
       kind: 'section',
@@ -297,13 +296,17 @@ const invoiceReport: ReportDescriptor = {
       kind: 'table',
       source: 'lines',
       className: 'eerp-report-table',
+      // sale_line rows live in their own table now — the print route
+      // fetches them (filtered by invoice_id) and assigns them onto
+      // record.lines before this node ever renders (see
+      // report-descriptor.ts's ReportTableNode.relation doc comment).
+      relation: { entity: 'sale_line', inverseField: 'invoice_id' },
       columns: [
-        { name: 'description', label: 'Description' },
+        { name: 'variant_name', label: 'Product' },
         { name: 'unit', label: 'Unit' },
         { name: 'quantity', label: 'Quantity' },
         { name: 'unit_price', label: 'Unit price' },
-        { name: 'vat_rate', label: 'VAT' },
-        { name: 'total_ht', label: 'Total (excl. tax)' },
+        { name: 'tax_rate', label: 'Tax' },
       ],
     },
     {
@@ -352,9 +355,10 @@ const invoiceReport: ReportDescriptor = {
 const sale: FrontModule = {
   name: 'sale',
   routes: [
-    { path: '/sale', descriptor: dashboardView, permission: 'sale:invoices:read' },
-    { path: '/sale/list', descriptor: listView, permission: 'sale:invoices:read' },
-    { path: '/sale/:id', descriptor: formView, permission: 'sale:invoices:read' },
+    { path: '/sale', descriptor: dashboardView, permission: 'invoice:invoice:read' },
+    { path: '/sale/list', descriptor: listView, permission: 'invoice:invoice:read' },
+    { path: '/sale/:id', descriptor: formView, permission: 'invoice:invoice:read' },
+    { path: '/sale/lines/:id', descriptor: saleLineFormView, permission: 'sale_line:sale_line:read' },
   ],
   reports: [invoiceReport],
 }

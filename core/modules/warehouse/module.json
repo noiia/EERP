@@ -1,0 +1,18 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "warehouse",
+    "display_name": "Warehouse",
+    "version": "0.0.1",
+    "author": "",
+    "description": "Warehouse module — products and product variants",
+    "app_mode": true,
+    "depends": [],
+    "static_files": {
+        "views": [
+            "WarehouseViews.ts"
+        ]
+    },
+    "is_service": true,
+    "auto_install": true
+}

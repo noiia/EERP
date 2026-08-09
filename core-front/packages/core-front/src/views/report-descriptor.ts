@@ -75,10 +75,28 @@ export interface ReportTableColumn {
 
 export interface ReportTableNode {
   kind: 'table'
-  /** Name of an array-valued field on the record (e.g. embedded line items). */
+  /**
+   * Name the print route assigns the resolved rows to on the fetched
+   * record — same "property on the record" contract `ReportFieldNode.name`
+   * and `ReportImageNode.source` use, just written to rather than read
+   * from when `relation` is set (below).
+   */
   source: string
   columns: ReportTableColumn[]
   className?: string
+  /**
+   * When the rows are NOT an embedded array field but their own child
+   * table (e.g. sale.SaleLine, one row per invoice line), the print route
+   * fetches `entity` filtered by `inverseField = <record id>` and assigns
+   * the result onto `record[source]` before ReportRenderer ever sees it —
+   * same "resolve into the record object first" posture the picture/
+   * company-fallback resolution already uses (reportImageSources/
+   * reportCompanyFallbackFields), and the same `{entity, inverseField}`
+   * shape `RelationField` uses for a one2many `ViewDescriptor` field.
+   * Omitted (the original, still-supported shape): `source` is read
+   * directly off the record as-is, e.g. crm.statement's embedded array.
+   */
+  relation?: { entity: string; inverseField: string }
 }
 
 export interface ReportPageBreakNode {
@@ -154,6 +172,29 @@ export function reportCompanyFallbackFields(
 }
 
 /**
+ * Every `table` node's (source, entity, inverseField) triple that opted
+ * into relation resolution, recursing into sections — mirrors
+ * reportImageSources'/reportCompanyFallbackFields' shape exactly. The print
+ * route is the one place that knows both the fetched record's id and a
+ * usable auth token, so it (not ReportRenderer) fetches the child rows and
+ * assigns them onto the record before rendering.
+ */
+export function reportTableRelations(
+  descriptor: ReportDescriptor,
+): { source: string; entity: string; inverseField: string }[] {
+  const relations: { source: string; entity: string; inverseField: string }[] = []
+  const visit = (node: ReportNode): void => {
+    if (node.kind === 'table' && node.relation) {
+      relations.push({ source: node.source, entity: node.relation.entity, inverseField: node.relation.inverseField })
+    } else if (node.kind === 'section') {
+      for (const child of node.children) visit(child)
+    }
+  }
+  for (const node of descriptor.layout) visit(node)
+  return relations
+}
+
+/**
  * Validate a report descriptor at registration: every field-leaf needs a
  * name, every table-leaf needs a source and at least one named column — the
  * same "fail at registration, not at render" discipline
@@ -173,6 +214,9 @@ export function validateReportDescriptor(descriptor: ReportDescriptor): void {
         }
         for (const col of node.columns) {
           if (!col.name) throw new Error(`table "${node.source}" has a column with no name`)
+        }
+        if (node.relation && (!node.relation.entity || !node.relation.inverseField)) {
+          throw new Error(`table "${node.source}" relation requires both entity and inverseField`)
         }
         return
       case 'pageBreak':
