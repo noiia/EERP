@@ -30,6 +30,7 @@ import {
 import { activeModuleNames } from '../src/lib/module-state'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
+import { listCompanies } from '../src/lib/company'
 import { getEntityGraphLayout, setEntityGraphLayout } from '../src/lib/graph-actions'
 import {
   createNotebookPage,
@@ -63,6 +64,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // renders the nav without an identity anyway).
   const activeSet = identity ? await activeModuleNames() : new Set<string>()
   const nav = identity ? moduleRegistry.moduleNav().filter((m) => activeSet.has(m.module)) : []
+  // Every company in the tenant, for the top-bar switcher's menu (multi-
+  // company) — only worth fetching once we know there's an active company
+  // to switch AWAY from.
+  const companies = preferences?.active_company ? await listCompanies() : []
   return (
     <html lang="en">
       <body>
@@ -78,7 +83,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 layout (there is only one), so the report's PDF must not
                 include the app's own nav chrome. */}
             <Box sx={{ '@media print': { display: 'none' } }}>
-              <AppTopBar identity={identity} nav={nav} activeCompanyName={preferences?.active_company?.name ?? null} />
+              <AppTopBar
+                identity={identity}
+                nav={nav}
+                email={preferences?.email}
+                activeCompany={preferences?.active_company ?? null}
+                companies={companies}
+              />
             </Box>
             {/* Relation widgets' app-wide data path: entity-generic Server Action
                 references — every relation query re-enters Go's permission gate

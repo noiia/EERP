@@ -99,6 +99,10 @@ func newHandlerWith(users userPreferenceStore, store settingStore, companies com
 // ── Response / request types ──────────────────────────────────────────────────
 
 type preferencesResponse struct {
+	// Email: the caller's own account email — the closest thing to a
+	// "display name" this schema has (Users carries no separate name field).
+	// The top bar's "Signed in as" shows this instead of the raw user id.
+	Email string `json:"email"`
 	// PreferredLocale: the caller's own choice. null = inherit the tenant
 	// default; "source" = force the untranslated source language.
 	PreferredLocale *string `json:"preferred_locale"`
@@ -165,6 +169,7 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 	}
 
 	resp := preferencesResponse{
+		Email:           user.Email,
 		PreferredLocale: user.PreferredLocale,
 		ActiveCompany:   &activeCompanyRef{ID: active.ID, Name: active.Name},
 	}

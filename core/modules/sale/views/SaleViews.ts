@@ -140,10 +140,6 @@ const formFields: ViewDescriptor['fields'] = [
   // Issuer* is the seller's own letterhead block (module.go's doc comment) —
   // a per-invoice snapshot, since no workspace-wide "company profile"
   // concept exists yet to default it from.
-  { name: 'issuer_name', label: 'Your company name', type: 'text' },
-  { name: 'issuer_address', label: 'Your company address', type: 'text', widget: 'long' },
-  { name: 'issuer_phone', label: 'Your company phone', type: 'text', widget: 'phone' },
-  { name: 'issuer_email', label: 'Your company email', type: 'text' },
   {
     name: 'currency',
     label: 'Currency',

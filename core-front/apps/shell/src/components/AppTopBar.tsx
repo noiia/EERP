@@ -28,6 +28,7 @@ import {
   type ModuleNav,
 } from '@eerp/core-front'
 import { authBffUrl } from '@/lib/auth-url'
+import { setActiveCompany, type CompanyRecord } from '@/lib/company'
 
 // The persistent application top bar (shell chrome). Shown on every authenticated route:
 // left = the module breadcrumb (fil d'Ariane) derived from the path, rooted at the menu;
@@ -182,12 +183,16 @@ function ModuleNav({ nav, pathname }: { nav: ModuleNav[]; pathname: string }) {
   )
 }
 
-function UserMenu({ identity }: { identity: Identity }) {
+function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
   const t = useT()
   const router = useRouter()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const open = Boolean(anchorEl)
-  const initial = identity.userId.trim().charAt(0).toUpperCase() || '?'
+  // email is the closest thing to a display name this schema has (Users
+  // carries no separate name field) — falls back to the raw user id only
+  // when the preferences read that supplies it hasn't resolved yet.
+  const displayName = email || identity.userId
+  const initial = displayName.trim().charAt(0).toUpperCase() || '?'
 
   function close() {
     setAnchorEl(null)
@@ -223,7 +228,7 @@ function UserMenu({ identity }: { identity: Identity }) {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 0.5, display: 'block' }}>
-          {t('Signed in as')} {identity.userId}
+          {t('Signed in as')} {displayName}
         </Typography>
         <Divider />
         <MenuItem component={Link} href="/settings" onClick={close}>
@@ -243,18 +248,117 @@ function UserMenu({ identity }: { identity: Identity }) {
   )
 }
 
+/**
+ * The active company's name, top-bar-right — click opens a menu listing
+ * every company in the tenant; picking one switches active_company_id
+ * (setActiveCompany, PUT /me/preferences) and refreshes the server tree so
+ * every company-scoped setting the rest of the page reads reflects the new
+ * company immediately. A trailing link still reaches the full Settings ->
+ * Company list/form for editing profiles or creating a new company —
+ * switching and managing are deliberately different affordances, same
+ * split UserMenu already draws between "Settings" and the account actions
+ * above it.
+ */
+function CompanySwitcher({
+  activeCompany,
+  companies,
+}: {
+  activeCompany: { id: string; name: string }
+  companies: CompanyRecord[]
+}) {
+  const t = useT()
+  const router = useRouter()
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+  const [switching, setSwitching] = useState(false)
+  const open = Boolean(anchorEl)
+
+  function close() {
+    setAnchorEl(null)
+  }
+
+  async function switchTo(companyId: string) {
+    close()
+    if (companyId === activeCompany.id) return
+    setSwitching(true)
+    await setActiveCompany(companyId)
+    setSwitching(false)
+    router.refresh()
+  }
+
+  return (
+    <>
+      <Box
+        component="button"
+        type="button"
+        onClick={(e: MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget)}
+        aria-haspopup="true"
+        aria-expanded={open}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          mr: 2,
+          color: 'inherit',
+          background: 'none',
+          border: 'none',
+          font: 'inherit',
+          cursor: 'pointer',
+          p: 0,
+        }}
+      >
+        <BusinessIcon fontSize="small" />
+        {activeCompany.name}
+      </Box>
+      <Menu
+        anchorEl={anchorEl}
+        open={open}
+        onClose={close}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 0.5, display: 'block' }}>
+          {t('Switch company')}
+        </Typography>
+        <Divider />
+        {companies.map((company) => (
+          <MenuItem
+            key={company.id}
+            selected={company.id === activeCompany.id}
+            disabled={switching}
+            onClick={() => switchTo(company.id)}
+          >
+            <ListItemText>{company.name}</ListItemText>
+          </MenuItem>
+        ))}
+        <Divider />
+        <MenuItem component={Link} href="/settings/company" onClick={close}>
+          <ListItemText>{t('Manage companies')}</ListItemText>
+        </MenuItem>
+      </Menu>
+    </>
+  )
+}
+
 export function AppTopBar({
   identity,
   nav = [],
-  activeCompanyName = null,
+  email,
+  activeCompany = null,
+  companies = [],
 }: {
   identity: Identity | null
   /** Per-module main pages, resolved server-side from the registry (empty in isolation). */
   nav?: ModuleNav[]
+  /** The caller's own account email — see UserMenu's displayName note. */
+  email?: string
   /** The caller's current company (multi-company) — null while unresolved
    * (e.g. an identity-less render) or genuinely absent (the preferences
    * read failed upstream); the switcher just doesn't render either way. */
-  activeCompanyName?: string | null
+  activeCompany?: { id: string; name: string } | null
+  /** Every company in the tenant, for the switcher's menu — empty (not an
+   * error) when the list read fails; the switcher then just shows the
+   * active company with nothing to switch to. */
+  companies?: CompanyRecord[]
 }) {
   const pathname = usePathname()
   // No bar before authentication (login page) or without a session.
@@ -266,19 +370,8 @@ export function AppTopBar({
         <PathBreadcrumbs pathname={pathname} nav={nav} />
         <ModuleNav nav={nav} pathname={pathname} />
         <Box sx={{ flexGrow: 1 }} />
-        {activeCompanyName && (
-          <MuiLink
-            component={Link}
-            href="/settings/company"
-            color="inherit"
-            underline="hover"
-            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 2 }}
-          >
-            <BusinessIcon fontSize="small" />
-            {activeCompanyName}
-          </MuiLink>
-        )}
-        <UserMenu identity={identity} />
+        {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
+        <UserMenu identity={identity} email={email} />
       </Toolbar>
     </AppBar>
   )

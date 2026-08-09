@@ -1,8 +1,14 @@
 'use server'
-import { apiRequest, createServerApiClient } from '@eerp/core-front/server'
+import { ApiError, apiRequest, createServerApiClient } from '@eerp/core-front/server'
 import type { LocalePreferences } from './locale'
 
 // Server Actions for multi-company. The browser never calls Go directly.
+
+export type SaveResult = { ok: true } | { ok: false; message: string }
+
+function failure(e: unknown, fallback: string): SaveResult {
+  return { ok: false, message: e instanceof ApiError ? e.message : fallback }
+}
 
 export interface CompanyRecord {
   id: string
@@ -10,6 +16,33 @@ export interface CompanyRecord {
   address?: string
   phone?: string
   email?: string
+}
+
+/**
+ * List every company in the caller's tenant — the top-bar switcher's menu
+ * contents. Degrades to an empty list on any failure (missing
+ * company:company:read, session hiccup) rather than throwing: the switcher
+ * then just shows the active company with nothing to switch to, same
+ * "additive, never breaks the page" posture as getReportsLayout.
+ */
+export async function listCompanies(): Promise<CompanyRecord[]> {
+  try {
+    return await createServerApiClient().list<CompanyRecord>('company')
+  } catch {
+    return []
+  }
+}
+
+/** Switch the caller's active company. Go authorizes: a company id outside
+ * the caller's own tenant is rejected (VALIDATION_ERROR), surfaced as a
+ * message rather than thrown. */
+export async function setActiveCompany(companyId: string): Promise<SaveResult> {
+  try {
+    await apiRequest('PUT', '/me/preferences', { active_company_id: companyId })
+    return { ok: true }
+  } catch (e) {
+    return failure(e, 'Could not switch company.')
+  }
 }
 
 /**

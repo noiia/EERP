@@ -10,6 +10,11 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, refresh: refreshMock }),
 }))
 
+const setActiveCompanyMock = vi.fn()
+vi.mock('@/lib/company', () => ({
+  setActiveCompany: (companyId: string) => setActiveCompanyMock(companyId),
+}))
+
 import { AppTopBar } from './AppTopBar'
 
 const identity: Identity = { userId: 'ada', tenantId: 't1', roles: [], permissions: [] }
@@ -27,6 +32,8 @@ const crmNav: ModuleNav[] = [
 beforeEach(() => {
   pushMock.mockReset()
   refreshMock.mockReset()
+  setActiveCompanyMock.mockReset()
+  setActiveCompanyMock.mockResolvedValue({ ok: true })
   useSessionStore.getState().setIdentity(identity)
   useRecordLabelStore.setState({ id: null, label: null })
   vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
@@ -143,17 +150,49 @@ describe('AppTopBar', () => {
     expect(dashboard).not.toHaveAttribute('aria-current')
   })
 
-  it('shows the active company name, linking to the company list', () => {
+  const acme = { id: 'co-1', name: 'Acme Corp' }
+  const globex = { id: 'co-2', name: 'Globex' }
+
+  it('shows the active company name as a button, not a plain link', () => {
     pathnameMock.mockReturnValue('/crm/contacts')
-    render(<AppTopBar identity={identity} activeCompanyName="Acme Corp" />)
-    const link = screen.getByRole('link', { name: /acme corp/i })
-    expect(link).toHaveAttribute('href', '/settings/company')
+    render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
+    expect(screen.getByRole('button', { name: /acme corp/i })).toBeInTheDocument()
   })
 
   it('renders no company switcher when the active company is unknown', () => {
     pathnameMock.mockReturnValue('/crm/contacts')
-    const { container } = render(<AppTopBar identity={identity} />)
-    expect(container.querySelector('a[href="/settings/company"]')).not.toBeInTheDocument()
+    render(<AppTopBar identity={identity} />)
+    expect(screen.queryByRole('button', { name: /acme corp/i })).not.toBeInTheDocument()
+  })
+
+  it('opens a menu listing every company, with a link to manage them', () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme, globex]} />)
+    fireEvent.click(screen.getByRole('button', { name: /acme corp/i }))
+
+    expect(screen.getByRole('menuitem', { name: 'Acme Corp' })).toHaveClass('Mui-selected')
+    expect(screen.getByRole('menuitem', { name: 'Globex' })).not.toHaveClass('Mui-selected')
+    const manage = screen.getByRole('menuitem', { name: /manage companies/i })
+    expect(manage).toHaveAttribute('href', '/settings/company')
+  })
+
+  it('switching to a different company calls setActiveCompany and refreshes', async () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme, globex]} />)
+    fireEvent.click(screen.getByRole('button', { name: /acme corp/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Globex' }))
+
+    await waitFor(() => expect(setActiveCompanyMock).toHaveBeenCalledWith('co-2'))
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled())
+  })
+
+  it('clicking the already-active company is a no-op', async () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme, globex]} />)
+    fireEvent.click(screen.getByRole('button', { name: /acme corp/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Acme Corp' }))
+
+    expect(setActiveCompanyMock).not.toHaveBeenCalled()
   })
 
   it('shows no module nav for a route outside the registered modules', () => {
@@ -184,5 +223,19 @@ describe('AppTopBar', () => {
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/login'))
     expect(fetch).toHaveBeenCalledWith('/api/v1/auth/logout', { method: 'POST' })
     expect(useSessionStore.getState().identity).toBeNull()
+  })
+
+  it('shows the caller\'s email after "Signed in as" — the closest thing to a display name this schema has', () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} email="ada@example.test" />)
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
+    expect(screen.getByText(/signed in as/i)).toHaveTextContent('Signed in as ada@example.test')
+  })
+
+  it('falls back to the raw user id when email has not resolved yet', () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} />)
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
+    expect(screen.getByText(/signed in as/i)).toHaveTextContent(`Signed in as ${identity.userId}`)
   })
 })

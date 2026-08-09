@@ -336,6 +336,25 @@ func TestGetMyPreferences_ActiveCompany(t *testing.T) {
 	}
 }
 
+func TestGetMyPreferences_Email(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	users := &stubUsers{user: auth.Users{Email: "ada@example.test"}}
+
+	h := newHandlerWith(users, &stubStore{}, &stubCompanies{})
+	rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["email"] != "ada@example.test" {
+		t.Errorf("email = %v, want ada@example.test", resp["email"])
+	}
+}
+
 func TestPutMyPreferences_ActiveCompany(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	ownCompany := uuid.New()
