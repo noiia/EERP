@@ -1,6 +1,37 @@
 package sale
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+// Regression: Handler.Create/Update bind the request body straight onto
+// SaleLine via c.Bind (encoding/json). Without an explicit `json` struct
+// tag matching each `db` tag, snake_case keys like "variant_id"/
+// "invoice_id" never match their Go fields (case-insensitive matching
+// doesn't ignore underscores) — they'd silently stay uuid.Nil and
+// snapshotFromVariant would reject a perfectly valid line. This exercises
+// the exact same encoding/json path Bind uses, not just the struct's shape.
+func TestSaleLine_JSONUnmarshalsIDFields(t *testing.T) {
+	invoiceID, variantID := uuid.New(), uuid.New()
+	body := []byte(`{"invoice_id":"` + invoiceID.String() + `","variant_id":"` + variantID.String() + `","quantity":3}`)
+
+	var line SaleLine
+	if err := json.Unmarshal(body, &line); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if line.InvoiceID != invoiceID {
+		t.Errorf("InvoiceID = %v, want %v", line.InvoiceID, invoiceID)
+	}
+	if line.VariantID != variantID {
+		t.Errorf("VariantID = %v, want %v", line.VariantID, variantID)
+	}
+	if line.Quantity != 3 {
+		t.Errorf("Quantity = %v, want 3", line.Quantity)
+	}
+}
 
 func TestSumLines(t *testing.T) {
 	tests := []struct {

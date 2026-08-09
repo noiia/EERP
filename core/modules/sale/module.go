@@ -102,28 +102,35 @@ type Invoice struct {
 // Invoice.CustomerName: a line must keep reading correctly even if the
 // product's price changes later, and the PDF report reads raw columns,
 // never a live join.
+// json tags mirror the db tags exactly: Echo's default Bind uses
+// encoding/json, which without an explicit `json` tag matches a JSON key to
+// a Go field name case-insensitively but NOT underscore-insensitively — a
+// snake_case key like "variant_id" never matches field VariantID on its own
+// (see handler.go's Create/Update, which c.Bind() straight onto this
+// struct). Every field the dedicated handler binds from client JSON needs
+// one.
 type SaleLine struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	// InvoiceID is the parent FK — the one2many inverse field the invoice
 	// form's line-items table filters on (views/SaleViews.ts).
-	InvoiceID uuid.UUID `db:"invoice_id"`
+	InvoiceID uuid.UUID `db:"invoice_id" json:"invoice_id"`
 	// VariantID many2one -> warehouse.ProductVariant. First column per the
 	// request ("first column is product.variant many2one").
-	VariantID uuid.UUID `db:"variant_id"`
+	VariantID uuid.UUID `db:"variant_id" json:"variant_id"`
 	// VariantName is a display-only snapshot of the variant's own Name,
 	// same "don't live-join" reasoning as the other snapshots — it exists so
 	// the invoice form's embedded line-items table (a read-only grid over
 	// raw JSON rows, see views/SaleViews.ts) can show a product name instead
 	// of a bare variant_id uuid.
-	VariantName string  `db:"variant_name"`
-	Quantity    float64 `db:"quantity"`
+	VariantName string  `db:"variant_name" json:"variant_name"`
+	Quantity    float64 `db:"quantity" json:"quantity"`
 	// Unit/TaxRate/UnitPrice: snapshotted from the variant's Product on
 	// create (see handler.go). TaxRate is a 0..1 ratio; UnitPrice is
 	// "free taxes" (excl. tax), matching warehouse.Product's own fields.
-	Unit      string  `db:"unit"`
-	TaxRate   float64 `db:"tax_rate"`
-	UnitPrice float64 `db:"unit_price"`
+	Unit      string  `db:"unit" json:"unit"`
+	TaxRate   float64 `db:"tax_rate" json:"tax_rate"`
+	UnitPrice float64 `db:"unit_price" json:"unit_price"`
 }
 
 type saleModule struct{}

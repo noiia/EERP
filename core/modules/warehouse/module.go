@@ -16,24 +16,30 @@ func init() {
 // price/tax pair a sale line snapshots from ("unit price free taxes" +
 // "the tax from the product" in sale.SaleLine's doc comment). It is never
 // referenced directly by a sale line — see ProductVariant.
+// json tags mirror the db tags exactly: Echo's default Bind uses
+// encoding/json, which without an explicit `json` tag matches a JSON key to
+// a Go field name case-insensitively but NOT underscore-insensitively — a
+// snake_case key like "unit_price" never matches field UnitPrice on its own
+// (see warehouse/handler.go's Create, which c.Bind()s straight onto this
+// struct). Every field a dedicated handler binds from client JSON needs one.
 type Product struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
-	Name     string    `db:"name"`
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name     string    `db:"name" json:"name"`
 	// Reference is a free-text SKU/internal code — optional, no uniqueness
 	// enforced (this ORM has no unique-constraint support yet).
-	Reference string `db:"reference"`
+	Reference string `db:"reference" json:"reference"`
 	// Unit is the unit of measure (e.g. "pcs", "kg", "hour") — free text
 	// rather than a selection, since the set of units a business needs is
 	// open-ended.
-	Unit string `db:"unit"`
+	Unit string `db:"unit" json:"unit"`
 	// UnitPrice is the price excl. tax ("free taxes" in the request).
-	UnitPrice float64 `db:"unit_price"`
+	UnitPrice float64 `db:"unit_price" json:"unit_price"`
 	// TaxRate is a 0..1 ratio (percent widget on the frontend), same
 	// contract as sale.Invoice's former single invoice-level TaxRate — here
 	// it lives per product, since sale.Invoice.TaxAmount is now the sum of
 	// each line's own product tax.
-	TaxRate float64 `db:"tax_rate"`
+	TaxRate float64 `db:"tax_rate" json:"tax_rate"`
 }
 
 // ProductVariant is a concrete, sellable instance of a Product — the entity
@@ -47,12 +53,12 @@ type Product struct {
 // makes creating one from a product a one-field action.
 type ProductVariant struct {
 	model.BaseModel
-	TenantID  uuid.UUID `db:"tenant_id"`
-	ProductID uuid.UUID `db:"product_id"`
+	TenantID  uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	ProductID uuid.UUID `db:"product_id" json:"product_id"`
 	// Name is the variant's own label (e.g. "Red / XL"). Left blank on
 	// create, it defaults to the underlying Product's name — see
 	// warehouse/handler.go's Create override.
-	Name string `db:"name"`
+	Name string `db:"name" json:"name"`
 }
 
 type warehouseModule struct{}
