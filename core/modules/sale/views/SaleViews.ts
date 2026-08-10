@@ -1,9 +1,11 @@
 import {
   exportReportPDF,
+  FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerMenuAction,
   type FrontModule,
   type MenuNode,
+  type Operation,
   type ReportDescriptor,
   type ViewDescriptor,
 } from '@eerp/core-front'
@@ -125,7 +127,11 @@ const formFields: ViewDescriptor['fields'] = [
   // goes through the engine's one2many grid + create wizard
   // (RelationListWidget); each mutation is a real POST/PUT/DELETE against
   // /api/v1/sale_line, which is what recomputes subtotal/tax_amount/total
-  // below (see handler.go) — not a client-side compute.
+  // below (see handler.go) — not a client-side compute. Declared here so it
+  // exists as a field at all; orderLinesPageOperations below (via the
+  // module's own `extends`) is what actually MOVES it off the two-column
+  // body and into its own first-position notebook page — this array's
+  // declaration order no longer decides where it renders on the form.
   {
     name: 'sale_lines',
     label: 'Line items',
@@ -176,6 +182,26 @@ const formView: ViewDescriptor = {
   permissions: ['invoice:invoice:read'],
   actions: formActions,
 }
+
+// Moves sale_lines off the default anatomy's two-column body and into its
+// own notebook page, "Order lines" — same self-extension shape
+// core/modules/crm/views/CrmViews.ts uses for its Signature page
+// (addField there is unnecessary here since sale_lines is already declared
+// in formFields above; addNode alone both creates the page AND extracts the
+// field from wherever it currently sits into it). `position: 'first'`
+// against FORM_NOTEBOOK_ID inserts it as the notebook's first tab, ahead of
+// the synthesized "Settings" page (customer_address/payment_terms/
+// legal_notice) — the invoice's line items are the first thing a user sees
+// past the header, not squeezed in wherever declaration order happened to
+// put it.
+const orderLinesPageOperations: Operation[] = [
+  {
+    op: 'addNode',
+    node: { kind: 'page', title: 'Order lines', children: [{ kind: 'field', name: 'sale_lines' }] },
+    target: FORM_NOTEBOOK_ID,
+    position: 'first',
+  },
+]
 
 // sale_line's own descriptor — needed so the invoice form's one2many
 // create-wizard (RelationListWidget/RelationCreateWizard) has a form to
@@ -361,6 +387,7 @@ const sale: FrontModule = {
     { path: '/sale/lines/:id', descriptor: saleLineFormView, permission: 'sale_line:sale_line:read' },
   ],
   reports: [invoiceReport],
+  extends: [{ path: '/sale/:id', operations: orderLinesPageOperations }],
 }
 
 export default sale

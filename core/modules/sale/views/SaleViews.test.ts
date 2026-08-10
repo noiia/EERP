@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { reportCompanyFallbackFields, reportTableRelations } from '@eerp/core-front'
+import {
+  FORM_NOTEBOOK_ID,
+  ModuleRegistry,
+  normalizeLayout,
+  reportCompanyFallbackFields,
+  reportTableRelations,
+} from '@eerp/core-front'
 import sale from './SaleViews'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
@@ -134,5 +140,50 @@ describe('sale FrontModule', () => {
         children: [{ kind: 'action', label: 'Invoice', action: 'sale.printInvoice' }],
       },
     ])
+  })
+})
+
+// sale extends its OWN already-registered '/sale/:id' route (same
+// self-extension shape core/modules/crm/views/CrmViews.ts uses for its
+// Signature page) to move sale_lines off the default two-column body and
+// into its own "Order lines" notebook page, first among tabs.
+describe('sale — self-extended "Order lines" notebook page (registry-level)', () => {
+  function register(): ModuleRegistry {
+    const registry = new ModuleRegistry()
+    registry.register(sale)
+    return registry
+  }
+
+  it('order lines lands on its OWN "Order lines" tab, not __form_columns', () => {
+    const registry = register()
+    const resolved = registry.buildRegistry().get('/sale/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    expect(notebook).toBeDefined()
+    if (notebook && notebook.kind !== 'field') {
+      const linesPage = notebook.children.find((p) => p.kind !== 'field' && p.title === 'Order lines')
+      expect(linesPage).toBeDefined()
+      if (linesPage && linesPage.kind !== 'field') {
+        expect(linesPage.children).toEqual([{ kind: 'field', name: 'sale_lines' }])
+      }
+    }
+  })
+
+  it('"Order lines" is the FIRST tab, ahead of the synthesized "Settings" page', () => {
+    const registry = register()
+    const resolved = registry.buildRegistry().get('/sale/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    expect(notebook && notebook.kind !== 'field' ? notebook.children.map((p) => p.kind !== 'field' && p.title) : []).toEqual([
+      'Order lines',
+      'Settings',
+    ])
+  })
+
+  it('/sale/list and /sale are untouched — the extension targets only :id', () => {
+    const registry = register()
+    expect(registry.buildRegistry().get('/sale/list')?.descriptor.fields.map((f) => f.name)).not.toContain(
+      'sale_lines',
+    )
   })
 })
