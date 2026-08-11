@@ -79,16 +79,17 @@ func (s *stubPermissions) ForRoles(_ context.Context, _ []string) ([]string, err
 }
 
 type stubTokens struct {
-	gotUser  auth.Users
-	gotRoles []string
-	gotPerms []string
-	gotTTL   time.Duration
-	token    string
-	err      error
+	gotUser   auth.Users
+	gotRoles  []string
+	gotGroups []string
+	gotPerms  []string
+	gotTTL    time.Duration
+	token     string
+	err       error
 }
 
-func (s *stubTokens) IssueAccessWithTTL(user auth.Users, roles []string, permissions []string, ttl time.Duration) (string, error) {
-	s.gotUser, s.gotRoles, s.gotPerms, s.gotTTL = user, roles, permissions, ttl
+func (s *stubTokens) IssueAccessWithTTL(user auth.Users, roles []string, groups []string, permissions []string, ttl time.Duration) (string, error) {
+	s.gotUser, s.gotRoles, s.gotGroups, s.gotPerms, s.gotTTL = user, roles, groups, permissions, ttl
 	if s.err != nil {
 		return "", s.err
 	}

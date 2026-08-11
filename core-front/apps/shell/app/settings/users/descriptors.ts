@@ -1,4 +1,10 @@
-import type { ViewDescriptor } from '@eerp/core-front'
+import {
+  FORM_COLUMNS_ID,
+  FORM_HEADER_ID,
+  FORM_NOTEBOOK_ID,
+  PAGE_SETTINGS_ID,
+  type ViewDescriptor,
+} from '@eerp/core-front'
 
 // Settings → Users: descriptors only, like a module's views file — the engine
 // derives the loaders, stores, and renderers. The entities map to the dedicated
@@ -63,6 +69,55 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
   fields: [
     { name: 'name', label: 'Name', type: 'text', required: true },
     { name: 'description', label: 'Description', type: 'text' },
+    {
+      name: 'technical_name',
+      label: 'Technical name',
+      type: 'text',
+      // Matched against a field's `groups` list (core/orm's WithFieldGroups)
+      // for server-side field visibility — see docs/adr/ADR-013.
+    },
+    {
+      // Self-referential many2many over the generic-CRUD-registered
+      // role_belongs junction (core/internal/auth.RoleBelongs) — the roles
+      // this role transitively inherits group access from (Odoo
+      // implied_ids). Needs no bespoke widget: RelationTagsWidget/RelationOps
+      // drive it purely from this descriptor.
+      name: 'belongs',
+      label: 'Belongs to',
+      type: 'relation',
+      relation: {
+        entity: 'roles',
+        kind: 'many2many',
+        via: 'role_belongs',
+        viaFields: { own: 'role_id', related: 'belongs_to_role_id' },
+        labelField: 'name',
+      },
+    },
+  ],
+  // Explicit layout so `belongs` gets its own "Belongs" tab instead of
+  // landing in the synthesized default anatomy's two-column group — the
+  // header/columns/Settings-page nodes reuse the same well-known ids the
+  // default synthesis would have used, so nothing else about the form's
+  // appearance changes.
+  layout: [
+    { kind: 'row', id: FORM_HEADER_ID, children: [{ kind: 'field', name: 'name', variant: 'title' }] },
+    {
+      kind: 'group',
+      id: FORM_COLUMNS_ID,
+      columns: 2,
+      children: [
+        { kind: 'field', name: 'description' },
+        { kind: 'field', name: 'technical_name' },
+      ],
+    },
+    {
+      kind: 'notebook',
+      id: FORM_NOTEBOOK_ID,
+      children: [
+        { kind: 'page', id: PAGE_SETTINGS_ID, title: 'Settings', children: [] },
+        { kind: 'page', title: 'Belongs', children: [{ kind: 'field', name: 'belongs' }] },
+      ],
+    },
   ],
   permissions: ['roles:roles:read'],
 }

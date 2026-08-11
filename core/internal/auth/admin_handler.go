@@ -39,8 +39,8 @@ type adminUserStore interface {
 type adminRoleStore interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Roles, error)
 	FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Roles, error)
-	CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string) (Roles, error)
-	UpdateRole(ctx context.Context, tenantID, id uuid.UUID, name, description string) (Roles, error)
+	CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string, technicalName *string) (Roles, error)
+	UpdateRole(ctx context.Context, tenantID, id uuid.UUID, name, description string, technicalName *string) (Roles, error)
 }
 
 // AdminHandler carries the tenant-scoped stores; see the package comment above.
@@ -82,20 +82,26 @@ func toUserResponse(u Users) adminUserResponse {
 }
 
 type adminRoleResponse struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID            uuid.UUID `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	TechnicalName string    `json:"technical_name"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func toRoleResponse(r Roles) adminRoleResponse {
+	technicalName := ""
+	if r.TechnicalName != nil {
+		technicalName = *r.TechnicalName
+	}
 	return adminRoleResponse{
-		ID:          r.ID,
-		Name:        r.Name,
-		Description: r.Description,
-		CreatedAt:   r.CreatedAt,
-		UpdatedAt:   r.UpdatedAt,
+		ID:            r.ID,
+		Name:          r.Name,
+		Description:   r.Description,
+		TechnicalName: technicalName,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
 	}
 }
 
@@ -216,19 +222,24 @@ func (h *AdminHandler) CreateRole(c echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name          string `json:"name"`
+		Description   string `json:"description"`
+		TechnicalName string `json:"technical_name"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	name := strings.TrimSpace(req.Name)
-	if msg := validateRole(name, req.Description); msg != "" {
+	technicalName := strings.TrimSpace(req.TechnicalName)
+	if msg := validateRole(name, req.Description, technicalName); msg != "" {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
 	}
 
-	created, err := h.roles.CreateRole(c.Request().Context(), identity.TenantID, name, strings.TrimSpace(req.Description))
+	created, err := h.roles.CreateRole(c.Request().Context(), identity.TenantID, name, strings.TrimSpace(req.Description), nilIfEmpty(technicalName))
 	if err != nil {
+		if errors.Is(err, ErrDuplicateTechnicalName) {
+			return adminErrorJSON(c, http.StatusConflict, "CONFLICT", "A role with that technical name already exists.")
+		}
 		return fmt.Errorf("admin: create role: %w", err)
 	}
 	return c.JSON(http.StatusCreated, toRoleResponse(created))
@@ -252,8 +263,9 @@ func (h *AdminHandler) GetRole(c echo.Context) error {
 	return c.JSON(http.StatusOK, toRoleResponse(role))
 }
 
-// UpdateRole handles PUT /api/v1/roles/:id. Name and description are the only
-// writable fields — permission grants stay with their own audited flows.
+// UpdateRole handles PUT /api/v1/roles/:id. Name, description, and
+// technical_name are the only writable fields — permission grants stay with
+// their own audited flows.
 func (h *AdminHandler) UpdateRole(c echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
@@ -262,21 +274,26 @@ func (h *AdminHandler) UpdateRole(c echo.Context) error {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid role id.")
 	}
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name          string `json:"name"`
+		Description   string `json:"description"`
+		TechnicalName string `json:"technical_name"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	name := strings.TrimSpace(req.Name)
-	if msg := validateRole(name, req.Description); msg != "" {
+	technicalName := strings.TrimSpace(req.TechnicalName)
+	if msg := validateRole(name, req.Description, technicalName); msg != "" {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
 	}
 
-	updated, err := h.roles.UpdateRole(c.Request().Context(), identity.TenantID, id, name, strings.TrimSpace(req.Description))
+	updated, err := h.roles.UpdateRole(c.Request().Context(), identity.TenantID, id, name, strings.TrimSpace(req.Description), nilIfEmpty(technicalName))
 	if err != nil {
 		if errors.Is(err, orm.ErrNotFound) {
 			return adminErrorJSON(c, http.StatusNotFound, "NOT_FOUND", "Role not found.")
+		}
+		if errors.Is(err, ErrDuplicateTechnicalName) {
+			return adminErrorJSON(c, http.StatusConflict, "CONFLICT", "A role with that technical name already exists.")
 		}
 		return fmt.Errorf("admin: update role: %w", err)
 	}
@@ -291,16 +308,30 @@ func validEmail(email string) bool {
 	return len(email) >= 3 && len(email) <= 254 && strings.Contains(email[1:len(email)-1], "@")
 }
 
-// validateRole returns the validation message for a trimmed name + raw
-// description, or "" when both are acceptable.
-func validateRole(name, description string) string {
+// validateRole returns the validation message for a trimmed name +
+// description + technical name, or "" when all are acceptable. No charset
+// validation on technicalName — ponytail: slug regex skipped, add if a bad
+// value causes a real support issue.
+func validateRole(name, description, technicalName string) string {
 	if name == "" || len(name) > 100 {
 		return "name is required (max 100 characters)."
 	}
 	if len(description) > 500 {
 		return "description too long (max 500 characters)."
 	}
+	if len(technicalName) > 100 {
+		return "technical_name too long (max 100 characters)."
+	}
 	return ""
+}
+
+// nilIfEmpty returns nil for "" and &s otherwise — Roles.TechnicalName is
+// nullable so an unset technical name doesn't collide in the unique index.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func adminErrorJSON(c echo.Context, status int, code, msg string) error {

@@ -32,9 +32,24 @@ describe('Settings → Users descriptors', () => {
   })
 
   it('exposes only the backend-writable fields on the forms', () => {
-    // Go whitelists these on PUT; offering more would be dead inputs.
+    // Go whitelists these on PUT; offering more would be dead inputs. `belongs`
+    // is the one exception — a virtual many2many, stripped from the PUT body
+    // and written instead through its own role_belongs junction endpoint.
     expect(userFormDescriptor.fields.map((f) => f.name)).toEqual(['email'])
-    expect(roleFormDescriptor.fields.map((f) => f.name)).toEqual(['name', 'description'])
+    expect(roleFormDescriptor.fields.map((f) => f.name)).toEqual([
+      'name',
+      'description',
+      'technical_name',
+      'belongs',
+    ])
+  })
+
+  it("puts the belongs relation on its own tab, not the two-column group", () => {
+    const notebook = roleFormDescriptor.layout?.find((n) => 'kind' in n && n.kind === 'notebook')
+    expect(notebook && 'children' in notebook ? notebook.children.map((p) => 'title' in p ? p.title : undefined) : []).toEqual([
+      'Settings',
+      'Belongs',
+    ])
   })
 
   it('guards every view with the derived admin permissions', () => {

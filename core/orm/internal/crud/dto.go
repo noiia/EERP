@@ -1,9 +1,11 @@
 package crud
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"core/orm/access"
 	"core/orm/internal/registry"
 )
 
@@ -69,13 +71,34 @@ func ValidateRequest(meta registry.TableMeta, body map[string]any, isCreate bool
 }
 
 // BuildResponse maps a raw DB row (keyed by column name) to a response map
-// keyed by FieldMeta.Name (the JSON key). Fields not in meta are silently dropped.
-func BuildResponse(meta registry.TableMeta, row map[string]any) map[string]any {
+// keyed by FieldMeta.Name (the JSON key). Fields not in meta are silently
+// dropped. A field carrying Groups is also dropped — key omitted entirely,
+// never nulled, so its absence is indistinguishable from "no such field" —
+// when the caller's resolved groups (core/orm/access.GroupsFromContext) don't
+// intersect it. Fields with no Groups declared are unaffected: this is a
+// no-op for every table that doesn't use WithFieldGroups.
+func BuildResponse(ctx context.Context, meta registry.TableMeta, row map[string]any) map[string]any {
+	callerGroups, _ := access.GroupsFromContext(ctx)
 	out := make(map[string]any, len(meta.Fields))
 	for _, f := range meta.Fields {
+		if len(f.Groups) > 0 && !intersects(f.Groups, callerGroups) {
+			continue
+		}
 		if val, ok := row[f.Column]; ok {
 			out[f.Name] = val
 		}
 	}
 	return out
+}
+
+// intersects reports whether need and have share at least one element.
+func intersects(need, have []string) bool {
+	for _, g := range need {
+		for _, h := range have {
+			if g == h {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -112,3 +112,43 @@ func (r *UserRepository) FindRoleNames(ctx context.Context, userID uuid.UUID) ([
 	}
 	return names, nil
 }
+
+// FindGroups returns the technical-name closure of every group the user's
+// roles resolve to: their directly-assigned roles' own technical_name, plus
+// every role transitively "belonged to" via role_belongs (Odoo's
+// implied_ids). The recursive CTE uses a plain UNION (not UNION ALL), which
+// dedupes visited role ids on every step — a cycle (A belongs_to B
+// belongs_to A) simply stops re-adding an id already in the closure, so no
+// application-level visited-set/cycle-detection code is needed.
+func (r *UserRepository) FindGroups(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		WITH RECURSIVE closure(id) AS (
+			SELECT ur.role_id FROM user_roles ur WHERE ur.user_id = $1
+			UNION
+			SELECT rb.belongs_to_role_id
+			FROM role_belongs rb
+			JOIN closure c ON c.id = rb.role_id
+		)
+		SELECT DISTINCT r.technical_name
+		FROM roles r
+		JOIN closure c ON c.id = r.id
+		WHERE r.deleted_at IS NULL AND r.technical_name IS NOT NULL
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("user: find groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []string
+	for rows.Next() {
+		var group string
+		if err := rows.Scan(&group); err != nil {
+			return nil, fmt.Errorf("user: scan group: %w", err)
+		}
+		groups = append(groups, group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("user: find groups: %w", err)
+	}
+	return groups, nil
+}

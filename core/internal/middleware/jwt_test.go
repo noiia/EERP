@@ -84,7 +84,7 @@ func TestJWTMiddleware_ValidToken_InjectsIdentityAndCalls200(t *testing.T) {
 	}
 	user.BaseModel.ID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
-	raw, err := svc.IssueAccess(user, []string{"admin"}, nil)
+	raw, err := svc.IssueAccess(user, []string{"admin"}, nil, nil)
 	if err != nil {
 		t.Fatalf("IssueAccess: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestJWTMiddleware_WrongKeyword_Returns401(t *testing.T) {
 
 	user := auth.Users{TenantID: uuid.New()}
 	user.BaseModel.ID = uuid.New()
-	raw, _ := svc.IssueAccess(user, nil, nil)
+	raw, _ := svc.IssueAccess(user, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.Header.Set("Authorization", "Token "+raw) // wrong scheme

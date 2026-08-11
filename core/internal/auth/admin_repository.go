@@ -11,8 +11,26 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ErrDuplicateTechnicalName is returned by CreateRole/UpdateRole when the
+// technical_name is already used by another role in the tenant — the first
+// unique constraint in the codebase (idx_roles_tenant_technical_name, see
+// core/modules/auth/module.go's Migrate), so the Postgres 23505 violation is
+// mapped here rather than surfacing as a raw 500.
+var ErrDuplicateTechnicalName = errors.New("role: technical_name already used in this tenant")
+
+const pgUniqueViolation = "23505"
+
+func mapRoleWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		return ErrDuplicateTechnicalName
+	}
+	return err
+}
 
 // Tenant-scoped admin queries backing the users/roles management endpoints
 // (AdminHandler → Settings → Users in the frontend). The auth tables are off the
@@ -117,30 +135,34 @@ func (r *RoleRepository) FindInTenant(ctx context.Context, tenantID, id uuid.UUI
 }
 
 // CreateRole creates a role in the tenant. It starts with no permission grants —
-// grants keep their own flows.
-func (r *RoleRepository) CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string) (Roles, error) {
+// grants keep their own flows. technicalName is nil when left blank (see
+// Roles.TechnicalName on why it's nullable).
+func (r *RoleRepository) CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string, technicalName *string) (Roles, error) {
 	created, err := r.roles.Create(ctx, Roles{
-		TenantID:    tenantID,
-		Name:        name,
-		Description: description,
+		TenantID:      tenantID,
+		Name:          name,
+		Description:   description,
+		TechnicalName: technicalName,
 	})
 	if err != nil {
-		return Roles{}, fmt.Errorf("role: create: %w", err)
+		return Roles{}, fmt.Errorf("role: create: %w", mapRoleWriteErr(err))
 	}
 	return created, nil
 }
 
-// UpdateRole sets the role's name and description (the whitelisted fields).
-func (r *RoleRepository) UpdateRole(ctx context.Context, tenantID, id uuid.UUID, name, description string) (Roles, error) {
+// UpdateRole sets the role's name, description, and technical_name (the
+// whitelisted fields).
+func (r *RoleRepository) UpdateRole(ctx context.Context, tenantID, id uuid.UUID, name, description string, technicalName *string) (Roles, error) {
 	role, err := r.FindInTenant(ctx, tenantID, id)
 	if err != nil {
 		return Roles{}, err
 	}
 	role.Name = name
 	role.Description = description
+	role.TechnicalName = technicalName
 	updated, err := r.roles.Update(ctx, role, id)
 	if err != nil {
-		return Roles{}, fmt.Errorf("role: update: %w", err)
+		return Roles{}, fmt.Errorf("role: update: %w", mapRoleWriteErr(err))
 	}
 	return updated, nil
 }

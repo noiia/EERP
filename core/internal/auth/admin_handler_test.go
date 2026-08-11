@@ -56,11 +56,12 @@ func (s *stubAdminUsers) UpdateEmail(_ context.Context, tenantID, id uuid.UUID, 
 }
 
 type stubAdminRoles struct {
-	roles   []Roles
-	role    Roles
-	err     error
-	gotName string
-	gotDesc string
+	roles            []Roles
+	role             Roles
+	err              error
+	gotName          string
+	gotDesc          string
+	gotTechnicalName *string
 }
 
 func (s *stubAdminRoles) ListByTenant(_ context.Context, _ uuid.UUID) ([]Roles, error) {
@@ -71,21 +72,21 @@ func (s *stubAdminRoles) FindInTenant(_ context.Context, _, _ uuid.UUID) (Roles,
 	return s.role, s.err
 }
 
-func (s *stubAdminRoles) CreateRole(_ context.Context, _ uuid.UUID, name, description string) (Roles, error) {
-	s.gotName, s.gotDesc = name, description
+func (s *stubAdminRoles) CreateRole(_ context.Context, _ uuid.UUID, name, description string, technicalName *string) (Roles, error) {
+	s.gotName, s.gotDesc, s.gotTechnicalName = name, description, technicalName
 	if s.err != nil {
 		return Roles{}, s.err
 	}
-	return Roles{Name: name, Description: description}, nil
+	return Roles{Name: name, Description: description, TechnicalName: technicalName}, nil
 }
 
-func (s *stubAdminRoles) UpdateRole(_ context.Context, _, _ uuid.UUID, name, description string) (Roles, error) {
-	s.gotName, s.gotDesc = name, description
+func (s *stubAdminRoles) UpdateRole(_ context.Context, _, _ uuid.UUID, name, description string, technicalName *string) (Roles, error) {
+	s.gotName, s.gotDesc, s.gotTechnicalName = name, description, technicalName
 	if s.err != nil {
 		return Roles{}, s.err
 	}
 	r := s.role
-	r.Name, r.Description = name, description
+	r.Name, r.Description, r.TechnicalName = name, description, technicalName
 	return r, nil
 }
 
@@ -326,6 +327,7 @@ func TestAdminCreateRole(t *testing.T) {
 		{name: "valid", body: `{"name":"support","description":"helpdesk"}`, wantStatus: http.StatusCreated, wantName: "support"},
 		{name: "empty name rejected", body: `{"name":""}`, wantStatus: http.StatusBadRequest},
 		{name: "overlong description rejected", body: `{"name":"x","description":"` + strings.Repeat("d", 501) + `"}`, wantStatus: http.StatusBadRequest},
+		{name: "overlong technical_name rejected", body: `{"name":"x","technical_name":"` + strings.Repeat("t", 101) + `"}`, wantStatus: http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -340,6 +342,40 @@ func TestAdminCreateRole(t *testing.T) {
 				t.Errorf("created name = %q, want %q", roles.gotName, tt.wantName)
 			}
 		})
+	}
+}
+
+func TestAdminCreateRole_TechnicalNameRoundTrips(t *testing.T) {
+	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	roles := &stubAdminRoles{}
+	h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+
+	rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", `{"name":"support","technical_name":"support_agent"}`, identity)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body = %s", rec.Code, rec.Body.String())
+	}
+	if roles.gotTechnicalName == nil || *roles.gotTechnicalName != "support_agent" {
+		t.Errorf("gotTechnicalName = %v, want support_agent", roles.gotTechnicalName)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["technical_name"] != "support_agent" {
+		t.Errorf("response technical_name = %v, want support_agent", resp["technical_name"])
+	}
+}
+
+func TestAdminCreateRole_DuplicateTechnicalName_Returns409(t *testing.T) {
+	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	roles := &stubAdminRoles{err: ErrDuplicateTechnicalName}
+	h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+
+	rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", `{"name":"support","technical_name":"support_agent"}`, identity)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body = %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -31,6 +31,10 @@ func JWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
 			// Stamp the tenant so the generic CRUD layer can isolate rows to this
 			// caller's tenant (fail-closed on tenant-owned tables).
 			ctx = access.WithTenant(ctx, identity.TenantID)
+			// Stamp the resolved group closure so the generic CRUD layer can
+			// omit group-gated fields (core/orm/internal/crud.BuildResponse)
+			// without importing this package.
+			ctx = access.WithGroups(ctx, identity.Groups)
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}

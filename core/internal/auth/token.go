@@ -15,6 +15,12 @@ type Claims struct {
 	Sub    uuid.UUID `json:"sub"`
 	Tenant uuid.UUID `json:"tenant"`
 	Roles  []string  `json:"roles"`
+	// Groups carries the role-derived, transitively-belonged-to technical
+	// names (auth.UserRepository.FindGroups) — read back by
+	// core/orm/access.WithGroups so the generic CRUD layer can omit
+	// group-gated fields for a caller who doesn't hold them. Same "resolved
+	// once at issue time" posture as Permissions below.
+	Groups []string `json:"groups,omitempty"`
 	// Permissions carries the role-derived permission codes so the frontend's
 	// session mirror can gate UI (Create buttons, <Can>) without a round-trip.
 	// UI convenience only — Go still authorizes every call from the DB, so a
@@ -34,21 +40,23 @@ func NewTokenService(cfg *types.Config) *TokenService {
 }
 
 // IssueAccess issues a signed access token embedding user ID, tenant ID, roles,
-// and the role-derived permission codes (see Claims.Permissions), valid for the
-// configured access_ttl_seconds.
-func (t *TokenService) IssueAccess(user Users, roles []string, permissions []string) (string, error) {
-	return t.IssueAccessWithTTL(user, roles, permissions, t.accessTTL())
+// the role-derived group closure (see Claims.Groups), and the role-derived
+// permission codes (see Claims.Permissions), valid for the configured
+// access_ttl_seconds.
+func (t *TokenService) IssueAccess(user Users, roles []string, groups []string, permissions []string) (string, error) {
+	return t.IssueAccessWithTTL(user, roles, groups, permissions, t.accessTTL())
 }
 
 // IssueAccessWithTTL is IssueAccess with an explicit expiry instead of the
 // configured access_ttl_seconds — for short-lived, narrowly-scoped tokens
 // (e.g. the PDF report pipeline's internal print URL, docs/adr/ADR-010) that
 // must not remain a valid credential for a full session.
-func (t *TokenService) IssueAccessWithTTL(user Users, roles []string, permissions []string, ttl time.Duration) (string, error) {
+func (t *TokenService) IssueAccessWithTTL(user Users, roles []string, groups []string, permissions []string, ttl time.Duration) (string, error) {
 	claims := Claims{
 		Sub:         user.ID,
 		Tenant:      user.TenantID,
 		Roles:       roles,
+		Groups:      groups,
 		Permissions: permissions,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.String(),

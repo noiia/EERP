@@ -51,6 +51,10 @@ func (s *stubUserRepo) FindRoleNames(_ context.Context, _ uuid.UUID) ([]string, 
 	return s.roles, nil
 }
 
+func (s *stubUserRepo) FindGroups(_ context.Context, _ uuid.UUID) ([]string, error) {
+	return nil, nil
+}
+
 type stubPermissionSource struct{}
 
 func (s *stubPermissionSource) ForRoles(_ context.Context, roles []string) ([]string, error) {

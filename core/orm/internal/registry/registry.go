@@ -23,17 +23,22 @@ type FieldMeta struct {
 	Nullable  bool   // true when the field is a pointer type
 	ReadOnly  bool   // true when marked read-only via Option or api.yaml
 	IndexPath []int  // FieldByIndex path, from cache.FieldMeta
+	// Groups gates this field to callers whose resolved group set (core/orm/
+	// access.GroupsFromContext — a role's own technical_name plus every role
+	// it transitively belongs to) intersects these strings. Empty (the
+	// default) means ungated, visible to everyone. Set via WithFieldGroups.
+	Groups []string
 }
 
 // TableMeta is the fully resolved descriptor for one registered struct.
 type TableMeta struct {
-	TableName   string        // snake_case table name
-	RoutePrefix string        // URL segment, e.g. "products" → /api/v1/products
-	Fields      []FieldMeta   // all API-visible fields
-	PKField     FieldMeta     // the primary key field
-	SoftDelete  bool          // true when any field carries the softdelete tag
-	Excluded    bool          // true when api.yaml marks this table exclude: true
-	TypeRef     reflect.Type  // for instantiating values at runtime
+	TableName   string           // snake_case table name
+	RoutePrefix string           // URL segment, e.g. "products" → /api/v1/products
+	Fields      []FieldMeta      // all API-visible fields
+	PKField     FieldMeta        // the primary key field
+	SoftDelete  bool             // true when any field carries the softdelete tag
+	Excluded    bool             // true when api.yaml marks this table exclude: true
+	TypeRef     reflect.Type     // for instantiating values at runtime
 	StructMeta  cache.StructMeta // passed to query builders by the crud layer
 }
 
@@ -53,10 +58,11 @@ func (m TableMeta) HasField(col string) bool {
 type Option func(*regOptions)
 
 type regOptions struct {
-	tableName    string
-	readOnly     []string
-	excludeCols  []string
-	excluded     bool
+	tableName   string
+	readOnly    []string
+	excludeCols []string
+	excluded    bool
+	fieldGroups map[string][]string
 }
 
 // WithTableName overrides the table name derived from the struct name.
@@ -73,6 +79,17 @@ func WithReadOnlyFields(fields ...string) Option {
 // WithExcludeFields removes the named columns from the API entirely.
 func WithExcludeFields(fields ...string) Option {
 	return func(o *regOptions) { o.excludeCols = append(o.excludeCols, fields...) }
+}
+
+// WithFieldGroups gates the named columns to callers whose resolved group set
+// intersects the given groups (map: column -> groups). A module author
+// declares this alongside the struct's own Register call — unlike
+// WithReadOnlyFields/WithExcludeFields, which exist so an *operator* can
+// override another module's code via api.yaml without a rebuild, gating is a
+// module-author decision made at registration time, so there is no api.yaml
+// twin. See core/orm/internal/crud.BuildResponse for the enforcement.
+func WithFieldGroups(groups map[string][]string) Option {
+	return func(o *regOptions) { o.fieldGroups = groups }
 }
 
 // WithExcluded keeps the table off the HTTP surface entirely: it is still
@@ -395,6 +412,7 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 			Nullable:  cf.Type.Kind() == reflect.Ptr,
 			ReadOnly:  roSet[cf.Column],
 			IndexPath: cf.IndexPath,
+			Groups:    o.fieldGroups[cf.Column],
 		}
 		if cf.IsPK {
 			pkField = fm

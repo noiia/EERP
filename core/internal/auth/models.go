@@ -32,6 +32,29 @@ type Roles struct {
 	TenantID    uuid.UUID `db:"tenant_id"`
 	Name        string    `db:"name"`
 	Description string    `db:"description"`
+	// TechnicalName is a stable slug distinct from Name (which stays mutable
+	// and is the identifier the existing permission system/JWT roles claim
+	// already relies on — untouched by this field). It's what a field's
+	// group-gating list matches against, and what other roles reference via
+	// RoleBelongs. Nullable: the ORM's struct-tag migration has no unique
+	// modifier, so the unique index (auth module's Migrate) is hand-written
+	// SQL scoped to non-null values — existing roles simply don't
+	// participate until someone sets one.
+	TechnicalName *string `db:"technical_name"`
+}
+
+// RoleBelongs is a role's self-referential "implied role" edge (Odoo's
+// implied_ids): RoleID belongs to BelongsToRoleID, so a user holding RoleID
+// transitively inherits BelongsToRoleID's groups (see
+// UserRepository.FindGroups). Unlike UserRoles/RolePermissions this carries
+// model.BaseModel (a single uuid PK) rather than a composite PK, because it's
+// registered on the generic CRUD surface so the frontend's many2many chips
+// widget can address one link by its own row id.
+type RoleBelongs struct {
+	model.BaseModel
+	TenantID        uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	RoleID          uuid.UUID `db:"role_id" json:"role_id"`
+	BelongsToRoleID uuid.UUID `db:"belongs_to_role_id" json:"belongs_to_role_id"`
 }
 
 // Permission represents a single capability using the "module:resource:action" DSL.

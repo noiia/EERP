@@ -24,8 +24,14 @@ import {
 } from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { useNotebookOps, type NotebookPageRecord } from './notebook-ops'
+import { useSessionStore } from './session-store'
 import { layout as layoutTokens, typeScale } from './tokens'
 import { fieldWidget } from './widgets'
+
+// Stable reference — a fresh [] from the selector would make zustand see a
+// new snapshot every render and loop forever (same reasoning as Can.tsx's
+// NO_PERMISSIONS).
+const NO_GROUPS: string[] = []
 
 // The single entry point for descriptor-driven field rendering
 // (docs/roadmaps/view-customization.md, Phase 1): walks a descriptor's
@@ -412,6 +418,7 @@ function LayoutNodeView({
   hidden?: ReadonlySet<string>
 }) {
   const t = useT()
+  const callerGroups = useSessionStore((s) => s.identity?.groups ?? NO_GROUPS)
 
   if (node.kind === 'field') {
     if (hidden?.has(node.name)) return null
@@ -424,8 +431,10 @@ function LayoutNodeView({
     // subscription), so visibility/readOnly react to the user's own edits
     // with zero extra plumbing. Hidden (static `invisible` or `states.visible:
     // false`) UNMOUNTS the field; its draft value is untouched, so toggling
-    // states.visible back on shows it unchanged.
-    if (!isFieldVisible(field, draft)) return null
+    // states.visible back on shows it unchanged. `field.groups` is the same
+    // static-hide family — see FieldDescriptor.groups's doc on why this is a
+    // UX mirror, not the security boundary.
+    if (!isFieldVisible(field, draft, callerGroups)) return null
     const stateReadOnly = field.states?.readOnly
       ? evaluateCondition(field.states.readOnly, draft)
       : false

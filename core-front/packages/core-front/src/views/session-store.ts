@@ -13,6 +13,16 @@ export interface Identity {
   roles: string[]
   /** Effective permission DSL strings (module:resource:action), wildcards allowed. */
   permissions: string[]
+  /**
+   * Resolved group closure (a role's own technical_name plus every role it
+   * transitively belongs to — core/orm's WithFieldGroups / FieldMeta.Groups).
+   * UX mirror only: Go's generic CRUD already omits a gated field's key from
+   * the response for a caller outside these groups, so this just keeps
+   * layout-renderer.tsx from rendering an empty slot for it. Optional so
+   * every existing Identity literal (tests, older sessions) keeps compiling —
+   * isFieldVisible treats an absent set as fail-open (don't hide).
+   */
+  groups?: string[]
 }
 
 export interface SessionState {

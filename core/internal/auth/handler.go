@@ -22,10 +22,11 @@ type userQuerier interface {
 	FindByEmail(ctx context.Context, email string) (Users, error)
 	FindByID(ctx context.Context, id uuid.UUID) (Users, error)
 	FindRoleNames(ctx context.Context, userID uuid.UUID) ([]string, error)
+	FindGroups(ctx context.Context, userID uuid.UUID) ([]string, error)
 }
 
 type tokenIssuer interface {
-	IssueAccess(user Users, roles []string, permissions []string) (string, error)
+	IssueAccess(user Users, roles []string, groups []string, permissions []string) (string, error)
 	IssueRefresh(userID uuid.UUID) (string, error)
 	ParseRefresh(raw string) (uuid.UUID, error)
 	accessTTLSeconds() int // lowercase: only implementations in this package
@@ -137,12 +138,17 @@ func (h *Handler) Login(c echo.Context) error {
 		return fmt.Errorf("login: find roles: %w", err)
 	}
 
+	groups, err := h.users.FindGroups(c.Request().Context(), user.ID)
+	if err != nil {
+		return fmt.Errorf("login: find groups: %w", err)
+	}
+
 	permissions, err := h.perms.ForRoles(c.Request().Context(), roles)
 	if err != nil {
 		return fmt.Errorf("login: resolve permissions: %w", err)
 	}
 
-	accessToken, err := h.tokens.IssueAccess(user, roles, permissions)
+	accessToken, err := h.tokens.IssueAccess(user, roles, groups, permissions)
 	if err != nil {
 		return fmt.Errorf("login: issue access token: %w", err)
 	}
@@ -195,12 +201,17 @@ func (h *Handler) Refresh(c echo.Context) error {
 		return fmt.Errorf("refresh: find roles: %w", err)
 	}
 
+	groups, err := h.users.FindGroups(c.Request().Context(), user.ID)
+	if err != nil {
+		return fmt.Errorf("refresh: find groups: %w", err)
+	}
+
 	permissions, err := h.perms.ForRoles(c.Request().Context(), roles)
 	if err != nil {
 		return fmt.Errorf("refresh: resolve permissions: %w", err)
 	}
 
-	accessToken, err := h.tokens.IssueAccess(user, roles, permissions)
+	accessToken, err := h.tokens.IssueAccess(user, roles, groups, permissions)
 	if err != nil {
 		return fmt.Errorf("refresh: issue access token: %w", err)
 	}

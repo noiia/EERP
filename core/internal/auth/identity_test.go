@@ -63,7 +63,7 @@ func TestNewIdentityFromClaims_MapsFields(t *testing.T) {
 	u := testUser()
 	u.BaseModel.ID = uuid.New()
 
-	raw, _ := svc.IssueAccess(u, []string{"crm:read"}, nil)
+	raw, _ := svc.IssueAccess(u, []string{"crm:read"}, nil, nil)
 	claims, _ := svc.ParseAccess(raw)
 
 	id := auth.NewIdentityFromClaims(claims)

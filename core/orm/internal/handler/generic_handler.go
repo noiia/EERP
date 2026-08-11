@@ -103,7 +103,8 @@ func (h *GenericHandler) List(c echo.Context) error {
 		return err
 	}
 
-	rows, total, err := h.svc.List(c.Request().Context(), f)
+	ctx := c.Request().Context()
+	rows, total, err := h.svc.List(ctx, f)
 	if err != nil {
 		if errors.Is(err, crud.ErrUnknownColumn) {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -113,7 +114,7 @@ func (h *GenericHandler) List(c echo.Context) error {
 
 	resp := make([]map[string]any, len(rows))
 	for i, row := range rows {
-		resp[i] = crud.BuildResponse(h.meta, row)
+		resp[i] = crud.BuildResponse(ctx, h.meta, row)
 	}
 
 	return c.JSON(http.StatusOK, crud.PaginatedResponse{
@@ -131,7 +132,8 @@ func (h *GenericHandler) GetByID(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
 	}
 
-	row, err := h.svc.GetByID(c.Request().Context(), id)
+	ctx := c.Request().Context()
+	row, err := h.svc.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, crud.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -139,7 +141,7 @@ func (h *GenericHandler) GetByID(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, crud.BuildResponse(h.meta, row))
+	return c.JSON(http.StatusOK, crud.BuildResponse(ctx, h.meta, row))
 }
 
 // Create handles POST /api/v1/{table}
@@ -162,12 +164,13 @@ func (h *GenericHandler) Create(c echo.Context) error {
 		return err
 	}
 
-	result, err := h.svc.Create(c.Request().Context(), clean)
+	ctx := c.Request().Context()
+	result, err := h.svc.Create(ctx, clean)
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusCreated, crud.BuildResponse(h.meta, result))
+	return c.JSON(http.StatusCreated, crud.BuildResponse(ctx, h.meta, result))
 }
 
 // Update handles PUT /api/v1/{table}/:id
@@ -195,7 +198,8 @@ func (h *GenericHandler) Update(c echo.Context) error {
 		return err
 	}
 
-	result, err := h.svc.Update(c.Request().Context(), id, clean)
+	ctx := c.Request().Context()
+	result, err := h.svc.Update(ctx, id, clean)
 	if err != nil {
 		if errors.Is(err, crud.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -203,7 +207,7 @@ func (h *GenericHandler) Update(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, crud.BuildResponse(h.meta, result))
+	return c.JSON(http.StatusOK, crud.BuildResponse(ctx, h.meta, result))
 }
 
 // Delete handles DELETE /api/v1/{table}/:id
@@ -232,7 +236,8 @@ func (h *GenericHandler) Restore(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
 	}
 
-	result, err := h.svc.Restore(c.Request().Context(), id)
+	ctx := c.Request().Context()
+	result, err := h.svc.Restore(ctx, id)
 	if err != nil {
 		if errors.Is(err, crud.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -240,5 +245,5 @@ func (h *GenericHandler) Restore(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, crud.BuildResponse(h.meta, result))
+	return c.JSON(http.StatusOK, crud.BuildResponse(ctx, h.meta, result))
 }

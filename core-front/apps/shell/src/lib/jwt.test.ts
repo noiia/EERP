@@ -16,6 +16,7 @@ describe('identityFromAccessToken', () => {
       userId: 'u1',
       tenantId: 't1',
       roles: ['admin'],
+      groups: [],
       permissions: [],
     })
   })
@@ -23,6 +24,11 @@ describe('identityFromAccessToken', () => {
   it('reads a permissions claim when present (forward-compatible)', () => {
     const token = makeJwt({ sub: 'u1', tenant: 't1', roles: [], permissions: ['crm:*:read'], exp: future })
     expect(identityFromAccessToken(token)?.permissions).toEqual(['crm:*:read'])
+  })
+
+  it('reads a groups claim when present', () => {
+    const token = makeJwt({ sub: 'u1', tenant: 't1', roles: [], groups: ['pricing'], exp: future })
+    expect(identityFromAccessToken(token)?.groups).toEqual(['pricing'])
   })
 
   it('returns null for an expired token', () => {

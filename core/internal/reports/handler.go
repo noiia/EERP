@@ -31,7 +31,7 @@ type permissionSource interface {
 // tokenIssuer is the call-site interface the handler needs to mint the
 // print URL's token — *auth.TokenService satisfies it.
 type tokenIssuer interface {
-	IssueAccessWithTTL(user auth.Users, roles []string, permissions []string, ttl time.Duration) (string, error)
+	IssueAccessWithTTL(user auth.Users, roles []string, groups []string, permissions []string, ttl time.Duration) (string, error)
 }
 
 type Handler struct {
@@ -92,7 +92,7 @@ func (h *Handler) GeneratePDF(c echo.Context) error {
 	}
 	user := auth.Users{TenantID: identity.TenantID}
 	user.ID = identity.UserID
-	token, err := h.tokens.IssueAccessWithTTL(user, identity.Roles, perms, printTokenTTL)
+	token, err := h.tokens.IssueAccessWithTTL(user, identity.Roles, identity.Groups, perms, printTokenTTL)
 	if err != nil {
 		return fmt.Errorf("reports: issue print token: %w", err)
 	}

@@ -187,6 +187,19 @@ export interface FieldDescriptor {
    */
   invisible?: boolean
   /**
+   * Server-enforced group gating (core/orm's `WithFieldGroups` /
+   * `FieldMeta.Groups`): when set, Go's generic CRUD `BuildResponse` omits
+   * this column's KEY entirely from every JSON response for a caller whose
+   * resolved group set (JWT `groups` claim — a role's own technical_name
+   * plus every role it transitively belongs to, Odoo `implied_ids`-style)
+   * doesn't intersect these strings. That server omission is the real
+   * security boundary; `groups` here is purely the client-side UX
+   * counterpart (see `isFieldVisible`), so a gated field's slot doesn't
+   * render empty/broken for a user who can never receive its value — it
+   * never affects what data is actually reachable.
+   */
+  groups?: string[]
+  /**
    * Suppresses the field's own label (the boxed TextField label, the
    * FormControlLabel text, or the small caption a widget renders above
    * itself) while still rendering the field itself — unlike `invisible`,
@@ -403,14 +416,28 @@ export function evaluateCondition(cond: Condition, record: Record<string, unknow
 
 /**
  * Whether a field renders/counts at all: the static `invisible` flag OR's
- * with the declarative `states.visible` condition — either one hiding the
- * field is enough, and STATIC wins (no condition can turn it back on). The
- * one definition of "visible" LayoutNodeView (rendering) and requiredMissing
- * (commit validation) both read, so they can never disagree about a field
- * `invisible: true` already unmounted.
+ * with the declarative `states.visible` condition and `field.groups` OR's in
+ * too — any one hiding the field is enough, and STATIC (`invisible`,
+ * `groups`) wins over `states.visible` (no condition can turn it back on).
+ * The one definition of "visible" LayoutNodeView (rendering) and
+ * requiredMissing (commit validation) both read, so they can never disagree
+ * about a field `invisible: true` already unmounted.
+ *
+ * `callerGroups` is optional and fail-OPEN when omitted (every existing call
+ * site keeps compiling and keeps its old behavior) — correct because the
+ * real gate already ran server-side (see `FieldDescriptor.groups`'s doc);
+ * this check only avoids rendering an empty slot for a field the caller was
+ * never sent.
  */
-export function isFieldVisible(field: FieldDescriptor, draft: Record<string, unknown>): boolean {
+export function isFieldVisible(
+  field: FieldDescriptor,
+  draft: Record<string, unknown>,
+  callerGroups?: string[],
+): boolean {
   if (field.invisible) return false
+  if (field.groups?.length && callerGroups && !field.groups.some((g) => callerGroups.includes(g))) {
+    return false
+  }
   return field.states?.visible ? evaluateCondition(field.states.visible, draft) : true
 }
 

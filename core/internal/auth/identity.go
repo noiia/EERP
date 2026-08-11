@@ -12,6 +12,11 @@ type Identity struct {
 	UserID   uuid.UUID
 	TenantID uuid.UUID
 	Roles    []string
+	// Groups is the technical-name closure resolved at token-issue time (see
+	// UserRepository.FindGroups) — a role's own technical_name plus every
+	// role it transitively belongs to. Stamped onto the request context via
+	// core/orm/access.WithGroups so the generic CRUD layer can gate fields.
+	Groups []string
 }
 
 type contextKey struct{}
@@ -45,5 +50,6 @@ func NewIdentityFromClaims(claims *Claims) Identity {
 		UserID:   claims.Sub,
 		TenantID: claims.Tenant,
 		Roles:    claims.Roles,
+		Groups:   claims.Groups,
 	}
 }

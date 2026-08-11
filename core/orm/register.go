@@ -50,6 +50,12 @@ func WithExcludeFields(fields ...string) Option {
 	return registry.WithExcludeFields(fields...)
 }
 
+// WithFieldGroups gates the named columns (map: column -> groups) to callers
+// whose resolved group set intersects. See registry.WithFieldGroups.
+func WithFieldGroups(groups map[string][]string) Option {
+	return registry.WithFieldGroups(groups)
+}
+
 // WithExcluded keeps the table registered with the ORM but off the HTTP surface
 // (no CRUD routes). Code-level, fail-closed equivalent of api.yaml `exclude: true`.
 func WithExcluded() Option {

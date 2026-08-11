@@ -32,7 +32,7 @@ func TestIssueAccess_ReturnsSigned(t *testing.T) {
 	u := testUser()
 	u.BaseModel.ID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
-	tok, err := svc.IssueAccess(u, []string{"admin"}, []string{"*:*:*"})
+	tok, err := svc.IssueAccess(u, []string{"admin"}, nil, []string{"*:*:*"})
 	if err != nil {
 		t.Fatalf("IssueAccess: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestIssueAccess_EmbedsPermissionsClaim(t *testing.T) {
 	u := testUser()
 	u.BaseModel.ID = uuid.New()
 
-	raw, err := svc.IssueAccess(u, []string{"admin"}, []string{"crm:contacts:write", "users:users:read"})
+	raw, err := svc.IssueAccess(u, []string{"admin"}, nil, []string{"crm:contacts:write", "users:users:read"})
 	if err != nil {
 		t.Fatalf("IssueAccess: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestParseAccess_ValidToken_ReturnsRoles(t *testing.T) {
 	u.BaseModel.ID = uuid.New()
 	roles := []string{"admin", "crm:write"}
 
-	raw, err := svc.IssueAccess(u, roles, nil)
+	raw, err := svc.IssueAccess(u, roles, nil, nil)
 	if err != nil {
 		t.Fatalf("IssueAccess: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestParseAccess_WrongKey_ReturnsError(t *testing.T) {
 
 	u := testUser()
 	u.BaseModel.ID = uuid.New()
-	raw, _ := svc1.IssueAccess(u, nil, nil)
+	raw, _ := svc1.IssueAccess(u, nil, nil, nil)
 
 	_, err := svc2.ParseAccess(raw)
 	if err == nil {
@@ -177,7 +177,7 @@ func TestTokenService_ZeroTTL_UsesDefaults(t *testing.T) {
 	u := testUser()
 	u.BaseModel.ID = uuid.New()
 
-	tok, err := svc.IssueAccess(u, nil, nil)
+	tok, err := svc.IssueAccess(u, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("IssueAccess with zero TTL: %v", err)
 	}

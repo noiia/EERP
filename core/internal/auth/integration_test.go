@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"core/internal/auth"
 	authmw "core/internal/middleware"
@@ -56,7 +59,8 @@ func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 			deleted_at TIMESTAMPTZ,
 			tenant_id UUID NOT NULL,
 			name TEXT NOT NULL,
-			description TEXT NOT NULL DEFAULT ''
+			description TEXT NOT NULL DEFAULT '',
+			technical_name TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS permissions (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -77,6 +81,15 @@ func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 			permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
 			PRIMARY KEY (role_id, permission_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS role_belongs (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			deleted_at TIMESTAMPTZ,
+			tenant_id UUID NOT NULL,
+			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+			belongs_to_role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS refresh_tokens (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -95,13 +108,14 @@ func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 	}
 
 	t.Cleanup(func() {
-		app.DB.Exec(ctx, "DELETE FROM refresh_tokens") //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM user_roles")     //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM refresh_tokens")   //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM role_belongs")     //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM user_roles")       //nolint:errcheck
 		app.DB.Exec(ctx, "DELETE FROM role_permissions") //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM users")          //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM roles")          //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM permissions")    //nolint:errcheck
-		app.Close()                                     //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM users")            //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM roles")            //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM permissions")      //nolint:errcheck
+		app.Close()                                      //nolint:errcheck
 	})
 	return app, cfg
 }
@@ -147,6 +161,36 @@ func seedRoleWithPermission(t *testing.T, db *orm.DB, userID uuid.UUID, tenantID
 	}
 	if _, err := db.Exec(ctx, `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)`, roleID, permID); err != nil {
 		t.Fatalf("seed role_permission: %v", err)
+	}
+}
+
+// seedRole creates a role with the given technical name (empty = untagged)
+// and assigns it directly to userID. Returns the role id, for wiring
+// role_belongs edges in tests.
+func seedRole(t *testing.T, db *orm.DB, userID, tenantID uuid.UUID, technicalName string) uuid.UUID {
+	t.Helper()
+	var roleID uuid.UUID
+	if err := db.QueryRow(context.Background(),
+		`INSERT INTO roles (tenant_id, name, technical_name) VALUES ($1, $2, NULLIF($3, '')) RETURNING id`,
+		tenantID, "role-"+technicalName, technicalName,
+	).Scan(&roleID); err != nil {
+		t.Fatalf("seed role %q: %v", technicalName, err)
+	}
+	if _, err := db.Exec(context.Background(),
+		`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, userID, roleID,
+	); err != nil {
+		t.Fatalf("seed user_role for %q: %v", technicalName, err)
+	}
+	return roleID
+}
+
+func seedBelongs(t *testing.T, db *orm.DB, tenantID, roleID, belongsToRoleID uuid.UUID) {
+	t.Helper()
+	if _, err := db.Exec(context.Background(),
+		`INSERT INTO role_belongs (tenant_id, role_id, belongs_to_role_id) VALUES ($1, $2, $3)`,
+		tenantID, roleID, belongsToRoleID,
+	); err != nil {
+		t.Fatalf("seed role_belongs: %v", err)
 	}
 }
 
@@ -423,5 +467,80 @@ func TestIntegration_ProtectedRoute_SuperAdmin_Returns200(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIntegration_FindGroups_TransitiveClosure_CycleSafe(t *testing.T) {
+	app, _ := integrationSetup(t)
+	tenantID := uuid.New()
+	userID := seedUser(t, app.DB, "henry@example.com", "pass", tenantID)
+
+	// henry directly holds role "a". a belongs_to b, b belongs_to c, and c
+	// belongs_to a again (a cycle) — FindGroups must still terminate and
+	// return exactly {a, b, c}, not loop forever or miss the far end.
+	roleA := seedRole(t, app.DB, userID, tenantID, "a")
+	roleB := seedRole(t, app.DB, uuid.New(), tenantID, "b") // not directly assigned to henry
+	roleC := seedRole(t, app.DB, uuid.New(), tenantID, "c")
+	seedBelongs(t, app.DB, tenantID, roleA, roleB)
+	seedBelongs(t, app.DB, tenantID, roleB, roleC)
+	seedBelongs(t, app.DB, tenantID, roleC, roleA) // closes the cycle
+
+	users := auth.NewUserRepository(app.DB)
+
+	done := make(chan struct{})
+	var groups []string
+	var err error
+	go func() {
+		groups, err = users.FindGroups(context.Background(), userID)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FindGroups did not return — recursive CTE likely looping on the cycle")
+	}
+	if err != nil {
+		t.Fatalf("FindGroups: %v", err)
+	}
+
+	sort.Strings(groups)
+	want := []string{"a", "b", "c"}
+	if !reflect.DeepEqual(groups, want) {
+		t.Errorf("groups = %v, want %v", groups, want)
+	}
+}
+
+func TestIntegration_Login_EmbedsGroupsClaim(t *testing.T) {
+	app, cfg := integrationSetup(t)
+	tenantID := uuid.New()
+	userID := seedUser(t, app.DB, "iris@example.com", "pass", tenantID)
+	roleA := seedRole(t, app.DB, userID, tenantID, "support_agent")
+	roleB := seedRole(t, app.DB, uuid.New(), tenantID, "senior_support")
+	seedBelongs(t, app.DB, tenantID, roleA, roleB)
+
+	e, _ := buildTestStack(app, cfg)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
+		strings.NewReader(`{"email":"iris@example.com","password":"pass"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &resp) //nolint:errcheck
+	accessToken, _ := resp["access_token"].(string)
+
+	tokenSvc := auth.NewTokenService(cfg)
+	claims, err := tokenSvc.ParseAccess(accessToken)
+	if err != nil {
+		t.Fatalf("ParseAccess: %v", err)
+	}
+	sort.Strings(claims.Groups)
+	want := []string{"senior_support", "support_agent"}
+	if !reflect.DeepEqual(claims.Groups, want) {
+		t.Errorf("groups claim = %v, want %v", claims.Groups, want)
 	}
 }

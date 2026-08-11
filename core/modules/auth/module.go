@@ -43,6 +43,15 @@ func (m *authModule) Register() error {
 	if err := orm.Register[auth.RefreshTokens](orm.WithExcluded()); err != nil {
 		return err
 	}
+	// RoleBelongs is deliberately NOT WithExcluded: it rides the generic CRUD
+	// surface (like any module's own many2many junction) so the frontend's
+	// existing RelationTagsWidget/RelationOps drive the Roles form's "Belongs"
+	// tab with no bespoke endpoint or widget code. The coarse
+	// role_belongs:role_belongs:* permission this derives is granted to the
+	// default admin role in seed.go alongside roles:roles:*.
+	if err := orm.Register[auth.RoleBelongs](); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -67,6 +76,20 @@ func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
 		)
 	`); err != nil {
 		return fmt.Errorf("auth: create role_permissions: %w", err)
+	}
+
+	// First unique constraint in the codebase: struct-tag auto-migration only
+	// supports plain (non-unique) indexes, so a per-tenant uniqueness
+	// guarantee on technical_name has to be hand-written here, like the
+	// junction tables above. Partial on technical_name IS NOT NULL (nullable
+	// column, see Roles.TechnicalName) and deleted_at IS NULL so a
+	// soft-deleted role doesn't permanently squat a slug.
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_tenant_technical_name
+		ON roles (tenant_id, technical_name)
+		WHERE technical_name IS NOT NULL AND deleted_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("auth: create roles technical_name index: %w", err)
 	}
 
 	return nil
