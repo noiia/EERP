@@ -1,6 +1,8 @@
 'use server'
 import { ApiError, createServerApiClient } from '@eerp/core-front/server'
 import { seedingAllowed } from './dev-seed-allowed'
+import { getMyLocalePreferences } from './preferences'
+import { PAPER_SIZE_PRESETS } from '../../app/settings/appearance/page-formats/descriptors'
 
 // Settings -> Developer: populates the workspace with realistic-looking demo
 // records through the SAME generic entity API (POST /{entity}) any other write
@@ -51,9 +53,28 @@ const CRM_NOTES = [
 ] as const
 const TAG_NAMES = ['VIP', 'Newsletter', 'Hot lead', 'Enterprise', 'Churn risk', 'Partner'] as const
 
+// warehouse.Product's small fixed catalog — a product catalog reads more
+// realistically as concrete offerings than as randomly combined words, unlike
+// contacts/CRM records above. tax_rate is a 0..1 ratio (see warehouse/module.go).
+const PRODUCTS = [
+  { name: 'Standard consulting hour', reference: 'CONS-STD', unit: 'hour', unit_price: 85, tax_rate: 0.2 },
+  { name: 'Onboarding package', reference: 'ONB-PKG', unit: 'pcs', unit_price: 1200, tax_rate: 0.2 },
+  { name: 'Support retainer (monthly)', reference: 'SUP-MO', unit: 'month', unit_price: 400, tax_rate: 0.2 },
+  { name: 'Server rack unit', reference: 'HW-RACK', unit: 'pcs', unit_price: 650, tax_rate: 0.055 },
+  { name: 'Training workshop (half day)', reference: 'TRN-HD', unit: 'pcs', unit_price: 300, tax_rate: 0.2 },
+  { name: 'Custom integration', reference: 'DEV-INT', unit: 'pcs', unit_price: 2400, tax_rate: 0.2 },
+] as const
+
+const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled'] as const
+const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as const
+const CURRENCIES = ['USD', 'EUR', 'GBP'] as const
+
 const CONTACT_COUNT = 10
 const CRM_COUNT = 15
 const TAG_LINKS_MAX_PER_CRM = 2
+const INVOICE_COUNT = 6
+const QUOTE_COUNT = 6
+const DOC_LINES_MAX_PER_DOCUMENT = 3
 
 function pick<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)] as T
@@ -125,6 +146,100 @@ function buildTagLinks(
   return links
 }
 
+function buildProducts(): Record<string, unknown>[] {
+  return PRODUCTS.map((p) => ({ ...p }))
+}
+
+/**
+ * One variant per product, Name left BLANK on purpose — exercises
+ * warehouse.Handler's Create override, which defaults it from the product's
+ * own name ("each product automatically references a variant").
+ */
+function buildProductVariants(products: { id: string }[]): Record<string, unknown>[] {
+  return products.map((p) => ({ product_id: p.id }))
+}
+
+/**
+ * Shared shape behind buildInvoices/buildQuotes: sale.Invoice and sale.Quote
+ * carry the same field set (module.go's doc comment on Quote) — only the
+ * number prefix and status vocabulary differ per document kind.
+ */
+function buildDocuments(
+  contacts: { id: string }[],
+  count: number,
+  numberPrefix: string,
+  statuses: readonly string[],
+): Record<string, unknown>[] {
+  const year = new Date().getFullYear()
+  return Array.from({ length: count }, (_, i) => {
+    const first = pick(FIRST_NAMES)
+    const last = pick(LAST_NAMES)
+    const company = pick(COMPANIES)
+    // A third of the batch has no linked contact, same reasoning as buildCrmRecords.
+    const contact = contacts.length > 0 && Math.random() > 0.33 ? pick(contacts) : null
+    const issueDate = new Date()
+    issueDate.setDate(issueDate.getDate() - Math.floor(Math.random() * 60))
+    const dueDate = new Date(issueDate)
+    dueDate.setDate(dueDate.getDate() + 30)
+    return {
+      number: `${numberPrefix}-${year}-${String(i + 1).padStart(4, '0')}`,
+      status: pick(statuses),
+      issue_date: issueDate.toISOString().slice(0, 10),
+      due_date: dueDate.toISOString().slice(0, 10),
+      subject: 'Professional services',
+      customer_id: contact?.id ?? null,
+      customer_name: contact ? `${first} ${last}` : company,
+      customer_email: fakeEmail(first, last, company),
+      customer_address: company,
+      currency: pick(CURRENCIES),
+      reference: `PO-${1000 + Math.floor(Math.random() * 9000)}`,
+    }
+  })
+}
+
+/**
+ * 1-3 lines per document, each striking a random product variant — the
+ * backend snapshots Unit/TaxRate/UnitPrice from the variant's product and
+ * rolls the parent document's totals up on every line write (handler.go's
+ * recomputeTotals), so line bodies only need the variant + quantity.
+ */
+function buildDocumentLines(
+  headerIdField: string,
+  headers: { id: string }[],
+  variants: { id: string }[],
+): Record<string, unknown>[] {
+  if (variants.length === 0) return []
+  const lines: Record<string, unknown>[] = []
+  for (const header of headers) {
+    const lineCount = 1 + Math.floor(Math.random() * DOC_LINES_MAX_PER_DOCUMENT)
+    for (let i = 0; i < lineCount; i += 1) {
+      lines.push({
+        [headerIdField]: header.id,
+        variant_id: pick(variants).id,
+        quantity: 1 + Math.floor(Math.random() * 5),
+      })
+    }
+  }
+  return lines
+}
+
+/**
+ * One report_page_format row per standard preset (A4/A5/Letter/Legal, the
+ * same PAPER_SIZE_PRESETS the page-format form's "Standard size" selector
+ * offers) — Settings -> Global settings -> Reports ships with real defaults
+ * instead of an empty table. Tagged to the caller's active company when
+ * resolvable (report-settings.ts's createPageFormatForCompany does the same
+ * for a manually created row); left untagged otherwise, same as any
+ * pre-multi-company row (company.go's BackfillCompanyID sweeps those up).
+ */
+function buildPageFormats(companyId: string | null): Record<string, unknown>[] {
+  return Object.entries(PAPER_SIZE_PRESETS).map(([name, size]) => ({
+    name,
+    ...size,
+    ...(companyId ? { company_id: companyId } : {}),
+  }))
+}
+
 /** Creates every body, tolerating per-record failures (e.g. a missing permission). */
 async function createMany<R extends { id: string }>(
   entity: string,
@@ -148,9 +263,10 @@ async function createMany<R extends { id: string }>(
 }
 
 /**
- * Seed the workspace with fake contacts, CRM opportunities, tags, and the
- * junction rows linking them — through the ordinary entity API, in dependency
- * order (contacts and tags before the CRM/crm_tag rows that reference them).
+ * Seed the workspace with fake contacts, CRM opportunities, tags, warehouse
+ * products, sale invoices/quotes (with their line items), and default report
+ * page formats — through the ordinary entity API, in dependency order
+ * (parents before the rows that reference their ids).
  */
 export async function seedDemoData(): Promise<SeedResult> {
   if (!seedingAllowed()) {
@@ -176,6 +292,46 @@ export async function seedDemoData(): Promise<SeedResult> {
     const linksOutcome = await createMany('crm_tag', tagLinks)
     results.push(linksOutcome.result)
   }
+
+  const productsOutcome = await createMany<{ id: string }>('product', buildProducts())
+  results.push(productsOutcome.result)
+
+  const variantsOutcome = await createMany<{ id: string }>(
+    'product_variant',
+    buildProductVariants(productsOutcome.records),
+  )
+  results.push(variantsOutcome.result)
+
+  const invoicesOutcome = await createMany<{ id: string }>(
+    'invoice',
+    buildDocuments(contactsOutcome.records, INVOICE_COUNT, 'INV', INVOICE_STATUSES),
+  )
+  results.push(invoicesOutcome.result)
+
+  const saleLinesOutcome = await createMany(
+    'sale_line',
+    buildDocumentLines('invoice_id', invoicesOutcome.records, variantsOutcome.records),
+  )
+  results.push(saleLinesOutcome.result)
+
+  const quotesOutcome = await createMany<{ id: string }>(
+    'quote',
+    buildDocuments(contactsOutcome.records, QUOTE_COUNT, 'QUO', QUOTE_STATUSES),
+  )
+  results.push(quotesOutcome.result)
+
+  const quoteLinesOutcome = await createMany(
+    'quote_line',
+    buildDocumentLines('quote_id', quotesOutcome.records, variantsOutcome.records),
+  )
+  results.push(quoteLinesOutcome.result)
+
+  const preferences = await getMyLocalePreferences()
+  const pageFormatsOutcome = await createMany(
+    'report_page_format',
+    buildPageFormats(preferences?.active_company?.id ?? null),
+  )
+  results.push(pageFormatsOutcome.result)
 
   return { ok: true, results }
 }

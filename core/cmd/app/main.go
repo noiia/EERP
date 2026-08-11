@@ -372,6 +372,20 @@ func main() {
 	saleLineGroup.PUT("/:id", saleLineHandler.Update)
 	saleLineGroup.DELETE("/:id", saleLineHandler.Delete)
 
+	// ── sale: quote_line Create/Update/Delete overrides ──────────────────────
+	// Same reasoning as sale_line above, scoped to Quote/QuoteLine instead of
+	// Invoice/SaleLine. See modules/sale/quote_handler.go.
+	quoteLineHandler := sale.NewQuoteHandler(
+		orm.MustRepo[sale.QuoteLine](app.DB),
+		orm.MustRepo[sale.Quote](app.DB),
+		orm.MustRepo[warehouse.ProductVariant](app.DB),
+		orm.MustRepo[warehouse.Product](app.DB),
+	)
+	quoteLineGroup := srv.Echo().Group("/api/v1/quote_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	quoteLineGroup.POST("", quoteLineHandler.Create)
+	quoteLineGroup.PUT("/:id", quoteLineHandler.Update)
+	quoteLineGroup.DELETE("/:id", quoteLineHandler.Delete)
+
 	for _, r := range srv.Routes() {
 		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))
 	}

@@ -11,10 +11,11 @@ import {
 } from '@eerp/core-front'
 
 // Sale frontend — DESCRIPTORS ONLY (same discipline as core/modules/crm's
-// CrmViews.ts). Two entities: 'invoice' (the document) and 'sale_line' (its
-// line items — a real child table now, see module.go's doc comments), the
-// same one2many master-detail shape core/modules/contact's contact/crm pair
-// already uses. Both `entity` names are the Go route prefixes from
+// CrmViews.ts). Four entities: 'invoice' + 'sale_line' (the billing
+// document and its line items) and 'quote' + 'quote_line' (the pre-invoice
+// proposal — module.go's doc comment on Quote), each pair the same
+// one2many master-detail shape core/modules/contact's contact/crm pair
+// already uses. Every `entity` name is the Go route prefix from
 // module.go's orm.Register calls — NOT the module slug 'sale'.
 
 /** The Invoice record as served by Go's /invoice endpoints (BaseModel + business fields). */
@@ -62,11 +63,63 @@ export interface SaleLine {
   unit_price?: number
 }
 
+/** The Quote record as served by Go's /quote endpoints — same shape as Invoice. */
+export interface Quote {
+  id: string
+  logo?: boolean | null
+  issuer_name?: string
+  issuer_address?: string
+  issuer_phone?: string
+  issuer_email?: string
+  number: string
+  issue_date?: string | null
+  subject?: string
+  customer_id?: string | null
+  customer_name: string
+  customer_email?: string
+  customer_address?: string
+  /** Validity/expiry date — Quote's equivalent of Invoice's payment due_date. */
+  due_date?: string | null
+  /** One of the selection field's options: draft/sent/accepted/declined/expired. */
+  status?: string
+  currency?: string
+  reference?: string
+  subtotal?: number | null
+  discount?: number | null
+  net_subtotal?: number | null
+  tax_amount?: number | null
+  total?: number | null
+  payment_method?: string
+  payment_terms?: string
+  legal_notice?: string
+}
+
+/** One quote_line row — mirrors SaleLine, scoped to a Quote. */
+export interface QuoteLine {
+  id: string
+  quote_id: string
+  variant_id: string
+  variant_name?: string
+  quantity: number
+  unit?: string
+  tax_rate?: number
+  unit_price?: number
+}
+
 // default as a FUNCTION (same name-not-function rule as compute): a new
 // invoice starts dated today, same pattern as crm.defaultSatisfaction.
 registerFieldFunction({
   entity: 'invoice',
   name: 'sale.defaultIssueDate',
+  depends: [],
+  handler: () => new Date().toISOString().slice(0, 10),
+})
+
+// Function names are globally unique (behaviors.ts), so quote gets its own
+// name even though the handler body is identical to invoice's above.
+registerFieldFunction({
+  entity: 'quote',
+  name: 'sale.defaultQuoteIssueDate',
   depends: [],
   handler: () => new Date().toISOString().slice(0, 10),
 })
@@ -147,6 +200,120 @@ const formFields: ViewDescriptor['fields'] = [
   { name: 'payment_method', label: 'Payment method', type: 'text' },
   { name: 'payment_terms', label: 'Payment terms', type: 'text', widget: 'long' },
   { name: 'legal_notice', label: 'Legal notice', type: 'text', widget: 'long' },
+]
+
+// quote's own field set — same shape as invoice's above, entity + status
+// options swapped for the quote flow (draft/sent/accepted/declined/expired
+// instead of draft/sent/paid/overdue/cancelled).
+const quoteFields: ViewDescriptor['fields'] = [
+  { name: 'number', label: 'Number', type: 'text', required: true },
+  { name: 'customer_name', label: 'Customer', type: 'text', required: true },
+  {
+    name: 'status',
+    label: 'Status',
+    type: 'selection',
+    selection: { options: ['draft', 'sent', 'accepted', 'declined', 'expired'] },
+  },
+  { name: 'issue_date', label: 'Issue date', type: 'date', default: 'sale.defaultQuoteIssueDate' },
+  { name: 'due_date', label: 'Valid until', type: 'date' },
+  { name: 'total', label: 'Total', type: 'number', widget: 'float', readOnly: true },
+]
+
+const quoteFormFields: ViewDescriptor['fields'] = [
+  {
+    name: 'logo',
+    hideLabel: true,
+    label: 'Company logo',
+    type: 'boolean',
+    widget: 'picture',
+  },
+  ...quoteFields,
+  { name: 'subject', label: 'Subject', type: 'text' },
+  {
+    name: 'customer_id',
+    label: 'Linked customer',
+    type: 'relation',
+    relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+  },
+  { name: 'customer_email', label: 'Customer email', type: 'text' },
+  { name: 'customer_address', label: 'Billing address', type: 'text', widget: 'long' },
+  {
+    name: 'currency',
+    label: 'Currency',
+    type: 'selection',
+    selection: { options: ['USD', 'EUR', 'GBP'] },
+  },
+  { name: 'reference', label: 'Reference', type: 'text' },
+  {
+    name: 'quote_lines',
+    label: 'Line items',
+    type: 'relation',
+    relation: { entity: 'quote_line', kind: 'one2many', inverseField: 'quote_id', labelField: 'variant_name' },
+  },
+  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
+  { name: 'discount', label: 'Discount (excl. tax)', type: 'number', widget: 'float' },
+  { name: 'net_subtotal', label: 'Net subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
+  { name: 'tax_amount', label: 'Tax amount', type: 'number', widget: 'float', readOnly: true },
+  { name: 'payment_method', label: 'Payment method', type: 'text' },
+  { name: 'payment_terms', label: 'Payment terms', type: 'text', widget: 'long' },
+  { name: 'legal_notice', label: 'Legal notice', type: 'text', widget: 'long' },
+]
+
+const quoteListView: ViewDescriptor = {
+  entity: 'quote',
+  viewType: 'tree',
+  fields: quoteFields,
+  formPath: '/sale/quote/:id',
+  createPermission: 'quote:quote:write',
+  permissions: ['quote:quote:read'],
+}
+
+const quoteFormView: ViewDescriptor = {
+  entity: 'quote',
+  viewType: 'form',
+  fields: quoteFormFields,
+  permissions: ['quote:quote:read'],
+}
+
+// quote_line's own descriptor — needed for the quote form's one2many
+// create-wizard, same reasoning as saleLineFields below.
+const quoteLineFields: ViewDescriptor['fields'] = [
+  {
+    name: 'quote_id',
+    label: 'Quote',
+    type: 'relation',
+    required: true,
+    relation: { entity: 'quote', kind: 'many2one', labelField: 'number' },
+  },
+  {
+    name: 'variant_id',
+    label: 'Product variant',
+    type: 'relation',
+    required: true,
+    relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' },
+  },
+  { name: 'quantity', label: 'Quantity', type: 'number', required: true },
+  { name: 'unit', label: 'Unit', type: 'text', readOnly: true },
+  { name: 'tax_rate', label: 'Tax', type: 'number', widget: 'percent', readOnly: true },
+  { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float', readOnly: true },
+]
+
+const quoteLineFormView: ViewDescriptor = {
+  entity: 'quote_line',
+  viewType: 'form',
+  fields: quoteLineFields,
+  permissions: ['quote_line:quote_line:read'],
+}
+
+// Moves quote_lines into its own first-position notebook page, same
+// self-extension shape as orderLinesPageOperations below.
+const quoteLinesPageOperations: Operation[] = [
+  {
+    op: 'addNode',
+    node: { kind: 'page', title: 'Quote lines', children: [{ kind: 'field', name: 'quote_lines' }] },
+    target: FORM_NOTEBOOK_ID,
+    position: 'first',
+  },
 ]
 
 const dashboardView: ViewDescriptor = {
@@ -382,12 +549,23 @@ const sale: FrontModule = {
   name: 'sale',
   routes: [
     { path: '/sale', descriptor: dashboardView, permission: 'invoice:invoice:read' },
+    // quote's tree view is registered BEFORE invoice's — the dashboard rolls
+    // a module's tree views into tiles in registration order (resolve.ts's
+    // dashboardListViews over ModuleRegistry.listViews, same mechanism
+    // core/modules/warehouse/views/WarehouseViews.ts documents), so this
+    // ordering alone is what makes the Quote tile the first dashboard tile.
+    { path: '/sale/quote/list', descriptor: quoteListView, permission: 'quote:quote:read' },
+    { path: '/sale/quote/:id', descriptor: quoteFormView, permission: 'quote:quote:read' },
+    { path: '/sale/quote/lines/:id', descriptor: quoteLineFormView, permission: 'quote_line:quote_line:read' },
     { path: '/sale/list', descriptor: listView, permission: 'invoice:invoice:read' },
     { path: '/sale/:id', descriptor: formView, permission: 'invoice:invoice:read' },
     { path: '/sale/lines/:id', descriptor: saleLineFormView, permission: 'sale_line:sale_line:read' },
   ],
   reports: [invoiceReport],
-  extends: [{ path: '/sale/:id', operations: orderLinesPageOperations }],
+  extends: [
+    { path: '/sale/:id', operations: orderLinesPageOperations },
+    { path: '/sale/quote/:id', operations: quoteLinesPageOperations },
+  ],
 }
 
 export default sale

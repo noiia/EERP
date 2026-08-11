@@ -10,10 +10,13 @@ import sale from './SaleViews'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('sale FrontModule', () => {
-  it('is named "sale" and exposes the invoice routes plus the sale_line form', () => {
+  it('is named "sale" and exposes the quote routes ahead of the invoice routes', () => {
     expect(sale.name).toBe('sale')
     expect(sale.routes.map((r) => r.path)).toEqual([
       '/sale',
+      '/sale/quote/list',
+      '/sale/quote/:id',
+      '/sale/quote/lines/:id',
       '/sale/list',
       '/sale/:id',
       '/sale/lines/:id',
@@ -21,7 +24,9 @@ describe('sale FrontModule', () => {
   })
 
   it('wires a dashboard, a tree list, and a form, all over the invoice entity', () => {
-    const [dashboard, list, form] = sale.routes
+    const dashboard = sale.routes.find((r) => r.path === '/sale')!
+    const list = sale.routes.find((r) => r.path === '/sale/list')!
+    const form = sale.routes.find((r) => r.path === '/sale/:id')!
     expect(dashboard.descriptor.viewType).toBe('dashboard')
     expect(list.descriptor.viewType).toBe('tree')
     expect(form.descriptor.viewType).toBe('form')
@@ -47,12 +52,14 @@ describe('sale FrontModule', () => {
   })
 
   it('guards invoice routes with invoice:invoice:read', () => {
-    const invoiceRoutes = sale.routes.filter((r) => r.path.startsWith('/sale') && r.path !== '/sale/lines/:id')
+    const invoiceRoutes = sale.routes.filter(
+      (r) => r.path.startsWith('/sale') && !r.path.startsWith('/sale/quote') && r.path !== '/sale/lines/:id',
+    )
     expect(invoiceRoutes.every((r) => r.permission === 'invoice:invoice:read')).toBe(true)
   })
 
   it('exposes the scalar fields on every view and the relation/detail fields on the form only', () => {
-    expect(sale.routes[0].descriptor.fields.map((f) => f.name)).toEqual([
+    expect(sale.routes.find((r) => r.path === '/sale')!.descriptor.fields.map((f) => f.name)).toEqual([
       'number',
       'customer_name',
       'status',
@@ -60,7 +67,7 @@ describe('sale FrontModule', () => {
       'due_date',
       'total',
     ])
-    const formFieldNames = sale.routes[2].descriptor.fields.map((f) => f.name)
+    const formFieldNames = sale.routes.find((r) => r.path === '/sale/:id')!.descriptor.fields.map((f) => f.name)
     expect(formFieldNames).toContain('customer_id')
     expect(formFieldNames).toContain('logo')
     expect(formFieldNames).toContain('sale_lines')
@@ -69,7 +76,9 @@ describe('sale FrontModule', () => {
   })
 
   it('exposes sale_lines as a real one2many relation over sale_line, scoped by invoice_id', () => {
-    const linesField = sale.routes[2].descriptor.fields.find((f) => f.name === 'sale_lines')
+    const linesField = sale.routes
+      .find((r) => r.path === '/sale/:id')!
+      .descriptor.fields.find((f) => f.name === 'sale_lines')
     expect(linesField?.type).toBe('relation')
     expect(linesField?.relation).toEqual({
       entity: 'sale_line',
@@ -80,9 +89,11 @@ describe('sale FrontModule', () => {
   })
 
   it('the totals rollups are read-only — computed server-side from sale_line rows', () => {
-    const fields = sale.routes[2].descriptor.fields
+    const fields = sale.routes.find((r) => r.path === '/sale/:id')!.descriptor.fields
     for (const name of ['subtotal', 'net_subtotal', 'tax_amount', 'total']) {
-      const field = fields.find((f) => f.name === name) ?? sale.routes[0].descriptor.fields.find((f) => f.name === name)
+      const field =
+        fields.find((f) => f.name === name) ??
+        sale.routes.find((r) => r.path === '/sale')!.descriptor.fields.find((f) => f.name === name)
       expect(field?.readOnly, `${name} should be readOnly`).toBe(true)
     }
     // Discount stays user-editable — it's the one manual input left.
@@ -184,6 +195,71 @@ describe('sale — self-extended "Order lines" notebook page (registry-level)', 
     const registry = register()
     expect(registry.buildRegistry().get('/sale/list')?.descriptor.fields.map((f) => f.name)).not.toContain(
       'sale_lines',
+    )
+  })
+})
+
+// The Quote tile is the FIRST dashboard tile: resolve.ts's dashboardListViews
+// rolls a module's tree ('list') routes into tiles in registration order —
+// see WarehouseViews.ts's identical doc comment — so this asserts the
+// registration order itself, the actual mechanism, not just the route list.
+describe('sale — quote registers ahead of invoice (dashboard tile ordering)', () => {
+  it('quote/list is the first tree route, invoice/list the second', () => {
+    const treeRoutes = sale.routes.filter((r) => r.descriptor.viewType === 'tree')
+    expect(treeRoutes.map((r) => r.path)).toEqual(['/sale/quote/list', '/sale/list'])
+  })
+
+  it('wires a tree list and a form over the quote entity, plus the quote_line form', () => {
+    const list = sale.routes.find((r) => r.path === '/sale/quote/list')!
+    const form = sale.routes.find((r) => r.path === '/sale/quote/:id')!
+    const lineForm = sale.routes.find((r) => r.path === '/sale/quote/lines/:id')!
+    expect(list.descriptor.viewType).toBe('tree')
+    expect(form.descriptor.viewType).toBe('form')
+    expect(list.descriptor.entity).toBe('quote')
+    expect(form.descriptor.entity).toBe('quote')
+    expect(lineForm.descriptor.entity).toBe('quote_line')
+    expect(list.descriptor.formPath).toBe('/sale/quote/:id')
+    expect(list.descriptor.createPermission).toBe('quote:quote:write')
+  })
+
+  it('exposes quote_lines as a real one2many relation over quote_line, scoped by quote_id', () => {
+    const linesField = sale.routes
+      .find((r) => r.path === '/sale/quote/:id')!
+      .descriptor.fields.find((f) => f.name === 'quote_lines')
+    expect(linesField?.type).toBe('relation')
+    expect(linesField?.relation).toEqual({
+      entity: 'quote_line',
+      kind: 'one2many',
+      inverseField: 'quote_id',
+      labelField: 'variant_name',
+    })
+  })
+})
+
+// Same self-extension shape as invoice's "Order lines" page above, targeting
+// quote's own form route instead.
+describe('sale — self-extended "Quote lines" notebook page (registry-level)', () => {
+  function register(): ModuleRegistry {
+    const registry = new ModuleRegistry()
+    registry.register(sale)
+    return registry
+  }
+
+  it('"Quote lines" is the FIRST tab, ahead of the synthesized "Settings" page', () => {
+    const registry = register()
+    const resolved = registry.buildRegistry().get('/sale/quote/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    expect(notebook && notebook.kind !== 'field' ? notebook.children.map((p) => p.kind !== 'field' && p.title) : []).toEqual([
+      'Quote lines',
+      'Settings',
+    ])
+  })
+
+  it('/sale/quote/list is untouched — the extension targets only /sale/quote/:id', () => {
+    const registry = register()
+    expect(registry.buildRegistry().get('/sale/quote/list')?.descriptor.fields.map((f) => f.name)).not.toContain(
+      'quote_lines',
     )
   })
 })

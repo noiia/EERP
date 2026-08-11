@@ -89,3 +89,34 @@ func TestSumLines(t *testing.T) {
 		})
 	}
 }
+
+// Regression: QuoteHandler.Create/Update bind the request body straight onto
+// QuoteLine via c.Bind — same underscore-insensitivity pitfall as SaleLine,
+// see TestSaleLine_JSONUnmarshalsIDFields above.
+func TestQuoteLine_JSONUnmarshalsIDFields(t *testing.T) {
+	quoteID, variantID := uuid.New(), uuid.New()
+	body := []byte(`{"quote_id":"` + quoteID.String() + `","variant_id":"` + variantID.String() + `","quantity":3}`)
+
+	var line QuoteLine
+	if err := json.Unmarshal(body, &line); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if line.QuoteID != quoteID {
+		t.Errorf("QuoteID = %v, want %v", line.QuoteID, quoteID)
+	}
+	if line.VariantID != variantID {
+		t.Errorf("VariantID = %v, want %v", line.VariantID, variantID)
+	}
+	if line.Quantity != 3 {
+		t.Errorf("Quantity = %v, want 3", line.Quantity)
+	}
+}
+
+func TestSumQuoteLines(t *testing.T) {
+	subtotal, tax, netSubtotal, total := sumQuoteLines([]QuoteLine{
+		{Quantity: 2, UnitPrice: 50, TaxRate: 0.2}, // 100 HT, 20 tax
+	}, 10)
+	if subtotal != 100 || tax != 20 || netSubtotal != 90 || total != 110 {
+		t.Errorf("sumQuoteLines() = (%v, %v, %v, %v), want (100, 20, 90, 110)", subtotal, tax, netSubtotal, total)
+	}
+}

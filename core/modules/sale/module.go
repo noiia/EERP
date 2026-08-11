@@ -133,6 +133,59 @@ type SaleLine struct {
 	UnitPrice float64 `db:"unit_price" json:"unit_price"`
 }
 
+// Quote is a pre-invoice sales proposal ("devis") sent to a prospect before
+// they commit — same field layout as Invoice, since both render off the same
+// letterhead template (Invoice's doc comment above). Kept a SEPARATE table
+// rather than an Invoice row with an "is_quote" flag: a quote and an invoice
+// are distinct documents with their own number sequence and status flow, and
+// a future quote -> invoice conversion needs two real rows to link between,
+// not a flag flip — that conversion isn't built yet.
+type Quote struct {
+	model.BaseModel
+	TenantID        uuid.UUID  `db:"tenant_id"`
+	Logo            *bool      `db:"logo"`
+	IssuerName      string     `db:"issuer_name"`
+	IssuerAddress   string     `db:"issuer_address"`
+	IssuerPhone     string     `db:"issuer_phone"`
+	IssuerEmail     string     `db:"issuer_email"`
+	Number          string     `db:"number"`
+	IssueDate       *time.Time `db:"issue_date"`
+	Subject         string     `db:"subject"`
+	CustomerID      *uuid.UUID `db:"customer_id"`
+	CustomerName    string     `db:"customer_name"`
+	CustomerEmail   string     `db:"customer_email"`
+	CustomerAddress string     `db:"customer_address"`
+	// DueDate is the quote's validity/expiry date — same column shape as
+	// Invoice.DueDate, different meaning ("valid until" vs "payment due by").
+	DueDate       *time.Time `db:"due_date"`
+	Status        string     `db:"status"` // "draft", "sent", "accepted", "declined", "expired"
+	Currency      string     `db:"currency"`
+	Reference     string     `db:"reference"`
+	Subtotal      *float64   `db:"subtotal"`
+	Discount      *float64   `db:"discount"`
+	NetSubtotal   *float64   `db:"net_subtotal"`
+	TaxAmount     *float64   `db:"tax_amount"`
+	Total         *float64   `db:"total"`
+	PaymentMethod string     `db:"payment_method"`
+	PaymentTerms  string     `db:"payment_terms"`
+	LegalNotice   string     `db:"legal_notice"`
+}
+
+// QuoteLine mirrors SaleLine exactly, scoped to a Quote instead of an
+// Invoice — see SaleLine's doc comment for the snapshot-at-line-creation
+// reasoning, which applies here unchanged.
+type QuoteLine struct {
+	model.BaseModel
+	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	QuoteID     uuid.UUID `db:"quote_id" json:"quote_id"`
+	VariantID   uuid.UUID `db:"variant_id" json:"variant_id"`
+	VariantName string    `db:"variant_name" json:"variant_name"`
+	Quantity    float64   `db:"quantity" json:"quantity"`
+	Unit        string    `db:"unit" json:"unit"`
+	TaxRate     float64   `db:"tax_rate" json:"tax_rate"`
+	UnitPrice   float64   `db:"unit_price" json:"unit_price"`
+}
+
 type saleModule struct{}
 
 func (m *saleModule) Name() string { return "sale" }
@@ -141,5 +194,11 @@ func (m *saleModule) Register() error {
 	if err := orm.Register[Invoice](); err != nil {
 		return err
 	}
-	return orm.Register[SaleLine]()
+	if err := orm.Register[SaleLine](); err != nil {
+		return err
+	}
+	if err := orm.Register[Quote](); err != nil {
+		return err
+	}
+	return orm.Register[QuoteLine]()
 }

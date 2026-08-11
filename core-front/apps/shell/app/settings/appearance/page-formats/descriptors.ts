@@ -17,7 +17,7 @@ export type ReportPageFormatRecord = { id: string } & Record<string, unknown>
 // is a deliberate no-op, leaving manual entry untouched. Real physical
 // dimensions, not arbitrary presets: A4/A5 in cm (ISO 216), Letter/Legal in
 // inches (the units each size is conventionally quoted in).
-const PAPER_SIZE_PRESETS = {
+export const PAPER_SIZE_PRESETS = {
   A4: { width: 21, height: 29.7, unit: 'cm' },
   A5: { width: 14.8, height: 21, unit: 'cm' },
   Letter: { width: 8.5, height: 11, unit: 'in' },

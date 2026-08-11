@@ -10,6 +10,15 @@ vi.mock('@eerp/core-front/server', async (importOriginal) => {
   }
 })
 
+// getMyLocalePreferences hits GET /me/preferences over apiRequest — stubbed
+// so buildPageFormats' company_id tagging is deterministic in tests instead
+// of depending on a real network call (which getMyLocalePreferences itself
+// would just swallow into `null` anyway, see preferences.ts).
+const getMyLocalePreferencesMock = vi.fn()
+vi.mock('./preferences', () => ({
+  getMyLocalePreferences: () => getMyLocalePreferencesMock(),
+}))
+
 import { seedDemoData } from './dev-seed'
 import { seedingAllowed } from './dev-seed-allowed'
 
@@ -24,6 +33,8 @@ beforeEach(() => {
     id: `${entity}-${(idCounter += 1)}`,
     ...body,
   }))
+  getMyLocalePreferencesMock.mockReset()
+  getMyLocalePreferencesMock.mockResolvedValue(null)
 })
 
 afterEach(() => {
@@ -111,8 +122,89 @@ describe('seedDemoData', () => {
       expect(body.tag_id).toMatch(/^tag-\d+$/)
     }
 
-    expect(outcome.results.map((r) => r.entity)).toEqual(['contact', 'tag', 'crm', 'crm_tag'])
+    expect(outcome.results.map((r) => r.entity)).toEqual([
+      'contact',
+      'tag',
+      'crm',
+      'crm_tag',
+      'product',
+      'product_variant',
+      'invoice',
+      'sale_line',
+      'quote',
+      'quote_line',
+      'report_page_format',
+    ])
     expect(outcome.results.every((r) => r.failed === 0)).toBe(true)
+  })
+
+  it('seeds products, one blank-name variant per product, and invoices/quotes with line items over those variants', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    const outcome = await seedDemoData()
+    if (!outcome.ok) throw new Error('expected seeding to succeed')
+
+    expect(callsFor('product')).toHaveLength(6)
+    const [, variantBody] = callsFor('product_variant')[0] as [string, Record<string, unknown>]
+    expect(variantBody).toEqual({ product_id: expect.stringMatching(/^product-\d+$/) })
+
+    expect(callsFor('invoice')).toHaveLength(6)
+    expect(callsFor('quote')).toHaveLength(6)
+    const [, invoiceBody] = callsFor('invoice')[0] as [string, Record<string, unknown>]
+    expect(invoiceBody).toMatchObject({
+      number: expect.stringMatching(/^INV-\d{4}-\d{4}$/),
+      status: expect.any(String),
+      customer_name: expect.any(String),
+    })
+    const [, quoteBody] = callsFor('quote')[0] as [string, Record<string, unknown>]
+    expect(quoteBody.number).toMatch(/^QUO-\d{4}-\d{4}$/)
+
+    // Every line references a real seeded document + variant id, never a raw index.
+    const saleLineCalls = callsFor('sale_line')
+    expect(saleLineCalls.length).toBeGreaterThan(0)
+    for (const [, body] of saleLineCalls as [string, Record<string, unknown>][]) {
+      expect(body.invoice_id).toMatch(/^invoice-\d+$/)
+      expect(body.variant_id).toMatch(/^product_variant-\d+$/)
+    }
+    const quoteLineCalls = callsFor('quote_line')
+    expect(quoteLineCalls.length).toBeGreaterThan(0)
+    for (const [, body] of quoteLineCalls as [string, Record<string, unknown>][]) {
+      expect(body.quote_id).toMatch(/^quote-\d+$/)
+      expect(body.variant_id).toMatch(/^product_variant-\d+$/)
+    }
+  })
+
+  it('seeds one report_page_format per standard preset, tagged to the active company when resolvable', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue({
+      preferred_locale: null,
+      default_locale: null,
+      active_company: { id: 'company-1', name: 'Acme' },
+    })
+
+    const outcome = await seedDemoData()
+    if (!outcome.ok) throw new Error('expected seeding to succeed')
+
+    const pageFormatCalls = callsFor('report_page_format')
+    expect(pageFormatCalls.map(([, body]) => (body as Record<string, unknown>).name)).toEqual([
+      'A4',
+      'A5',
+      'Letter',
+      'Legal',
+    ])
+    expect(pageFormatCalls.every(([, body]) => (body as Record<string, unknown>).company_id === 'company-1')).toBe(
+      true,
+    )
+  })
+
+  it('leaves report_page_format rows untagged when the active company cannot be resolved', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue(null)
+
+    const outcome = await seedDemoData()
+    if (!outcome.ok) throw new Error('expected seeding to succeed')
+
+    const pageFormatCalls = callsFor('report_page_format')
+    expect(pageFormatCalls).toHaveLength(4)
+    expect(pageFormatCalls.every(([, body]) => !('company_id' in (body as Record<string, unknown>)))).toBe(true)
   })
 
   it('tolerates per-record failures and reports them without aborting the batch', async () => {

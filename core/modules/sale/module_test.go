@@ -24,3 +24,20 @@ func TestInvoice_IsTenantScoped(t *testing.T) {
 	}
 	t.Error("invoice is missing tenant_id — tenant isolation would not apply")
 }
+
+func TestQuote_IsTenantScoped(t *testing.T) {
+	if err := (&saleModule{}).Register(); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	fields, ok := orm.MigrationFieldsForTable("quote")
+	if !ok {
+		t.Fatal("quote table not registered")
+	}
+	for _, f := range fields {
+		if f.Column == "tenant_id" {
+			return
+		}
+	}
+	t.Error("quote is missing tenant_id — tenant isolation would not apply")
+}
