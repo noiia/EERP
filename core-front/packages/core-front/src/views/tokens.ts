@@ -116,13 +116,21 @@ export const layout = {
    * (`LayoutContainerNode.columns`) collapses to one. Deliberately a CSS
    * CONTAINER query keyed off this width, never a viewport media query: the
    * same `LayoutForm` renders both the full-width form page and the relation
-   * wizard's ~552px-wide dialog content, and only the wizard should ever
-   * collapse — a viewport query can't tell those two apart
-   * (docs/roadmaps/responsive-displays.md, Architecture decision 3). Set
-   * comfortably above the wizard's dialog content width (`Dialog
-   * maxWidth="sm"` ≈ 600px Paper minus padding ≈ 552px) so it reliably stays
-   * single-column there. */
+   * wizard's dialog content, each measured against its own container rather
+   * than the viewport (docs/roadmaps/responsive-displays.md, Architecture
+   * decision 3) — a narrow wizard (small screens, or `wizardWideWidth` on a
+   * viewport just past `wizardWideBreakpoint`) collapses to one column like
+   * any other narrow container; a wide one gets the same two-up layout the
+   * full page does. */
   formTwoColumnMinWidth: 640,
+  /** Relation wizard dialog width (docs/roadmaps/field-widgets.md): 95% of the
+   * viewport by default — a fixed `sm`/552px cap read as cramped for a real
+   * search grid or creation form — narrowing to a more comfortable 75% once
+   * the viewport is wide enough (`wizardWideBreakpoint`) that 95% would
+   * otherwise stretch edge-to-edge. */
+  wizardWidth: '95%',
+  wizardWideWidth: '75%',
+  wizardWideBreakpoint: 1200,
 } as const
 
 /** Motion. Short, restrained; the theme also disables it under prefers-reduced-motion. */

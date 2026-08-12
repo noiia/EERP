@@ -25,7 +25,22 @@ import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { LayoutForm } from './layout-renderer'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
 import { createFormStore, useFormDraft, useFormError } from './stores'
+import { layout } from './tokens'
 import type { WidgetProps } from './widgets'
+
+// Both wizard dialogs (search + create-from-search) share this width: 95% of
+// the viewport, narrowing to a comfortable 75% past `wizardWideBreakpoint` —
+// a fixed `sm` cap read as cramped for a real search grid or creation form.
+const wizardDialogSx = {
+  '& .MuiDialog-paper': {
+    width: layout.wizardWidth,
+    maxWidth: layout.wizardWidth,
+    [`@media (min-width: ${layout.wizardWideBreakpoint}px)`]: {
+      width: layout.wizardWideWidth,
+      maxWidth: layout.wizardWideWidth,
+    },
+  },
+}
 
 // Relation widgets (docs/roadmaps/field-widgets.md, Phase 4). All data flows
 // through RelationOps — bound Server Actions the host mounts once — so Go
@@ -290,7 +305,7 @@ function RelationCreateWizard({
   }
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
       <Box>
         <DialogTitle>
           {t('Create a new')} {t(entityDisplayName(rel.entity))}
@@ -384,7 +399,7 @@ function RelationWizard({
   }, [open, text, rel.entity, labelField, ops])
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open={open} onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
       <DialogTitle>{t('Select a record')}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
