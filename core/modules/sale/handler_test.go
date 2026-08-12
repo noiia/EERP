@@ -4,8 +4,35 @@ import (
 	"encoding/json"
 	"testing"
 
+	"core/modules/warehouse"
+
 	"github.com/google/uuid"
 )
+
+// resolveUnitPrice: a variant's own UnitPrice override wins over the
+// product's when set; a nil override falls back to the product's price —
+// the "inherit by default" behavior every variant had before overrides
+// existed.
+func TestResolveUnitPrice(t *testing.T) {
+	product := warehouse.Product{UnitPrice: 10}
+	override := 15.0
+
+	tests := []struct {
+		name    string
+		variant warehouse.ProductVariant
+		want    float64
+	}{
+		{"no override falls back to product price", warehouse.ProductVariant{}, 10},
+		{"override wins over product price", warehouse.ProductVariant{UnitPrice: &override}, 15},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveUnitPrice(product, tt.variant); got != tt.want {
+				t.Errorf("resolveUnitPrice() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 // Regression: Handler.Create/Update bind the request body straight onto
 // SaleLine via c.Bind (encoding/json). Without an explicit `json` struct

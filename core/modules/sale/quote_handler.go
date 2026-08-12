@@ -152,7 +152,7 @@ func (h *QuoteHandler) snapshotFromVariant(ctx context.Context, line *QuoteLine)
 	line.VariantName = variant.Name
 	line.Unit = product.Unit
 	line.TaxRate = product.TaxRate
-	line.UnitPrice = product.UnitPrice
+	line.UnitPrice = resolveUnitPrice(product, variant)
 	return nil
 }
 

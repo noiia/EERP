@@ -1,4 +1,4 @@
-import type { FrontModule, ViewDescriptor } from '@eerp/core-front'
+import { FORM_COLUMNS_ID, FORM_HEADER_ID, type FrontModule, type ViewDescriptor } from '@eerp/core-front'
 
 // warehouse frontend — DESCRIPTORS ONLY (same discipline as core/modules/crm's
 // CrmViews.ts). Two entities, one module: `product` (the catalog entry) and
@@ -23,6 +23,8 @@ export interface ProductVariant {
   tenant_id: string
   product_id: string
   name: string
+  /** Overrides the parent Product's unit_price for this variant when set. */
+  unit_price?: number | null
 }
 
 const productFields: ViewDescriptor['fields'] = [
@@ -62,6 +64,25 @@ const productFormView: ViewDescriptor = {
   viewType: 'form',
   fields: productFormFields,
   permissions: ['product:product:read'],
+  // Same header/two-column body the default anatomy would synthesize, EXCEPT
+  // 'variants' is pulled into its own full-width group after the columns —
+  // a relation table cramped into a 50%-width column reads worse than the
+  // stock two-up layout the other (scalar) fields still get.
+  layout: [
+    { kind: 'row', id: FORM_HEADER_ID, children: [{ kind: 'field', name: 'name', variant: 'title' }] },
+    {
+      kind: 'group',
+      id: FORM_COLUMNS_ID,
+      columns: 2,
+      children: [
+        { kind: 'field', name: 'reference' },
+        { kind: 'field', name: 'unit' },
+        { kind: 'field', name: 'unit_price' },
+        { kind: 'field', name: 'tax_rate' },
+      ],
+    },
+    { kind: 'group', id: 'variants_group', children: [{ kind: 'field', name: 'variants' }] },
+  ],
 }
 
 const variantFields: ViewDescriptor['fields'] = [
@@ -76,6 +97,12 @@ const variantFields: ViewDescriptor['fields'] = [
   // the backend's Create override (core/modules/warehouse/handler.go) — "each
   // product automatically references a variant."
   { name: 'name', label: 'Name', type: 'text' },
+  // Optional: blank means "inherit the product's own price." When set, sale's
+  // snapshotFromVariant (core/modules/sale/handler.go and quote_handler.go)
+  // uses this instead of the product's unit_price for lines on this variant.
+  // default: null overrides the number type's usual zero-default (a new
+  // variant seeded with 0 would silently price every sale line at zero).
+  { name: 'unit_price', label: 'Price override (excl. tax)', type: 'number', widget: 'float', default: null },
 ]
 
 const variantListView: ViewDescriptor = {
@@ -116,11 +143,7 @@ const warehouse: FrontModule = {
     { path: '/warehouse', descriptor: dashboardView, permission: 'product:product:read' },
     { path: '/warehouse/products/list', descriptor: productListView, permission: 'product:product:read' },
     { path: '/warehouse/products/:id', descriptor: productFormView, permission: 'product:product:read' },
-    {
-      path: '/warehouse/variants/list',
-      descriptor: variantListView,
-      permission: 'product_variant:product_variant:read',
-    },
+    { path: '/warehouse/variants/list', descriptor: variantListView, permission: 'product_variant:product_variant:read'},
     { path: '/warehouse/variants/:id', descriptor: variantFormView, permission: 'product_variant:product_variant:read' },
   ],
 }

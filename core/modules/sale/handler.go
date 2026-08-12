@@ -150,8 +150,9 @@ func (h *Handler) Delete(c echo.Context) error {
 // snapshotFromVariant resolves line.VariantID -> ProductVariant -> Product
 // and copies Unit/TaxRate/UnitPrice onto the line — "each product
 // automatically references a variant" made concrete on the sale side: a
-// line never carries stale or hand-typed pricing, only what its product
-// says right now, captured at the moment the line is written.
+// line never carries stale or hand-typed pricing, only what its product (or,
+// when the variant carries its own UnitPrice override, the variant) says
+// right now, captured at the moment the line is written.
 func (h *Handler) snapshotFromVariant(ctx context.Context, line *SaleLine) error {
 	variant, err := h.variants.FindByID(ctx, line.VariantID)
 	if err != nil {
@@ -170,8 +171,18 @@ func (h *Handler) snapshotFromVariant(ctx context.Context, line *SaleLine) error
 	line.VariantName = variant.Name
 	line.Unit = product.Unit
 	line.TaxRate = product.TaxRate
-	line.UnitPrice = product.UnitPrice
+	line.UnitPrice = resolveUnitPrice(product, variant)
 	return nil
+}
+
+// resolveUnitPrice is pulled out as a pure function (no DB, no HTTP) so the
+// override precedence is testable on its own — see handler_test.go. The
+// variant's own UnitPrice, when set, wins over the product's.
+func resolveUnitPrice(product warehouse.Product, variant warehouse.ProductVariant) float64 {
+	if variant.UnitPrice != nil {
+		return *variant.UnitPrice
+	}
+	return product.UnitPrice
 }
 
 // recomputeTotals sums every active line on the invoice into

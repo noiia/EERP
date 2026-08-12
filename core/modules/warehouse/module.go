@@ -59,6 +59,12 @@ type ProductVariant struct {
 	// create, it defaults to the underlying Product's name — see
 	// warehouse/handler.go's Create override.
 	Name string `db:"name" json:"name"`
+	// UnitPrice, when set, overrides the parent Product's price for this one
+	// variant (e.g. "Red / XL" costs more than "Red / S") — nil means
+	// "inherit the product's price," the previous, only behavior. sale's
+	// snapshotFromVariant (handler.go and quote_handler.go) prefers this over
+	// Product.UnitPrice when present.
+	UnitPrice *float64 `db:"unit_price" json:"unit_price"`
 }
 
 type warehouseModule struct{}
