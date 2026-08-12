@@ -350,6 +350,27 @@ export function validateCatalogDescriptor<T>(descriptor: ViewDescriptor<T>): voi
 }
 
 /**
+ * Validate a `viewType: 'tree'` descriptor's `search` block, when declared:
+ * every named field (liveFields/filterableFields/groupableFields) resolves
+ * against `fields` — the same "dangling reference is a registration error"
+ * discipline validateCatalogDescriptor already enforces. A no-op when
+ * `search` is omitted (the engine default) or the viewType isn't 'tree'.
+ */
+export function validateSearchDescriptor<T>(descriptor: ViewDescriptor<T>): void {
+  if (descriptor.viewType !== 'tree' || !descriptor.search) return
+  const { liveFields, filterableFields, groupableFields } = descriptor.search
+  const fieldNames = new Set(descriptor.fields.map((f) => f.name))
+  const checkNamed = (key: string, name: string): void => {
+    if (!fieldNames.has(name)) {
+      throw new Error(`search.${key} "${name}" is not declared in this view's fields`)
+    }
+  }
+  for (const entry of liveFields ?? []) checkNamed('liveFields', entry.field)
+  for (const name of filterableFields ?? []) checkNamed('filterableFields', name)
+  for (const name of groupableFields ?? []) checkNamed('groupableFields', name)
+}
+
+/**
  * The zero default a field seeds with when the record lacks it and the
  * descriptor declares no `default`: the natural empty value of each data type.
  * Relations default null on the m2o FK ("no target"); virtual relations
@@ -766,6 +787,53 @@ export interface CatalogDescriptor {
   subtitle?: string
 }
 
+/**
+ * The search bar's structured-filter operators (docs/adr/ADR-014-search-filter-bar.md).
+ * Maps 1:1 to the generic list endpoint's query params: eq/contains -> the
+ * existing filter[col]/search[col]; in -> in[col] (comma-joined); the
+ * ranges -> gt[col]/gte[col]/lt[col]/lte[col]. A "between" is just a gte
+ * condition and an lte condition on the same field — no separate operator.
+ */
+export type FilterOperator = 'eq' | 'contains' | 'in' | 'gt' | 'gte' | 'lt' | 'lte'
+
+/** One structured filter row in the search bar's Filters section. */
+export interface FilterCondition {
+  field: string
+  op: FilterOperator
+  /** eq/contains/gt/gte/lt/lte. */
+  value?: string
+  /** in only. */
+  values?: string[]
+}
+
+/** One entry in `SearchDescriptor.liveFields` — the search bar's typed-text
+ * autocomplete leg, in priority order. */
+export interface SearchFieldConfig {
+  field: string
+  /** Lower searches first. Omitted ⇒ declaration order among liveFields, or
+   * the engine default (name, then id, then other text/relation fields). */
+  priority?: number
+}
+
+/**
+ * `viewType: 'tree'`'s built-in search bar (docs/adr/ADR-014-search-filter-bar.md)
+ * — every tree view gets the bar automatically; this only customizes it.
+ * Values are field NAMES, resolved against `ViewDescriptor.fields` at
+ * registration (validateSearchDescriptor), the same "dangling reference is a
+ * build error" discipline `catalog`/layout leaves already follow. A module
+ * overriding another module's search bar patches this whole block via a
+ * `setDescriptor` view extension (registry/extensions.ts) — there is no
+ * separate inheritance mechanism.
+ */
+export interface SearchDescriptor {
+  /** Omitted ⇒ engine default: name, then id, then every other text/relation field. */
+  liveFields?: SearchFieldConfig[]
+  /** Omitted ⇒ every field is filterable (still per-caller group-gated). */
+  filterableFields?: string[]
+  /** Omitted ⇒ every selection/relation/boolean field is groupable. */
+  groupableFields?: string[]
+}
+
 export interface ViewDescriptor<T = Record<string, unknown>> {
   /** Maps straight to the Go route group, e.g. 'crm' -> GET /crm/. */
   entity: string
@@ -822,6 +890,12 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * (api/view-fields.ts) — never read directly by a renderer.
    */
   viewModeDefaults?: ViewModeDefaults
+  /**
+   * For `viewType: 'tree'` only: customizes the built-in search bar every
+   * list view renders automatically (docs/adr/ADR-014-search-filter-bar.md)
+   * — omitted means the engine default (see SearchDescriptor's own fields).
+   */
+  search?: SearchDescriptor
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

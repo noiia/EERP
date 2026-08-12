@@ -16,12 +16,14 @@ import {
   titleFieldName,
   validateCatalogDescriptor,
   validateDescriptorWidgets,
+  validateSearchDescriptor,
   type CatalogDescriptor,
   type Condition,
   type FieldDescriptor,
   type FieldType,
   type LayoutNode,
   type RelationDescriptor,
+  type SearchDescriptor,
   type ViewDescriptor,
 } from './descriptor'
 
@@ -254,6 +256,64 @@ describe('validateCatalogDescriptor', () => {
   it('is a no-op for every other viewType', () => {
     const nonCatalog: ViewDescriptor = { entity: 'crm', viewType: 'form', fields: [] }
     expect(() => validateCatalogDescriptor(nonCatalog)).not.toThrow()
+  })
+})
+
+describe('validateSearchDescriptor', () => {
+  const searchFields: FieldDescriptor[] = [
+    { name: 'name', label: 'Name', type: 'text' },
+    { name: 'status', label: 'Status', type: 'selection', selection: { options: ['open', 'won'] } },
+  ]
+
+  const treeDescriptor = (fields: FieldDescriptor[], search: SearchDescriptor | undefined): ViewDescriptor => ({
+    entity: 'crm',
+    viewType: 'tree',
+    fields,
+    search,
+  })
+
+  it('passes a valid search block naming declared fields', () => {
+    expect(() =>
+      validateSearchDescriptor(
+        treeDescriptor(searchFields, {
+          liveFields: [{ field: 'name', priority: 0 }],
+          filterableFields: ['name', 'status'],
+          groupableFields: ['status'],
+        }),
+      ),
+    ).not.toThrow()
+  })
+
+  it('is a no-op when search is omitted', () => {
+    expect(() => validateSearchDescriptor(treeDescriptor(searchFields, undefined))).not.toThrow()
+  })
+
+  it('throws when liveFields names an undeclared field', () => {
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { liveFields: [{ field: 'nope' }] })),
+    ).toThrowError(/search.liveFields "nope" is not declared/)
+  })
+
+  it('throws when filterableFields names an undeclared field', () => {
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { filterableFields: ['nope'] })),
+    ).toThrowError(/search.filterableFields "nope" is not declared/)
+  })
+
+  it('throws when groupableFields names an undeclared field', () => {
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { groupableFields: ['nope'] })),
+    ).toThrowError(/search.groupableFields "nope" is not declared/)
+  })
+
+  it('is a no-op for every other viewType, even with a search block set', () => {
+    const nonTree: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: searchFields,
+      search: { filterableFields: ['nope'] },
+    }
+    expect(() => validateSearchDescriptor(nonTree)).not.toThrow()
   })
 })
 

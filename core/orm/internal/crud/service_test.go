@@ -47,6 +47,7 @@ type mockRepo struct {
 	update   func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
 	del      func(ctx context.Context, id any) error
 	restore  func(ctx context.Context, id any) (map[string]any, error)
+	distinct func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
 }
 
 func (m *mockRepo) FindAll(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
@@ -84,6 +85,12 @@ func (m *mockRepo) Restore(ctx context.Context, id any) (map[string]any, error) 
 		return m.restore(ctx, id)
 	}
 	return map[string]any{}, nil
+}
+func (m *mockRepo) DistinctValues(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error) {
+	if m.distinct != nil {
+		return m.distinct(ctx, column, f)
+	}
+	return nil, nil
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -233,6 +240,29 @@ func TestService_Restore_DelegatesToRepoWhenSoftDelete(t *testing.T) {
 	}
 	if !called {
 		t.Error("Restore should delegate to repo.Restore")
+	}
+}
+
+// ── DistinctValues ────────────────────────────────────────────────────────────
+
+func TestService_DistinctValues_DelegatesToRepo(t *testing.T) {
+	var gotCol string
+	repo := &mockRepo{
+		distinct: func(_ context.Context, column string, _ crud.ListFilter) ([]crud.DistinctValue, error) {
+			gotCol = column
+			return []crud.DistinctValue{{Value: "open", Total: 3}}, nil
+		},
+	}
+	svc := crud.NewServiceFromRepo(repo, softMeta())
+	values, err := svc.DistinctValues(context.Background(), "status", crud.ListFilter{})
+	if err != nil {
+		t.Fatalf("DistinctValues: %v", err)
+	}
+	if gotCol != "status" {
+		t.Errorf("column passed to repo = %q, want status", gotCol)
+	}
+	if len(values) != 1 || values[0].Value != "open" || values[0].Total != 3 {
+		t.Errorf("values = %+v, want [{open 3}]", values)
 	}
 }
 

@@ -155,6 +155,49 @@ describe('ServerApiClient', () => {
     )
   })
 
+  it('encodes in[]/gt[]/gte[]/lt[]/lte[] query params — the search bar\'s multi-select and range filters', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, []))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createServerApiClient().list('crm', {
+      in: { status: ['open', 'won'] },
+      gt: { score: '10' },
+      gte: { created_at: '2026-01-01' },
+      lt: { score: '100' },
+      lte: { created_at: '2026-12-31' },
+    })
+
+    const [url] = fetchMock.mock.calls[0] as unknown as [string]
+    const query = new URL(url).searchParams
+    expect(query.get('in[status]')).toBe('open,won')
+    expect(query.get('gt[score]')).toBe('10')
+    expect(query.get('gte[created_at]')).toBe('2026-01-01')
+    expect(query.get('lt[score]')).toBe('100')
+    expect(query.get('lte[created_at]')).toBe('2026-12-31')
+  })
+
+  it('distinctValues() requests ?distinct=<column> plus active filters, returns the values array', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { values: [{ value: 'open', total: 3 }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const values = await createServerApiClient().distinctValues('crm', 'status', {
+      search: { name: 'ada' },
+    })
+
+    expect(values).toEqual([{ value: 'open', total: 3 }])
+    const [url] = fetchMock.mock.calls[0] as unknown as [string]
+    const query = new URL(url).searchParams
+    expect(query.get('distinct')).toBe('status')
+    expect(query.get('search[name]')).toBe('ada')
+  })
+
+  it('distinctValues() returns an empty array when the envelope carries no values', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, {})))
+    await expect(createServerApiClient().distinctValues('crm', 'status')).resolves.toEqual([])
+  })
+
   it('unwraps the paginated { data } envelope from the list endpoint', async () => {
     vi.stubGlobal(
       'fetch',

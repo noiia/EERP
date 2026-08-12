@@ -25,6 +25,7 @@ type svcLayer interface {
 	Update(ctx context.Context, id any, data map[string]any) (map[string]any, error)
 	Delete(ctx context.Context, id any) error
 	Restore(ctx context.Context, id any) (map[string]any, error)
+	DistinctValues(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
 }
 
 // GenericHandler drives all CRUD operations for one registered table.
@@ -58,9 +59,11 @@ func bracketColumn(key, prefix string) (string, bool) {
 //	?page=&page_size=              pagination (defaults 1 / 20)
 //	?filter[<column>]=<value>      exact match — relation scoping (o2m, junctions)
 //	?search[<column>]=<text>       case-insensitive containment — autocomplete
+//	?in[<column>]=<v1>,<v2>        one of several values — the search bar's multi-select
+//	?gt[<column>]=/gte[]=/lt[]=/lte[]=  range comparison — the search bar's number/date ranges
 //
 // Filter columns are validated against the table meta here (friendly 400) and
-// again in the repository (the actual security boundary).
+// again in the repository (the actual security boundary, including group gating).
 func (h *GenericHandler) listFilter(c echo.Context) (crud.ListFilter, error) {
 	page, _ := strconv.Atoi(c.QueryParam("page"))
 	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
@@ -72,31 +75,63 @@ func (h *GenericHandler) listFilter(c echo.Context) (crud.ListFilter, error) {
 	}
 	f := crud.ListFilter{Page: page, PageSize: pageSize}
 
+	// Single-value operators share one parsing shape; `in` is handled
+	// separately below since it's multi-value (comma-split).
+	singleValueMaps := []struct {
+		prefix string
+		into   *map[string]string
+	}{
+		{"filter", &f.Equals},
+		{"search", &f.Matches},
+		{"gt", &f.GT},
+		{"gte", &f.GTE},
+		{"lt", &f.LT},
+		{"lte", &f.LTE},
+	}
+
 	for key, vals := range c.QueryParams() {
 		if len(vals) == 0 || vals[0] == "" {
 			continue
 		}
-		into := &f.Equals
-		col, ok := bracketColumn(key, "filter")
-		if !ok {
-			into = &f.Matches
-			col, ok = bracketColumn(key, "search")
-		}
-		if !ok {
+
+		if col, ok := bracketColumn(key, "in"); ok {
+			if !h.meta.HasField(col) {
+				return f, echo.NewHTTPError(http.StatusBadRequest, "unknown filter column: "+col)
+			}
+			if f.In == nil {
+				f.In = make(map[string][]string)
+			}
+			f.In[col] = strings.Split(vals[0], ",")
 			continue
 		}
-		if !h.meta.HasField(col) {
-			return f, echo.NewHTTPError(http.StatusBadRequest, "unknown filter column: "+col)
+
+		for _, sv := range singleValueMaps {
+			col, ok := bracketColumn(key, sv.prefix)
+			if !ok {
+				continue
+			}
+			if !h.meta.HasField(col) {
+				return f, echo.NewHTTPError(http.StatusBadRequest, "unknown filter column: "+col)
+			}
+			if *sv.into == nil {
+				*sv.into = make(map[string]string)
+			}
+			(*sv.into)[col] = vals[0]
+			break
 		}
-		if *into == nil {
-			*into = make(map[string]string)
-		}
-		(*into)[col] = vals[0]
 	}
 	return f, nil
 }
 
-// List handles GET /api/v1/{table}?page=&page_size=&filter[col]=&search[col]=
+// List handles GET /api/v1/{table}?page=&page_size=&filter[col]=&search[col]=&in[col]=&gt[col]=...
+// and, when ?distinct=<column> is given, returns that column's distinct
+// values (+ counts) among the filtered rows instead of a paginated page —
+// the search bar's group-by section. This rides the SAME route as the
+// ordinary list rather than a new path on purpose: a literal new segment
+// like "/distinct" would derive its own auto-permission
+// (table:distinct:read, since derivePermissionFromRoute only collects
+// static segments before the first :param) that no existing role has,
+// unlike this query param, which stays on the existing table:table:read.
 func (h *GenericHandler) List(c echo.Context) error {
 	f, err := h.listFilter(c)
 	if err != nil {
@@ -104,6 +139,18 @@ func (h *GenericHandler) List(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+
+	if col := c.QueryParam("distinct"); col != "" {
+		values, err := h.svc.DistinctValues(ctx, col, f)
+		if err != nil {
+			if errors.Is(err, crud.ErrUnknownColumn) {
+				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+			}
+			return err
+		}
+		return c.JSON(http.StatusOK, crud.DistinctResponse{Values: values})
+	}
+
 	rows, total, err := h.svc.List(ctx, f)
 	if err != nil {
 		if errors.Is(err, crud.ErrUnknownColumn) {

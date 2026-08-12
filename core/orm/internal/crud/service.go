@@ -24,6 +24,24 @@ type ListFilter struct {
 	// Matches keeps rows whose column contains the value case-insensitively
 	// (ILIKE %v%) — the autocomplete search path.
 	Matches map[string]string
+	// In keeps rows whose column's value is one of Values — the search
+	// bar's multi-select filter (e.g. status in [open, pending]).
+	In map[string][]string
+	// GT/GTE/LT/LTE keep rows whose column compares against the value —
+	// the search bar's number/date range filters. Compared with a
+	// type-aware cast (numeric or timestamptz, from the column's GoType),
+	// unlike Equals/Matches's uniform ::text cast, since lexicographic
+	// text comparison is wrong for numbers and non-ISO dates. A "between"
+	// is just a GTE condition and an LTE condition on the same column —
+	// they AND together like any other two filters, no separate operator.
+	GT, GTE, LT, LTE map[string]string
+}
+
+// DistinctValue is one bucket from DistinctValues: a distinct value of the
+// grouped column (cast to text), and how many filtered rows carry it.
+type DistinctValue struct {
+	Value string `json:"value"`
+	Total int    `json:"total"`
 }
 
 // repoLayer is the interface Service requires from the repository layer.
@@ -35,6 +53,7 @@ type repoLayer interface {
 	Update(ctx context.Context, id any, data map[string]any) (map[string]any, error)
 	Delete(ctx context.Context, id any) error
 	Restore(ctx context.Context, id any) (map[string]any, error)
+	DistinctValues(ctx context.Context, column string, f ListFilter) ([]DistinctValue, error)
 }
 
 // Service adds business-logic guardrails on top of the raw repository:
@@ -54,6 +73,12 @@ func NewService(repo *Repository, meta registry.TableMeta) *Service {
 // List returns a paginated list and total count.
 func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, int, error) {
 	return s.repo.FindAll(ctx, f)
+}
+
+// DistinctValues returns each distinct value of column (+ row count) among
+// rows matching f's filters — the search bar's group-by section.
+func (s *Service) DistinctValues(ctx context.Context, column string, f ListFilter) ([]DistinctValue, error) {
+	return s.repo.DistinctValues(ctx, column, f)
 }
 
 // GetByID returns the row with the given id, excluding soft-deleted rows.

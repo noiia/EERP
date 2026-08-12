@@ -20,6 +20,18 @@ export interface RelationOps {
   create: (entity: string, body: Record<string, unknown>) => Promise<RelationRecord>
   /** Junction-row removal (m2m unlink). */
   remove: (entity: string, id: string) => Promise<void>
+  /**
+   * The search bar's group-by section (docs/adr/ADR-014-search-filter-bar.md):
+   * every distinct value of column (+ count) among rows matching options'
+   * filters. Optional and fail-open (undefined, not a rejected promise) for
+   * a host that hasn't wired the Server Action yet — same posture the
+   * field-level group-gating client mirror takes.
+   */
+  distinctValues?: (
+    entity: string,
+    column: string,
+    options?: EntityListOptions,
+  ) => Promise<{ value: string; total: number }[]>
 }
 
 const relationOpsContext = createOpsContext<RelationOps>()

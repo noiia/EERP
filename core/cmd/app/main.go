@@ -19,6 +19,7 @@ import (
 	"core/internal/notebook"
 	"core/internal/pictures"
 	"core/internal/reports"
+	"core/internal/savedfilter"
 	"core/internal/settings"
 	"core/internal/types"
 	_ "core/modules/all"
@@ -294,6 +295,21 @@ func main() {
 	notebookGroup.POST("", notebookHandler.Create)
 	notebookGroup.PUT("/:id", notebookHandler.Update)
 	notebookGroup.DELETE("/:id", notebookHandler.Delete)
+
+	// ── Saved filters ─────────────────────────────────────────────────────────
+	// Named search-bar filter combinations (docs/adr/ADR-014-search-filter-bar.md),
+	// private or shared per row. Dedicated, tenant-pinned endpoints off the
+	// generic CRUD surface — "private OR shared" visibility and the owner-only
+	// rename/delete check can't be expressed by a bare column-whitelist handler.
+	// The permission middleware derives saved_filters:saved_filters:read|write|delete
+	// from the route (a flat route with no literal second segment, so this is
+	// safe — see the ADR for the /distinct query-param decision this mirrors).
+	savedFilterHandler := savedfilter.NewHandler(savedfilter.NewRepository(app.DB))
+	savedFilterGroup := srv.Echo().Group("/api/v1/saved_filters", jwtMw, permMw)
+	savedFilterGroup.GET("", savedFilterHandler.List)
+	savedFilterGroup.POST("", savedFilterHandler.Create)
+	savedFilterGroup.PUT("/:id", savedFilterHandler.Update)
+	savedFilterGroup.DELETE("/:id", savedFilterHandler.Delete)
 
 	// ── Module management (App Store) ────────────────────────────────────────
 	// Dedicated endpoints over module.json content plus the live runtime

@@ -38,6 +38,12 @@ type PaginatedResponse struct {
 	PageSize int              `json:"page_size"`
 }
 
+// DistinctResponse is the envelope for GET /api/v1/{table}?distinct=<column>
+// — the search bar's group-by section.
+type DistinctResponse struct {
+	Values []DistinctValue `json:"values"`
+}
+
 // ValidateRequest filters body to known non-read-only fields and validates that
 // all non-nullable, non-server-generated fields are present on create.
 //

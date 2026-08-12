@@ -31,6 +31,47 @@ type globalItem struct {
 	Label string `db:"label"`
 }
 
+// gatedItem carries one field gated to a group, for the filter/search
+// group-gating tests (ADR-013's documented follow-up).
+type gatedItem struct {
+	model.BaseModel
+	Label  string `db:"label"`
+	Secret string `db:"secret"`
+}
+
+// rangeItem carries a numeric and a time column, for the range-filter cast tests.
+type rangeItem struct {
+	model.BaseModel
+	Label string  `db:"label"`
+	Price float64 `db:"price"`
+}
+
+func rangeMeta(t *testing.T) registry.TableMeta {
+	t.Helper()
+	if err := registry.Register[rangeItem](); err != nil {
+		t.Fatalf("register rangeItem: %v", err)
+	}
+	m, ok := registry.Get("range_item")
+	if !ok {
+		t.Fatal("range_item not registered")
+	}
+	return m
+}
+
+func gatedMeta(t *testing.T) registry.TableMeta {
+	t.Helper()
+	if err := registry.Register[gatedItem](
+		registry.WithFieldGroups(map[string][]string{"secret": {"hr_manager"}}),
+	); err != nil {
+		t.Fatalf("register gatedItem: %v", err)
+	}
+	m, ok := registry.Get("gated_item")
+	if !ok {
+		t.Fatal("gated_item not registered")
+	}
+	return m
+}
+
 func tenantMeta(t *testing.T) registry.TableMeta {
 	t.Helper()
 	if err := registry.Register[tenantItem](); err != nil {
@@ -317,5 +358,194 @@ func TestRepository_FindAll_RejectsUnknownFilterColumn(t *testing.T) {
 	}
 	if len(ex.queries) != 0 {
 		t.Errorf("no SQL must run for an unknown column, got %v", ex.queries)
+	}
+}
+
+// ── In / range filters ──────────────────────────────────────────────────
+
+func TestRepository_FindAll_AppliesInFilter(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{
+		In: map[string][]string{"label": {"open", "pending"}},
+	})
+	if err != nil {
+		t.Fatalf("FindAll: %v", err)
+	}
+	for _, q := range ex.queries {
+		if !strings.Contains(q, "label::text = ANY($1)") {
+			t.Errorf("query missing the In filter: %q", q)
+		}
+	}
+}
+
+func TestRepository_FindAll_RangeFiltersUseTypeAwareCasts(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{
+		GT:  map[string]string{"price": "10"},
+		LTE: map[string]string{"created_at": "2026-01-01"},
+	})
+	if err != nil {
+		t.Fatalf("FindAll: %v", err)
+	}
+	found := map[string]bool{}
+	for _, q := range ex.queries {
+		if strings.Contains(q, "price::numeric > $") {
+			found["price"] = true
+		}
+		if strings.Contains(q, "created_at::timestamptz <= $") {
+			found["created_at"] = true
+		}
+	}
+	if !found["price"] {
+		t.Errorf("expected a numeric-cast GT condition on price, got %v", ex.queries)
+	}
+	if !found["created_at"] {
+		t.Errorf("expected a timestamptz-cast LTE condition on created_at, got %v", ex.queries)
+	}
+}
+
+func TestRepository_FindAll_RejectsUnknownInAndRangeColumns(t *testing.T) {
+	for _, f := range []crud.ListFilter{
+		{In: map[string][]string{"nope": {"x"}}},
+		{GT: map[string]string{"nope": "1"}},
+	} {
+		ex := &captureExec{}
+		repo := crud.NewRepository(ex, rangeMeta(t))
+		_, _, err := repo.FindAll(context.Background(), f)
+		if !errors.Is(err, crud.ErrUnknownColumn) {
+			t.Errorf("filter %+v: err = %v, want ErrUnknownColumn", f, err)
+		}
+	}
+}
+
+// ── DistinctValues (group-by) ──────────────────────────────────────────────
+
+func TestRepository_DistinctValues_GroupsAndCounts(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+
+	_, err := repo.DistinctValues(context.Background(), "label", crud.ListFilter{})
+	if err != nil {
+		t.Fatalf("DistinctValues: %v", err)
+	}
+	q, _ := ex.find(t, "GROUP BY")
+	if !strings.Contains(q, "label::text AS value") {
+		t.Errorf("query missing the value projection: %q", q)
+	}
+	if !strings.Contains(q, "COUNT(*) AS total") {
+		t.Errorf("query missing the count projection: %q", q)
+	}
+	if !strings.Contains(q, "GROUP BY label") {
+		t.Errorf("query missing GROUP BY: %q", q)
+	}
+	if !strings.Contains(q, "LIMIT 500") {
+		t.Errorf("query missing the distinct-values cap: %q", q)
+	}
+}
+
+func TestRepository_DistinctValues_RespectsActiveFilters(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+
+	_, err := repo.DistinctValues(context.Background(), "label", crud.ListFilter{
+		Matches: map[string]string{"label": "open"},
+	})
+	if err != nil {
+		t.Fatalf("DistinctValues: %v", err)
+	}
+	q, _ := ex.find(t, "GROUP BY")
+	if !strings.Contains(q, "label::text ILIKE") {
+		t.Errorf("query missing the active search filter: %q", q)
+	}
+}
+
+func TestRepository_DistinctValues_RejectsUnknownColumn(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+
+	_, err := repo.DistinctValues(context.Background(), "nope", crud.ListFilter{})
+	if !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Fatalf("err = %v, want ErrUnknownColumn", err)
+	}
+	if len(ex.queries) != 0 {
+		t.Errorf("no SQL must run for an unknown column, got %v", ex.queries)
+	}
+}
+
+func TestRepository_DistinctValues_RejectsGatedColumnWithoutGroup(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, gatedMeta(t))
+
+	_, err := repo.DistinctValues(context.Background(), "secret", crud.ListFilter{})
+	if !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Fatalf("err = %v, want ErrUnknownColumn — group-by must be group-gated too", err)
+	}
+}
+
+// ── ADR-013 follow-up: filter/search must be group-aware ──────────────────
+
+func TestRepository_FindAll_RejectsGatedFilterColumnWithoutGroup(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, gatedMeta(t))
+
+	// No groups on the context at all — the fail-open default everywhere
+	// else in this system means "no groups", not "every group".
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{
+		Equals: map[string]string{"secret": "x"},
+	})
+	if !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Fatalf("err = %v, want ErrUnknownColumn", err)
+	}
+	if len(ex.queries) != 0 {
+		t.Errorf("no SQL must run for a gated column the caller lacks, got %v", ex.queries)
+	}
+}
+
+func TestRepository_FindAll_RejectsGatedSearchColumnForWrongGroup(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, gatedMeta(t))
+	ctx := access.WithGroups(context.Background(), []string{"some_other_group"})
+
+	_, _, err := repo.FindAll(ctx, crud.ListFilter{
+		Matches: map[string]string{"secret": "x"},
+	})
+	if !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Fatalf("err = %v, want ErrUnknownColumn", err)
+	}
+}
+
+func TestRepository_FindAll_AllowsGatedFilterColumnWithMatchingGroup(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, gatedMeta(t))
+	ctx := access.WithGroups(context.Background(), []string{"hr_manager"})
+
+	_, _, err := repo.FindAll(ctx, crud.ListFilter{
+		Equals: map[string]string{"secret": "x"},
+	})
+	if err != nil {
+		t.Fatalf("FindAll: %v", err)
+	}
+	for _, q := range ex.queries {
+		if !strings.Contains(q, "secret::text =") {
+			t.Errorf("query missing the gated filter once the caller has the group: %q", q)
+		}
+	}
+}
+
+func TestRepository_FindAll_UngatedColumnUnaffectedByAbsentGroups(t *testing.T) {
+	// A table with no gated fields must keep working exactly as before —
+	// zero behavior change for every caller/table not using WithFieldGroups.
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, gatedMeta(t))
+
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{
+		Equals: map[string]string{"label": "x"},
+	})
+	if err != nil {
+		t.Fatalf("FindAll on ungated column with no groups on context: %v", err)
 	}
 }

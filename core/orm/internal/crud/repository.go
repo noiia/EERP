@@ -80,16 +80,41 @@ func (r *Repository) tenantCondition(ctx context.Context) (query.Condition, bool
 // check is a security boundary, not a convenience.
 var ErrUnknownColumn = errors.New("crud: unknown filter column")
 
+// checkColumn validates col against the table's whitelist (the identifier
+// security boundary ErrUnknownColumn already documents) AND, when the
+// column carries FieldMeta.Groups, that the caller's resolved groups
+// (core/orm/access.GroupsFromContext) intersect them — closing the gap
+// ADR-013 named and deliberately deferred: BuildResponse already omits a
+// gated column's key from every response body, but filter/search column
+// names skipped this check, letting a caller without the group infer a
+// gated value from which rows matched even though the column itself never
+// appeared in a response. A gated column a caller can't use is rejected
+// with the SAME ErrUnknownColumn as a nonexistent one — indistinguishable
+// on purpose, mirroring BuildResponse's "omit, don't reveal" posture.
+func (r *Repository) checkColumn(ctx context.Context, col string) error {
+	fm, ok := r.meta.FieldByColumn(col)
+	if !ok {
+		return fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+	}
+	if len(fm.Groups) > 0 {
+		callerGroups, _ := access.GroupsFromContext(ctx)
+		if !intersects(fm.Groups, callerGroups) {
+			return fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+		}
+	}
+	return nil
+}
+
 // filterConditions turns the validated Equals/Matches maps into WHERE
 // predicates. Columns are compared as text (cast) so uuid/int/text scalars
 // filter uniformly — relation scoping and autocomplete target small result
 // sets, so the lost index use is an accepted v1 tradeoff. Keys are iterated
 // sorted for deterministic SQL (stable tests, stable statement cache).
-func (r *Repository) filterConditions(f ListFilter) ([]query.Condition, error) {
+func (r *Repository) filterConditions(ctx context.Context, f ListFilter) ([]query.Condition, error) {
 	appendConds := func(conds []query.Condition, m map[string]string, pattern string) ([]query.Condition, error) {
 		for _, col := range sortedKeys(m) {
-			if !r.meta.HasField(col) {
-				return nil, fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+			if err := r.checkColumn(ctx, col); err != nil {
+				return nil, err
 			}
 			conds = append(conds, query.NewCondition(fmt.Sprintf(pattern, col), m[col]))
 		}
@@ -100,10 +125,58 @@ func (r *Repository) filterConditions(f ListFilter) ([]query.Condition, error) {
 	if err != nil {
 		return nil, err
 	}
-	return appendConds(conds, f.Matches, "%s::text ILIKE '%%' || $1 || '%%'")
+	conds, err = appendConds(conds, f.Matches, "%s::text ILIKE '%%' || $1 || '%%'")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, col := range sortedKeys(f.In) {
+		if err := r.checkColumn(ctx, col); err != nil {
+			return nil, err
+		}
+		conds = append(conds, query.NewCondition(fmt.Sprintf("%s::text = ANY($1)", col), f.In[col]))
+	}
+
+	appendRange := func(conds []query.Condition, m map[string]string, op string) ([]query.Condition, error) {
+		for _, col := range sortedKeys(m) {
+			if err := r.checkColumn(ctx, col); err != nil {
+				return nil, err
+			}
+			fm, _ := r.meta.FieldByColumn(col) // checkColumn above already proved this exists
+			pattern := fmt.Sprintf("%%s::%s %s $1", rangeCast(fm.GoType), op)
+			conds = append(conds, query.NewCondition(fmt.Sprintf(pattern, col), m[col]))
+		}
+		return conds, nil
+	}
+	for _, rng := range []struct {
+		m  map[string]string
+		op string
+	}{
+		{f.GT, ">"}, {f.GTE, ">="}, {f.LT, "<"}, {f.LTE, "<="},
+	} {
+		conds, err = appendRange(conds, rng.m, rng.op)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return conds, nil
 }
 
-func sortedKeys(m map[string]string) []string {
+// rangeCast picks the SQL cast a GT/GTE/LT/LTE comparison needs so it
+// compares by value, not lexicographically — Equals/Matches's uniform
+// ::text cast works for equality/containment but "9" > "10" as text, and a
+// non-ISO date wouldn't compare correctly either. GoType is the human-
+// readable string registry.buildFromCache derives (e.g. "float64",
+// "*time.Time") — a pointer prefix doesn't change which underlying type it
+// is, so a plain substring check on "Time" is enough.
+func rangeCast(goType string) string {
+	if strings.Contains(goType, "Time") {
+		return "timestamptz"
+	}
+	return "numeric"
+}
+
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -124,7 +197,7 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 	} else if ok {
 		b = b.Where(cond)
 	}
-	filters, err := r.filterConditions(f)
+	filters, err := r.filterConditions(ctx, f)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -157,6 +230,72 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 		return nil, 0, err
 	}
 	return results, int(total), nil
+}
+
+// distinctCap ceilings how many distinct buckets a single DistinctValues call
+// returns — a real column with more than this many distinct values needs
+// pagination, not a single unbounded GROUP BY.
+// ponytail: 500-value ceiling, paginate if a real field blows past it.
+const distinctCap = 500
+
+// DistinctValues returns each distinct value of column (cast to text) plus
+// how many rows carry it, among rows matching f's filters — the same
+// tenant/soft-delete/filter guards FindAll applies. column goes through the
+// SAME checkColumn every other filter column does, so a caller can never
+// group by a column they couldn't otherwise filter/search on — that's what
+// makes group-by group-gated for free.
+func (r *Repository) DistinctValues(ctx context.Context, column string, f ListFilter) ([]DistinctValue, error) {
+	if err := r.checkColumn(ctx, column); err != nil {
+		return nil, err
+	}
+
+	b := query.Select[struct{}](r.meta.StructMeta).
+		Columns(column+"::text AS value", "COUNT(*) AS total")
+	if r.meta.SoftDelete {
+		b = b.Where(query.NewCondition("deleted_at IS NULL"))
+	}
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		b = b.Where(cond)
+	}
+	filters, err := r.filterConditions(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	for _, cond := range filters {
+		b = b.Where(cond)
+	}
+
+	sql, args := b.GroupBy(column).OrderBy(column).Limit(distinctCap).ToSQL()
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("crud: distinct values %s.%s: %w", r.meta.TableName, column, err)
+	}
+	return scanDistinct(rows)
+}
+
+// scanDistinct reads the (value, total) shape DistinctValues' custom column
+// list produces — scanToMaps doesn't fit here since the row shape isn't a
+// full table row.
+func scanDistinct(rows pgx.Rows) ([]DistinctValue, error) {
+	defer rows.Close()
+	var out []DistinctValue
+	for rows.Next() {
+		var v DistinctValue
+		var value *string // the grouped column may itself be NULL
+		if err := rows.Scan(&value, &v.Total); err != nil {
+			return nil, fmt.Errorf("crud: scan distinct row: %w", err)
+		}
+		if value != nil {
+			v.Value = *value
+		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("crud: scan distinct rows: %w", err)
+	}
+	return out, nil
 }
 
 // FindByID returns the single row with the given id. Returns ErrNotFound when

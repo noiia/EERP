@@ -32,3 +32,11 @@ export async function createRelationRecord(
 export async function removeRelationRecord(entity: string, id: string): Promise<void> {
   await createServerApiClient().remove(entity, id)
 }
+
+export async function distinctValues(
+  entity: string,
+  column: string,
+  options?: EntityListOptions,
+): Promise<{ value: string; total: number }[]> {
+  return createServerApiClient().distinctValues(entity, column, options)
+}

@@ -52,6 +52,16 @@ func (m TableMeta) HasField(col string) bool {
 	return false
 }
 
+// FieldByColumn returns the FieldMeta for col, and whether it exists.
+func (m TableMeta) FieldByColumn(col string) (FieldMeta, bool) {
+	for _, f := range m.Fields {
+		if f.Column == col {
+			return f, true
+		}
+	}
+	return FieldMeta{}, false
+}
+
 // ── Options ───────────────────────────────────────────────────────────────────
 
 // Option configures a Register call.

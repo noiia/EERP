@@ -253,6 +253,16 @@ describe('applyExtension — setDescriptor', () => {
     expect(result.createPermission).toBe('crm:contacts:write')
     expect(result.entity).toBe('crm') // untouched
   })
+
+  it('patches the search bar config as a whole-block replace', () => {
+    const result = apply([
+      {
+        op: 'setDescriptor',
+        patch: { search: { filterableFields: ['name'], groupableFields: ['name'] } },
+      },
+    ])
+    expect(result.search).toEqual({ filterableFields: ['name'], groupableFields: ['name'] })
+  })
 })
 
 describe('applyExtension — form views materialize the synthesized default anatomy first', () => {

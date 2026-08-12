@@ -206,19 +206,45 @@ async function request<T>(
   return (text ? (JSON.parse(text) as T) : (undefined as T))
 }
 
-function listQuery(options?: EntityListOptions): string {
-  if (!options) return ''
-  const params = new URLSearchParams()
+/** Shared by listQuery and the distinct=<column> query string — every
+ * filter/search/in/range param the generic list endpoint accepts. */
+function appendListParams(params: URLSearchParams, options?: EntityListOptions): void {
+  if (!options) return
   for (const [col, value] of Object.entries(options.filter ?? {})) {
     params.set(`filter[${col}]`, value)
   }
   for (const [col, value] of Object.entries(options.search ?? {})) {
     params.set(`search[${col}]`, value)
   }
+  for (const [col, values] of Object.entries(options.in ?? {})) {
+    params.set(`in[${col}]`, values.join(','))
+  }
+  for (const [prefix, m] of [
+    ['gt', options.gt],
+    ['gte', options.gte],
+    ['lt', options.lt],
+    ['lte', options.lte],
+  ] as const) {
+    for (const [col, value] of Object.entries(m ?? {})) {
+      params.set(`${prefix}[${col}]`, value)
+    }
+  }
   if (options.page) params.set('page', String(options.page))
   if (options.pageSize) params.set('page_size', String(options.pageSize))
+}
+
+function listQuery(options?: EntityListOptions): string {
+  const params = new URLSearchParams()
+  appendListParams(params, options)
   const qs = params.toString()
   return qs ? `?${qs}` : ''
+}
+
+function distinctQuery(column: string, options?: EntityListOptions): string {
+  const params = new URLSearchParams()
+  params.set('distinct', column)
+  appendListParams(params, options)
+  return `?${params.toString()}`
 }
 
 export interface ServerApiClient {
@@ -262,6 +288,19 @@ export interface ServerApiClient {
    * page_size-truncated one, without a second request.
    */
   listWithTotal<T>(entity: string, options?: EntityListOptions): Promise<{ records: T[]; total: number }>
+  /**
+   * The search bar's group-by section (docs/adr/ADR-014-search-filter-bar.md):
+   * every distinct value of column (+ row count) among rows matching options'
+   * filters, server-computed over the FULL dataset — never the client's
+   * already-fetched page. Reuses the ordinary list endpoint's own
+   * filter/search/in/range params and group-gating check (?distinct=column
+   * rather than a new route, so no new auto-derived permission is needed).
+   */
+  distinctValues(
+    entity: string,
+    column: string,
+    options?: EntityListOptions,
+  ): Promise<{ value: string; total: number }[]>
 }
 
 class ServerApiClientImpl implements ServerApiClient {
@@ -299,6 +338,21 @@ class ServerApiClientImpl implements ServerApiClient {
     // being exactly what Go counted server-side.
     const total = typeof envelope?.total === 'number' ? envelope.total : records.length
     return { records, total }
+  }
+
+  async distinctValues(
+    entity: string,
+    column: string,
+    options?: EntityListOptions,
+  ): Promise<{ value: string; total: number }[]> {
+    const body = await request<{ values?: { value: string; total: number }[] }>(
+      'GET',
+      `/${entity}${distinctQuery(column, options)}`,
+      [entity],
+      undefined,
+      this.tokenOverride,
+    )
+    return body.values ?? []
   }
 
   get<T>(entity: string, id: string): Promise<T> {

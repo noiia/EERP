@@ -16,6 +16,7 @@ import (
 	_ "core/modules/pictures"
 	_ "core/modules/reportlayout"
 	_ "core/modules/sale"
+	_ "core/modules/savedfilter"
 	_ "core/modules/settings"
 	_ "core/modules/warehouse"
 )

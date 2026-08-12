@@ -44,12 +44,13 @@ func hardItemMeta() registry.TableMeta {
 // ── mock service ──────────────────────────────────────────────────────────────
 
 type mockSvc struct {
-	list    func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
-	byID    func(ctx context.Context, id any) (map[string]any, error)
-	create  func(ctx context.Context, data map[string]any) (map[string]any, error)
-	update  func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
-	del     func(ctx context.Context, id any) error
-	restore func(ctx context.Context, id any) (map[string]any, error)
+	list     func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
+	byID     func(ctx context.Context, id any) (map[string]any, error)
+	create   func(ctx context.Context, data map[string]any) (map[string]any, error)
+	update   func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
+	del      func(ctx context.Context, id any) error
+	restore  func(ctx context.Context, id any) (map[string]any, error)
+	distinct func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
 }
 
 func (m *mockSvc) List(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
@@ -87,6 +88,12 @@ func (m *mockSvc) Restore(ctx context.Context, id any) (map[string]any, error) {
 		return m.restore(ctx, id)
 	}
 	return map[string]any{}, nil
+}
+func (m *mockSvc) DistinctValues(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error) {
+	if m.distinct != nil {
+		return m.distinct(ctx, column, f)
+	}
+	return nil, nil
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -176,6 +183,71 @@ func TestList_ResponseEnvelope(t *testing.T) {
 	}
 	if envelope.Total != 42 {
 		t.Errorf("total = %d, want 42", envelope.Total)
+	}
+}
+
+// ── distinct (group-by) ───────────────────────────────────────────────────────
+
+func TestList_DistinctQueryParam(t *testing.T) {
+	var gotCol string
+	svc := &mockSvc{
+		distinct: func(_ context.Context, column string, _ crud.ListFilter) ([]crud.DistinctValue, error) {
+			gotCol = column
+			return []crud.DistinctValue{{Value: "open", Total: 3}}, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, rec := newEchoRequest(http.MethodGet, "/api/v1/items?distinct=name", "")
+
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if gotCol != "name" {
+		t.Errorf("column passed to service = %q, want name", gotCol)
+	}
+	var envelope struct {
+		Values []crud.DistinctValue `json:"values"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(envelope.Values) != 1 || envelope.Values[0].Value != "open" || envelope.Values[0].Total != 3 {
+		t.Errorf("values = %+v, want [{open 3}]", envelope.Values)
+	}
+}
+
+func TestList_DistinctUnknownColumnIs400(t *testing.T) {
+	svc := &mockSvc{
+		distinct: func(_ context.Context, _ string, _ crud.ListFilter) ([]crud.DistinctValue, error) {
+			return nil, crud.ErrUnknownColumn
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items?distinct=nope", "")
+
+	err := h.List(c)
+	var he *echo.HTTPError
+	if !errors.As(err, &he) || he.Code != http.StatusBadRequest {
+		t.Errorf("err = %v, want 400 HTTPError", err)
+	}
+}
+
+func TestList_DistinctNotCalledWhenParamAbsent(t *testing.T) {
+	called := false
+	svc := &mockSvc{
+		distinct: func(_ context.Context, _ string, _ crud.ListFilter) ([]crud.DistinctValue, error) {
+			called = true
+			return nil, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items", "")
+
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if called {
+		t.Error("DistinctValues must not be called for an ordinary list request")
 	}
 }
 
@@ -287,6 +359,63 @@ func TestList_FilterAndSearchParams(t *testing.T) {
 	}
 }
 
+func TestList_InFilterParam(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+			gotFilter = f
+			return nil, 0, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items?in%5Bname%5D=ada,grace,alan", "")
+
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	want := []string{"ada", "grace", "alan"}
+	got := gotFilter.In["name"]
+	if len(got) != len(want) {
+		t.Fatalf("In[name] = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("In[name][%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestList_RangeFilterParams(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+			gotFilter = f
+			return nil, 0, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet,
+		"/api/v1/items?gt%5Bname%5D=1&gte%5Bname%5D=2&lt%5Bname%5D=3&lte%5Bname%5D=4", "")
+
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	for _, tt := range []struct {
+		label string
+		m     map[string]string
+		want  string
+	}{
+		{"GT", gotFilter.GT, "1"},
+		{"GTE", gotFilter.GTE, "2"},
+		{"LT", gotFilter.LT, "3"},
+		{"LTE", gotFilter.LTE, "4"},
+	} {
+		if got := tt.m["name"]; got != tt.want {
+			t.Errorf("%s[name] = %q, want %q", tt.label, got, tt.want)
+		}
+	}
+}
+
 func TestList_UnknownFilterColumnIs400(t *testing.T) {
 	called := false
 	svc := &mockSvc{
@@ -300,6 +429,8 @@ func TestList_UnknownFilterColumnIs400(t *testing.T) {
 	for _, target := range []string{
 		"/api/v1/items?filter%5Bnope%5D=x",
 		"/api/v1/items?search%5Bnope%5D=x",
+		"/api/v1/items?in%5Bnope%5D=x",
+		"/api/v1/items?gt%5Bnope%5D=x",
 	} {
 		_, c, _ := newEchoRequest(http.MethodGet, target, "")
 		err := h.List(c)

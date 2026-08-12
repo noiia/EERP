@@ -25,6 +25,7 @@ import {
   GraphOpsProvider,
   NotebookOpsProvider,
   RelationOpsProvider,
+  SavedFilterOpsProvider,
   layout,
 } from '@eerp/core-front'
 import { activeModuleNames } from '../src/lib/module-state'
@@ -40,10 +41,17 @@ import {
 } from '../src/lib/notebook-actions'
 import {
   createRelationRecord,
+  distinctValues,
   getRecord,
   listRecords,
   removeRelationRecord,
 } from '../src/lib/relation-actions'
+import {
+  createSavedFilter,
+  listSavedFilters,
+  removeSavedFilter,
+  updateSavedFilter,
+} from '../src/lib/saved-filter-actions'
 
 export const metadata = {
   title: 'EERP',
@@ -100,6 +108,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 get: getRecord,
                 create: createRelationRecord,
                 remove: removeRelationRecord,
+                distinctValues,
               }}
             >
               {/* Graph mode's app-wide data path: entity-generic Server Action
@@ -119,23 +128,36 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                     remove: removeNotebookPage,
                   }}
                 >
-                  {/* The ONE page-content inset, applied once here — everything below
+                  {/* The search bar's named, reusable filter combinations
+                      (docs/adr/ADR-014-search-filter-bar.md) — independent
+                      named rows a user creates/renames/deletes, the same
+                      shape NotebookOps already takes. */}
+                  <SavedFilterOpsProvider
+                    ops={{
+                      list: listSavedFilters,
+                      create: createSavedFilter,
+                      update: updateSavedFilter,
+                      remove: removeSavedFilter,
+                    }}
+                  >
+                    {/* The ONE page-content inset, applied once here — everything below
                       the top bar (list/form/dashboard/settings, any view) sits inside
                       it, never against or past the screen edge. Graph mode's canvas
                       (react-grid-layout) measures ITS OWN container width to derive its
                       column count, so it naturally sizes itself to whatever this inset
                       provides — overflowX: 'auto' remains a defensive fallback for any
                       other wide inner surface, never a per-view width hack. */}
-                  <Box
-                    sx={{
-                      px: layout.pageInsetX,
-                      py: layout.pageInsetY,
-                      overflowX: 'auto',
-                      '@media print': { p: 0, overflowX: 'visible' },
-                    }}
-                  >
-                    {children}
-                  </Box>
+                    <Box
+                      sx={{
+                        px: layout.pageInsetX,
+                        py: layout.pageInsetY,
+                        overflowX: 'auto',
+                        '@media print': { p: 0, overflowX: 'visible' },
+                      }}
+                    >
+                      {children}
+                    </Box>
+                  </SavedFilterOpsProvider>
                 </NotebookOpsProvider>
               </GraphOpsProvider>
             </RelationOpsProvider>

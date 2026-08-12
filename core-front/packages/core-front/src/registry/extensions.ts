@@ -77,7 +77,7 @@ export interface SetDescriptorOp {
   /** View-level knobs only — never entity/viewType/fields/layout, which have
    * their own dedicated operations (or are structural and shouldn't be
    * extension-patched at all). */
-  patch: Partial<Pick<ViewDescriptor, 'formPath' | 'createPermission' | 'permissions'>>
+  patch: Partial<Pick<ViewDescriptor, 'formPath' | 'createPermission' | 'permissions' | 'search'>>
 }
 
 export type Operation =

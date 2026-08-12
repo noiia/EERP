@@ -3,6 +3,7 @@ import {
   normalizeLayout,
   validateCatalogDescriptor,
   validateDescriptorWidgets,
+  validateSearchDescriptor,
   type ViewDescriptor,
 } from '../views/descriptor'
 import { validateMenuActions } from '../views/menu-actions'
@@ -137,6 +138,7 @@ interface RegisteredModule {
 function validateDescriptor(descriptor: ViewDescriptor): void {
   validateDescriptorWidgets(descriptor)
   validateCatalogDescriptor(descriptor)
+  validateSearchDescriptor(descriptor)
   validateMenuActions(descriptor)
   buildBehaviorPlan(descriptor)
   normalizeLayout(descriptor)

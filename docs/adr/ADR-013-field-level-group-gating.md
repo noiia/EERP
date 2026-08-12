@@ -102,7 +102,7 @@ existing `isFieldVisible` call site keeps compiling and keeps its old behavior.
   full field secrecy, left open deliberately: the ask was specifically for response-body
   omission, and closing this means validating filter/search column names against the caller's
   groups the same way `BuildResponse` does — a natural, contained follow-up, not attempted
-  here.
+  here. **Closed by `docs/adr/ADR-014-search-filter-bar.md`** (`Repository.checkColumn`).
 - **`role_belongs` sits on the generic CRUD surface** — the one deliberate exception to
   "the auth tables are excluded on purpose" (`core/modules/auth/module.go`'s own comment on
   `Users`/`Roles`/`Permissions`/`RefreshTokens`). A tenant admin with `role_belongs:role_belongs:write`

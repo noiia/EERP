@@ -44,6 +44,7 @@ import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
 import { PictureSizeProvider } from './picture-widgets'
 import { useRecordLabelStore } from './record-label-store'
+import { SearchBar } from './search-bar'
 import { tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
 import {
@@ -409,6 +410,12 @@ function TreeRenderer<T extends HasId>({
   // renderer's — a view-specific fix here would just be a second, competing mechanism.
   return (
     <Box>
+      {/* Built-in search/filter bar (docs/adr/ADR-014-search-filter-bar.md) —
+          every tree view gets it automatically, same "no opt-in" posture the
+          mode switcher below takes. Writes into the SAME liveRecords state
+          Kanban/Calendar drags already share, so a filter/search/group-by
+          result shows up identically across List/Kanban/Calendar/Graph. */}
+      <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
       <DisplayModeSwitcher
         entity={descriptor.entity}
         mode={mode}
