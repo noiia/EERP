@@ -1,0 +1,130 @@
+# sale — fr. Exported from Settings → Translations.
+# Save as i18n/fr.po inside the 'sale' module folder and rebuild.
+msgid ""
+msgstr ""
+"Project-Id-Version: sale\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Company logo"
+msgstr "Logo de l'entreprise"
+
+msgid "Number"
+msgstr "Nombre"
+
+msgid "Customer"
+msgstr "Client"
+
+msgid "Status"
+msgstr ""
+
+msgid "Issue date"
+msgstr "Date d'émission"
+
+msgid "Due date"
+msgstr "Date d'échéance"
+
+msgid "Due date:"
+msgstr "Date d'échéance:"
+
+msgid "Total"
+msgstr ""
+
+msgid "Subject"
+msgstr "Sujet"
+
+msgid "Subject:"
+msgstr "Sujet:"
+
+msgid "Linked customer"
+msgstr "Client lié"
+
+msgid "Customer email"
+msgstr "Email client"
+
+msgid "Billing address"
+msgstr "Adresse de Facturation"
+
+msgid "Your company name"
+msgstr "Nom de votre entreprise"
+
+msgid "Your company address"
+msgstr "Adresse de votre entreprise"
+
+msgid "Your company phone"
+msgstr "N° de téléphone de votre entreprise"
+
+msgid "Your company email"
+msgstr "Email de votre entreprise"
+
+msgid "Currency"
+msgstr "Devise monaitaire"
+
+msgid "Reference"
+msgstr "Référence"
+
+msgid "Line items"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Unit"
+msgstr "Unité"
+
+msgid "Quantity"
+msgstr "Quantité"
+
+msgid "Unit price"
+msgstr "Prix unitaire"
+
+msgid "VAT"
+msgstr "TVA"
+
+msgid "Total (excl. tax)"
+msgstr "Total HT"
+
+msgid "No line items yet — add them via the API."
+msgstr "Aucune entrée disponible pour le moment"
+
+msgid "Subtotal (excl. tax)"
+msgstr "Sous-total HT"
+
+msgid "Discount (excl. tax)"
+msgstr "Remise HT"
+
+msgid "Net subtotal (excl. tax)"
+msgstr "Sous-total Net HT"
+
+msgid "Tax rate"
+msgstr "Taxe (%)"
+
+msgid "Tax amount"
+msgstr "Montant de la Taxe"
+
+msgid "Tax"
+msgstr "Taxes"
+
+msgid "Total (incl. tax)"
+msgstr "Total TTC"
+
+msgid "Payment method"
+msgstr "Méthode de paiement"
+
+msgid "Payment method:"
+msgstr "Méthode de paiement:"
+
+msgid "Payment terms"
+msgstr "Conditions de paiement"
+
+msgid "Payment terms:"
+msgstr "Conditions de paiement:"
+
+msgid "Legal notice"
+msgstr "Mentions Légales"
+
+msgid "Print"
+msgstr "Imprimer"
+
+msgid "Invoice"
+msgstr "Facture"
