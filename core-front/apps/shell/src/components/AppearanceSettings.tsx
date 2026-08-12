@@ -15,8 +15,14 @@ import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { BRAND_COLORS, isHexColor, useT, useUiStore } from '@eerp/core-front'
+import {
+  BRAND_COLORS,
+  byPrefixAndName,
+  FontAwesomeIcon,
+  isHexColor,
+  useT,
+  useUiStore,
+} from '@eerp/core-front'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
 
 // Settings → Global settings (formerly "Appearance", docs/roadmaps/
@@ -60,7 +66,9 @@ export default function AppearanceSettings({
         </Stack>
 
         <Accordion defaultExpanded disableGutters>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
             <Typography variant="subtitle1">{t('Colors')}</Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -177,7 +185,9 @@ export default function AppearanceSettings({
         </Accordion>
 
         <Accordion disableGutters>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
             <Typography variant="subtitle1">{t('Reports')}</Typography>
           </AccordionSummary>
           <AccordionDetails>

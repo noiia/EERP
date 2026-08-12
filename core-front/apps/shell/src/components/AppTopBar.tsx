@@ -15,12 +15,9 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
-import BusinessIcon from '@mui/icons-material/Business'
-import HomeIcon from '@mui/icons-material/Home'
-import LogoutIcon from '@mui/icons-material/Logout'
-import NavigateNextIcon from '@mui/icons-material/NavigateNext'
-import SettingsIcon from '@mui/icons-material/Settings'
 import {
+  byPrefixAndName,
+  FontAwesomeIcon,
   useRecordLabelStore,
   useSessionStore,
   useT,
@@ -106,13 +103,13 @@ function PathBreadcrumbs({ pathname, nav }: { pathname: string; nav: ModuleNav[]
   return (
     <Breadcrumbs
       aria-label="breadcrumb"
-      separator={<NavigateNextIcon fontSize="small" />}
+      separator={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} size="sm" />}
       sx={{ color: 'inherit', '& .MuiBreadcrumbs-separator': { color: 'inherit' } }}
     >
       {/* Root: the application menu. Plain text (current page) when already on the menu. */}
       {crumbs.length === 0 ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <HomeIcon fontSize="small" />
+          <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
           <Typography variant="subtitle2" component="span">
             {t('Menu')}
           </Typography>
@@ -125,7 +122,7 @@ function PathBreadcrumbs({ pathname, nav }: { pathname: string; nav: ModuleNav[]
           underline="hover"
           sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
         >
-          <HomeIcon fontSize="small" />
+          <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
           {t('Menu')}
         </MuiLink>
       )}
@@ -233,13 +230,13 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
         <Divider />
         <MenuItem component={Link} href="/settings" onClick={close}>
           <ListItemIcon>
-            <SettingsIcon fontSize="small" />
+            <FontAwesomeIcon icon={byPrefixAndName.fas['gear']} size="sm" />
           </ListItemIcon>
           <ListItemText>{t('Settings')}</ListItemText>
         </MenuItem>
         <MenuItem onClick={onLogout}>
           <ListItemIcon>
-            <LogoutIcon fontSize="small" />
+            <FontAwesomeIcon icon={byPrefixAndName.fas['right-from-bracket']} size="sm" />
           </ListItemIcon>
           <ListItemText>{t('Logout')}</ListItemText>
         </MenuItem>
@@ -306,7 +303,7 @@ function CompanySwitcher({
           p: 0,
         }}
       >
-        <BusinessIcon fontSize="small" />
+        <FontAwesomeIcon icon={byPrefixAndName.fas['building']} size="sm" />
         {activeCompany.name}
       </Box>
       <Menu

@@ -10,7 +10,6 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
-import SvgIcon from '@mui/material/SvgIcon'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef } from '@mui/x-data-grid'
@@ -22,6 +21,7 @@ import {
   type RelationDescriptor,
   type ViewDescriptor,
 } from './descriptor'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { LayoutForm } from './layout-renderer'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
 import { createFormStore, useFormDraft, useFormError } from './stores'
@@ -38,15 +38,6 @@ import type { WidgetProps } from './widgets'
 //
 // o2m/m2m fields are VIRTUAL on this record (isVirtualRelation): the behavior
 // plan strips them from commit payloads; these widgets never touch the draft.
-
-/** Material "link" glyph inlined — one icon does not justify an icons dependency. */
-function LinkIcon(props: React.ComponentProps<typeof SvgIcon>) {
-  return (
-    <SvgIcon {...props}>
-      <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" />
-    </SvgIcon>
-  )
-}
 
 const SEARCH_DEBOUNCE_MS = 250
 // 6 result rows; the create-from-search line below them is the 7th.
@@ -534,7 +525,7 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
           disabled={disabled}
           size="small"
         >
-          <LinkIcon fontSize="small" />
+          <FontAwesomeIcon icon={byPrefixAndName.fas['link']} size="sm" />
         </IconButton>
       </Stack>
       <RelationWizard

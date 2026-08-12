@@ -9,10 +9,18 @@ import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { ErrorAlert, toApiError, serializeError, usePermission, useT, type SerializedError } from '@eerp/core-front'
+import {
+  byPrefixAndName,
+  ErrorAlert,
+  FontAwesomeIcon,
+  toApiError,
+  serializeError,
+  usePermission,
+  useT,
+  type SerializedError,
+} from '@eerp/core-front'
 import { getModuleLogs, type ModuleLogEntry } from '@/lib/module-actions'
 
 // The Logs wizard: every activate/deactivate/reload run's backend- and
@@ -103,7 +111,9 @@ export function LogsButton({ name }: { name: string }) {
           {!error &&
             groups?.map((group) => (
               <Accordion key={group.operationId} disableGutters>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                     <Chip size="small" label={group.operation} />
                     <Typography variant="body2" color="text.secondary">

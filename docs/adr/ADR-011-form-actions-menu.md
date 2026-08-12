@@ -61,13 +61,18 @@ so far acts on a record before it exists, and the menu has no way to know in adv
 whether a future action might want to (e.g. "Save and print" is not something the current
 handler contract expresses; it would need its own design if requested).
 
-### 3. The page title is dropped from forms; the button takes its exact spot
+### 3. The page title is dropped from forms; the button lives in the form's own top toolbar
 
 `apps/shell/app/[...module]/page.tsx`'s title row now branches on `viewType === 'form'`:
-forms render `<FormActionsMenu>` where the `<Typography variant="h4">` used to sit; every
-other view type is unchanged (tree/dashboard/catalog keep the title, and tree additionally
-keeps `CreateBar` on the same row). No new row, no new layout primitive — the options
-button is a straight swap into chrome that already existed.
+forms render no title row at all (`isForm ? null : <title row>`); every other view type is
+unchanged (tree/dashboard/catalog keep the title, and tree additionally keeps `CreateBar` on
+the same row). `FormActionsMenu` moved from the host page into `FormRenderer` itself
+(`renderers.tsx`), which already has everything the menu needs — `descriptor.entity`,
+`descriptor.actions`, and the draft's own id — as a byproduct of rendering the form. This
+also put Save and Reset (previously a right-aligned footer under the fields) in the same
+row as the menu, immediately to ITS left, so the whole group's left edge lands exactly where
+the menu used to sit alone. Reset is icon-only (an "undo" glyph) to match the menu's own
+icon-only button rather than reading as a second, unbalanced text button next to Save.
 
 ### 4. Nesting is a real MUI submenu, not a flattened list
 
@@ -75,10 +80,16 @@ A `submenu` node renders as a `MenuItem` that opens a second, right-anchored MUI
 click (`form-actions-menu.tsx`'s `MenuNodeItem`, recursing on its own `children`) — closing
 the root menu unmounts every open submenu automatically (MUI's `Menu` doesn't keep its
 Portal content mounted while `open={false}`), so there is no explicit "close all submenus"
-bookkeeping to get wrong. Icons (`MoreVertIcon`, `ChevronRightIcon`) are inlined `SvgIcon`
-paths, not an `@mui/icons-material` dependency — the same call `relation-widgets.tsx`'s
-`LinkIcon` and `picture-widgets.tsx`'s `DownloadIcon`/`CloseIcon` already made: one or two
-icons don't justify a new package the engine doesn't otherwise need.
+bookkeeping to get wrong. Icons (the options button's kebab, the submenu's chevron, Reset's
+undo glyph, and every other icon across the engine) render via `FontAwesomeIcon` from
+`@fortawesome/react-fontawesome`, looked up as `byPrefixAndName.fas['icon-name']`
+(`views/icons.ts`) — mirroring the syntax FontAwesome's own paid Kit product ships, but
+built as a small local shim over the free `@fortawesome/free-solid-svg-icons` set (keyed by
+each icon's own `iconName`) so no Kit subscription is required. This superseded the
+inlined-`SvgIcon` convention `relation-widgets.tsx`'s `LinkIcon` and `picture-widgets.tsx`'s
+`DownloadIcon`/`CloseIcon` used to follow — once the icon set needed unifying across the
+whole engine and shell (a dozen-plus call sites), one shared dependency read better than a
+one-off inlined path per icon.
 
 ## Consequences
 

@@ -4,7 +4,7 @@ import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { EntityViewServer } from '@eerp/core-front/server'
-import { CreateBar, FormActionsMenu, T, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
+import { CreateBar, T, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
 // Side-effect import: registers every discovered module's FrontModule into the shared
 // registry before we resolve the route. Regenerated at build time (gitignored).
 import '@/generated/generated-modules'
@@ -75,26 +75,21 @@ export default async function ModulePage({ params }: ModulePageProps) {
         {/* The title is computed here (RSC) but the locale is client state, so the
             <T> leaf translates it at the client boundary. Tree views carry their
             Create button on this same row, right-aligned (the engine's CreateBar
-            hides itself without the permission). A form has no title here at all:
-            the options button (docs/adr/ADR-011) takes the title's spot instead —
-            the record's own name already renders as the form's big title field
-            (FORM_HEADER_ID), so a second page-level title was redundant. */}
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-          {isForm ? (
-            <FormActionsMenu
-              entity={entity}
-              actions={(route.descriptor as ViewDescriptor<AnyRecord>).actions ?? []}
-              recordId={routeParams.id}
-            />
-          ) : (
+            hides itself without the permission). A form has no title row here at
+            all: the record's own name already renders as the form's big title
+            field (FORM_HEADER_ID), and the options menu (docs/adr/ADR-011) now
+            renders as part of FormRenderer's own top toolbar, alongside
+            Save/Reset — see renderers.tsx. */}
+        {isForm ? null : (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
             <Typography variant="h4" component="h1">
               <T text={modulePageTitle(segments, routeParams)} />
             </Typography>
-          )}
-          {route.descriptor.viewType === 'tree' ? (
-            <CreateBar descriptor={route.descriptor as ViewDescriptor<AnyRecord>} />
-          ) : null}
-        </Box>
+            {route.descriptor.viewType === 'tree' ? (
+              <CreateBar descriptor={route.descriptor as ViewDescriptor<AnyRecord>} />
+            ) : null}
+          </Box>
+        )}
         <EntityViewServer
           descriptor={route.descriptor as ViewDescriptor<AnyRecord>}
           actions={actions}

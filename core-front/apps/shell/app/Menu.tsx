@@ -6,8 +6,7 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
-import SettingsIcon from '@mui/icons-material/Settings'
-import { useT, type MenuModule } from '@eerp/core-front'
+import { byPrefixAndName, FontAwesomeIcon, useT, type MenuModule } from '@eerp/core-front'
 
 // The landing menu: one square tile per installed application. A Client Component
 // because each tile uses MUI's `component={Link}` (a function prop MUI can't receive
@@ -126,7 +125,11 @@ export default function Menu({ menu }: MenuProps) {
           />
         ))}
         {/* Settings is a built-in shell application, always available. */}
-        <MenuTile href="/settings" label={t('Settings')} icon={<SettingsIcon />} />
+        <MenuTile
+        href="/settings"
+        label={t('Settings')}
+        icon={<FontAwesomeIcon icon={byPrefixAndName.fas['gear']} />}
+      />
       </Box>
     </Container>
   )

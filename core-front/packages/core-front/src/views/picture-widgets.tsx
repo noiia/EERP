@@ -12,7 +12,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
-import SvgIcon from '@mui/material/SvgIcon'
 import Typography from '@mui/material/Typography'
 import type { Theme } from '@mui/material/styles'
 import {
@@ -23,6 +22,7 @@ import {
 } from '../api/pictures-client'
 import { useT } from '../i18n/translate'
 import { fieldLabel, type FieldDescriptor } from './descriptor'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import type { WidgetProps } from './widgets'
 
 // Picture-backed boolean widgets (docs/roadmaps/field-widgets.md, Phase 3).
@@ -32,26 +32,6 @@ import type { WidgetProps } from './widgets'
 // what actually exists, so a failed upload can never leave a `true` without an
 // image. Uploads happen at interaction time — before the record PUT that
 // commits the boolean — which is exactly the mandated commit order.
-
-/** Material "file_download" glyph inlined — same call as relation-widgets.tsx's
- * LinkIcon: one icon does not justify an @mui/icons-material dependency (the
- * engine package doesn't have it; only apps/shell does). */
-function DownloadIcon(props: React.ComponentProps<typeof SvgIcon>) {
-  return (
-    <SvgIcon {...props}>
-      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-    </SvgIcon>
-  )
-}
-
-/** Material "close" glyph inlined, same call as DownloadIcon above. */
-function CloseIcon(props: React.ComponentProps<typeof SvgIcon>) {
-  return (
-    <SvgIcon {...props}>
-      <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-    </SvgIcon>
-  )
-}
 
 const PictureClientContext = createContext<PictureClient | null>(null)
 
@@ -295,7 +275,9 @@ export function BooleanPictureWidget(props: WidgetProps) {
                 sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
-              <DownloadIcon fontSize="large" sx={{ color: 'text.disabled' }} />
+              <Box component="span" sx={{ color: 'text.disabled' }}>
+                <FontAwesomeIcon icon={byPrefixAndName.fas['download']} size="2x" />
+              </Box>
             )}
             <input
               hidden
@@ -325,7 +307,7 @@ export function BooleanPictureWidget(props: WidgetProps) {
                 '&:hover': { bgcolor: 'error.light' },
               }}
             >
-              <CloseIcon sx={{ fontSize: 14 }} />
+              <FontAwesomeIcon icon={byPrefixAndName.fas['xmark']} size="sm" />
             </IconButton>
           ) : null}
         </Box>

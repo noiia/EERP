@@ -7,8 +7,8 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
-import Divider from '@mui/material/Divider'
 import Grid from '@mui/material/Grid'
+import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import ToggleButton from '@mui/material/ToggleButton'
@@ -36,7 +36,9 @@ import {
   type ViewDescriptor,
 } from './descriptor'
 import { ErrorAlert } from './error-alert'
+import { FormActionsMenu } from './form-actions-menu'
 import { GraphRenderer } from './graph-renderer'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
 import { PictureSizeProvider } from './picture-widgets'
@@ -190,6 +192,35 @@ function FormRenderer<T extends HasId>({
       // and the columns' container-query floor.
       sx={{ maxWidth: '100%' }}
     >
+      {/* Top toolbar: Reset + Save sit immediately left of the form's options
+          menu (docs/adr/ADR-011) — the group's left edge lands exactly where
+          the menu used to sit alone (apps/shell/app/[...module]/page.tsx no
+          longer renders it; the form owns its own top chrome now). Reset is
+          icon-only ("undo" glyph), matching the menu's own icon-only button. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <IconButton
+          aria-label={t('Reset')}
+          disabled={!dirty || submitting}
+          onClick={() => store.getState().reset()}
+        >
+          <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
+        </IconButton>
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={!dirty || submitting}
+          startIcon={
+            submitting ? <CircularProgress size={16} color="inherit" thickness={5} /> : undefined
+          }
+        >
+          {submitting ? t('Saving…') : t('Save')}
+        </Button>
+        <FormActionsMenu
+          entity={descriptor.entity}
+          actions={descriptor.actions ?? []}
+          recordId={recordId ?? 'new'}
+        />
+      </Box>
       <Card>
         <CardContent sx={{ p: 3 }}>
           <Stack spacing={2.5}>
@@ -209,36 +240,6 @@ function FormRenderer<T extends HasId>({
             </PictureSizeProvider>
           </Stack>
         </CardContent>
-        <Divider />
-        {/* Footer action bar: primary Save + a Reset that discards edits (store.reset). */}
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 1,
-            px: 3,
-            py: 2,
-          }}
-        >
-          <Button
-            type="button"
-            color="inherit"
-            disabled={!dirty || submitting}
-            onClick={() => store.getState().reset()}
-          >
-            {t('Reset')}
-          </Button>
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={!dirty || submitting}
-            startIcon={
-              submitting ? <CircularProgress size={16} color="inherit" thickness={5} /> : undefined
-            }
-          >
-            {submitting ? t('Saving…') : t('Save')}
-          </Button>
-        </Box>
       </Card>
     </Box>
   )
