@@ -21,11 +21,16 @@ const DefaultLocaleKey = "i18n.default_locale"
 const NumberFormatKey = "format.number"
 
 // ViewFieldsKey returns the app_settings key holding entity's Kanban/Calendar
-// field configuration (docs/roadmaps/list-view-modes.md), stored as JSON:
-// {"kanban_status_field":"status","calendar_date_field":"due_date"}. One key
-// per entity — unlike DefaultLocaleKey/NumberFormatKey, which are tenant-wide
-// singletons, this setting is inherently per-entity, so the key is computed
-// rather than a fixed constant. Absent means neither mode is configured yet.
+// field configuration plus its Graph mode override (docs/roadmaps/
+// list-view-modes.md), stored as JSON: {"kanban_status_field":"status",
+// "calendar_date_field":"due_date","enable_graphs":true}. One key per entity
+// — unlike DefaultLocaleKey/NumberFormatKey, which are tenant-wide singletons,
+// this setting is inherently per-entity, so the key is computed rather than a
+// fixed constant. Absent (or a null field) means no workspace override for
+// that field — the frontend falls back to the entity's own ViewDescriptor.
+// viewModeDefaults, a module's optional hardcoded baseline, before landing on
+// "disabled" (docs/adr/ADR-006-runtime-configurable-view-fields.md's
+// amendment).
 func ViewFieldsKey(entity string) string {
 	return "views." + entity + ".fields"
 }

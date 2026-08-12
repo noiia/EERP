@@ -1,5 +1,5 @@
 import { moduleRegistry } from '@eerp/core-front/server'
-import type { FieldDescriptor } from '@eerp/core-front'
+import type { FieldDescriptor, ViewModeDefaults } from '@eerp/core-front'
 
 // Every entity with a registered tree (list) view, paired with the fields an
 // admin may pick as its Kanban status field (type 'selection') or Calendar
@@ -15,6 +15,10 @@ export interface ViewEntityFields {
   module: string
   kanbanFields: FieldDescriptor[]
   dateFields: FieldDescriptor[]
+  /** The module's own hardcoded Kanban/Calendar/Graph baseline, if it
+   * declared one (docs/adr/ADR-006-runtime-configurable-view-fields.md's
+   * amendment) — {} when it declared none. */
+  defaults: ViewModeDefaults
 }
 
 export function treeViewEntities(): ViewEntityFields[] {
@@ -29,6 +33,7 @@ export function treeViewEntities(): ViewEntityFields[] {
       module,
       kanbanFields: descriptor.fields.filter((f) => f.type === 'selection'),
       dateFields: descriptor.fields.filter((f) => f.type === 'date'),
+      defaults: descriptor.viewModeDefaults ?? {},
     })
   }
   return Array.from(seen.values())

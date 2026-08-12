@@ -62,11 +62,12 @@ admin-authored, runtime truth. Neither side duplicates the other's job.
 
 An entity with no configured Kanban/Calendar field is not a misconfiguration:
 most entities will never need one. `GetViewFieldsSettings` returns
-`{null, null}` for an unconfigured entity with a 200, not a 404, and the
-frontend's mode switcher simply keeps those two buttons disabled (tooltip:
-"Configure in Settings → Views") until set. Graph needs no such gate — an
-empty canvas is itself a valid state — so it's the one mode from
-`docs/roadmaps/list-view-modes.md` that's never disabled.
+`{null, null, null}` for an unconfigured entity with a 200, not a 404, and the
+frontend's mode switcher OMITS the corresponding button entirely rather than
+rendering it disabled — see the amendment below for why this hardened from
+"disabled with a tooltip" to "not rendered at all," and for Graph mode's own
+`enable_graphs` gate (it used to be exempt from configuration; it no longer
+is).
 
 ## Consequences
 
@@ -91,11 +92,71 @@ empty canvas is itself a valid state — so it's the one mode from
   landing menu use, unlike Settings → Users, which declares its own
   descriptors and needs no cross-module registry read.
 
+## Amendment (2026-08-13): module-declared defaults, hidden-not-disabled, Graph gets a gate
+
+Three refinements, still within this ADR's own boundary (`app_settings` stays
+the durable, admin-owned truth) rather than a reversal of it:
+
+1. **`ViewDescriptor.viewModeDefaults?: { kanbanStatusField?; calendarDateField?;
+   enableGraphs? }` — a module's own hardcoded BASELINE, not a new place the
+   choice itself lives.** This looks like the exact reflex the original
+   Decision rejected, so the distinction matters: `viewModeDefaults` is not
+   "the Kanban field," it's "the Kanban field IF an admin hasn't picked one" —
+   a starting point a workspace administrator can always override or revert,
+   exactly like a form field's own `default` (`docs/roadmaps/field-widgets.md`)
+   seeds a draft without becoming the value. The admin-owned override in
+   `app_settings` still wins whenever it's non-null; `effectiveViewFields`
+   (`api/view-fields.ts`) is the one function that resolves "default, then
+   override" into what a renderer actually acts on. What changed is only that
+   "no admin has opinion yet" no longer has to mean "disabled" — a module MAY
+   ship a sensible starting point (e.g. a CRM's `status` field as its own
+   Kanban column) without forcing every workspace to configure it by hand
+   before the mode is even visible.
+2. **Kanban/Calendar/Graph are hidden, not disabled, when unavailable.** The
+   original "disabled button + tooltip" affordance implied "you could turn
+   this on right here"; in practice turning it on always meant leaving the
+   view for Settings → Views. `DisplayModeSwitcher` now renders only the modes
+   `availableDisplayModes` reports true for — a mode with nothing configured
+   (by the module OR the admin) simply isn't a button, mirroring how the
+   Create button itself only appears when `createPermission` is granted
+   rather than rendering disabled.
+3. **Graph gets `enable_graphs`, the same override/default shape as the other
+   two.** "An empty canvas needs no configuration" was true, but it also meant
+   every entity's list view carried a Graph tab whether or not that entity
+   ever benefited from one. `enable_graphs` (nullable bool, same
+   `views.<entity>.fields` key) makes Graph an opt-in mode like Kanban/
+   Calendar, with the same module-default/admin-override/revert shape as the
+   other two.
+4. **Settings → Views gained a "revert to module settings" action.** Once a
+   field/flag has a module default, Settings → Views warns before saving a
+   value that diverges from it ("this is set by the module — overriding it
+   only affects this workspace") and, once overridden, offers a one-click
+   revert (clears just the overridden fields the module actually defaults,
+   leaving any OTHER admin choice on that row untouched) — `ViewsSettings.tsx`.
+   Go itself stores only the override (`viewFieldsConfig`, unchanged shape
+   plus `EnableGraphs *bool`); it never sees a descriptor, so "revert" is
+   simply nulling the override back out, resolved to "inherit the default"
+   client-side, same posture `PictureSizeKey`/`ModulePictureSizeKey`'s
+   Base/module cascade already established for "absence means inherit, no
+   separate delete endpoint needed."
+
+None of this changes the core test from the original Decision: an admin's
+choice, once made, is still the one that wins, still lives in `app_settings`,
+still edited without a rebuild. What's new is that a module may now suggest a
+starting point instead of forcing every workspace to start from nothing.
+
 ## Reference implementation
 
-`core/internal/settings` (`GetViewFieldsSettings`/`PutViewFieldsSettings`,
-key `views.<entity>.fields`); `core-front/packages/core-front/src/api/view-fields.ts`
-(`ViewFieldsConfig`, `DisplayMode`, `availableDisplayModes`); the `TreeRenderer`
-mode switcher and `useUiStore.viewMode` (`core-front/packages/core-front/src/views/renderers.tsx`,
-`ui-store.ts`); `apps/shell/app/settings/views/` (the admin UI, sourcing field
-choices from `moduleRegistry.buildRegistry()`).
+`core/internal/settings` (`GetViewFieldsSettings`/`PutViewFieldsSettings`, key
+`views.<entity>.fields`, now also `EnableGraphs`);
+`core-front/packages/core-front/src/api/view-fields.ts` (`ViewFieldsConfig`,
+`ViewModeDefaults`, `effectiveViewFields`, `DisplayMode`,
+`availableDisplayModes`); `ViewDescriptor.viewModeDefaults`
+(`core-front/packages/core-front/src/views/descriptor.ts`); the `TreeRenderer`
+mode switcher and `useUiStore.viewMode`
+(`core-front/packages/core-front/src/views/renderers.tsx`, `ui-store.ts`);
+`apps/shell/src/components/ViewsSettings.tsx` (the admin UI — warning dialog +
+revert button), rendered per-module from
+`apps/shell/app/settings/apps/[module]/page.tsx`, sourcing each entity's field
+choices AND its module defaults from `apps/shell/app/settings/views/registry.ts`'s
+`treeViewEntities()` (`moduleRegistry.buildRegistry()`).

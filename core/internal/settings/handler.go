@@ -313,17 +313,27 @@ func (h *Handler) PutFormatSettings(c echo.Context) error {
 
 // viewFieldsConfig is both the stored value of a ViewFieldsKey(entity) setting
 // and the request/response body of GET|PUT /settings/views/:entity/fields.
+// A nil field here always means "no workspace override" — the frontend falls
+// back to the entity's ViewDescriptor.viewModeDefaults (a module's own
+// hardcoded default, if any) rather than a fixed disabled state; Go itself
+// never sees a descriptor, so it only ever stores/returns the override.
 type viewFieldsConfig struct {
 	KanbanStatusField *string `json:"kanban_status_field"`
 	CalendarDateField *string `json:"calendar_date_field"`
+	// EnableGraphs overrides the entity's Graph mode availability. nil = no
+	// override (inherit the module's own default, or disabled if it declared
+	// none); non-nil forces Graph on or off regardless of that default.
+	EnableGraphs *bool `json:"enable_graphs"`
 }
 
 // GetViewFieldsSettings handles GET /api/v1/settings/views/:entity/fields —
 // which field, if any, the workspace has designated as entity's Kanban status
-// field and Calendar date field (docs/roadmaps/list-view-modes.md). An
-// unconfigured entity returns nulls, not a 404: it's a normal state (the
-// frontend's mode switcher just keeps Kanban/Calendar disabled), not an error.
-// Mounted behind the permission middleware, which derives settings:views:read.
+// field and Calendar date field, plus whether it overrides Graph mode
+// availability (docs/roadmaps/list-view-modes.md). An unconfigured entity
+// returns nulls, not a 404: it's a normal state — the frontend merges these
+// nulls with the entity's own ViewDescriptor.viewModeDefaults (if any), Go
+// never seeing that descriptor itself. Mounted behind the permission
+// middleware, which derives settings:views:read.
 func (h *Handler) GetViewFieldsSettings(c echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 

@@ -18,11 +18,16 @@ beforeEach(() => {
 
 describe('getEntityViewFields', () => {
   it('reads and camelCases the entity config from GET /settings/views/:entity/fields', async () => {
-    apiRequestMock.mockResolvedValue({ kanban_status_field: 'status', calendar_date_field: null })
+    apiRequestMock.mockResolvedValue({
+      kanban_status_field: 'status',
+      calendar_date_field: null,
+      enable_graphs: true,
+    })
 
     await expect(getEntityViewFields('crm')).resolves.toEqual({
       kanbanStatusField: 'status',
       calendarDateField: null,
+      enableGraphs: true,
     })
     expect(apiRequestMock).toHaveBeenCalledWith('GET', '/settings/views/crm/fields')
   })
@@ -32,6 +37,7 @@ describe('getEntityViewFields', () => {
     await expect(getEntityViewFields('crm')).resolves.toEqual({
       kanbanStatusField: null,
       calendarDateField: null,
+      enableGraphs: null,
     })
   })
 })
@@ -41,11 +47,12 @@ describe('setEntityViewFields', () => {
     apiRequestMock.mockResolvedValue(undefined)
 
     await expect(
-      setEntityViewFields('crm', { kanbanStatusField: 'status', calendarDateField: null }),
+      setEntityViewFields('crm', { kanbanStatusField: 'status', calendarDateField: null, enableGraphs: true }),
     ).resolves.toEqual({ ok: true })
     expect(apiRequestMock).toHaveBeenCalledWith('PUT', '/settings/views/crm/fields', {
       kanban_status_field: 'status',
       calendar_date_field: null,
+      enable_graphs: true,
     })
   })
 

@@ -611,6 +611,7 @@ func TestGetViewFieldsSettings(t *testing.T) {
 		wantStatus   int
 		wantKanban   any
 		wantCalendar any
+		wantGraphs   any
 	}{
 		{
 			name:         "unconfigured entity reads as nulls, not a 404",
@@ -619,16 +620,18 @@ func TestGetViewFieldsSettings(t *testing.T) {
 			wantStatus:   http.StatusOK,
 			wantKanban:   nil,
 			wantCalendar: nil,
+			wantGraphs:   nil,
 		},
 		{
 			name:   "configured entity",
 			entity: "crm",
 			store: &stubStore{values: map[string]string{
-				ViewFieldsKey("crm"): `{"kanban_status_field":"status","calendar_date_field":"due_date"}`,
+				ViewFieldsKey("crm"): `{"kanban_status_field":"status","calendar_date_field":"due_date","enable_graphs":true}`,
 			}},
 			wantStatus:   http.StatusOK,
 			wantKanban:   "status",
 			wantCalendar: "due_date",
+			wantGraphs:   true,
 		},
 		{
 			name:         "unparsable stored value degrades to nulls",
@@ -637,6 +640,7 @@ func TestGetViewFieldsSettings(t *testing.T) {
 			wantStatus:   http.StatusOK,
 			wantKanban:   nil,
 			wantCalendar: nil,
+			wantGraphs:   nil,
 		},
 		{
 			name:       "junk entity rejected",
@@ -669,6 +673,9 @@ func TestGetViewFieldsSettings(t *testing.T) {
 			if resp["calendar_date_field"] != tt.wantCalendar {
 				t.Errorf("calendar_date_field = %v, want %v", resp["calendar_date_field"], tt.wantCalendar)
 			}
+			if resp["enable_graphs"] != tt.wantGraphs {
+				t.Errorf("enable_graphs = %v, want %v", resp["enable_graphs"], tt.wantGraphs)
+			}
 		})
 	}
 }
@@ -694,7 +701,7 @@ func TestPutViewFieldsSettings(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 			wantSet:    true,
 			wantKey:    "views.crm.fields",
-			wantValue:  `{"kanban_status_field":"status","calendar_date_field":"due_date"}`,
+			wantValue:  `{"kanban_status_field":"status","calendar_date_field":"due_date","enable_graphs":null}`,
 		},
 		{
 			name:       "clear both fields",
@@ -703,7 +710,16 @@ func TestPutViewFieldsSettings(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 			wantSet:    true,
 			wantKey:    "views.crm.fields",
-			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null}`,
+			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null,"enable_graphs":null}`,
+		},
+		{
+			name:       "enable graphs override",
+			entity:     "crm",
+			body:       `{"enable_graphs":true}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    "views.crm.fields",
+			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null,"enable_graphs":true}`,
 		},
 		{
 			name:       "junk entity rejected",

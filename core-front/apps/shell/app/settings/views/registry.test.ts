@@ -15,6 +15,7 @@ const routes = new Map([
           { name: 'due_date', label: 'Due date', type: 'date' },
           { name: 'name', label: 'Name', type: 'text' },
         ],
+        viewModeDefaults: { kanbanStatusField: 'status', enableGraphs: true },
       },
       permission: undefined,
     },
@@ -69,5 +70,12 @@ describe('treeViewEntities', () => {
     const roles = treeViewEntities().find((e) => e.entity === 'roles')
     expect(crm?.module).toBe('crm')
     expect(roles?.module).toBe('users')
+  })
+
+  it("carries the module's own viewModeDefaults, {} when it declared none", () => {
+    const crm = treeViewEntities().find((e) => e.entity === 'crm')
+    const roles = treeViewEntities().find((e) => e.entity === 'roles')
+    expect(crm?.defaults).toEqual({ kanbanStatusField: 'status', enableGraphs: true })
+    expect(roles?.defaults).toEqual({})
   })
 })

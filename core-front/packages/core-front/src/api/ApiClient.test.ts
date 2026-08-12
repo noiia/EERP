@@ -287,15 +287,16 @@ describe('ServerApiClient', () => {
     expect(revalidateTagMock).toHaveBeenCalledWith('crm', 'max')
   })
 
-  it('reads Kanban/Calendar field config, never caching (tenant-wide settings)', async () => {
+  it('reads Kanban/Calendar/Graph field config, never caching (tenant-wide settings)', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse(200, { kanban_status_field: 'status', calendar_date_field: null }),
+      jsonResponse(200, { kanban_status_field: 'status', calendar_date_field: null, enable_graphs: true }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(createServerApiClient().getViewFields('crm')).resolves.toEqual({
       kanbanStatusField: 'status',
       calendarDateField: null,
+      enableGraphs: true,
     })
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }]
     expect(url).toBe('http://api.test/api/v1/settings/views/crm/fields')

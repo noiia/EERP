@@ -3,6 +3,8 @@
 // from them (CONVENTIONS.md — Module FE contract). Adding an entity is a descriptor;
 // adding a view type is one store factory + one renderer + one loader path.
 
+import type { ViewModeDefaults } from '../api/view-fields'
+
 export type ViewType = 'form' | 'tree' | 'dashboard' | 'catalog'
 
 export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean' | 'selection'
@@ -808,6 +810,18 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * form. Omitted ⇒ the button still renders (disabled) — see MenuNode's doc.
    */
   actions?: MenuNode[]
+  /**
+   * For `viewType: 'tree'` only: a module's own hardcoded baseline for its
+   * Kanban status field / Calendar date field / Graph mode availability
+   * (docs/adr/ADR-006-runtime-configurable-view-fields.md's amendment) — the
+   * value Settings -> Views shows before any admin override, and what a
+   * "revert to module settings" action there restores. Omitted (the common
+   * case) means the module declared no opinion; every mode stays unavailable
+   * until an admin configures it from Settings, unchanged from before this
+   * existed. Merged with the admin's own override via `effectiveViewFields`
+   * (api/view-fields.ts) — never read directly by a renderer.
+   */
+  viewModeDefaults?: ViewModeDefaults
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

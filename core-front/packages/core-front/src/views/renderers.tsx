@@ -10,7 +10,6 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Grid from '@mui/material/Grid'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
-import Tooltip from '@mui/material/Tooltip'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
@@ -20,6 +19,8 @@ import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models
 import type { SerializedError } from '../api/errors'
 import {
   availableDisplayModes,
+  DISPLAY_MODES,
+  effectiveViewFields,
   EMPTY_VIEW_FIELDS,
   type DisplayMode,
   type ViewFieldsConfig,
@@ -188,8 +189,8 @@ function FormRenderer<T extends HasId>({
       // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
       // sense for a single flat column but wastes most of a wide screen now
       // that the default anatomy is a header + two responsive columns.
-      // layout.formMaxWidth survives as the relation wizard's dialog width
-      // and the columns' container-query floor.
+      // The relation wizard's dialog (relation-widgets.tsx) sizes itself off
+      // its own layout.wizardWidth/wizardWideWidth tokens instead.
       sx={{ maxWidth: '100%' }}
     >
       {/* Top toolbar: Reset + Save sit immediately left of the form's options
@@ -257,11 +258,14 @@ const MODE_LABELS: Record<DisplayMode, string> = {
 /**
  * Top-right of the list content: switches between List (the DataGrid/tree
  * this renderer has always shown) and Kanban/Calendar/Graph (docs/roadmaps/
- * list-view-modes.md). Kanban/Calendar disable themselves — with a tooltip
- * pointing at Settings -> Views — until an admin configures the matching
- * field; Graph is always enabled (an empty canvas needs no configuration).
- * The choice persists per entity in useUiStore, so leaving and returning to
- * a view keeps the last mode.
+ * list-view-modes.md). Kanban/Calendar/Graph are each OMITTED entirely — not
+ * rendered disabled — until their EFFECTIVE config (a module's own
+ * `viewModeDefaults`, merged with any admin override from Settings -> Views;
+ * see `availability`'s caller) resolves truthy: an unconfigured mode isn't a
+ * "here's a button you can't press," it's not a button at all. The choice
+ * persists per entity in useUiStore, so leaving and returning to a view keeps
+ * the last mode — falling back to 'list' if the persisted mode is no longer
+ * available (see TreeRenderer's guard).
  */
 function DisplayModeSwitcher({
   entity,
@@ -275,6 +279,7 @@ function DisplayModeSwitcher({
   availability: Record<DisplayMode, boolean>
 }) {
   const t = useT()
+  const candidates = DISPLAY_MODES.filter((candidate) => availability[candidate])
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
       <ToggleButtonGroup
@@ -286,22 +291,11 @@ function DisplayModeSwitcher({
         }}
         aria-label={t('Display mode')}
       >
-        {(['list', 'kanban', 'calendar', 'graph'] as const).map((candidate) => {
-          const enabled = availability[candidate]
-          const button = (
-            <ToggleButton key={candidate} value={candidate} disabled={!enabled} data-entity={entity}>
-              {t(MODE_LABELS[candidate])}
-            </ToggleButton>
-          )
-          if (enabled) return button
-          // A disabled MuiButtonBase swallows pointer events, so the tooltip
-          // needs a non-disabled wrapper to still receive them.
-          return (
-            <Tooltip key={candidate} title={t('Configure in Settings → Views')}>
-              <span>{button}</span>
-            </Tooltip>
-          )
-        })}
+        {candidates.map((candidate) => (
+          <ToggleButton key={candidate} value={candidate} data-entity={entity}>
+            {t(MODE_LABELS[candidate])}
+          </ToggleButton>
+        ))}
       </ToggleButtonGroup>
     </Box>
   )
@@ -318,7 +312,11 @@ function TreeRenderer<T extends HasId>({
   const router = useRouter()
   const mode = useUiStore((s) => s.viewMode[descriptor.entity] ?? 'list')
   const setViewMode = useUiStore((s) => s.setViewMode)
-  const availability = availableDisplayModes(viewFields)
+  // The module's own hardcoded baseline (if any), overridden field-by-field by
+  // whatever Settings -> Views has saved — the switcher and both modes below
+  // act on this merged EFFECTIVE config, never the raw pieces separately.
+  const effective = effectiveViewFields(descriptor.viewModeDefaults, viewFields)
+  const availability = availableDisplayModes(effective)
 
   // A single shared record set every mode reads from, instead of each mode
   // rendering its own frozen copy of `initialData`. Kanban/Calendar's drags
@@ -334,27 +332,27 @@ function TreeRenderer<T extends HasId>({
   }, [initialData])
 
   let content: React.ReactNode
-  if (mode === 'kanban' && viewFields.kanbanStatusField) {
+  if (mode === 'kanban' && effective.kanbanStatusField) {
     content = (
       <KanbanRenderer
         descriptor={descriptor}
         initialData={liveRecords}
         actions={actions}
-        statusField={viewFields.kanbanStatusField}
+        statusField={effective.kanbanStatusField}
         onRecordsChange={setLiveRecords}
       />
     )
-  } else if (mode === 'calendar' && viewFields.calendarDateField) {
+  } else if (mode === 'calendar' && effective.calendarDateField) {
     content = (
       <CalendarRenderer
         descriptor={descriptor}
         initialData={liveRecords}
         actions={actions}
-        dateField={viewFields.calendarDateField}
+        dateField={effective.calendarDateField}
         onRecordsChange={setLiveRecords}
       />
     )
-  } else if (mode === 'graph') {
+  } else if (mode === 'graph' && effective.enableGraphs) {
     content = (
       <GraphRenderer
         descriptor={descriptor}
@@ -363,9 +361,11 @@ function TreeRenderer<T extends HasId>({
       />
     )
   } else {
-    // 'list' (default), and the safe fallback if 'kanban'/'calendar' are
-    // somehow reached with no configured field (the switcher disables those
-    // buttons, so this is defensive, not a normal path).
+    // 'list' (default), and the safe fallback if 'kanban'/'calendar'/'graph'
+    // are somehow reached with no effectively-configured field/flag (the
+    // switcher hides those buttons entirely, so this is defensive, not a
+    // normal path — e.g. a persisted useUiStore mode from before an admin
+    // turned a mode back off).
     // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
     const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
     if (!hierarchical) {

@@ -20,25 +20,31 @@ function failure(e: unknown, fallback: string): SaveResult {
 interface RawViewFields {
   kanban_status_field: string | null
   calendar_date_field: string | null
+  enable_graphs: boolean | null
 }
 
 /**
- * Read one entity's Kanban/Calendar field config. Degrades to the empty
+ * Read one entity's Kanban/Calendar/Graph field config. Degrades to the empty
  * config on any failure (missing settings:views:read, session hiccup) rather
  * than throwing — Settings -> Views then just shows it as unconfigured.
  */
 export async function getEntityViewFields(entity: string): Promise<ViewFieldsConfig> {
   try {
     const raw = await apiRequest<RawViewFields>('GET', `/settings/views/${entity}/fields`)
-    return { kanbanStatusField: raw.kanban_status_field, calendarDateField: raw.calendar_date_field }
+    return {
+      kanbanStatusField: raw.kanban_status_field,
+      calendarDateField: raw.calendar_date_field,
+      enableGraphs: raw.enable_graphs,
+    }
   } catch {
     return EMPTY_VIEW_FIELDS
   }
 }
 
 /**
- * Save one entity's Kanban/Calendar field config. Go authorizes: callers
- * without settings:views:write get the error envelope back as a message.
+ * Save one entity's Kanban/Calendar/Graph field config. Go authorizes:
+ * callers without settings:views:write get the error envelope back as a
+ * message.
  */
 export async function setEntityViewFields(
   entity: string,
@@ -48,6 +54,7 @@ export async function setEntityViewFields(
     await apiRequest('PUT', `/settings/views/${entity}/fields`, {
       kanban_status_field: config.kanbanStatusField,
       calendar_date_field: config.calendarDateField,
+      enable_graphs: config.enableGraphs ?? null,
     })
     return { ok: true }
   } catch (e) {

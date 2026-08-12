@@ -323,16 +323,15 @@ class ServerApiClientImpl implements ServerApiClient {
   }
 
   async getViewFields(entity: string): Promise<ViewFieldsConfig> {
-    const raw = await request<{ kanban_status_field: string | null; calendar_date_field: string | null }>(
-      'GET',
-      `/settings/views/${entity}/fields`,
-      null,
-      undefined,
-      this.tokenOverride,
-    )
+    const raw = await request<{
+      kanban_status_field: string | null
+      calendar_date_field: string | null
+      enable_graphs: boolean | null
+    }>('GET', `/settings/views/${entity}/fields`, null, undefined, this.tokenOverride)
     return {
       kanbanStatusField: raw.kanban_status_field ?? null,
       calendarDateField: raw.calendar_date_field ?? null,
+      enableGraphs: raw.enable_graphs ?? null,
     }
   }
 

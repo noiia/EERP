@@ -266,7 +266,7 @@ describe('EntityView', () => {
   describe('display-mode switcher (Kanban/Calendar/Graph)', () => {
     const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
 
-    it('defaults to List, with Kanban/Calendar disabled until configured, Graph always enabled', () => {
+    it('defaults to List only — Kanban/Calendar/Graph stay unrendered, not merely disabled, until configured', () => {
       render(
         <EntityView
           descriptor={treeDescriptor}
@@ -275,24 +275,59 @@ describe('EntityView', () => {
         />,
       )
       expect(screen.getByRole('button', { name: 'List', pressed: true })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Kanban' })).toBeDisabled()
-      expect(screen.getByRole('button', { name: 'Calendar' })).toBeDisabled()
-      expect(screen.getByRole('button', { name: 'Graph' })).toBeEnabled()
+      expect(screen.queryByRole('button', { name: 'Kanban' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Calendar' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Graph' })).not.toBeInTheDocument()
       // The List mode itself is unaffected — still the same grid as before.
       expect(screen.getByRole('grid')).toBeInTheDocument()
     })
 
-    it('enables Kanban/Calendar once their field is configured', () => {
+    it('shows Kanban/Calendar/Graph once their field/flag is configured via Settings -> Views', () => {
       render(
         <EntityView
           descriptor={treeDescriptor}
           initialData={[{ id: '1', name: 'Ada' }]}
           actions={noopActions}
-          viewFields={{ kanbanStatusField: 'status', calendarDateField: 'due_date' }}
+          viewFields={{ kanbanStatusField: 'status', calendarDateField: 'due_date', enableGraphs: true }}
         />,
       )
       expect(screen.getByRole('button', { name: 'Kanban' })).toBeEnabled()
       expect(screen.getByRole('button', { name: 'Calendar' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Graph' })).toBeEnabled()
+    })
+
+    it("shows Kanban/Calendar/Graph from the module's own viewModeDefaults, with no Settings override at all", () => {
+      const defaultedDescriptor: ViewDescriptor<Contact> = {
+        ...treeDescriptor,
+        viewModeDefaults: { kanbanStatusField: 'status', calendarDateField: 'due_date', enableGraphs: true },
+      }
+      render(
+        <EntityView
+          descriptor={defaultedDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Kanban' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Calendar' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Graph' })).toBeEnabled()
+    })
+
+    it('a non-null Settings override wins over the module default (including turning a mode back off)', () => {
+      const defaultedDescriptor: ViewDescriptor<Contact> = {
+        ...treeDescriptor,
+        viewModeDefaults: { kanbanStatusField: 'status', enableGraphs: true },
+      }
+      render(
+        <EntityView
+          descriptor={defaultedDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+          viewFields={{ kanbanStatusField: 'priority', calendarDateField: null, enableGraphs: false }}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Kanban' })).toBeEnabled()
+      expect(screen.queryByRole('button', { name: 'Graph' })).not.toBeInTheDocument()
     })
 
     it('switching to Kanban with a configured status field renders real columns, not a placeholder', () => {
@@ -339,12 +374,13 @@ describe('EntityView', () => {
       expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Ada')
     })
 
-    it('switching to Graph (always enabled) swaps the content, not the grid — inert with no GraphOpsProvider', () => {
+    it('switching to Graph (enabled via Settings) swaps the content, not the grid — inert with no GraphOpsProvider', () => {
       render(
         <EntityView
           descriptor={treeDescriptor}
           initialData={[{ id: '1', name: 'Ada' }]}
           actions={noopActions}
+          viewFields={{ kanbanStatusField: null, calendarDateField: null, enableGraphs: true }}
         />,
       )
       fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
@@ -363,6 +399,7 @@ describe('EntityView', () => {
             descriptor={treeDescriptor}
             initialData={[{ id: '1', name: 'Ada' }]}
             actions={noopActions}
+            viewFields={{ kanbanStatusField: null, calendarDateField: null, enableGraphs: true }}
           />
         </GraphOpsProvider>,
       )
@@ -403,7 +440,7 @@ describe('EntityView', () => {
             descriptor={dealDescriptor}
             initialData={[{ id: '1', name: 'Ada', status: 'open' }]}
             actions={actions}
-            viewFields={{ kanbanStatusField: 'status', calendarDateField: null }}
+            viewFields={{ kanbanStatusField: 'status', calendarDateField: null, enableGraphs: true }}
           />
         </GraphOpsProvider>,
       )
@@ -421,11 +458,13 @@ describe('EntityView', () => {
     })
 
     it('persists the chosen mode per entity across remounts (useUiStore)', () => {
+      const graphEnabled = { kanbanStatusField: null, calendarDateField: null, enableGraphs: true }
       const { unmount } = render(
         <EntityView
           descriptor={treeDescriptor}
           initialData={[{ id: '1', name: 'Ada' }]}
           actions={noopActions}
+          viewFields={graphEnabled}
         />,
       )
       fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
@@ -436,6 +475,7 @@ describe('EntityView', () => {
           descriptor={treeDescriptor}
           initialData={[{ id: '1', name: 'Ada' }]}
           actions={noopActions}
+          viewFields={graphEnabled}
         />,
       )
       expect(screen.getByRole('button', { name: 'Graph', pressed: true })).toBeInTheDocument()
