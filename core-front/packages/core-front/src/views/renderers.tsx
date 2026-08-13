@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -12,8 +12,9 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { DataGrid, type GridColDef } from '@mui/x-data-grid'
+import { ColumnsPanelTrigger, DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import type { SerializedError } from '../api/errors'
@@ -29,11 +30,15 @@ import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import { CalendarRenderer } from './calendar-renderer'
 import { CatalogRenderer } from './catalog-renderer'
+import { ChatterPanel } from './chatter-panel'
+import { useChatterOps } from './chatter-ops'
 import {
   fieldLabel,
+  isVirtualRelation,
   layoutFieldOrder,
   normalizeLayout,
   titleFieldName,
+  type FieldDescriptor,
   type ViewDescriptor,
 } from './descriptor'
 import { ErrorAlert } from './error-alert'
@@ -45,7 +50,7 @@ import { LayoutForm } from './layout-renderer'
 import { PictureSizeProvider } from './picture-widgets'
 import { useRecordLabelStore } from './record-label-store'
 import { SearchBar } from './search-bar'
-import { tabularNums } from './tokens'
+import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
 import {
   createDashboardStore,
@@ -138,6 +143,40 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
 
 // --- form ---
 
+function displayValue(value: unknown): string {
+  if (value == null || value === '') return '—'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  return String(value)
+}
+
+/**
+ * A short, human-readable summary of which fields changed between two
+ * snapshots of the same record — its state before this save, and what Go
+ * just confirmed after it — posted as a chatter "log" entry once an EDIT
+ * (not a first-time create) succeeds. Virtual relations (o2m/m2m) are
+ * skipped — the commit payload never carries them, so `after` never
+ * reflects a real change there. A relation/date value renders as its raw
+ * stored value (an FK id, an ISO string) rather than a resolved label —
+ * resolving one would mean a lookup per changed field per save; acceptable
+ * for an activity-feed summary, not a polished audit trail.
+ */
+function summarizeFieldChanges(
+  fields: FieldDescriptor[],
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string | null {
+  const changes: string[] = []
+  for (const field of fields) {
+    if (isVirtualRelation(field)) continue
+    const prev = before[field.name]
+    const next = after[field.name]
+    if (prev === next) continue
+    if ((prev ?? '') === (next ?? '')) continue
+    changes.push(`${fieldLabel(field)}: ${displayValue(prev)} → ${displayValue(next)}`)
+  }
+  return changes.length > 0 ? changes.join('; ') : null
+}
+
 function FormRenderer<T extends HasId>({
   descriptor,
   initialData,
@@ -150,6 +189,16 @@ function FormRenderer<T extends HasId>({
   const dirty = useFormDirty(store)
   const error = useFormError(store)
   const { setField } = store.getState()
+  const chatterOps = useChatterOps()
+  // The record's field values as of the last successful load/save — the
+  // BEFORE side of the chatter log's diff. Re-seeded from a fresh navigation
+  // (`initialData` prop change) and after every successful commit below, so a
+  // second save in the same session diffs against what was actually just
+  // persisted, not the page's original snapshot.
+  const lastPersistedRef = useRef<Partial<T>>(initialData[0] ?? {})
+  useEffect(() => {
+    lastPersistedRef.current = initialData[0] ?? {}
+  }, [initialData])
   // Transient view-only state: the in-flight save, for the button's busy affordance. The
   // business logic stays in the store's commit(); this only mirrors its pendency.
   // NOTE: the durable home for this is a `submitting` flag on the form store — a store-API
@@ -174,75 +223,113 @@ function FormRenderer<T extends HasId>({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
+    const before = lastPersistedRef.current
+    // An id already present BEFORE this commit means an existing record is
+    // being edited — a first-time create has nothing to diff against, so it
+    // never posts a log entry (the chatter feed only tracks "edition").
+    const wasExisting = (before as Partial<HasId>).id != null
     try {
-      await store.getState().commit()
+      const saved = await store.getState().commit()
+      if (saved) {
+        if (wasExisting && chatterOps) {
+          const summary = summarizeFieldChanges(
+            descriptor.fields,
+            before as Record<string, unknown>,
+            saved as Record<string, unknown>,
+          )
+          if (summary) {
+            chatterOps.create(descriptor.entity, saved.id, 'log', summary).catch(() => {
+              // A log-post failure must never surface as a save error — the
+              // record itself already saved successfully.
+            })
+          }
+        }
+        lastPersistedRef.current = saved
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
+    // The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
+    // the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
+    // under that — a plain viewport media query, since this wrapper is
+    // always the whole form page, never re-embedded in a narrower container.
     <Box
-      component="form"
-      onSubmit={onSubmit}
-      aria-busy={submitting}
-      // Full width inside RootLayout's page inset (docs/roadmaps/
-      // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
-      // sense for a single flat column but wastes most of a wide screen now
-      // that the default anatomy is a header + two responsive columns.
-      // The relation wizard's dialog (relation-widgets.tsx) sizes itself off
-      // its own layout.wizardWidth/wizardWideWidth tokens instead.
-      sx={{ maxWidth: '100%' }}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 2,
+        [`@media (min-width:${layoutTokens.chatterBreakpoint}px)`]: { flexDirection: 'row' },
+      }}
     >
-      {/* Top toolbar: Reset + Save sit immediately left of the form's options
-          menu (docs/adr/ADR-011) — the group's left edge lands exactly where
-          the menu used to sit alone (apps/shell/app/[...module]/page.tsx no
-          longer renders it; the form owns its own top chrome now). Reset is
-          icon-only ("undo" glyph), matching the menu's own icon-only button. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-        <IconButton
-          aria-label={t('Reset')}
-          disabled={!dirty || submitting}
-          onClick={() => store.getState().reset()}
-        >
-          <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
-        </IconButton>
-        <Button
-          type="submit"
-          variant="contained"
-          disabled={!dirty || submitting}
-          startIcon={
-            submitting ? <CircularProgress size={16} color="inherit" thickness={5} /> : undefined
-          }
-        >
-          {submitting ? t('Saving…') : t('Save')}
-        </Button>
-        <FormActionsMenu
-          entity={descriptor.entity}
-          actions={descriptor.actions ?? []}
-          recordId={recordId ?? 'new'}
-        />
+      <Box
+        component="form"
+        onSubmit={onSubmit}
+        aria-busy={submitting}
+        // Full width inside RootLayout's page inset (docs/roadmaps/
+        // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
+        // sense for a single flat column but wastes most of a wide screen now
+        // that the default anatomy is a header + two responsive columns.
+        // The relation wizard's dialog (relation-widgets.tsx) sizes itself off
+        // its own layout.wizardWidth/wizardWideWidth tokens instead.
+        // flex/minWidth: shrinks correctly next to the chatter panel in the
+        // row layout above; both are inert (block default) in column layout.
+        sx={{ maxWidth: '100%', flex: 1, minWidth: 0, width: '100%' }}
+      >
+        {/* Top toolbar: Reset + Save sit immediately left of the form's options
+            menu (docs/adr/ADR-011) — the group's left edge lands exactly where
+            the menu used to sit alone (apps/shell/app/[...module]/page.tsx no
+            longer renders it; the form owns its own top chrome now). Reset is
+            icon-only ("undo" glyph), matching the menu's own icon-only button. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <IconButton
+            aria-label={t('Reset')}
+            disabled={!dirty || submitting}
+            onClick={() => store.getState().reset()}
+          >
+            <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
+          </IconButton>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={!dirty || submitting}
+            startIcon={
+              submitting ? <CircularProgress size={16} color="inherit" thickness={5} /> : undefined
+            }
+          >
+            {submitting ? t('Saving…') : t('Save')}
+          </Button>
+          <FormActionsMenu
+            entity={descriptor.entity}
+            actions={descriptor.actions ?? []}
+            recordId={recordId ?? 'new'}
+          />
+        </Box>
+        <Card>
+          <CardContent sx={{ p: 3 }}>
+            <Stack spacing={2.5}>
+              {error ? (
+                <ErrorAlert
+                  error={{ code: error.code, message: error.message, requestId: error.requestId }}
+                />
+              ) : null}
+              <PictureSizeProvider size={pictureSize}>
+                <LayoutForm
+                  descriptor={descriptor}
+                  draft={draft as Record<string, unknown>}
+                  onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
+                  entity={descriptor.entity}
+                  recordId={(draft as { id?: string }).id ?? null}
+                />
+              </PictureSizeProvider>
+            </Stack>
+          </CardContent>
+        </Card>
       </Box>
-      <Card>
-        <CardContent sx={{ p: 3 }}>
-          <Stack spacing={2.5}>
-            {error ? (
-              <ErrorAlert
-                error={{ code: error.code, message: error.message, requestId: error.requestId }}
-              />
-            ) : null}
-            <PictureSizeProvider size={pictureSize}>
-              <LayoutForm
-                descriptor={descriptor}
-                draft={draft as Record<string, unknown>}
-                onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
-                entity={descriptor.entity}
-                recordId={(draft as { id?: string }).id ?? null}
-              />
-            </PictureSizeProvider>
-          </Stack>
-        </CardContent>
-      </Card>
+      <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} />
     </Box>
   )
 }
@@ -298,6 +385,28 @@ function DisplayModeSwitcher({
           </ToggleButton>
         ))}
       </ToggleButtonGroup>
+    </Box>
+  )
+}
+
+/**
+ * The flat List DataGrid's own toolbar (List mode only — a tree/Kanban/
+ * Calendar/Graph has no per-column concept): a single icon button, right-
+ * aligned, that opens the grid's BUILT-IN columns panel (`ColumnsPanelTrigger`
+ * + `showToolbar` — MUI X's own column-visibility mechanism, not a hand-rolled
+ * picker). Visibility choices live in the grid's own uncontrolled state —
+ * session-only, not persisted; add a controlled `columnVisibilityModel` +
+ * `useUiStore` entry if per-entity persistence is ever needed.
+ */
+function GridColumnsToolbar() {
+  const t = useT()
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 0.5 }}>
+      <Tooltip title={t('Choose columns')}>
+        <ColumnsPanelTrigger render={<IconButton size="small" aria-label={t('Choose columns')} />}>
+          <FontAwesomeIcon icon={byPrefixAndName.fas['table-columns']} size="sm" />
+        </ColumnsPanelTrigger>
+      </Tooltip>
     </Box>
   )
 }
@@ -397,6 +506,8 @@ function TreeRenderer<T extends HasId>({
                 : undefined
             }
             sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
+            showToolbar
+            slots={{ toolbar: GridColumnsToolbar }}
           />
         </Box>
       )

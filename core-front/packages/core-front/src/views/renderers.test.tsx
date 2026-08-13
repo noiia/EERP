@@ -7,6 +7,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }))
 
+import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
 import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
 import { useRecordLabelStore } from './record-label-store'
@@ -233,6 +234,34 @@ describe('EntityView', () => {
     expect(screen.getByText('Ada')).toBeInTheDocument()
   })
 
+  it("offers the DataGrid's own built-in columns panel, right-aligned above the grid, to choose which fields display", async () => {
+    const wideDescriptor: ViewDescriptor<Contact & { email?: string }> = {
+      entity: 'crm',
+      viewType: 'tree',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'email', label: 'Email', type: 'text' },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={wideDescriptor}
+        initialData={[{ id: '1', name: 'Ada', email: 'ada@example.com' }]}
+        actions={noopActions as unknown as EntityActions<Contact & { email?: string }>}
+      />,
+    )
+    expect(screen.getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose columns' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Email' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('columnheader', { name: 'Email' })).not.toBeInTheDocument(),
+    )
+    // Hiding a column is a display choice only — the underlying record is untouched.
+    expect(screen.getByText('Ada')).toBeInTheDocument()
+  })
+
   it('navigates to the record form on row click when the descriptor sets formPath', () => {
     const treeDescriptor: ViewDescriptor<Contact> = {
       ...formDescriptor,
@@ -261,6 +290,106 @@ describe('EntityView', () => {
     )
     fireEvent.click(screen.getByText('Ada'))
     expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  describe('form chatter panel', () => {
+    function chatterOps(): ChatterOps {
+      return {
+        list: vi.fn(async () => [] as ChatterMessageRecord[]),
+        create: vi.fn(async (_table: string, _record: string, kind: 'message' | 'log', body: string) => ({
+          id: 'm1',
+          author: 'me@x.com',
+          kind,
+          body,
+          createdAt: '2026-01-01T00:00:00Z',
+        })),
+      }
+    }
+
+    it('renders the panel beside/below the form once a ChatterOpsProvider is mounted', () => {
+      const ops = chatterOps()
+      render(
+        <ChatterOpsProvider ops={ops}>
+          <EntityView
+            descriptor={formDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={noopActions}
+          />
+        </ChatterOpsProvider>,
+      )
+      expect(screen.getByText('Activity')).toBeInTheDocument()
+    })
+
+    it('renders nothing extra with no ChatterOpsProvider — the form itself is unaffected', () => {
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    })
+
+    it('posts a chatter log summarizing the change after saving an EDIT to an existing record', async () => {
+      const ops = chatterOps()
+      const update = vi.fn(async (id: string, b: Partial<Contact>) => ({ id, name: 'Ada', ...b }) as Contact)
+      render(
+        <ChatterOpsProvider ops={ops}>
+          <EntityView
+            descriptor={formDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={{ create: noopActions.create, update }}
+          />
+        </ChatterOpsProvider>,
+      )
+      fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Ada Lovelace' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(update).toHaveBeenCalled())
+      await waitFor(() =>
+        expect(ops.create).toHaveBeenCalledWith('crm', '1', 'log', 'Name: Ada → Ada Lovelace'),
+      )
+    })
+
+    it('does not post a log entry when the save is a first-time CREATE, not an edit', async () => {
+      const ops = chatterOps()
+      render(
+        <ChatterOpsProvider ops={ops}>
+          <EntityView descriptor={formDescriptor} initialData={[]} actions={noopActions} />
+        </ChatterOpsProvider>,
+      )
+      fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Ada' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(noopActions.create).toHaveBeenCalled())
+      expect(ops.create).not.toHaveBeenCalled()
+    })
+
+    it('a save with no actual field change posts no log entry', async () => {
+      const ops = chatterOps()
+      const update = vi.fn(async (id: string, b: Partial<Contact>) => ({ id, name: 'Ada', ...b }) as Contact)
+      render(
+        <ChatterOpsProvider ops={ops}>
+          <EntityView
+            descriptor={formDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={{ create: noopActions.create, update }}
+          />
+        </ChatterOpsProvider>,
+      )
+      // Round-trip back to the original value: dirty (any setField marks it
+      // so) but no real diff once committed. Two real DOM value changes —
+      // jsdom never fires a change event for a no-op "same value" set.
+      const input = screen.getByPlaceholderText('Name')
+      fireEvent.change(input, { target: { value: 'Ada Lovelace' } })
+      fireEvent.change(input, { target: { value: 'Ada' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(update).toHaveBeenCalled())
+      expect(ops.create).not.toHaveBeenCalled()
+    })
   })
 
   describe('display-mode switcher (Kanban/Calendar/Graph)', () => {

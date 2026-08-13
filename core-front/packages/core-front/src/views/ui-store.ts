@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DisplayMode } from '../api/view-fields'
 import { DEFAULT_PALETTE, type BrandColorKey, type ThemePalette } from './palette'
+import { layout } from './tokens'
 
 // Cross-cutting UI state, persisted to localStorage so preferences survive reloads.
 // Pure interaction state — no data, no session secrets. The theme palette lives here
@@ -21,6 +22,9 @@ export interface UiState {
    * default — docs/roadmaps/list-view-modes.md). Purely a UI preference, so it
    * lives here rather than as server state. */
   viewMode: Record<string, DisplayMode>
+  /** The form chatter panel's drag-resized width (px), shared across every
+   * entity — a per-user layout preference, not per-entity like viewMode. */
+  chatterWidth: number
   setTheme: (theme: ThemeMode) => void
   /** Override a single brand color (live theming). */
   setPaletteColor: (key: BrandColorKey, value: string) => void
@@ -32,6 +36,7 @@ export interface UiState {
   setSidebar: (open: boolean) => void
   setLastRoute: (route: string | null) => void
   setViewMode: (entity: string, mode: DisplayMode) => void
+  setChatterWidth: (width: number) => void
 }
 
 export const useUiStore = create<UiState>()(
@@ -42,6 +47,7 @@ export const useUiStore = create<UiState>()(
       sidebarOpen: true,
       lastRoute: null,
       viewMode: {},
+      chatterWidth: layout.chatterWidthDefault,
       setTheme: (theme) => set({ theme }),
       setPaletteColor: (key, value) =>
         set((state) => ({ palette: { ...state.palette, [key]: value } })),
@@ -52,6 +58,7 @@ export const useUiStore = create<UiState>()(
       setLastRoute: (lastRoute) => set({ lastRoute }),
       setViewMode: (entity, mode) =>
         set((state) => ({ viewMode: { ...state.viewMode, [entity]: mode } })),
+      setChatterWidth: (chatterWidth) => set({ chatterWidth }),
     }),
     {
       name: 'eerp-ui',

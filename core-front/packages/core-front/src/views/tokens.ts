@@ -131,6 +131,18 @@ export const layout = {
   wizardWidth: '95%',
   wizardWideWidth: '75%',
   wizardWideBreakpoint: 1200,
+  /** Form chatter panel (chatter-panel.tsx): a resizable side panel to the
+   * RIGHT of the form on a wide screen, stacked full-width BELOW it once the
+   * viewport narrows past `chatterBreakpoint` — a plain viewport media query
+   * (the panel sits beside the whole form page, never re-embedded in a
+   * narrower container the way `LayoutForm` is). `chatterWidthDefault` seeds
+   * `useUiStore.chatterWidth` the first time a user ever sees the panel;
+   * `chatterWidthMin`/`Max` clamp its drag-resize handle.
+   */
+  chatterBreakpoint: 1500,
+  chatterWidthDefault: 360,
+  chatterWidthMin: 280,
+  chatterWidthMax: 640,
 } as const
 
 /** Motion. Short, restrained; the theme also disables it under prefers-reduced-motion. */

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"core/internal/auth"
+	"core/internal/chatter"
 	"core/internal/common"
 	"core/internal/company"
 	authmw "core/internal/middleware"
@@ -310,6 +311,19 @@ func main() {
 	savedFilterGroup.POST("", savedFilterHandler.Create)
 	savedFilterGroup.PUT("/:id", savedFilterHandler.Update)
 	savedFilterGroup.DELETE("/:id", savedFilterHandler.Delete)
+
+	// ── Chatter ───────────────────────────────────────────────────────────────
+	// A record's activity feed: user-authored messages plus the frontend's own
+	// summary of a form edit, both posted the same way (Kind "message"/"log") —
+	// dedicated, tenant-pinned endpoints off the generic CRUD surface, mirroring
+	// the notebook pages' shape. Append-only (no PUT/DELETE — an activity log
+	// reads wrong if entries can change after the fact). No external dependency
+	// to gate on, so this mounts unconditionally. The permission middleware
+	// derives chatter_messages:chatter_messages:read|write from the route.
+	chatterHandler := chatter.NewHandler(chatter.NewRepository(app.DB), userRepo)
+	chatterGroup := srv.Echo().Group("/api/v1/chatter_messages", jwtMw, permMw)
+	chatterGroup.GET("", chatterHandler.List)
+	chatterGroup.POST("", chatterHandler.Create)
 
 	// ── Module management (App Store) ────────────────────────────────────────
 	// Dedicated endpoints over module.json content plus the live runtime

@@ -22,6 +22,7 @@ import { LocaleSync } from '../src/components/LocaleSync'
 import { ModulesInit } from '../src/components/ModulesInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
 import {
+  ChatterOpsProvider,
   GraphOpsProvider,
   NotebookOpsProvider,
   RelationOpsProvider,
@@ -32,6 +33,7 @@ import { activeModuleNames } from '../src/lib/module-state'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
 import { listCompanies } from '../src/lib/company'
+import { createChatterMessage, listChatterMessages } from '../src/lib/chatter-actions'
 import { getEntityGraphLayout, setEntityGraphLayout } from '../src/lib/graph-actions'
 import {
   createNotebookPage,
@@ -128,36 +130,41 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                     remove: removeNotebookPage,
                   }}
                 >
-                  {/* The search bar's named, reusable filter combinations
-                      (docs/adr/ADR-014-search-filter-bar.md) — independent
-                      named rows a user creates/renames/deletes, the same
-                      shape NotebookOps already takes. */}
-                  <SavedFilterOpsProvider
-                    ops={{
-                      list: listSavedFilters,
-                      create: createSavedFilter,
-                      update: updateSavedFilter,
-                      remove: removeSavedFilter,
-                    }}
-                  >
-                    {/* The ONE page-content inset, applied once here — everything below
-                      the top bar (list/form/dashboard/settings, any view) sits inside
-                      it, never against or past the screen edge. Graph mode's canvas
-                      (react-grid-layout) measures ITS OWN container width to derive its
-                      column count, so it naturally sizes itself to whatever this inset
-                      provides — overflowX: 'auto' remains a defensive fallback for any
-                      other wide inner surface, never a per-view width hack. */}
-                    <Box
-                      sx={{
-                        px: layout.pageInsetX,
-                        py: layout.pageInsetY,
-                        overflowX: 'auto',
-                        '@media print': { p: 0, overflowX: 'visible' },
+                  {/* A record's own activity feed (the form chatter panel) —
+                      per-record data like NotebookOps, its own context for the
+                      same reason. */}
+                  <ChatterOpsProvider ops={{ list: listChatterMessages, create: createChatterMessage }}>
+                    {/* The search bar's named, reusable filter combinations
+                        (docs/adr/ADR-014-search-filter-bar.md) — independent
+                        named rows a user creates/renames/deletes, the same
+                        shape NotebookOps already takes. */}
+                    <SavedFilterOpsProvider
+                      ops={{
+                        list: listSavedFilters,
+                        create: createSavedFilter,
+                        update: updateSavedFilter,
+                        remove: removeSavedFilter,
                       }}
                     >
-                      {children}
-                    </Box>
-                  </SavedFilterOpsProvider>
+                      {/* The ONE page-content inset, applied once here — everything below
+                        the top bar (list/form/dashboard/settings, any view) sits inside
+                        it, never against or past the screen edge. Graph mode's canvas
+                        (react-grid-layout) measures ITS OWN container width to derive its
+                        column count, so it naturally sizes itself to whatever this inset
+                        provides — overflowX: 'auto' remains a defensive fallback for any
+                        other wide inner surface, never a per-view width hack. */}
+                      <Box
+                        sx={{
+                          px: layout.pageInsetX,
+                          py: layout.pageInsetY,
+                          overflowX: 'auto',
+                          '@media print': { p: 0, overflowX: 'visible' },
+                        }}
+                      >
+                        {children}
+                      </Box>
+                    </SavedFilterOpsProvider>
+                  </ChatterOpsProvider>
                 </NotebookOpsProvider>
               </GraphOpsProvider>
             </RelationOpsProvider>
