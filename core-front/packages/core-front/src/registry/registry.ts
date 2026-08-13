@@ -4,6 +4,7 @@ import {
   validateCatalogDescriptor,
   validateDescriptorWidgets,
   validateSearchDescriptor,
+  validateStatusBarDescriptor,
   type ViewDescriptor,
 } from '../views/descriptor'
 import { validateMenuActions } from '../views/menu-actions'
@@ -139,6 +140,7 @@ function validateDescriptor(descriptor: ViewDescriptor): void {
   validateDescriptorWidgets(descriptor)
   validateCatalogDescriptor(descriptor)
   validateSearchDescriptor(descriptor)
+  validateStatusBarDescriptor(descriptor)
   validateMenuActions(descriptor)
   buildBehaviorPlan(descriptor)
   normalizeLayout(descriptor)

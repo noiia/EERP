@@ -131,6 +131,17 @@ export const layout = {
   wizardWidth: '95%',
   wizardWideWidth: '75%',
   wizardWideBreakpoint: 1200,
+  /** List search bar (search-bar.tsx): capped at a comfortable reading width
+   * on wide screens, widening to 95% of its own container once the screen
+   * narrows past `searchBarNarrowBreakpoint` — the bar otherwise reads as
+   * cramped on a phone-width screen. A plain viewport media query, not a
+   * container query: TreeRenderer (where the bar lives) is always the full
+   * page width, never re-embedded in a narrower container the way
+   * `LayoutForm` is (the reason the wizard tokens above stay percentage-based
+   * against their own Dialog rather than the viewport). */
+  searchBarMaxWidth: 450,
+  searchBarNarrowWidth: '95%',
+  searchBarNarrowBreakpoint: 720,
   /** Form chatter panel (chatter-panel.tsx): a resizable side panel to the
    * RIGHT of the form on a wide screen, stacked full-width BELOW it once the
    * viewport narrows past `chatterBreakpoint` — a plain viewport media query

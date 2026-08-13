@@ -50,6 +50,7 @@ import { LayoutForm } from './layout-renderer'
 import { PictureSizeProvider } from './picture-widgets'
 import { useRecordLabelStore } from './record-label-store'
 import { SearchBar } from './search-bar'
+import { StatusBar } from './status-bar'
 import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
 import {
@@ -210,6 +211,14 @@ function FormRenderer<T extends HasId>({
   // field's OWN value (not the whole draft) so an edit to some other field doesn't
   // spuriously re-fire this.
   const recordId = (draft as { id?: string }).id
+  // The status breadcrumb's field, when the descriptor opts in — resolved
+  // here (not inside StatusBar) so an unknown/removed field name degrades
+  // to "no breadcrumb" rather than a render error (registration already
+  // caught a genuinely bad descriptor; a stale statusBar on an in-memory
+  // descriptor during a hot-reload shouldn't crash the form).
+  const statusField = descriptor.statusBar
+    ? descriptor.fields.find((f) => f.name === descriptor.statusBar?.field)
+    : undefined
   const layout = normalizeLayout(descriptor)
   const titleField = titleFieldName(layout) ?? layoutFieldOrder(layout)[0]
   const titleValue = titleField ? (draft as Record<string, unknown>)[titleField] : undefined
@@ -283,7 +292,11 @@ function FormRenderer<T extends HasId>({
             menu (docs/adr/ADR-011) — the group's left edge lands exactly where
             the menu used to sit alone (apps/shell/app/[...module]/page.tsx no
             longer renders it; the form owns its own top chrome now). Reset is
-            icon-only ("undo" glyph), matching the menu's own icon-only button. */}
+            icon-only ("undo" glyph), matching the menu's own icon-only button.
+            The optional status breadcrumb (ViewDescriptor.statusBar) sits at
+            the far right of this SAME row (`ml: 'auto'` on StatusBar itself) —
+            its right edge lands flush with the Card's below it since neither
+            this Box nor the Card carries its own horizontal padding. */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
           <IconButton
             aria-label={t('Reset')}
@@ -307,6 +320,9 @@ function FormRenderer<T extends HasId>({
             actions={descriptor.actions ?? []}
             recordId={recordId ?? 'new'}
           />
+          {statusField && (
+            <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />
+          )}
         </Box>
         <Card>
           <CardContent sx={{ p: 3 }}>

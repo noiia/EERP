@@ -371,6 +371,24 @@ export function validateSearchDescriptor<T>(descriptor: ViewDescriptor<T>): void
 }
 
 /**
+ * Validate a `viewType: 'form'` descriptor's `statusBar` block, when
+ * declared: the named field must exist AND be `type: 'selection'` (the
+ * breadcrumb's steps come from its `selection.options`) — a no-op when
+ * `statusBar` is omitted or the viewType isn't 'form'.
+ */
+export function validateStatusBarDescriptor<T>(descriptor: ViewDescriptor<T>): void {
+  if (descriptor.viewType !== 'form' || !descriptor.statusBar) return
+  const { field: name } = descriptor.statusBar
+  const field = descriptor.fields.find((f) => f.name === name)
+  if (!field) {
+    throw new Error(`statusBar.field "${name}" is not declared in this view's fields`)
+  }
+  if (field.type !== 'selection') {
+    throw new Error(`statusBar.field "${name}" must be type 'selection', got "${field.type}"`)
+  }
+}
+
+/**
  * The zero default a field seeds with when the record lacks it and the
  * descriptor declares no `default`: the natural empty value of each data type.
  * Relations default null on the m2o FK ("no target"); virtual relations
@@ -834,6 +852,23 @@ export interface SearchDescriptor {
   groupableFields?: string[]
 }
 
+/**
+ * `viewType: 'form'`'s built-in read-only status breadcrumb — names a
+ * declared `type: 'selection'` field as the status source; the breadcrumb's
+ * own steps are that field's `selection.options`, in declaration order (no
+ * separately-declared step list — the field already owns that order, the
+ * same "don't re-declare what a field already states" spirit
+ * `viewModeDefaults.kanbanStatusField` follows for Kanban's columns). The
+ * current step is the field's live value; earlier options read as done,
+ * later ones as upcoming. Purely a DISPLAY of the field's value — never
+ * interactive, never a second way to edit it — validated at registration
+ * (validateStatusBarDescriptor): the named field must exist and be
+ * `type: 'selection'`.
+ */
+export interface StatusBarDescriptor {
+  field: string
+}
+
 export interface ViewDescriptor<T = Record<string, unknown>> {
   /** Maps straight to the Go route group, e.g. 'crm' -> GET /crm/. */
   entity: string
@@ -896,6 +931,13 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * — omitted means the engine default (see SearchDescriptor's own fields).
    */
   search?: SearchDescriptor
+  /**
+   * For `viewType: 'form'` only: the built-in read-only status breadcrumb
+   * (see StatusBarDescriptor). Omitted ⇒ no breadcrumb renders — opt-in,
+   * unlike Save/Reset/the options menu, since not every form has a
+   * meaningful status field.
+   */
+  statusBar?: StatusBarDescriptor
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

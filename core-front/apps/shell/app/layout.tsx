@@ -27,6 +27,7 @@ import {
   NotebookOpsProvider,
   RelationOpsProvider,
   SavedFilterOpsProvider,
+  UndoToastHost,
   layout,
 } from '@eerp/core-front'
 import { activeModuleNames } from '../src/lib/module-state'
@@ -87,6 +88,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <ModulesInit />
             <LocaleSync preferences={preferences} />
             <SessionHydrator identity={identity} />
+            {/* The generic "undo a hard delete" toast (search-bar.tsx's saved-
+                filter delete, calendar-renderer.tsx's drag-to-unschedule) —
+                one instance app-wide, a plain Zustand store underneath so any
+                component can trigger it without a context/provider. */}
+            <UndoToastHost />
             {/* Hidden when Chrome prints (tools/pdf-service's Page.printToPDF
                 always applies @media print, docs/adr/ADR-010) — a print
                 target under /print/report/... renders through this SAME root

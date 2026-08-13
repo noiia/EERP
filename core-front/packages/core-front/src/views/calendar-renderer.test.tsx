@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({
 import { CalendarRenderer } from './calendar-renderer'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
+import { useUndoToastStore } from './undo-toast'
 import { ApiError } from '../api/errors'
 
 interface Task {
@@ -57,6 +58,7 @@ describe('CalendarRenderer', () => {
     update = vi.fn(async (id: string, body: Partial<Task>) => ({ id, ...body }) as Task)
     actions = { create: vi.fn(async (b) => b as Task), update }
     pushMock.mockReset()
+    useUndoToastStore.setState({ pending: null })
   })
 
   it('positions a scheduled record on its day and lists a dateless one as Unscheduled', () => {
@@ -191,7 +193,7 @@ describe('CalendarRenderer', () => {
     expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toBeInTheDocument()
   })
 
-  it('dropping a scheduled card outside the calendar asks to confirm before clearing its date', async () => {
+  it('dropping a scheduled card outside the calendar clears its date immediately and offers an undo toast', async () => {
     render(
       <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
     )
@@ -200,39 +202,38 @@ describe('CalendarRenderer', () => {
     // the calendar" drag never fires our onDrop handlers at all.
     fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
 
-    expect(await screen.findByRole('dialog')).toHaveTextContent(day15)
-    expect(screen.getByRole('dialog')).toHaveTextContent('Alpha')
-    expect(update).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove date' }))
+    // Optimistic: cleared before the Server Action resolves, no confirmation needed.
+    expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Alpha')
     await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: null }))
+    expect(useUndoToastStore.getState().pending?.message).toContain('Alpha')
   })
 
-  it('cancelling the confirm dialog leaves the date untouched', async () => {
+  it('recovering from the undo toast restores the cleared date', async () => {
     render(
       <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
     )
     fireEvent.dragStart(screen.getByTestId('calendar-card-1'))
     fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: null }))
 
-    await screen.findByRole('dialog')
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    useUndoToastStore.getState().recover()
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(update).not.toHaveBeenCalled()
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day15 }))
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
   })
 
-  it('dropping an already-unscheduled card outside the calendar does not prompt (nothing to remove)', () => {
+  it('dropping an already-unscheduled card outside the calendar does nothing (nothing to remove)', () => {
     render(
       <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
     )
     fireEvent.dragStart(screen.getByTestId('calendar-card-2'))
     fireEvent.dragEnd(screen.getByTestId('calendar-card-2'))
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(update).not.toHaveBeenCalled()
+    expect(useUndoToastStore.getState().pending).toBeNull()
   })
 
-  it('dropping on a real drop target (a day cell) never triggers the confirm dialog', async () => {
+  it('dropping on a real drop target (a day cell) never triggers the undo toast', async () => {
     render(
       <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
     )
@@ -240,7 +241,7 @@ describe('CalendarRenderer', () => {
     fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
 
     await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day20 }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useUndoToastStore.getState().pending).toBeNull()
   })
 
   it('reverts the move and surfaces the error on a rejected write', async () => {

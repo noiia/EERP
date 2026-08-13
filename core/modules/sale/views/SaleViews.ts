@@ -273,6 +273,7 @@ const quoteFormView: ViewDescriptor = {
   viewType: 'form',
   fields: quoteFormFields,
   permissions: ['quote:quote:read'],
+  statusBar: { field: 'status' },
 }
 
 // quote_line's own descriptor — needed for the quote form's one2many
@@ -348,6 +349,11 @@ const formView: ViewDescriptor = {
   fields: formFields,
   permissions: ['invoice:invoice:read'],
   actions: formActions,
+  // Read-only status breadcrumb, top-right of the top toolbar (see
+  // StatusBarDescriptor's own doc comment): steps come straight from the
+  // 'status' field's own selection.options above, so this never re-declares
+  // the vocabulary — it just points at it.
+  statusBar: { field: 'status' },
 }
 
 // Moves sale_lines off the default anatomy's two-column body and into its

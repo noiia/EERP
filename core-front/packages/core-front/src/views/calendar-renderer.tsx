@@ -6,11 +6,6 @@ import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Collapse from '@mui/material/Collapse'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogContentText from '@mui/material/DialogContentText'
-import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
@@ -18,6 +13,7 @@ import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { orderedFields } from './layout-fields'
 import type { EntityActions, HasId } from './stores'
+import { useUndoToastStore } from './undo-toast'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
 
 // Calendar display mode (docs/roadmaps/list-view-modes.md, Phase 3): a month
@@ -78,12 +74,17 @@ export function CalendarRenderer<T extends HasId>({
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
+  // The undo toast's onRecover fires long after this render is gone — closing over
+  // `moveField` directly would call back into that stale render's `records`, whose
+  // no-op-if-unchanged guard would then see the ALREADY-cleared value and do
+  // nothing. A ref always dereferences the latest moveField/records pair.
+  const moveFieldRef = useRef(moveField)
+  moveFieldRef.current = moveField
   const [dragging, setDragging] = useState<T | null>(null)
   // Set by a valid onDrop (day cell / Unscheduled) before onDragEnd fires; tells
   // onDragEnd whether the drag landed on one of THIS component's own drop targets
   // or was released somewhere outside it entirely (desktop, another panel, ...).
   const droppedRef = useRef(false)
-  const [removeConfirm, setRemoveConfirm] = useState<{ id: string; label: string; date: string } | null>(null)
   const now = new Date()
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() })
 
@@ -144,7 +145,13 @@ export function CalendarRenderer<T extends HasId>({
           setDragging(null)
           if (!dropped) {
             const date = dateOf(record)
-            if (date) setRemoveConfirm({ id: record.id, label: label(record), date })
+            if (date) {
+              void moveField(record.id, null)
+              useUndoToastStore.getState().show({
+                message: `${t('Removed')} ${date} ${t('from')} "${label(record)}"`,
+                onRecover: () => void moveFieldRef.current(record.id, date),
+              })
+            }
           }
         }}
         // A real drag never fires click (the browser suppresses it once the pointer
@@ -241,27 +248,6 @@ export function CalendarRenderer<T extends HasId>({
           </Box>
         </Collapse>
       </Stack>
-
-      <Dialog open={removeConfirm != null} onClose={() => setRemoveConfirm(null)}>
-        <DialogTitle>{t('Remove date?')}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {t('Remove')} {removeConfirm?.date} {t('from')} "{removeConfirm?.label}"?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRemoveConfirm(null)}>{t('Cancel')}</Button>
-          <Button
-            color="error"
-            onClick={() => {
-              if (removeConfirm) void moveField(removeConfirm.id, null)
-              setRemoveConfirm(null)
-            }}
-          >
-            {t('Remove date')}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

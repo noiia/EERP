@@ -299,14 +299,21 @@ persists through the real update path and reverts cleanly on a rejected write.
 >
 > Dropping a scheduled record **outside the calendar entirely** (released
 > over neither a day cell nor the Unscheduled panel — desktop, another
-> widget, anywhere with no `onDrop` of ours) is NOT silently ignored and NOT
-> treated the same as an Unscheduled drop: a confirm dialog names the record
-> (its label field) and its current date, and the PATCH-to-`null` only fires
-> on explicit confirmation. Detection is a same-component ref (`droppedRef`,
-> set by the day-cell/Unscheduled `onDrop` handlers, read by the dragged
-> card's `onDragEnd`) rather than the HTML5 DnD `dataTransfer.dropEffect` —
-> jsdom's `DragEvent` doesn't populate `dataTransfer`, so a browser-API-only
-> check would be untestable; the ref works identically in both.
+> widget, anywhere with no `onDrop` of ours) is NOT silently ignored, but it's
+> also no longer a blocking confirmation: the PATCH-to-`null` fires
+> immediately (same act-first posture as every other Kanban/Calendar drag in
+> this file, Unscheduled's own drop included) and a generic undo toast
+> (`views/undo-toast.tsx`, see the Search/filter bar section's own adoption
+> below) offers Recover for a few seconds — clicking it PATCHes the date back
+> via the same `moveField`. Detection is still a same-component ref
+> (`droppedRef`, set by the day-cell/Unscheduled `onDrop` handlers, read by
+> the dragged card's `onDragEnd`) rather than the HTML5 DnD
+> `dataTransfer.dropEffect` — jsdom's `DragEvent` doesn't populate
+> `dataTransfer`, so a browser-API-only check would be untestable; the ref
+> works identically in both. `onRecover` is wired through a ref to the latest
+> `moveField`/`records` pair rather than closed over directly — the toast
+> fires long after the triggering render is gone, and a stale closure's
+> already-cleared `records` would make the recovering PATCH a no-op.
 
 **Claude Code prompt:**
 ```

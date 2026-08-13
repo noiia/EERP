@@ -17,6 +17,7 @@ import {
   validateCatalogDescriptor,
   validateDescriptorWidgets,
   validateSearchDescriptor,
+  validateStatusBarDescriptor,
   type CatalogDescriptor,
   type Condition,
   type FieldDescriptor,
@@ -314,6 +315,52 @@ describe('validateSearchDescriptor', () => {
       search: { filterableFields: ['nope'] },
     }
     expect(() => validateSearchDescriptor(nonTree)).not.toThrow()
+  })
+})
+
+describe('validateStatusBarDescriptor', () => {
+  const statusFields: FieldDescriptor[] = [
+    { name: 'name', label: 'Name', type: 'text' },
+    { name: 'status', label: 'Status', type: 'selection', selection: { options: ['draft', 'sent'] } },
+  ]
+
+  const formDescriptor = (fields: FieldDescriptor[], statusBar: { field: string } | undefined): ViewDescriptor => ({
+    entity: 'invoice',
+    viewType: 'form',
+    fields,
+    statusBar,
+  })
+
+  it('passes a valid statusBar naming a declared selection field', () => {
+    expect(() =>
+      validateStatusBarDescriptor(formDescriptor(statusFields, { field: 'status' })),
+    ).not.toThrow()
+  })
+
+  it('is a no-op when statusBar is omitted', () => {
+    expect(() => validateStatusBarDescriptor(formDescriptor(statusFields, undefined))).not.toThrow()
+  })
+
+  it('throws when the field is not declared', () => {
+    expect(() =>
+      validateStatusBarDescriptor(formDescriptor(statusFields, { field: 'nope' })),
+    ).toThrowError(/statusBar.field "nope" is not declared/)
+  })
+
+  it('throws when the field is not type "selection"', () => {
+    expect(() =>
+      validateStatusBarDescriptor(formDescriptor(statusFields, { field: 'name' })),
+    ).toThrowError(/statusBar.field "name" must be type 'selection'/)
+  })
+
+  it('is a no-op for every other viewType, even with a statusBar block set', () => {
+    const nonForm: ViewDescriptor = {
+      entity: 'invoice',
+      viewType: 'tree',
+      fields: statusFields,
+      statusBar: { field: 'nope' },
+    }
+    expect(() => validateStatusBarDescriptor(nonForm)).not.toThrow()
   })
 })
 
