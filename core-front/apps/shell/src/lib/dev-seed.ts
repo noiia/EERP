@@ -69,6 +69,22 @@ const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled'] as co
 const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as const
 const CURRENCIES = ['USD', 'EUR', 'GBP'] as const
 
+// The seller's own letterhead — fixed rather than randomized per document,
+// since every invoice/quote from one workspace is issued by the same
+// company. sale.Invoice/Quote's issuer_*/payment_*/legal_notice columns are
+// plain (non-pointer) strings — NOT NULL with no default — so Create 422s
+// with VALIDATION_ERROR unless every one of them is present in the body,
+// even as an empty string; the normal form always sends its zero-default
+// '' for every field, this seed script has to do the same explicitly.
+const ISSUER = {
+  issuer_name: 'Northwind Logistics',
+  issuer_address: '48 Harbor Row, Portsmouth',
+  issuer_phone: '+1 555 0142',
+  issuer_email: 'billing@northwindlogistics.example',
+}
+const PAYMENT_METHODS = ['Bank transfer', 'Credit card', 'Check'] as const
+const PAYMENT_TERMS = ['Net 30', 'Net 15', 'Due on receipt'] as const
+
 const CONTACT_COUNT = 10
 const CRM_COUNT = 15
 const TAG_LINKS_MAX_PER_CRM = 2
@@ -182,6 +198,7 @@ function buildDocuments(
     const dueDate = new Date(issueDate)
     dueDate.setDate(dueDate.getDate() + 30)
     return {
+      ...ISSUER,
       number: `${numberPrefix}-${year}-${String(i + 1).padStart(4, '0')}`,
       status: pick(statuses),
       issue_date: issueDate.toISOString().slice(0, 10),
@@ -193,6 +210,9 @@ function buildDocuments(
       customer_address: company,
       currency: pick(CURRENCIES),
       reference: `PO-${1000 + Math.floor(Math.random() * 9000)}`,
+      payment_method: pick(PAYMENT_METHODS),
+      payment_terms: pick(PAYMENT_TERMS),
+      legal_notice: '',
     }
   })
 }

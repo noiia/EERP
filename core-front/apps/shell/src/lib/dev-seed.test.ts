@@ -156,6 +156,22 @@ describe('seedDemoData', () => {
       status: expect.any(String),
       customer_name: expect.any(String),
     })
+    // sale.Invoice/Quote's issuer_*/payment_*/legal_notice columns are plain
+    // (non-pointer) strings — NOT NULL with no default — so Go's generic
+    // Create 422s (VALIDATION_ERROR) unless every one of these keys is
+    // present, even as ''. A regression here silently breaks the seed tool
+    // in a real backend even though this test's mocked client wouldn't catch it.
+    for (const key of [
+      'issuer_name',
+      'issuer_address',
+      'issuer_phone',
+      'issuer_email',
+      'payment_method',
+      'payment_terms',
+      'legal_notice',
+    ]) {
+      expect(invoiceBody).toHaveProperty(key)
+    }
     const [, quoteBody] = callsFor('quote')[0] as [string, Record<string, unknown>]
     expect(quoteBody.number).toMatch(/^QUO-\d{4}-\d{4}$/)
 
