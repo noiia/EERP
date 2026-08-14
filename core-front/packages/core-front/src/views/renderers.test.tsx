@@ -234,34 +234,6 @@ describe('EntityView', () => {
     expect(screen.getByText('Ada')).toBeInTheDocument()
   })
 
-  it("offers the DataGrid's own built-in columns panel, right-aligned above the grid, to choose which fields display", async () => {
-    const wideDescriptor: ViewDescriptor<Contact & { email?: string }> = {
-      entity: 'crm',
-      viewType: 'tree',
-      fields: [
-        { name: 'name', label: 'Name', type: 'text' },
-        { name: 'email', label: 'Email', type: 'text' },
-      ],
-    }
-    render(
-      <EntityView
-        descriptor={wideDescriptor}
-        initialData={[{ id: '1', name: 'Ada', email: 'ada@example.com' }]}
-        actions={noopActions as unknown as EntityActions<Contact & { email?: string }>}
-      />,
-    )
-    expect(screen.getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Choose columns' }))
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Email' }))
-
-    await waitFor(() =>
-      expect(screen.queryByRole('columnheader', { name: 'Email' })).not.toBeInTheDocument(),
-    )
-    // Hiding a column is a display choice only — the underlying record is untouched.
-    expect(screen.getByText('Ada')).toBeInTheDocument()
-  })
-
   it('navigates to the record form on row click when the descriptor sets formPath', () => {
     const treeDescriptor: ViewDescriptor<Contact> = {
       ...formDescriptor,
@@ -645,7 +617,7 @@ describe('EntityView', () => {
       expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
     })
 
-    it('is NOT rendered by the tree view itself — the host owns its title-row placement', () => {
+    it('is NOT rendered by the tree view itself when no title is passed — the host owns its own title-row placement', () => {
       useSessionStore.setState({ identity: identityWith(['*:*:*']) })
       render(
         <EntityView
@@ -655,6 +627,21 @@ describe('EntityView', () => {
         />,
       )
       expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+    })
+
+    it('renders alongside the title, on the SAME row as the search bar, when the catch-all route passes title', () => {
+      useSessionStore.setState({ identity: identityWith(['*:*:*']) })
+      render(
+        <EntityView
+          descriptor={creatableList}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+          title="Contacts"
+        />,
+      )
+      expect(screen.getByRole('heading', { name: 'Contacts' })).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('Search…')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
     })
 
     it('is NOT rendered on dashboards — tree views only', () => {

@@ -464,7 +464,17 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
         anchorEl={anchorEl}
         open={menuOpen}
         onClose={() => setAnchorEl(null)}
-        slotProps={{ paper: { sx: { width: 360, maxWidth: '90vw' } } }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+        slotProps={{
+          paper: {
+            // 10px narrower than the bar on each side, centered on it
+            // (anchorOrigin/transformOrigin above) — the bar's own live
+            // width, not a fixed guess, so it tracks the narrow-viewport
+            // breakpoint automatically.
+            sx: { width: anchorEl ? anchorEl.offsetWidth - 20 : 360, maxWidth: '90vw' },
+          },
+        }}
       >
         <ListSubheader>{t('Filters')}</ListSubheader>
         <MenuItem disableRipple sx={{ cursor: 'default' }}>

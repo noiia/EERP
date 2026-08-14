@@ -12,9 +12,8 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
-import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { ColumnsPanelTrigger, DataGrid, type GridColDef } from '@mui/x-data-grid'
+import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import type { SerializedError } from '../api/errors'
@@ -96,6 +95,12 @@ export interface EntityViewProps<T extends HasId> {
    * loader.tsx's loadPictureSize. `null`/undefined means no admin setting at
    * any level — the widget falls back to its own widgetOptions/default. */
   pictureSize?: { width: number; height: number } | null
+  /** The page title (tree views only) — passed down so TreeRenderer can put
+   * it on the SAME row as the search bar and Create button instead of the
+   * host page rendering a separate title row above. Untranslated source
+   * text; TreeRenderer runs it through its own `useT()`, same as the host
+   * page's `<T>` leaf did before. */
+  title?: string
 }
 
 /** Top-level dispatcher: render a load error, otherwise the renderer for the viewType. */
@@ -123,8 +128,14 @@ export function EntityView<T extends HasId>(props: EntityViewProps<T>) {
  * Navigates to the empty form (formPath with ':id' → 'new'); the form store
  * creates on commit since the draft has no id.
  *
- * No renderer places it: the HOST page renders it inline on the title row
- * (right side) next to the tree view — exported for exactly that.
+ * Exported so a host page can place it inline on its own title row (right
+ * side) next to the tree view — most host pages (e.g. Settings -> Users)
+ * still do this themselves. The one exception is the module catch-all route
+ * (`apps/shell/app/[...module]/page.tsx`), which instead passes `title`
+ * to `EntityViewProps` and lets `TreeRenderer` render title + search bar +
+ * this button together on one row (the search bar's state has to live in
+ * that renderer, so the row does too) — a host page that already renders its
+ * own title+CreateBar row must NOT also pass `title`, or the button doubles.
  */
 export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDescriptor<T> }) {
   const t = useT()
@@ -405,34 +416,13 @@ function DisplayModeSwitcher({
   )
 }
 
-/**
- * The flat List DataGrid's own toolbar (List mode only — a tree/Kanban/
- * Calendar/Graph has no per-column concept): a single icon button, right-
- * aligned, that opens the grid's BUILT-IN columns panel (`ColumnsPanelTrigger`
- * + `showToolbar` — MUI X's own column-visibility mechanism, not a hand-rolled
- * picker). Visibility choices live in the grid's own uncontrolled state —
- * session-only, not persisted; add a controlled `columnVisibilityModel` +
- * `useUiStore` entry if per-entity persistence is ever needed.
- */
-function GridColumnsToolbar() {
-  const t = useT()
-  return (
-    <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 0.5 }}>
-      <Tooltip title={t('Choose columns')}>
-        <ColumnsPanelTrigger render={<IconButton size="small" aria-label={t('Choose columns')} />}>
-          <FontAwesomeIcon icon={byPrefixAndName.fas['table-columns']} size="sm" />
-        </ColumnsPanelTrigger>
-      </Tooltip>
-    </Box>
-  )
-}
-
 function TreeRenderer<T extends HasId>({
   descriptor,
   initialData,
   actions,
   viewFields = EMPTY_VIEW_FIELDS,
   recordTotal,
+  title,
 }: EntityViewProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -522,8 +512,6 @@ function TreeRenderer<T extends HasId>({
                 : undefined
             }
             sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
-            showToolbar
-            slots={{ toolbar: GridColumnsToolbar }}
           />
         </Box>
       )
@@ -531,18 +519,38 @@ function TreeRenderer<T extends HasId>({
       content = <HierarchyTree descriptor={descriptor} initialData={initialData as (T & TreeNode)[]} />
     }
   }
-  // No CreateBar here: for tree views the host page renders it on the title row.
+  // `title` set (the catch-all route only): the host page skipped its own
+  // title row and CreateBar, so this renderer places all three — title,
+  // search bar, Create — on ONE row instead, since the search bar's
+  // liveRecords state (and therefore the search bar itself) has to live
+  // here. `title` unset (every other host page still rendering its own
+  // title+CreateBar row, e.g. Settings -> Users): fall back to the search
+  // bar alone, exactly as before — rendering CreateBar here too would
+  // duplicate the one that page already renders.
   // Width/overflow containment is RootLayout's job now (one page-wide inset around
   // everything but the top bar — see the `pageInsetX`/`pageInsetY` tokens), not this
   // renderer's — a view-specific fix here would just be a second, competing mechanism.
+  const searchBar = <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
   return (
     <Box>
-      {/* Built-in search/filter bar (docs/adr/ADR-014-search-filter-bar.md) —
-          every tree view gets it automatically, same "no opt-in" posture the
-          mode switcher below takes. Writes into the SAME liveRecords state
-          Kanban/Calendar drags already share, so a filter/search/group-by
-          result shows up identically across List/Kanban/Calendar/Graph. */}
-      <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
+      {title != null ? (
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+          <Typography variant="h4" component="h1" sx={{ flexShrink: 0 }}>
+            {t(title)}
+          </Typography>
+          {/* Built-in search/filter bar (docs/adr/ADR-014-search-filter-bar.md) —
+              every tree view gets it automatically, same "no opt-in" posture the
+              mode switcher below takes. Writes into the SAME liveRecords state
+              Kanban/Calendar drags already share, so a filter/search/group-by
+              result shows up identically across List/Kanban/Calendar/Graph. */}
+          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{searchBar}</Box>
+          <Box sx={{ flexShrink: 0 }}>
+            <CreateBar descriptor={descriptor} />
+          </Box>
+        </Box>
+      ) : (
+        searchBar
+      )}
       <DisplayModeSwitcher
         entity={descriptor.entity}
         mode={mode}

@@ -153,6 +153,9 @@ export interface EntityViewServerProps<T extends HasId> {
   module?: string
   /** Server-side row filter/search for a tree/dashboard list — see LoadViewOptions. */
   listOptions?: EntityListOptions
+  /** Passed straight through to `EntityViewProps.title` — see its own doc
+   * comment (renderers.tsx). Tree views only; every other viewType ignores it. */
+  title?: string
 }
 
 export async function EntityViewServer<T extends HasId>({
@@ -163,6 +166,7 @@ export async function EntityViewServer<T extends HasId>({
   listViews,
   module,
   listOptions,
+  title,
 }: EntityViewServerProps<T>) {
   const client = api ?? createServerApiClient()
   const { initialData, error, total } = await loadView(descriptor, client, { recordId, listOptions })
@@ -192,6 +196,7 @@ export async function EntityViewServer<T extends HasId>({
       viewFields={viewFields}
       recordTotal={total}
       pictureSize={pictureSize}
+      title={title}
     />
   )
 }

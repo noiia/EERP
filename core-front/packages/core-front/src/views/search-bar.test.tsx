@@ -304,6 +304,21 @@ describe('SearchBar', () => {
     expect(document.activeElement).toBe(valueField)
   })
 
+  it('sizes the filter dropdown to the bar\'s own width, 10px narrower on each side, centered on it', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 400 })
+    try {
+      renderBar()
+      fireEvent.click(screen.getByPlaceholderText('Search…'))
+      const menuList = await screen.findByRole('menu')
+      const paper = menuList.closest('.MuiPaper-root') as HTMLElement
+      // 400px bar -> 380px menu (10px inset each side), not the old fixed 360px.
+      expect(getComputedStyle(paper).width).toBe('380px')
+    } finally {
+      if (originalDescriptor) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', originalDescriptor)
+    }
+  })
+
   it('is inert (no crash) with no SavedFilterOps provider mounted', () => {
     renderBar({}, null)
     fireEvent.click(screen.getByPlaceholderText('Search…'))
