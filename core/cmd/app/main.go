@@ -461,6 +461,31 @@ func main() {
 	cronScheduler := cron.NewScheduler(app.DB, userRepo, permRepo, chatter.NewRepository(app.DB), configContent.CronLogDir)
 	go cronScheduler.Run(ctx)
 
+	// Quote expiry sweep (modules/sale/expiry.go): "if the valid until date
+	// is reached, the quote's status goes to expired" is unconditional
+	// business logic, not a user-configured scheduled action — a separate,
+	// simpler ticker from the cron scheduler above, hourly since expiry
+	// doesn't need minute-level precision. Runs once immediately so a quote
+	// already overdue at boot doesn't wait a full hour for its first check.
+	quoteRepo := orm.MustRepo[sale.Quote](app.DB)
+	go func() {
+		if err := sale.ExpireOverdueQuotes(ctx, quoteRepo); err != nil {
+			common.Logger.Warn("sale: expire overdue quotes", zap.Error(err))
+		}
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := sale.ExpireOverdueQuotes(ctx, quoteRepo); err != nil {
+					common.Logger.Warn("sale: expire overdue quotes", zap.Error(err))
+				}
+			}
+		}
+	}()
+
 	common.Logger.Info("server starting", zap.String("addr", srvCfg.Addr))
 	if err := srv.Start(ctx); err != nil {
 		common.Logger.Error("server stopped with error", zap.Error(err))

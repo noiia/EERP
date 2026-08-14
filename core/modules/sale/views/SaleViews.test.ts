@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   FORM_NOTEBOOK_ID,
   ModuleRegistry,
+  headerButtonRegistry,
   normalizeLayout,
   reportCompanyFallbackFields,
   reportTableRelations,
+  type HeaderButtonContext,
+  type RelationOps,
 } from '@eerp/core-front'
 import sale from './SaleViews'
 
@@ -108,10 +111,12 @@ describe('sale FrontModule', () => {
     expect(totals?.relation).toEqual({ entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id' })
   })
 
-  it('ships one printable report over the invoice entity', () => {
-    expect(sale.reports).toHaveLength(1)
+  it('ships one printable report over the invoice entity, and one over the quote entity', () => {
+    expect(sale.reports).toHaveLength(2)
     expect(sale.reports?.[0].name).toBe('sale.invoice')
     expect(sale.reports?.[0].entity).toBe('invoice')
+    expect(sale.reports?.[1].name).toBe('sale.quote')
+    expect(sale.reports?.[1].entity).toBe('quote')
   })
 
   it('prints the logo as an image node and the line items as a relation-backed table node', () => {
@@ -272,5 +277,165 @@ describe('sale — self-extended "Quote lines" notebook page (registry-level)', 
     expect(registry.buildRegistry().get('/sale/quote/list')?.descriptor.fields.map((f) => f.name)).not.toContain(
       'quote_lines',
     )
+  })
+})
+
+describe('sale — quote workflow (header buttons)', () => {
+  it('status options run draft -> confirmed -> sent -> accepted/declined, plus expired', () => {
+    const status = sale.routes
+      .find((r) => r.path === '/sale/quote/:id')!
+      .descriptor.fields.find((f) => f.name === 'status')
+    expect(status?.selection?.options).toEqual(['draft', 'confirmed', 'sent', 'accepted', 'declined', 'expired'])
+  })
+
+  it('declares Confirm/Send/Accept as primary buttons and Decline as secondary, each gated on status', () => {
+    const headerButtons = sale.routes.find((r) => r.path === '/sale/quote/:id')!.descriptor.headerButtons
+    expect(headerButtons).toEqual([
+      {
+        name: 'sale.confirmQuote',
+        label: 'Confirm',
+        states: { visible: { field: 'status', op: 'eq', value: 'draft' } },
+      },
+      {
+        name: 'sale.sendQuote',
+        label: 'Send',
+        states: { visible: { field: 'status', op: 'eq', value: 'confirmed' } },
+      },
+      {
+        name: 'sale.acceptQuote',
+        label: 'Accept',
+        states: { visible: { field: 'status', op: 'eq', value: 'sent' } },
+      },
+      {
+        name: 'sale.declineQuote',
+        label: 'Decline',
+        variant: 'secondary',
+        states: { visible: { field: 'status', op: 'eq', value: 'sent' } },
+      },
+    ])
+  })
+
+  function context(overrides: Partial<HeaderButtonContext> = {}): HeaderButtonContext {
+    return {
+      entity: 'quote',
+      recordId: 'q1',
+      draft: { number: 'QUO-0001' },
+      setFieldAndCommit: vi.fn(async (patch) => ({ id: 'q1', ...patch })),
+      relationOps: null,
+      ...overrides,
+    }
+  }
+
+  it('sale.confirmQuote sets status to confirmed', async () => {
+    const ctx = context()
+    await headerButtonRegistry.get('sale.confirmQuote')!.handler(ctx)
+    expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'confirmed' })
+  })
+
+  it('sale.declineQuote sets status to declined', async () => {
+    const ctx = context()
+    await headerButtonRegistry.get('sale.declineQuote')!.handler(ctx)
+    expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'declined' })
+  })
+
+  describe('sale.sendQuote', () => {
+    afterEach(() => vi.restoreAllMocks())
+
+    it('advances status to sent, then prints the quote report', async () => {
+      // Sale's own tsconfig has no DOM lib (views/descriptors are plain TS,
+      // no browser APIs at compile time) — a plain ok/json stub matches what
+      // exportReportPDF actually reads, without needing the real Response type.
+      const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ download_url: '/api/reports/pdf?key=x' }) }))
+      vi.stubGlobal('fetch', fetchMock)
+      // This module's tests run under Node, not jsdom — window doesn't exist
+      // at all until stubbed (exportReportPDF calls window.open directly).
+      vi.stubGlobal('window', { open: vi.fn() })
+      const ctx = context()
+
+      await headerButtonRegistry.get('sale.sendQuote')!.handler(ctx)
+
+      expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'sent' })
+      expect(fetchMock).toHaveBeenCalledWith('/api/reports/sale.quote/q1', { method: 'POST' })
+    })
+  })
+
+  describe('sale.acceptQuote', () => {
+    it('does nothing without a wired RelationOpsProvider', async () => {
+      const ctx = context({ relationOps: null })
+      await headerButtonRegistry.get('sale.acceptQuote')!.handler(ctx)
+      expect(ctx.setFieldAndCommit).not.toHaveBeenCalled()
+    })
+
+    it('creates an invoice snapshotting the quote, one sale_line per quote_line, links quote_id, then marks accepted', async () => {
+      const quoteLines = [
+        { id: 'ql1', quote_id: 'q1', variant_id: 'v1', quantity: 2 },
+        { id: 'ql2', quote_id: 'q1', variant_id: 'v2', quantity: 1 },
+      ]
+      const ops: RelationOps = {
+        list: vi.fn(async () => quoteLines),
+        get: vi.fn(),
+        create: vi.fn(async (entity: string, body: Record<string, unknown>) => ({
+          id: entity === 'invoice' ? 'inv1' : 'sl-new',
+          ...body,
+        })),
+        remove: vi.fn(),
+      }
+      const ctx = context({
+        draft: {
+          number: 'QUO-0001',
+          customer_name: 'Acme',
+          customer_id: 'c1',
+          subject: 'Consulting',
+        },
+        relationOps: ops,
+      })
+
+      await headerButtonRegistry.get('sale.acceptQuote')!.handler(ctx)
+
+      expect(ops.list).toHaveBeenCalledWith('quote_line', { filter: { quote_id: 'q1' }, pageSize: 200 })
+      expect(ops.create).toHaveBeenCalledWith(
+        'invoice',
+        expect.objectContaining({
+          number: 'INV-QUO-0001',
+          customer_name: 'Acme',
+          customer_id: 'c1',
+          subject: 'Consulting',
+          status: 'draft',
+          quote_id: 'q1',
+        }),
+      )
+      expect(ops.create).toHaveBeenCalledWith('sale_line', { invoice_id: 'inv1', variant_id: 'v1', quantity: 2 })
+      expect(ops.create).toHaveBeenCalledWith('sale_line', { invoice_id: 'inv1', variant_id: 'v2', quantity: 1 })
+      expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'accepted' })
+    })
+  })
+})
+
+describe('sale — invoice.quote_id (provenance link)', () => {
+  it('is a read-only many2one to quote, labeled by number', () => {
+    const field = sale.routes
+      .find((r) => r.path === '/sale/:id')!
+      .descriptor.fields.find((f) => f.name === 'quote_id')
+    expect(field?.type).toBe('relation')
+    expect(field?.readOnly).toBe(true)
+    expect(field?.relation).toEqual({ entity: 'quote', kind: 'many2one', labelField: 'number' })
+  })
+})
+
+describe('sale — quote.quote report', () => {
+  it('prints the logo, the quote_line table, and a "Valid until" date instead of "Due date"', () => {
+    const report = sale.reports?.find((r) => r.name === 'sale.quote')!
+    const masthead = report.layout.find((n) => n.kind === 'section' && n.className === 'eerp-report-masthead')
+    expect(masthead && masthead.kind === 'section' ? masthead.children[0] : null).toEqual({
+      kind: 'image',
+      source: 'logo',
+      className: 'eerp-report-logo',
+      alt: 'Company logo',
+    })
+    expect(reportTableRelations(report)).toEqual([{ source: 'lines', entity: 'quote_line', inverseField: 'quote_id' }])
+    const validUntil = report.layout.find(
+      (n) => n.kind === 'section' && n.children.some((c) => c.kind === 'text' && c.text === 'Valid until:'),
+    )
+    expect(validUntil).toBeDefined()
   })
 })

@@ -59,6 +59,12 @@ type Invoice struct {
 	DueDate         *time.Time `db:"due_date"`
 	Status          string     `db:"status"`    // "draft", "sent", "paid", "overdue", "cancelled"
 	Reference       string     `db:"reference"` // customer PO / reference number
+	// QuoteID is the quote this invoice was raised FROM, when it was —
+	// nil for an invoice created directly, never through a quote's Accept
+	// flow. Set once, at creation, by the quote form's Accept header button
+	// (views/SaleViews.ts's sale.acceptQuote) via the generic entity API —
+	// nothing on the Go side writes it itself.
+	QuoteID *uuid.UUID `db:"quote_id"`
 	// Subtotal/TaxAmount/Total are the invoice's HT -> TVA -> TTC breakdown,
 	// each a REAL stored column rather than a compute:store:false field —
 	// the print pipeline reads the raw record, never the client compute

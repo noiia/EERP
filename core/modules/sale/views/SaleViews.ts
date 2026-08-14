@@ -2,8 +2,10 @@ import {
   exportReportPDF,
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
+  registerHeaderButtonAction,
   registerMenuAction,
   type FrontModule,
+  type HeaderButtonDescriptor,
   type MenuNode,
   type Operation,
   type ReportDescriptor,
@@ -39,6 +41,10 @@ export interface Invoice {
   /** One of the selection field's options: draft/sent/paid/overdue/cancelled. */
   status?: string
   reference?: string
+  /** The quote this invoice was created FROM (sale.acceptQuote header button
+   * handler below) — null for an invoice raised directly, never through a
+   * quote's Accept flow. */
+  quote_id?: string | null
   subtotal?: number | null
   tax_amount?: number | null
   total?: number | null
@@ -128,6 +134,125 @@ registerMenuAction({
   handler: ({ recordId }) => exportReportPDF('sale.invoice', recordId),
 })
 
+// Quote workflow (header-button-container — core-front/CLAUDE.md's "Header
+// button container" row): draft -> confirmed -> sent -> accepted/declined.
+// Each simple transition is a scripted field-edit-then-save through
+// HeaderButtonContext.setFieldAndCommit — the SAME commit() path Save uses,
+// never a separate write mechanism (see quoteHeaderButtons below for which
+// button shows at which status).
+
+registerHeaderButtonAction({
+  entity: 'quote',
+  name: 'sale.confirmQuote',
+  handler: async (ctx) => {
+    await ctx.setFieldAndCommit({ status: 'confirmed' })
+  },
+})
+
+// Send both prints the quote (same "call the BFF, open the PDF" dance as
+// sale.printInvoice above, over the sale.quote report below) AND advances
+// the status — one click does both, since "sent" only means something once
+// the document is actually in the customer's hands.
+registerHeaderButtonAction({
+  entity: 'quote',
+  name: 'sale.sendQuote',
+  handler: async (ctx) => {
+    await ctx.setFieldAndCommit({ status: 'sent' })
+    await exportReportPDF('sale.quote', ctx.recordId)
+  },
+})
+
+registerHeaderButtonAction({
+  entity: 'quote',
+  name: 'sale.declineQuote',
+  handler: async (ctx) => {
+    await ctx.setFieldAndCommit({ status: 'declined' })
+  },
+})
+
+// Accept both marks the quote won AND raises the invoice it becomes — "if
+// quote is accepted, an invoice is created with the data from this quote."
+// ctx.relationOps is the SAME entity-generic client the relation widgets use
+// (RelationOps): read this quote's own lines, snapshot the quote's fields
+// onto a new invoice (linked back via quote_id — see Invoice.quote_id
+// above), then create one sale_line per quote_line. sale_line's own Create
+// override (handler.go) re-resolves Unit/TaxRate/UnitPrice from the
+// variant/product at INVOICE creation time and recomputes the invoice's own
+// totals itself (recomputeTotals) — only invoice_id/variant_id/quantity need
+// passing through here, same as the invoice form's own line-items wizard.
+// Ponytail: this re-prices at TODAY's product/variant rates rather than
+// locking in what the quote itself snapshotted — matches every other
+// sale_line/quote_line creation path in this codebase (no live joins, but
+// always resolved fresh at the CREATING document's own time); revisit if the
+// product ever needs quoted prices to survive unchanged onto the invoice.
+registerHeaderButtonAction({
+  entity: 'quote',
+  name: 'sale.acceptQuote',
+  handler: async (ctx) => {
+    const ops = ctx.relationOps
+    if (!ops) return
+    const lines = await ops.list('quote_line', {
+      filter: { quote_id: ctx.recordId },
+      pageSize: 200,
+    })
+    const invoice = await ops.create('invoice', {
+      issuer_name: ctx.draft.issuer_name,
+      issuer_address: ctx.draft.issuer_address,
+      issuer_phone: ctx.draft.issuer_phone,
+      issuer_email: ctx.draft.issuer_email,
+      number: `INV-${ctx.draft.number as string}`,
+      issue_date: new Date().toISOString().slice(0, 10),
+      subject: ctx.draft.subject,
+      customer_id: ctx.draft.customer_id,
+      customer_name: ctx.draft.customer_name,
+      customer_email: ctx.draft.customer_email,
+      customer_address: ctx.draft.customer_address,
+      status: 'draft',
+      reference: ctx.draft.reference,
+      quote_id: ctx.recordId,
+      payment_method: ctx.draft.payment_method,
+      payment_terms: ctx.draft.payment_terms,
+      legal_notice: ctx.draft.legal_notice,
+    })
+    for (const line of lines) {
+      await ops.create('sale_line', {
+        invoice_id: invoice.id,
+        variant_id: line.variant_id,
+        quantity: line.quantity,
+      })
+    }
+    await ctx.setFieldAndCommit({ status: 'accepted' })
+  },
+})
+
+// The visual slot each button occupies is entirely driven by `states.visible`
+// against the live 'status' field — several entries with mutually exclusive
+// conditions is how ONE slot appears to change label as the quote moves
+// through its workflow (see core-front/CLAUDE.md's "Header button container").
+const quoteHeaderButtons: HeaderButtonDescriptor[] = [
+  {
+    name: 'sale.confirmQuote',
+    label: 'Confirm',
+    states: { visible: { field: 'status', op: 'eq', value: 'draft' } },
+  },
+  {
+    name: 'sale.sendQuote',
+    label: 'Send',
+    states: { visible: { field: 'status', op: 'eq', value: 'confirmed' } },
+  },
+  {
+    name: 'sale.acceptQuote',
+    label: 'Accept',
+    states: { visible: { field: 'status', op: 'eq', value: 'sent' } },
+  },
+  {
+    name: 'sale.declineQuote',
+    label: 'Decline',
+    variant: 'secondary',
+    states: { visible: { field: 'status', op: 'eq', value: 'sent' } },
+  },
+]
+
 const fields: ViewDescriptor['fields'] = [
   { name: 'number', label: 'Number', type: 'text', required: true },
   { name: 'customer_name', label: 'Customer', type: 'text', required: true },
@@ -166,6 +291,17 @@ const formFields: ViewDescriptor['fields'] = [
   // (internal/company.Company.Currency, Settings -> Company), not duplicated
   // per document.
   { name: 'reference', label: 'Reference', type: 'text' },
+  // System-set provenance link, never hand-picked: sale.acceptQuote (below)
+  // is the only writer, at invoice-creation time. readOnly rather than
+  // omitted from the form entirely — a user should be able to SEE which
+  // quote (if any) an invoice came from.
+  {
+    name: 'quote_id',
+    label: 'Quote',
+    type: 'relation',
+    readOnly: true,
+    relation: { entity: 'quote', kind: 'many2one', labelField: 'number' },
+  },
   // Real child table (core/modules/sale/module.go's SaleLine), not the old
   // Lines JSONB blob — the invoice's line-items table. Adding/removing rows
   // goes through the engine's one2many grid + create wizard
@@ -202,8 +338,10 @@ const formFields: ViewDescriptor['fields'] = [
 ]
 
 // quote's own field set — same shape as invoice's above, entity + status
-// options swapped for the quote flow (draft/sent/accepted/declined/expired
-// instead of draft/sent/paid/overdue/cancelled).
+// options swapped for the quote flow: draft -> confirmed -> sent ->
+// accepted/declined, or expired at any point past due_date (see
+// quoteHeaderButtons below and handler.go's expiry check) — instead of
+// invoice's draft/sent/paid/overdue/cancelled.
 const quoteFields: ViewDescriptor['fields'] = [
   { name: 'number', label: 'Number', type: 'text', required: true },
   { name: 'customer_name', label: 'Customer', type: 'text', required: true },
@@ -211,7 +349,7 @@ const quoteFields: ViewDescriptor['fields'] = [
     name: 'status',
     label: 'Status',
     type: 'selection',
-    selection: { options: ['draft', 'sent', 'accepted', 'declined', 'expired'] },
+    selection: { options: ['draft', 'confirmed', 'sent', 'accepted', 'declined', 'expired'] },
   },
   { name: 'issue_date', label: 'Issue date', type: 'date', default: 'sale.defaultQuoteIssueDate' },
   { name: 'due_date', label: 'Valid until', type: 'date' },
@@ -275,6 +413,7 @@ const quoteFormView: ViewDescriptor = {
   fields: quoteFormFields,
   permissions: ['quote:quote:read'],
   statusBar: { field: 'status' },
+  headerButtons: quoteHeaderButtons,
 }
 
 // quote_line's own descriptor — needed for the quote form's one2many
@@ -567,6 +706,120 @@ const invoiceReport: ReportDescriptor = {
   ],
 }
 
+// sale.quote — the quote's own printable PDF, triggered by the Send header
+// button above (sale.sendQuote). Mirrors invoiceReport field-for-field
+// (same letterhead template — Quote's own doc comment in module.go), scoped
+// to quote/quote_line instead of invoice/sale_line; the only textual
+// difference is "Valid until:" instead of "Due date:", matching the form's
+// own due_date label ("Valid until" — a quote's due_date is an expiry, not
+// a payment deadline).
+const quoteReport: ReportDescriptor = {
+  name: 'sale.quote',
+  entity: 'quote',
+  permissions: ['quote:quote:read'],
+  layout: [
+    {
+      kind: 'section',
+      className: 'eerp-report-masthead',
+      children: [
+        { kind: 'image', source: 'logo', className: 'eerp-report-logo', alt: 'Company logo' },
+        {
+          kind: 'section',
+          className: 'eerp-report-doc-meta',
+          children: [
+            { kind: 'field', name: 'issue_date', format: 'date' },
+            { kind: 'field', name: 'number' },
+          ],
+        },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-parties',
+      children: [
+        {
+          kind: 'section',
+          className: 'eerp-report-issuer',
+          children: [
+            { kind: 'field', name: 'issuer_name', companyFallback: 'name' },
+            { kind: 'field', name: 'issuer_address', companyFallback: 'address' },
+            { kind: 'field', name: 'issuer_phone', companyFallback: 'phone' },
+            { kind: 'field', name: 'issuer_email', companyFallback: 'email' },
+          ],
+        },
+        {
+          kind: 'section',
+          className: 'eerp-report-client',
+          children: [
+            { kind: 'field', name: 'customer_name' },
+            { kind: 'field', name: 'customer_address' },
+            { kind: 'field', name: 'customer_email' },
+          ],
+        },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-subject',
+      children: [
+        { kind: 'text', text: 'Subject:', className: 'eerp-report-label' },
+        { kind: 'field', name: 'subject' },
+      ],
+    },
+    {
+      kind: 'table',
+      source: 'lines',
+      className: 'eerp-report-table',
+      relation: { entity: 'quote_line', inverseField: 'quote_id' },
+      columns: [
+        { name: 'variant_name', label: 'Product' },
+        { name: 'unit', label: 'Unit' },
+        { name: 'quantity', label: 'Quantity' },
+        { name: 'unit_price', label: 'Unit price' },
+        { name: 'tax_rate', label: 'Tax' },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-totals',
+      children: [
+        totalsRow('Subtotal (excl. tax)', 'subtotal'),
+        totalsRow('Tax', 'tax_amount'),
+        totalsRow('Total (incl. tax)', 'total', true),
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-payment',
+      children: [
+        { kind: 'text', text: 'Payment method:', className: 'eerp-report-label' },
+        { kind: 'field', name: 'payment_method' },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-payment',
+      children: [
+        { kind: 'text', text: 'Payment terms:', className: 'eerp-report-label' },
+        { kind: 'field', name: 'payment_terms' },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-payment',
+      children: [
+        { kind: 'text', text: 'Valid until:', className: 'eerp-report-label' },
+        { kind: 'field', name: 'due_date', format: 'date' },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-footer',
+      children: [{ kind: 'field', name: 'legal_notice' }],
+    },
+  ],
+}
+
 const sale: FrontModule = {
   name: 'sale',
   routes: [
@@ -583,7 +836,7 @@ const sale: FrontModule = {
     { path: '/sale/:id', descriptor: formView, permission: 'invoice:invoice:read' },
     { path: '/sale/lines/:id', descriptor: saleLineFormView, permission: 'sale_line:sale_line:read' },
   ],
-  reports: [invoiceReport],
+  reports: [invoiceReport, quoteReport],
   extends: [
     { path: '/sale/:id', operations: orderLinesPageOperations },
     { path: '/sale/quote/:id', operations: quoteLinesPageOperations },
