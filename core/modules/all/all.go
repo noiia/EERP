@@ -13,6 +13,7 @@ import (
 	_ "core/modules/contact"
 	_ "core/modules/crm"
 	_ "core/modules/crminheritdemo"
+	_ "core/modules/cron"
 	_ "core/modules/notebook"
 	_ "core/modules/pictures"
 	_ "core/modules/reportlayout"

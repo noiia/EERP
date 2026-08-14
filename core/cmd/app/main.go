@@ -15,6 +15,7 @@ import (
 	"core/internal/chatter"
 	"core/internal/common"
 	"core/internal/company"
+	"core/internal/cron"
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
@@ -25,6 +26,7 @@ import (
 	"core/internal/types"
 	_ "core/modules/all"
 	"core/modules/crminheritdemo"
+	cronmodule "core/modules/cron"
 	"core/modules/sale"
 	"core/modules/warehouse"
 	"core/orm"
@@ -73,6 +75,10 @@ func main() {
 	for i, root := range configContent.ModuleRoot {
 		configContent.ModuleRoot[i] = resolveConfigPath(root)
 	}
+	if configContent.CronLogDir == "" {
+		configContent.CronLogDir = "cron_logs"
+	}
+	configContent.CronLogDir = resolveConfigPath(configContent.CronLogDir)
 
 	// Refuse to start with an insecure signing key.
 	if configContent.MasterPassword == "" || configContent.MasterPassword == "change-me-in-production" {
@@ -325,6 +331,23 @@ func main() {
 	chatterGroup.GET("", chatterHandler.List)
 	chatterGroup.POST("", chatterHandler.Create)
 
+	// ── Cron ──────────────────────────────────────────────────────────────────
+	// Background scheduled actions (docs/adr/ADR-016-cron-scheduler.md). Unlike
+	// chatter/notebook/savedfilter, cron/cron_history ride the GENERIC CRUD
+	// surface (core/modules/cron/module.go's Register) — that's what gives
+	// them List/Kanban/Calendar/Graph for free. Two hand-mounted additions on
+	// top: Create/Update overrides on cron (resolving action_code from the
+	// registry — mounted AFTER the generic block below so Echo keeps these
+	// registrations, same posture as crminheritdemo/warehouse/sale) and one
+	// extra action on cron_history (downloading a run's log file — a static
+	// suffix after :id, so it derives the SAME cron_history:cron_history:read
+	// permission the row's own GET already needs, no new wiring required).
+	cron.SetEnv(app.DB, configContent.CronLogDir)
+	cronOverride := cronmodule.NewHandler(orm.MustRepo[cron.Cron](app.DB))
+	cronHistoryHandler := cron.NewHandler(cron.NewRepository(app.DB))
+	cronHistoryGroup := srv.Echo().Group("/api/v1/cron_history", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	cronHistoryGroup.GET("/:id/log", cronHistoryHandler.DownloadLog)
+
 	// ── Module management (App Store) ────────────────────────────────────────
 	// Dedicated endpoints over module.json content plus the live runtime
 	// registry (docs/roadmaps/app-store.md, docs/adr/ADR-008) — a virtual
@@ -376,6 +399,14 @@ func main() {
 	crmInheritCreate := crminheritdemo.NewHandler(orm.MustRepo[crminheritdemo.CRM](app.DB))
 	srv.Echo().POST("/api/v1/crm", crmInheritCreate.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
+	// ── cron: Create/Update overrides ────────────────────────────────────────
+	// Only these two verbs are overridden (GET/DELETE stay generic) — see the
+	// "── Cron ──" section above for why. Mounted here, after the generic
+	// block, for the same Echo route-registration-order reason crminheritdemo
+	// is.
+	srv.Echo().POST("/api/v1/cron", cronOverride.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().PUT("/api/v1/cron/:id", cronOverride.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
 	// ── warehouse: product_variant Create override ───────────────────────────
 	// Same reasoning as crminheritdemo above: only POST /api/v1/product_variant
 	// is overridden (defaults Name from the underlying Product) — GET/PUT/DELETE
@@ -423,6 +454,12 @@ func main() {
 	// ── Graceful shutdown ─────────────────────────────────────────────────────
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// The cron scheduler polls for due crons every minute until ctx is
+	// canceled (see internal/cron/scheduler.go) — started here, alongside
+	// the server, so it stops on the same SIGINT/SIGTERM.
+	cronScheduler := cron.NewScheduler(app.DB, userRepo, permRepo, chatter.NewRepository(app.DB), configContent.CronLogDir)
+	go cronScheduler.Run(ctx)
 
 	common.Logger.Info("server starting", zap.String("addr", srvCfg.Addr))
 	if err := srv.Start(ctx); err != nil {

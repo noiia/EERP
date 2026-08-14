@@ -519,6 +519,19 @@ export async function deletePicture(id: string): Promise<void> {
   if (!res.ok) throw await parseError(res)
 }
 
+// ── Cron (docs/adr/ADR-016-cron-scheduler.md) ────────────────────────────────
+
+/**
+ * Fetch a cron_history run's log file from Go. Returns the raw Response so
+ * the BFF route can stream body + content type back to the browser without
+ * buffering — same shape as streamPicture/streamReportPDF.
+ */
+export async function streamCronHistoryLog(id: string): Promise<Response> {
+  const res = await fetchWithRefresh('GET', `/cron_history/${id}/log`, null)
+  if (!res.ok) throw await parseError(res)
+  return res
+}
+
 // ── PDF reports (Go side of the BFF proxy) ───────────────────────────────────
 // The /api/reports BFF route handlers call these (docs/adr/ADR-010,
 // docs/roadmaps/pdf-reports.md Phase 4) — the same session-cookie path every

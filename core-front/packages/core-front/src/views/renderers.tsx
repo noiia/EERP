@@ -483,6 +483,7 @@ function TreeRenderer<T extends HasId>({
         initialData={liveRecords}
         actions={actions}
         dateField={effective.calendarDateField}
+        colorField={effective.calendarColorField ?? undefined}
         onRecordsChange={setLiveRecords}
       />
     )

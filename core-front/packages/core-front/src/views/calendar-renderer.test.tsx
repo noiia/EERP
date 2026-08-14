@@ -255,4 +255,42 @@ describe('CalendarRenderer', () => {
     expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
     expect(screen.getByRole('group', { name: day20 })).not.toHaveTextContent('Alpha')
   })
+
+  it('colorField: a record whose named boolean field is true renders red; false/absent does not', () => {
+    interface Run {
+      id: string
+      name: string
+      due_date?: string | null
+      failed?: boolean
+    }
+    const runDescriptor: ViewDescriptor<Run> = {
+      entity: 'cron_history',
+      viewType: 'tree',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'due_date', label: 'Ran at', type: 'date' },
+        { name: 'failed', label: 'Failed', type: 'boolean' },
+      ],
+    }
+    const runs: Run[] = [
+      { id: '1', name: 'ok-run', due_date: day15, failed: false },
+      { id: '2', name: 'bad-run', due_date: day15, failed: true },
+    ]
+    render(
+      <CalendarRenderer
+        descriptor={runDescriptor}
+        initialData={runs}
+        actions={actions as unknown as EntityActions<Run>}
+        dateField="due_date"
+        colorField="failed"
+      />,
+    )
+    const okCard = screen.getByTestId('calendar-card-1')
+    const badCard = screen.getByTestId('calendar-card-2')
+    // sx only applies the error-colored branch's extra classes when flagged
+    // — asserting via the generated class name (not a computed color, which
+    // jsdom doesn't resolve theme tokens for) is what actually distinguishes
+    // "colored" from "not colored" here.
+    expect(badCard.className).not.toBe(okCard.className)
+  })
 })

@@ -29,6 +29,7 @@ func DefaultConfig() *Config {
 		ConnectTimeout:    10 * time.Second,
 		ApiConfigPath:     "api.yaml",
 		ModuleRoot:        []string{"modules"},
+		CronLogDir:        "cron_logs",
 	}
 }
 
@@ -94,7 +95,15 @@ type Config struct {
 	// still a complete, valid setup; set this only once horizontal scaling
 	// is an actual need, not by default.
 	NatsURL string `json:"nats_url" needed:"false"`
-	DSN     string
+	// CronLogDir is where the cron scheduler writes each run's log file
+	// (internal/cron), one file per cron_history row — plain local disk, not
+	// S3: unlike pictures/reports, a cron log is small, workspace-internal
+	// text with no need for object storage's durability/CDN properties, so
+	// the feature stays available with zero extra infra to configure.
+	// Relative paths resolve the same way ModuleRoot does (anchored to the
+	// config file's directory). Defaults to "cron_logs".
+	CronLogDir string `json:"cron_log_dir" needed:"false"`
+	DSN        string
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:

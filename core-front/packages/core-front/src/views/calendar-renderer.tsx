@@ -52,6 +52,13 @@ export interface CalendarRendererProps<T extends HasId> {
   /** The entity's configured Calendar date field name (a 'date' field). */
   dateField: string
   /**
+   * Names a `type: 'boolean'` field: a record whose value is true renders
+   * its card with a red accent — e.g. cron_history's `failed`
+   * (ViewModeDefaults.calendarColorField, api/view-fields.ts). Omitted ⇒
+   * no coloring, every card renders the same as before this existed.
+   */
+  colorField?: string
+  /**
    * Reports this renderer's working record set (initialData + any in-flight
    * optimistic edits) up to the shared TreeRenderer, so switching to another
    * mode (e.g. Graph) without a page reload sees the same data instead of a
@@ -65,6 +72,7 @@ export function CalendarRenderer<T extends HasId>({
   initialData,
   actions,
   dateField,
+  colorField,
   onRecordsChange,
 }: CalendarRendererProps<T>) {
   const t = useT()
@@ -129,7 +137,13 @@ export function CalendarRenderer<T extends HasId>({
     return String((record as Record<string, unknown>)[labelField.name] ?? record.id)
   }
 
+  function isFlagged(record: T): boolean {
+    if (!colorField) return false
+    return (record as Record<string, unknown>)[colorField] === true
+  }
+
   function dayCard(record: T) {
+    const flagged = isFlagged(record)
     return (
       <Card
         key={record.id}
@@ -158,7 +172,15 @@ export function CalendarRenderer<T extends HasId>({
         // moves past the drag threshold), so a plain click here is unambiguously
         // "clicked, didn't drag" — no separate bookkeeping needed.
         onClick={formPath ? () => router.push(formPath.replace(':id', record.id)) : undefined}
-        sx={{ cursor: formPath ? 'pointer' : 'grab' }}
+        sx={{
+          cursor: formPath ? 'pointer' : 'grab',
+          ...(flagged && {
+            borderColor: 'error.main',
+            borderLeftWidth: 3,
+            bgcolor: 'error.main',
+            '& .MuiTypography-root': { color: 'error.contrastText' },
+          }),
+        }}
       >
         <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
           <Typography variant="caption" sx={{ display: 'block' }}>

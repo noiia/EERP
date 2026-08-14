@@ -41,6 +41,15 @@ export interface ViewModeDefaults {
   kanbanStatusField?: string
   calendarDateField?: string
   enableGraphs?: boolean
+  /**
+   * Names a `type: 'boolean'` field: when a record's value is true, the
+   * Calendar renderer highlights its card red (e.g. cron_history's `failed`
+   * — "if a cron has failed, display it as red" — docs/adr/ADR-016-cron-
+   * scheduler.md). Module-declared only, no runtime admin override exists
+   * for this one (unlike kanbanStatusField/calendarDateField) — it is a
+   * fixed semantic ("true means highlight"), not a workspace preference.
+   */
+  calendarColorField?: string
 }
 
 /** The fully-resolved (module default, then admin override) view-mode config
@@ -49,6 +58,7 @@ export interface EffectiveViewFields {
   kanbanStatusField: string | null
   calendarDateField: string | null
   enableGraphs: boolean
+  calendarColorField: string | null
 }
 
 /**
@@ -64,6 +74,7 @@ export function effectiveViewFields(
     kanbanStatusField: config.kanbanStatusField ?? defaults?.kanbanStatusField ?? null,
     calendarDateField: config.calendarDateField ?? defaults?.calendarDateField ?? null,
     enableGraphs: config.enableGraphs ?? defaults?.enableGraphs ?? false,
+    calendarColorField: defaults?.calendarColorField ?? null,
   }
 }
 
