@@ -2,7 +2,6 @@ package cron
 
 import (
 	"context"
-	"sort"
 	"sync"
 )
 
@@ -53,19 +52,6 @@ func Get(id string) (Action, bool) {
 	defer registryMu.RUnlock()
 	a, ok := registry[id]
 	return a, ok
-}
-
-// List returns every registered Action, sorted by ID for a stable,
-// deterministic order (the cron_actions lookup endpoint's response).
-func List() []Action {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	out := make([]Action, 0, len(registry))
-	for _, a := range registry {
-		out = append(out, a)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
 }
 
 // clearForTest empties the registry — test-only (mirrors the frontend

@@ -179,26 +179,3 @@ func TestEnsureColumns_NotNullGetsAZeroDefault(t *testing.T) {
 		})
 	}
 }
-
-func TestAutoMigrateTable_TableThenColumnsThenIndexes(t *testing.T) {
-	exec := &recordingExec{}
-	fields := []orm.MigrationField{
-		{Column: "id", SQLType: "UUID", IsPK: true}, // BaseModel column: no ALTER
-		field("status", "hash", true),
-	}
-	if err := autoMigrateTable(context.Background(), exec, "orders", fields); err != nil {
-		t.Fatalf("autoMigrateTable: %v", err)
-	}
-	if len(exec.sql) != 3 {
-		t.Fatalf("expected 3 statements (create, alter, index), got %d: %v", len(exec.sql), exec.sql)
-	}
-	if !strings.Contains(exec.sql[0], "CREATE TABLE IF NOT EXISTS orders") {
-		t.Errorf("statement 1 = %s, want CREATE TABLE", exec.sql[0])
-	}
-	if !strings.Contains(exec.sql[1], "ALTER TABLE orders ADD COLUMN IF NOT EXISTS status") {
-		t.Errorf("statement 2 = %s, want ALTER TABLE ADD COLUMN status", exec.sql[1])
-	}
-	if !strings.Contains(exec.sql[2], "CREATE INDEX IF NOT EXISTS idx_orders_status") {
-		t.Errorf("statement 3 = %s, want CREATE INDEX", exec.sql[2])
-	}
-}

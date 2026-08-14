@@ -128,18 +128,6 @@ var baseModelColumns = map[string]bool{
 	"id": true, "created_at": true, "updated_at": true, "deleted_at": true,
 }
 
-// autoMigrateTable ensures the table exists, adds any missing columns, and
-// creates any declared indexes.
-func autoMigrateTable(ctx context.Context, db orm.Executor, table string, fields []orm.MigrationField) error {
-	if err := ensureTable(ctx, db, table); err != nil {
-		return err
-	}
-	if err := ensureColumns(ctx, db, table, fields); err != nil {
-		return err
-	}
-	return ensureIndexes(ctx, db, table, fields)
-}
-
 // zeroSQLDefault returns the DEFAULT literal for a NOT NULL column of the
 // given SQL type, or "" when no sane zero value exists (e.g. UUID). Needed
 // because ADD COLUMN ... NOT NULL with no DEFAULT fails outright on a table

@@ -27,11 +27,6 @@ type hardEntity struct {
 	Code string    `db:"code"`
 }
 
-type noTagsStruct struct {
-	Foo string
-	Bar int
-}
-
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // resetRegistry clears the global state between tests.

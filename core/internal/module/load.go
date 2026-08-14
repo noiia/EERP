@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 
 	"core/internal/common"
 	"core/internal/types"
@@ -142,54 +141,4 @@ func registerSchemas(m types.Migration) error {
 		}
 	}
 	return nil
-}
-
-func LoadModules(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *wasmtime.Linker, moduleRoots []string) []error {
-	if err := bootstrapMigrationsTable(ctx, db); err != nil {
-		return []error{fmt.Errorf("bootstrap module_migrations: %w", err)}
-	}
-
-	modules, err := detector(moduleRoots)
-	if err != nil {
-		return []error{err}
-	}
-
-	priorityGroups := make(map[int][]types.Module)
-	maxPriority := 0
-	for _, mod := range modules {
-		priorityGroups[mod.Priority] = append(priorityGroups[mod.Priority], mod)
-		if mod.Priority > maxPriority {
-			maxPriority = mod.Priority
-		}
-	}
-
-	var (
-		errMu   sync.Mutex
-		errList []error
-	)
-
-	for p := 0; p <= maxPriority; p++ {
-		group, ok := priorityGroups[p]
-		if !ok {
-			continue
-		}
-		var wg sync.WaitGroup
-		for _, mod := range group {
-			if mod.Active && mod.Type != "go" {
-				wg.Add(1)
-				go func(mod types.Module) {
-					defer wg.Done()
-					common.Logger.Debug("Loading module:", zap.String("name", mod.Name), zap.Int("priority", mod.Priority))
-					if _, err := loadModule(ctx, db, store, linker, mod.WasmPath, mod.Name, nil); err != nil {
-						errMu.Lock()
-						errList = append(errList, err)
-						errMu.Unlock()
-					}
-				}(mod)
-			}
-		}
-		wg.Wait()
-	}
-
-	return errList
 }

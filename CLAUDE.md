@@ -23,7 +23,7 @@ make run-back-tests BACKTESTPATH=./orm/...
 # Pass extra go test flags (e.g. verbose, run a single test)
 make run-back-tests ARGS="-v -run TestMyFunc"
 
-# Build Rust WASM modules
+# Build WASM modules (Go source, cross-compiled to WASI)
 make build
 
 # Full clean + rebuild + run
@@ -53,7 +53,7 @@ Entry point: `core/cmd/app/main.go`. On startup it:
 - Reads `eerp-config.json` (path via `-config` flag)
 - Opens a PostgreSQL connection (pgx)
 - Creates a Wasmtime engine/store/linker
-- Calls `module.LoadModules()` which detects, orders, and loads WASM modules
+- Calls `module.NewRegistry(...)` (`internal/module/runtime.go`) which detects, orders, and loads every module — WASM and Go, active or not
 
 Key internal packages:
 - `internal/module/` — module detection (`detector.go`), loading (`load.go`), DB migration (`migration.go`), and the live runtime lifecycle (`runtime.go`, `oplog.go`; `docs/adr/ADR-009-live-module-lifecycle.md`). The detector scans `module_root` dirs for `module.json` files, builds filesystem snapshots for change detection, resolves `depends` ordering via topological priority. `runtime.go`'s `Registry` replaces the old one-shot boot: it loads **every** discovered module — WASM and Go, active or not — at startup (one `wasmtime.Store` per WASM module, not shared, so a later reload can drop just that module's memory), and keeps `active`/table-ownership state live in memory so `ActiveGateMiddleware` (one extra middleware on the generic CRUD route group) can 403 a deactivated module's routes per request instead of never loading them. Also backs the App Store's module-management API (`manager.go`/`handler.go`, `docs/roadmaps/app-store.md`, `docs/adr/ADR-008-module-lifecycle-via-api.md`, `docs/adr/ADR-009-live-module-lifecycle.md`): `GET /api/v1/modules` (list, generic `{data, total}` envelope, excludes the `appstore` module's own record) + `GET /api/v1/modules/:id` (both re-walking `module_root` on every call, raw `map[string]any` — not `types.Module` — so a PUT can round-trip unknown/future `module.json` keys untouched, annotated with `module_dir` for the frontend's Views table) + `PUT /api/v1/modules/:id` (flips `Registry.SetActive`'s live gate FIRST, then writes `module.json` atomically — temp file + rename — restricted to `writableModuleFields`, currently just `active`; the appstore module itself refuses `active: false`) + `POST /api/v1/modules/:id/reload` (re-instantiates a WASM module's binary with no restart; a re-validation no-op for Go-type modules, whose code is compiled into the binary and needs a rebuild+restart to actually change) + `GET /api/v1/modules/:id/logs` (every activate/deactivate/reload run's backend/DB log lines, grouped by operation). A successful `PUT`/`POST /reload` is live by the time the response returns — no `requires_restart` field anymore. Permissions `modules:modules:read`/`write` derived from the routes.
@@ -67,16 +67,18 @@ Key internal packages:
 - `internal/chatter/` — a record's activity feed: a user-posted comment or the frontend's own summary of a form edit, both stored as one `ChatterMessage` row (`kind` "message"/"log") anchored on `(tenant_id, table_name, record_id)`, the same shape `internal/notebook` uses. Unlike a notebook page, append-only — no `Update`/`Delete`, since an activity log reads wrong if entries can change after the fact. `AuthorEmail` is snapshotted at write time (resolved via `auth.UserRepository`, the same cross-package dependency `internal/settings` already takes) so a feed read never needs a per-message author lookup. Dedicated tenant-pinned routes `GET|POST /api/v1/chatter_messages` (query `table`+`record` for the list, newest first; permissions `chatter_messages:chatter_messages:read`/`write` derived from the route); mounted unconditionally. The frontend posts a `kind: "log"` entry itself after a successful form edit (`core-front/packages/core-front/src/views/renderers.tsx`'s `summarizeFieldChanges`) — Go never diffs a record's fields itself, it only stores whatever the caller (composer or form save) posts.
 - `internal/cron/` — background scheduled actions (`docs/adr/ADR-016-cron-scheduler.md`). Unlike chatter/notebook/savedfilter, `Cron`/`CronHistory` ride the **generic CRUD surface** (`core/modules/cron/module.go`'s `orm.Register`, no `WithExcluded`) — that's what gives the frontend List/Kanban/Calendar/Graph for free, no bespoke view code. `Cron` is one-shot (`ExecutionDate`, cleared to nil after a run — not a recurring interval), names a Go `Action` by `ActionID`; `internal/cron.Register(Action{...})` is the extension point a module's own **`cron.go`** file calls from `init()` (mirrors `module.RegisterGoModule`'s shape), embedding its own source (`//go:embed cron.go`) into `Action.Source` so the form's read-only "Code" notebook page always shows the real code that runs. `Scheduler` (`scheduler.go`) polls every minute (`main.go`'s `go cronScheduler.Run(ctx)`), permission-checks the cron's `RunAsUserID` against the action's `RequiredPermission` (`auth.PermissionRepository.Has`) before running it, and records one `CronHistory` row (`Failed bool`, `LogsFilepath` — a local-disk text log under `Config.CronLogDir`, not S3) per attempt regardless of outcome; a missing-permission run also posts a `kind: "log"` `internal/chatter` message on the cron's own record, naming the action and the missing permission. The SAME tick also runs `SweepHistory` — the sliding-retention cleanup ("remove cron_history lines and files after N years"), a real `HardDelete` per row, where N is each cron's own `HistoryRetentionYears` field (0/unset = the 1-year default). `core/modules/cron/handler.go` overrides `POST`/`PUT /api/v1/cron` only (resolving `ActionCode` from the registry); every other verb, and all of `cron_history`, stays fully generic except one hand-mounted addition, `GET /api/v1/cron_history/:id/log` (downloads a run's log file, permission derived automatically from the route's existing `:id/action` shape).
 
-### 2. WASM modules (`modules/`) — Rust
-Each module is a Rust crate compiled to `wasm32-unknown-unknown`. A module directory must contain:
-- `module.json` — module metadata (name, version, `active`, `depends`, `priority`)
-- `*.wasm` — compiled binary (auto-discovered by the detector)
+### 2. WASM modules (`core/modules/`) — Go, cross-compiled to WASI
+Each module lives in `core/modules/<name>/` and is Go source, not Rust — `make build` cross-compiles every module directory to `<dir>/build/<name>.wasm` via `GOOS=wasip1 GOARCH=wasm go build`. `module.json`'s `type` decides how the result is actually used: `"go"` compiles the module directly into the `core` binary (registered via `RegisterGoModule` in `core/modules/all/all.go`) and ignores its own built `.wasm` artifact; `"wasm"` instead loads that artifact dynamically at runtime through Wasmtime, via the detector's `module_root` scan — every module in this repo today is `"type": "go"`, so the WASM-loaded path is implemented and exercised by the detector/runtime but currently has no live module using it.
 
-Modules may optionally export two WASM functions: `migrate()` returning a pointer and `migrate_len()` returning its byte length. The core reads the pointer from linear memory, deserializes the JSON `Migration` struct, and applies `add_column` operations via `ALTER TABLE`.
+A `"wasm"`-type module directory must contain:
+- `module.json` — module metadata (name, version, `active`, `depends`, `priority`, `type`)
+- `*.wasm` — the compiled binary (auto-discovered by the detector)
+
+Modules of either type may optionally export two WASM functions: `migrate()` returning a pointer and `migrate_len()` returning its byte length. The core reads the pointer from linear memory, deserializes the JSON `Migration` struct, and applies `add_column` operations via `ALTER TABLE`.
 
 A module may also ship an optional `i18n/` folder (gettext `<name>.pot` template + one `<locale>.po` per language). The catalogs are consumed by the **frontend build**: the frontend's module discovery compiles them in and the UI offers them under Settings → Translations (see `core-front/CLAUDE.md`). The Go core owns only which language each user sees: the per-user `preferred_locale` on the user record and the workspace default in `app_settings` (see `internal/settings/`).
 
-### 3. Frontend (`core-front/`) — SvelteKit + TypeScript
+### 3. Frontend (`core-front/`) — Next.js (App Router) + TypeScript
 
 ## ORM (`core/orm/`)
 
