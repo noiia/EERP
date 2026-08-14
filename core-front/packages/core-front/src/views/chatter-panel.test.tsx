@@ -25,9 +25,8 @@ describe('ChatterPanel', () => {
     expect(ops.list).not.toHaveBeenCalled()
   })
 
-  it('lists messages newest-first as "author : body", styling a log entry distinctly from a message', async () => {
+  it('renders a message as "author : body"', async () => {
     const messages: ChatterMessageRecord[] = [
-      { id: 'm2', author: 'bob@x.com', kind: 'log', body: 'Changed status: open → won', createdAt: '2026-01-02T00:00:00Z' },
       { id: 'm1', author: 'alice@x.com', kind: 'message', body: 'Looks good', createdAt: '2026-01-01T00:00:00Z' },
     ]
     const ops = { list: vi.fn(async () => messages), create: vi.fn() }
@@ -36,11 +35,47 @@ describe('ChatterPanel', () => {
         <ChatterPanel entity="crm" recordId="1" />
       </ChatterOpsProvider>,
     )
-    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('crm', '1'))
-    expect(await screen.findByText('bob@x.com')).toBeInTheDocument()
-    expect(screen.getByText('Changed status: open → won')).toBeInTheDocument()
-    expect(screen.getByText('alice@x.com')).toBeInTheDocument()
+    expect(await screen.findByText('alice@x.com')).toBeInTheDocument()
     expect(screen.getByText('Looks good')).toBeInTheDocument()
+  })
+
+  it('renders a log entry\'s changed fields as "author - field : old" / icon / "new", one line per field', async () => {
+    const messages: ChatterMessageRecord[] = [
+      {
+        id: 'm2',
+        author: 'bob@x.com',
+        kind: 'log',
+        body: 'Status : open → won\nAmount : 10 → 20',
+        createdAt: '2026-01-02T00:00:00Z',
+      },
+    ]
+    const ops = { list: vi.fn(async () => messages), create: vi.fn() }
+    const { container } = render(
+      <ChatterOpsProvider ops={ops}>
+        <ChatterPanel entity="crm" recordId="1" />
+      </ChatterOpsProvider>,
+    )
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('crm', '1'))
+    expect(await screen.findByText('bob@x.com - Status : open')).toBeInTheDocument()
+    expect(screen.getByText('won')).toBeInTheDocument()
+    expect(screen.getByText('bob@x.com - Amount : 10')).toBeInTheDocument()
+    expect(screen.getByText('20')).toBeInTheDocument()
+    // The arrow glyph is never rendered as raw text — only as an icon.
+    expect(screen.queryByText(/→/)).not.toBeInTheDocument()
+    expect(container.querySelectorAll('svg').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('falls back to plain "author - line" for a log line with no arrow', async () => {
+    const messages: ChatterMessageRecord[] = [
+      { id: 'm3', author: 'bob@x.com', kind: 'log', body: 'legacy note', createdAt: '2026-01-02T00:00:00Z' },
+    ]
+    const ops = { list: vi.fn(async () => messages), create: vi.fn() }
+    render(
+      <ChatterOpsProvider ops={ops}>
+        <ChatterPanel entity="crm" recordId="1" />
+      </ChatterOpsProvider>,
+    )
+    expect(await screen.findByText('bob@x.com - legacy note')).toBeInTheDocument()
   })
 
   it('posting a message calls create and prepends it to the feed', async () => {

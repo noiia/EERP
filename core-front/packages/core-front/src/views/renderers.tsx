@@ -175,6 +175,12 @@ function displayValue(value: unknown): string {
  * stored value (an FK id, an ISO string) rather than a resolved label —
  * resolving one would mean a lookup per changed field per save; acceptable
  * for an activity-feed summary, not a polished audit trail.
+ *
+ * One line per changed field, "<field> : <old> → <new>" — chatter-panel.tsx's
+ * ChatterEntry prefixes each line with the author ("<author> - <field> : ...")
+ * and swaps the "→" glyph for a rendered FontAwesome arrow at display time
+ * (the stored body stays plain text; only the arrow's PRESENTATION is an
+ * icon). Joined with newlines, not "; ", so each field lands on its own line.
  */
 function summarizeFieldChanges(
   fields: FieldDescriptor[],
@@ -188,9 +194,9 @@ function summarizeFieldChanges(
     const next = after[field.name]
     if (prev === next) continue
     if ((prev ?? '') === (next ?? '')) continue
-    changes.push(`${fieldLabel(field)}: ${displayValue(prev)} → ${displayValue(next)}`)
+    changes.push(`${fieldLabel(field)} : ${displayValue(prev)} → ${displayValue(next)}`)
   }
-  return changes.length > 0 ? changes.join('; ') : null
+  return changes.length > 0 ? changes.join('\n') : null
 }
 
 function FormRenderer<T extends HasId>({
@@ -276,84 +282,87 @@ function FormRenderer<T extends HasId>({
   }
 
   return (
-    // The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
-    // the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
-    // under that — a plain viewport media query, since this wrapper is
-    // always the whole form page, never re-embedded in a narrower container.
     <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 2,
-        [`@media (min-width:${layoutTokens.chatterBreakpoint}px)`]: { flexDirection: 'row' },
-      }}
+      component="form"
+      onSubmit={onSubmit}
+      aria-busy={submitting}
+      // Full width inside RootLayout's page inset (docs/roadmaps/
+      // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
+      // sense for a single flat column but wastes most of a wide screen now
+      // that the default anatomy is a header + two responsive columns.
+      // The relation wizard's dialog (relation-widgets.tsx) sizes itself off
+      // its own layout.wizardWidth/wizardWideWidth tokens instead.
+      sx={{ maxWidth: '100%', width: '100%' }}
     >
-      <Box
-        component="form"
-        onSubmit={onSubmit}
-        aria-busy={submitting}
-        // Full width inside RootLayout's page inset (docs/roadmaps/
-        // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
-        // sense for a single flat column but wastes most of a wide screen now
-        // that the default anatomy is a header + two responsive columns.
-        // The relation wizard's dialog (relation-widgets.tsx) sizes itself off
-        // its own layout.wizardWidth/wizardWideWidth tokens instead.
-        // flex/minWidth: shrinks correctly next to the chatter panel in the
-        // row layout above; both are inert (block default) in column layout.
-        sx={{ maxWidth: '100%', flex: 1, minWidth: 0, width: '100%' }}
-      >
-        {/* Top toolbar: Reset + Save sit immediately left of the form's options
-            menu (docs/adr/ADR-011) — the group's left edge lands exactly where
-            the menu used to sit alone (apps/shell/app/[...module]/page.tsx no
-            longer renders it; the form owns its own top chrome now). Reset is
-            icon-only ("undo" glyph), matching the menu's own icon-only button.
-            The optional status breadcrumb (ViewDescriptor.statusBar) sits at
-            the far right of this SAME row (`ml: 'auto'` on StatusBar itself) —
-            its right edge lands flush with the Card's below it since neither
-            this Box nor the Card carries its own horizontal padding. */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <IconButton
-            aria-label={t('Reset')}
-            disabled={!dirty || submitting}
-            onClick={() => store.getState().reset()}
-          >
-            <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
-          </IconButton>
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={!dirty || submitting}
-            // Explicit accessible name, independent of the visible label's
-            // own CSS breakpoint below — an icon-only button (< mobileBreakpoint)
-            // still needs a real name for assistive tech, not just a glyph.
-            aria-label={submitting ? t('Saving…') : t('Save')}
-            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
-          >
-            {submitting ? (
-              <CircularProgress size={16} color="inherit" thickness={5} />
-            ) : (
-              <FontAwesomeIcon icon={byPrefixAndName.fas['floppy-disk']} size="sm" />
-            )}
-            {/* Below layout.mobileBreakpoint the button is icon-only (the
-                floppy disk glyph alone reads as "Save" without crowding a
-                narrow toolbar); at/above it the label follows the icon.
-                display:none removes the span from flex layout entirely, so
-                the `gap` above never leaves a stray space next to a lone icon. */}
-            <Box component="span" sx={{ display: 'none', [mobileMediaQuery]: { display: 'inline' } }}>
-              {submitting ? t('Saving…') : t('Save')}
-            </Box>
-          </Button>
-          <FormActionsMenu
-            entity={descriptor.entity}
-            actions={descriptor.actions ?? []}
-            recordId={recordId ?? 'new'}
-          />
-          {statusField && (
-            <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />
+      {/* Top toolbar: Reset + Save sit immediately left of the form's options
+          menu (docs/adr/ADR-011) — the group's left edge lands exactly where
+          the menu used to sit alone (apps/shell/app/[...module]/page.tsx no
+          longer renders it; the form owns its own top chrome now). Reset is
+          icon-only ("undo" glyph), matching the menu's own icon-only button.
+          The optional status breadcrumb (ViewDescriptor.statusBar) sits at
+          the far right of this SAME row (`ml: 'auto'` on StatusBar itself).
+          A full-width sibling ABOVE the form-card/chatter row below (rather
+          than living inside the form-card's own column, as it used to) — so
+          the chatter panel's top edge lines up with the form Card's top edge
+          instead of sitting a whole toolbar-row lower than it. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <IconButton
+          aria-label={t('Reset')}
+          disabled={!dirty || submitting}
+          onClick={() => store.getState().reset()}
+        >
+          <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
+        </IconButton>
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={!dirty || submitting}
+          // Explicit accessible name, independent of the visible label's
+          // own CSS breakpoint below — an icon-only button (< mobileBreakpoint)
+          // still needs a real name for assistive tech, not just a glyph.
+          aria-label={submitting ? t('Saving…') : t('Save')}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+        >
+          {submitting ? (
+            <CircularProgress size={16} color="inherit" thickness={5} />
+          ) : (
+            <FontAwesomeIcon icon={byPrefixAndName.fas['floppy-disk']} size="sm" />
           )}
-        </Box>
-        <Card>
+          {/* Below layout.mobileBreakpoint the button is icon-only (the
+              floppy disk glyph alone reads as "Save" without crowding a
+              narrow toolbar); at/above it the label follows the icon.
+              display:none removes the span from flex layout entirely, so
+              the `gap` above never leaves a stray space next to a lone icon. */}
+          <Box component="span" sx={{ display: 'none', [mobileMediaQuery]: { display: 'inline' } }}>
+            {submitting ? t('Saving…') : t('Save')}
+          </Box>
+        </Button>
+        <FormActionsMenu
+          entity={descriptor.entity}
+          actions={descriptor.actions ?? []}
+          recordId={recordId ?? 'new'}
+        />
+        {statusField && (
+          <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />
+        )}
+      </Box>
+      {/* The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
+          the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
+          under that — a plain viewport media query, since this wrapper is
+          always the whole form page, never re-embedded in a narrower container.
+          Both this row's children start at the same y — the toolbar above is
+          now a full-width sibling, not part of the form-card's own column —
+          so the chatter Card's top border lands flush with the form Card's. */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 2,
+          [`@media (min-width:${layoutTokens.chatterBreakpoint}px)`]: { flexDirection: 'row' },
+        }}
+      >
+        <Card sx={{ flex: 1, minWidth: 0, width: '100%' }}>
           <CardContent sx={{ p: 3 }}>
             <Stack spacing={2.5}>
               {error ? (
@@ -373,8 +382,8 @@ function FormRenderer<T extends HasId>({
             </Stack>
           </CardContent>
         </Card>
+        <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} />
       </Box>
-      <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} />
     </Box>
   )
 }

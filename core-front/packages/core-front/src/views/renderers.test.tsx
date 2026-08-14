@@ -333,7 +333,7 @@ describe('EntityView', () => {
 
       await waitFor(() => expect(update).toHaveBeenCalled())
       await waitFor(() =>
-        expect(ops.create).toHaveBeenCalledWith('crm', '1', 'log', 'Name: Ada → Ada Lovelace'),
+        expect(ops.create).toHaveBeenCalledWith('crm', '1', 'log', 'Name : Ada → Ada Lovelace'),
       )
     })
 

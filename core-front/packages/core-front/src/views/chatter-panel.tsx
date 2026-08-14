@@ -9,6 +9,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useChatterOps, type ChatterMessageRecord } from './chatter-ops'
 import { useT } from '../i18n/translate'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { layout } from './tokens'
 import { useUiStore } from './ui-store'
 
@@ -61,19 +62,65 @@ function useHorizontalResize(width: number, setWidth: (w: number) => void, min: 
   }
 }
 
+// The separator summarizeFieldChanges (renderers.tsx) joins "<field> : <old>
+// → <new>" changes on — one field per line. Splitting on it here is what
+// turns the arrow back into a rendered icon at DISPLAY time; the stored body
+// itself stays plain text (chatter_message.body is just a string column).
+const ARROW = ' → '
+
+/**
+ * One changed-field line of a 'log' entry, in the "user - field : former
+ * value -> new value" pattern: the arrow glyph is swapped for a rendered
+ * FontAwesome icon. A line with no arrow (unexpected/legacy data) still
+ * renders, plainly, rather than being dropped.
+ */
+function ChatterLogLine({ author, line }: { author: string; line: string }) {
+  const arrowAt = line.indexOf(ARROW)
+  if (arrowAt === -1) {
+    return (
+      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+        {author} - {line}
+      </Typography>
+    )
+  }
+  return (
+    <Typography
+      variant="body2"
+      component="div"
+      sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}
+    >
+      <span>
+        {author} - {line.slice(0, arrowAt)}
+      </span>
+      <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-right-long']} size="xs" />
+      <span>{line.slice(arrowAt + ARROW.length)}</span>
+    </Typography>
+  )
+}
+
 function ChatterEntry({ message }: { message: ChatterMessageRecord }) {
   const isLog = message.kind === 'log'
   return (
     <Box sx={{ opacity: isLog ? 0.72 : 1 }}>
-      <Typography variant="body2" component="span" sx={{ fontWeight: isLog ? 400 : 600 }}>
-        {message.author}
-      </Typography>
-      <Typography variant="body2" component="span" color="text.secondary">
-        {' : '}
-      </Typography>
-      <Typography variant="body2" component="span" sx={{ whiteSpace: 'pre-wrap' }}>
-        {message.body}
-      </Typography>
+      {isLog ? (
+        <Stack spacing={0.25}>
+          {message.body.split('\n').map((line, i) => (
+            <ChatterLogLine key={i} author={message.author} line={line} />
+          ))}
+        </Stack>
+      ) : (
+        <>
+          <Typography variant="body2" component="span" sx={{ fontWeight: 600 }}>
+            {message.author}
+          </Typography>
+          <Typography variant="body2" component="span" color="text.secondary">
+            {' : '}
+          </Typography>
+          <Typography variant="body2" component="span" sx={{ whiteSpace: 'pre-wrap' }}>
+            {message.body}
+          </Typography>
+        </>
+      )}
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
         {new Date(message.createdAt).toLocaleString()}
       </Typography>
@@ -172,7 +219,17 @@ export function ChatterPanel({ entity, recordId }: { entity: string; recordId?: 
                   onChange={(e) => setDraft(e.target.value)}
                   disabled={posting}
                 />
-                <Button variant="contained" disabled={!draft.trim() || posting} onClick={() => void send()}>
+                {/* type="button": the panel now renders INSIDE FormRenderer's
+                    <form> (so its Card lines up with the form Card's own top
+                    border) — without an explicit type, a plain <button>
+                    defaults to "submit" and would also trigger the record's
+                    own save. */}
+                <Button
+                  type="button"
+                  variant="contained"
+                  disabled={!draft.trim() || posting}
+                  onClick={() => void send()}
+                >
                   {t('Send')}
                 </Button>
               </Stack>
