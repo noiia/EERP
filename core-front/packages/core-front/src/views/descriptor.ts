@@ -7,7 +7,7 @@ import type { ViewModeDefaults } from '../api/view-fields'
 
 export type ViewType = 'form' | 'tree' | 'dashboard' | 'catalog'
 
-export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean' | 'selection'
+export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean' | 'selection' | 'totals'
 
 /**
  * Descriptors cross the RSC boundary as props, so everything in them — widget
@@ -35,7 +35,12 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * presets) is a dropdown that ALSO patches sibling fields per
  * widgetOptions.presets when an option is picked — a generic "apply a preset"
  * mechanism, not specific to page formats; see widgets.tsx's
- * SelectionLinkedWidget for the exact contract.
+ * SelectionLinkedWidget for the exact contract. type/totals (sale/quote's
+ * totals recap block) is the other odd one out: its value, like text/table,
+ * is never typed or stored (`store: false`) — it computes itself, live, from
+ * the SAME one2many lines its sibling relation field already reads (declared
+ * via `relation`, exactly like a relation field's own block), grouped by
+ * each line's own tax rate. One widget, 'recap' — no presentation variants.
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   text: ['simple', 'long', 'phone', 'table', 'color'],
@@ -44,6 +49,7 @@ export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   date: ['simple'],
   relation: ['search', 'tags', 'list'],
   selection: ['select', 'linked'],
+  totals: ['recap'],
 }
 
 export type RelationKind = 'many2one' | 'one2many' | 'many2many'
@@ -254,6 +260,9 @@ export function resolveWidget(field: FieldDescriptor): string {
   }
   if (field.type === 'relation') return resolveRelationWidget(field)
   if (field.type === 'selection') return resolveSelectionWidget(field)
+  if (field.type === 'totals' && !field.relation) {
+    throw new Error(`field "${field.name}": type 'totals' requires a relation block (the lines it recaps)`)
+  }
   const widget = field.widget ?? allowed[0]
   if (!allowed.includes(widget)) {
     throw new Error(
@@ -410,6 +419,7 @@ export function fieldZeroDefault(field: FieldDescriptor): JsonValue {
       return field.selection?.options[0] ?? null
     case 'date':
     case 'relation':
+    case 'totals':
       return null
   }
 }

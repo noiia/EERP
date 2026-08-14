@@ -381,3 +381,39 @@ describe('create-from-search: primary color', () => {
     expect(button.className).toContain('MuiButton-colorPrimary')
   })
 })
+
+const totalsField: FieldDescriptor = {
+  name: 'sale_totals',
+  label: 'Totals',
+  type: 'totals',
+  hideLabel: true,
+  store: false,
+  relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id' },
+}
+
+describe('totals/recap', () => {
+  it('groups lines by their own tax rate and sums subtotal/tax/total', async () => {
+    const lines: RelationRecord[] = [
+      { id: 'l1', quantity: 2, unit_price: 50, tax_rate: 0.2 }, // 100 HT, 20 tax
+      { id: 'l2', quantity: 3, unit_price: 10, tax_rate: 0.1 }, // 30 HT, 3 tax
+      { id: 'l3', quantity: 1, unit_price: 100, tax_rate: 0.2 }, // 100 HT, 20 tax (same rate as l1)
+    ]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'inv1' })
+
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('sale_line', expect.objectContaining({ filter: { invoice_id: 'inv1' } })))
+
+    // subtotal = 100 + 30 + 100 = 230; tax@20% = 40; tax@10% = 3; total = 273
+    expect(await screen.findByText('230.00')).toBeInTheDocument()
+    expect(screen.getByText('20%:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('40.00')).toBeInTheDocument()
+    expect(screen.getByText('10%:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('3.00')).toBeInTheDocument()
+    expect(screen.getByText('273.00')).toBeInTheDocument()
+  })
+
+  it('renders nothing for an unsaved record (no id to scope lines to)', () => {
+    renderWidget(totalsField, stubOps(), { recordId: null })
+    expect(screen.queryByText('Untaxed Amount:', { exact: false })).not.toBeInTheDocument()
+  })
+})

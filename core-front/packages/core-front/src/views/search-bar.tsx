@@ -132,6 +132,11 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
     case 'relation':
     case 'boolean':
       return ['eq', 'in']
+    case 'totals':
+      // Never filterable/groupable in practice — a computed recap field only
+      // ever appears on a form, never a tree view's fields — but the switch
+      // must stay exhaustive over FieldType.
+      return []
   }
 }
 

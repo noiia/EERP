@@ -64,7 +64,7 @@ describe('resolveWidget', () => {
 
   it('accepts every widget the matrix allows', () => {
     for (const [type, widgets] of Object.entries(FIELD_WIDGETS)) {
-      if (type === 'relation' || type === 'selection') continue // block-driven — covered below
+      if (type === 'relation' || type === 'selection' || type === 'totals') continue // block-driven — covered below
       for (const widget of widgets) {
         expect(resolveWidget(field(type as FieldType, widget))).toBe(widget)
       }
@@ -134,6 +134,18 @@ describe('resolveWidget — relations', () => {
   })
 })
 
+describe('resolveWidget — totals', () => {
+  it('defaults to recap', () => {
+    expect(resolveWidget({ ...field('totals'), relation: { entity: 'sale_line', kind: 'one2many' } })).toBe(
+      'recap',
+    )
+  })
+
+  it('requires a relation block', () => {
+    expect(() => resolveWidget(field('totals'))).toThrowError(/requires a relation block/)
+  })
+})
+
 describe('fieldZeroDefault', () => {
   it('returns the natural empty value per type', () => {
     expect(fieldZeroDefault(field('text'))).toBe('')
@@ -141,6 +153,7 @@ describe('fieldZeroDefault', () => {
     expect(fieldZeroDefault(field('boolean'))).toBe(false)
     expect(fieldZeroDefault(field('date'))).toBeNull()
     expect(fieldZeroDefault(relationField({ kind: 'many2one' }))).toBeNull()
+    expect(fieldZeroDefault(field('totals'))).toBeNull()
   })
 
   it('a selection field has no "empty" — its zero default is the FIRST option', () => {

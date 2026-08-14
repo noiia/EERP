@@ -17,7 +17,7 @@ import { useT } from '../i18n/translate'
 import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
 import { isHexColor } from './palette'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
-import { RelationListWidget, RelationSearchWidget, RelationTagsWidget } from './relation-widgets'
+import { RelationListWidget, RelationSearchWidget, RelationTagsWidget, TaxTotalsWidget } from './relation-widgets'
 import { useNumberFormat } from './format-store'
 import { tabularNums } from './tokens'
 
@@ -569,6 +569,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'relation/search': RelationSearchWidget,
   'relation/tags': RelationTagsWidget,
   'relation/list': RelationListWidget,
+  'totals/recap': TaxTotalsWidget,
 }
 
 /**

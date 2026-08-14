@@ -23,9 +23,10 @@ import {
 } from './descriptor'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { LayoutForm } from './layout-renderer'
+import { useNumberFormat } from './format-store'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
 import { createFormStore, useFormDraft, useFormError } from './stores'
-import { layout } from './tokens'
+import { layout, tabularNums } from './tokens'
 import type { WidgetProps } from './widgets'
 
 // Both wizard dialogs (search + create-from-search) share this width: 95% of
@@ -798,5 +799,87 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
         />
       ) : null}
     </Box>
+  )
+}
+
+/**
+ * type: 'totals' / widget: 'recap' — the sale/quote form's totals block:
+ * Untaxed Amount, one row per DISTINCT tax rate among this record's own line
+ * items (each line carries its own rate, from its product/variant — see
+ * core/modules/warehouse's Product.TaxRate / ProductVariant.TaxRate
+ * override), a divider, then the grand Total. Replaces three bare readOnly
+ * fields (subtotal/tax_amount/total) that used to sit in the form body: this
+ * widget computes all three live from the SAME lines the sibling one2many
+ * grid already fetches (field.relation), so it's never a save round-trip
+ * behind what's actually on the form — it doesn't read the record's own
+ * stored subtotal/tax_amount/total columns at all, only recomputes the
+ * identical math (core/modules/sale/handler.go's sumLines) client-side.
+ */
+export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
+  const t = useT()
+  const ops = useRelationOps()
+  const { format } = useNumberFormat()
+  const rel = relationOf(field)
+  const inverseField = rel.inverseField as string
+  const [rows, setRows] = useState<RelationRecord[]>([])
+
+  useEffect(() => {
+    if (!ops || !recordId) {
+      setRows([])
+      return
+    }
+    let cancelled = false
+    ops
+      .list(rel.entity, { filter: { [inverseField]: recordId }, pageSize: EMBED_PAGE_SIZE })
+      .then((found) => {
+        if (!cancelled) setRows(found)
+      })
+      .catch(() => {
+        if (!cancelled) setRows([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ops, rel.entity, inverseField, recordId])
+
+  if (!ops || !recordId) return null
+
+  let subtotal = 0
+  const taxByRate = new Map<number, number>()
+  for (const row of rows) {
+    const amount = (Number(row.quantity) || 0) * (Number(row.unit_price) || 0)
+    const rate = Number(row.tax_rate) || 0
+    subtotal += amount
+    taxByRate.set(rate, (taxByRate.get(rate) ?? 0) + amount * rate)
+  }
+  const taxRows = [...taxByRate.entries()].sort(([a], [b]) => a - b)
+  const total = subtotal + taxRows.reduce((sum, [, tax]) => sum + tax, 0)
+
+  return (
+    <Stack spacing={0.5} sx={{ maxWidth: 360, ml: 'auto', width: '100%' }}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+        <Typography variant="body2">{t('Untaxed Amount')}:</Typography>
+        <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
+          {format(subtotal, { decimals: 2 })}
+        </Typography>
+      </Stack>
+      {taxRows.map(([rate, tax]) => (
+        <Stack direction="row" sx={{ justifyContent: 'space-between' }} key={rate}>
+          <Typography variant="body2">
+            {t('Tax')} {Number((rate * 100).toFixed(2))}%:
+          </Typography>
+          <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
+            {format(tax, { decimals: 2 })}
+          </Typography>
+        </Stack>
+      ))}
+      <Box sx={{ borderTop: '0.5px solid', borderColor: 'divider' }} />
+      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+        <Typography variant="subtitle2">{t('Total')}:</Typography>
+        <Typography variant="subtitle2" sx={{ fontVariantNumeric: tabularNums }}>
+          {format(total, { decimals: 2 })}
+        </Typography>
+      </Stack>
+    </Stack>
   )
 }
