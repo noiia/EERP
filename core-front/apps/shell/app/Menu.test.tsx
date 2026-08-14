@@ -34,13 +34,12 @@ describe('Menu', () => {
     expect(keyWarnings).toHaveLength(0)
   })
 
-  it('gives every tile exactly one below-tile label (the phone-size label) and one in-tile caption', () => {
+  it('gives every tile exactly one label, always inside the tile', () => {
     render(<Menu menu={menu} />)
-    // 2 modules + Settings = 3 tiles; each contributes exactly one below-label.
-    expect(screen.getAllByTestId('menu-tile-label')).toHaveLength(3)
-    // The label text exists in both slots (CSS shows exactly one per breakpoint —
-    // in-tile from sm up, below-tile under it); what must NOT exist is a third copy.
-    expect(screen.getAllByText('Stock Manager')).toHaveLength(2)
+    // 2 modules + Settings = 3 tiles; each contributes exactly one label —
+    // no below-tile duplicate now that even the compact tier (300px) is
+    // spacious enough to hold icon/monogram + label together.
+    expect(screen.getAllByText('Stock Manager')).toHaveLength(1)
   })
 
   it('module tiles with no icon get a monogram so the compact tile is never blank', () => {

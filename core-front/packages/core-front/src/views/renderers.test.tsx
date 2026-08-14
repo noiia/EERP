@@ -221,6 +221,18 @@ describe('EntityView', () => {
     expect(reset).toBeDisabled()
   })
 
+  it('the Save button keeps an explicit accessible name regardless of the CSS-hidden label below mobileBreakpoint', () => {
+    render(<EntityView descriptor={formDescriptor} initialData={[]} actions={noopActions} />)
+    const save = screen.getByRole('button', { name: 'Save' })
+    // The icon renders unconditionally (idle state); the text label is a
+    // real DOM child too (CSS decides visibility per breakpoint, tested
+    // manually — jsdom has no real viewport), and aria-label carries the
+    // accessible name independent of either.
+    expect(save).toHaveAttribute('aria-label', 'Save')
+    expect(save).toHaveTextContent('Save')
+    expect(save.querySelector('svg[data-icon="floppy-disk"]')).toBeInTheDocument()
+  })
+
   it('renders a flat grid for a "tree" view with no hierarchy', () => {
     const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
     render(

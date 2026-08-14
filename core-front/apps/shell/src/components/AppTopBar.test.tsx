@@ -81,7 +81,7 @@ describe('AppTopBar', () => {
 
   it('inserts a "List" crumb before a flat "/<module>/<id>" form route (CRM\'s shape: form is a sibling of list, not nested under it)', () => {
     pathnameMock.mockReturnValue('/crm/42')
-    render(<AppTopBar identity={identity} nav={crmNav} />)
+    render(<AppTopBar identity={identity} nav={crmNav} knownPaths={['/crm/list']} />)
 
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     const listLink = breadcrumb.getByRole('link', { name: 'List' })
@@ -91,27 +91,70 @@ describe('AppTopBar', () => {
     expect(crumbTexts).toEqual(['Crm', 'List', '42'])
   })
 
+  it('generalizes to ANY depth — sale\'s quote form ("/sale/quote/:id") splices List between Quote and the record, fixing the dead "/sale/quote" link', () => {
+    pathnameMock.mockReturnValue('/sale/quote/99')
+    render(<AppTopBar identity={identity} knownPaths={['/sale/list', '/sale/quote/list']} />)
+
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    // "Sale" itself must NOT also get a spurious splice from the sibling
+    // "/sale/list" — only "Quote"'s own immediate parent ("/sale/quote")
+    // matches, so exactly one "List" crumb appears (5 total crumbs also
+    // triggers the collapse — see the dedicated test below — which is WHY
+    // Sale/Quote themselves aren't asserted visible here).
+    expect(breadcrumb.getAllByText('List')).toHaveLength(1)
+    expect(breadcrumb.getByRole('link', { name: 'List' })).toHaveAttribute('href', '/sale/quote/list')
+    expect(breadcrumb.getByText('99')).toBeInTheDocument()
+  })
+
+  it('generalizes to ANY depth without collapsing, when short enough to fit', () => {
+    // Same shape as above, but with 4 total crumbs (Menu, Quote, List, 99)
+    // instead of 5 — under maxItems, so nothing collapses and the full
+    // chain (module segment omitted here on purpose) is visible.
+    pathnameMock.mockReturnValue('/quote/99')
+    render(<AppTopBar identity={identity} knownPaths={['/quote/list']} />)
+
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByRole('link', { name: 'Menu' })).toBeInTheDocument()
+    const crumbTexts = breadcrumb.getAllByText(/^(Quote|List|99)$/).map((el) => el.textContent)
+    expect(crumbTexts).toEqual(['Quote', 'List', '99'])
+    expect(breadcrumb.getByRole('link', { name: 'Quote' })).toHaveAttribute('href', '/quote')
+    expect(breadcrumb.getByRole('link', { name: 'List' })).toHaveAttribute('href', '/quote/list')
+  })
+
   it('does not insert a "List" crumb when already on the list page itself', () => {
     pathnameMock.mockReturnValue('/crm/list')
-    render(<AppTopBar identity={identity} nav={crmNav} />)
+    render(<AppTopBar identity={identity} nav={crmNav} knownPaths={['/crm/list']} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     // The trailing crumb is the plain-text current page, not a second "List" link.
     expect(breadcrumb.queryByRole('link', { name: 'List' })).not.toBeInTheDocument()
     expect(breadcrumb.getByText('List')).toBeInTheDocument()
   })
 
-  it('does not insert a "List" crumb when the module declares no list page', () => {
+  it('does not insert a "List" crumb when no sibling list page is registered', () => {
     pathnameMock.mockReturnValue('/appstore/42')
     render(<AppTopBar identity={identity} nav={[]} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByText('List')).not.toBeInTheDocument()
   })
 
-  it('does not insert a "List" crumb for a path deeper than "/<module>/<id>"', () => {
+  it('does not insert a "List" crumb for a path deeper than "/<module>/<id>" when no matching sibling is registered', () => {
     pathnameMock.mockReturnValue('/crm/nested/42')
-    render(<AppTopBar identity={identity} nav={crmNav} />)
+    render(<AppTopBar identity={identity} nav={crmNav} knownPaths={['/crm/list']} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByRole('link', { name: 'List' })).not.toBeInTheDocument()
+  })
+
+  it('collapses older crumbs under a single "…" once there are more than fit, leaving "… > parent > current"', () => {
+    pathnameMock.mockReturnValue('/sale/quote/99')
+    render(<AppTopBar identity={identity} knownPaths={['/sale/quote/list']} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    // 5 items (Menu, Sale, Quote, List, 99) exceed maxItems=4 — collapses to
+    // an ellipsis (even swallowing the root "Menu" crumb) plus the last two.
+    expect(breadcrumb.queryByRole('link', { name: 'Menu' })).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Sale')).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Quote')).not.toBeInTheDocument()
+    expect(breadcrumb.getByRole('link', { name: 'List' })).toHaveAttribute('href', '/sale/quote/list')
+    expect(breadcrumb.getByText('99')).toBeInTheDocument()
   })
 
   it('labels the /settings/appearance crumb "Global settings", not the titleized "Appearance" slug', () => {

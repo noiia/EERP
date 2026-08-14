@@ -71,6 +71,10 @@ import { useStore } from 'zustand'
 // entity = a descriptor; new view type = one store factory + one renderer here +
 // one server loader path. Nothing entity-specific lives in this file.
 
+/** Shared small-screen threshold (tokens.ts) for this file's own responsive
+ * bits — the Save button's icon-only mode. */
+const mobileMediaQuery = `@media (min-width:${layoutTokens.mobileBreakpoint}px)` as const
+
 export interface EntityViewProps<T extends HasId> {
   descriptor: ViewDescriptor<T>
   initialData: T[]
@@ -320,11 +324,25 @@ function FormRenderer<T extends HasId>({
             type="submit"
             variant="contained"
             disabled={!dirty || submitting}
-            startIcon={
-              submitting ? <CircularProgress size={16} color="inherit" thickness={5} /> : undefined
-            }
+            // Explicit accessible name, independent of the visible label's
+            // own CSS breakpoint below — an icon-only button (< mobileBreakpoint)
+            // still needs a real name for assistive tech, not just a glyph.
+            aria-label={submitting ? t('Saving…') : t('Save')}
+            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
           >
-            {submitting ? t('Saving…') : t('Save')}
+            {submitting ? (
+              <CircularProgress size={16} color="inherit" thickness={5} />
+            ) : (
+              <FontAwesomeIcon icon={byPrefixAndName.fas['floppy-disk']} size="sm" />
+            )}
+            {/* Below layout.mobileBreakpoint the button is icon-only (the
+                floppy disk glyph alone reads as "Save" without crowding a
+                narrow toolbar); at/above it the label follows the icon.
+                display:none removes the span from flex layout entirely, so
+                the `gap` above never leaves a stray space next to a lone icon. */}
+            <Box component="span" sx={{ display: 'none', [mobileMediaQuery]: { display: 'inline' } }}>
+              {submitting ? t('Saving…') : t('Save')}
+            </Box>
           </Button>
           <FormActionsMenu
             entity={descriptor.entity}

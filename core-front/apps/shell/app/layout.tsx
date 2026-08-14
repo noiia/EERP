@@ -75,6 +75,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // renders the nav without an identity anyway).
   const activeSet = identity ? await activeModuleNames() : new Set<string>()
   const nav = identity ? moduleRegistry.moduleNav().filter((m) => activeSet.has(m.module)) : []
+  // Every registered route path (AppTopBar's breadcrumb uses this ONLY to
+  // detect a record's sibling list page — e.g. sale/quote/:id's parent
+  // '/sale/quote' has a sibling '/sale/quote/list' — and splice a real
+  // "List" crumb in instead of a dead link to the non-existent parent path
+  // itself; see crumbsFromPath). Display routing only, so unlike `nav` this
+  // doesn't need active-module filtering — Go still re-authorizes every
+  // route regardless of what the breadcrumb offers to click.
+  const knownPaths = identity ? Array.from(moduleRegistry.buildRegistry().keys()) : []
   // Every company in the tenant, for the top-bar switcher's menu (multi-
   // company) — only worth fetching once we know there's an active company
   // to switch AWAY from.
@@ -102,6 +110,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               <AppTopBar
                 identity={identity}
                 nav={nav}
+                knownPaths={knownPaths}
                 email={preferences?.email}
                 activeCompany={preferences?.active_company ?? null}
                 companies={companies}

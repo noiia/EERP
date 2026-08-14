@@ -67,15 +67,19 @@ const SKIPPED_SEGMENTS = new Set(['page-formats'])
 
 /**
  * Build cumulative breadcrumb links from a pathname (excluding the menu root).
- * A module's form route often sits directly off its own root — e.g. CRM's is
- * '/crm/:id', a sibling of '/crm/list', not nested under it — so the raw path
- * alone has no segment for "List" even though that's really the record's
- * parent page. When the path is exactly that flat "/<module>/<id>" shape and
- * the module declares a `list` main page (`nav`, the same data ModuleNav's
- * own top-bar links use), splice a "List" crumb in between. Skipped when the
- * module has no list page, or the path already IS the list page itself.
+ * A record's form route sits directly off a "parent" path that is often NOT
+ * itself a real page — CRM's form is '/crm/:id', a sibling of '/crm/list',
+ * not nested under it; sale's quote form is '/sale/quote/:id', where
+ * '/sale/quote' isn't a page at all (only '/sale/quote/list' and
+ * '/sale/quote/:id' are) — so the raw path alone either has no segment for
+ * "List", or (worse) a dead-link segment a user can click into a 404. Works
+ * at ANY depth, one rule: if the record's own parent path (segments minus
+ * the last) has a sibling registered at `<parent>/list` (`knownPaths` — every
+ * non-dynamic route path the module registry produced), splice a "List"
+ * crumb in right before the record. Skipped when no such list page is
+ * registered, or the path already IS the list page itself.
  */
-function crumbsFromPath(pathname: string, nav: ModuleNav[]): Crumb[] {
+function crumbsFromPath(pathname: string, knownPaths: Set<string>): Crumb[] {
   const segments = pathname.split('/').filter(Boolean)
   const crumbs = segments.map((segment, i) => ({
     label: SEGMENT_LABEL_OVERRIDES[segment] ?? titleize(segment),
@@ -83,18 +87,19 @@ function crumbsFromPath(pathname: string, nav: ModuleNav[]): Crumb[] {
   }))
 
   let result = crumbs
-  if (segments.length === 2) {
-    const listPage = nav.find((n) => n.module === segments[0])?.pages.find((p) => p.kind === 'list')
-    if (listPage && listPage.path !== pathname) {
-      result = [crumbs[0], { label: 'List', href: listPage.path }, crumbs[1]]
+  if (segments.length >= 2) {
+    const parentPath = '/' + segments.slice(0, -1).join('/')
+    const listPath = `${parentPath}/list`
+    if (knownPaths.has(listPath) && listPath !== pathname) {
+      result = [...crumbs.slice(0, -1), { label: 'List', href: listPath }, crumbs[crumbs.length - 1]]
     }
   }
   return result.filter((c) => !SKIPPED_SEGMENTS.has(c.href.split('/').filter(Boolean).at(-1) ?? ''))
 }
 
-function PathBreadcrumbs({ pathname, nav }: { pathname: string; nav: ModuleNav[] }) {
+function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPaths: Set<string> }) {
   const t = useT()
-  const crumbs = crumbsFromPath(pathname, nav)
+  const crumbs = crumbsFromPath(pathname, knownPaths)
   const lastSegment = pathname.split('/').filter(Boolean).at(-1)
   // A form route's trailing crumb is otherwise the raw record id (it's just a URL
   // segment) — FormRenderer reports the record's real title-field value here
@@ -104,6 +109,15 @@ function PathBreadcrumbs({ pathname, nav }: { pathname: string; nav: ModuleNav[]
     <Breadcrumbs
       aria-label="breadcrumb"
       separator={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} size="sm" />}
+      // When there are more crumbs than fit comfortably, collapse the OLDER
+      // (earlier/ancestor) ones under a single "…" rather than wrapping to a
+      // second line — itemsBeforeCollapse=0 means even the root "Menu" crumb
+      // can fold into the ellipsis, leaving exactly "… > parent > current".
+      // Count-based (MUI's own built-in mechanism), not a true measured-width
+      // collapse — good enough for how deep this app's breadcrumbs realistically get.
+      maxItems={4}
+      itemsBeforeCollapse={0}
+      itemsAfterCollapse={2}
       sx={{ color: 'inherit', '& .MuiBreadcrumbs-separator': { color: 'inherit' } }}
     >
       {/* Root: the application menu. Plain text (current page) when already on the menu. */}
@@ -339,6 +353,7 @@ function CompanySwitcher({
 export function AppTopBar({
   identity,
   nav = [],
+  knownPaths = [],
   email,
   activeCompany = null,
   companies = [],
@@ -346,6 +361,13 @@ export function AppTopBar({
   identity: Identity | null
   /** Per-module main pages, resolved server-side from the registry (empty in isolation). */
   nav?: ModuleNav[]
+  /** Every registered NON-dynamic route path (tree/dashboard/catalog/settings
+   * pages — never a form's `:id` template), resolved server-side from the
+   * registry. Used ONLY by PathBreadcrumbs to detect a record's sibling list
+   * page for the breadcrumb's "List" splice (crumbsFromPath) — display
+   * routing only, never permission/security-relevant (Go re-authorizes
+   * every route regardless of what the breadcrumb offers to click). */
+  knownPaths?: string[]
   /** The caller's own account email — see UserMenu's displayName note. */
   email?: string
   /** The caller's current company (multi-company) — null while unresolved
@@ -364,7 +386,7 @@ export function AppTopBar({
   return (
     <AppBar position="sticky">
       <Toolbar variant="dense">
-        <PathBreadcrumbs pathname={pathname} nav={nav} />
+        <PathBreadcrumbs pathname={pathname} knownPaths={new Set(knownPaths)} />
         <ModuleNav nav={nav} pathname={pathname} />
         <Box sx={{ flexGrow: 1 }} />
         {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}

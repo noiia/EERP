@@ -112,6 +112,16 @@ export const layout = {
    * anything expressible as pure CSS uses `sx` breakpoints instead
    * (docs/roadmaps/responsive-displays.md, Architecture decisions 1–2). */
   phoneMaxWidth: 600,
+  /** Viewport threshold (px) for a cluster of small-screen simplifications
+   * (docs/roadmaps/responsive-displays.md): the landing menu's tiles grow
+   * instead of shrinking (Menu.tsx), the form Save button drops its label to
+   * an icon, and a form's status breadcrumb (`status-bar.tsx`) shows only
+   * the current step. All three are pure CSS (`sx`'s raw
+   * `@media (min-width:${mobileBreakpoint}px)` key) — nothing here changes a
+   * render TREE, so this is deliberately a second, independent number from
+   * `phoneMaxWidth` (which IS a JS branch point, pinned to MUI's own `sm`)
+   * rather than reusing it at a different value. */
+  mobileBreakpoint: 720,
   /** Container-query threshold (px) below which a form's two-column group
    * (`LayoutContainerNode.columns`) collapses to one. Deliberately a CSS
    * CONTAINER query keyed off this width, never a viewport media query: the
