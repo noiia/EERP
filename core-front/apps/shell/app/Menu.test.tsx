@@ -48,6 +48,26 @@ describe('Menu', () => {
     expect(crmLink).toHaveTextContent(/^C/)
   })
 
+  it('a module declaring a Font Awesome menu_icon renders it instead of the monogram', () => {
+    const menuWithIcon = [
+      { name: 'crm', routes: [{ path: '/crm', descriptor }], icon: 'handshake' },
+    ] as unknown as MenuModule[]
+    render(<Menu menu={menuWithIcon} />)
+    const crmLink = screen.getByRole('link', { name: /crm/i })
+    expect(crmLink.querySelector('svg')).toBeInTheDocument()
+    expect(crmLink).not.toHaveTextContent(/^C\s/)
+  })
+
+  it('an unknown menu_icon name falls back to the monogram instead of rendering nothing', () => {
+    const menuWithBadIcon = [
+      { name: 'crm', routes: [{ path: '/crm', descriptor }], icon: 'not-a-real-icon' },
+    ] as unknown as MenuModule[]
+    render(<Menu menu={menuWithBadIcon} />)
+    const crmLink = screen.getByRole('link', { name: /crm/i })
+    expect(crmLink.querySelector('svg')).not.toBeInTheDocument()
+    expect(crmLink).toHaveTextContent(/^C/)
+  })
+
   it('shows the empty-state message when no applications are installed (Settings still listed)', () => {
     render(<Menu menu={[]} />)
     expect(screen.getByText('No applications are available for your account.')).toBeInTheDocument()

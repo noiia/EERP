@@ -158,7 +158,8 @@ export function discoverModuleViews(repoRoot, config) {
 
       if (viewFiles.length === 0) continue
       const depends = Array.isArray(meta.depends) ? meta.depends.filter((d) => typeof d === 'string') : []
-      discovered.push({ name, moduleDir, appMode: meta.app_mode === true, depends, views: viewFiles })
+      const icon = typeof meta.menu_icon === 'string' ? meta.menu_icon : undefined
+      discovered.push({ name, moduleDir, appMode: meta.app_mode === true, depends, icon, views: viewFiles })
     }
   }
 
@@ -302,6 +303,7 @@ function renderRegisterCall(r) {
   const parts = []
   if (r.appMode) parts.push('appMode: true')
   if (r.depends.length > 0) parts.push(`depends: ${JSON.stringify(r.depends)}`)
+  if (r.icon) parts.push(`icon: ${JSON.stringify(r.icon)}`)
   return parts.length > 0
     ? `moduleRegistry.register(${r.id}, { ${parts.join(', ')} })`
     : `moduleRegistry.register(${r.id})`
@@ -326,7 +328,7 @@ export function renderManifest(discovered, fromDir) {
   for (const module of discovered) {
     for (const view of module.views) {
       const id = `m${i++}`
-      registrations.push({ id, appMode: module.appMode, depends: module.depends ?? [] })
+      registrations.push({ id, appMode: module.appMode, depends: module.depends ?? [], icon: module.icon })
       lines.push(`import ${id} from '${toImportSpecifier(fromDir, view.sourceFile)}'`)
     }
   }
@@ -370,7 +372,7 @@ export function renderClientManifest(discovered, fromDir) {
   for (const module of discovered) {
     for (const view of module.views) {
       const id = `m${i++}`
-      registrations.push({ id, appMode: module.appMode, depends: module.depends ?? [] })
+      registrations.push({ id, appMode: module.appMode, depends: module.depends ?? [], icon: module.icon })
       lines.push(`import ${id} from '${toImportSpecifier(fromDir, view.sourceFile)}'`)
     }
   }

@@ -126,13 +126,17 @@ export default function Menu({ menu }: MenuProps) {
           mx: 'auto',
         }}
       >
-        {menu.map((module) => (
-          <MenuTile
-            key={module.name}
-            href={module.routes[0].path}
-            label={t(titleize(module.name))}
-          />
-        ))}
+        {menu.map((module) => {
+          const iconDef = module.icon ? byPrefixAndName.fas[module.icon] : undefined
+          return (
+            <MenuTile
+              key={module.name}
+              href={module.routes[0].path}
+              label={t(titleize(module.name))}
+              icon={iconDef ? <FontAwesomeIcon icon={iconDef} /> : undefined}
+            />
+          )
+        })}
         {/* Settings is a built-in shell application, always available. */}
         <MenuTile
           href="/settings"

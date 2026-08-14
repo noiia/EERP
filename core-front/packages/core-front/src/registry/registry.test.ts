@@ -145,6 +145,11 @@ describe('ModuleRegistry.menu', () => {
     ])
   })
 
+  it('carries the icon option through to the menu entry', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true, icon: 'handshake' })
+    expect(registry.menu()[0].icon).toBe('handshake')
+  })
+
   it('omits modules not registered as applications, keeping their routes reachable', () => {
     const registry = new ModuleRegistry().register(crm)
     expect(registry.menu()).toEqual([])

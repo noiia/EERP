@@ -4,6 +4,7 @@
     "name": "appstore",
     "display_name": "App Store",
     "icon": "🧩",
+    "menu_icon": "puzzle-piece",
     "app_mode": true,
     "version": "0.0.1",
     "author": "Edwin Lecomte",

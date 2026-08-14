@@ -62,6 +62,14 @@ export interface RegisterOptions {
    * module's `extends` targets a path owned by a module absent from this list.
    */
   depends?: string[]
+  /**
+   * `module.json` `menu_icon`: a Font Awesome solid icon name (`byPrefixAndName.fas`
+   * key, e.g. `'warehouse'`) for this module's landing-menu tile. Separate from
+   * module.json's own `icon` field (the App Store catalog's plain-text/emoji avatar
+   * for the module's own row — a multi-char FA name would render badly there).
+   * Omitted ⇒ the tile falls back to its monogram letter.
+   */
+  icon?: string
 }
 
 /** What the catch-all page resolves per path: the owning module + how to render it. */
@@ -88,6 +96,9 @@ export interface MenuRoute {
 export interface MenuModule {
   name: string
   routes: MenuRoute[]
+  /** Font Awesome solid icon name for the tile (RegisterOptions.icon), or undefined
+   * to fall back to the tile's monogram letter. */
+  icon?: string
 }
 
 /**
@@ -130,6 +141,7 @@ function mainPageKind(path: string): MainPageKind | null {
 interface RegisteredModule {
   module: FrontModule
   appMode: boolean
+  icon?: string
 }
 
 /** Validate a descriptor at registration: widget/type pairs, the behavior plan
@@ -206,7 +218,7 @@ export class ModuleRegistry {
       this.resolvedReports.set(report.name, report)
     }
 
-    this.entries.push({ module, appMode: options.appMode === true })
+    this.entries.push({ module, appMode: options.appMode === true, icon: options.icon })
 
     // Extensions apply AFTER this module's own routes are registered, on top
     // of whatever the target path currently resolves to (the base, or the
@@ -280,7 +292,7 @@ export class ModuleRegistry {
    */
   menu(): MenuModule[] {
     const result: MenuModule[] = []
-    for (const { module, appMode } of this.entries) {
+    for (const { module, appMode, icon } of this.entries) {
       if (!appMode) continue
       const routes: MenuRoute[] = []
       for (const route of module.routes) {
@@ -295,7 +307,7 @@ export class ModuleRegistry {
           permission: resolved?.permission ?? route.permission,
         })
       }
-      if (routes.length > 0) result.push({ name: module.name, routes })
+      if (routes.length > 0) result.push({ name: module.name, routes, icon })
     }
     return result
   }
