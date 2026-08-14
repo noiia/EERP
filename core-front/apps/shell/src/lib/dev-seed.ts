@@ -67,7 +67,6 @@ const PRODUCTS = [
 
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled'] as const
 const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as const
-const CURRENCIES = ['USD', 'EUR', 'GBP'] as const
 
 // The seller's own letterhead — fixed rather than randomized per document,
 // since every invoice/quote from one workspace is issued by the same
@@ -208,7 +207,6 @@ function buildDocuments(
       customer_name: contact ? `${first} ${last}` : company,
       customer_email: fakeEmail(first, last, company),
       customer_address: company,
-      currency: pick(CURRENCIES),
       reference: `PO-${1000 + Math.floor(Math.random() * 9000)}`,
       payment_method: pick(PAYMENT_METHODS),
       payment_terms: pick(PAYMENT_TERMS),

@@ -55,9 +55,6 @@ msgstr ""
 msgid "Your company email"
 msgstr ""
 
-msgid "Currency"
-msgstr ""
-
 msgid "Reference"
 msgstr ""
 
@@ -88,16 +85,7 @@ msgstr ""
 msgid "Subtotal (excl. tax)"
 msgstr ""
 
-msgid "Discount (excl. tax)"
-msgstr ""
-
-msgid "Net subtotal (excl. tax)"
-msgstr ""
-
 msgid "Tax rate"
-msgstr ""
-
-msgid "Tax amount"
 msgstr ""
 
 msgid "Tax"

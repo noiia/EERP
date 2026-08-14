@@ -151,7 +151,7 @@ func (h *QuoteHandler) snapshotFromVariant(ctx context.Context, line *QuoteLine)
 	}
 	line.VariantName = variant.Name
 	line.Unit = product.Unit
-	line.TaxRate = product.TaxRate
+	line.TaxRate = resolveTaxRate(product, variant)
 	line.UnitPrice = resolveUnitPrice(product, variant)
 	return nil
 }
@@ -167,14 +167,9 @@ func (h *QuoteHandler) recomputeTotals(ctx context.Context, quoteID uuid.UUID) e
 	if err != nil {
 		return err
 	}
-	discount := 0.0
-	if quote.Discount != nil {
-		discount = *quote.Discount
-	}
-	subtotal, taxAmount, netSubtotal, total := sumQuoteLines(lines, discount)
+	subtotal, taxAmount, total := sumQuoteLines(lines)
 
 	quote.Subtotal = &subtotal
-	quote.NetSubtotal = &netSubtotal
 	quote.TaxAmount = &taxAmount
 	quote.Total = &total
 
@@ -182,15 +177,13 @@ func (h *QuoteHandler) recomputeTotals(ctx context.Context, quoteID uuid.UUID) e
 	return err
 }
 
-// sumQuoteLines mirrors sumLines for QuoteLine — see its doc comment for the
-// tax-on-gross, discount-outside-the-taxable-base ponytail note.
-func sumQuoteLines(lines []QuoteLine, discount float64) (subtotal, taxAmount, netSubtotal, total float64) {
+// sumQuoteLines mirrors sumLines for QuoteLine.
+func sumQuoteLines(lines []QuoteLine) (subtotal, taxAmount, total float64) {
 	for _, l := range lines {
 		lineTotal := l.Quantity * l.UnitPrice
 		subtotal += lineTotal
 		taxAmount += lineTotal * l.TaxRate
 	}
-	netSubtotal = subtotal - discount
-	total = netSubtotal + taxAmount
-	return subtotal, taxAmount, netSubtotal, total
+	total = subtotal + taxAmount
+	return subtotal, taxAmount, total
 }

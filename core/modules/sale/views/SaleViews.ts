@@ -38,11 +38,8 @@ export interface Invoice {
   due_date?: string | null
   /** One of the selection field's options: draft/sent/paid/overdue/cancelled. */
   status?: string
-  currency?: string
   reference?: string
   subtotal?: number | null
-  discount?: number | null
-  net_subtotal?: number | null
   tax_amount?: number | null
   total?: number | null
   payment_method?: string
@@ -82,11 +79,8 @@ export interface Quote {
   due_date?: string | null
   /** One of the selection field's options: draft/sent/accepted/declined/expired. */
   status?: string
-  currency?: string
   reference?: string
   subtotal?: number | null
-  discount?: number | null
-  net_subtotal?: number | null
   tax_amount?: number | null
   total?: number | null
   payment_method?: string
@@ -168,35 +162,40 @@ const formFields: ViewDescriptor['fields'] = [
   },
   { name: 'customer_email', label: 'Customer email', type: 'text' },
   { name: 'customer_address', label: 'Billing address', type: 'text', widget: 'long' },
-  {
-    name: 'currency',
-    label: 'Currency',
-    type: 'selection',
-    selection: { options: ['USD', 'EUR', 'GBP'] },
-  },
+  // No currency field: currency is now the ISSUING COMPANY's own property
+  // (internal/company.Company.Currency, Settings -> Company), not duplicated
+  // per document.
   { name: 'reference', label: 'Reference', type: 'text' },
   // Real child table (core/modules/sale/module.go's SaleLine), not the old
   // Lines JSONB blob — the invoice's line-items table. Adding/removing rows
   // goes through the engine's one2many grid + create wizard
   // (RelationListWidget); each mutation is a real POST/PUT/DELETE against
   // /api/v1/sale_line, which is what recomputes subtotal/tax_amount/total
-  // below (see handler.go) — not a client-side compute. Declared here so it
-  // exists as a field at all; orderLinesPageOperations below (via the
-  // module's own `extends`) is what actually MOVES it off the two-column
-  // body and into its own first-position notebook page — this array's
-  // declaration order no longer decides where it renders on the form.
+  // server-side (see handler.go) — not a client-side compute. Declared here
+  // so it exists as a field at all; orderLinesPageOperations below (via the
+  // module's own `extends`) is what actually MOVES it, and sale_totals right
+  // after it, off the two-column body and into their own first-position
+  // notebook page — this array's declaration order no longer decides where
+  // it renders on the form.
   {
     name: 'sale_lines',
     label: 'Line items',
     type: 'relation',
     relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id', labelField: 'variant_name' },
   },
-  // Subtotal/NetSubtotal/TaxAmount/Total are now rollups over sale_lines,
-  // computed server-side (handler.go's recomputeTotals) — never typed here.
-  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
-  { name: 'discount', label: 'Discount (excl. tax)', type: 'number', widget: 'float' },
-  { name: 'net_subtotal', label: 'Net subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
-  { name: 'tax_amount', label: 'Tax amount', type: 'number', widget: 'float', readOnly: true },
+  // The HT -> tax-by-rate -> TTC recap block (docs/roadmaps — sale totals):
+  // computes itself, live, from the SAME sale_lines above (each line's own
+  // tax_rate, from its product/variant) rather than reading the stored
+  // subtotal/tax_amount/total columns — see widgets.tsx's TaxTotalsWidget.
+  // store: false — nothing here round-trips to the server.
+  {
+    name: 'sale_totals',
+    label: 'Totals',
+    type: 'totals',
+    hideLabel: true,
+    store: false,
+    relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id' },
+  },
   { name: 'payment_method', label: 'Payment method', type: 'text' },
   { name: 'payment_terms', label: 'Payment terms', type: 'text', widget: 'long' },
   { name: 'legal_notice', label: 'Legal notice', type: 'text', widget: 'long' },
@@ -237,12 +236,8 @@ const quoteFormFields: ViewDescriptor['fields'] = [
   },
   { name: 'customer_email', label: 'Customer email', type: 'text' },
   { name: 'customer_address', label: 'Billing address', type: 'text', widget: 'long' },
-  {
-    name: 'currency',
-    label: 'Currency',
-    type: 'selection',
-    selection: { options: ['USD', 'EUR', 'GBP'] },
-  },
+  // No currency field — same as invoice's formFields: it's the issuing
+  // company's own property now (Settings -> Company).
   { name: 'reference', label: 'Reference', type: 'text' },
   {
     name: 'quote_lines',
@@ -250,10 +245,16 @@ const quoteFormFields: ViewDescriptor['fields'] = [
     type: 'relation',
     relation: { entity: 'quote_line', kind: 'one2many', inverseField: 'quote_id', labelField: 'variant_name' },
   },
-  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
-  { name: 'discount', label: 'Discount (excl. tax)', type: 'number', widget: 'float' },
-  { name: 'net_subtotal', label: 'Net subtotal (excl. tax)', type: 'number', widget: 'float', readOnly: true },
-  { name: 'tax_amount', label: 'Tax amount', type: 'number', widget: 'float', readOnly: true },
+  // Same totals recap as invoice's sale_totals, scoped to this quote's own
+  // lines — see formFields above for the full doc comment.
+  {
+    name: 'quote_totals',
+    label: 'Totals',
+    type: 'totals',
+    hideLabel: true,
+    store: false,
+    relation: { entity: 'quote_line', kind: 'one2many', inverseField: 'quote_id' },
+  },
   { name: 'payment_method', label: 'Payment method', type: 'text' },
   { name: 'payment_terms', label: 'Payment terms', type: 'text', widget: 'long' },
   { name: 'legal_notice', label: 'Legal notice', type: 'text', widget: 'long' },
@@ -306,12 +307,21 @@ const quoteLineFormView: ViewDescriptor = {
   permissions: ['quote_line:quote_line:read'],
 }
 
-// Moves quote_lines into its own first-position notebook page, same
-// self-extension shape as orderLinesPageOperations below.
+// Moves quote_lines (+ its totals recap) into its own first-position
+// notebook page, same self-extension shape as orderLinesPageOperations
+// below. removeField('total') first: 'total' is still part of quoteFields
+// (spread into quoteFormFields for the compact tree/dashboard columns) and
+// would otherwise land in the default two-column body as a bare field —
+// quote_totals now shows it as part of the recap instead.
 const quoteLinesPageOperations: Operation[] = [
+  { op: 'removeField', name: 'total' },
   {
     op: 'addNode',
-    node: { kind: 'page', title: 'Quote lines', children: [{ kind: 'field', name: 'quote_lines' }] },
+    node: {
+      kind: 'page',
+      title: 'Quote lines',
+      children: [{ kind: 'field', name: 'quote_lines' }, { kind: 'field', name: 'quote_totals' }],
+    },
     target: FORM_NOTEBOOK_ID,
     position: 'first',
   },
@@ -356,21 +366,29 @@ const formView: ViewDescriptor = {
   statusBar: { field: 'status' },
 }
 
-// Moves sale_lines off the default anatomy's two-column body and into its
-// own notebook page, "Order lines" — same self-extension shape
-// core/modules/crm/views/CrmViews.ts uses for its Signature page
-// (addField there is unnecessary here since sale_lines is already declared
-// in formFields above; addNode alone both creates the page AND extracts the
-// field from wherever it currently sits into it). `position: 'first'`
-// against FORM_NOTEBOOK_ID inserts it as the notebook's first tab, ahead of
-// the synthesized "Settings" page (customer_address/payment_terms/
-// legal_notice) — the invoice's line items are the first thing a user sees
-// past the header, not squeezed in wherever declaration order happened to
-// put it.
+// Moves sale_lines (+ its totals recap) off the default anatomy's
+// two-column body and into its own notebook page, "Order lines" — same
+// self-extension shape core/modules/crm/views/CrmViews.ts uses for its
+// Signature page (addField there is unnecessary here since sale_lines is
+// already declared in formFields above; addNode alone both creates the page
+// AND extracts the field from wherever it currently sits into it).
+// `position: 'first'` against FORM_NOTEBOOK_ID inserts it as the notebook's
+// first tab, ahead of the synthesized "Settings" page (customer_address/
+// payment_terms/legal_notice) — the invoice's line items are the first
+// thing a user sees past the header, not squeezed in wherever declaration
+// order happened to put it. removeField('total') first: 'total' is still
+// part of `fields` (spread into formFields for the compact tree/dashboard
+// columns) and would otherwise land in the default two-column body as a
+// bare field — sale_totals now shows it as part of the recap instead.
 const orderLinesPageOperations: Operation[] = [
+  { op: 'removeField', name: 'total' },
   {
     op: 'addNode',
-    node: { kind: 'page', title: 'Order lines', children: [{ kind: 'field', name: 'sale_lines' }] },
+    node: {
+      kind: 'page',
+      title: 'Order lines',
+      children: [{ kind: 'field', name: 'sale_lines' }, { kind: 'field', name: 'sale_totals' }],
+    },
     target: FORM_NOTEBOOK_ID,
     position: 'first',
   },
@@ -513,8 +531,6 @@ const invoiceReport: ReportDescriptor = {
       className: 'eerp-report-totals',
       children: [
         totalsRow('Subtotal (excl. tax)', 'subtotal'),
-        totalsRow('Discount (excl. tax)', 'discount'),
-        totalsRow('Net subtotal (excl. tax)', 'net_subtotal'),
         totalsRow('Tax', 'tax_amount'),
         totalsRow('Total (incl. tax)', 'total', true),
       ],

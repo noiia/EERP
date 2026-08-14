@@ -88,16 +88,24 @@ describe('sale FrontModule', () => {
     })
   })
 
-  it('the totals rollups are read-only — computed server-side from sale_line rows', () => {
+  it('total stays read-only where it is still shown (dashboard/list)', () => {
+    const total = sale.routes.find((r) => r.path === '/sale')!.descriptor.fields.find((f) => f.name === 'total')
+    expect(total?.readOnly).toBe(true)
+  })
+
+  it('no bare subtotal/discount/net_subtotal/tax_amount/currency fields on the form — the totals recap replaces them', () => {
     const fields = sale.routes.find((r) => r.path === '/sale/:id')!.descriptor.fields
-    for (const name of ['subtotal', 'net_subtotal', 'tax_amount', 'total']) {
-      const field =
-        fields.find((f) => f.name === name) ??
-        sale.routes.find((r) => r.path === '/sale')!.descriptor.fields.find((f) => f.name === name)
-      expect(field?.readOnly, `${name} should be readOnly`).toBe(true)
+    for (const name of ['subtotal', 'discount', 'net_subtotal', 'tax_amount', 'currency']) {
+      expect(fields.find((f) => f.name === name), `${name} should not be a field`).toBeUndefined()
     }
-    // Discount stays user-editable — it's the one manual input left.
-    expect(fields.find((f) => f.name === 'discount')?.readOnly).not.toBe(true)
+  })
+
+  it('the sale_totals recap computes from sale_lines, store: false', () => {
+    const fields = sale.routes.find((r) => r.path === '/sale/:id')!.descriptor.fields
+    const totals = fields.find((f) => f.name === 'sale_totals')
+    expect(totals?.type).toBe('totals')
+    expect(totals?.store).toBe(false)
+    expect(totals?.relation).toEqual({ entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id' })
   })
 
   it('ships one printable report over the invoice entity', () => {
@@ -175,7 +183,10 @@ describe('sale — self-extended "Order lines" notebook page (registry-level)', 
       const linesPage = notebook.children.find((p) => p.kind !== 'field' && p.title === 'Order lines')
       expect(linesPage).toBeDefined()
       if (linesPage && linesPage.kind !== 'field') {
-        expect(linesPage.children).toEqual([{ kind: 'field', name: 'sale_lines' }])
+        expect(linesPage.children).toEqual([
+          { kind: 'field', name: 'sale_lines' },
+          { kind: 'field', name: 'sale_totals' },
+        ])
       }
     }
   })

@@ -65,6 +65,12 @@ type ProductVariant struct {
 	// snapshotFromVariant (handler.go and quote_handler.go) prefers this over
 	// Product.UnitPrice when present.
 	UnitPrice *float64 `db:"unit_price" json:"unit_price"`
+	// TaxRate, when set, overrides the parent Product's tax rate for this one
+	// variant — same "nil means inherit" contract as UnitPrice above. sale's
+	// snapshotFromVariant (handler.go and quote_handler.go) prefers this over
+	// Product.TaxRate when present, so a sale line's tax percent is always
+	// resolved from the specific variant sold, not just its product.
+	TaxRate *float64 `db:"tax_rate" json:"tax_rate"`
 }
 
 type warehouseModule struct{}

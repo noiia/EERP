@@ -57,23 +57,24 @@ type Invoice struct {
 	CustomerEmail   string     `db:"customer_email"`
 	CustomerAddress string     `db:"customer_address"`
 	DueDate         *time.Time `db:"due_date"`
-	Status          string     `db:"status"` // "draft", "sent", "paid", "overdue", "cancelled"
-	Currency        string     `db:"currency"`
+	Status          string     `db:"status"`    // "draft", "sent", "paid", "overdue", "cancelled"
 	Reference       string     `db:"reference"` // customer PO / reference number
-	// Subtotal/Discount/NetSubtotal/TaxAmount/Total are the invoice's HT ->
-	// TVA -> TTC breakdown, each a REAL stored column rather than a
-	// compute:store:false field — the print pipeline reads the raw record,
-	// never the client compute registry, so a value it must show has to
-	// actually be a column. Unlike before (a single manually-typed
-	// TaxRate), TaxAmount is now a ROLLUP over this invoice's SaleLine rows
-	// — "the tax amount, depending on each product's own tax and price" —
-	// recomputed server-side by sale_line's Create/Update/Delete overrides
-	// (see handler.go's recomputeTotals) every time a line changes, not by
-	// a frontend on_change: only the backend sees every sibling line.
-	// NetSubtotal = Subtotal - Discount; Total = NetSubtotal + TaxAmount.
+	// Subtotal/TaxAmount/Total are the invoice's HT -> TVA -> TTC breakdown,
+	// each a REAL stored column rather than a compute:store:false field —
+	// the print pipeline reads the raw record, never the client compute
+	// registry, so a value it must show has to actually be a column.
+	// TaxAmount is a ROLLUP over this invoice's SaleLine rows, each with its
+	// own tax rate from its product/variant — "the tax amount, depending on
+	// each product's own tax and price" — recomputed server-side by
+	// sale_line's Create/Update/Delete overrides (see handler.go's
+	// recomputeTotals) every time a line changes, not by a frontend
+	// on_change: only the backend sees every sibling line. Total = Subtotal
+	// + TaxAmount. There is no per-document Discount or Currency column
+	// anymore: discount is being rethought as a product-variant concept, not
+	// shipped yet, and currency is now a property of the issuing company
+	// (internal/company.Company.Currency, Settings -> Company) instead of
+	// being duplicated on every document.
 	Subtotal      *float64 `db:"subtotal"`
-	Discount      *float64 `db:"discount"`
-	NetSubtotal   *float64 `db:"net_subtotal"`
 	TaxAmount     *float64 `db:"tax_amount"`
 	Total         *float64 `db:"total"`
 	PaymentMethod string   `db:"payment_method"`
@@ -157,18 +158,17 @@ type Quote struct {
 	CustomerAddress string     `db:"customer_address"`
 	// DueDate is the quote's validity/expiry date — same column shape as
 	// Invoice.DueDate, different meaning ("valid until" vs "payment due by").
-	DueDate       *time.Time `db:"due_date"`
-	Status        string     `db:"status"` // "draft", "sent", "accepted", "declined", "expired"
-	Currency      string     `db:"currency"`
-	Reference     string     `db:"reference"`
-	Subtotal      *float64   `db:"subtotal"`
-	Discount      *float64   `db:"discount"`
-	NetSubtotal   *float64   `db:"net_subtotal"`
-	TaxAmount     *float64   `db:"tax_amount"`
-	Total         *float64   `db:"total"`
-	PaymentMethod string     `db:"payment_method"`
-	PaymentTerms  string     `db:"payment_terms"`
-	LegalNotice   string     `db:"legal_notice"`
+	DueDate   *time.Time `db:"due_date"`
+	Status    string     `db:"status"` // "draft", "sent", "accepted", "declined", "expired"
+	Reference string     `db:"reference"`
+	// See Invoice's doc comment: Subtotal/TaxAmount/Total is the HT/TVA/TTC
+	// breakdown, no Discount/Currency column anymore.
+	Subtotal      *float64 `db:"subtotal"`
+	TaxAmount     *float64 `db:"tax_amount"`
+	Total         *float64 `db:"total"`
+	PaymentMethod string   `db:"payment_method"`
+	PaymentTerms  string   `db:"payment_terms"`
+	LegalNotice   string   `db:"legal_notice"`
 }
 
 // QuoteLine mirrors SaleLine exactly, scoped to a Quote instead of an

@@ -21,6 +21,11 @@ type Company struct {
 	Address  string    `db:"address"`
 	Phone    string    `db:"phone"`
 	Email    string    `db:"email"`
+	// Currency is this company's own global currency (e.g. "USD") — the
+	// single source of truth sale.Invoice/sale.Quote used to duplicate as a
+	// per-document field. A document's currency is now implicit: whichever
+	// company issued it.
+	Currency string `db:"currency"`
 	// IsDefault marks the lazily-bootstrapped company a tenant with none gets
 	// on first touch (repository.go's ensureDefaultCompany) — at most one per
 	// tenant, enforced by module.go's partial unique index, which is also

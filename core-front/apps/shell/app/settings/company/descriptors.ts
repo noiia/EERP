@@ -31,6 +31,9 @@ export const companyFormDescriptor: ViewDescriptor<CompanyRecord> = {
     { name: 'address', label: 'Address', type: 'text', widget: 'long' },
     { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
     { name: 'email', label: 'Email', type: 'text' },
+    // This company's own global currency — sale documents (invoice/quote)
+    // no longer carry a per-document currency field; they read this instead.
+    { name: 'currency', label: 'Currency', type: 'selection', selection: { options: ['USD', 'EUR', 'GBP'] } },
   ],
   permissions: ['company:company:read'],
 }

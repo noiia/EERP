@@ -23,9 +23,9 @@ import (
 // modules/crminheritdemo/handler.go.
 //
 // Every mutation needs interception because a line's Unit/TaxRate/UnitPrice
-// must be resolved from its product (Create), possibly re-resolved
-// (Update), and the parent invoice's Subtotal/TaxAmount/NetSubtotal/Total
-// rollups must stay in sync with whichever lines exist afterward — see
+// must be resolved from its product/variant (Create), possibly re-resolved
+// (Update), and the parent invoice's Subtotal/TaxAmount/Total rollups must
+// stay in sync with whichever lines exist afterward — see
 // recomputeTotals. Bypassing the generic route also bypasses its
 // tenant-scoping (core/orm/internal/crud, unreachable from here), so
 // TenantID is forced from the JWT identity by hand, same as
@@ -170,7 +170,7 @@ func (h *Handler) snapshotFromVariant(ctx context.Context, line *SaleLine) error
 	}
 	line.VariantName = variant.Name
 	line.Unit = product.Unit
-	line.TaxRate = product.TaxRate
+	line.TaxRate = resolveTaxRate(product, variant)
 	line.UnitPrice = resolveUnitPrice(product, variant)
 	return nil
 }
@@ -185,12 +185,22 @@ func resolveUnitPrice(product warehouse.Product, variant warehouse.ProductVarian
 	return product.UnitPrice
 }
 
+// resolveTaxRate mirrors resolveUnitPrice: the variant's own TaxRate
+// override, when set, wins over the product's — "each line has its own tax
+// percent," resolved from the specific variant sold rather than just its
+// product.
+func resolveTaxRate(product warehouse.Product, variant warehouse.ProductVariant) float64 {
+	if variant.TaxRate != nil {
+		return *variant.TaxRate
+	}
+	return product.TaxRate
+}
+
 // recomputeTotals sums every active line on the invoice into
-// Subtotal/TaxAmount/NetSubtotal/Total — "the total free taxes, [under it]
-// the taxes amount depending on each product's own taxes and prices, and
-// finally the total." Runs after every sale_line Create/Update/Delete so
-// the invoice's stored columns (what the PDF report actually reads) never
-// go stale.
+// Subtotal/TaxAmount/Total — "the total free taxes, [under it] the taxes
+// amount depending on each product's own taxes and prices, and finally the
+// total." Runs after every sale_line Create/Update/Delete so the invoice's
+// stored columns (what the PDF report actually reads) never go stale.
 func (h *Handler) recomputeTotals(ctx context.Context, invoiceID uuid.UUID) error {
 	lines, err := h.lines.FindAll(ctx, orm.Cond("invoice_id = $1", invoiceID))
 	if err != nil {
@@ -201,14 +211,9 @@ func (h *Handler) recomputeTotals(ctx context.Context, invoiceID uuid.UUID) erro
 	if err != nil {
 		return err
 	}
-	discount := 0.0
-	if invoice.Discount != nil {
-		discount = *invoice.Discount
-	}
-	subtotal, taxAmount, netSubtotal, total := sumLines(lines, discount)
+	subtotal, taxAmount, total := sumLines(lines)
 
 	invoice.Subtotal = &subtotal
-	invoice.NetSubtotal = &netSubtotal
 	invoice.TaxAmount = &taxAmount
 	invoice.Total = &total
 
@@ -217,18 +222,18 @@ func (h *Handler) recomputeTotals(ctx context.Context, invoiceID uuid.UUID) erro
 }
 
 // sumLines is the pure money math behind recomputeTotals, pulled out so it's
-// testable without a DB (see handler_test.go). Ponytail: tax is computed on
-// each line's gross total, not discount-adjusted proportionally — Discount
-// reduces NetSubtotal/Total but not the taxable base.
-func sumLines(lines []SaleLine, discount float64) (subtotal, taxAmount, netSubtotal, total float64) {
+// testable without a DB (see handler_test.go). Each line's own tax rate
+// (from its product/variant) taxes its own gross total independently — see
+// views/SaleViews.ts's totals recap, which groups these same lines by tax
+// rate for display.
+func sumLines(lines []SaleLine) (subtotal, taxAmount, total float64) {
 	for _, l := range lines {
 		lineTotal := l.Quantity * l.UnitPrice
 		subtotal += lineTotal
 		taxAmount += lineTotal * l.TaxRate
 	}
-	netSubtotal = subtotal - discount
-	total = netSubtotal + taxAmount
-	return subtotal, taxAmount, netSubtotal, total
+	total = subtotal + taxAmount
+	return subtotal, taxAmount, total
 }
 
 // toColumnMap mirrors the generic CRUD handler's JSON shape — snake_case db

@@ -60,12 +60,32 @@ func TestSaleLine_JSONUnmarshalsIDFields(t *testing.T) {
 	}
 }
 
+func TestResolveTaxRate(t *testing.T) {
+	product := warehouse.Product{TaxRate: 0.2}
+	override := 0.1
+
+	tests := []struct {
+		name    string
+		variant warehouse.ProductVariant
+		want    float64
+	}{
+		{"no override falls back to product tax rate", warehouse.ProductVariant{}, 0.2},
+		{"override wins over product tax rate", warehouse.ProductVariant{TaxRate: &override}, 0.1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveTaxRate(product, tt.variant); got != tt.want {
+				t.Errorf("resolveTaxRate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSumLines(t *testing.T) {
 	tests := []struct {
-		name                                              string
-		lines                                             []SaleLine
-		discount                                          float64
-		wantSubtotal, wantTax, wantNetSubtotal, wantTotal float64
+		name                             string
+		lines                            []SaleLine
+		wantSubtotal, wantTax, wantTotal float64
 	}{
 		{
 			name:  "no lines",
@@ -76,10 +96,9 @@ func TestSumLines(t *testing.T) {
 			lines: []SaleLine{
 				{Quantity: 2, UnitPrice: 50, TaxRate: 0.2}, // 100 HT, 20 tax
 			},
-			wantSubtotal:    100,
-			wantTax:         20,
-			wantNetSubtotal: 100,
-			wantTotal:       120,
+			wantSubtotal: 100,
+			wantTax:      20,
+			wantTotal:    120,
 		},
 		{
 			name: "mixed tax rates per product sum independently",
@@ -87,31 +106,19 @@ func TestSumLines(t *testing.T) {
 				{Quantity: 1, UnitPrice: 100, TaxRate: 0.2}, // 100 HT, 20 tax
 				{Quantity: 3, UnitPrice: 10, TaxRate: 0.1},  // 30 HT, 3 tax
 			},
-			wantSubtotal:    130,
-			wantTax:         23,
-			wantNetSubtotal: 130,
-			wantTotal:       153,
-		},
-		{
-			name: "discount reduces net subtotal and total but not the taxable base",
-			lines: []SaleLine{
-				{Quantity: 1, UnitPrice: 100, TaxRate: 0.2},
-			},
-			discount:        10,
-			wantSubtotal:    100,
-			wantTax:         20,
-			wantNetSubtotal: 90,
-			wantTotal:       110,
+			wantSubtotal: 130,
+			wantTax:      23,
+			wantTotal:    153,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			subtotal, tax, netSubtotal, total := sumLines(tt.lines, tt.discount)
-			if subtotal != tt.wantSubtotal || tax != tt.wantTax || netSubtotal != tt.wantNetSubtotal || total != tt.wantTotal {
-				t.Errorf("sumLines() = (%v, %v, %v, %v), want (%v, %v, %v, %v)",
-					subtotal, tax, netSubtotal, total,
-					tt.wantSubtotal, tt.wantTax, tt.wantNetSubtotal, tt.wantTotal)
+			subtotal, tax, total := sumLines(tt.lines)
+			if subtotal != tt.wantSubtotal || tax != tt.wantTax || total != tt.wantTotal {
+				t.Errorf("sumLines() = (%v, %v, %v), want (%v, %v, %v)",
+					subtotal, tax, total,
+					tt.wantSubtotal, tt.wantTax, tt.wantTotal)
 			}
 		})
 	}
@@ -140,10 +147,10 @@ func TestQuoteLine_JSONUnmarshalsIDFields(t *testing.T) {
 }
 
 func TestSumQuoteLines(t *testing.T) {
-	subtotal, tax, netSubtotal, total := sumQuoteLines([]QuoteLine{
+	subtotal, tax, total := sumQuoteLines([]QuoteLine{
 		{Quantity: 2, UnitPrice: 50, TaxRate: 0.2}, // 100 HT, 20 tax
-	}, 10)
-	if subtotal != 100 || tax != 20 || netSubtotal != 90 || total != 110 {
-		t.Errorf("sumQuoteLines() = (%v, %v, %v, %v), want (100, 20, 90, 110)", subtotal, tax, netSubtotal, total)
+	})
+	if subtotal != 100 || tax != 20 || total != 120 {
+		t.Errorf("sumQuoteLines() = (%v, %v, %v), want (100, 20, 120)", subtotal, tax, total)
 	}
 }

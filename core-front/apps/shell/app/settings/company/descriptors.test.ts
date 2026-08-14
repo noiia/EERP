@@ -27,6 +27,12 @@ describe('Settings → Company descriptors', () => {
 
   it('keeps the list compact (no address), the form carries every field', () => {
     expect(companyListDescriptor.fields.map((f) => f.name)).toEqual(['name', 'phone', 'email'])
-    expect(companyFormDescriptor.fields.map((f) => f.name)).toEqual(['name', 'address', 'phone', 'email'])
+    expect(companyFormDescriptor.fields.map((f) => f.name)).toEqual([
+      'name',
+      'address',
+      'phone',
+      'email',
+      'currency',
+    ])
   })
 })

@@ -57,9 +57,6 @@ msgstr "N° de téléphone de votre entreprise"
 msgid "Your company email"
 msgstr "Email de votre entreprise"
 
-msgid "Currency"
-msgstr "Devise monaitaire"
-
 msgid "Reference"
 msgstr "Référence"
 
@@ -90,17 +87,8 @@ msgstr "Aucune entrée disponible pour le moment"
 msgid "Subtotal (excl. tax)"
 msgstr "Sous-total HT"
 
-msgid "Discount (excl. tax)"
-msgstr "Remise HT"
-
-msgid "Net subtotal (excl. tax)"
-msgstr "Sous-total Net HT"
-
 msgid "Tax rate"
 msgstr "Taxe (%)"
-
-msgid "Tax amount"
-msgstr "Montant de la Taxe"
 
 msgid "Tax"
 msgstr "Taxes"
