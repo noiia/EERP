@@ -856,7 +856,11 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
   const total = subtotal + taxRows.reduce((sum, [, tax]) => sum + tax, 0)
 
   return (
-    <Stack spacing={0.5} sx={{ maxWidth: 360, ml: 'auto', width: '100%' }}>
+    // alignSelf (not ml: 'auto') is what reliably pushes this to the right
+    // edge: the parent ("Order lines" page) is a column flex Stack, whose
+    // default align-items: stretch otherwise pins a maxWidth-capped item to
+    // the START of the cross axis regardless of margin.
+    <Stack spacing={0.5} sx={{ maxWidth: 360, alignSelf: 'flex-end' }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
         <Typography variant="body2">{t('Untaxed Amount')}:</Typography>
         <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>

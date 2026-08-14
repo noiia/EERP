@@ -7,6 +7,7 @@ import {
   validateStatusBarDescriptor,
   type ViewDescriptor,
 } from '../views/descriptor'
+import { validateHeaderButtons } from '../views/header-button-actions'
 import { validateMenuActions } from '../views/menu-actions'
 import { validateReportDescriptor, type ReportDescriptor } from '../views/report-descriptor'
 import { applyExtension, type ViewExtension } from './extensions'
@@ -154,6 +155,7 @@ function validateDescriptor(descriptor: ViewDescriptor): void {
   validateSearchDescriptor(descriptor)
   validateStatusBarDescriptor(descriptor)
   validateMenuActions(descriptor)
+  validateHeaderButtons(descriptor)
   buildBehaviorPlan(descriptor)
   normalizeLayout(descriptor)
 }

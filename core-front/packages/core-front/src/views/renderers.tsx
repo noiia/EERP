@@ -43,6 +43,7 @@ import {
 import { ErrorAlert } from './error-alert'
 import { FormActionsMenu } from './form-actions-menu'
 import { GraphRenderer } from './graph-renderer'
+import { HeaderButtonContainer } from './header-button-container'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
@@ -250,6 +251,21 @@ function FormRenderer<T extends HasId>({
       .setLabel(recordId, typeof titleValue === 'string' && titleValue.trim() !== '' ? titleValue : null)
   }, [recordId, titleValue])
 
+  // The header-button-container's write path (HeaderButtonContext.setFieldAndCommit):
+  // patch one or more fields on THIS record and persist via the SAME
+  // commit() a Save click uses — a workflow button (e.g. Quote's Confirm) is
+  // just a scripted field edit + save, not a separate write mechanism.
+  const onHeaderButtonCommit = async (
+    patch: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> => {
+    const { setField, commit } = store.getState()
+    for (const [key, value] of Object.entries(patch)) {
+      setField(key as keyof T, value as T[keyof T])
+    }
+    const saved = await commit()
+    return saved as Record<string, unknown> | null
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
@@ -341,6 +357,13 @@ function FormRenderer<T extends HasId>({
           entity={descriptor.entity}
           actions={descriptor.actions ?? []}
           recordId={recordId ?? 'new'}
+        />
+        <HeaderButtonContainer
+          entity={descriptor.entity}
+          buttons={descriptor.headerButtons ?? []}
+          recordId={recordId ?? 'new'}
+          draft={draft as Record<string, unknown>}
+          onFieldsCommit={onHeaderButtonCommit}
         />
         {statusField && (
           <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />

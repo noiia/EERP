@@ -879,6 +879,34 @@ export interface StatusBarDescriptor {
   field: string
 }
 
+/**
+ * One button in `ViewDescriptor.headerButtons` (the header-button-container —
+ * see `header-button-actions.ts`'s `registerHeaderButtonAction`): a REAL,
+ * always-visible button (not a menu item behind a click) for a workflow
+ * action that mutates the record's own state or side effects, rendered in
+ * the form's top toolbar immediately right of the options menu (FormActionsMenu)
+ * — e.g. sale's Quote form Confirm/Send/Accept/Decline buttons. Several
+ * entries with different `states.visible` conditions is how a SINGLE visual
+ * slot appears to "change label" across a workflow (Confirm while draft, Send
+ * once confirmed, Accept once sent) — only one is ever visible at a time for
+ * a given condition set, same "declarative, not a function" discipline
+ * `FieldDescriptor.states` already uses.
+ */
+export interface HeaderButtonDescriptor {
+  /** A name registered via `registerHeaderButtonAction` for this SAME
+   * descriptor's entity — validated at registration, not at click (mirrors
+   * MenuActionNode.action). */
+  name: string
+  label: string
+  /** MUI Button variant mapping: 'primary' (contained, the default) or
+   * 'secondary' (outlined) — e.g. a destructive/negative action like Decline. */
+  variant?: 'primary' | 'secondary'
+  /** Shown only while the condition holds against the CURRENT DRAFT, reevaluated
+   * live exactly like `FieldDescriptor.states.visible` — e.g. `{ field: 'status',
+   * op: 'eq', value: 'draft' }`. Omitted ⇒ always shown (while the record exists). */
+  states?: { visible?: Condition }
+}
+
 export interface ViewDescriptor<T = Record<string, unknown>> {
   /** Maps straight to the Go route group, e.g. 'crm' -> GET /crm/. */
   entity: string
@@ -948,6 +976,13 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * meaningful status field.
    */
   statusBar?: StatusBarDescriptor
+  /**
+   * For `viewType: 'form'` only: the header-button-container (see
+   * HeaderButtonDescriptor) — real workflow buttons in the top toolbar, right
+   * of the options menu. Omitted ⇒ nothing renders there, unlike Save/Reset/
+   * the options menu, since not every form has a workflow beyond plain edits.
+   */
+  headerButtons?: HeaderButtonDescriptor[]
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }
