@@ -165,6 +165,14 @@ describe('AppTopBar', () => {
     expect(breadcrumb.queryByText('Appearance')).not.toBeInTheDocument()
   })
 
+  it('labels the /propertymanagement crumb "Property Management", not the titleized "Propertymanagement" slug', () => {
+    pathnameMock.mockReturnValue('/propertymanagement/list')
+    render(<AppTopBar identity={identity} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByText('Property Management')).toBeInTheDocument()
+    expect(breadcrumb.queryByText('Propertymanagement')).not.toBeInTheDocument()
+  })
+
   it('omits the "page-formats" segment from a page format\'s breadcrumb (no page of its own — the list is embedded in Global settings)', () => {
     pathnameMock.mockReturnValue('/settings/appearance/page-formats/42')
     render(<AppTopBar identity={identity} />)

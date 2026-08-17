@@ -1,0 +1,5 @@
+# Property Management module — translation template. Copy to <locale>.po per language.
+msgid ""
+msgstr ""
+"Project-Id-Version: propertymanagement 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"

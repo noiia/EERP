@@ -28,6 +28,7 @@ import (
 	_ "core/modules/all"
 	"core/modules/crminheritdemo"
 	cronmodule "core/modules/cron"
+	"core/modules/propertymanagement"
 	"core/modules/sale"
 	"core/modules/warehouse"
 	"core/orm"
@@ -470,6 +471,27 @@ func main() {
 	quoteLineGroup.POST("", quoteLineHandler.Create)
 	quoteLineGroup.PUT("/:id", quoteLineHandler.Update)
 	quoteLineGroup.DELETE("/:id", quoteLineHandler.Delete)
+
+	// ── propertymanagement: property_management GET + equipment-status
+	// Create + rent-receipt Update/Delete overrides ──────────────────────────
+	// property_management/property_management_equipment/... ride the generic
+	// CRUD surface (module.go's Register, no WithExcluded) — same posture as
+	// cron — with three hand-mounted overrides: GET on property_management
+	// injects the computed receipt_generated_this_month key the "Generate
+	// Rent Receipt" header button reads; POST on
+	// property_management_equipment_status rolls the entry's State up onto
+	// its parent Equipment's CurrentState; PUT/DELETE on
+	// property_management_rent_receipt always reject (a receipt is
+	// append-only). See modules/propertymanagement/handler.go.
+	propertyManagementHandler := propertymanagement.NewHandler(
+		orm.MustRepo[propertymanagement.PropertyManagement](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementEquipment](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementEquipmentStatus](app.DB),
+	)
+	srv.Echo().GET("/api/v1/property_management/:id", propertyManagementHandler.GetProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().POST("/api/v1/property_management_equipment_status", propertyManagementHandler.CreateEquipmentStatus, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().PUT("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptMutation, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().DELETE("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptMutation, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	for _, r := range srv.Routes() {
 		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))

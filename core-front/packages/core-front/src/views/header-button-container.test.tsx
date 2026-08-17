@@ -49,6 +49,44 @@ describe('HeaderButtonContainer', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('renders a button disabled (not omitted) while its states.readOnly condition holds', () => {
+    registerHeaderButtonAction({ entity: 'quote', name: 'sale.confirmQuote', handler: () => undefined })
+    const readOnlyButton: HeaderButtonDescriptor = {
+      name: 'sale.confirmQuote',
+      label: 'Confirm',
+      states: { readOnly: { field: 'locked', op: 'eq', value: true } },
+    }
+    render(
+      <HeaderButtonContainer
+        entity="quote"
+        buttons={[readOnlyButton]}
+        recordId="r1"
+        draft={{ locked: true }}
+        onFieldsCommit={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+  })
+
+  it('renders a button enabled once its states.readOnly condition no longer holds', () => {
+    registerHeaderButtonAction({ entity: 'quote', name: 'sale.confirmQuote', handler: () => undefined })
+    const readOnlyButton: HeaderButtonDescriptor = {
+      name: 'sale.confirmQuote',
+      label: 'Confirm',
+      states: { readOnly: { field: 'locked', op: 'eq', value: true } },
+    }
+    render(
+      <HeaderButtonContainer
+        entity="quote"
+        buttons={[readOnlyButton]}
+        recordId="r1"
+        draft={{ locked: false }}
+        onFieldsCommit={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Confirm' })).not.toBeDisabled()
+  })
+
   it('only shows the button whose states.visible condition currently holds', () => {
     registerHeaderButtonAction({ entity: 'quote', name: 'sale.confirmQuote', handler: () => undefined })
     registerHeaderButtonAction({ entity: 'quote', name: 'sale.declineQuote', handler: () => undefined })

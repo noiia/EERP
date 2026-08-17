@@ -71,20 +71,26 @@ export function HeaderButtonContainer({
           {error}
         </Typography>
       ) : null}
-      {visible.map((button) => (
-        <Button
-          key={button.name}
-          variant={button.variant === 'secondary' ? 'outlined' : 'contained'}
-          disabled={runningName !== null}
-          onClick={() => run(button.name)}
-          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
-        >
-          {runningName === button.name && (
-            <CircularProgress size={16} color="inherit" thickness={5} />
-          )}
-          {t(button.label)}
-        </Button>
-      ))}
+      {visible.map((button) => {
+        // readOnly renders DISABLED, not omitted — unlike visible, which
+        // unmounts. "Already generated this month" should still be seen,
+        // just not clickable, until the condition clears on its own.
+        const readOnly = button.states?.readOnly ? evaluateCondition(button.states.readOnly, draft) : false
+        return (
+          <Button
+            key={button.name}
+            variant={button.variant === 'secondary' ? 'outlined' : 'contained'}
+            disabled={runningName !== null || readOnly}
+            onClick={() => run(button.name)}
+            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+          >
+            {runningName === button.name && (
+              <CircularProgress size={16} color="inherit" thickness={5} />
+            )}
+            {t(button.label)}
+          </Button>
+        )
+      })}
     </Box>
   )
 }

@@ -1,0 +1,19 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "propertymanagement",
+    "display_name": "Property Management",
+    "version": "0.0.1",
+    "author": "",
+    "description": "Property management — list and follow real estate assets, their equipment, and rent receipts",
+    "app_mode": true,
+    "menu_icon": "building",
+    "depends": [],
+    "static_files": {
+        "views": [
+            "PropertyManagementViews.ts"
+        ]
+    },
+    "is_service": true,
+    "auto_install": true
+}

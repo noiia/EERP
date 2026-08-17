@@ -52,9 +52,17 @@ interface Crumb {
  * renamed without renaming the URL slug (SettingsHub.tsx's Appearance ->
  * "Global settings" tile keeps the stable /settings/appearance path on
  * purpose, so titleize()'s pure slug->title mapping never sees the rename).
+ * `propertymanagement` is a different case of the same problem: the module
+ * FOLDER/package name has no word separator at all (the scaffolding tool's
+ * name regex forbids underscores there — module.go's own doc comment), so
+ * titleize() can't split it into "Property Management" the way it splits
+ * hyphenated slugs like "product-variant" — this restores the word break
+ * titleize() would have produced on its own, matching module.json's
+ * display_name (the landing-menu tile's own label).
  */
 const SEGMENT_LABEL_OVERRIDES: Record<string, string> = {
   appearance: 'Global settings',
+  propertymanagement: 'Property Management',
 }
 
 /**
