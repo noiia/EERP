@@ -128,7 +128,9 @@ function usePictureState(
   return { client, anchor, meta, busy, error, sync, run }
 }
 
-function WidgetFrame({
+/** Exported so file-widgets.tsx's BooleanFileWidget (a sibling service-backed
+ * boolean widget) can reuse the same label+error chrome instead of duplicating it. */
+export function WidgetFrame({
   label,
   error,
   children,
@@ -154,7 +156,8 @@ function WidgetFrame({
   )
 }
 
-function UnsavedRecordHint() {
+/** Exported for the same reason as WidgetFrame above. */
+export function UnsavedRecordHint() {
   const t = useT()
   return (
     <Typography variant="body2" color="text.secondary">

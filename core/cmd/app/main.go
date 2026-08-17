@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"core/internal/attachments"
 	"core/internal/auth"
 	"core/internal/chatter"
 	"core/internal/common"
@@ -233,6 +234,29 @@ func main() {
 		picturesGroup.DELETE("/:id", picturesHandler.Delete)
 	} else {
 		common.Logger.Warn("⚠️  s3_* not configured — picture endpoints disabled")
+	}
+
+	// ── Attachments ───────────────────────────────────────────────────────────
+	// Dedicated arbitrary-file endpoints (internal/attachments — the non-image
+	// sibling of pictures above: boolean/file fields, e.g. property_management's
+	// "billing of buy" and rent-receipt PDFs). Same S3 config/gate as pictures
+	// (a second pictures.NewS3Store call, its own client instance — the object
+	// store layer is provider-agnostic, reused verbatim rather than duplicated).
+	// The permission middleware derives attachments:attachments:read|write|delete
+	// from the routes.
+	if pictures.S3Configured(configContent) {
+		attachmentObjects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			common.Logger.Fatal("❌ Error building S3 object store for attachments", zap.Error(err))
+		}
+		attachmentsHandler := attachments.NewHandler(attachments.NewRepository(app.DB), attachmentObjects)
+		attachmentsGroup := srv.Echo().Group("/api/v1/attachments", jwtMw, permMw)
+		attachmentsGroup.POST("", attachmentsHandler.Upload)
+		attachmentsGroup.GET("", attachmentsHandler.Find)
+		attachmentsGroup.GET("/:id", attachmentsHandler.Get)
+		attachmentsGroup.DELETE("/:id", attachmentsHandler.Delete)
+	} else {
+		common.Logger.Warn("⚠️  s3_* not configured — attachment endpoints disabled")
 	}
 
 	// ── Reports (PDF generation) ─────────────────────────────────────────────

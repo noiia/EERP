@@ -7,6 +7,7 @@ package all
 
 import (
 	_ "core/modules/appstore"
+	_ "core/modules/attachments"
 	_ "core/modules/auth"
 	_ "core/modules/chatter"
 	_ "core/modules/company"

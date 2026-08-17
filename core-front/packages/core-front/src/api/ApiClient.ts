@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { revalidateTag } from 'next/cache'
 import { parseError } from './errors'
 import type { EntityListOptions } from './list-options'
+import type { AttachmentAnchor, AttachmentMeta } from './attachments-client'
 import type { PictureAnchor, PictureMeta } from './pictures-client'
 import type { ViewFieldsConfig } from './view-fields'
 
@@ -516,6 +517,44 @@ export async function resolvePictureDataURL(anchor: PictureAnchor, tokenOverride
 
 export async function deletePicture(id: string): Promise<void> {
   const res = await fetchWithRefresh('DELETE', `/pictures/${id}`, null)
+  if (!res.ok) throw await parseError(res)
+}
+
+// ── Attachments (internal/attachments — the non-image sibling of pictures) ────
+
+/** Forward a multipart upload to Go — same shape as uploadPicture. */
+export async function uploadAttachment(form: FormData): Promise<AttachmentMeta> {
+  const res = await fetchWithRefresh('POST', '/attachments', null, form)
+  if (!res.ok) throw await parseError(res)
+  return (await res.json()) as AttachmentMeta
+}
+
+/** Resolve an anchor to its attachment metadata; null when the field has none. */
+export async function findAttachment(anchor: AttachmentAnchor): Promise<AttachmentMeta | null> {
+  const query = new URLSearchParams({
+    table: anchor.table,
+    record: anchor.recordId,
+    field: anchor.field,
+  })
+  const res = await fetchWithRefresh('GET', `/attachments?${query}`, null)
+  if (res.status === 404) return null
+  if (!res.ok) throw await parseError(res)
+  return (await res.json()) as AttachmentMeta
+}
+
+/**
+ * Fetch an attachment's bytes from Go. Returns the raw Response so the BFF
+ * route can stream body + content type + Content-Disposition back to the
+ * browser without buffering — same shape as streamPicture.
+ */
+export async function streamAttachment(id: string): Promise<Response> {
+  const res = await fetchWithRefresh('GET', `/attachments/${id}`, null)
+  if (!res.ok) throw await parseError(res)
+  return res
+}
+
+export async function deleteAttachment(id: string): Promise<void> {
+  const res = await fetchWithRefresh('DELETE', `/attachments/${id}`, null)
   if (!res.ok) throw await parseError(res)
 }
 
