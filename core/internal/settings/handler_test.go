@@ -1264,3 +1264,124 @@ func TestPutReportsLayoutSettings(t *testing.T) {
 		})
 	}
 }
+
+// ── GET /settings/integrations/osm ────────────────────────────────────────────
+
+func TestGetOSMSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name  string
+		store *stubStore
+		want  osmConnector
+	}{
+		{
+			name:  "no connector configured reads as disabled, not a 404",
+			store: &stubStore{},
+			want:  osmConnector{},
+		},
+		{
+			name: "configured connector",
+			store: &stubStore{values: map[string]string{
+				OSMConnectorKey: `{"enabled":true,"base_url":"https://nominatim.openstreetmap.org","user_agent":"eerp/1.0"}`,
+			}},
+			want: osmConnector{Enabled: true, BaseURL: "https://nominatim.openstreetmap.org", UserAgent: "eerp/1.0"},
+		},
+		{
+			name:  "unparsable stored value degrades to disabled",
+			store: &stubStore{values: map[string]string{OSMConnectorKey: "{not json"}},
+			want:  osmConnector{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			rec := serve(t, h.GetOSMSettings, http.MethodGet, "/settings/integrations/osm", "", identity)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+			}
+			var resp osmConnector
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp != tt.want {
+				t.Errorf("got %+v, want %+v", resp, tt.want)
+			}
+		})
+	}
+}
+
+// ── PUT /settings/integrations/osm ────────────────────────────────────────────
+
+func TestPutOSMSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantValue  string
+	}{
+		{
+			name:       "saves an enabled connector",
+			body:       `{"enabled":true,"base_url":"https://nominatim.openstreetmap.org","user_agent":"eerp/1.0"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"enabled":true,"base_url":"https://nominatim.openstreetmap.org","user_agent":"eerp/1.0"}`,
+		},
+		{
+			name:       "saves a disabled connector with no base_url",
+			body:       `{"enabled":false,"base_url":"","user_agent":""}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  `{"enabled":false,"base_url":"","user_agent":""}`,
+		},
+		{
+			name:       "enabling with no base_url is rejected",
+			body:       `{"enabled":true,"base_url":"","user_agent":""}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "base_url over the length cap rejected",
+			body:       `{"enabled":false,"base_url":"` + strings.Repeat("a", osmConnectorMaxLen+1) + `"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "user_agent over the length cap rejected",
+			body:       `{"enabled":false,"base_url":"","user_agent":"` + strings.Repeat("a", osmConnectorMaxLen+1) + `"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "malformed body rejected",
+			body:       `not json`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			rec := serve(t, h.PutOSMSettings, http.MethodPut, "/settings/integrations/osm", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotKey != OSMConnectorKey {
+				t.Errorf("key = %q, want %q", store.gotKey, OSMConnectorKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}

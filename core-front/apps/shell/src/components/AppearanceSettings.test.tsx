@@ -43,4 +43,11 @@ describe('AppearanceSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: /reset to defaults/i }))
     expect(useUiStore.getState().palette).toEqual(DEFAULT_PALETTE)
   })
+
+  it('renders the Integrations section holding the OSM connector settings', () => {
+    render(<AppearanceSettings />)
+    expect(screen.getByText('Integrations')).toBeInTheDocument()
+    expect(screen.getByLabelText('Enabled')).toBeInTheDocument()
+    expect(screen.getByLabelText('Base URL')).toBeInTheDocument()
+  })
 })

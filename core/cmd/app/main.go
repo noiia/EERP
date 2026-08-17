@@ -207,6 +207,8 @@ func main() {
 	settingsGroup.PUT("/apps/:module/picture-size", settingsHandler.PutPictureSizeSettings)
 	settingsGroup.GET("/reports/layout", settingsHandler.GetReportsLayoutSettings)
 	settingsGroup.PUT("/reports/layout", settingsHandler.PutReportsLayoutSettings)
+	settingsGroup.GET("/integrations/osm", settingsHandler.GetOSMSettings)
+	settingsGroup.PUT("/integrations/osm", settingsHandler.PutOSMSettings)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new

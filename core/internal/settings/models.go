@@ -68,6 +68,19 @@ func ModulePictureSizeKey(module string) string {
 // field per format; this key only ever holds the global default.
 const ReportsLayoutKey = "reports.layout"
 
+// OSMConnectorKey is the app_settings key holding the workspace's
+// OpenStreetMap (Nominatim) connector configuration — used to autocomplete
+// addresses as the user types into a `type: 'address'` field (see
+// core-front's AddressWidget). Stored as JSON: {"enabled":true,
+// "base_url":"https://nominatim.openstreetmap.org","user_agent":"..."}.
+// Absent means the connector is off — the address widget degrades to plain
+// manual entry, same "render inert, not a crash" posture every other
+// optional Ops/connector integration in this codebase already takes.
+// UserAgent exists because Nominatim's usage policy requires a real,
+// identifying User-Agent on every request; the value is set once here
+// (never per-request) so it isn't forgotten.
+const OSMConnectorKey = "integrations.osm"
+
 // AppSettings is one company-scoped setting. (tenant_id, company_id, key) is
 // unique — the settings module's Migrate creates the index — so writes are
 // upserts. CompanyID is nullable at the schema level even though the

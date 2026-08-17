@@ -725,6 +725,83 @@ func (h *Handler) PutReportsLayoutSettings(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// osmConnector is both the stored value of OSMConnectorKey and the
+// request/response body of GET|PUT /settings/integrations/osm.
+type osmConnector struct {
+	Enabled   bool   `json:"enabled"`
+	BaseURL   string `json:"base_url"`
+	UserAgent string `json:"user_agent"`
+}
+
+// osmConnectorMaxLen bounds base_url/user_agent so a workspace can't stuff an
+// unbounded string into a single key/value row — same guard reportsLayout's
+// footer/address get.
+const osmConnectorMaxLen = 500
+
+// GetOSMSettings handles GET /api/v1/settings/integrations/osm — the
+// workspace's OpenStreetMap/Nominatim connector config. Absent returns the
+// zero value (enabled: false), not a 404: no connector configured yet is a
+// normal state. Mounted behind the permission middleware, which derives
+// settings:integrations:read from the route.
+func (h *Handler) GetOSMSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, OSMConnectorKey)
+	if err != nil {
+		return fmt.Errorf("settings: get osm connector: %w", err)
+	}
+
+	var resp osmConnector
+	if ok && raw != "" {
+		// An unparsable stored value degrades to the disabled connector rather
+		// than failing the read — same posture as every other settings GET here.
+		_ = json.Unmarshal([]byte(raw), &resp)
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutOSMSettings handles PUT /api/v1/settings/integrations/osm. Mounted
+// behind the permission middleware, which derives settings:integrations:write
+// from the route.
+func (h *Handler) PutOSMSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	var req osmConnector
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if len(req.BaseURL) > osmConnectorMaxLen {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("base_url exceeds %d characters", osmConnectorMaxLen))
+	}
+	if len(req.UserAgent) > osmConnectorMaxLen {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("user_agent exceeds %d characters", osmConnectorMaxLen))
+	}
+	if req.Enabled && req.BaseURL == "" {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "base_url is required to enable the connector.")
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal osm connector: %w", err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, OSMConnectorKey, string(value)); err != nil {
+		return fmt.Errorf("settings: set osm connector: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // CloneCompanySettings handles POST /api/v1/company/:id/clone-settings —
 // copies every setting from the company named by :id (the source, normally
 // the caller's own active company at the moment they create a new one) to

@@ -23,19 +23,23 @@ import {
   useT,
   useUiStore,
 } from '@eerp/core-front'
+import type { OSMConnector } from '@/lib/osm-settings'
+import OSMConnectorSettings from './OSMConnectorSettings'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
 
 // Settings → Global settings (formerly "Appearance", docs/roadmaps/
-// pdf-reports.md's Reports settings subsection): two collapsible sections —
+// pdf-reports.md's Reports settings subsection): three collapsible sections —
 // "Colors" is the ORIGINAL Appearance content, unchanged behavior, just
-// relabeled and grouped; "Reports" is new (workspace-wide PDF report
-// letterhead + the page-format table, the latter wired in by
-// ReportPageFormatList once Phase E lands).
+// relabeled and grouped; "Reports" is workspace-wide PDF report letterhead +
+// the page-format table; "Integrations" is the OpenStreetMap/Nominatim
+// connector (type: 'address' fields' autocomplete source).
 export default function AppearanceSettings({
   canEditReports = false,
   initialFooter = '',
   initialAddress = '',
   reportPageFormats,
+  canEditIntegrations = false,
+  initialOSMConnector = { enabled: false, base_url: '', user_agent: '' },
 }: {
   canEditReports?: boolean
   initialFooter?: string
@@ -45,6 +49,8 @@ export default function AppearanceSettings({
    * import, a Server Component). Omitted in tests, where there's no server
    * tree to render it from. */
   reportPageFormats?: ReactNode
+  canEditIntegrations?: boolean
+  initialOSMConnector?: OSMConnector
 }) {
   const t = useT()
   const palette = useUiStore((s) => s.palette)
@@ -203,6 +209,17 @@ export default function AppearanceSettings({
                 {reportPageFormats}
               </Stack>
             </Stack>
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Integrations')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <OSMConnectorSettings canEdit={canEditIntegrations} initialConnector={initialOSMConnector} />
           </AccordionDetails>
         </Accordion>
       </Stack>
