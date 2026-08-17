@@ -77,16 +77,14 @@ services:
       core-back:
         condition: service_started
 
-  # Standalone PDF renderer (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Behind a
-  # profile so it doesn't load Chromium into every dev's `make run` before anything calls
-  # it (Phase 3+) — start explicitly with `docker compose --profile pdf up -d pdf-service`.
-  # No container_name: Phase 5's NATS worker mode makes this service horizontally
-  # scalable (`docker compose --profile pdf up -d --scale pdf-service=N`) — a static
-  # name would collide across replicas. NATS_URL is always set here; nats (below) is
-  # in the same "pdf" profile, so it's always up alongside this. A single replica works
-  # fine either way — the HTTP server (Phase 1-4) never goes away, NATS is additive.
+  # Standalone PDF renderer (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Started by
+  # default (no profile) so `docker compose up -d --build` alone is enough for report
+  # generation to work — was profile-gated ("pdf") until report generation became a
+  # regularly-used dev feature (rent receipts) and 502s from a missing pdf-service were
+  # a recurring surprise. Scale with `docker compose up -d --build --scale pdf-service=N`
+  # if needed (Phase 5's NATS worker mode). No container_name: a static name would
+  # collide across replicas. nats (below) starts alongside it unconditionally too.
   pdf-service:
-    profiles: ["pdf"]
     build:
       context: .
       dockerfile: tools/pdf-service/Dockerfile
@@ -106,13 +104,14 @@ services:
   # Message broker fronting pdf-service replicas for horizontal scaling
   # (docs/roadmaps/pdf-reports.md Phase 5) — only used when core's own config sets
   # nats_url (unset by default: the HTTP path from Phase 1-4 keeps working with zero
-  # extra infra). Default max_payload (1MB) is plenty for the reports measured so far
-  # (10-60KB) — nats-server only takes max_payload from a config file, not a CLI flag,
-  # so raising it later means mounting one, not just editing this command.
+  # extra infra, see eerp-config.docker.json). Started unconditionally alongside
+  # pdf-service anyway, so switching a deployment to NATS mode is a config-only change.
+  # Default max_payload (1MB) is plenty for the reports measured so far (10-60KB) —
+  # nats-server only takes max_payload from a config file, not a CLI flag, so raising it
+  # later means mounting one, not just editing this command.
   nats:
     image: nats:2.10-alpine
     container_name: nats
-    profiles: ["pdf"]
     expose:
       - "4222"
     healthcheck:
