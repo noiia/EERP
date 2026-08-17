@@ -119,11 +119,14 @@ type preferencesResponse struct {
 }
 
 // activeCompanyRef is the minimal company shape callers need to render a
-// switcher — name and id, not the full profile (address/phone/email, only
-// needed by the Company settings form itself).
+// switcher (name/id) plus the ONE other field widgets need app-wide without
+// a separate fetch: Currency, so a `number/monetary` field (core-front's
+// widgets.tsx) can format with the right symbol/code — not the full profile
+// (address/phone/email, only needed by the Company settings form itself).
 type activeCompanyRef struct {
-	ID   uuid.UUID `json:"id"`
-	Name string    `json:"name"`
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Currency string    `json:"currency"`
 }
 
 // numberFormat is both the stored value of NumberFormatKey and the request
@@ -171,7 +174,7 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 	resp := preferencesResponse{
 		Email:           user.Email,
 		PreferredLocale: user.PreferredLocale,
-		ActiveCompany:   &activeCompanyRef{ID: active.ID, Name: active.Name},
+		ActiveCompany:   &activeCompanyRef{ID: active.ID, Name: active.Name, Currency: active.Currency},
 	}
 	if ok && defaultLocale != "" {
 		resp.DefaultLocale = &defaultLocale

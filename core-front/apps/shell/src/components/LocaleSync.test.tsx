@@ -3,6 +3,7 @@ import { render } from '@testing-library/react'
 import {
   DEFAULT_NUMBER_FORMAT,
   translationRegistry,
+  useCompanyStore,
   useFormatStore,
   useI18nStore,
 } from '@eerp/core-front'
@@ -20,6 +21,7 @@ beforeEach(() => {
   translationRegistry.register({ module: 'crm', locale: 'de', entries: { Save: 'Speichern' } })
   useI18nStore.setState({ locale: null, enabledLocales: [] })
   useFormatStore.setState({ ...DEFAULT_NUMBER_FORMAT })
+  useCompanyStore.setState({ currency: '' })
 })
 
 afterEach(() => {
@@ -73,5 +75,23 @@ describe('LocaleSync', () => {
     useFormatStore.setState({ decimalSeparator: ',', thousandsSeparator: ' ' })
     render(<LocaleSync preferences={{ ...prefs(null, null), number_format: null }} />)
     expect(useFormatStore.getState().decimalSeparator).toBe(',')
+  })
+
+  it('applies the active company currency to the company mirror', () => {
+    render(
+      <LocaleSync
+        preferences={{
+          ...prefs(null, null),
+          active_company: { id: 'c1', name: 'Acme', currency: 'USD' },
+        }}
+      />,
+    )
+    expect(useCompanyStore.getState().currency).toBe('USD')
+  })
+
+  it('keeps the company mirror when active_company is absent (the read failed upstream)', () => {
+    useCompanyStore.setState({ currency: 'EUR' })
+    render(<LocaleSync preferences={{ ...prefs(null, null), active_company: null }} />)
+    expect(useCompanyStore.getState().currency).toBe('EUR')
   })
 })

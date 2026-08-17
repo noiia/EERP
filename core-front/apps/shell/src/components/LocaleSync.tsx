@@ -1,6 +1,6 @@
 'use client'
 import { useEffect } from 'react'
-import { translationRegistry, useFormatStore, useI18nStore } from '@eerp/core-front'
+import { translationRegistry, useCompanyStore, useFormatStore, useI18nStore } from '@eerp/core-front'
 import { resolveEffectiveLocale, type LocalePreferences } from '@/lib/locale'
 // Catalogs register as an import side effect; importing here guarantees the pool is
 // populated before the sync validates the server preference against it.
@@ -29,6 +29,13 @@ export function LocaleSync({ preferences }: { preferences: LocalePreferences | n
         decimalSeparator: preferences.number_format.decimal_separator,
         thousandsSeparator: preferences.number_format.thousands_separator,
       })
+    }
+
+    // Same reasoning as number_format above: an absent active_company (the
+    // read itself failed upstream) keeps the mirror's last-known value
+    // instead of clobbering it with an empty currency.
+    if (preferences.active_company) {
+      useCompanyStore.getState().setCurrency(preferences.active_company.currency)
     }
   }, [preferences])
   return null

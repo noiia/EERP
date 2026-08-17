@@ -22,6 +22,9 @@ export interface NumberFormatPreference {
 export interface ActiveCompanyRef {
   id: string
   name: string
+  /** e.g. "USD" — what `number/monetary` fields (core-front's widgets.tsx)
+   * format with, via useCompanyStore's client mirror. */
+  currency: string
 }
 
 /**

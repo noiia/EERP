@@ -311,7 +311,7 @@ func TestPutMyPreferences(t *testing.T) {
 func TestGetMyPreferences_ActiveCompany(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	companyID := uuid.New()
-	active := company.Company{Name: "Acme"}
+	active := company.Company{Name: "Acme", Currency: "USD"}
 	active.ID = companyID
 
 	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{active: active})
@@ -333,6 +333,9 @@ func TestGetMyPreferences_ActiveCompany(t *testing.T) {
 	}
 	if got["name"] != "Acme" {
 		t.Errorf("active_company.name = %v, want Acme", got["name"])
+	}
+	if got["currency"] != "USD" {
+		t.Errorf("active_company.currency = %v, want USD", got["currency"])
 	}
 }
 
