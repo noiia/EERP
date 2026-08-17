@@ -13,6 +13,7 @@ import {
 } from '../api/attachments-client'
 import { useT } from '../i18n/translate'
 import { fieldLabel } from './descriptor'
+import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { UnsavedRecordHint, WidgetFrame } from './picture-widgets'
 import type { WidgetProps } from './widgets'
@@ -58,6 +59,12 @@ function useAttachmentState({ field, value, onChange, entity, recordId }: Widget
     if (Boolean(value) !== (found != null)) onChange(found != null)
   }
 
+  // Bumped by a host action that replaced this anchor's file OUTSIDE this
+  // widget's own upload flow (e.g. propertymanagement.regenerateReceiptPdf
+  // uploading straight through createAttachmentClient()) — see
+  // entity-refresh-store.ts.
+  const refreshSignal = useEntityRefreshStore((s) => s.bumps[entity ?? ''])
+
   useEffect(() => {
     if (!anchor) return
     let cancelled = false
@@ -72,9 +79,9 @@ function useAttachmentState({ field, value, onChange, entity, recordId }: Widget
     return () => {
       cancelled = true
     }
-    // Deliberately keyed on the anchor alone: the lookup runs once per anchor,
-    // not on every draft edit.
-  }, [anchor?.table, anchor?.recordId, anchor?.field])
+    // Deliberately keyed on the anchor (+ the refresh signal) alone: the
+    // lookup runs once per anchor, not on every draft edit.
+  }, [anchor?.table, anchor?.recordId, anchor?.field, refreshSignal])
 
   const run = async (io: () => Promise<void>) => {
     setBusy(true)

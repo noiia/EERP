@@ -22,6 +22,7 @@ import {
   type RelationDescriptor,
   type ViewDescriptor,
 } from './descriptor'
+import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { LayoutForm } from './layout-renderer'
 import { useNumberFormat } from './format-store'
@@ -749,6 +750,10 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   const labelField = rel.labelField ?? 'name'
   const [rows, setRows] = useState<RelationRecord[]>([])
   const [createOpen, setCreateOpen] = useState(false)
+  // Bumped by a host action that created/changed rel.entity rows OUTSIDE
+  // this widget's own create wizard (e.g. a header button using relationOps
+  // directly) — see entity-refresh-store.ts.
+  const refreshSignal = useEntityRefreshStore((s) => s.bumps[rel.entity])
 
   useEffect(() => {
     if (!ops || !recordId) return
@@ -764,7 +769,7 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, inverseField, recordId])
+  }, [ops, rel.entity, inverseField, recordId, refreshSignal])
 
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />

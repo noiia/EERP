@@ -5,6 +5,7 @@ import {
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerHeaderButtonAction,
+  useEntityRefreshStore,
   type DraftRecord,
   type FrontModule,
   type HeaderButtonDescriptor,
@@ -129,6 +130,10 @@ registerHeaderButtonAction({
       // been uploaded yet at the point this row is created, just below.
       receipt_file: false,
     })
+    // The property form's own rent_receipts RelationListWidget has no way to
+    // know this row exists (created via relationOps, not its own create
+    // wizard) — bump so any mounted widget over this entity re-fetches.
+    useEntityRefreshStore.getState().bump('property_management_rent_receipt')
 
     // Best-effort: the receipt row + month gate above are the workflow's
     // real state — a PDF failure (e.g. attachments' S3 store not configured
@@ -141,6 +146,9 @@ registerHeaderButtonAction({
         pdf,
         `rent-receipt-${period}.pdf`,
       )
+      // Same signal again: the receipt's own boolean/file widget (if its
+      // form happens to be open) needs to re-resolve the anchor too.
+      useEntityRefreshStore.getState().bump('property_management_rent_receipt')
     } catch {
       // Swallowed — see the comment above.
     }
@@ -443,6 +451,11 @@ registerHeaderButtonAction({
       pdf,
       `rent-receipt-${String(ctx.draft.period ?? '')}.pdf`,
     )
+    // This upload bypasses BooleanFileWidget's own upload flow, so its
+    // useAttachmentState effect never re-resolves the anchor on its own —
+    // without this the button stays visible (its states.visible watches
+    // receipt_file) after a successful regenerate.
+    useEntityRefreshStore.getState().bump('property_management_rent_receipt')
   },
 })
 
