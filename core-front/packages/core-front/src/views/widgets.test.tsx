@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { FieldDescriptor } from './descriptor'
+import { useCompanyStore } from './company-store'
 import { DEFAULT_NUMBER_FORMAT, useFormatStore } from './format-store'
 import { fieldWidget, type WidgetProps } from './widgets'
 
@@ -19,6 +20,7 @@ function renderWidget(field: FieldDescriptor, value: unknown, extra?: Partial<Wi
 
 beforeEach(() => {
   useFormatStore.setState({ ...DEFAULT_NUMBER_FORMAT })
+  useCompanyStore.setState({ currency: '' })
 })
 
 describe('text widgets', () => {
@@ -73,6 +75,43 @@ describe('text/color', () => {
     const { onChange } = renderWidget(colorField, '#f2f2f2')
     fireEvent.change(screen.getByLabelText('Accent swatch'), { target: { value: '#00ff00' } })
     expect(onChange).toHaveBeenCalledWith('#00ff00')
+  })
+})
+
+describe('text/url', () => {
+  const urlField: FieldDescriptor = { name: 'website', label: 'Website', type: 'text', widget: 'url' }
+
+  it('renders the value and emits edits like a plain text field', () => {
+    const { onChange } = renderWidget(urlField, 'https://example.com')
+    const input = screen.getByLabelText('Website')
+    expect(input).toHaveValue('https://example.com')
+    fireEvent.change(input, { target: { value: 'https://example.org' } })
+    expect(onChange).toHaveBeenCalledWith('https://example.org')
+  })
+
+  it('disables the open button while empty', () => {
+    renderWidget(urlField, '')
+    expect(screen.getByRole('button', { name: 'Open link' })).toBeDisabled()
+  })
+
+  it('opens a full-scheme URL as typed', () => {
+    const openMock = vi.fn()
+    vi.stubGlobal('open', openMock)
+    renderWidget(urlField, 'https://example.com')
+    fireEvent.click(screen.getByRole('button', { name: 'Open link' }))
+    expect(openMock).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer')
+    vi.unstubAllGlobals()
+  })
+
+  it('adds https:// when opening a schemeless value, without rewriting the stored value', () => {
+    const openMock = vi.fn()
+    vi.stubGlobal('open', openMock)
+    const { onChange } = renderWidget(urlField, 'example.com')
+    expect(screen.getByLabelText('Website')).toHaveValue('example.com')
+    fireEvent.click(screen.getByRole('button', { name: 'Open link' }))
+    expect(openMock).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer')
+    expect(onChange).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })
 
@@ -142,6 +181,33 @@ describe('number/int', () => {
     fireEvent.focus(input)
     fireEvent.change(input, { target: { value: '3.7' } })
     expect(onChange).toHaveBeenCalledWith(4)
+  })
+})
+
+describe('number/monetary', () => {
+  it('formats like number/float with no adornment while the company currency is unresolved', () => {
+    renderWidget({ name: 'price', label: 'Price', type: 'number', widget: 'monetary' }, 1200.5)
+    expect(screen.getByLabelText('Price')).toHaveValue('1,200.50')
+    expect(screen.queryByText('USD')).not.toBeInTheDocument()
+  })
+
+  it('decorates with the active company currency code once useCompanyStore resolves one', () => {
+    useCompanyStore.setState({ currency: 'USD' })
+    renderWidget({ name: 'price', label: 'Price', type: 'number', widget: 'monetary' }, 1200.5)
+    expect(screen.getByLabelText('Price')).toHaveValue('1,200.50')
+    expect(screen.getByText('USD')).toBeInTheDocument()
+  })
+
+  it('edits round-trip exactly like number/float', () => {
+    useCompanyStore.setState({ currency: 'EUR' })
+    const { onChange } = renderWidget(
+      { name: 'price', label: 'Price', type: 'number', widget: 'monetary' },
+      null,
+    )
+    const input = screen.getByLabelText('Price')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '99.9' } })
+    expect(onChange).toHaveBeenCalledWith(99.9)
   })
 })
 

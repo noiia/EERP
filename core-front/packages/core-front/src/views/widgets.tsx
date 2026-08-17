@@ -2,6 +2,7 @@
 import { useState, type ComponentType } from 'react'
 import Box from '@mui/material/Box'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
 import Rating from '@mui/material/Rating'
@@ -15,7 +16,13 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
 import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
+import { AddressWidget } from './address-widget'
+import { RelationCarouselWidget } from './carousel-widget'
+import { RelationSummaryWidget } from './relation-summary-widget'
+import { useCompanyStore } from './company-store'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { isHexColor } from './palette'
+import { BooleanFileWidget } from './file-widgets'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
 import { RelationListWidget, RelationSearchWidget, RelationTagsWidget, TaxTotalsWidget } from './relation-widgets'
 import { useNumberFormat } from './format-store'
@@ -50,6 +57,16 @@ export interface WidgetProps {
    * widgetOptions.presets. Every other widget ignores it.
    */
   onChangeField?: (name: string, value: unknown) => void
+  /**
+   * The record's full current draft — sibling field values, read-only. Most
+   * widgets only ever need their own `value`; this exists for the rare
+   * composite widget that owns SEVERAL real sibling columns at once (e.g. an
+   * `type: 'address'` field's number/street/city/... columns) and needs to
+   * read them to render, the read-side counterpart to `onChangeField`'s
+   * write side. Optional and best-effort: a widget that ignores it behaves
+   * exactly as before.
+   */
+  draft?: Record<string, unknown>
 }
 
 // ── text ──────────────────────────────────────────────────────────────────────
@@ -117,6 +134,46 @@ function TextColorWidget({ field, value, onChange, disabled }: WidgetProps) {
         onChange={(e) => onChange(e.target.value)}
       />
     </Box>
+  )
+}
+
+/**
+ * A plain TextField that treats its string value as a URL: a trailing
+ * open-in-new-tab IconButton, disabled while the field is empty (nothing to
+ * open) — no format validation beyond that, matching text/color's "still
+ * round-trips through onChange as typed" lightness. `href` sanitizes a
+ * bare `www.`/schemeless value ("example.com") to `https://example.com` only
+ * for the OPEN action; the stored/displayed value is never rewritten.
+ */
+function TextUrlWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const raw = typeof value === 'string' ? value : ''
+  const href = raw && !/^[a-z][a-z0-9+.-]*:/i.test(raw) ? `https://${raw}` : raw
+  return (
+    <TextField
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      value={raw}
+      onChange={(e) => onChange(e.target.value)}
+      slotProps={{
+        input: {
+          endAdornment: (
+            <InputAdornment position="end">
+              <IconButton
+                aria-label={t('Open link')}
+                disabled={raw === ''}
+                size="small"
+                onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
+              >
+                <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-up-right-from-square']} size="xs" />
+              </IconButton>
+            </InputAdornment>
+          ),
+        },
+      }}
+    />
   )
 }
 
@@ -411,6 +468,23 @@ function NumberFloatWidget({ field, value, onChange, disabled }: WidgetProps) {
   return <NumberInput field={field} input={input} disabled={disabled} />
 }
 
+/**
+ * A number/float field decorated with the active company's currency code
+ * (e.g. "USD") as its end adornment — `useCompanyStore` (company-store.ts)
+ * is the client mirror the shell's LocaleSync seeds from GET /me/preferences'
+ * active_company.currency, the SAME one-round-trip-seeds-every-mirror shape
+ * useFormatStore already uses for number separators. An empty/unresolved
+ * currency (no company yet, or the store hasn't synced) renders with no
+ * adornment at all rather than a misleading blank/placeholder code — the
+ * field is still fully usable, just undecorated until the mirror catches up.
+ */
+function NumberMonetaryWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
+  const currency = useCompanyStore((s) => s.currency)
+  const input = useNumericInput({ value, onChange, decimals })
+  return <NumberInput field={field} input={input} endAdornment={currency || undefined} disabled={disabled} />
+}
+
 function NumberIntWidget({ field, value, onChange, disabled }: WidgetProps) {
   const input = useNumericInput({ value, onChange, decimals: 0, integer: true })
   return <NumberInput field={field} input={input} disabled={disabled} />
@@ -555,13 +629,16 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'text/phone': PhoneWidget,
   'text/table': TableWidget,
   'text/color': TextColorWidget,
+  'text/url': TextUrlWidget,
   'number/float': NumberFloatWidget,
+  'number/monetary': NumberMonetaryWidget,
   'number/int': NumberIntWidget,
   'number/percent': NumberPercentWidget,
   'number/stars': NumberStarsWidget,
   'number/phone': PhoneWidget,
   'boolean/switch': BooleanSwitchWidget,
   'boolean/picture': BooleanPictureWidget,
+  'boolean/file': BooleanFileWidget,
   'boolean/signature': BooleanSignatureWidget,
   'date/simple': DateWidget,
   'selection/select': SelectionWidget,
@@ -569,7 +646,10 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'relation/search': RelationSearchWidget,
   'relation/tags': RelationTagsWidget,
   'relation/list': RelationListWidget,
+  'relation/carousel': RelationCarouselWidget,
+  'relation/summary': RelationSummaryWidget,
   'totals/recap': TaxTotalsWidget,
+  'address/form': AddressWidget,
 }
 
 /**

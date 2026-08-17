@@ -146,6 +146,12 @@ describe('resolveWidget — totals', () => {
   })
 })
 
+describe('resolveWidget — address', () => {
+  it('defaults to form — no relation block required, unlike totals', () => {
+    expect(resolveWidget(field('address'))).toBe('form')
+  })
+})
+
 describe('fieldZeroDefault', () => {
   it('returns the natural empty value per type', () => {
     expect(fieldZeroDefault(field('text'))).toBe('')
@@ -154,6 +160,7 @@ describe('fieldZeroDefault', () => {
     expect(fieldZeroDefault(field('date'))).toBeNull()
     expect(fieldZeroDefault(relationField({ kind: 'many2one' }))).toBeNull()
     expect(fieldZeroDefault(field('totals'))).toBeNull()
+    expect(fieldZeroDefault(field('address'))).toBeNull()
   })
 
   it('a selection field has no "empty" — its zero default is the FIRST option', () => {

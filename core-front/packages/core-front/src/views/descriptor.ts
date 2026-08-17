@@ -7,7 +7,15 @@ import type { ViewModeDefaults } from '../api/view-fields'
 
 export type ViewType = 'form' | 'tree' | 'dashboard' | 'catalog'
 
-export type FieldType = 'text' | 'number' | 'date' | 'relation' | 'boolean' | 'selection' | 'totals'
+export type FieldType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'relation'
+  | 'boolean'
+  | 'selection'
+  | 'totals'
+  | 'address'
 
 /**
  * Descriptors cross the RSC boundary as props, so everything in them — widget
@@ -21,7 +29,10 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * never needs one for the stock look (docs/roadmaps/field-widgets.md).
  * boolean picture/signature are backed by the core picture service (the DB
  * column stores only the flag, the service owns the bytes — field true ⇔ a
- * picture exists on the anchor). Relation tags/list (Phase 4) will extend this
+ * picture exists on the anchor). boolean/file is the same contract over
+ * internal/attachments instead — an arbitrary (non-image) file, e.g. a
+ * purchase invoice, rendered as a filename + download link rather than an
+ * <img> thumbnail. Relation tags/list (Phase 4) will extend this
  * matrix. selection has exactly one widget (`select`, a dropdown) — the type
  * exists to declare a closed value list (SelectionDescriptor), not to offer
  * presentation variants. text/table (docs/roadmaps/app-store.md, Phase 2) is
@@ -41,13 +52,34 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * the SAME one2many lines its sibling relation field already reads (declared
  * via `relation`, exactly like a relation field's own block), grouped by
  * each line's own tax rate. One widget, 'recap' — no presentation variants.
+ * text/url is the same "plain text field, decorated" shape as text/color —
+ * a trailing open-in-new-tab button, disabled while empty; no format
+ * validation, the stored value is never rewritten. number/monetary is
+ * number/float decorated with the active company's currency code as its end
+ * adornment (`useCompanyStore`, seeded from GET /me/preferences —
+ * company-store.ts) — undecorated (not blank/placeholder) while the mirror
+ * hasn't resolved a currency yet. type/address (widget 'form', the only
+ * entry) is a COMPOSITE field: `field.name` is a PREFIX, not a column — it
+ * owns 7 real, separately-stored sibling columns (`<name>_number` int,
+ * `<name>_complement`/`_street`/`_zip_code`/`_city`/`_state`/`_country`
+ * string, never declared as their own `FieldDescriptor`s) it reads via the
+ * form's full `draft` (`WidgetProps.draft`, threaded from `layout-renderer
+ * .tsx`) and writes via the existing `onChangeField` (the same sibling-write
+ * mechanism `selection/linked` already uses) — see `AddressWidget` in
+ * `address-widget.tsx`. Real columns, not a JSON blob, so they stay
+ * filterable/searchable through the generic list endpoint like any other
+ * column. Always `store: false` regardless of the module's own declaration
+ * (`buildBehaviorPlan`'s `unstored` computation, `behaviors.ts`) — the field
+ * itself has no column of its own to write, same "computes/writes through
+ * something else" posture `type: 'totals'` already has.
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
-  text: ['simple', 'long', 'phone', 'table', 'color'],
-  number: ['float', 'int', 'percent', 'stars', 'phone'],
-  boolean: ['switch', 'picture', 'signature'],
+  text: ['simple', 'long', 'phone', 'table', 'color', 'url'],
+  number: ['float', 'int', 'percent', 'stars', 'phone', 'monetary'],
+  boolean: ['switch', 'picture', 'signature', 'file'],
   date: ['simple'],
-  relation: ['search', 'tags', 'list'],
+  relation: ['search', 'tags', 'list', 'carousel', 'summary'],
+  address: ['form'],
   selection: ['select', 'linked'],
   totals: ['recap'],
 }
@@ -63,6 +95,21 @@ export const RELATION_KIND_WIDGETS: Record<RelationKind, string> = {
   many2one: 'search',
   one2many: 'list',
   many2many: 'tags',
+}
+
+/**
+ * Extra widgets a relation kind may opt INTO beyond its own default above —
+ * e.g. one2many's stock grid (`list`) may instead render as `carousel` (a
+ * photo gallery over the SAME embedded rows, each backed by its own
+ * `boolean/picture` anchor — property_management's Photos pages are the
+ * first use). Kept as a SEPARATE map from `RELATION_KIND_WIDGETS` rather
+ * than widening that one to arrays, so "the kind's default widget" stays a
+ * single unambiguous lookup for every other caller.
+ */
+const RELATION_KIND_WIDGET_OVERRIDES: Record<RelationKind, readonly string[]> = {
+  many2one: ['summary'],
+  one2many: ['carousel'],
+  many2many: [],
 }
 
 /**
@@ -84,6 +131,16 @@ export interface RelationDescriptor {
    * `<related entity>_id` — declare explicitly when the junction deviates.
    */
   viaFields?: { own: string; related: string }
+  /**
+   * one2many only: the related record's OWN dedicated form route, as a path
+   * template whose ':id' is replaced by the clicked row's id (same convention
+   * as `ViewDescriptor.formPath`) — e.g. property_management's Equipment
+   * table opens the clicked equipment's own form. Omitted (the default,
+   * matching every relation field before this existed — `sale_lines`/
+   * `quote_lines` included) means the grid stays inert on row click, same as
+   * always: opt-in, not a behavior change for existing declarations.
+   */
+  formPath?: string
 }
 
 /**
@@ -289,10 +346,11 @@ function resolveRelationWidget(field: FieldDescriptor): string {
     throw new Error(`field "${field.name}": unknown relation kind "${rel.kind}"`)
   }
   const widget = field.widget ?? expected
-  if (widget !== expected) {
+  if (widget !== expected && !RELATION_KIND_WIDGET_OVERRIDES[rel.kind].includes(widget)) {
+    const allowed = [expected, ...RELATION_KIND_WIDGET_OVERRIDES[rel.kind]].join('", "')
     throw new Error(
       `field "${field.name}": widget "${widget}" does not match relation kind ` +
-        `"${rel.kind}" (expected "${expected}")`,
+        `"${rel.kind}" (allowed: "${allowed}")`,
     )
   }
   if (rel.kind === 'one2many' && !rel.inverseField) {
@@ -420,8 +478,38 @@ export function fieldZeroDefault(field: FieldDescriptor): JsonValue {
     case 'date':
     case 'relation':
     case 'totals':
+    case 'address':
       return null
   }
+}
+
+/**
+ * The 7 sibling column suffixes a `type: 'address'` field owns off its own
+ * `field.name` prefix (address-widget.tsx's doc comment) — canonical here so
+ * behaviors.ts (seeding each sibling's own zero default, see
+ * ADDRESS_SUB_DEFAULTS below) and address-widget.tsx (reading/writing them)
+ * never drift out of sync with each other.
+ */
+export const ADDRESS_SUFFIXES = [
+  'number',
+  'complement',
+  'street',
+  'zip_code',
+  'city',
+  'state',
+  'country',
+] as const
+
+/** `<prefix>_<suffix>` — the actual sibling column name. */
+export function addressSubKey(prefix: string, suffix: (typeof ADDRESS_SUFFIXES)[number]): string {
+  return `${prefix}_${suffix}`
+}
+
+/** Each suffix's own zero default — `number` is a nullable *int on the Go
+ * side, every other sub-column a NOT NULL string (same shape core/CLAUDE.md's
+ * ORM section documents for property_management.Address*). */
+export function addressSubZeroDefault(suffix: (typeof ADDRESS_SUFFIXES)[number]): JsonValue {
+  return suffix === 'number' ? null : ''
 }
 
 /**
@@ -901,10 +989,17 @@ export interface HeaderButtonDescriptor {
   /** MUI Button variant mapping: 'primary' (contained, the default) or
    * 'secondary' (outlined) — e.g. a destructive/negative action like Decline. */
   variant?: 'primary' | 'secondary'
-  /** Shown only while the condition holds against the CURRENT DRAFT, reevaluated
+  /**
+   * Shown only while the condition holds against the CURRENT DRAFT, reevaluated
    * live exactly like `FieldDescriptor.states.visible` — e.g. `{ field: 'status',
-   * op: 'eq', value: 'draft' }`. Omitted ⇒ always shown (while the record exists). */
-  states?: { visible?: Condition }
+   * op: 'eq', value: 'draft' }`. Omitted ⇒ always shown (while the record exists).
+   * `readOnly`, unlike `visible`, doesn't unmount the button — it renders
+   * disabled instead (e.g. "already run this month, come back next month" —
+   * the user should still SEE the button exists, just can't click it right
+   * now). Both are optional and independent: a button can have neither, just
+   * one, or both.
+   */
+  states?: { visible?: Condition; readOnly?: Condition }
 }
 
 export interface ViewDescriptor<T = Record<string, unknown>> {
