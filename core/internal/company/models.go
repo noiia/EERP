@@ -18,9 +18,20 @@ type Company struct {
 	model.BaseModel
 	TenantID uuid.UUID `db:"tenant_id,index"`
 	Name     string    `db:"name"`
-	Address  string    `db:"address"`
-	Phone    string    `db:"phone"`
-	Email    string    `db:"email"`
+	// Address* — the type: 'address' composite field's 7 sibling columns
+	// (core-front's AddressWidget, core/CLAUDE.md's ORM section), prefixed
+	// "address_" to match the frontend field name 'address'. Real columns
+	// rather than a JSON blob so they stay filterable/searchable through the
+	// generic list endpoint like any other column.
+	AddressNumber     *int   `db:"address_number"`
+	AddressComplement string `db:"address_complement"`
+	AddressStreet     string `db:"address_street"`
+	AddressZipCode    string `db:"address_zip_code"`
+	AddressCity       string `db:"address_city"`
+	AddressState      string `db:"address_state"`
+	AddressCountry    string `db:"address_country"`
+	Phone             string `db:"phone"`
+	Email             string `db:"email"`
 	// Currency is this company's own global currency (e.g. "USD") — the
 	// single source of truth sale.Invoice/sale.Quote used to duplicate as a
 	// per-document field. A document's currency is now implicit: whichever

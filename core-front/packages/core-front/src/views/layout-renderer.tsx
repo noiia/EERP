@@ -462,6 +462,7 @@ function LayoutNodeView({
         disabled={disabled}
         entity={entity}
         recordId={recordId}
+        draft={draft}
       />
     )
   }

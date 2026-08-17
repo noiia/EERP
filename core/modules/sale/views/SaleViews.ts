@@ -26,7 +26,17 @@ export interface Invoice {
   /** true ⇔ a picture exists on this record's logo anchor (picture service). */
   logo?: boolean | null
   issuer_name?: string
-  issuer_address?: string
+  // issuer_address_* — the type: 'address' composite field's 7 sibling
+  // columns (core-front's AddressWidget). Never edited on the invoice form
+  // itself (see formFields below) — blank falls back to the active
+  // company's own address at print time (invoiceReport's companyFallback).
+  issuer_address_number?: number | null
+  issuer_address_complement?: string
+  issuer_address_street?: string
+  issuer_address_zip_code?: string
+  issuer_address_city?: string
+  issuer_address_state?: string
+  issuer_address_country?: string
   issuer_phone?: string
   issuer_email?: string
   number: string
@@ -36,7 +46,15 @@ export interface Invoice {
   /** Bill-to snapshot, captured at invoice time — see module.go's doc comment. */
   customer_name: string
   customer_email?: string
-  customer_address?: string
+  // customer_address_* mirrors issuer_address_*'s composite shape — edited
+  // on the form (type: 'address' widget, formFields below).
+  customer_address_number?: number | null
+  customer_address_complement?: string
+  customer_address_street?: string
+  customer_address_zip_code?: string
+  customer_address_city?: string
+  customer_address_state?: string
+  customer_address_country?: string
   due_date?: string | null
   /** One of the selection field's options: draft/sent/paid/overdue/cancelled. */
   status?: string
@@ -71,7 +89,15 @@ export interface Quote {
   id: string
   logo?: boolean | null
   issuer_name?: string
-  issuer_address?: string
+  // issuer_address_*/customer_address_* mirror Invoice's own composite
+  // shape above.
+  issuer_address_number?: number | null
+  issuer_address_complement?: string
+  issuer_address_street?: string
+  issuer_address_zip_code?: string
+  issuer_address_city?: string
+  issuer_address_state?: string
+  issuer_address_country?: string
   issuer_phone?: string
   issuer_email?: string
   number: string
@@ -80,7 +106,13 @@ export interface Quote {
   customer_id?: string | null
   customer_name: string
   customer_email?: string
-  customer_address?: string
+  customer_address_number?: number | null
+  customer_address_complement?: string
+  customer_address_street?: string
+  customer_address_zip_code?: string
+  customer_address_city?: string
+  customer_address_state?: string
+  customer_address_country?: string
   /** Validity/expiry date — Quote's equivalent of Invoice's payment due_date. */
   due_date?: string | null
   /** One of the selection field's options: draft/sent/accepted/declined/expired. */
@@ -197,7 +229,13 @@ registerHeaderButtonAction({
     })
     const invoice = await ops.create('invoice', {
       issuer_name: ctx.draft.issuer_name,
-      issuer_address: ctx.draft.issuer_address,
+      issuer_address_number: ctx.draft.issuer_address_number,
+      issuer_address_complement: ctx.draft.issuer_address_complement,
+      issuer_address_street: ctx.draft.issuer_address_street,
+      issuer_address_zip_code: ctx.draft.issuer_address_zip_code,
+      issuer_address_city: ctx.draft.issuer_address_city,
+      issuer_address_state: ctx.draft.issuer_address_state,
+      issuer_address_country: ctx.draft.issuer_address_country,
       issuer_phone: ctx.draft.issuer_phone,
       issuer_email: ctx.draft.issuer_email,
       number: `INV-${ctx.draft.number as string}`,
@@ -206,7 +244,13 @@ registerHeaderButtonAction({
       customer_id: ctx.draft.customer_id,
       customer_name: ctx.draft.customer_name,
       customer_email: ctx.draft.customer_email,
-      customer_address: ctx.draft.customer_address,
+      customer_address_number: ctx.draft.customer_address_number,
+      customer_address_complement: ctx.draft.customer_address_complement,
+      customer_address_street: ctx.draft.customer_address_street,
+      customer_address_zip_code: ctx.draft.customer_address_zip_code,
+      customer_address_city: ctx.draft.customer_address_city,
+      customer_address_state: ctx.draft.customer_address_state,
+      customer_address_country: ctx.draft.customer_address_country,
       status: 'draft',
       reference: ctx.draft.reference,
       quote_id: ctx.recordId,
@@ -286,7 +330,7 @@ const formFields: ViewDescriptor['fields'] = [
     relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
   },
   { name: 'customer_email', label: 'Customer email', type: 'text' },
-  { name: 'customer_address', label: 'Billing address', type: 'text', widget: 'long' },
+  { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field: currency is now the ISSUING COMPANY's own property
   // (internal/company.Company.Currency, Settings -> Company), not duplicated
   // per document.
@@ -373,7 +417,7 @@ const quoteFormFields: ViewDescriptor['fields'] = [
     relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
   },
   { name: 'customer_email', label: 'Customer email', type: 'text' },
-  { name: 'customer_address', label: 'Billing address', type: 'text', widget: 'long' },
+  { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field — same as invoice's formFields: it's the issuing
   // company's own property now (Settings -> Company).
   { name: 'reference', label: 'Reference', type: 'text' },
@@ -621,10 +665,30 @@ const invoiceReport: ReportDescriptor = {
           // user's active company profile instead — the invoice's own
           // columns/form fields are UNCHANGED (still editable, still
           // snapshotted on create); removing them as now-redundant is a
-          // deliberately separate, later pass.
+          // deliberately separate, later pass. issuer_address_number has NO
+          // companyFallback: company[companyField] ?? '' can't distinguish
+          // "blank" from a legitimate 0 for a NUMBER field the way it can
+          // for the string sub-fields — ponytail: acceptable ceiling, the
+          // street/city/country lines still fall back correctly.
           children: [
             { kind: 'field', name: 'issuer_name', companyFallback: 'name' },
-            { kind: 'field', name: 'issuer_address', companyFallback: 'address' },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'issuer_address_number' },
+                { kind: 'field', name: 'issuer_address_street', companyFallback: 'address_street' },
+              ],
+            },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'issuer_address_zip_code', companyFallback: 'address_zip_code' },
+                { kind: 'field', name: 'issuer_address_city', companyFallback: 'address_city' },
+              ],
+            },
+            { kind: 'field', name: 'issuer_address_country', companyFallback: 'address_country' },
             { kind: 'field', name: 'issuer_phone', companyFallback: 'phone' },
             { kind: 'field', name: 'issuer_email', companyFallback: 'email' },
           ],
@@ -634,7 +698,23 @@ const invoiceReport: ReportDescriptor = {
           className: 'eerp-report-client',
           children: [
             { kind: 'field', name: 'customer_name' },
-            { kind: 'field', name: 'customer_address' },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'customer_address_number' },
+                { kind: 'field', name: 'customer_address_street' },
+              ],
+            },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'customer_address_zip_code' },
+                { kind: 'field', name: 'customer_address_city' },
+              ],
+            },
+            { kind: 'field', name: 'customer_address_country' },
             { kind: 'field', name: 'customer_email' },
           ],
         },
@@ -740,9 +820,27 @@ const quoteReport: ReportDescriptor = {
         {
           kind: 'section',
           className: 'eerp-report-issuer',
+          // See invoiceReport's own doc comment above for why
+          // issuer_address_number has no companyFallback.
           children: [
             { kind: 'field', name: 'issuer_name', companyFallback: 'name' },
-            { kind: 'field', name: 'issuer_address', companyFallback: 'address' },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'issuer_address_number' },
+                { kind: 'field', name: 'issuer_address_street', companyFallback: 'address_street' },
+              ],
+            },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'issuer_address_zip_code', companyFallback: 'address_zip_code' },
+                { kind: 'field', name: 'issuer_address_city', companyFallback: 'address_city' },
+              ],
+            },
+            { kind: 'field', name: 'issuer_address_country', companyFallback: 'address_country' },
             { kind: 'field', name: 'issuer_phone', companyFallback: 'phone' },
             { kind: 'field', name: 'issuer_email', companyFallback: 'email' },
           ],
@@ -752,7 +850,23 @@ const quoteReport: ReportDescriptor = {
           className: 'eerp-report-client',
           children: [
             { kind: 'field', name: 'customer_name' },
-            { kind: 'field', name: 'customer_address' },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'customer_address_number' },
+                { kind: 'field', name: 'customer_address_street' },
+              ],
+            },
+            {
+              kind: 'section',
+              className: 'eerp-report-subject',
+              children: [
+                { kind: 'field', name: 'customer_address_zip_code' },
+                { kind: 'field', name: 'customer_address_city' },
+              ],
+            },
+            { kind: 'field', name: 'customer_address_country' },
             { kind: 'field', name: 'customer_email' },
           ],
         },

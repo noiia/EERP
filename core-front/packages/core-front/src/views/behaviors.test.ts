@@ -83,6 +83,16 @@ describe('buildBehaviorPlan', () => {
       registerOnChange({ entity: 'crm', name: 'crm.oc', onChange: ['x'], handler: () => undefined }),
     ).toThrowError(/already registered/)
   })
+
+  it('treats a type: address field as always unstored, regardless of its own store declaration', () => {
+    const plan = buildBehaviorPlan(
+      descriptor([
+        num('qty'),
+        { name: 'address', label: 'Address', type: 'address' }, // no explicit store: false
+      ]),
+    )
+    expect(plan.unstored).toEqual(['address'])
+  })
 })
 
 describe('applyBehaviors', () => {
@@ -217,6 +227,26 @@ describe('seedDefaults', () => {
       active: false,
       due: null,
       contact_id: null,
+    })
+  })
+
+  it('seeds every sibling column of a type: address field, not just the (unstored) field name itself', () => {
+    // Regression: without this, a record saved without ever touching the
+    // AddressWidget omits every sibling key (address_street, etc.) from the
+    // commit payload — Go's generic Create 422s (VALIDATION_ERROR) because
+    // the NOT NULL string sub-columns never arrive in the body at all.
+    const plan = buildBehaviorPlan(
+      descriptor([{ name: 'address', label: 'Address', type: 'address' }]),
+    )
+    expect(seedDefaults(plan, {})).toEqual({
+      address: null,
+      address_number: null,
+      address_complement: '',
+      address_street: '',
+      address_zip_code: '',
+      address_city: '',
+      address_state: '',
+      address_country: '',
     })
   })
 

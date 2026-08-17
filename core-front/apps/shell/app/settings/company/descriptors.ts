@@ -28,7 +28,7 @@ export const companyFormDescriptor: ViewDescriptor<CompanyRecord> = {
   viewType: 'form',
   fields: [
     { name: 'name', label: 'Name', type: 'text', required: true },
-    { name: 'address', label: 'Address', type: 'text', widget: 'long' },
+    { name: 'address', label: 'Address', type: 'address', widget: 'form' },
     { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
     { name: 'email', label: 'Email', type: 'text' },
     // This company's own global currency — sale documents (invoice/quote)

@@ -34,10 +34,22 @@ type Invoice struct {
 	// such concept exists yet in this codebase; app_settings would be the
 	// natural home for one once multiple invoices need to share a single
 	// issuer identity without re-entering it).
-	IssuerName    string `db:"issuer_name"`
-	IssuerAddress string `db:"issuer_address"`
-	IssuerPhone   string `db:"issuer_phone"`
-	IssuerEmail   string `db:"issuer_email"`
+	IssuerName string `db:"issuer_name"`
+	// IssuerAddress* — the type: 'address' composite field's 7 sibling
+	// columns (core-front's AddressWidget, core/CLAUDE.md's ORM section),
+	// prefixed to match the frontend field name 'issuer_address'. Real
+	// columns rather than a JSON blob for the same reason
+	// property_management.Address is: they stay filterable/searchable
+	// through the generic list endpoint.
+	IssuerAddressNumber     *int   `db:"issuer_address_number"`
+	IssuerAddressComplement string `db:"issuer_address_complement"`
+	IssuerAddressStreet     string `db:"issuer_address_street"`
+	IssuerAddressZipCode    string `db:"issuer_address_zip_code"`
+	IssuerAddressCity       string `db:"issuer_address_city"`
+	IssuerAddressState      string `db:"issuer_address_state"`
+	IssuerAddressCountry    string `db:"issuer_address_country"`
+	IssuerPhone             string `db:"issuer_phone"`
+	IssuerEmail             string `db:"issuer_email"`
 	// Number is the human-facing invoice reference (e.g. "INV-2026-0001"),
 	// distinct from the record's own UUID id.
 	Number    string     `db:"number"`
@@ -47,18 +59,25 @@ type Invoice struct {
 	// CustomerID is the optional many2one FK behind the form's contact search
 	// widget (nullable, same contract as crm.CRM's Contacts).
 	CustomerID *uuid.UUID `db:"customer_id"`
-	// CustomerName/CustomerEmail/CustomerAddress are the bill-to snapshot
+	// CustomerName/CustomerEmail/CustomerAddress* are the bill-to snapshot
 	// printed on the PDF — captured at invoice time on purpose, not resolved
 	// live through CustomerID: an invoice must keep reading correctly even if
 	// the linked contact is later renamed or moved (and the report layout,
 	// like crm.statement, only ever reads scalar fields already on the
-	// record — no FK join at print time).
-	CustomerName    string     `db:"customer_name"`
-	CustomerEmail   string     `db:"customer_email"`
-	CustomerAddress string     `db:"customer_address"`
-	DueDate         *time.Time `db:"due_date"`
-	Status          string     `db:"status"`    // "draft", "sent", "paid", "overdue", "cancelled"
-	Reference       string     `db:"reference"` // customer PO / reference number
+	// record — no FK join at print time). CustomerAddress* mirrors
+	// IssuerAddress*'s 7-column composite shape above.
+	CustomerName              string     `db:"customer_name"`
+	CustomerEmail             string     `db:"customer_email"`
+	CustomerAddressNumber     *int       `db:"customer_address_number"`
+	CustomerAddressComplement string     `db:"customer_address_complement"`
+	CustomerAddressStreet     string     `db:"customer_address_street"`
+	CustomerAddressZipCode    string     `db:"customer_address_zip_code"`
+	CustomerAddressCity       string     `db:"customer_address_city"`
+	CustomerAddressState      string     `db:"customer_address_state"`
+	CustomerAddressCountry    string     `db:"customer_address_country"`
+	DueDate                   *time.Time `db:"due_date"`
+	Status                    string     `db:"status"`    // "draft", "sent", "paid", "overdue", "cancelled"
+	Reference                 string     `db:"reference"` // customer PO / reference number
 	// QuoteID is the quote this invoice was raised FROM, when it was —
 	// nil for an invoice created directly, never through a quote's Accept
 	// flow. Set once, at creation, by the quote form's Accept header button
@@ -149,19 +168,33 @@ type SaleLine struct {
 // not a flag flip — that conversion isn't built yet.
 type Quote struct {
 	model.BaseModel
-	TenantID        uuid.UUID  `db:"tenant_id"`
-	Logo            *bool      `db:"logo"`
-	IssuerName      string     `db:"issuer_name"`
-	IssuerAddress   string     `db:"issuer_address"`
-	IssuerPhone     string     `db:"issuer_phone"`
-	IssuerEmail     string     `db:"issuer_email"`
-	Number          string     `db:"number"`
-	IssueDate       *time.Time `db:"issue_date"`
-	Subject         string     `db:"subject"`
-	CustomerID      *uuid.UUID `db:"customer_id"`
-	CustomerName    string     `db:"customer_name"`
-	CustomerEmail   string     `db:"customer_email"`
-	CustomerAddress string     `db:"customer_address"`
+	TenantID   uuid.UUID `db:"tenant_id"`
+	Logo       *bool     `db:"logo"`
+	IssuerName string    `db:"issuer_name"`
+	// IssuerAddress*/CustomerAddress* mirror Invoice's own 7-column
+	// type: 'address' composite shape (see Invoice's doc comment above).
+	IssuerAddressNumber       *int       `db:"issuer_address_number"`
+	IssuerAddressComplement   string     `db:"issuer_address_complement"`
+	IssuerAddressStreet       string     `db:"issuer_address_street"`
+	IssuerAddressZipCode      string     `db:"issuer_address_zip_code"`
+	IssuerAddressCity         string     `db:"issuer_address_city"`
+	IssuerAddressState        string     `db:"issuer_address_state"`
+	IssuerAddressCountry      string     `db:"issuer_address_country"`
+	IssuerPhone               string     `db:"issuer_phone"`
+	IssuerEmail               string     `db:"issuer_email"`
+	Number                    string     `db:"number"`
+	IssueDate                 *time.Time `db:"issue_date"`
+	Subject                   string     `db:"subject"`
+	CustomerID                *uuid.UUID `db:"customer_id"`
+	CustomerName              string     `db:"customer_name"`
+	CustomerEmail             string     `db:"customer_email"`
+	CustomerAddressNumber     *int       `db:"customer_address_number"`
+	CustomerAddressComplement string     `db:"customer_address_complement"`
+	CustomerAddressStreet     string     `db:"customer_address_street"`
+	CustomerAddressZipCode    string     `db:"customer_address_zip_code"`
+	CustomerAddressCity       string     `db:"customer_address_city"`
+	CustomerAddressState      string     `db:"customer_address_state"`
+	CustomerAddressCountry    string     `db:"customer_address_country"`
 	// DueDate is the quote's validity/expiry date — same column shape as
 	// Invoice.DueDate, different meaning ("valid until" vs "payment due by").
 	DueDate   *time.Time `db:"due_date"`

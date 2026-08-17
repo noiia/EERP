@@ -27,10 +27,18 @@ func NewRepository(db *orm.DB) *Repository {
 func (r *Repository) FindByID(ctx context.Context, tenantID, id uuid.UUID) (Company, error) {
 	var c Company
 	err := r.db.QueryRow(ctx, `
-		SELECT id, tenant_id, name, address, phone, email, is_default
+		SELECT id, tenant_id, name,
+			address_number, address_complement, address_street, address_zip_code,
+			address_city, address_state, address_country,
+			phone, email, is_default
 		FROM company
 		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-	`, id, tenantID).Scan(&c.ID, &c.TenantID, &c.Name, &c.Address, &c.Phone, &c.Email, &c.IsDefault)
+	`, id, tenantID).Scan(
+		&c.ID, &c.TenantID, &c.Name,
+		&c.AddressNumber, &c.AddressComplement, &c.AddressStreet, &c.AddressZipCode,
+		&c.AddressCity, &c.AddressState, &c.AddressCountry,
+		&c.Phone, &c.Email, &c.IsDefault,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Company{}, fmt.Errorf("company: find by id: %w", orm.ErrNotFound)
@@ -61,10 +69,18 @@ func (r *Repository) EnsureDefaultCompany(ctx context.Context, tenantID uuid.UUI
 
 	var c Company
 	err := r.db.QueryRow(ctx, `
-		SELECT id, tenant_id, name, address, phone, email, is_default
+		SELECT id, tenant_id, name,
+			address_number, address_complement, address_street, address_zip_code,
+			address_city, address_state, address_country,
+			phone, email, is_default
 		FROM company
 		WHERE tenant_id = $1 AND is_default AND deleted_at IS NULL
-	`, tenantID).Scan(&c.ID, &c.TenantID, &c.Name, &c.Address, &c.Phone, &c.Email, &c.IsDefault)
+	`, tenantID).Scan(
+		&c.ID, &c.TenantID, &c.Name,
+		&c.AddressNumber, &c.AddressComplement, &c.AddressStreet, &c.AddressZipCode,
+		&c.AddressCity, &c.AddressState, &c.AddressCountry,
+		&c.Phone, &c.Email, &c.IsDefault,
+	)
 	if err != nil {
 		return Company{}, fmt.Errorf("company: read default: %w", err)
 	}

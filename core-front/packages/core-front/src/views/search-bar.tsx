@@ -133,9 +133,12 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
     case 'boolean':
       return ['eq', 'in']
     case 'totals':
-      // Never filterable/groupable in practice — a computed recap field only
-      // ever appears on a form, never a tree view's fields — but the switch
-      // must stay exhaustive over FieldType.
+    case 'address':
+      // Never filterable/groupable in practice through THIS field — a
+      // computed recap or composite field only ever appears on a form, never
+      // a tree view's fields, and address's real filterable data lives on
+      // its sibling columns (<name>_city etc.), not a field named 'address'
+      // itself — but the switch must stay exhaustive over FieldType.
       return []
   }
 }

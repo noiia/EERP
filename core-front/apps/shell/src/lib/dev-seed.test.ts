@@ -163,7 +163,12 @@ describe('seedDemoData', () => {
     // in a real backend even though this test's mocked client wouldn't catch it.
     for (const key of [
       'issuer_name',
-      'issuer_address',
+      'issuer_address_complement',
+      'issuer_address_street',
+      'issuer_address_zip_code',
+      'issuer_address_city',
+      'issuer_address_state',
+      'issuer_address_country',
       'issuer_phone',
       'issuer_email',
       'payment_method',

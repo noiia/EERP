@@ -1,4 +1,7 @@
 import {
+  addressSubKey,
+  addressSubZeroDefault,
+  ADDRESS_SUFFIXES,
   fieldZeroDefault,
   isVirtualRelation,
   type FieldDescriptor,
@@ -164,10 +167,14 @@ export function buildBehaviorPlan<T>(descriptor: ViewDescriptor<T>): BehaviorPla
   return {
     computed: ordered,
     onChange: behaviorRegistry.onChangeFor(descriptor.entity),
-    // store:false fields plus virtual relations (o2m/m2m): neither has a column
-    // on this record, so neither may reach the commit payload.
+    // store:false fields, virtual relations (o2m/m2m), and type:'address'
+    // fields: none of the three has a column on this record under their OWN
+    // name (address owns SIBLING columns instead — descriptor.ts's FIELD_WIDGETS
+    // doc comment), so none may reach the commit payload. address is always
+    // unstored regardless of the module's own `store` declaration, same
+    // "the type itself decides, not the flag" posture o2m/m2m relations have.
     unstored: descriptor.fields
-      .filter((f) => f.store === false || isVirtualRelation(f))
+      .filter((f) => f.store === false || isVirtualRelation(f) || f.type === 'address')
       .map((f) => f.name),
     defaults: buildDefaults(descriptor),
   }
@@ -183,6 +190,21 @@ function buildDefaults<T>(descriptor: ViewDescriptor<T>): FieldDefault[] {
   const defaults: FieldDefault[] = []
   for (const field of descriptor.fields) {
     if (isVirtualRelation(field)) continue
+    // type: 'address' owns 7 SIBLING columns, not its own — none of them
+    // get a default from the loop below (the field's own default resolves
+    // to the unstored 'address' key itself, per fieldZeroDefault). Without
+    // this, a record saved without ever touching the widget omits every
+    // sibling key from the commit payload entirely; Go's generic Create
+    // 422s (VALIDATION_ERROR) because the NOT NULL string sub-columns
+    // never arrived in the body at all — this is what actually keeps them
+    // present (even as '') on every commit, not just once the user edits.
+    if (field.type === 'address') {
+      for (const suffix of ADDRESS_SUFFIXES) {
+        const key = addressSubKey(field.name, suffix)
+        const zero = addressSubZeroDefault(suffix)
+        defaults.push({ name: key, resolve: () => zero })
+      }
+    }
     if (field.default === undefined) {
       const zero = fieldZeroDefault(field)
       defaults.push({ name: field.name, resolve: () => zero })

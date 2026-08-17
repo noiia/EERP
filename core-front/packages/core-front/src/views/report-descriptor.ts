@@ -30,7 +30,17 @@ export interface ReportFieldNode {
    * reportCompanyFallbackFields() below. Absent means no fallback; the
    * record's own value (however empty) always renders as-is.
    */
-  companyFallback?: 'name' | 'address' | 'phone' | 'email'
+  companyFallback?:
+    | 'name'
+    | 'address_number'
+    | 'address_complement'
+    | 'address_street'
+    | 'address_zip_code'
+    | 'address_city'
+    | 'address_state'
+    | 'address_country'
+    | 'phone'
+    | 'email'
 }
 
 /**

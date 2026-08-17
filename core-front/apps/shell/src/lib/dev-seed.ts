@@ -75,9 +75,17 @@ const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as c
 // with VALIDATION_ERROR unless every one of them is present in the body,
 // even as an empty string; the normal form always sends its zero-default
 // '' for every field, this seed script has to do the same explicitly.
+// issuer_address_* is the type: 'address' composite's 7 sibling columns —
+// issuer_address_number is the one nullable (*int) sub-column, safe to omit.
 const ISSUER = {
   issuer_name: 'Northwind Logistics',
-  issuer_address: '48 Harbor Row, Portsmouth',
+  issuer_address_number: 48,
+  issuer_address_complement: '',
+  issuer_address_street: 'Harbor Row',
+  issuer_address_zip_code: '',
+  issuer_address_city: 'Portsmouth',
+  issuer_address_state: '',
+  issuer_address_country: '',
   issuer_phone: '+1 555 0142',
   issuer_email: 'billing@northwindlogistics.example',
 }
@@ -206,7 +214,14 @@ function buildDocuments(
       customer_id: contact?.id ?? null,
       customer_name: contact ? `${first} ${last}` : company,
       customer_email: fakeEmail(first, last, company),
-      customer_address: company,
+      // customer_address_* — same NOT-NULL-string-columns rule as ISSUER
+      // above; company doubles as filler street text, the rest stay blank.
+      customer_address_complement: '',
+      customer_address_street: company,
+      customer_address_zip_code: '',
+      customer_address_city: '',
+      customer_address_state: '',
+      customer_address_country: '',
       reference: `PO-${1000 + Math.floor(Math.random() * 9000)}`,
       payment_method: pick(PAYMENT_METHODS),
       payment_terms: pick(PAYMENT_TERMS),
