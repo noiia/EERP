@@ -4,9 +4,11 @@ import (
 	"context"
 	"core/orm/log"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -123,6 +125,51 @@ func TestZapLogger_ErrorField_OnlyWhenErr(t *testing.T) {
 	fields = obs.All()[0].ContextMap()
 	if _, ok := fields["error"]; !ok {
 		t.Error("\"error\" field must be present when Err != nil")
+	}
+}
+
+func TestZapLogger_NoRowsErr_LoggedAtDebug(t *testing.T) {
+	t.Parallel()
+
+	logger, obs := zapObserver(t)
+	logger.Log(context.Background(), log.LogEntry{
+		SQL: "SELECT value FROM app_settings WHERE key = $1",
+		Err: pgx.ErrNoRows,
+	})
+
+	logs := obs.All()
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(logs))
+	}
+	if logs[0].Level != zap.DebugLevel {
+		t.Errorf("level = %v, want Debug — an unconfigured setting isn't a failure", logs[0].Level)
+	}
+}
+
+func TestZapLogger_CallerField_OnlyWhenSet(t *testing.T) {
+	t.Parallel()
+
+	logger, obs := zapObserver(t)
+
+	logger.Log(context.Background(), log.LogEntry{SQL: "SELECT 1"})
+	if _, ok := obs.All()[0].ContextMap()["caller"]; ok {
+		t.Error("\"caller\" field must not be present when Caller is empty")
+	}
+
+	obs.TakeAll()
+	logger.Log(context.Background(), log.LogEntry{SQL: "SELECT 1", Caller: "repository.go:29"})
+	fields := obs.All()[0].ContextMap()
+	if got, ok := fields["caller"]; !ok || got != "repository.go:29" {
+		t.Errorf("caller field = %v, want %q", got, "repository.go:29")
+	}
+}
+
+func TestCaller_ReturnsImmediateCallSite(t *testing.T) {
+	t.Parallel()
+
+	got := func() string { return log.Caller() }() // this line's number is what we expect back
+	if !strings.Contains(got, "logger_test.go:") {
+		t.Errorf("Caller() = %q, want it to name this test file", got)
 	}
 }
 

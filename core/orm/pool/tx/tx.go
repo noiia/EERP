@@ -42,24 +42,27 @@ func New(pgxTx pgx.Tx, logger log.Logger, cfg config.Config) *Tx {
 
 // Query executes a SQL query within the transaction.
 func (t *Tx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	caller := log.Caller()
 	start := time.Now()
 	rows, err := t.pgxTx.Query(ctx, sql, args...)
-	t.log(ctx, sql, args, time.Since(start), err)
+	t.log(ctx, sql, args, time.Since(start), err, caller)
 	return rows, err
 }
 
 // QueryRow executes a single-row query within the transaction.
 func (t *Tx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	caller := log.Caller()
 	start := time.Now()
 	row := t.pgxTx.QueryRow(ctx, sql, args...)
-	return &txLoggedRow{row: row, tx: t, ctx: ctx, sql: sql, args: args, start: start}
+	return &txLoggedRow{row: row, tx: t, ctx: ctx, sql: sql, args: args, start: start, caller: caller}
 }
 
 // Exec executes a statement within the transaction.
 func (t *Tx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	caller := log.Caller()
 	start := time.Now()
 	tag, err := t.pgxTx.Exec(ctx, sql, args...)
-	t.log(ctx, sql, args, time.Since(start), err)
+	t.log(ctx, sql, args, time.Since(start), err, caller)
 	return tag, err
 }
 
@@ -97,11 +100,11 @@ func (t *Tx) Release(ctx context.Context, name string) error {
 
 // ── Internal ──────────────────────────────────────────────────────────────────
 
-func (t *Tx) log(ctx context.Context, sql string, args []any, d time.Duration, err error) {
+func (t *Tx) log(ctx context.Context, sql string, args []any, d time.Duration, err error, caller string) {
 	if !t.cfg.Debug && err == nil {
 		return
 	}
-	t.logger.Log(ctx, log.LogEntry{SQL: sql, Args: args, Duration: d, Err: err})
+	t.logger.Log(ctx, log.LogEntry{SQL: sql, Args: args, Duration: d, Err: err, Caller: caller})
 }
 
 // pgxSafeName strips everything that isn't a letter, digit, or underscore
@@ -123,16 +126,17 @@ func PgxSafeName(s string) string {
 
 // txLoggedRow mirrors loggedRow for the Tx context.
 type txLoggedRow struct {
-	row   pgx.Row
-	tx    *Tx
-	ctx   context.Context
-	sql   string
-	args  []any
-	start time.Time
+	row    pgx.Row
+	tx     *Tx
+	ctx    context.Context
+	sql    string
+	args   []any
+	start  time.Time
+	caller string
 }
 
 func (r *txLoggedRow) Scan(dest ...any) error {
 	err := r.row.Scan(dest...)
-	r.tx.log(r.ctx, r.sql, r.args, time.Since(r.start), err)
+	r.tx.log(r.ctx, r.sql, r.args, time.Since(r.start), err, r.caller)
 	return err
 }

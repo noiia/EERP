@@ -30,7 +30,13 @@ func new(encoderCfg zapcore.EncoderConfig, level zapcore.Level) (*zap.Logger, er
 		zapcore.NewCore(fileEncoder, zapcore.AddSync(file), level),
 	)
 
-	return zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel)), nil
+	// Stacktrace only above Error: Error is the common case for a handled,
+	// expected failure (bad input, no rows, a downstream 4xx) and a 20+ frame
+	// dump of echo/net/http internals on every one of those bodies the real
+	// signal — the "caller" field on ORM logs (core/orm/log.LogEntry) already
+	// names the actual source line without it. Reserve the full stack for
+	// DPanic/Fatal, where something is about to crash and every frame matters.
+	return zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.DPanicLevel)), nil
 }
 
 func InitLogger(debug bool) error {

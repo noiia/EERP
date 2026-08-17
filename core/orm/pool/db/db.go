@@ -79,9 +79,10 @@ func (db *DB) Pool() *pgxpool.Pool {
 // Query executes a SQL query that returns rows.
 // Logs the query, duration, and any error via the configured Logger.
 func (db *DB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	caller := log.Caller()
 	start := time.Now()
 	rows, err := db.pool.Query(ctx, sql, args...)
-	db.log(ctx, sql, args, time.Since(start), err)
+	db.log(ctx, sql, args, time.Since(start), err, caller)
 	return rows, err
 }
 
@@ -89,16 +90,18 @@ func (db *DB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, err
 // The error (if any) is deferred to pgx.Row.Scan — logging happens there.
 // We record the start time and log on the first Scan call via a wrapped row.
 func (db *DB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	caller := log.Caller()
 	start := time.Now()
 	row := db.pool.QueryRow(ctx, sql, args...)
-	return &loggedRow{row: row, db: db, ctx: ctx, sql: sql, args: args, start: start}
+	return &loggedRow{row: row, db: db, ctx: ctx, sql: sql, args: args, start: start, caller: caller}
 }
 
 // Exec executes a SQL statement that returns no rows (INSERT, UPDATE, DELETE).
 func (db *DB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	caller := log.Caller()
 	start := time.Now()
 	tag, err := db.pool.Exec(ctx, sql, args...)
-	db.log(ctx, sql, args, time.Since(start), err)
+	db.log(ctx, sql, args, time.Since(start), err, caller)
 	return tag, err
 }
 
@@ -123,7 +126,7 @@ func (db *DB) Transaction(ctx context.Context, fn func(*tx.Tx) error) error {
 	if err := fn(tx); err != nil {
 		// Best-effort rollback — log if it also fails but return the original error.
 		if rbErr := pgxTx.Rollback(ctx); rbErr != nil {
-			db.log(ctx, "ROLLBACK", nil, 0, rbErr)
+			db.log(ctx, "ROLLBACK", nil, 0, rbErr, log.Caller())
 		}
 		return err
 	}
@@ -138,25 +141,26 @@ func (db *DB) Transaction(ctx context.Context, fn func(*tx.Tx) error) error {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-func (db *DB) log(ctx context.Context, sql string, args []any, d time.Duration, err error) {
+func (db *DB) log(ctx context.Context, sql string, args []any, d time.Duration, err error, caller string) {
 	if !db.config.Debug && err == nil {
 		return
 	}
-	db.logger.Log(ctx, log.LogEntry{SQL: sql, Args: args, Duration: d, Err: err})
+	db.logger.Log(ctx, log.LogEntry{SQL: sql, Args: args, Duration: d, Err: err, Caller: caller})
 }
 
 // loggedRow defers logging until Scan is called, capturing the round-trip time.
 type loggedRow struct {
-	row   pgx.Row
-	db    *DB
-	ctx   context.Context
-	sql   string
-	args  []any
-	start time.Time
+	row    pgx.Row
+	db     *DB
+	ctx    context.Context
+	sql    string
+	args   []any
+	start  time.Time
+	caller string
 }
 
 func (r *loggedRow) Scan(dest ...any) error {
 	err := r.row.Scan(dest...)
-	r.db.log(r.ctx, r.sql, r.args, time.Since(r.start), err)
+	r.db.log(r.ctx, r.sql, r.args, time.Since(r.start), err, r.caller)
 	return err
 }
