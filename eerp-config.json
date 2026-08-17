@@ -25,8 +25,8 @@
     "s3_endpoint": "http://127.0.0.1:3910",
     "s3_region": "garage",
     "s3_bucket": "eerp",
-    "s3_access_key": "GKdeadbeefdeadbeefdeadbeef",
-    "s3_secret_key": "3b7932955ae6e6d18fa87084d6c4f35898471aee3bbce0da3d5779b65195080c",
+    "s3_access_key": "GKd570a36db0c8d20a660b41bc",
+    "s3_secret_key": "5f479b0c0600d9777c76d65bd0dd85f3e6dd347c1c0252da0f36ed2d34d749a7",
     "pdf_service_url": "http://127.0.0.1:8090",
     "frontend_base_url": "http://127.0.0.1:3000"
 }
