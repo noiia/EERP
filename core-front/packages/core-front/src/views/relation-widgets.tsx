@@ -12,7 +12,8 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { DataGrid, type GridColDef } from '@mui/x-data-grid'
+import { DataGrid, type GridColDef, type GridRowParams } from '@mui/x-data-grid'
+import { useRouter } from 'next/navigation'
 import { useT } from '../i18n/translate'
 import { moduleRegistry } from '../registry'
 import {
@@ -82,7 +83,9 @@ function labelOf(record: RelationRecord, labelField: string): string {
   return raw == null || raw === '' ? record.id : String(raw)
 }
 
-function relationOf(field: FieldDescriptor): RelationDescriptor {
+/** Exported so other relation-backed widgets can share this one cast+doc
+ * comment instead of duplicating it. */
+export function relationOf(field: FieldDescriptor): RelationDescriptor {
   // Registration validated the block exists (resolveRelationWidget).
   return field.relation as RelationDescriptor
 }
@@ -194,7 +197,10 @@ function relatedColumns(
   }))
 }
 
-function MissingOpsHint({ label }: { label: string | null }) {
+/** Exported so other relation-backed widgets (carousel-widget.tsx,
+ * relation-summary-widget.tsx) can reuse the same inert-posture hint instead
+ * of duplicating it. */
+export function MissingOpsHint({ label }: { label: string | null }) {
   const t = useT()
   return (
     <Box>
@@ -210,7 +216,8 @@ function MissingOpsHint({ label }: { label: string | null }) {
   )
 }
 
-function UnsavedHint({ label }: { label: string | null }) {
+/** Exported for the same reason as MissingOpsHint above. */
+export function UnsavedHint({ label }: { label: string | null }) {
   const t = useT()
   return (
     <Box>
@@ -574,7 +581,9 @@ interface TagLink {
 }
 
 /** The junction's FK columns: declared viaFields or the naming convention. */
-function junctionColumns(rel: RelationDescriptor, ownEntity: string) {
+/** Exported so relation-summary-widget.tsx can resolve a many2many's
+ * default junction column names the same way RelationTagsWidget does. */
+export function junctionColumns(rel: RelationDescriptor, ownEntity: string) {
   return {
     own: rel.viaFields?.own ?? `${ownEntity}_id`,
     related: rel.viaFields?.related ?? `${rel.entity}_id`,
@@ -733,6 +742,7 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
 
 export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   const t = useT()
+  const router = useRouter()
   const ops = useRelationOps()
   const rel = relationOf(field)
   const inverseField = rel.inverseField as string // registration validated presence
@@ -766,15 +776,23 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
           {t(fieldLabel(field))}
         </Typography>
       )}
-      {/* Rows stay read-only (inline edit is a later iteration); creation goes
-          through the wizard line below — the inverse FK is preset, so the new
-          record lands in this list by construction. */}
+      {/* Rows stay read-only inline (inline edit is a later iteration); creation
+          goes through the wizard line below — the inverse FK is preset, so the
+          new record lands in this list by construction. rel.formPath (opt-in —
+          absent for sale_lines/quote_lines, which intentionally stay inert on
+          click) navigates to the clicked row's own dedicated form instead. */}
       <DataGrid
         rows={rows}
         columns={relatedColumns(rows, labelField, t, [inverseField])}
         autoHeight
         hideFooter
         disableRowSelectionOnClick
+        onRowClick={
+          rel.formPath
+            ? (params: GridRowParams) => router.push(rel.formPath!.replace(':id', String(params.id)))
+            : undefined
+        }
+        sx={rel.formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
       />
       {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
           rather than relying on the Button default staying primary. */}

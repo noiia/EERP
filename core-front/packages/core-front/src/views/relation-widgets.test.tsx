@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import Typography from '@mui/material/Typography'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+
+// RelationListWidget navigates via the App Router when relation.formPath is declared.
+const pushMock = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
+}))
+
 import type { FieldDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { fieldWidget, type WidgetProps } from './widgets'
@@ -288,6 +295,24 @@ describe('relation/list (one2many)', () => {
     )
     expect(await screen.findByText('Acme')).toBeInTheDocument()
     expect(await screen.findByText('Globex')).toBeInTheDocument()
+  })
+
+  it('with no relation.formPath declared, clicking a row does not navigate (sale_lines/quote_lines posture)', async () => {
+    const ops = stubOps()
+    renderWidget(listField, ops)
+    fireEvent.click(await screen.findByText('Acme'))
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('with relation.formPath declared, clicking a row navigates to that record\'s own form', async () => {
+    const ops = stubOps()
+    const navigableField: FieldDescriptor = {
+      ...listField,
+      relation: { ...listField.relation!, formPath: '/crm/lines/:id' },
+    }
+    renderWidget(navigableField, ops)
+    fireEvent.click(await screen.findByText('Acme'))
+    expect(pushMock).toHaveBeenCalledWith('/crm/lines/c1')
   })
 
   it('create line: creates with the inverse FK preset and hidden, row joins the grid', async () => {
