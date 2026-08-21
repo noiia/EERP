@@ -93,8 +93,9 @@ function MenuTile({ href, label, icon }: { href: string; label: string; icon?: R
 }
 
 export default function Menu({ menu }: MenuProps) {
-  // Tile labels are titleized module names — msgids like any other string, so a
-  // module can localize its own tile by translating its titleized name in its .po.
+  // Tile labels are the module's display_name (module.json), falling back to a
+  // titleized module name when absent — either way a msgid like any other
+  // string, so a module can localize its tile by translating it in its .po.
   const t = useT()
   return (
     <Container maxWidth={false} sx={{ py: 6 }}>
@@ -132,7 +133,7 @@ export default function Menu({ menu }: MenuProps) {
             <MenuTile
               key={module.name}
               href={module.routes[0].path}
-              label={t(titleize(module.name))}
+              label={t(module.displayName || titleize(module.name))}
               icon={iconDef ? <FontAwesomeIcon icon={iconDef} /> : undefined}
             />
           )

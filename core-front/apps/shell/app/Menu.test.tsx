@@ -68,6 +68,15 @@ describe('Menu', () => {
     expect(crmLink).toHaveTextContent(/^C/)
   })
 
+  it('prefers displayName over the titleized name when set', () => {
+    const menuWithDisplayName = [
+      { name: 'propertymanagement', routes: [{ path: '/pm', descriptor }], displayName: 'Real Estate' },
+    ] as unknown as MenuModule[]
+    render(<Menu menu={menuWithDisplayName} />)
+    expect(screen.getByRole('link', { name: /real estate/i })).toBeInTheDocument()
+    expect(screen.queryByText('Propertymanagement')).not.toBeInTheDocument()
+  })
+
   it('shows the empty-state message when no applications are installed (Settings still listed)', () => {
     render(<Menu menu={[]} />)
     expect(screen.getByText('No applications are available for your account.')).toBeInTheDocument()

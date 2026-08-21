@@ -134,6 +134,20 @@ describe('discoverModuleViews', () => {
     )
     expect(discoverModuleViews(repo, readConfig(repo))[0].appMode).toBe(false)
   })
+
+  it('defaults displayName to name when module.json omits display_name', () => {
+    expect(discoverModuleViews(repo, readConfig(repo))[0].displayName).toBe('demo')
+
+    writeFileSync(
+      join(repo, 'mods', 'demo', 'module.json'),
+      JSON.stringify({
+        name: 'demo',
+        display_name: 'Demo App',
+        static_files: { views: ['DemoViews.ts'] },
+      }),
+    )
+    expect(discoverModuleViews(repo, readConfig(repo))[0].displayName).toBe('Demo App')
+  })
 })
 
 describe('translationsForDir', () => {
@@ -210,18 +224,19 @@ describe('renderManifest', () => {
     )
     expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front/server'")
     expect(manifest).toContain("import m0 from '../../../../mods/demo/views/DemoViews'")
-    // The fixture module declares app_mode: true — the registration carries it.
-    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true })')
+    // The fixture module declares app_mode: true — the registration carries it,
+    // along with a displayName defaulted from "name" (no display_name declared).
+    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true, displayName: "demo" })')
     expect(manifest).toContain('export { moduleRegistry }')
   })
 
-  it('registers a module without app_mode plainly (routes only, no menu tile)', () => {
+  it('registers a module without app_mode plainly, still carrying its displayName', () => {
     writeFileSync(
       join(repo, 'mods', 'demo', 'module.json'),
       JSON.stringify({ name: 'demo', static_files: { views: ['DemoViews.ts'] } }),
     )
     const manifest = renderManifest(discoverModuleViews(repo, readConfig(repo)), fromDir)
-    expect(manifest).toContain('moduleRegistry.register(m0)')
+    expect(manifest).toContain('moduleRegistry.register(m0, { displayName: "demo" })')
     expect(manifest).not.toContain('appMode')
   })
 
@@ -242,7 +257,7 @@ describe('renderClientManifest', () => {
     // moduleRegistry (the create wizard resolves form descriptors from it).
     expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front'")
     expect(manifest).toContain("import m0 from '../../../../mods/demo/views/DemoViews'")
-    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true })')
+    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true, displayName: "demo" })')
     expect(manifest).not.toContain('@eerp/core-front/server')
   })
 
@@ -255,7 +270,9 @@ describe('renderClientManifest', () => {
   it('carries depends into the register() call — the registry checks it for the extension-coverage warning', () => {
     const withDepends = [{ ...discoverModuleViews(repo, readConfig(repo))[0], depends: ['crm'] }]
     const manifest = renderClientManifest(withDepends, join(repo, 'apps', 'shell', 'src', 'generated'))
-    expect(manifest).toContain('moduleRegistry.register(m0, { appMode: true, depends: ["crm"] })')
+    expect(manifest).toContain(
+      'moduleRegistry.register(m0, { appMode: true, depends: ["crm"], displayName: "demo" })',
+    )
   })
 })
 

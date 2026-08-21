@@ -150,6 +150,11 @@ describe('ModuleRegistry.menu', () => {
     expect(registry.menu()[0].icon).toBe('handshake')
   })
 
+  it('carries the displayName option through to the menu entry', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true, displayName: 'CRM' })
+    expect(registry.menu()[0].displayName).toBe('CRM')
+  })
+
   it('omits modules not registered as applications, keeping their routes reachable', () => {
     const registry = new ModuleRegistry().register(crm)
     expect(registry.menu()).toEqual([])

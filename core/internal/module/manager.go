@@ -204,7 +204,10 @@ func (m *Manager) find(id string) (map[string]any, string, error) {
 
 // readModuleJSON decodes path into a raw map and mirrors "name" onto "id" —
 // the frontend's generic list envelope expects every record to carry one
-// (docs/roadmaps/app-store.md, Record shape).
+// (docs/roadmaps/app-store.md, Record shape). "display_name" defaults to
+// "name" when absent or blank, so every consumer (App Store catalog, Settings
+// → Apps, the catch-all page title) always has a human-readable label without
+// each of them repeating the same fallback.
 func readModuleJSON(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -214,8 +217,12 @@ func readModuleJSON(path string) (map[string]any, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
-	if name, ok := raw["name"].(string); ok {
+	name, _ := raw["name"].(string)
+	if name != "" {
 		raw["id"] = name
+	}
+	if displayName, _ := raw["display_name"].(string); displayName == "" {
+		raw["display_name"] = name
 	}
 	return raw, nil
 }

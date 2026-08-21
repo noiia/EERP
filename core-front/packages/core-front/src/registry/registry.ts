@@ -71,6 +71,15 @@ export interface RegisterOptions {
    * Omitted ⇒ the tile falls back to its monogram letter.
    */
   icon?: string
+  /**
+   * `module.json` `display_name`: the human-readable label for this module's landing-menu
+   * tile (Go defaults it to `name` server-side when blank — `readModuleJSON`, `core/
+   * internal/module/manager.go` — the discovery script mirrors that same fallback here so
+   * the tile label matches the App Store's own display of the module). Omitted only for
+   * modules registered outside the generated manifest (tests, hand-written `register()`
+   * calls); the menu falls back to a titleized `name` in that case.
+   */
+  displayName?: string
 }
 
 /** What the catch-all page resolves per path: the owning module + how to render it. */
@@ -100,6 +109,9 @@ export interface MenuModule {
   /** Font Awesome solid icon name for the tile (RegisterOptions.icon), or undefined
    * to fall back to the tile's monogram letter. */
   icon?: string
+  /** Tile label (RegisterOptions.displayName), or undefined to fall back to a
+   * titleized `name`. */
+  displayName?: string
 }
 
 /**
@@ -143,6 +155,7 @@ interface RegisteredModule {
   module: FrontModule
   appMode: boolean
   icon?: string
+  displayName?: string
 }
 
 /** Validate a descriptor at registration: widget/type pairs, the behavior plan
@@ -220,7 +233,12 @@ export class ModuleRegistry {
       this.resolvedReports.set(report.name, report)
     }
 
-    this.entries.push({ module, appMode: options.appMode === true, icon: options.icon })
+    this.entries.push({
+      module,
+      appMode: options.appMode === true,
+      icon: options.icon,
+      displayName: options.displayName,
+    })
 
     // Extensions apply AFTER this module's own routes are registered, on top
     // of whatever the target path currently resolves to (the base, or the
@@ -294,7 +312,7 @@ export class ModuleRegistry {
    */
   menu(): MenuModule[] {
     const result: MenuModule[] = []
-    for (const { module, appMode, icon } of this.entries) {
+    for (const { module, appMode, icon, displayName } of this.entries) {
       if (!appMode) continue
       const routes: MenuRoute[] = []
       for (const route of module.routes) {
@@ -309,7 +327,7 @@ export class ModuleRegistry {
           permission: resolved?.permission ?? route.permission,
         })
       }
-      if (routes.length > 0) result.push({ name: module.name, routes, icon })
+      if (routes.length > 0) result.push({ name: module.name, routes, icon, displayName })
     }
     return result
   }
