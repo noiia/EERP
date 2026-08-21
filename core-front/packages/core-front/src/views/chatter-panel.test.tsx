@@ -103,6 +103,30 @@ describe('ChatterPanel', () => {
     expect(screen.getByPlaceholderText('Write a message…')).toHaveValue('')
   })
 
+  it('Ctrl+Enter in the composer sends the message', async () => {
+    const created: ChatterMessageRecord = {
+      id: 'm4',
+      author: 'me@x.com',
+      kind: 'message',
+      body: 'Quick note',
+      createdAt: '2026-01-04T00:00:00Z',
+    }
+    const ops = { list: vi.fn(async () => []), create: vi.fn(async () => created) }
+    render(
+      <ChatterOpsProvider ops={ops}>
+        <ChatterPanel entity="crm" recordId="1" />
+      </ChatterOpsProvider>,
+    )
+    await waitFor(() => expect(ops.list).toHaveBeenCalled())
+
+    const composer = screen.getByPlaceholderText('Write a message…')
+    fireEvent.change(composer, { target: { value: 'Quick note' } })
+    fireEvent.keyDown(composer, { key: 'Enter', ctrlKey: true })
+
+    await waitFor(() => expect(ops.create).toHaveBeenCalledWith('crm', '1', 'message', 'Quick note'))
+    expect(await screen.findByText('Quick note')).toBeInTheDocument()
+  })
+
   it('the Send button stays disabled for a blank draft', async () => {
     const ops = { list: vi.fn(async () => []), create: vi.fn() }
     render(

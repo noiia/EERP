@@ -198,41 +198,50 @@ export function ChatterPanel({ entity, recordId }: { entity: string; recordId?: 
       />
       <Card sx={{ height: '100%', [chatterMediaQuery]: { ml: 1.5 } }}>
         <CardContent>
-          <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
-            {t('Activity')}
-          </Typography>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
+            <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
+              {t('Activity')}
+            </Typography>
+            {recordId ? (
+              /* type="button": the panel now renders INSIDE FormRenderer's
+                  <form> (so its Card lines up with the form Card's own top
+                  border) — without an explicit type, a plain <button>
+                  defaults to "submit" and would also trigger the record's
+                  own save. */
+              <Button
+                type="button"
+                variant="contained"
+                size="small"
+                disabled={!draft.trim() || posting}
+                onClick={() => void send()}
+              >
+                {t('Send')}
+              </Button>
+            ) : null}
+          </Stack>
           {!recordId ? (
             <Typography variant="body2" color="text.secondary">
               {t('Available once the record has been saved.')}
             </Typography>
           ) : (
             <Stack spacing={2}>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-end' }}>
-                <TextField
-                  multiline
-                  minRows={2}
-                  maxRows={6}
-                  fullWidth
-                  size="small"
-                  placeholder={t('Write a message…')}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  disabled={posting}
-                />
-                {/* type="button": the panel now renders INSIDE FormRenderer's
-                    <form> (so its Card lines up with the form Card's own top
-                    border) — without an explicit type, a plain <button>
-                    defaults to "submit" and would also trigger the record's
-                    own save. */}
-                <Button
-                  type="button"
-                  variant="contained"
-                  disabled={!draft.trim() || posting}
-                  onClick={() => void send()}
-                >
-                  {t('Send')}
-                </Button>
-              </Stack>
+              <TextField
+                multiline
+                minRows={2}
+                maxRows={6}
+                fullWidth
+                size="small"
+                placeholder={t('Write a message…')}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault()
+                    void send()
+                  }
+                }}
+                disabled={posting}
+              />
               <Stack spacing={1.5} divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
                 {messages.map((m) => (
                   <ChatterEntry key={m.id} message={m} />
