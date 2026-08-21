@@ -58,11 +58,10 @@ services:
         API_BASE: "http://core-back:8080"
         API_VERSION: "1"
     environment:
-      # The api-gateway terminates plain HTTP for now (no cert configured yet — see
-      # nginx.conf). A Secure session cookie set over that connection would be silently
-      # dropped by the browser, so login would succeed but never persist. Drop this once
-      # TLS termination is added to the gateway.
-      COOKIE_SECURE: "false"
+      # The api-gateway now terminates TLS on :443 (infra/nginx/nginx.conf) — Secure
+      # cookies work, so no COOKIE_SECURE override is needed; it falls back to its
+      # NODE_ENV=production default (true). Set COOKIE_SECURE: "false" here again
+      # if the gateway ever goes back to serving the app over plain HTTP only.
       # The standalone image always runs with NODE_ENV=production (next start requires
       # it), even for this local/dev compose stack — so the Settings > Developer seed
       # tool's NODE_ENV-derived guard would stay permanently disabled here otherwise.
@@ -120,6 +119,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # One-shot: provisions api-gateway's self-signed TLS cert into the
+  # gateway-certs volume (infra/nginx/gen-certs.sh) BEFORE nginx starts, so
+  # `docker compose up` alone gets working HTTPS/HTTP2 with no separate manual
+  # step — idempotent (skips regenerating if the cert already exists in the
+  # volume from a previous run), same "no missing-piece surprise" posture
+  # pdf-service above takes. Exits after running; api-gateway waits on its
+  # successful completion via depends_on below.
+  gateway-certs:
+    image: alpine:3.20
+    container_name: gateway-certs
+    volumes:
+      - ./infra/nginx/gen-certs.sh:/gen-certs.sh:ro
+      - gateway-certs:/certs
+    entrypoint: ["sh", "/gen-certs.sh"]
+    restart: "no"
+
   api-gateway:
     image: nginx:1.31-alpine
     container_name: api-gateway
@@ -138,12 +153,15 @@ services:
       - /tmp
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - gateway-certs:/etc/nginx/certs:ro
     ports:
       - "80:80"
-      # - "443:443"
+      - "443:443"
     depends_on:
       core-front:
         condition: service_started
+      gateway-certs:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
       interval: 15s
@@ -154,3 +172,4 @@ services:
 volumes:
   garage-meta:
   garage-data:
+  gateway-certs:

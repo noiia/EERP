@@ -137,6 +137,8 @@ go run main.go -config="../../eerp-config.json"
 
 The Docker Compose service (`compose.yml`) runs PostgreSQL 18 on port 5432 with user/password `postgres` and database `poc`.
 
+**Gateway (TLS + HTTP/2):** `api-gateway` (nginx, `infra/nginx/nginx.conf`) fronts the whole stack. Plain `http://localhost/` (port 80) 301-redirects to `https://localhost/` (port 443, self-signed dev cert) except `/healthz`, which stays on both — HTTP/2 only exists over TLS (browsers don't speak h2c), so :443 is the only HTTP/2 endpoint; Next↔Go stays plain HTTP/1.1 internally. The `gateway-certs` one-shot compose service provisions the self-signed cert into a shared volume before nginx starts (`infra/nginx/gen-certs.sh`, idempotent — regenerate by clearing the `gateway-certs` volume), so `docker compose up`/`make run` need no separate manual step. Swap in a real certificate for a public-facing deployment.
+
 ## Conventions
 
 - Commit format: `<type>(scope): <description>` — types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
