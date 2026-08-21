@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
 import { fieldLabel, type RelationDescriptor } from './descriptor'
 import { moduleRegistry } from '../registry'
-import { junctionColumns, MissingOpsHint, relationOf } from './relation-widgets'
+import { junctionColumns, MissingOpsHint, relationOf, resolveManyToManyLinks } from './relation-widgets'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
 import type { WidgetProps } from './widgets'
 
@@ -70,15 +70,8 @@ async function loadSubRelation(
   }
   if (subRel.kind === 'many2many' && subRel.via) {
     const cols = junctionColumns(subRel, ownEntity)
-    const junctions = await ops.list(subRel.via, { filter: { [cols.own]: ownRecordId }, pageSize: 100 })
-    const resolved = await Promise.all(
-      junctions.map((row) => {
-        const relatedId = row[cols.related]
-        if (typeof relatedId !== 'string') return null
-        return ops.get(subRel.entity, relatedId).catch((): RelationRecord => ({ id: relatedId }))
-      }),
-    )
-    return resolved.filter((r): r is RelationRecord => r !== null)
+    const links = await resolveManyToManyLinks(ops, subRel.via, subRel.entity, cols, ownRecordId)
+    return links.map((l) => l.related)
   }
   return []
 }

@@ -92,15 +92,23 @@ describe('relation/summary', () => {
       c1: { id: 'c1', name: 'Ada Lovelace' },
       c2: { id: 'c2', name: 'Grace Hopper' },
     }
+    const list = vi.fn(async (entity: string) => {
+      if (entity === 'property_management_tenant') return junctions
+      if (entity === 'contact') return Object.values(contacts)
+      return []
+    })
     const ops = stubOps({
-      get: vi.fn(async (entity: string, id: string) =>
-        entity === 'property_management' ? { id, name: 'Sunset Apartments', city: 'Springfield' } : contacts[id],
-      ),
-      list: vi.fn(async (entity: string) => (entity === 'property_management_tenant' ? junctions : [])),
+      get: vi.fn(async (_entity: string, id: string) => ({ id, name: 'Sunset Apartments', city: 'Springfield' })),
+      list,
     })
     renderWidget(ops, 'prop1')
 
     expect(await screen.findByText('Ada Lovelace, Grace Hopper')).toBeInTheDocument()
     expect(screen.getByText('Tenant')).toBeInTheDocument()
+    // The many2many sub-relation resolves in one batched call — never one
+    // get() per linked contact (was N+1).
+    expect(list).toHaveBeenCalledWith('contact', { in: { id: ['c1', 'c2'] }, pageSize: 100 })
+    expect(ops.get).not.toHaveBeenCalledWith('contact', 'c1')
+    expect(ops.get).not.toHaveBeenCalledWith('contact', 'c2')
   })
 })

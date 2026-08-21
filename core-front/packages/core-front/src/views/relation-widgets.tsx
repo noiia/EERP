@@ -576,7 +576,9 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
 
 // ── relation/tags (many2many) ─────────────────────────────────────────────────
 
-interface TagLink {
+/** Exported so relation-summary-widget.tsx can resolve a many2many's own
+ * links (loadSubRelation) the same way RelationTagsWidget does. */
+export interface TagLink {
   junctionId: string
   related: RelationRecord
 }
@@ -591,6 +593,42 @@ export function junctionColumns(rel: RelationDescriptor, ownEntity: string) {
   }
 }
 
+/**
+ * Junction rows -> resolved related records for a many2many relation, in
+ * exactly TWO calls (junction list + one batched `in[id]=` related list)
+ * regardless of how many rows are linked. Was one `get` per junction row —
+ * a real N+1 fan-out both RelationTagsWidget and relation-summary-widget's
+ * loadSubRelation hit independently; centralized here so the fix (and any
+ * future one) lands once for both. A dangling junction (the related record
+ * was deleted) keeps the id as its own placeholder record, the same
+ * fallback both callers already had before batching.
+ */
+export async function resolveManyToManyLinks(
+  ops: RelationOps,
+  via: string,
+  relatedEntity: string,
+  cols: { own: string; related: string },
+  ownRecordId: string,
+): Promise<TagLink[]> {
+  const junctions = await ops.list(via, { filter: { [cols.own]: ownRecordId }, pageSize: EMBED_PAGE_SIZE })
+  const relatedIds = [
+    ...new Set(junctions.map((row) => row[cols.related]).filter((v): v is string => typeof v === 'string')),
+  ]
+  const related =
+    relatedIds.length > 0
+      ? await ops.list(relatedEntity, { in: { id: relatedIds }, pageSize: EMBED_PAGE_SIZE })
+      : []
+  const byId = new Map(related.map((r) => [r.id, r]))
+  const links: TagLink[] = []
+  for (const row of junctions) {
+    const relatedId = row[cols.related]
+    if (typeof relatedId !== 'string') continue
+    // A dangling junction row (related record deleted) keeps the id as label.
+    links.push({ junctionId: row.id, related: byId.get(relatedId) ?? { id: relatedId } })
+  }
+  return links
+}
+
 export function RelationTagsWidget({ field, disabled, entity, recordId }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
@@ -603,30 +641,18 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
   const [createOpen, setCreateOpen] = useState(false)
   const [inputText, setInputText] = useState('')
 
-  // Links are junction rows: load them, then resolve each related record's label.
+  // Links are junction rows: load them, then resolve their related records
+  // in one batched call (resolveManyToManyLinks) rather than one per row.
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
-    ;(async () => {
-      const junctions = await ops.list(via, {
-        filter: { [cols.own]: recordId },
-        pageSize: EMBED_PAGE_SIZE,
+    resolveManyToManyLinks(ops, via, rel.entity, cols, recordId)
+      .then((resolved) => {
+        if (!cancelled) setLinks(resolved)
       })
-      const resolved = await Promise.all(
-        junctions.map(async (row): Promise<TagLink | null> => {
-          const relatedId = row[cols.related]
-          if (typeof relatedId !== 'string') return null
-          // A dangling junction row (related record deleted) keeps the id as label.
-          const related = await ops
-            .get(rel.entity, relatedId)
-            .catch((): RelationRecord => ({ id: relatedId }))
-          return { junctionId: row.id, related }
-        }),
-      )
-      if (!cancelled) setLinks(resolved.filter((l): l is TagLink => l !== null))
-    })().catch((e: unknown) => {
-      if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-    })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+      })
     return () => {
       cancelled = true
     }

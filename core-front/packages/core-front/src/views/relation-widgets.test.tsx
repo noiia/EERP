@@ -272,6 +272,34 @@ describe('relation/tags (many2many)', () => {
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
   })
 
+  it('resolves every linked tag in ONE batched list call, never one get() per row (was N+1)', async () => {
+    const listMock = vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies))
+    const ops = stubOps({ list: listMock })
+    renderWidget(tagsField, ops)
+
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    // Exactly two calls total: junctions, then the batched related lookup —
+    // regardless of how many rows were linked.
+    expect(listMock).toHaveBeenCalledTimes(2)
+    expect(listMock).toHaveBeenCalledWith('tag', { in: { id: ['c1', 'c2'] }, pageSize: 100 })
+    expect(ops.get).not.toHaveBeenCalled()
+  })
+
+  it('a dangling junction (related record deleted) keeps the id as its own placeholder', async () => {
+    const danglingJunctions: RelationRecord[] = [
+      { id: 'j1', crm_id: 'r1', tag_id: 'c1' },
+      { id: 'j2', crm_id: 'r1', tag_id: 'missing' },
+    ]
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? danglingJunctions : companies)),
+    })
+    renderWidget(tagsField, ops)
+
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findByText('missing')).toBeInTheDocument()
+  })
+
   it('hideLabel: true suppresses the caption but tags still render', async () => {
     const ops = stubOps({
       list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
