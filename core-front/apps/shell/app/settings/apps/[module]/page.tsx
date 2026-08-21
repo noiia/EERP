@@ -6,15 +6,17 @@ import { createServerApiClient, toApiError } from '@eerp/core-front/server'
 import { getEffectivePermissions, requireAuth } from '@/lib/session'
 import { activeModuleNames } from '@/lib/module-state'
 import { getEntityViewFields } from '@/lib/view-fields'
+import { getEntityChatterVisibility } from '@/lib/chatter-visibility'
 import { getModulePictureSize } from '@/lib/app-settings'
 import FormatSettings from '@/components/FormatSettings'
 import PictureSizeSettings from '@/components/PictureSizeSettings'
 import ViewsSettings, { type ViewEntityRow } from '@/components/ViewsSettings'
+import ChatterSettings, { type ChatterEntityRow } from '@/components/ChatterSettings'
 // Side-effect import: registers every discovered module's FrontModule into
 // the shared registry before enumerating its tree views (mirrors
 // Settings -> Views' own page, which this one replaces).
 import '@/generated/generated-modules'
-import { treeViewEntities } from '../../views/registry'
+import { formViewEntities, treeViewEntities } from '../../views/registry'
 
 // Settings -> Apps -> :module: one app's own settings form. `module === 'base'`
 // is a reserved, synthetic slug (not a real installed module) for the
@@ -101,12 +103,30 @@ export default async function AppSettingsPage({
 }
 
 async function ViewsSettingsSection({ module, canEdit }: { module: string; canEdit: boolean }) {
-  const entities = treeViewEntities()
   const active = await activeModuleNames()
+
+  const treeEntities = treeViewEntities().filter((e) => e.module === module && active.has(e.module))
   const rows: ViewEntityRow[] = await Promise.all(
-    entities
-      .filter((e) => e.module === module && active.has(e.module))
-      .map(async (e) => ({ ...e, config: await getEntityViewFields(e.entity) })),
+    treeEntities.map(async (e) => ({ ...e, config: await getEntityViewFields(e.entity) })),
   )
-  return <ViewsSettings rows={rows} canEdit={canEdit} />
+
+  const formEntities = formViewEntities().filter((e) => e.module === module && active.has(e.module))
+  const chatterRows: ChatterEntityRow[] = await Promise.all(
+    formEntities.map(async (e) => ({
+      entity: e.entity,
+      moduleDefault: e.showChatterDefault,
+      config: await getEntityChatterVisibility(e.entity),
+    })),
+  )
+
+  return (
+    <>
+      <ViewsSettings rows={rows} canEdit={canEdit} />
+      {chatterRows.length > 0 ? (
+        <Container maxWidth="md" sx={{ pb: 6 }}>
+          <ChatterSettings rows={chatterRows} canEdit={canEdit} />
+        </Container>
+      ) : null}
+    </>
+  )
 }

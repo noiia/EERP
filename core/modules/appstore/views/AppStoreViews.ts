@@ -77,6 +77,11 @@ const formView: ViewDescriptor = {
   viewType: 'form',
   fields: formFields,
   permissions: ['modules:modules:read'],
+  // A module.json record isn't a discussion topic — every field here is
+  // already readOnly, and Activate/Reload/Logs (the page's real write
+  // affordances) live outside the form entirely. An admin can still turn
+  // this back on from Settings -> Apps -> App Store if they want it.
+  showChatter: false,
 }
 
 // ── Views + Reports notebook pages (self-extension) ─────────────────────────

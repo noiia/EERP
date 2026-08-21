@@ -193,9 +193,11 @@ func main() {
 
 	// Tenant-wide settings: JWT + permission middleware (PUT /settings/i18n
 	// derives settings:i18n:write, PUT /settings/format settings:format:write,
-	// GET|PUT /settings/views/:entity/fields and .../graph settings:views:read|write
-	// — the Kanban/Calendar field config and Graph tile layout from
-	// docs/roadmaps/list-view-modes.md).
+	// GET|PUT /settings/views/:entity/fields, .../graph, and .../chatter all
+	// derive settings:views:read|write — the Kanban/Calendar field config and
+	// Graph tile layout from docs/roadmaps/list-view-modes.md, plus the form
+	// chatter panel's visibility override (core-front/CLAUDE.md's "Form
+	// chatter panel" row)).
 	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
 	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
 	settingsGroup.PUT("/format", settingsHandler.PutFormatSettings)
@@ -203,6 +205,8 @@ func main() {
 	settingsGroup.PUT("/views/:entity/fields", settingsHandler.PutViewFieldsSettings)
 	settingsGroup.GET("/views/:entity/graph", settingsHandler.GetGraphLayoutSettings)
 	settingsGroup.PUT("/views/:entity/graph", settingsHandler.PutGraphLayoutSettings)
+	settingsGroup.GET("/views/:entity/chatter", settingsHandler.GetChatterSettings)
+	settingsGroup.PUT("/views/:entity/chatter", settingsHandler.PutChatterSettings)
 	settingsGroup.GET("/apps/:module/picture-size", settingsHandler.GetPictureSizeSettings)
 	settingsGroup.PUT("/apps/:module/picture-size", settingsHandler.PutPictureSizeSettings)
 	settingsGroup.GET("/reports/layout", settingsHandler.GetReportsLayoutSettings)

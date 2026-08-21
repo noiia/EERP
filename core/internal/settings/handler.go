@@ -403,6 +403,80 @@ func (h *Handler) PutViewFieldsSettings(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// chatterVisibility is both the stored value of a ViewChatterKey(entity)
+// setting and the request/response body of GET|PUT
+// /settings/views/:entity/chatter. Enabled nil always means "no workspace
+// override" — the frontend falls back to the entity's own
+// ViewDescriptor.showChatter (a module's hardcoded baseline, default true),
+// same posture as viewFieldsConfig.
+type chatterVisibility struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// GetChatterSettings handles GET /api/v1/settings/views/:entity/chatter —
+// whether the workspace overrides the form chatter panel's visibility for
+// entity. An unconfigured entity returns {"enabled":null}, not a 404: the
+// frontend merges this with the entity's own ViewDescriptor.showChatter, Go
+// never seeing that descriptor itself. Mounted behind the permission
+// middleware, which derives settings:views:read.
+func (h *Handler) GetChatterSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, ViewChatterKey(entity))
+	if err != nil {
+		return fmt.Errorf("settings: get chatter visibility for %s: %w", entity, err)
+	}
+
+	var resp chatterVisibility
+	if ok && raw != "" {
+		// An unparsable stored value degrades to the empty config rather than
+		// failing the read — same posture as GetViewFieldsSettings.
+		_ = json.Unmarshal([]byte(raw), &resp)
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutChatterSettings handles PUT /api/v1/settings/views/:entity/chatter.
+// Mounted behind the permission middleware, which derives
+// settings:views:write from the route.
+func (h *Handler) PutChatterSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	var req chatterVisibility
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal chatter visibility for %s: %w", entity, err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ViewChatterKey(entity), string(value)); err != nil {
+		return fmt.Errorf("settings: set chatter visibility for %s: %w", entity, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // graphTile is one tile of an entity's Graph mode layout. Coordinates are
 // integer grid units — one unit is 30px on the frontend (GRID_UNIT), a
 // constant the backend never needs to know. `Config` stays opaque: the

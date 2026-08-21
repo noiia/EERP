@@ -2,6 +2,7 @@ import 'server-only'
 import { ApiError, serializeError, type SerializedError } from '../api/errors'
 import { createServerApiClient, type ServerApiClient } from '../api/ApiClient'
 import { EMPTY_VIEW_FIELDS, type ViewFieldsConfig } from '../api/view-fields'
+import { effectiveChatterVisible, type ChatterVisibilityConfig } from '../api/chatter-visibility'
 import type { EntityListOptions } from '../api/list-options'
 import type { ViewDescriptor } from './descriptor'
 import { EntityView } from './renderers'
@@ -75,6 +76,25 @@ export async function loadViewFields(
     return await api.getViewFields(entity)
   } catch (e) {
     if (e instanceof ApiError) return EMPTY_VIEW_FIELDS
+    throw e
+  }
+}
+
+/**
+ * entity's admin-configured chatter-panel visibility override (Settings ->
+ * Apps -> :module, "Form chatter panel" row). An unreadable config (session
+ * hiccup, missing settings:views:read) degrades to "no override" rather than
+ * failing the whole form — see effectiveChatterVisible for how this merges
+ * with the entity's own ViewDescriptor.showChatter.
+ */
+export async function loadChatterVisibility(
+  entity: string,
+  api: ServerApiClient = createServerApiClient(),
+): Promise<ChatterVisibilityConfig> {
+  try {
+    return await api.getChatterVisibility(entity)
+  } catch (e) {
+    if (e instanceof ApiError) return { enabled: null }
     throw e
   }
 }
@@ -186,6 +206,13 @@ export async function EntityViewServer<T extends HasId>({
     descriptor.viewType === 'form' && module && hasPictureField
       ? await loadPictureSize(module, client)
       : undefined
+  // Every form view is a chatter candidate — unlike pictureSize, there's no
+  // "has the relevant field" gate here, since the panel is keyed on the
+  // entity/record, not a specific field.
+  const chatterVisible =
+    descriptor.viewType === 'form'
+      ? effectiveChatterVisible(descriptor.showChatter, await loadChatterVisibility(descriptor.entity, client))
+      : undefined
   return (
     <EntityView
       descriptor={descriptor}
@@ -196,6 +223,7 @@ export async function EntityViewServer<T extends HasId>({
       viewFields={viewFields}
       recordTotal={total}
       pictureSize={pictureSize}
+      chatterVisible={chatterVisible}
       title={title}
     />
   )

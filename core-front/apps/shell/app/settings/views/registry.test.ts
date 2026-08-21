@@ -29,6 +29,14 @@ const routes = new Map([
     },
   ],
   [
+    '/appstore/:id',
+    {
+      module: 'appstore',
+      descriptor: { entity: 'modules', viewType: 'form', fields: [], showChatter: false },
+      permission: undefined,
+    },
+  ],
+  [
     '/settings/users/roles',
     {
       module: 'users',
@@ -45,7 +53,7 @@ vi.mock('@eerp/core-front/server', () => ({
   moduleRegistry: { buildRegistry: () => routes },
 }))
 
-import { treeViewEntities } from './registry'
+import { formViewEntities, treeViewEntities } from './registry'
 
 describe('treeViewEntities', () => {
   it('lists only tree-view entities, not form/other viewTypes', () => {
@@ -77,5 +85,21 @@ describe('treeViewEntities', () => {
     const roles = treeViewEntities().find((e) => e.entity === 'roles')
     expect(crm?.defaults).toEqual({ kanbanStatusField: 'status', enableGraphs: true })
     expect(roles?.defaults).toEqual({})
+  })
+})
+
+describe('formViewEntities', () => {
+  it('lists only form-view entities, not tree/other viewTypes', () => {
+    const entities = formViewEntities().map((e) => e.entity)
+    expect(entities).toEqual(['crm', 'modules'])
+  })
+
+  it('carries the owning module and the module\'s own showChatter default', () => {
+    const crm = formViewEntities().find((e) => e.entity === 'crm')
+    const modules = formViewEntities().find((e) => e.entity === 'modules')
+    expect(crm?.module).toBe('crm')
+    expect(crm?.showChatterDefault).toBeUndefined()
+    expect(modules?.module).toBe('appstore')
+    expect(modules?.showChatterDefault).toBe(false)
   })
 })

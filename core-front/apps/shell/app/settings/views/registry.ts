@@ -38,3 +38,30 @@ export function treeViewEntities(): ViewEntityFields[] {
   }
   return Array.from(seen.values())
 }
+
+/** Every entity with a registered form view, paired with the module's own
+ * chatter-visibility default ("Form chatter panel" row) — the Settings ->
+ * Apps -> :module chatter override list. Mirrors treeViewEntities' shape;
+ * kept separate since a form view and a tree view are different route kinds
+ * that happen to often share the same entity. */
+export interface ViewEntityChatter {
+  entity: string
+  module: string
+  /** ViewDescriptor.showChatter, undefined = the module declared no opinion
+   * (defaults to true). */
+  showChatterDefault: boolean | undefined
+}
+
+export function formViewEntities(): ViewEntityChatter[] {
+  const seen = new Map<string, ViewEntityChatter>()
+  for (const { module, descriptor } of moduleRegistry.buildRegistry().values()) {
+    if (descriptor.viewType !== 'form') continue
+    if (seen.has(descriptor.entity)) continue
+    seen.set(descriptor.entity, {
+      entity: descriptor.entity,
+      module,
+      showChatterDefault: descriptor.showChatter,
+    })
+  }
+  return Array.from(seen.values())
+}

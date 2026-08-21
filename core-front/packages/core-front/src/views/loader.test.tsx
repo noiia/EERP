@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from './descriptor'
-import { EntityViewServer, loadDashboardWidgets, loadPictureSize, loadView, loadViewFields } from './loader'
+import {
+  EntityViewServer,
+  loadChatterVisibility,
+  loadDashboardWidgets,
+  loadPictureSize,
+  loadView,
+  loadViewFields,
+} from './loader'
 import type { ServerApiClient } from '../api/ApiClient'
 import { ApiError } from '../api/errors'
 import { EMPTY_VIEW_FIELDS } from '../api/view-fields'
+import { EMPTY_CHATTER_VISIBILITY } from '../api/chatter-visibility'
 
 interface Crm {
   id: string
@@ -19,6 +27,7 @@ function fakeApi(overrides: Partial<ServerApiClient> = {}): ServerApiClient {
     update: vi.fn(),
     remove: vi.fn(),
     getViewFields: vi.fn(async () => EMPTY_VIEW_FIELDS),
+    getChatterVisibility: vi.fn(async () => EMPTY_CHATTER_VISIBILITY),
     getPictureSize: vi.fn(async () => null),
     ...overrides,
   } as ServerApiClient
@@ -141,7 +150,63 @@ describe('loadPictureSize', () => {
   })
 })
 
+describe('loadChatterVisibility', () => {
+  it("returns the entity's chatter-visibility override", async () => {
+    const api = fakeApi({ getChatterVisibility: vi.fn(async () => ({ enabled: false })) as never })
+    await expect(loadChatterVisibility('crm', api)).resolves.toEqual({ enabled: false })
+  })
+
+  it('degrades to "no override" on an ApiError rather than failing the form', async () => {
+    const api = fakeApi({
+      getChatterVisibility: vi.fn(async () => {
+        throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
+      }) as never,
+    })
+    await expect(loadChatterVisibility('crm', api)).resolves.toEqual({ enabled: null })
+  })
+})
+
 describe('EntityViewServer', () => {
+  it('resolves chatterVisible from the module default merged with the admin override, for a form', async () => {
+    const api = fakeApi({
+      get: vi.fn(async () => ({ id: '1' })) as never,
+      getChatterVisibility: vi.fn(async () => ({ enabled: null })) as never,
+    })
+    const element = await EntityViewServer({
+      descriptor: { ...form, showChatter: false },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+    })
+    expect(element.props.chatterVisible).toBe(false)
+  })
+
+  it('the admin override wins over the module default', async () => {
+    const api = fakeApi({
+      get: vi.fn(async () => ({ id: '1' })) as never,
+      getChatterVisibility: vi.fn(async () => ({ enabled: true })) as never,
+    })
+    const element = await EntityViewServer({
+      descriptor: { ...form, showChatter: false },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+    })
+    expect(element.props.chatterVisible).toBe(true)
+  })
+
+  it('skips chatterVisible entirely for a non-form view', async () => {
+    const getChatterVisibility = vi.fn(async () => ({ enabled: false }))
+    const api = fakeApi({ getChatterVisibility: getChatterVisibility as never })
+    const element = await EntityViewServer({
+      descriptor: tree,
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+    })
+    expect(getChatterVisibility).not.toHaveBeenCalled()
+    expect(element.props.chatterVisible).toBeUndefined()
+  })
+
   it('fetches the picture-size cascade for a form with a picture field and a known module', async () => {
     const getPictureSize = vi.fn(async (module: string) =>
       module === 'crm' ? { width: 300, height: 300 } : null,

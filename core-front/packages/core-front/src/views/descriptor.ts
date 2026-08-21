@@ -1078,6 +1078,17 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * the options menu, since not every form has a workflow beyond plain edits.
    */
   headerButtons?: HeaderButtonDescriptor[]
+  /**
+   * For `viewType: 'form'` only: a module's own hardcoded baseline for
+   * whether the chatter panel (the per-record activity feed beside/below the
+   * form, "Form chatter panel" row) renders at all. Omitted ⇒ true — by
+   * design, chatter is on unless a module opts out (e.g. AppStoreViews.ts,
+   * whose form is a read-only management page a comment thread doesn't suit).
+   * Merged with the admin's own per-entity override via
+   * `effectiveChatterVisible` (api/chatter-visibility.ts) — never read
+   * directly by a renderer.
+   */
+  showChatter?: boolean
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

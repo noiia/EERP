@@ -2,8 +2,14 @@ import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { EntityView, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
-import { createServerApiClient, moduleRegistry, serializeError, toApiError } from '@eerp/core-front/server'
+import { effectiveChatterVisible, EntityView, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
+import {
+  createServerApiClient,
+  loadChatterVisibility,
+  moduleRegistry,
+  serializeError,
+  toApiError,
+} from '@eerp/core-front/server'
 // Side-effect import: registers every discovered module's FrontModule into
 // the shared registry — this page reads moduleRegistry directly (both for
 // the resolved form descriptor AND the Views rows below), bypassing the
@@ -65,6 +71,13 @@ export default async function AppStoreFormPage({ params }: { params: Promise<{ i
     remove: removeRecord.bind(null, 'modules'),
   } as unknown as EntityActions<ModuleRecord>
 
+  // Bypasses EntityViewServer (this page builds its own seed), so the
+  // module-default/admin-override merge it would otherwise do for a form
+  // view has to happen here instead — same effectiveChatterVisible call.
+  const chatterVisible = descriptor
+    ? effectiveChatterVisible(descriptor.showChatter, await loadChatterVisibility('modules', client))
+    : true
+
   return (
     <Container maxWidth={false} sx={{ py: 4 }}>
       <Stack spacing={3}>
@@ -100,6 +113,7 @@ export default async function AppStoreFormPage({ params }: { params: Promise<{ i
             initialData={initialData}
             actions={actions}
             error={error}
+            chatterVisible={chatterVisible}
           />
         ) : null}
       </Stack>

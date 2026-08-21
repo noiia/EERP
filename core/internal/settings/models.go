@@ -43,6 +43,18 @@ func ViewGraphKey(entity string) string {
 	return "views." + entity + ".graph"
 }
 
+// ViewChatterKey returns the app_settings key holding entity's form
+// chatter-panel visibility override — whether the activity feed beside/below
+// the form is shown (core-front/CLAUDE.md's "Form chatter panel" row), stored
+// as JSON: {"enabled":true}. Same per-entity shape as ViewFieldsKey/
+// ViewGraphKey; absent (or a null "enabled") means no workspace override — the
+// frontend falls back to the entity's own ViewDescriptor.showChatter (a
+// module's hardcoded baseline, defaulting to true when the module declares
+// none).
+func ViewChatterKey(entity string) string {
+	return "views." + entity + ".chatter"
+}
+
 // PictureSizeKey is the app_settings key holding the workspace-wide ("Base")
 // default box size for boolean/picture widgets, stored as JSON:
 // {"width":160,"height":96}. Absent means the frontend's own hardcoded

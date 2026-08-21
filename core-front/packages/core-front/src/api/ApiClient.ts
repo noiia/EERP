@@ -6,9 +6,11 @@ import type { EntityListOptions } from './list-options'
 import type { AttachmentAnchor, AttachmentMeta } from './attachments-client'
 import type { PictureAnchor, PictureMeta } from './pictures-client'
 import type { ViewFieldsConfig } from './view-fields'
+import type { ChatterVisibilityConfig } from './chatter-visibility'
 
 export type { EntityListOptions } from './list-options'
 export type { ViewFieldsConfig } from './view-fields'
+export type { ChatterVisibilityConfig } from './chatter-visibility'
 import {
   ACCESS_COOKIE,
   ACCESS_TTL_SECONDS,
@@ -262,6 +264,12 @@ export interface ServerApiClient {
    */
   getViewFields(entity: string): Promise<ViewFieldsConfig>
   /**
+   * entity's form chatter-panel visibility override, as configured from
+   * Settings -> Apps -> :module ("Form chatter panel" row). Never cached,
+   * same posture as getViewFields.
+   */
+  getChatterVisibility(entity: string): Promise<ChatterVisibilityConfig>
+  /**
    * A boolean/picture widget's configured box size, either the workspace-wide
    * Base default (module: 'base') or one specific app's own override
    * (Settings -> Apps) — `null` when unset at that level. Never cached, same
@@ -388,6 +396,17 @@ class ServerApiClientImpl implements ServerApiClient {
       calendarDateField: raw.calendar_date_field ?? null,
       enableGraphs: raw.enable_graphs ?? null,
     }
+  }
+
+  async getChatterVisibility(entity: string): Promise<ChatterVisibilityConfig> {
+    const raw = await request<{ enabled: boolean | null }>(
+      'GET',
+      `/settings/views/${entity}/chatter`,
+      null,
+      undefined,
+      this.tokenOverride,
+    )
+    return { enabled: raw.enabled ?? null }
   }
 
   async getPictureSize(module: string): Promise<{ width: number; height: number } | null> {

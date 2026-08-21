@@ -100,6 +100,12 @@ export interface EntityViewProps<T extends HasId> {
    * loader.tsx's loadPictureSize. `null`/undefined means no admin setting at
    * any level — the widget falls back to its own widgetOptions/default. */
   pictureSize?: { width: number; height: number } | null
+  /** Whether the chatter panel renders on this form (form views only),
+   * already resolved (module default + admin override) by loader.tsx's
+   * loadChatterVisibility via effectiveChatterVisible. Undefined (a host
+   * that skips the fetch, e.g. Settings -> Users) behaves as true — chatter
+   * is on by design unless something says otherwise. */
+  chatterVisible?: boolean
   /** The page title (tree views only) — passed down so TreeRenderer can put
    * it on the SAME row as the search bar and Create button instead of the
    * host page rendering a separate title row above. Untranslated source
@@ -205,6 +211,7 @@ function FormRenderer<T extends HasId>({
   initialData,
   actions,
   pictureSize,
+  chatterVisible = true,
 }: EntityViewProps<T>) {
   const t = useT()
   const [store] = useState(() => createFormStore(descriptor, actions, initialData[0] ?? {}))
@@ -405,7 +412,7 @@ function FormRenderer<T extends HasId>({
             </Stack>
           </CardContent>
         </Card>
-        <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} />
+        {chatterVisible ? <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} /> : null}
       </Box>
     </Box>
   )

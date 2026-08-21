@@ -347,6 +347,22 @@ describe('ServerApiClient', () => {
     expect(init.next).toBeUndefined()
   })
 
+  it("reads an entity's chatter-visibility override, never caching", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { enabled: false }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient().getChatterVisibility('crm')).resolves.toEqual({ enabled: false })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }]
+    expect(url).toBe('http://api.test/api/v1/settings/views/crm/chatter')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+  })
+
+  it('reads null when an entity has no chatter-visibility override configured', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { enabled: null })))
+    await expect(createServerApiClient().getChatterVisibility('crm')).resolves.toEqual({ enabled: null })
+  })
+
   it('reads a module\'s picture-size setting, never caching', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { size: { width: 200, height: 150 } }))
     vi.stubGlobal('fetch', fetchMock)

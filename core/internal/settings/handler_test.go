@@ -773,6 +773,140 @@ func TestPutViewFieldsSettings(t *testing.T) {
 	}
 }
 
+// ── GET /settings/views/:entity/chatter ───────────────────────────────────────
+
+func TestGetChatterSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name        string
+		entity      string
+		store       *stubStore
+		wantStatus  int
+		wantEnabled any
+	}{
+		{
+			name:        "unconfigured entity reads as null, not a 404",
+			entity:      "crm",
+			store:       &stubStore{},
+			wantStatus:  http.StatusOK,
+			wantEnabled: nil,
+		},
+		{
+			name:        "configured entity",
+			entity:      "crm",
+			store:       &stubStore{values: map[string]string{ViewChatterKey("crm"): `{"enabled":false}`}},
+			wantStatus:  http.StatusOK,
+			wantEnabled: false,
+		},
+		{
+			name:        "unparsable stored value degrades to null",
+			entity:      "crm",
+			store:       &stubStore{values: map[string]string{ViewChatterKey("crm"): "{not json"}},
+			wantStatus:  http.StatusOK,
+			wantEnabled: nil,
+		},
+		{
+			name:       "junk entity rejected",
+			entity:     "../../etc",
+			store:      &stubStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			rec := serveWithParam(t, h.GetChatterSettings, http.MethodGet,
+				"/settings/views/"+tt.entity+"/chatter", "", identity, "entity", tt.entity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+
+			var resp map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp["enabled"] != tt.wantEnabled {
+				t.Errorf("enabled = %v, want %v", resp["enabled"], tt.wantEnabled)
+			}
+		})
+	}
+}
+
+// ── PUT /settings/views/:entity/chatter ───────────────────────────────────────
+
+func TestPutChatterSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		entity     string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantKey    string
+		wantValue  string
+	}{
+		{
+			name:       "override off",
+			entity:     "modules",
+			body:       `{"enabled":false}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    "views.modules.chatter",
+			wantValue:  `{"enabled":false}`,
+		},
+		{
+			name:       "clear override",
+			entity:     "modules",
+			body:       `{"enabled":null}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    "views.modules.chatter",
+			wantValue:  `{"enabled":null}`,
+		},
+		{
+			name:       "junk entity rejected",
+			entity:     "../../etc",
+			body:       `{}`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			rec := serveWithParam(t, h.PutChatterSettings, http.MethodPut,
+				"/settings/views/"+tt.entity+"/chatter", tt.body, identity, "entity", tt.entity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotTenant != identity.TenantID {
+				t.Errorf("tenant = %s, want the caller's %s", store.gotTenant, identity.TenantID)
+			}
+			if store.gotKey != tt.wantKey {
+				t.Errorf("key = %q, want %q", store.gotKey, tt.wantKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
 // ── GET /settings/views/:entity/graph ─────────────────────────────────────────
 
 func TestGetGraphLayoutSettings(t *testing.T) {

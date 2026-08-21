@@ -304,6 +304,36 @@ describe('EntityView', () => {
       expect(screen.getByText('Activity')).toBeInTheDocument()
     })
 
+    it('honors chatterVisible={false} even with a ChatterOpsProvider mounted (e.g. App Store\'s own form)', () => {
+      const ops = chatterOps()
+      render(
+        <ChatterOpsProvider ops={ops}>
+          <EntityView
+            descriptor={formDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={noopActions}
+            chatterVisible={false}
+          />
+        </ChatterOpsProvider>,
+      )
+      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    })
+
+    it('defaults to visible (true by design) when chatterVisible is omitted', () => {
+      const ops = chatterOps()
+      render(
+        <ChatterOpsProvider ops={ops}>
+          <EntityView
+            descriptor={formDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={noopActions}
+          />
+        </ChatterOpsProvider>,
+      )
+      expect(screen.getByText('Activity')).toBeInTheDocument()
+    })
+
     it('renders nothing extra with no ChatterOpsProvider — the form itself is unaffected', () => {
       render(
         <EntityView
