@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   reportCompanyFallbackFields,
   reportImageSources,
+  reportMastheadSection,
   reportTableRelations,
+  reportTitleSection,
   validateReportDescriptor,
   type ReportDescriptor,
 } from './report-descriptor'
@@ -206,5 +208,61 @@ describe('reportTableRelations', () => {
       { source: 'lines', entity: 'sale_line', inverseField: 'invoice_id' },
       { source: 'items', entity: 'other_line', inverseField: 'parent_id' },
     ])
+  })
+})
+
+describe('reportMastheadSection', () => {
+  const masthead = reportMastheadSection({ companyPrefix: 'issuer', contactPrefix: 'customer' })
+
+  it('is a well-formed descriptor node on its own', () => {
+    const descriptor: ReportDescriptor = { ...valid, layout: [masthead] }
+    expect(() => validateReportDescriptor(descriptor)).not.toThrow()
+  })
+
+  it('renders company (left) and contact (right) as the parties row', () => {
+    expect(masthead).toMatchObject({ kind: 'section', className: 'eerp-report-parties' })
+    expect(masthead.children).toHaveLength(2)
+    expect(masthead.children[0]).toMatchObject({ className: 'eerp-report-issuer' })
+    expect(masthead.children[1]).toMatchObject({ className: 'eerp-report-client' })
+  })
+
+  it('falls back every company-side address field to the active company profile, except the address number', () => {
+    // address_number is deliberately excluded: company[companyField] ?? ''
+    // can't distinguish "blank" from a legitimate 0 the way it can for the
+    // string fields (see reportPartyAddressFields' own doc comment).
+    const descriptor: ReportDescriptor = { ...valid, layout: [masthead] }
+    expect(reportCompanyFallbackFields(descriptor)).toEqual([
+      { recordField: 'issuer_name', companyField: 'name' },
+      { recordField: 'issuer_address_street', companyField: 'address_street' },
+      { recordField: 'issuer_address_complement', companyField: 'address_complement' },
+      { recordField: 'issuer_address_zip_code', companyField: 'address_zip_code' },
+      { recordField: 'issuer_address_city', companyField: 'address_city' },
+      { recordField: 'issuer_address_country', companyField: 'address_country' },
+    ])
+  })
+
+  it('never gives the contact side a company fallback — it prints only its own fields', () => {
+    const contactFieldNames = (masthead.children[1] as { children: { name?: string }[] }).children
+      .flatMap((n) => ('children' in n ? (n as { children: { name: string }[] }).children : [n]))
+      .map((n) => n.name)
+    expect(contactFieldNames).toEqual([
+      'customer_name',
+      'customer_address_number',
+      'customer_address_street',
+      'customer_address_complement',
+      'customer_address_zip_code',
+      'customer_address_city',
+      'customer_address_country',
+    ])
+  })
+})
+
+describe('reportTitleSection', () => {
+  it('renders the named field with the big-title class', () => {
+    expect(reportTitleSection('title')).toEqual({
+      kind: 'field',
+      name: 'title',
+      className: 'eerp-report-title',
+    })
   })
 })

@@ -2,6 +2,7 @@ import {
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerOnChange,
+  reportTitleSection,
   type DraftRecord,
   type FrontModule,
   type Operation,
@@ -277,20 +278,25 @@ const signaturePageOperations: Operation[] = [
 // print). No `table` node: Go's GET /crm/:id response carries no embedded
 // array-valued field (tags is a many2many resolved lazily, client-side only,
 // per ADR-010's Phase 2 finding) — a real relation table is future work once a
-// report actually needs one, not a Phase 4 gap.
+// report actually needs one, not a Phase 4 gap. Likewise NO
+// reportMastheadSection/reportPartyAddressFields: that helper's two-party
+// (company left / contact right) address block needs real *_address_* columns
+// on both sides, and a crm row has neither an issuer/customer split nor any
+// address columns at all — it's one contact, not a billing document between
+// two parties. Bolting fabricated field names onto it would violate this very
+// file's own "every printed field is a real, declared crm field" test
+// (CrmViews.test.ts). `reportTitleSection('name')` DOES fit, since `name` is a
+// real, already-editable field.
 const crmStatementReport: ReportDescriptor = {
   name: 'crm.statement',
   entity: 'crm',
   permissions: ['crm:contacts:read'],
   layout: [
+    reportTitleSection('name'),
     {
       kind: 'section',
       className: 'eerp-report-header',
-      children: [
-        { kind: 'field', name: 'name' },
-        { kind: 'field', name: 'company' },
-        { kind: 'field', name: 'status' },
-      ],
+      children: [{ kind: 'field', name: 'company' }, { kind: 'field', name: 'status' }],
     },
     {
       kind: 'section',

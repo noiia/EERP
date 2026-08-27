@@ -308,6 +308,67 @@ describe('relation/tags (many2many)', () => {
     expect(screen.queryByText('Tags')).not.toBeInTheDocument()
     expect(await screen.findByText('Acme')).toBeInTheDocument()
   })
+
+  describe('widgetOptions.deferred — stage instead of writing junction rows immediately', () => {
+    const deferredTagsField: FieldDescriptor = {
+      ...tagsField,
+      widgetOptions: { deferred: true },
+    }
+
+    it('adding a tag stages it (onChange with a pending diff) instead of calling ops.create', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'glo' } })
+      fireEvent.click(await screen.findByText('Globex'))
+
+      expect(await screen.findByText('Globex')).toBeInTheDocument()
+      expect(ops.create).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenCalledWith({
+        toLink: [{ id: 'c2', name: 'Globex', status: 'lead' }],
+        toUnlinkJunctionIds: [],
+      })
+    })
+
+    it('removing an already-persisted tag stages its junction id for removal instead of calling ops.remove', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops)
+      expect(await screen.findByText('Acme')).toBeInTheDocument()
+
+      const tag = screen.getByText('Acme').closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+
+      await waitFor(() => expect(screen.queryByText('Acme')).not.toBeInTheDocument())
+      expect(ops.remove).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenCalledWith({ toLink: [], toUnlinkJunctionIds: ['j1'] })
+    })
+
+    it('removing a just-staged (not yet persisted) tag drops it back out of the pending diff entirely', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'glo' } })
+      fireEvent.click(await screen.findByText('Globex'))
+      expect(await screen.findByText('Globex')).toBeInTheDocument()
+
+      const tag = screen.getByText('Globex').closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+
+      await waitFor(() => expect(screen.queryByText('Globex')).not.toBeInTheDocument())
+      expect(ops.create).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenLastCalledWith({ toLink: [], toUnlinkJunctionIds: [] })
+    })
+  })
 })
 
 describe('relation/list (one2many)', () => {

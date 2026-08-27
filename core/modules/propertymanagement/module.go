@@ -136,19 +136,52 @@ type PropertyManagementEquipmentPhoto struct {
 // time — same "capture at document time, don't live-join" discipline
 // sale.SaleLine/Invoice already follow, since a receipt must keep reading
 // correctly even if the property/tenants are edited afterward.
+//
+// One generation click produces a PARENT row (one per property+period,
+// PropertyManagementID set, ParentID nil, no PDF of its own — TenantNames
+// holds the full comma-joined list, for display only) plus one CHILD row
+// per current tenant (ParentID set to the parent's id, PropertyManagementID
+// left nil, TenantNames holds that ONE tenant's name, ReceiptFile its own
+// dedicated PDF) — self-referencing, the same shape TreeRenderer already
+// expects for a hierarchical tree view (any row with parent_id != null).
+// The property form's own rent_receipts field (PropertyManagementViews.ts,
+// inverseField: property_management_id) therefore lists PARENTS only —
+// children never match that filter, since they carry no
+// property_management_id — and a parent's own read-only form embeds its
+// children through a SECOND relation field (inverseField: parent_id).
 type PropertyManagementRentReceipt struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	// PropertyManagementID: set on a parent row, nil on a child (see the
+	// type doc comment above). A pointer for the same reason
+	// LastReceiptMonth is: a child's Create body omits it entirely.
+	PropertyManagementID *uuid.UUID `db:"property_management_id" json:"property_management_id"`
+	// ParentID: nil on a parent row, set to that parent's id on a child.
+	ParentID *uuid.UUID `db:"parent_id" json:"parent_id"`
+	// IsParent: true on a parent row, false on a child. Exists ONLY because
+	// the generic list endpoint's filter[col]= is an exact-match compare —
+	// there is no "column IS NULL" filter to scope the flat, cross-property
+	// receipts list (PropertyManagementViews.ts's rentReceiptListView) to
+	// parents by ParentID alone; this plain boolean is filterable the normal
+	// way (filter[is_parent]=true).
+	IsParent bool `db:"is_parent" json:"is_parent"`
 	// Period is "2026-08"-shaped — the calendar month this receipt covers.
-	Period          string     `db:"period" json:"period"`
-	GeneratedAt     *time.Time `db:"generated_at" json:"generated_at"`
-	PropertyName    string     `db:"property_name" json:"property_name"`
-	PropertyAddress string     `db:"property_address" json:"property_address"`
-	TenantNames     string     `db:"tenant_names" json:"tenant_names"`
+	Period       string     `db:"period" json:"period"`
+	GeneratedAt  *time.Time `db:"generated_at" json:"generated_at"`
+	PropertyName string     `db:"property_name" json:"property_name"`
+	// PropertyAddress is the FULL formatted line (number/street, complement,
+	// zip/city, country — PropertyManagementViews.ts's formatPropertyAddress)
+	// snapshotted at generation time, not just number+street.
+	PropertyAddress string `db:"property_address" json:"property_address"`
+	// FloorArea snapshots PropertyManagement.FloorArea at generation time —
+	// the printed report's own "Property management form content" the user
+	// asked for, beyond the address.
+	FloorArea   float64 `db:"floor_area" json:"floor_area"`
+	TenantNames string  `db:"tenant_names" json:"tenant_names"`
 	// ReceiptFile is the boolean/file flag (internal/attachments) for the
 	// SAVED PDF — a fixed snapshot from generation time, never recomputed
-	// live on later downloads (the user's own explicit requirement).
+	// live on later downloads (the user's own explicit requirement). Always
+	// false on a parent row: no PDF is ever generated for it.
 	ReceiptFile bool `db:"receipt_file" json:"receipt_file"`
 }
 
@@ -192,6 +225,16 @@ func (m *propertyManagementModule) Migrate(ctx context.Context, db *orm.DB) erro
 		ALTER TABLE property_management ALTER COLUMN last_receipt_month DROP NOT NULL
 	`); err != nil {
 		return fmt.Errorf("propertymanagement: drop last_receipt_month NOT NULL: %w", err)
+	}
+	// Same reasoning, for PropertyManagementRentReceipt.PropertyManagementID's
+	// 2026-08 change from uuid.UUID to *uuid.UUID (parent/child rent
+	// receipts, above): a deployment that already had this table keeps the
+	// column's original NOT NULL, which would reject every child row's
+	// Create (it deliberately omits property_management_id).
+	if _, err := db.Exec(ctx, `
+		ALTER TABLE property_management_rent_receipt ALTER COLUMN property_management_id DROP NOT NULL
+	`); err != nil {
+		return fmt.Errorf("propertymanagement: drop rent receipt property_management_id NOT NULL: %w", err)
 	}
 	return nil
 }

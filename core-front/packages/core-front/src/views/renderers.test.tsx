@@ -11,6 +11,7 @@ import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from '
 import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
 import { useRecordLabelStore } from './record-label-store'
+import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { CreateBar, EntityView } from './renderers'
 import { useSessionStore, type Identity } from './session-store'
 import { useUiStore } from './ui-store'
@@ -403,6 +404,81 @@ describe('EntityView', () => {
 
       await waitFor(() => expect(update).toHaveBeenCalled())
       expect(ops.create).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('deferred many2many (widgetOptions.deferred) — flush on save', () => {
+    const tagOptions: RelationRecord[] = [{ id: 't1', name: 'VIP' }]
+
+    function relationOps(overrides: Partial<RelationOps> = {}): RelationOps {
+      return {
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : tagOptions)),
+        get: vi.fn(async (_entity: string, id: string) => ({ id })),
+        create: vi.fn(async (_entity: string, body: Record<string, unknown>) => ({ id: 'j-new', ...body })),
+        remove: vi.fn(async () => undefined),
+        ...overrides,
+      }
+    }
+
+    const deferredFormDescriptor: ViewDescriptor<Contact> = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        {
+          name: 'tags',
+          label: 'Tags',
+          type: 'relation',
+          relation: { entity: 'tag', kind: 'many2many', via: 'crm_tag', labelField: 'name' },
+          widgetOptions: { deferred: true },
+        },
+      ],
+    }
+
+    it('stages the tag on add (no junction write yet), then writes it only once Save succeeds, using the confirmed record id', async () => {
+      const ops = relationOps()
+      const update = vi.fn(async (id: string, b: Partial<Contact>) => ({ id, name: 'Ada', ...b }) as Contact)
+      render(
+        <RelationOpsProvider ops={ops}>
+          <EntityView
+            descriptor={deferredFormDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={{ create: noopActions.create, update }}
+          />
+        </RelationOpsProvider>,
+      )
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'vip' } })
+      fireEvent.click(await screen.findByText('VIP'))
+      expect(await screen.findByText('VIP')).toBeInTheDocument()
+      expect(ops.create).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(update).toHaveBeenCalled())
+      await waitFor(() => expect(ops.create).toHaveBeenCalledWith('crm_tag', { crm_id: '1', tag_id: 't1' }))
+    })
+
+    it('never writes anything when nothing was staged', async () => {
+      const ops = relationOps()
+      const update = vi.fn(async (id: string, b: Partial<Contact>) => ({ id, name: 'Ada', ...b }) as Contact)
+      render(
+        <RelationOpsProvider ops={ops}>
+          <EntityView
+            descriptor={deferredFormDescriptor}
+            initialData={[{ id: '1', name: 'Ada' }]}
+            actions={{ create: noopActions.create, update }}
+          />
+        </RelationOpsProvider>,
+      )
+
+      fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Ada Lovelace' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(update).toHaveBeenCalled())
+      expect(ops.create).not.toHaveBeenCalled()
+      expect(ops.remove).not.toHaveBeenCalled()
     })
   })
 

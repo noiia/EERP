@@ -3,6 +3,7 @@
 // from them (CONVENTIONS.md — Module FE contract). Adding an entity is a descriptor;
 // adding a view type is one store factory + one renderer + one loader path.
 
+import type { EntityListOptions } from '../api/list-options'
 import type { ViewModeDefaults } from '../api/view-fields'
 
 export type ViewType = 'form' | 'tree' | 'dashboard' | 'catalog'
@@ -1064,6 +1065,20 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * — omitted means the engine default (see SearchDescriptor's own fields).
    */
   search?: SearchDescriptor
+  /**
+   * For `viewType: 'tree'`/`'dashboard'` only: a FIXED, non-user-editable
+   * server-side refinement (same `EntityListOptions` shape relation widgets
+   * and a hand-built settings page already pass through `loadView`'s
+   * `listOptions`, e.g. `apps/shell/app/settings/appearance/page.tsx`
+   * scoping its list to the active company) always applied when this
+   * route's own list loads — `loadView` merges it ahead of any caller-
+   * supplied `listOptions` (loader.tsx). Unlike `search`, this isn't a user
+   * affordance: there's no UI to change or remove it, it just narrows what
+   * the route ever shows (e.g. a cross-property list hiding child rows
+   * behind a parent/child marker column). Omitted ⇒ the route's list is
+   * unfiltered, as every descriptor before this existed.
+   */
+  listFilter?: EntityListOptions
   /**
    * For `viewType: 'form'` only: the built-in read-only status breadcrumb
    * (see StatusBarDescriptor). Omitted ⇒ no breadcrumb renders — opt-in,

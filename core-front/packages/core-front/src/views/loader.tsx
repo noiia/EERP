@@ -53,7 +53,18 @@ export async function loadView<T extends HasId>(
       if (!recordId || recordId === 'new') return { initialData: [], error: null }
       return { initialData: [await api.get<T>(descriptor.entity, recordId)], error: null }
     }
-    const { records, total } = await api.listWithTotal<T>(descriptor.entity, options.listOptions)
+    // descriptor.listFilter (a route-fixed refinement) always applies, ahead
+    // of whatever the caller passed — a host page's own listOptions can add
+    // to it (e.g. more filter/search keys) but never has to know it exists.
+    const mergedOptions: EntityListOptions | undefined =
+      descriptor.listFilter || options.listOptions
+        ? {
+            ...descriptor.listFilter,
+            ...options.listOptions,
+            filter: { ...descriptor.listFilter?.filter, ...options.listOptions?.filter },
+          }
+        : undefined
+    const { records, total } = await api.listWithTotal<T>(descriptor.entity, mergedOptions)
     return { initialData: records, error: null, total }
   } catch (e) {
     if (e instanceof ApiError) return { initialData: [], error: serializeError(e) }

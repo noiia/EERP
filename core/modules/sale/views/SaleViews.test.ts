@@ -147,12 +147,13 @@ describe('sale FrontModule', () => {
   })
 
   it('falls back the printed issuer block to the active company profile when the invoice\'s own snapshot is blank (multi-company)', () => {
-    // issuer_address_number carries no fallback (see invoiceReport's own doc
-    // comment: a NUMBER field can't distinguish "blank" from a real 0 the
-    // way company[companyField] ?? '' does for strings).
+    // issuer_address_number carries no fallback (see reportPartyAddressFields'
+    // own doc comment: a NUMBER field can't distinguish "blank" from a real 0
+    // the way company[companyField] ?? '' does for strings).
     expect(reportCompanyFallbackFields(sale.reports![0])).toEqual([
       { recordField: 'issuer_name', companyField: 'name' },
       { recordField: 'issuer_address_street', companyField: 'address_street' },
+      { recordField: 'issuer_address_complement', companyField: 'address_complement' },
       { recordField: 'issuer_address_zip_code', companyField: 'address_zip_code' },
       { recordField: 'issuer_address_city', companyField: 'address_city' },
       { recordField: 'issuer_address_country', companyField: 'address_country' },

@@ -4,6 +4,8 @@ import {
   registerFieldFunction,
   registerHeaderButtonAction,
   registerMenuAction,
+  reportPartyAddressFields,
+  reportTitleSection,
   type FrontModule,
   type HeaderButtonDescriptor,
   type MenuNode,
@@ -654,41 +656,22 @@ const invoiceReport: ReportDescriptor = {
       ],
     },
     {
+      // The default report masthead (report-descriptor.ts's
+      // reportMastheadSection, composed by hand here so issuer/customer keep
+      // their own extra phone/email lines): the printing company's address
+      // top-left — falling back to the active company profile when the
+      // invoice's own issuer_* snapshot is blank (multi-company; the
+      // invoice's own columns/form fields are UNCHANGED, still editable,
+      // still snapshotted on create) — and the customer's address top-right,
+      // its own fields only, no fallback.
       kind: 'section',
       className: 'eerp-report-parties',
       children: [
         {
           kind: 'section',
           className: 'eerp-report-issuer',
-          // companyFallback (multi-company): when an invoice's own issuer_*
-          // snapshot is blank, the print route fills it in from the printing
-          // user's active company profile instead — the invoice's own
-          // columns/form fields are UNCHANGED (still editable, still
-          // snapshotted on create); removing them as now-redundant is a
-          // deliberately separate, later pass. issuer_address_number has NO
-          // companyFallback: company[companyField] ?? '' can't distinguish
-          // "blank" from a legitimate 0 for a NUMBER field the way it can
-          // for the string sub-fields — ponytail: acceptable ceiling, the
-          // street/city/country lines still fall back correctly.
           children: [
-            { kind: 'field', name: 'issuer_name', companyFallback: 'name' },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'issuer_address_number' },
-                { kind: 'field', name: 'issuer_address_street', companyFallback: 'address_street' },
-              ],
-            },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'issuer_address_zip_code', companyFallback: 'address_zip_code' },
-                { kind: 'field', name: 'issuer_address_city', companyFallback: 'address_city' },
-              ],
-            },
-            { kind: 'field', name: 'issuer_address_country', companyFallback: 'address_country' },
+            ...reportPartyAddressFields('issuer', true),
             { kind: 'field', name: 'issuer_phone', companyFallback: 'phone' },
             { kind: 'field', name: 'issuer_email', companyFallback: 'email' },
           ],
@@ -696,38 +679,14 @@ const invoiceReport: ReportDescriptor = {
         {
           kind: 'section',
           className: 'eerp-report-client',
-          children: [
-            { kind: 'field', name: 'customer_name' },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'customer_address_number' },
-                { kind: 'field', name: 'customer_address_street' },
-              ],
-            },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'customer_address_zip_code' },
-                { kind: 'field', name: 'customer_address_city' },
-              ],
-            },
-            { kind: 'field', name: 'customer_address_country' },
-            { kind: 'field', name: 'customer_email' },
-          ],
+          children: [...reportPartyAddressFields('customer', false), { kind: 'field', name: 'customer_email' }],
         },
       ],
     },
-    {
-      kind: 'section',
-      className: 'eerp-report-subject',
-      children: [
-        { kind: 'text', text: 'Subject:', className: 'eerp-report-label' },
-        { kind: 'field', name: 'subject' },
-      ],
-    },
+    // The document's own name/title, big (report.css's eerp-report-title) —
+    // 'subject' is a plain, already-editable text field on the invoice form,
+    // just printed oversized here instead of the old small "Subject:" line.
+    reportTitleSection('subject'),
     {
       kind: 'table',
       source: 'lines',
@@ -814,33 +773,16 @@ const quoteReport: ReportDescriptor = {
       ],
     },
     {
+      // Same masthead composition as invoiceReport above (report-descriptor.ts's
+      // reportPartyAddressFields, plus issuer/customer's own phone/email lines).
       kind: 'section',
       className: 'eerp-report-parties',
       children: [
         {
           kind: 'section',
           className: 'eerp-report-issuer',
-          // See invoiceReport's own doc comment above for why
-          // issuer_address_number has no companyFallback.
           children: [
-            { kind: 'field', name: 'issuer_name', companyFallback: 'name' },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'issuer_address_number' },
-                { kind: 'field', name: 'issuer_address_street', companyFallback: 'address_street' },
-              ],
-            },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'issuer_address_zip_code', companyFallback: 'address_zip_code' },
-                { kind: 'field', name: 'issuer_address_city', companyFallback: 'address_city' },
-              ],
-            },
-            { kind: 'field', name: 'issuer_address_country', companyFallback: 'address_country' },
+            ...reportPartyAddressFields('issuer', true),
             { kind: 'field', name: 'issuer_phone', companyFallback: 'phone' },
             { kind: 'field', name: 'issuer_email', companyFallback: 'email' },
           ],
@@ -848,38 +790,11 @@ const quoteReport: ReportDescriptor = {
         {
           kind: 'section',
           className: 'eerp-report-client',
-          children: [
-            { kind: 'field', name: 'customer_name' },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'customer_address_number' },
-                { kind: 'field', name: 'customer_address_street' },
-              ],
-            },
-            {
-              kind: 'section',
-              className: 'eerp-report-subject',
-              children: [
-                { kind: 'field', name: 'customer_address_zip_code' },
-                { kind: 'field', name: 'customer_address_city' },
-              ],
-            },
-            { kind: 'field', name: 'customer_address_country' },
-            { kind: 'field', name: 'customer_email' },
-          ],
+          children: [...reportPartyAddressFields('customer', false), { kind: 'field', name: 'customer_email' }],
         },
       ],
     },
-    {
-      kind: 'section',
-      className: 'eerp-report-subject',
-      children: [
-        { kind: 'text', text: 'Subject:', className: 'eerp-report-label' },
-        { kind: 'field', name: 'subject' },
-      ],
-    },
+    reportTitleSection('subject'),
     {
       kind: 'table',
       source: 'lines',

@@ -60,6 +60,23 @@ describe('loadView', () => {
     expect(api.listWithTotal).toHaveBeenCalledWith('crm', { filter: { company_id: 'co-1' } })
   })
 
+  it('always applies descriptor.listFilter, with no caller-supplied listOptions', async () => {
+    const api = fakeApi({ listWithTotal: vi.fn(async () => ({ records: [], total: 0 })) as never })
+    const fixed: ViewDescriptor<Crm> = { ...tree, listFilter: { filter: { is_parent: 'true' } } }
+    await loadView(fixed, api)
+    expect(api.listWithTotal).toHaveBeenCalledWith('crm', { filter: { is_parent: 'true' } })
+  })
+
+  it('merges descriptor.listFilter with caller-supplied listOptions, caller keys winning on conflict', async () => {
+    const api = fakeApi({ listWithTotal: vi.fn(async () => ({ records: [], total: 0 })) as never })
+    const fixed: ViewDescriptor<Crm> = { ...tree, listFilter: { filter: { is_parent: 'true' }, pageSize: 10 } }
+    await loadView(fixed, api, { listOptions: { filter: { company_id: 'co-1' }, pageSize: 50 } })
+    expect(api.listWithTotal).toHaveBeenCalledWith('crm', {
+      filter: { is_parent: 'true', company_id: 'co-1' },
+      pageSize: 50,
+    })
+  })
+
   it('preserves a total larger than the fetched page (a page_size-truncated read)', async () => {
     const api = fakeApi({
       listWithTotal: vi.fn(async () => ({ records: [{ id: '1', name: 'A' }], total: 500 })) as never,

@@ -63,6 +63,12 @@ describe('propertymanagement FrontModule', () => {
     })
   })
 
+  it('current_tenant is deferred — a tenant change stages in the draft and requires Save, unlike every other many2many field', () => {
+    const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
+    const field = form.descriptor.fields.find((f) => f.name === 'current_tenant')
+    expect(field?.widgetOptions).toEqual({ deferred: true })
+  })
+
   it('photos is a relation/carousel one2many over property_management_photo, capped at 20', () => {
     const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
     const field = form.descriptor.fields.find((f) => f.name === 'photos')
@@ -117,12 +123,35 @@ describe('/propertymanagement/receipts — every generated receipt', () => {
     expect(list().descriptor.createPermission).toBeUndefined()
   })
 
-  it('shows the same snapshot fields as the receipt form, including receipt_file', () => {
-    expect(list().descriptor.fields.map((f) => f.name)).toEqual(
-      propertymanagement.routes
-        .find((r) => r.path === '/propertymanagement/receipts/:id')!
-        .descriptor.fields.map((f) => f.name),
-    )
+  it('shows the same snapshot fields the receipt form starts with (the form additionally embeds a children table)', () => {
+    const formFields = propertymanagement.routes
+      .find((r) => r.path === '/propertymanagement/receipts/:id')!
+      .descriptor.fields.map((f) => f.name)
+    expect(formFields).toEqual([...list().descriptor.fields.map((f) => f.name), 'children'])
+  })
+
+  it('is fixed-filtered to parent rows only — children never appear in this cross-property list', () => {
+    expect(list().descriptor.listFilter).toEqual({ filter: { is_parent: 'true' } })
+  })
+})
+
+describe('propertymanagement.rentReceipt report', () => {
+  function report() {
+    return propertymanagement.reports?.find((r) => r.name === 'propertymanagement.rentReceipt')
+  }
+
+  it('prints floor_area alongside the property/tenant snapshot', () => {
+    const fieldNames: string[] = []
+    const walk = (nodes: NonNullable<ReturnType<typeof report>>['layout']): void => {
+      for (const node of nodes) {
+        if (node.kind === 'field') fieldNames.push(node.name)
+        else if (node.kind === 'section') walk(node.children)
+      }
+    }
+    walk(report()?.layout ?? [])
+    expect(fieldNames).toContain('floor_area')
+    expect(fieldNames).toContain('property_address')
+    expect(fieldNames).toContain('tenant_names')
   })
 })
 
@@ -131,12 +160,19 @@ describe('propertymanagement.regenerateReceiptPdf', () => {
     return propertymanagement.routes.find((r) => r.path === '/propertymanagement/receipts/:id')!
   }
 
-  it('wires a Regenerate PDF header button, visible only while receipt_file is false', () => {
+  it('wires a Regenerate PDF header button, visible only for a child row (parent_id set) with no PDF yet', () => {
     expect(receiptForm().descriptor.headerButtons).toEqual([
       {
         name: 'propertymanagement.regenerateReceiptPdf',
         label: 'Regenerate PDF',
-        states: { visible: { field: 'receipt_file', op: 'eq', value: false } },
+        states: {
+          visible: {
+            all: [
+              { field: 'receipt_file', op: 'eq', value: false },
+              { field: 'parent_id', op: 'set' },
+            ],
+          },
+        },
       },
     ])
   })
@@ -144,6 +180,33 @@ describe('propertymanagement.regenerateReceiptPdf', () => {
   it('is registered against property_management_rent_receipt', () => {
     const registered = headerButtonRegistry.get('propertymanagement.regenerateReceiptPdf')
     expect(registered?.entity).toBe('property_management_rent_receipt')
+  })
+
+  it('embeds the batch\'s child receipts as a one2many over parent_id', () => {
+    const field = receiptForm().descriptor.fields.find((f) => f.name === 'children')
+    expect(field?.readOnly).toBe(true)
+    expect(field?.relation).toEqual({
+      entity: 'property_management_rent_receipt',
+      kind: 'one2many',
+      inverseField: 'parent_id',
+      labelField: 'tenant_names',
+      formPath: '/propertymanagement/receipts/:id',
+    })
+  })
+
+  it('self-extension puts the children table on its own "Tenant receipts" notebook tab', () => {
+    const registry = new ModuleRegistry()
+    registry.register(propertymanagement)
+    const resolved = registry.buildRegistry().get('/propertymanagement/receipts/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const notebook = nodes.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    expect(notebook).toBeDefined()
+    if (!notebook || notebook.kind === 'field') return
+    const page = notebook.children.find((p) => p.kind !== 'field' && p.title === 'Tenant receipts')
+    expect(page).toBeDefined()
+    if (page && page.kind !== 'field') {
+      expect(page.children).toEqual([{ kind: 'field', name: 'children' }])
+    }
   })
 })
 
@@ -258,7 +321,16 @@ describe('propertymanagement.generateRentReceipt', () => {
     return {
       entity: 'property_management',
       recordId: 'p1',
-      draft: { name: 'Sunset Apartments', address_number: 12, address_street: 'Main Street' },
+      draft: {
+        name: 'Sunset Apartments',
+        address_number: 12,
+        address_street: 'Main Street',
+        address_complement: 'Apt 4B',
+        address_zip_code: '75001',
+        address_city: 'Paris',
+        address_country: 'France',
+        floor_area: 42,
+      },
       setFieldAndCommit: async (patch) => ({ id: 'p1', ...patch }),
       relationOps: null,
       ...overrides,
@@ -278,15 +350,23 @@ describe('propertymanagement.generateRentReceipt', () => {
     expect(committed).toBe(false)
   })
 
-  it('creates this month\'s receipt snapshotting the property/tenants, then sets last_receipt_month', async () => {
+  it('creates one parent row for the property/period, plus one dedicated child per tenant, then sets last_receipt_month', async () => {
     const created: { entity: string; body: Record<string, unknown> }[] = []
     const ops: RelationOps = {
       list: async (entity) =>
-        entity === 'property_management_tenant' ? [{ id: 'link1', contact_id: 'c1' }] : [],
-      get: async (entity, id) => (entity === 'contact' && id === 'c1' ? { id: 'c1', name: 'Jane Doe' } : { id }),
+        entity === 'property_management_tenant'
+          ? [
+              { id: 'link1', contact_id: 'c1' },
+              { id: 'link2', contact_id: 'c2' },
+            ]
+          : [],
+      get: async (entity, id) => {
+        if (entity !== 'contact') return { id }
+        return { id, name: id === 'c1' ? 'Jane Doe' : 'John Smith' }
+      },
       create: async (entity, body) => {
         created.push({ entity, body })
-        return { id: 'r1', ...body }
+        return { id: created.length === 1 ? 'parent1' : `child${created.length - 1}`, ...body }
       },
       remove: async () => {},
     }
@@ -302,18 +382,37 @@ describe('propertymanagement.generateRentReceipt', () => {
     await headerButtonRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
 
     const period = new Date().toISOString().slice(0, 7)
-    expect(created).toEqual([
-      {
-        entity: 'property_management_rent_receipt',
-        body: expect.objectContaining({
-          property_management_id: 'p1',
-          period,
-          property_name: 'Sunset Apartments',
-          property_address: '12 Main Street',
-          tenant_names: 'Jane Doe',
-        }),
-      },
-    ])
+    // The parent: linked to the property, no parent_id, the FULL joined
+    // tenant list — never gets its own PDF (no receipt_file upload happens
+    // for it; fetchReportPDF is never invoked with its id in this test).
+    expect(created[0]).toEqual({
+      entity: 'property_management_rent_receipt',
+      body: expect.objectContaining({
+        property_management_id: 'p1',
+        is_parent: true,
+        period,
+        property_name: 'Sunset Apartments',
+        // The FULL address (was truncated to just number + street, which
+        // is what made a generated report read "barely empty").
+        property_address: '12 Main Street, Apt 4B, 75001 Paris, France',
+        floor_area: 42,
+        tenant_names: 'Jane Doe, John Smith',
+      }),
+    })
+    expect(created[0].body.parent_id).toBeUndefined()
+    // One dedicated child per tenant: linked to the PARENT, not the property,
+    // each with just its own tenant's name — same full address + floor_area
+    // snapshot as the parent.
+    expect(created).toHaveLength(3)
+    expect(created[1].body).toMatchObject({
+      parent_id: 'parent1',
+      is_parent: false,
+      tenant_names: 'Jane Doe',
+      property_address: '12 Main Street, Apt 4B, 75001 Paris, France',
+      floor_area: 42,
+    })
+    expect(created[1].body.property_management_id).toBeUndefined()
+    expect(created[2].body).toMatchObject({ parent_id: 'parent1', is_parent: false, tenant_names: 'John Smith' })
     expect(committed).toEqual([{ last_receipt_month: period }])
   })
 })

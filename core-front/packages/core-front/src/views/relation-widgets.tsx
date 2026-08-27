@@ -583,6 +583,21 @@ export interface TagLink {
   related: RelationRecord
 }
 
+/**
+ * `widgetOptions.deferred: true`'s staged, not-yet-written diff for a
+ * many2many field — stored as the field's OWN draft value (a many2many
+ * field is otherwise virtual/unstored, so this slot is free real estate;
+ * `isVirtualRelation` still strips it from the commit payload, so it never
+ * reaches Go). `RelationTagsWidget` reads it to render staged chips;
+ * `FormRenderer.onSubmit` (renderers.tsx) flushes it into real junction rows
+ * once the record's own save succeeds, then it's gone (commit() reseeds the
+ * draft from the server response, which carries no such key).
+ */
+export interface PendingManyToMany {
+  toLink: RelationRecord[]
+  toUnlinkJunctionIds: string[]
+}
+
 /** The junction's FK columns: declared viaFields or the naming convention. */
 /** Exported so relation-summary-widget.tsx can resolve a many2many's
  * default junction column names the same way RelationTagsWidget does. */
@@ -629,7 +644,7 @@ export async function resolveManyToManyLinks(
   return links
 }
 
-export function RelationTagsWidget({ field, disabled, entity, recordId }: WidgetProps) {
+export function RelationTagsWidget({ field, value, onChange, disabled, entity, recordId }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
@@ -640,6 +655,17 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [inputText, setInputText] = useState('')
+  // widgetOptions.deferred (opt-in, e.g. propertymanagement's current_tenant):
+  // stage add/remove in the draft instead of writing junction rows
+  // immediately — the record's own Save is what actually persists them
+  // (FormRenderer.onSubmit's flush, mirroring the chatter post-save hook).
+  // Every other many2many field keeps the original write-on-interaction
+  // behavior, unchanged — this is read only when opted in.
+  const deferred = field.widgetOptions?.deferred === true
+  const pending: PendingManyToMany = (deferred ? (value as PendingManyToMany | undefined) : undefined) ?? {
+    toLink: [],
+    toUnlinkJunctionIds: [],
+  }
 
   // Links are junction rows: load them, then resolve their related records
   // in one batched call (resolveManyToManyLinks) rather than one per row.
@@ -662,9 +688,22 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
-  const linkedIds = new Set(links.map((l) => l.related.id))
+  // Deferred: the persisted set minus anything staged for removal, plus
+  // anything staged for addition (marked `staged` so unlink knows which side
+  // of the diff to edit, rather than sniffing a synthetic id shape).
+  const visible: (TagLink & { staged?: boolean })[] = deferred
+    ? [
+        ...links.filter((l) => !pending.toUnlinkJunctionIds.includes(l.junctionId)),
+        ...pending.toLink.map((related) => ({ junctionId: `pending:${related.id}`, related, staged: true })),
+      ]
+    : links
+  const linkedIds = new Set(visible.map((l) => l.related.id))
 
   const add = (option: RelationRecord) => {
+    if (deferred) {
+      onChange({ ...pending, toLink: [...pending.toLink, option] })
+      return
+    }
     ops
       .create(via, { [cols.own]: recordId, [cols.related]: option.id })
       .then((junction) => {
@@ -674,7 +713,15 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
 
-  const unlink = (link: TagLink) => {
+  const unlink = (link: TagLink & { staged?: boolean }) => {
+    if (deferred) {
+      if (link.staged) {
+        onChange({ ...pending, toLink: pending.toLink.filter((o) => o.id !== link.related.id) })
+      } else {
+        onChange({ ...pending, toUnlinkJunctionIds: [...pending.toUnlinkJunctionIds, link.junctionId] })
+      }
+      return
+    }
     ops
       .remove(via, link.junctionId)
       .then(() => {
@@ -692,7 +739,7 @@ export function RelationTagsWidget({ field, disabled, entity, recordId }: Widget
         </Typography>
       )}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
-        {links.map((link) => (
+        {visible.map((link) => (
           <RelationTag
             key={link.junctionId}
             label={labelOf(link.related, labelField)}

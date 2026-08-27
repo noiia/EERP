@@ -205,6 +205,102 @@ export function reportTableRelations(
 }
 
 /**
+ * Field names for one "party" address block (company or contact), derived
+ * from a record field prefix — e.g. prefix 'issuer' -> 'issuer_name',
+ * 'issuer_address_street', etc. Mirrors sale.invoice's own issuer_ / customer_
+ * naming convention, just generalized so any report's entity can reuse it
+ * under its own prefix.
+ */
+function partyFieldNames(prefix: string) {
+  return {
+    name: `${prefix}_name`,
+    addressNumber: `${prefix}_address_number`,
+    addressStreet: `${prefix}_address_street`,
+    addressComplement: `${prefix}_address_complement`,
+    addressZipCode: `${prefix}_address_zip_code`,
+    addressCity: `${prefix}_address_city`,
+    addressCountry: `${prefix}_address_country`,
+  }
+}
+
+/**
+ * The address block's field lines, in print order: name, then (number,
+ * street) as a row, complement, then (zip code, city) as a row, then
+ * country — the shape every "current company data" / "contact data" ask
+ * boils down to. `companyFallback` opts every field EXCEPT address number
+ * into the active-company fallback: `address_number` is deliberately left
+ * out — company[companyField] ?? '' can't distinguish "blank" from a
+ * legitimate 0 the way it can for the string fields (sale.invoice's own
+ * issuer masthead hit this first; kept here so every caller gets the fix for
+ * free instead of rediscovering it).
+ */
+export function reportPartyAddressFields(prefix: string, companyFallback: boolean): ReportNode[] {
+  const fields = partyFieldNames(prefix)
+  const fb = <T extends ReportFieldNode['companyFallback']>(suffix: T): T | undefined =>
+    companyFallback ? suffix : undefined
+  return [
+    { kind: 'field', name: fields.name, companyFallback: fb('name') },
+    {
+      kind: 'section',
+      className: 'eerp-report-subject',
+      children: [
+        { kind: 'field', name: fields.addressNumber },
+        { kind: 'field', name: fields.addressStreet, companyFallback: fb('address_street') },
+      ],
+    },
+    { kind: 'field', name: fields.addressComplement, companyFallback: fb('address_complement') },
+    {
+      kind: 'section',
+      className: 'eerp-report-subject',
+      children: [
+        { kind: 'field', name: fields.addressZipCode, companyFallback: fb('address_zip_code') },
+        { kind: 'field', name: fields.addressCity, companyFallback: fb('address_city') },
+      ],
+    },
+    { kind: 'field', name: fields.addressCountry, companyFallback: fb('address_country') },
+  ]
+}
+
+/**
+ * The standard report masthead (docs/roadmaps/pdf-reports.md): the printing
+ * company's own address top-left (falling back to the printing user's
+ * active company profile when the record's own fields are blank — the same
+ * `companyFallback` mechanism sale.invoice pioneered by hand), and the
+ * record's OTHER party — customer, tenant, whoever the document is addressed
+ * to — top-right, from its own fields with no fallback. Reuses
+ * `eerp-report-parties`/`eerp-report-issuer`/`eerp-report-client`
+ * (report.css), the exact layout sale.invoice already established, so every
+ * report gets the same look "by design" instead of hand-rolling this tree
+ * per module. `companyPrefix`/`contactPrefix` name each side's record field
+ * prefix (e.g. 'issuer' / 'customer') — the entity must actually declare
+ * those columns; this only assembles the layout tree, it invents no fields.
+ * A report needing extra fields alongside the address block (e.g. phone/
+ * email) should compose `reportPartyAddressFields` directly instead — see
+ * sale.invoice/sale.quote.
+ */
+export function reportMastheadSection(opts: { companyPrefix: string; contactPrefix: string }): ReportSectionNode {
+  return {
+    kind: 'section',
+    className: 'eerp-report-parties',
+    children: [
+      { kind: 'section', className: 'eerp-report-issuer', children: reportPartyAddressFields(opts.companyPrefix, true) },
+      { kind: 'section', className: 'eerp-report-client', children: reportPartyAddressFields(opts.contactPrefix, false) },
+    ],
+  }
+}
+
+/**
+ * A big, bold document name/title — printed oversized (report.css's
+ * `eerp-report-title`) below the masthead, the way a letterhead's document
+ * name reads. `field` is a plain record field the module's own form still
+ * owns (editable there, like any other field — "I can edit manually later"
+ * is just that form field, not a print-time input).
+ */
+export function reportTitleSection(field: string): ReportFieldNode {
+  return { kind: 'field', name: field, className: 'eerp-report-title' }
+}
+
+/**
  * Validate a report descriptor at registration: every field-leaf needs a
  * name, every table-leaf needs a source and at least one named column — the
  * same "fail at registration, not at render" discipline

@@ -49,6 +49,8 @@ import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
 import { PictureSizeProvider } from './picture-widgets'
 import { useRecordLabelStore } from './record-label-store'
+import { useRelationOps } from './relation-ops'
+import { junctionColumns, relationOf, type PendingManyToMany } from './relation-widgets'
 import { SearchBar } from './search-bar'
 import { StatusBar } from './status-bar'
 import { layout as layoutTokens, tabularNums } from './tokens'
@@ -220,6 +222,7 @@ function FormRenderer<T extends HasId>({
   const error = useFormError(store)
   const { setField } = store.getState()
   const chatterOps = useChatterOps()
+  const relationOps = useRelationOps()
   // The record's field values as of the last successful load/save — the
   // BEFORE side of the chatter log's diff. Re-seeded from a fresh navigation
   // (`initialData` prop change) and after every successful commit below, so a
@@ -281,6 +284,11 @@ function FormRenderer<T extends HasId>({
     // being edited — a first-time create has nothing to diff against, so it
     // never posts a log entry (the chatter feed only tracks "edition").
     const wasExisting = (before as Partial<HasId>).id != null
+    // Captured BEFORE commit() reseeds the draft from the server's own
+    // response — a deferred many2many field's staged diff
+    // (relation-widgets.tsx's PendingManyToMany) lives only in the
+    // pre-commit draft; Go returns nothing for that virtual field.
+    const preCommitDraft = store.getState().draft as Record<string, unknown>
     try {
       const saved = await store.getState().commit()
       if (saved) {
@@ -294,6 +302,32 @@ function FormRenderer<T extends HasId>({
             chatterOps.create(descriptor.entity, saved.id, 'log', summary).catch(() => {
               // A log-post failure must never surface as a save error — the
               // record itself already saved successfully.
+            })
+          }
+        }
+        // Flush every deferred many2many field's staged diff into real
+        // junction rows now that the record has a confirmed id — mirrors the
+        // chatter log above: fire-and-forget, since the record itself
+        // already saved and a link failure here must not surface as a save
+        // error. Every non-deferred many2many field already wrote its
+        // junction rows at interaction time (relation-widgets.tsx) and has
+        // nothing staged here.
+        if (relationOps) {
+          for (const field of descriptor.fields) {
+            if (field.type !== 'relation' || field.relation?.kind !== 'many2many') continue
+            if (field.widgetOptions?.deferred !== true) continue
+            const pending = preCommitDraft[field.name] as PendingManyToMany | undefined
+            if (!pending || (pending.toLink.length === 0 && pending.toUnlinkJunctionIds.length === 0)) continue
+            const rel = relationOf(field)
+            const via = rel.via as string
+            const cols = junctionColumns(rel, descriptor.entity)
+            Promise.all([
+              ...pending.toUnlinkJunctionIds.map((id) => relationOps.remove(via, id)),
+              ...pending.toLink.map((related) =>
+                relationOps.create(via, { [cols.own]: saved.id, [cols.related]: related.id }),
+              ),
+            ]).catch(() => {
+              // Swallowed — see the comment above.
             })
           }
         }
