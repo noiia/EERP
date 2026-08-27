@@ -7,7 +7,6 @@
    prefixed specifically to stay collision-free with the rest of the app. */
 
 .eerp-report-header,
-.eerp-report-contact,
 .eerp-report-metrics,
 .eerp-report-notes {
   display: flex;
@@ -25,7 +24,6 @@
   margin-bottom: 0.5rem;
 }
 
-.eerp-report-contact,
 .eerp-report-metrics {
   font-size: 0.95rem;
   color: var(--eerp-report-text-muted, #333);
@@ -34,6 +32,18 @@
 .eerp-report-notes {
   display: block;
   white-space: pre-wrap;
+  font-size: 0.95rem;
+  color: var(--eerp-report-text-muted, #333);
+}
+
+/* Rebuilt: stacked lines (was a wrapping row sharing the 1.5rem/24px gap
+   with header/metrics/notes above) — each field its own line, 10px apart. */
+.eerp-report-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0.5rem 0;
+  font-family: Helvetica, Arial, sans-serif;
   font-size: 0.95rem;
   color: var(--eerp-report-text-muted, #333);
 }
@@ -99,6 +109,11 @@
 .eerp-report-parties {
   display: flex;
   justify-content: space-between;
+  /* Explicit (was relying on the flex default, `stretch`) — matches
+     .eerp-report-masthead's own align-items: flex-start above, so both
+     columns' tops line up on the LEFT column's top position even once one
+     side runs taller than the other (e.g. a logo image). */
+  align-items: flex-start;
   gap: 1.5rem;
   padding: 1rem 0;
   font-family: Helvetica, Arial, sans-serif;
@@ -206,4 +221,17 @@
   font-size: 0.85rem;
   color: var(--eerp-report-text-muted, #333);
   padding-bottom: 0.35rem;
+}
+
+/* SAMPLE (sale.invoice's Reference row, SaleViews.ts) — a module adding a
+   BRAND-NEW class rather than reusing one of the eerp-report-* rules above:
+   drop a rule here, reference its name from a ReportNode's className. Not
+   load-bearing — delete both this rule and its layout node freely. */
+.eerp-report-reference-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--eerp-report-accent, #f2f2f2);
+  color: var(--eerp-report-text, #222);
+  font-weight: 700;
 }

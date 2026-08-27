@@ -18,7 +18,7 @@ import (
 
 // Handler serves the three routes this module overrides for sale_line:
 // Create/Update/Delete. GET (list/get) stays fully generic — the invoice
-// form's one2many line-items table (views/SaleViews.ts) reads it
+// form's one2many line-items table (views/invoice_views.ts) reads it
 // unmodified, same "override only what needs it" shape as
 // modules/crminheritdemo/handler.go.
 //
@@ -224,7 +224,7 @@ func (h *Handler) recomputeTotals(ctx context.Context, invoiceID uuid.UUID) erro
 // sumLines is the pure money math behind recomputeTotals, pulled out so it's
 // testable without a DB (see handler_test.go). Each line's own tax rate
 // (from its product/variant) taxes its own gross total independently — see
-// views/SaleViews.ts's totals recap, which groups these same lines by tax
+// views/reports/invoice_report.ts's totals recap, which groups these same lines by tax
 // rate for display.
 func sumLines(lines []SaleLine) (subtotal, taxAmount, total float64) {
 	for _, l := range lines {

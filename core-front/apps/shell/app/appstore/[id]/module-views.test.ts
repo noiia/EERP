@@ -20,26 +20,26 @@ import { moduleViewRows } from './module-views'
 describe('moduleViewRows', () => {
   it("lists every path the module OWNS as a 'Created' row, with filename/filepath", () => {
     extendedPathsMock.mockReturnValue([])
-    expect(moduleViewRows('crm', 'CrmViews.ts', '/repo/core/modules/crm')).toEqual([
-      { route: '/crm', filename: 'CrmViews.ts', filepath: '/repo/core/modules/crm/views/CrmViews.ts', status: 'Created' },
-      { route: '/crm/list', filename: 'CrmViews.ts', filepath: '/repo/core/modules/crm/views/CrmViews.ts', status: 'Created' },
-      { route: '/crm/:id', filename: 'CrmViews.ts', filepath: '/repo/core/modules/crm/views/CrmViews.ts', status: 'Created' },
+    expect(moduleViewRows('crm', 'crm_views.ts', '/repo/core/modules/crm')).toEqual([
+      { route: '/crm', filename: 'crm_views.ts', filepath: '/repo/core/modules/crm/views/crm_views.ts', status: 'Created' },
+      { route: '/crm/list', filename: 'crm_views.ts', filepath: '/repo/core/modules/crm/views/crm_views.ts', status: 'Created' },
+      { route: '/crm/:id', filename: 'crm_views.ts', filepath: '/repo/core/modules/crm/views/crm_views.ts', status: 'Created' },
     ])
   })
 
   it("lists the module's own extended paths as 'Inherited' rows, after the created ones", () => {
     extendedPathsMock.mockReturnValue(['/crm/:id', '/crm/list'])
-    expect(moduleViewRows('crminheritdemo', 'CrmInheritViews.ts', '/repo/core/modules/crminheritdemo')).toEqual([
+    expect(moduleViewRows('crminheritdemo', 'crminheritdemo_views.ts', '/repo/core/modules/crminheritdemo')).toEqual([
       {
         route: '/crm/:id',
-        filename: 'CrmInheritViews.ts',
-        filepath: '/repo/core/modules/crminheritdemo/views/CrmInheritViews.ts',
+        filename: 'crminheritdemo_views.ts',
+        filepath: '/repo/core/modules/crminheritdemo/views/crminheritdemo_views.ts',
         status: 'Inherited',
       },
       {
         route: '/crm/list',
-        filename: 'CrmInheritViews.ts',
-        filepath: '/repo/core/modules/crminheritdemo/views/CrmInheritViews.ts',
+        filename: 'crminheritdemo_views.ts',
+        filepath: '/repo/core/modules/crminheritdemo/views/crminheritdemo_views.ts',
         status: 'Inherited',
       },
     ])
@@ -47,10 +47,10 @@ describe('moduleViewRows', () => {
 
   it('falls back to the bare filename when moduleDir is not given', () => {
     extendedPathsMock.mockReturnValue([])
-    expect(moduleViewRows('crm', 'CrmViews.ts')).toEqual([
-      { route: '/crm', filename: 'CrmViews.ts', filepath: 'CrmViews.ts', status: 'Created' },
-      { route: '/crm/list', filename: 'CrmViews.ts', filepath: 'CrmViews.ts', status: 'Created' },
-      { route: '/crm/:id', filename: 'CrmViews.ts', filepath: 'CrmViews.ts', status: 'Created' },
+    expect(moduleViewRows('crm', 'crm_views.ts')).toEqual([
+      { route: '/crm', filename: 'crm_views.ts', filepath: 'crm_views.ts', status: 'Created' },
+      { route: '/crm/list', filename: 'crm_views.ts', filepath: 'crm_views.ts', status: 'Created' },
+      { route: '/crm/:id', filename: 'crm_views.ts', filepath: 'crm_views.ts', status: 'Created' },
     ])
   })
 

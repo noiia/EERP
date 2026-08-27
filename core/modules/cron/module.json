@@ -9,7 +9,7 @@
     "app_mode": false,
     "static_files": {
         "views": [
-            "CronViews.ts"
+            "cron_views.ts"
         ]
     },
     "is_service": true,

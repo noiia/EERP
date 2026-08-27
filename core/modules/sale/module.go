@@ -18,7 +18,7 @@ func init() {
 // dashboard has a single section, Invoice, over this entity. The table name
 // derives from the struct name: "invoice" (GET /api/v1/invoice). Field
 // layout mirrors a standard French "devis"/invoice template end to end
-// (docs/adr/ADR-011, views/SaleViews.ts's sale.invoice report): logo,
+// (docs/adr/ADR-011, views/reports/invoice_report.ts's sale.invoice report): logo,
 // issuer, client, line items, HT/TVA/TTC totals, payment terms.
 type Invoice struct {
 	model.BaseModel
@@ -81,7 +81,7 @@ type Invoice struct {
 	// QuoteID is the quote this invoice was raised FROM, when it was —
 	// nil for an invoice created directly, never through a quote's Accept
 	// flow. Set once, at creation, by the quote form's Accept header button
-	// (views/SaleViews.ts's sale.acceptQuote) via the generic entity API —
+	// (views/quote_views.ts's sale.acceptQuote) via the generic entity API —
 	// nothing on the Go side writes it itself.
 	QuoteID *uuid.UUID `db:"quote_id"`
 	// Subtotal/TaxAmount/Total are the invoice's HT -> TVA -> TTC breakdown,
@@ -113,7 +113,7 @@ type Invoice struct {
 
 // SaleLine is one row of an invoice's item table — the "table style
 // display" the invoice form and PDF report both render (see
-// views/SaleViews.ts, invoiceReport's 'lines' table). It replaces the old
+// views/invoice_views.ts, views/reports/invoice_report.ts's 'lines' table). It replaces the old
 // Invoice.Lines JSONB blob with a real table so a line can point at an
 // actual product.
 //
@@ -139,7 +139,7 @@ type SaleLine struct {
 	model.BaseModel
 	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	// InvoiceID is the parent FK — the one2many inverse field the invoice
-	// form's line-items table filters on (views/SaleViews.ts).
+	// form's line-items table filters on (views/invoice_views.ts).
 	InvoiceID uuid.UUID `db:"invoice_id" json:"invoice_id"`
 	// VariantID many2one -> warehouse.ProductVariant. First column per the
 	// request ("first column is product.variant many2one").
@@ -147,7 +147,7 @@ type SaleLine struct {
 	// VariantName is a display-only snapshot of the variant's own Name,
 	// same "don't live-join" reasoning as the other snapshots — it exists so
 	// the invoice form's embedded line-items table (a read-only grid over
-	// raw JSON rows, see views/SaleViews.ts) can show a product name instead
+	// raw JSON rows, see views/invoice_views.ts) can show a product name instead
 	// of a bare variant_id uuid.
 	VariantName string  `db:"variant_name" json:"variant_name"`
 	Quantity    float64 `db:"quantity" json:"quantity"`

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FORM_NOTEBOOK_ID, ModuleRegistry, normalizeLayout } from '@eerp/core-front'
-import appstore from './AppStoreViews'
+import appstore from './modules_views'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('appstore FrontModule', () => {

@@ -10,7 +10,7 @@
     "menu_icon": "address-book",
     "static_files": {
         "views": [
-            "ContactsViews.ts"
+            "contact_views.ts"
         ]
     },
     "is_service": true,

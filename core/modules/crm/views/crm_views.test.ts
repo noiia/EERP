@@ -8,7 +8,7 @@ import {
   normalizeLayout,
   validateDescriptorWidgets,
 } from '@eerp/core-front'
-import crm from './CrmViews'
+import crm from './crm_views'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('crm FrontModule', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import mod from './WarehouseViews'
+import mod from './warehouse_views'
 
 describe('warehouse FrontModule', () => {
   it('registers the expected routes: one dashboard, two list/form pairs', () => {

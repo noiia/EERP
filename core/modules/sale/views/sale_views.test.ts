@@ -9,7 +9,7 @@ import {
   type HeaderButtonContext,
   type RelationOps,
 } from '@eerp/core-front'
-import sale from './SaleViews'
+import sale from './sale_views'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('sale FrontModule', () => {
@@ -175,7 +175,7 @@ describe('sale FrontModule', () => {
 })
 
 // sale extends its OWN already-registered '/sale/:id' route (same
-// self-extension shape core/modules/crm/views/CrmViews.ts uses for its
+// self-extension shape core/modules/crm/views/crm_views.ts uses for its
 // Signature page) to move sale_lines off the default two-column body and
 // into its own "Order lines" notebook page, first among tabs.
 describe('sale — self-extended "Order lines" notebook page (registry-level)', () => {
@@ -224,7 +224,7 @@ describe('sale — self-extended "Order lines" notebook page (registry-level)', 
 
 // The Quote tile is the FIRST dashboard tile: resolve.ts's dashboardListViews
 // rolls a module's tree ('list') routes into tiles in registration order —
-// see WarehouseViews.ts's identical doc comment — so this asserts the
+// see warehouse_views.ts's identical doc comment — so this asserts the
 // registration order itself, the actual mechanism, not just the route list.
 describe('sale — quote registers ahead of invoice (dashboard tile ordering)', () => {
   it('quote/list is the first tree route, invoice/list the second', () => {

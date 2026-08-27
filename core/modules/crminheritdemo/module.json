@@ -9,7 +9,7 @@
     "depends": ["crm"],
     "static_files": {
         "views": [
-            "CrmInheritViews.ts"
+            "crminheritdemo_views.ts"
         ]
     },
     "is_service": false,

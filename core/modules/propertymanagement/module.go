@@ -48,7 +48,7 @@ type PropertyManagement struct {
 	// warehouse.Product.Unit, this module has no opinion).
 	FloorArea float64 `db:"floor_area" json:"floor_area"`
 	// LastReceiptMonth is "2026-08"-shaped, set by the Generate Rent Receipt
-	// header button's handler (PropertyManagementViews.ts's
+	// header button's handler (property_management_views.ts's
 	// propertymanagement.generateRentReceipt) — what the Property GET
 	// override (handler.go) compares against the current month to compute
 	// the non-stored receipt_generated_this_month key the header button's
@@ -144,7 +144,7 @@ type PropertyManagementEquipmentPhoto struct {
 // left nil, TenantNames holds that ONE tenant's name, ReceiptFile its own
 // dedicated PDF) — self-referencing, the same shape TreeRenderer already
 // expects for a hierarchical tree view (any row with parent_id != null).
-// The property form's own rent_receipts field (PropertyManagementViews.ts,
+// The property form's own rent_receipts field (property_management_views.ts,
 // inverseField: property_management_id) therefore lists PARENTS only —
 // children never match that filter, since they carry no
 // property_management_id — and a parent's own read-only form embeds its
@@ -161,7 +161,7 @@ type PropertyManagementRentReceipt struct {
 	// IsParent: true on a parent row, false on a child. Exists ONLY because
 	// the generic list endpoint's filter[col]= is an exact-match compare —
 	// there is no "column IS NULL" filter to scope the flat, cross-property
-	// receipts list (PropertyManagementViews.ts's rentReceiptListView) to
+	// receipts list (property_management_rent_receipt_views.ts's rentReceiptListView) to
 	// parents by ParentID alone; this plain boolean is filterable the normal
 	// way (filter[is_parent]=true).
 	IsParent bool `db:"is_parent" json:"is_parent"`
@@ -170,7 +170,7 @@ type PropertyManagementRentReceipt struct {
 	GeneratedAt  *time.Time `db:"generated_at" json:"generated_at"`
 	PropertyName string     `db:"property_name" json:"property_name"`
 	// PropertyAddress is the FULL formatted line (number/street, complement,
-	// zip/city, country — PropertyManagementViews.ts's formatPropertyAddress)
+	// zip/city, country — property_management_views.ts's formatPropertyAddress)
 	// snapshotted at generation time, not just number+street.
 	PropertyAddress string `db:"property_address" json:"property_address"`
 	// FloorArea snapshots PropertyManagement.FloorArea at generation time —

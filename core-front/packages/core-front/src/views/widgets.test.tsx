@@ -411,13 +411,13 @@ describe('text/table', () => {
 
   it('renders declared columns and one row per array entry, in order', () => {
     renderWidget(tableField, [
-      { view: '/crm', file: 'CrmViews.ts' },
-      { view: '/crm/:id', file: 'CrmViews.ts' },
+      { view: '/crm', file: 'crm_views.ts' },
+      { view: '/crm/:id', file: 'crm_views.ts' },
     ])
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
     expect(headers).toEqual(['View', 'File'])
     const rows = screen.getAllByRole('row').slice(1) // drop the header row
-    expect(rows.map((r) => r.textContent)).toEqual(['/crmCrmViews.ts', '/crm/:idCrmViews.ts'])
+    expect(rows.map((r) => r.textContent)).toEqual(['/crmcrm_views.ts', '/crm/:idcrm_views.ts'])
   })
 
   it('a row missing a declared column key renders an empty cell, never throws', () => {

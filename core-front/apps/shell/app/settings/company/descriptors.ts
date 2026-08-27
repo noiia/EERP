@@ -27,6 +27,11 @@ export const companyFormDescriptor: ViewDescriptor<CompanyRecord> = {
   entity: 'company',
   viewType: 'form',
   fields: [
+    // First widget:'picture' field: the engine's default form anatomy
+    // (core-front/CLAUDE.md's "Default form anatomy" row) synthesizes it,
+    // with no explicit layout needed, into a top row on its own — logo top
+    // left, same convention crm's own picture field already uses.
+    { name: 'logo', hideLabel: true, label: 'Company logo', type: 'boolean', widget: 'picture' },
     { name: 'name', label: 'Name', type: 'text', required: true },
     { name: 'address', label: 'Address', type: 'address', widget: 'form' },
     { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },

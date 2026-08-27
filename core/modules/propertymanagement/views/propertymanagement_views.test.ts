@@ -9,7 +9,7 @@ import {
   type HeaderButtonContext,
   type RelationOps,
 } from '@eerp/core-front'
-import propertymanagement from './PropertyManagementViews'
+import propertymanagement from './propertymanagement_views'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('propertymanagement FrontModule', () => {

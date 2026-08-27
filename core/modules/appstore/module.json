@@ -11,7 +11,7 @@
     "description": "Install and manage the workspace's applications",
     "static_files": {
         "views": [
-            "AppStoreViews.ts"
+            "modules_views.ts"
         ]
     },
     "is_service": false,

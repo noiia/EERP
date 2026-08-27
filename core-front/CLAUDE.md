@@ -149,13 +149,31 @@ core-front/                          # frontend SERVICE (Next.js) — own proces
     └── ...
 
 <repo>/core/modules/crm/             # a business module — discovered via module_root, relocatable
-├── module.json                      # static_files.views: ["CrmViews.ts"]
+├── module.json                      # static_files.views: ["crm_views.ts"]
 ├── module.go · internal/crm.go      # Go service
 └── views/
-    └── CrmViews.ts                  # default-exports a FrontModule (descriptors only)
+    └── crm_views.ts                 # default-exports a FrontModule (descriptors only)
+
+<repo>/core/modules/sale/            # a module with several DB models + reports
+├── module.json                      # static_files.views: ["sale_views.ts"] — ONLY the assembler
+├── module.go                        # Go service
+├── reports/                         # sibling of views/ — one file per ReportDescriptor
+│   ├── invoice_report.ts            # sale.invoice ReportDescriptor
+│   └── quote_report.ts              # sale.quote ReportDescriptor
+└── views/
+    ├── sale_views.ts                # assembler: imports the pieces below, exports the ONE FrontModule
+    ├── invoice_views.ts             # invoice model: fields/descriptors/routes/behaviors
+    ├── sale_line_views.ts           # sale_line model
+    ├── quote_views.ts               # quote model
+    └── quote_line_views.ts          # quote_line model
 ```
 
 `module_root` paths may point anywhere on disk, so a module folder is relocatable — `core/modules/crm` is just the current default. Each module is self-describing via `module.json`; `static_files.views` lists the `.ts` view files under its `views/`.
+
+**One file per DB model, one file per report:** a module's `views/` folder holds one `<model>_views.ts` per entity it owns (fields, `ViewDescriptor`s, routes, `register*` behaviors); a sibling `reports/` folder (same level as `views/`, not nested inside it) holds one `<name>_report.ts` per `ReportDescriptor` — never one giant per-module file. `ModuleRegistry.register()` is idempotent by module **name** (a second `register()` call under the same name is silently skipped, not merged — `registry.ts`), so exactly ONE file may still default-export the whole `FrontModule`; every other file exports plain, non-registering pieces that file imports and assembles. `module.json`'s `static_files.views` lists ONLY that one assembler file — the entity/report files are reached by ordinary ES imports, not separately discovered. Naming wrinkles, all already applied across every module in this repo:
+- **A module with exactly one owned entity** (`crm`, `contact`, `appstore`'s `modules` virtual entity) skips the separate assembler file entirely — the one `<model>_views.ts` file both declares the entity's pieces AND default-exports the `FrontModule`, importing straight from `../reports/` itself if the module has a report (`crm`'s single `crm_views.ts` imports `../reports/statement_report.ts` this way) — there's nothing else to assemble regardless.
+- **A module whose name collides with one of its own entity names** (`cron`'s `cron` entity, alongside `cron_history`) lets that entity's own file double as the assembler, importing the other entities' route exports — the alternative (two files both wanting to be named `cron_views.ts`) isn't spellable.
+- **Route order is significant, not just declaration convenience**: `Menu.tsx` links a module's landing tile to `module.routes[0].path`, and `ModuleRegistry.listViews()`/`menu()` read `module.routes` in order for dashboard-tile and menu ordering — an assembler combining multiple entity files' route arrays must reconstruct the ORIGINAL order (typically: the dashboard route pulled out and put first, exported separately from the rest of that entity's routes — see `sale_views.ts`/`invoice_views.ts`'s `dashboardRoute`), not just spread them in whatever order the files happen to be imported.
 
 ---
 

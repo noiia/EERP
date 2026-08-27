@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import cron from './CronViews'
+import cron from './cron_views'
 
 describe('cron FrontModule', () => {
   it('is named "cron" and registers both entities routes', () => {

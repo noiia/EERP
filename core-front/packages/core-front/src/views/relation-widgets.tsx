@@ -828,13 +828,20 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   // directly) — see entity-refresh-store.ts.
   const refreshSignal = useEntityRefreshStore((s) => s.bumps[rel.entity])
 
+  // widgetOptions.reverse (opt-in, e.g. propertymanagement's rent_receipts):
+  // flips the fetched page so the LAST row (most recently created — Go's
+  // list endpoint has no explicit ORDER BY, so this is insertion order)
+  // renders first. Every other one2many field keeps the original fetch
+  // order, unchanged.
+  const reverse = field.widgetOptions?.reverse === true
+
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
     ops
       .list(rel.entity, { filter: { [inverseField]: recordId }, pageSize: EMBED_PAGE_SIZE })
       .then((found) => {
-        if (!cancelled) setRows(found)
+        if (!cancelled) setRows(reverse ? [...found].reverse() : found)
       })
       .catch(() => {
         if (!cancelled) setRows([])
@@ -842,7 +849,7 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, inverseField, recordId, refreshSignal])
+  }, [ops, rel.entity, inverseField, recordId, refreshSignal, reverse])
 
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />

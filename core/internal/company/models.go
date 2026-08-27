@@ -43,4 +43,11 @@ type Company struct {
 	// the ON CONFLICT arbiter that makes bootstrap race-safe under concurrent
 	// requests.
 	IsDefault bool `db:"is_default"`
+	// Logo is the flag column behind the company form's boolean/picture
+	// widget (apps/shell/app/settings/company/descriptors.ts): true ⇔ a
+	// picture row exists on the (company, record, logo) anchor — same shape
+	// as core/modules/crm's own Picture column; the picture service owns the
+	// bytes. Pointer = nullable, so a company created before this field
+	// existed (or via the generic API with no logo) stays a valid row.
+	Logo *bool `db:"logo"`
 }

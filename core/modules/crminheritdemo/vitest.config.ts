@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitest/config'
 
-// The registry-level test imports crm's OWN views file (CrmViews.ts) to
+// The registry-level test imports crm's OWN views file (crm_views.ts) to
 // register the real base descriptor before applying this module's extension
-// — mirroring the Go side's `core/modules/crm` import in module.go. CrmViews
+// — mirroring the Go side's `core/modules/crm` import in module.go. crm_views
 // registers behaviors at import time, reaching the engine's RUNTIME barrel
 // (not just types), which reaches MUI. MUI's ESM transitively does a
 // directory import of react-transition-group that Node's ESM loader rejects;

@@ -1097,7 +1097,8 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * For `viewType: 'form'` only: a module's own hardcoded baseline for
    * whether the chatter panel (the per-record activity feed beside/below the
    * form, "Form chatter panel" row) renders at all. Omitted ⇒ true — by
-   * design, chatter is on unless a module opts out (e.g. AppStoreViews.ts,
+   * design, chatter is on unless a module opts out (e.g. appstore's own
+   * modules_views.ts,
    * whose form is a read-only management page a comment thread doesn't suit).
    * Merged with the admin's own per-entity override via
    * `effectiveChatterVisible` (api/chatter-visibility.ts) — never read

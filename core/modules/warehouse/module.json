@@ -11,7 +11,7 @@
     "depends": [],
     "static_files": {
         "views": [
-            "WarehouseViews.ts"
+            "warehouse_views.ts"
         ]
     },
     "is_service": true,

@@ -2,17 +2,23 @@ import {
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerOnChange,
-  reportTitleSection,
   type DraftRecord,
   type FrontModule,
   type Operation,
-  type ReportDescriptor,
   type ViewDescriptor,
 } from '@eerp/core-front'
+import { statementReport } from '../reports/statement_report'
 
 // CRM frontend — DESCRIPTORS ONLY. The engine derives the server loader, the Zustand
 // store, and the renderer from these; this module ships no controllers or renderers.
 // A custom component here would signal an engine gap to fix in @eerp/core-front.
+// This file doubles as the module's assembler (default-exports the FrontModule)
+// since 'crm' is both the entity name and the module name — ModuleRegistry.
+// register() is idempotent by module NAME, so there is nothing left to
+// aggregate from a separate file the way multi-entity modules (e.g.
+// core/modules/sale) need. Only this file is listed in module.json's
+// static_files.views; ../reports/statement_report.ts (a sibling of views/)
+// is a plain ES import, not separately discovered.
 
 /** The CRM record as served by Go's /crm endpoints (BaseModel + business fields). */
 export interface Crm {
@@ -268,62 +274,6 @@ const signaturePageOperations: Operation[] = [
   },
 ]
 
-// crm.statement — the first real ReportDescriptor (docs/roadmaps/pdf-reports.md
-// Phase 4), proving the pipeline end to end on a real business document rather
-// than the throwaway fixtures Phases 2/3 verified against. className values are
-// the print stylesheet's hooks (apps/shell/app/print/report/report.css) — plain
-// CSS rather than Tailwind/MUI, since neither is installed in this frontend
-// (MUI ships React components, not utility classes; ReportRenderer deliberately
-// renders plain DOM, no MUI, so a report stays lightweight for pdf-service to
-// print). No `table` node: Go's GET /crm/:id response carries no embedded
-// array-valued field (tags is a many2many resolved lazily, client-side only,
-// per ADR-010's Phase 2 finding) — a real relation table is future work once a
-// report actually needs one, not a Phase 4 gap. Likewise NO
-// reportMastheadSection/reportPartyAddressFields: that helper's two-party
-// (company left / contact right) address block needs real *_address_* columns
-// on both sides, and a crm row has neither an issuer/customer split nor any
-// address columns at all — it's one contact, not a billing document between
-// two parties. Bolting fabricated field names onto it would violate this very
-// file's own "every printed field is a real, declared crm field" test
-// (CrmViews.test.ts). `reportTitleSection('name')` DOES fit, since `name` is a
-// real, already-editable field.
-const crmStatementReport: ReportDescriptor = {
-  name: 'crm.statement',
-  entity: 'crm',
-  permissions: ['crm:contacts:read'],
-  layout: [
-    reportTitleSection('name'),
-    {
-      kind: 'section',
-      className: 'eerp-report-header',
-      children: [{ kind: 'field', name: 'company' }, { kind: 'field', name: 'status' }],
-    },
-    {
-      kind: 'section',
-      className: 'eerp-report-contact',
-      children: [
-        { kind: 'field', name: 'email' },
-        { kind: 'field', name: 'phone' },
-      ],
-    },
-    {
-      kind: 'section',
-      className: 'eerp-report-metrics',
-      children: [
-        { kind: 'field', name: 'satisfaction', format: 'number' },
-        { kind: 'field', name: 'deals', format: 'number' },
-        { kind: 'field', name: 'score', format: 'number' },
-      ],
-    },
-    { kind: 'pageBreak' },
-    {
-      kind: 'section',
-      className: 'eerp-report-notes',
-      children: [{ kind: 'field', name: 'notes' }],
-    },
-  ],
-}
-
 const crm: FrontModule = {
   name: 'crm',
   routes: [
@@ -336,7 +286,7 @@ const crm: FrontModule = {
   // SAME call's `routes`, so the target already exists (registry.ts skips
   // the depends-coverage warning for self-targeting, too).
   extends: [{ path: '/crm/:id', operations: signaturePageOperations }],
-  reports: [crmStatementReport],
+  reports: [statementReport],
 }
 
 export default crm

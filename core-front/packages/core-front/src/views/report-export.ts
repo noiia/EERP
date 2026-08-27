@@ -26,7 +26,7 @@ export async function exportReportPDF(reportName: string, recordId: string): Pro
  * them — for a handler that needs to DO something with the bytes (e.g.
  * property_management's Generate Rent Receipt re-uploading them as the
  * receipt's own fixed snapshot, core/modules/propertymanagement/views/
- * PropertyManagementViews.ts) rather than just showing them to the user.
+ * property_management_views.ts) rather than just showing them to the user.
  */
 export async function fetchReportPDF(reportName: string, recordId: string): Promise<Blob> {
   const downloadURL = await requestReportDownloadURL(reportName, recordId)

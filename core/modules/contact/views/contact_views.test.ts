@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import contacts from './ContactsViews'
+import contacts from './contact_views'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('contacts FrontModule', () => {

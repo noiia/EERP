@@ -438,6 +438,24 @@ describe('relation/list (one2many)', () => {
     expect(screen.queryByText('CRM records')).not.toBeInTheDocument()
     expect(await screen.findByText('Acme')).toBeInTheDocument()
   })
+
+  it('widgetOptions.reverse: the last fetched row renders first (e.g. propertymanagement.rent_receipts)', async () => {
+    const ops = stubOps()
+    renderWidget({ ...listField, widgetOptions: { reverse: true } }, ops)
+    await screen.findByText('Acme')
+    const names = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="name"]')].map((el) => el.textContent)
+    // Fetch order is [Acme, Globex] (the `companies` fixture); reversed puts
+    // Globex — the "last" one — first.
+    expect(names).toEqual(['Globex', 'Acme'])
+  })
+
+  it('without widgetOptions.reverse, rows render in fetch order (unchanged default)', async () => {
+    const ops = stubOps()
+    renderWidget(listField, ops)
+    await screen.findByText('Acme')
+    const names = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="name"]')].map((el) => el.textContent)
+    expect(names).toEqual(['Acme', 'Globex'])
+  })
 })
 
 describe('create-from-search: primary color', () => {

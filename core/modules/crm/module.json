@@ -10,7 +10,7 @@
     "menu_icon": "handshake",
     "static_files": {
         "views": [
-            "CrmViews.ts"
+            "crm_views.ts"
         ]
     },
     "is_service": true,

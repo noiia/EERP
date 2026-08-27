@@ -1,18 +1,22 @@
-import {
-  downloadCronHistoryLog,
-  registerMenuAction,
-  type FrontModule,
-  type MenuNode,
-  type ViewDescriptor,
-} from '@eerp/core-front'
+import { type FrontModule, type FrontRoute, type ViewDescriptor } from '@eerp/core-front'
+import { cronHistoryRoutes } from './cron_history_views'
 
 // Cron frontend — DESCRIPTORS ONLY (same discipline as core/modules/crm's
-// CrmViews.ts). Two entities, both on the GENERIC CRUD surface (see
-// core/modules/cron/module.go): 'cron' (the scheduled action itself) and
-// 'cron_history' (one row per execution attempt). Riding the generic
-// surface is what gives 'cron' its List/Kanban/Calendar/Graph views for
-// free through the standard engine — no custom list/kanban/calendar
-// component was written for this feature (docs/adr/ADR-016-cron-scheduler.md).
+// views file). Two entities, both on the GENERIC CRUD surface (see
+// core/modules/cron/module.go): 'cron' (the scheduled action itself, this
+// file) and 'cron_history' (one row per execution attempt,
+// cron_history_views.ts). Riding the generic surface is what gives 'cron'
+// its List/Kanban/Calendar/Graph views for free through the standard engine
+// — no custom list/kanban/calendar component was written for this feature
+// (docs/adr/ADR-016-cron-scheduler.md).
+//
+// This file doubles as the module's ASSEMBLER (the one default-exported
+// FrontModule module.json points to) because the 'cron' entity happens to
+// share its name with the module itself — ModuleRegistry.register() is
+// idempotent by module NAME (registry.ts), so only one file may ever
+// default-export the FrontModule; naming a separate empty aggregator
+// "cron_views.ts" alongside this file's own natural name would collide.
+// cron_history_views.ts stays a plain pieces-only file, imported below.
 
 /** The Cron record as served by Go's /cron endpoints (BaseModel + business fields). */
 export interface Cron {
@@ -34,18 +38,6 @@ export interface Cron {
   history_retention_years?: number
 }
 
-/** The CronHistory record as served by Go's /cron_history endpoints. */
-export interface CronHistoryRecord {
-  id: string
-  cron_id: string
-  /** true ⇒ this run errored (unknown action, missing run-as-user
-   * permission, or the action's own Run returning an error) — the
-   * calendar's calendarColorField highlights these red. */
-  failed?: boolean
-  logs_filepath?: string
-  created_at?: string
-}
-
 const cronListFields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'action_id', label: 'Action', type: 'text', required: true },
@@ -62,9 +54,9 @@ const cronListFields: ViewDescriptor['fields'] = [
   },
 ]
 
-// Relation/detail fields render on the FORM only — same split CrmViews.ts's
-// fields/formFields makes, for the same reason (the list DataGrid has no
-// good way to show a relation FK or a long code blob).
+// Relation/detail fields render on the FORM only — same split crm's own
+// views file makes, for the same reason (the list DataGrid has no good way
+// to show a relation FK or a long code blob).
 const cronFormFields: ViewDescriptor['fields'] = [
   ...cronListFields,
   {
@@ -122,57 +114,14 @@ const formView: ViewDescriptor = {
   permissions: ['cron:cron:read'],
 }
 
-const cronHistoryFields: ViewDescriptor['fields'] = [
-  {
-    name: 'cron_id',
-    label: 'Cron',
-    type: 'relation',
-    relation: { entity: 'cron', kind: 'many2one', labelField: 'name' },
-    readOnly: true,
-  },
-  { name: 'created_at', label: 'Ran at', type: 'date', readOnly: true },
-  { name: 'failed', label: 'Failed', type: 'boolean', readOnly: true },
-  { name: 'logs_filepath', label: 'Log file', type: 'text', readOnly: true },
+const cronRoutes: FrontRoute[] = [
+  { path: '/cron', descriptor: listView, permission: 'cron:cron:read' },
+  { path: '/cron/:id', descriptor: formView, permission: 'cron:cron:read' },
 ]
-
-const cronHistoryActions: MenuNode[] = [
-  { kind: 'action', label: 'Download log', action: 'cron_history.downloadLog' },
-]
-
-registerMenuAction({
-  entity: 'cron_history',
-  name: 'cron_history.downloadLog',
-  handler: ({ recordId }) => downloadCronHistoryLog(recordId),
-})
-
-const cronHistoryListView: ViewDescriptor = {
-  entity: 'cron_history',
-  viewType: 'tree',
-  fields: cronHistoryFields,
-  formPath: '/cron_history/:id',
-  // No createPermission: history rows are written only by the scheduler,
-  // never user-created — omitting it hides the Create button entirely
-  // (default-closed, per the engine's own convention).
-  permissions: ['cron_history:cron_history:read'],
-  viewModeDefaults: { calendarDateField: 'created_at', calendarColorField: 'failed' },
-}
-
-const cronHistoryFormView: ViewDescriptor = {
-  entity: 'cron_history',
-  viewType: 'form',
-  fields: cronHistoryFields,
-  permissions: ['cron_history:cron_history:read'],
-  actions: cronHistoryActions,
-}
 
 const cron: FrontModule = {
   name: 'cron',
-  routes: [
-    { path: '/cron', descriptor: listView, permission: 'cron:cron:read' },
-    { path: '/cron/:id', descriptor: formView, permission: 'cron:cron:read' },
-    { path: '/cron_history', descriptor: cronHistoryListView, permission: 'cron_history:cron_history:read' },
-    { path: '/cron_history/:id', descriptor: cronHistoryFormView, permission: 'cron_history:cron_history:read' },
-  ],
+  routes: [...cronRoutes, ...cronHistoryRoutes],
 }
 
 export default cron

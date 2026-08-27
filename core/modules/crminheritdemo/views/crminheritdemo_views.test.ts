@@ -16,8 +16,8 @@ declare const console: { warn: (...args: unknown[]) => void }
 // Mirrors the Go side's `import "core/modules/crm"` in module.go: register the
 // REAL crm module, then apply this module's extension on top — proving the
 // merge end to end, not against a hand-rolled fixture.
-import crm from '../../crm/views/CrmViews'
-import crminheritdemo from './CrmInheritViews'
+import crm from '../../crm/views/crm_views'
+import crminheritdemo from './crminheritdemo_views'
 
 describe('crminheritdemo FrontModule', () => {
   it('ships no routes — it only extends already-registered ones', () => {
@@ -53,7 +53,7 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     // comment's own placement (on the Settings page) is pinned by the
     // dedicated Settings-page test below, precisely rather than by "the very
     // last field overall" — crm now codes its OWN extra notebook page
-    // ("Internal", views/CrmViews.ts), appended after Settings, so comment
+    // ("Internal", views/crm_views.ts), appended after Settings, so comment
     // is no longer the last field in the fully flattened order. That's an
     // expected consequence of crm's own anatomy growing another page, not a
     // regression in this module's `date` placement.
@@ -63,7 +63,7 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(order[order.indexOf('status') + 1]).toBe('date')
   })
 
-  it('email moves to sit immediately after date in LAYOUT order — CrmViews.ts\'s own fields[] declaration is untouched', () => {
+  it('email moves to sit immediately after date in LAYOUT order — crm_views.ts\'s own fields[] declaration is untouched', () => {
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm/:id')!
     const order = layoutFieldOrder(normalizeLayout(resolved.descriptor))

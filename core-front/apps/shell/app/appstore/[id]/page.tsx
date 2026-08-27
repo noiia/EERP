@@ -45,7 +45,7 @@ export default async function AppStoreFormPage({ params }: { params: Promise<{ i
   await requireAuth(`/appstore/${id}`)
 
   // The resolved descriptor — including the Views/Reports notebook pages
-  // appstore's own self-extension adds (AppStoreViews.ts) — comes from the
+  // appstore's own self-extension adds (modules_views.ts) — comes from the
   // SAME registry the catch-all reads; this page just doesn't go through it.
   const route = moduleRegistry.buildRegistry().get('/appstore/:id')
   const descriptor = route?.descriptor as ViewDescriptor<ModuleRecord> | undefined

@@ -28,11 +28,17 @@ describe('Settings → Company descriptors', () => {
   it('keeps the list compact (no address), the form carries every field', () => {
     expect(companyListDescriptor.fields.map((f) => f.name)).toEqual(['name', 'phone', 'email'])
     expect(companyFormDescriptor.fields.map((f) => f.name)).toEqual([
+      'logo',
       'name',
       'address',
       'phone',
       'email',
       'currency',
     ])
+  })
+
+  it('the logo is the FIRST field — the default form anatomy places it top-left with no explicit layout', () => {
+    const [first] = companyFormDescriptor.fields
+    expect(first).toMatchObject({ name: 'logo', type: 'boolean', widget: 'picture' })
   })
 })
