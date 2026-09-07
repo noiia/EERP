@@ -76,7 +76,7 @@ async function loadSubRelation(
   return []
 }
 
-export function RelationSummaryWidget({ field, recordId: _recordId, value }: WidgetProps) {
+export function RelationSummaryWidget({ field, value }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
