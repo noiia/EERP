@@ -31,7 +31,6 @@ WORKDIR /app
 
 COPY --from=builder /app/eerp           ./eerp
 COPY --from=builder /app/core/modules/  ./modules/
-COPY eerp-config.docker.json            ./eerp-config.json
 
 EXPOSE 8080
 

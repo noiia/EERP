@@ -43,6 +43,8 @@ services:
     build:
       context: .
       dockerfile: core/Dockerfile
+    volumes:
+      - ./eerp-config.docker.json:/app/eerp-config.json:ro
     expose:
       - "8080"
     depends_on:
