@@ -37,8 +37,8 @@ describe('Menu', () => {
   it('gives every tile exactly one label, always inside the tile', () => {
     render(<Menu menu={menu} />)
     // 2 modules + Settings = 3 tiles; each contributes exactly one label —
-    // no below-tile duplicate now that even the compact tier (300px) is
-    // spacious enough to hold icon/monogram + label together.
+    // no below-tile duplicate: even the compact 75px phone tier holds
+    // icon/monogram + label together, just sized down to fit.
     expect(screen.getAllByText('Stock Manager')).toHaveLength(1)
   })
 

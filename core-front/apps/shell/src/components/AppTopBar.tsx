@@ -15,9 +15,11 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import {
   byPrefixAndName,
   FontAwesomeIcon,
+  layout,
   useRecordLabelStore,
   useSessionStore,
   useT,
@@ -113,6 +115,62 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
   // segment) — FormRenderer reports the record's real title-field value here
   // (record-label-store) the moment it mounts, so swap it in when it matches.
   const recordLabel = useRecordLabelStore((s) => (s.id === lastSegment ? s.label : null))
+  const narrow = useMediaQuery(`(max-width:${layout.breadcrumbCollapseWidth}px)`)
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+
+  // Below breadcrumbCollapseWidth, a full trail rarely fits next to the nav/avatar —
+  // collapse it to a single "…" summary button plus the current page only. Clicking
+  // it opens every crumb in a Menu (which stacks its MenuItems VERTICALLY by nature)
+  // instead of falling through to MUI Breadcrumbs' own built-in collapse below, which
+  // would re-expand everything back INLINE — still too wide for this screen.
+  if (narrow && crumbs.length > 0) {
+    const open = Boolean(anchorEl)
+    function close() {
+      setAnchorEl(null)
+    }
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+        <IconButton
+          size="small"
+          color="inherit"
+          aria-label="Breadcrumb trail"
+          aria-haspopup="true"
+          aria-expanded={open}
+          onClick={(e: MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget)}
+        >
+          <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} size="sm" />
+        </IconButton>
+        <Typography
+          variant="subtitle2"
+          component="span"
+          color="inherit"
+          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {recordLabel ?? t(crumbs[crumbs.length - 1].label)}
+        </Typography>
+        <Menu anchorEl={anchorEl} open={open} onClose={close}>
+          <MenuItem component={Link} href="/" onClick={close}>
+            <ListItemIcon>
+              <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
+            </ListItemIcon>
+            <ListItemText>{t('Menu')}</ListItemText>
+          </MenuItem>
+          {crumbs.map((crumb, i) =>
+            i === crumbs.length - 1 ? (
+              <MenuItem key={crumb.href} disabled>
+                <ListItemText>{recordLabel ?? t(crumb.label)}</ListItemText>
+              </MenuItem>
+            ) : (
+              <MenuItem key={crumb.href} component={Link} href={crumb.href} onClick={close}>
+                <ListItemText>{t(crumb.label)}</ListItemText>
+              </MenuItem>
+            ),
+          )}
+        </Menu>
+      </Box>
+    )
+  }
+
   return (
     <Breadcrumbs
       aria-label="breadcrumb"
@@ -392,14 +450,27 @@ export function AppTopBar({
   if (!identity || pathname === '/login') return null
 
   return (
-    <AppBar position="sticky">
-      <Toolbar variant="dense">
-        <PathBreadcrumbs pathname={pathname} knownPaths={new Set(knownPaths)} />
-        <ModuleNav nav={nav} pathname={pathname} />
-        <Box sx={{ flexGrow: 1 }} />
-        {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
-        <UserMenu identity={identity} email={email} />
-      </Toolbar>
-    </AppBar>
+    <>
+      {/* position="fixed" (MUI's own default — spelled out here since sticky used to
+          override it) pins the bar to the viewport top on every view, regardless of
+          which element actually scrolls; it's no longer just "stuck" within its own
+          scroll container. */}
+      <AppBar position="fixed">
+        <Toolbar variant="dense">
+          <PathBreadcrumbs pathname={pathname} knownPaths={new Set(knownPaths)} />
+          <ModuleNav nav={nav} pathname={pathname} />
+          <Box sx={{ flexGrow: 1 }} />
+          {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
+          <UserMenu identity={identity} email={email} />
+        </Toolbar>
+      </AppBar>
+      {/* Reserves the AppBar's height in normal document flow — position: fixed takes
+          the real Toolbar above out of flow entirely, so every view's content would
+          otherwise start underneath the bar instead of below it. A real (hidden)
+          Toolbar of the SAME variant rather than a hardcoded height, so it can never
+          drift out of sync with the actual bar. Rendered right alongside it, so it
+          only ever exists when the bar itself does (never on /login). */}
+      <Toolbar variant="dense" sx={{ visibility: 'hidden' }} />
+    </>
   )
 }

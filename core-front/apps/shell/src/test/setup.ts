@@ -12,3 +12,20 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   }
   ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub
 }
+
+// jsdom has no native matchMedia. MUI's useMediaQuery (AppTopBar.tsx's narrow-phone
+// breadcrumb collapse) calls it on every render; without this stub any test mounting
+// AppTopBar crashes with "window.matchMedia is not a function". Always reports "no
+// match" (desktop-width behavior) — a narrow-width-specific test overrides this itself.
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'undefined') {
+  window.matchMedia = (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })
+}

@@ -18,9 +18,9 @@ import { byPrefixAndName, FontAwesomeIcon, layout, useT, type MenuModule } from 
 //
 // Responsive (docs/roadmaps/responsive-displays.md): at/above `layout.mobileBreakpoint`
 // (720px) keeps the desktop look — 100×100 tiles, label inside, centered wrapping rows
-// spanning 2/3 of the screen. Below it the board becomes a single centered column of
-// BIGGER 300×300 tiles (still label inside — spacious enough not to need a below-tile
-// duplicate) — fewer, larger touch targets read better on a phone than a shrunk grid.
+// spanning 2/3 of the screen. Below it the board becomes a fixed TWO-COLUMN grid of
+// compact 75×75 tiles (still label inside) — small enough that two sit side by side on
+// a phone screen, rather than one oversized tile per row.
 // All of it is CSS (`sx`'s raw `@media` key), no JS media queries.
 
 export interface MenuProps {
@@ -30,9 +30,9 @@ export interface MenuProps {
 
 const mobileMediaQuery = `@media (min-width:${layout.mobileBreakpoint}px)` as const
 
-/** Tile side (px): bigger below `layout.mobileBreakpoint`, the classic square at/above
- * it. The whole tile is the tap target either way. */
-const TILE_SIZE_COMPACT = 300
+/** Tile side (px): compact below `layout.mobileBreakpoint` (two fit side by side on a
+ * phone), the classic square at/above it. The whole tile is the tap target either way. */
+const TILE_SIZE_COMPACT = 120
 const TILE_SIZE_DEFAULT = 100
 
 /** "crm" -> "Crm" — a readable label from a slug. */
@@ -47,7 +47,7 @@ function titleize(slug: string): string {
 /**
  * A square link tile: the icon when one is given, else a monogram (the label's first
  * letter) so a tile is never blank, plus the label — both always inside the tile at
- * every size, since even the compact tier (300px) is spacious enough.
+ * every size, icon/label sized down to actually fit the compact 75px phone tier.
  */
 function MenuTile({ href, label, icon }: { href: string; label: string; icon?: ReactNode }) {
   return (
@@ -79,12 +79,15 @@ function MenuTile({ href, label, icon }: { href: string; label: string; icon?: R
             aria-hidden
             variant="h3"
             component="span"
-            sx={{ lineHeight: 1, [mobileMediaQuery]: { fontSize: '1.25rem' } }}
+            sx={{ lineHeight: 1, fontSize: '1.1rem', [mobileMediaQuery]: { fontSize: '1.25rem' } }}
           >
             {label.charAt(0).toUpperCase()}
           </Typography>
         )}
-        <Typography variant="body1" sx={{ lineHeight: 1.2, [mobileMediaQuery]: { fontSize: '0.75rem' } }}>
+        <Typography
+          variant="body1"
+          sx={{ lineHeight: 1.2, fontSize: '1rem', [mobileMediaQuery]: { fontSize: '0.75rem' } }}
+        >
           {label}
         </Typography>
       </CardActionArea>
@@ -107,16 +110,17 @@ export default function Menu({ menu }: MenuProps) {
 
       {/* The tile board. At/above layout.mobileBreakpoint: lines of square tiles — the
           row spans 2/3 of the screen, is centered, tiles separated by 70px (wrapping
-          into further lines). Below it: a single centered column of the bigger tiles —
-          two 300px tiles never fit side by side on a phone. */}
+          into further lines). Below it: a fixed two-column grid of the compact 75px
+          tiles — two sit side by side on a phone, wrapping into further rows. */}
       <Box
         sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 3,
+          display: 'grid',
+          gridTemplateColumns: `repeat(2, ${TILE_SIZE_COMPACT}px)`,
+          justifyContent: 'center',
+          gap: 5,
           width: '100%',
           [mobileMediaQuery]: {
+            display: 'flex',
             flexDirection: 'row',
             flexWrap: 'wrap',
             alignItems: 'flex-start',

@@ -152,6 +152,14 @@ export const layout = {
   searchBarMaxWidth: 450,
   searchBarNarrowWidth: '95%',
   searchBarNarrowBreakpoint: 720,
+  /** Viewport width (px) below which the top bar's breadcrumb (`AppTopBar.tsx`)
+   * collapses to a single "…" summary button plus the current page only, instead
+   * of MUI Breadcrumbs' own count-based collapse (which still lays the visible
+   * crumbs out horizontally) — a plain viewport media query, like
+   * `chatterBreakpoint`, since the fixed top bar always spans the full viewport.
+   * 375px is the narrowest common phone width (iPhone SE and similar) where even
+   * a two-crumb trail plus the nav/avatar realistically stops fitting. */
+  breadcrumbCollapseWidth: 375,
   /** Form chatter panel (chatter-panel.tsx): a resizable side panel to the
    * RIGHT of the form on a wide screen, stacked full-width BELOW it once the
    * viewport narrows past `chatterBreakpoint` — a plain viewport media query

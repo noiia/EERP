@@ -147,6 +147,14 @@ func main() {
 		} else {
 			common.Logger.Warn("⚠️  seeded DEV admin user", zap.String("email", auth.DevAdminEmail))
 		}
+
+		// DEV ONLY: demo Property Management data (a property, its equipment/history,
+		// a tenant, a generated rent receipt) so the module isn't empty out of the box.
+		if err := propertymanagement.SeedDemoData(context.Background(), app.DB); err != nil {
+			common.Logger.Error("❌ seed property management demo data failed", zap.Error(err))
+		} else {
+			common.Logger.Warn("⚠️  seeded DEV property management demo data")
+		}
 	}
 
 	// ── Auth layer ────────────────────────────────────────────────────────────

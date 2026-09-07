@@ -157,6 +157,56 @@ describe('AppTopBar', () => {
     expect(breadcrumb.getByText('99')).toBeInTheDocument()
   })
 
+  describe('narrow-phone breadcrumb collapse (below layout.breadcrumbCollapseWidth)', () => {
+    const realMatchMedia = window.matchMedia
+    beforeEach(() => {
+      // Simulate every media query matching (i.e. "narrow") — AppTopBar only ever
+      // queries the one breadcrumbCollapseWidth breakpoint, so a single stub covers it.
+      window.matchMedia = ((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      })) as typeof window.matchMedia
+    })
+    afterEach(() => {
+      window.matchMedia = realMatchMedia
+    })
+
+    it('collapses to a "…" summary button plus only the current page', () => {
+      pathnameMock.mockReturnValue('/crm/contacts')
+      render(<AppTopBar identity={identity} />)
+
+      expect(screen.getByRole('button', { name: /breadcrumb trail/i })).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /menu/i })).not.toBeInTheDocument()
+      expect(screen.queryByText('Crm')).not.toBeInTheDocument()
+      expect(screen.getByText('Contacts')).toBeInTheDocument()
+    })
+
+    it('never collapses the bare root — nothing to summarize on the menu page itself', () => {
+      pathnameMock.mockReturnValue('/')
+      render(<AppTopBar identity={identity} />)
+
+      expect(screen.queryByRole('button', { name: /breadcrumb trail/i })).not.toBeInTheDocument()
+      expect(screen.getByText('Menu')).toBeInTheDocument()
+    })
+
+    it('clicking the summary button lists every crumb as a VERTICAL menu, current page non-clickable', () => {
+      pathnameMock.mockReturnValue('/crm/contacts')
+      render(<AppTopBar identity={identity} />)
+      fireEvent.click(screen.getByRole('button', { name: /breadcrumb trail/i }))
+
+      expect(screen.getByRole('menuitem', { name: 'Menu' })).toHaveAttribute('href', '/')
+      expect(screen.getByRole('menuitem', { name: 'Crm' })).toHaveAttribute('href', '/crm')
+      const current = screen.getByRole('menuitem', { name: 'Contacts' })
+      expect(current).not.toHaveAttribute('href')
+    })
+  })
+
   it('labels the /settings/appearance crumb "Global settings", not the titleized "Appearance" slug', () => {
     pathnameMock.mockReturnValue('/settings/appearance')
     render(<AppTopBar identity={identity} />)
