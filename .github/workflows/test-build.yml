@@ -7,6 +7,7 @@ name: Test & Build
 #   - test-check.yml         (Go + frontend tests and coverage)
 #   - build-core.yml         (backend image -> ghcr)
 #   - build-core-front.yml   (frontend image -> ghcr)
+#   - build-pdf-service.yml  (PDF worker image -> ghcr)
 on:
   push:
     branches: [main, dev]
@@ -47,6 +48,15 @@ jobs:
   build-core-front:
     needs: test
     uses: ./.github/workflows/build-core-front.yml
+    with:
+      image_tag: ${{ inputs.image_tag || 'latest' }}
+      environment: ${{ inputs.environment || 'build' }}
+    secrets: inherit
+
+  # 2c. PDF worker image (waits on green tests).
+  build-pdf-service:
+    needs: test
+    uses: ./.github/workflows/build-pdf-service.yml
     with:
       image_tag: ${{ inputs.image_tag || 'latest' }}
       environment: ${{ inputs.environment || 'build' }}
