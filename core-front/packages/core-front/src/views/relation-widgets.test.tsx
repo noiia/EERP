@@ -524,28 +524,67 @@ const totalsField: FieldDescriptor = {
 }
 
 describe('totals/recap', () => {
-  it('groups lines by their own tax rate and sums subtotal/tax/total', async () => {
+  it('sums each line\'s own already-computed total into one aggregate tax row', async () => {
     const lines: RelationRecord[] = [
-      { id: 'l1', quantity: 2, unit_price: 50, tax_rate: 0.2 }, // 100 HT, 20 tax
-      { id: 'l2', quantity: 3, unit_price: 10, tax_rate: 0.1 }, // 30 HT, 3 tax
-      { id: 'l3', quantity: 1, unit_price: 100, tax_rate: 0.2 }, // 100 HT, 20 tax (same rate as l1)
+      // total is server-computed (handler.go's computeLineTotal) — the
+      // widget only ever sums it, never re-derives tax from tax_rate itself
+      // once it's present.
+      { id: 'l1', quantity: 2, unit_price: 50, tax_rate: 0.2, total: 120 }, // 100 HT, 20 tax
+      { id: 'l2', quantity: 3, unit_price: 10, tax_rate: 0.1, total: 33 }, // 30 HT, 3 tax
+      { id: 'l3', quantity: 1, unit_price: 100, tax_rate: 0.2, total: 120 }, // 100 HT, 20 tax
     ]
     const ops = stubOps({ list: vi.fn(async () => lines) })
     renderWidget(totalsField, ops, { recordId: 'inv1' })
 
     await waitFor(() => expect(ops.list).toHaveBeenCalledWith('sale_line', expect.objectContaining({ filter: { invoice_id: 'inv1' } })))
 
-    // subtotal = 100 + 30 + 100 = 230; tax@20% = 40; tax@10% = 3; total = 273
+    // subtotal = 100 + 30 + 100 = 230; tax = (120-100) + (33-30) + (120-100) = 43; total = 273
     expect(await screen.findByText('230.00')).toBeInTheDocument()
-    expect(screen.getByText('20%:', { exact: false })).toBeInTheDocument()
-    expect(screen.getByText('40.00')).toBeInTheDocument()
-    expect(screen.getByText('10%:', { exact: false })).toBeInTheDocument()
-    expect(screen.getByText('3.00')).toBeInTheDocument()
+    expect(screen.getByText('Tax:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('43.00')).toBeInTheDocument()
     expect(screen.getByText('273.00')).toBeInTheDocument()
+  })
+
+  it('falls back to tax_rate applied inline when total is absent (quote_line, which never got the many2many taxes/Total column)', async () => {
+    const lines: RelationRecord[] = [
+      { id: 'l1', quantity: 2, unit_price: 50, tax_rate: 0.2 }, // 100 HT, 20 tax
+      { id: 'l2', quantity: 3, unit_price: 10, tax_rate: 0.1 }, // 30 HT, 3 tax
+    ]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'q1' })
+
+    // subtotal = 100 + 30 = 130; tax = 20 + 3 = 23; total = 153
+    expect(await screen.findByText('130.00')).toBeInTheDocument()
+    expect(screen.getByText('23.00')).toBeInTheDocument()
+    expect(screen.getByText('153.00')).toBeInTheDocument()
   })
 
   it('renders nothing for an unsaved record (no id to scope lines to)', () => {
     renderWidget(totalsField, stubOps(), { recordId: null })
     expect(screen.queryByText('Untaxed Amount:', { exact: false })).not.toBeInTheDocument()
+  })
+
+  it('treats a missing quantity column as 1, not 0 (e.g. propertymanagement billing lines, priced flat with no quantity concept)', async () => {
+    const lines: RelationRecord[] = [
+      { id: 'l1', unit_price: 800, tax_rate: 0 }, // rent — no `quantity` key at all
+      { id: 'l2', unit_price: 50, tax_rate: 0.2 }, // condo fees
+    ]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'p1' })
+
+    // subtotal = 800 + 50 = 850 (NOT 0 — a real 0 × price bug would render 0.00)
+    expect(await screen.findByText('850.00')).toBeInTheDocument()
+    expect(screen.getByText('10.00')).toBeInTheDocument()
+    expect(screen.getByText('860.00')).toBeInTheDocument()
+  })
+
+  it('still respects a REAL quantity of 0 on entities that do have the column (never silently upgraded to 1)', async () => {
+    const lines: RelationRecord[] = [{ id: 'l1', quantity: 0, unit_price: 100, tax_rate: 0.2 }]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'inv1' })
+
+    // Untaxed amount, the 20% tax line, and the grand total all read 0.00 —
+    // a wrongly-upgraded-to-1 quantity would instead show 100.00/20.00/120.00.
+    await waitFor(() => expect(screen.getAllByText('0.00')).toHaveLength(3))
   })
 })

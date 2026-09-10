@@ -906,17 +906,20 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
 }
 
 /**
- * type: 'totals' / widget: 'recap' — the sale/quote form's totals block:
- * Untaxed Amount, one row per DISTINCT tax rate among this record's own line
- * items (each line carries its own rate, from its product/variant — see
- * core/modules/warehouse's Product.TaxRate / ProductVariant.TaxRate
- * override), a divider, then the grand Total. Replaces three bare readOnly
- * fields (subtotal/tax_amount/total) that used to sit in the form body: this
- * widget computes all three live from the SAME lines the sibling one2many
- * grid already fetches (field.relation), so it's never a save round-trip
- * behind what's actually on the form — it doesn't read the record's own
- * stored subtotal/tax_amount/total columns at all, only recomputes the
- * identical math (core/modules/sale/handler.go's sumLines) client-side.
+ * type: 'totals' / widget: 'recap' — the sale/quote/property-management
+ * form's totals block: Untaxed Amount, one Tax row (the aggregate, not
+ * per-rate — a line's tax can now be a mix of its own tax_rate PLUS any
+ * number of tagged sale_tax rows, percentage or fixed, which no longer
+ * collapses into "one rate per line" the way a per-rate breakdown needs —
+ * see core/modules/sale/module.go's SaleLine.Total doc comment), a divider,
+ * then the grand Total. Replaces three bare readOnly fields (subtotal/
+ * tax_amount/total) that used to sit in the form body: this widget reads
+ * each line's own ALREADY-COMPUTED `total` (core/modules/sale/handler.go's
+ * computeLineTotal / propertymanagement's computeBillingLineTotal — both
+ * server-side, never re-derived here) off the SAME lines the sibling
+ * one2many grid already fetches (field.relation), so it's never a save
+ * round-trip behind what's actually on the form, and never reimplements tax
+ * math on the client — only sums numbers Go already computed.
  */
 export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
   const t = useT()
@@ -948,15 +951,27 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
   if (!ops || !recordId) return null
 
   let subtotal = 0
-  const taxByRate = new Map<number, number>()
+  let total = 0
   for (const row of rows) {
-    const amount = (Number(row.quantity) || 0) * (Number(row.unit_price) || 0)
-    const rate = Number(row.tax_rate) || 0
+    // A row's own entity may have no quantity concept at all (e.g.
+    // propertymanagement's billing lines — a flat priced line, never
+    // quantity × unit_price against a product) — absent (not just falsy)
+    // quantity multiplies as 1, the identity, rather than zeroing the line
+    // out. A real column that happens to hold 0 still zeroes it, same as
+    // sale_line/quote_line always intended.
+    const quantity = row.quantity === undefined ? 1 : Number(row.quantity) || 0
+    const amount = quantity * (Number(row.unit_price) || 0)
     subtotal += amount
-    taxByRate.set(rate, (taxByRate.get(rate) ?? 0) + amount * rate)
+    // row.total is the line's own final price, already computed server-side
+    // (see this widget's own doc comment) — absent only for an entity that
+    // predates this column (quote_line, which this widget also still reads
+    // for sale.quote_totals, and never got the many2many taxes/Total this
+    // feature added — out of scope, see sale/module.go's own doc comment);
+    // fall back to its own tax_rate applied inline, the exact math this
+    // widget used everywhere before Total existed.
+    total += row.total === undefined ? amount + amount * (Number(row.tax_rate) || 0) : Number(row.total) || 0
   }
-  const taxRows = [...taxByRate.entries()].sort(([a], [b]) => a - b)
-  const total = subtotal + taxRows.reduce((sum, [, tax]) => sum + tax, 0)
+  const taxAmount = total - subtotal
 
   return (
     // alignSelf (not ml: 'auto') is what reliably pushes this to the right
@@ -970,16 +985,12 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
           {format(subtotal, { decimals: 2 })}
         </Typography>
       </Stack>
-      {taxRows.map(([rate, tax]) => (
-        <Stack direction="row" sx={{ justifyContent: 'space-between' }} key={rate}>
-          <Typography variant="body2">
-            {t('Tax')} {Number((rate * 100).toFixed(2))}%:
-          </Typography>
-          <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
-            {format(tax, { decimals: 2 })}
-          </Typography>
-        </Stack>
-      ))}
+      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+        <Typography variant="body2">{t('Tax')}:</Typography>
+        <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
+          {format(taxAmount, { decimals: 2 })}
+        </Typography>
+      </Stack>
       <Box sx={{ borderTop: '0.5px solid', borderColor: 'divider' }} />
       <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
         <Typography variant="subtitle2">{t('Total')}:</Typography>
