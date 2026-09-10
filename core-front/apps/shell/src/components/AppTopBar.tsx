@@ -17,6 +17,7 @@ import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import {
+  AppHeaderMenuBar,
   byPrefixAndName,
   FontAwesomeIcon,
   layout,
@@ -24,7 +25,7 @@ import {
   useSessionStore,
   useT,
   type Identity,
-  type ModuleNav,
+  type ModuleHeaderMenus,
 } from '@eerp/core-front'
 import { authBffUrl } from '@/lib/auth-url'
 import { setActiveCompany, type CompanyRecord } from '@/lib/company'
@@ -101,7 +102,11 @@ function crumbsFromPath(pathname: string, knownPaths: Set<string>): Crumb[] {
     const parentPath = '/' + segments.slice(0, -1).join('/')
     const listPath = `${parentPath}/list`
     if (knownPaths.has(listPath) && listPath !== pathname) {
-      result = [...crumbs.slice(0, -1), { label: 'List', href: listPath }, crumbs[crumbs.length - 1]]
+      result = [
+        ...crumbs.slice(0, -1),
+        { label: 'List', href: listPath },
+        crumbs[crumbs.length - 1],
+      ]
     }
   }
   return result.filter((c) => !SKIPPED_SEGMENTS.has(c.href.split('/').filter(Boolean).at(-1) ?? ''))
@@ -217,7 +222,13 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
             {recordLabel ?? t(crumb.label)}
           </Typography>
         ) : (
-          <MuiLink key={crumb.href} component={Link} href={crumb.href} color="inherit" underline="hover">
+          <MuiLink
+            key={crumb.href}
+            component={Link}
+            href={crumb.href}
+            color="inherit"
+            underline="hover"
+          >
             {t(crumb.label)}
           </MuiLink>
         ),
@@ -227,35 +238,25 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
 }
 
 /**
- * The current module's main pages (dashboard / list / settings), shown next to the
- * breadcrumb. Bolder and larger than the breadcrumb so it reads as the primary in-module
- * navigation. The active page is underlined and full-opacity. Renders nothing when the
- * current route belongs to no module with main pages (e.g. the menu or Settings).
+ * The current module's own top-bar header menus (Odoo-style "Orders / To
+ * Invoice / Products / Configuration"), shown next to the breadcrumb — see
+ * ModuleRegistry.headerMenus(). Renders nothing when the current route
+ * belongs to no registered module (e.g. the menu or Settings).
  */
-function ModuleNav({ nav, pathname }: { nav: ModuleNav[]; pathname: string }) {
-  const t = useT()
+function CurrentModuleHeaderMenus({
+  menus,
+  pathname,
+}: {
+  menus: ModuleHeaderMenus[]
+  pathname: string
+}) {
   const moduleSlug = pathname.split('/').filter(Boolean)[0]
-  const current = moduleSlug ? nav.find((n) => n.module === moduleSlug) : undefined
+  const current = moduleSlug ? menus.find((m) => m.module === moduleSlug) : undefined
   if (!current) return null
 
   return (
-    <Box component="nav" aria-label="module pages" sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 3 }}>
-      {current.pages.map((page) => {
-        const active = pathname === page.path
-        return (
-          <MuiLink
-            key={page.path}
-            component={Link}
-            href={page.path}
-            color="inherit"
-            // underline={active ? 'always' : 'hover'}
-            aria-current={active ? 'page' : undefined}
-            sx={{ fontWeight: 700, opacity: active ? 1 : 0.85 }}
-          >
-            {t(page.label)}
-          </MuiLink>
-        )
-      })}
+    <Box component="nav" aria-label="module pages" sx={{ ml: 3, minWidth: 0, display: 'flex' }}>
+      <AppHeaderMenuBar menus={current.menus} />
     </Box>
   )
 }
@@ -304,7 +305,11 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 0.5, display: 'block' }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ px: 2, py: 0.5, display: 'block' }}
+        >
           {t('Signed in as')} {displayName}
         </Typography>
         <Divider />
@@ -393,7 +398,11 @@ function CompanySwitcher({
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 0.5, display: 'block' }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ px: 2, py: 0.5, display: 'block' }}
+        >
           {t('Switch company')}
         </Typography>
         <Divider />
@@ -418,15 +427,16 @@ function CompanySwitcher({
 
 export function AppTopBar({
   identity,
-  nav = [],
+  headerMenus = [],
   knownPaths = [],
   email,
   activeCompany = null,
   companies = [],
 }: {
   identity: Identity | null
-  /** Per-module main pages, resolved server-side from the registry (empty in isolation). */
-  nav?: ModuleNav[]
+  /** Per-module top-bar header menus, resolved server-side from the registry
+   * (empty in isolation) — see ModuleRegistry.headerMenus(). */
+  headerMenus?: ModuleHeaderMenus[]
   /** Every registered NON-dynamic route path (tree/dashboard/catalog/settings
    * pages — never a form's `:id` template), resolved server-side from the
    * registry. Used ONLY by PathBreadcrumbs to detect a record's sibling list
@@ -458,7 +468,7 @@ export function AppTopBar({
       <AppBar position="fixed">
         <Toolbar variant="dense">
           <PathBreadcrumbs pathname={pathname} knownPaths={new Set(knownPaths)} />
-          <ModuleNav nav={nav} pathname={pathname} />
+          <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />
           <Box sx={{ flexGrow: 1 }} />
           {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
           <UserMenu identity={identity} email={email} />

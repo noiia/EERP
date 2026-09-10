@@ -22,7 +22,13 @@ export type FieldType =
  * Descriptors cross the RSC boundary as props, so everything in them — widget
  * options included — must stay JSON-serializable. No functions, ever.
  */
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue }
 
 /**
  * The widgets each field type may render as; the FIRST entry is the type's
@@ -319,7 +325,9 @@ export function resolveWidget(field: FieldDescriptor): string {
   if (field.type === 'relation') return resolveRelationWidget(field)
   if (field.type === 'selection') return resolveSelectionWidget(field)
   if (field.type === 'totals' && !field.relation) {
-    throw new Error(`field "${field.name}": type 'totals' requires a relation block (the lines it recaps)`)
+    throw new Error(
+      `field "${field.name}": type 'totals' requires a relation block (the lines it recaps)`,
+    )
   }
   const widget = field.widget ?? allowed[0]
   if (!allowed.includes(widget)) {
@@ -372,7 +380,9 @@ function resolveRelationWidget(field: FieldDescriptor): string {
 function resolveSelectionWidget(field: FieldDescriptor): string {
   const sel = field.selection
   if (!sel || sel.options.length === 0) {
-    throw new Error(`field "${field.name}": type 'selection' requires a non-empty selection.options list`)
+    throw new Error(
+      `field "${field.name}": type 'selection' requires a non-empty selection.options list`,
+    )
   }
   const allowed = FIELD_WIDGETS.selection
   const widget = field.widget ?? allowed[0]
@@ -794,16 +804,22 @@ export function normalizeLayout<T>(descriptor: ViewDescriptor<T>): LayoutNode[] 
     const label = node.id ? `"${node.id}"` : `(no id)`
     if (node.kind === 'page') {
       if (parentKind !== 'notebook') {
-        throw new Error(`layout: a "page" node ${label} must be a direct child of a "notebook" node`)
+        throw new Error(
+          `layout: a "page" node ${label} must be a direct child of a "notebook" node`,
+        )
       }
       if (!node.title) {
-        throw new Error(`layout: a "page" node ${label} requires a title (it is also its tab label)`)
+        throw new Error(
+          `layout: a "page" node ${label} requires a title (it is also its tab label)`,
+        )
       }
     }
     if (node.kind === 'notebook') {
       notebookCount += 1
       if (notebookCount > 1) {
-        throw new Error(`layout: at most one "notebook" node is allowed per layout, found a second ${label}`)
+        throw new Error(
+          `layout: at most one "notebook" node is allowed per layout, found a second ${label}`,
+        )
       }
       for (const child of node.children) {
         if (child.kind !== 'page') {
@@ -1105,6 +1121,24 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * directly by a renderer.
    */
   showChatter?: boolean
+  /**
+   * For `viewType: 'tree'`/`'catalog'`/`'dashboard'` only: the label this
+   * route's auto-generated top-bar header menu uses (see
+   * `ModuleRegistry.headerMenus()`, `registry/registry.ts`) — both the
+   * button text and the single line inside its dropdown. Omitted ⇒ a
+   * humanized `entity` (title-cased, underscores → spaces), which reads
+   * fine for most entities and needs no extra code.
+   */
+  navLabel?: string
+  /**
+   * For `viewType: 'tree'`/`'catalog'`/`'dashboard'` only: excludes this
+   * route from `ModuleRegistry.headerMenus()`'s auto-generated top-bar
+   * button — for a view a module wants reachable only through a hand-placed
+   * `registerHeaderMenu` entry instead (e.g. sale's Taxes catalog, moved
+   * into its Configuration menu). Omitted/false ⇒ included, the default for
+   * every qualifying route.
+   */
+  hideFromTopBar?: boolean
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

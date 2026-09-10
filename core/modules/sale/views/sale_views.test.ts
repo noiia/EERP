@@ -3,6 +3,7 @@ import {
   FORM_NOTEBOOK_ID,
   ModuleRegistry,
   headerButtonRegistry,
+  headerMenuRegistry,
   normalizeLayout,
   reportCompanyFallbackFields,
   reportTableRelations,
@@ -26,6 +27,21 @@ describe('sale FrontModule', () => {
       '/sale/taxes',
       '/sale/taxes/:id',
     ])
+  })
+
+  it('hides the tax catalog from the top bar\'s auto-generated buttons, since it lives in Configuration instead', () => {
+    const taxes = sale.routes.find((r) => r.path === '/sale/taxes')!
+    expect(taxes.descriptor.hideFromTopBar).toBe(true)
+  })
+
+  it('registers a Taxes line in sale\'s own Configuration header menu', () => {
+    const configuration = headerMenuRegistry.forModule('sale').find((m) => m.name === 'configuration')
+    expect(configuration?.entries).toContainEqual({
+      kind: 'line',
+      label: 'Taxes',
+      path: '/sale/taxes',
+      permission: 'sale_tax:sale_tax:read',
+    })
   })
 
   it('wires a dashboard, a tree list, and a form, all over the invoice entity', () => {

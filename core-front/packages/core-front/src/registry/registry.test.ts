@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from '../views/descriptor'
+import { headerMenuRegistry, registerHeaderMenu } from '../views/header-menu-registry'
 import type { ReportDescriptor } from '../views/report-descriptor'
 import { ModuleRegistry, type FrontModule } from './registry'
 
@@ -27,7 +28,11 @@ describe('ModuleRegistry', () => {
     expect([...map.keys()]).toEqual(['/crm/contacts', '/crm/contacts/:id'])
 
     const list = map.get('/crm/contacts')
-    expect(list).toEqual({ module: 'crm', descriptor: treeDescriptor, permission: 'crm:contacts:read' })
+    expect(list).toEqual({
+      module: 'crm',
+      descriptor: treeDescriptor,
+      permission: 'crm:contacts:read',
+    })
   })
 
   it('merges multiple modules in registration order', () => {
@@ -117,7 +122,14 @@ describe('ModuleRegistry reports', () => {
   it('rejects a report descriptor with an invalid node, naming module and report', () => {
     const bad: FrontModule = {
       ...crm,
-      reports: [{ name: 'crm.broken', entity: 'crm', permissions: [], layout: [{ kind: 'field', name: '' }] }],
+      reports: [
+        {
+          name: 'crm.broken',
+          entity: 'crm',
+          permissions: [],
+          layout: [{ kind: 'field', name: '' }],
+        },
+      ],
     }
     expect(() => new ModuleRegistry().register(bad)).toThrowError(
       /module "crm", report "crm.broken": a "field" node requires a name/,
@@ -140,7 +152,9 @@ describe('ModuleRegistry.menu', () => {
     expect(menu).toEqual([
       {
         name: 'crm',
-        routes: [{ path: '/crm/contacts', descriptor: treeDescriptor, permission: 'crm:contacts:read' }],
+        routes: [
+          { path: '/crm/contacts', descriptor: treeDescriptor, permission: 'crm:contacts:read' },
+        ],
       },
     ])
   })
@@ -185,8 +199,15 @@ describe('ModuleRegistry.menu', () => {
   })
 })
 
-describe('ModuleRegistry.moduleNav', () => {
+describe('ModuleRegistry.headerMenus', () => {
+  afterEach(() => headerMenuRegistry.clear())
+
   const dashboardDescriptor: ViewDescriptor = { ...formDescriptor, viewType: 'dashboard' }
+  const catalogDescriptor: ViewDescriptor = {
+    ...formDescriptor,
+    viewType: 'catalog',
+    catalog: { title: 'name' },
+  }
   const navModule: FrontModule = {
     name: 'crm',
     routes: [
@@ -196,37 +217,124 @@ describe('ModuleRegistry.moduleNav', () => {
     ],
   }
 
-  it('exposes the module main pages it has, in canonical order, dropping non-main routes', () => {
-    const nav = new ModuleRegistry().register(navModule).moduleNav()
-    expect(nav).toEqual([
+  it('auto-generates one menu per tree/catalog/dashboard route, each a single self-pointing line, and always appends Configuration', () => {
+    const menus = new ModuleRegistry().register(navModule).headerMenus()
+    expect(menus).toEqual([
       {
         module: 'crm',
-        pages: [
-          { kind: 'dashboard', label: 'Dashboard', path: '/crm/dashboard', permission: 'crm:contacts:read' },
-          { kind: 'list', label: 'List', path: '/crm/list', permission: 'crm:contacts:read' },
+        menus: [
+          {
+            name: '/crm/dashboard',
+            label: 'Crm',
+            entries: [
+              {
+                kind: 'line',
+                label: 'Crm',
+                path: '/crm/dashboard',
+                permission: 'crm:contacts:read',
+              },
+            ],
+          },
+          {
+            name: '/crm/list',
+            label: 'Crm',
+            entries: [
+              { kind: 'line', label: 'Crm', path: '/crm/list', permission: 'crm:contacts:read' },
+            ],
+          },
+          {
+            name: 'configuration',
+            label: 'Configuration',
+            entries: [{ kind: 'line', label: 'Settings', path: '/settings/apps/crm' }],
+          },
         ],
       },
     ])
   })
 
-  it('includes a settings page when the module declares one', () => {
-    const nav = new ModuleRegistry()
+  it('includes a catalog route and drops form routes (no :param, no plain routes either)', () => {
+    const menus = new ModuleRegistry()
       .register({
-        name: 'crm',
-        routes: [
-          { path: '/crm/list', descriptor: treeDescriptor },
-          { path: '/crm/settings', descriptor: formDescriptor },
-        ],
+        name: 'appstore',
+        routes: [{ path: '/appstore', descriptor: catalogDescriptor }],
       })
-      .moduleNav()
-    expect(nav[0].pages.map((p) => p.kind)).toEqual(['list', 'settings'])
+      .headerMenus()
+    expect(menus[0].menus[0]).toEqual({
+      name: '/appstore',
+      label: 'Crm',
+      entries: [{ kind: 'line', label: 'Crm', path: '/appstore' }],
+    })
   })
 
-  it('omits modules with no main pages', () => {
-    const nav = new ModuleRegistry()
+  it('uses navLabel over the humanized entity when declared', () => {
+    const menus = new ModuleRegistry()
+      .register({
+        name: 'sale',
+        routes: [
+          {
+            path: '/sale/tax',
+            descriptor: { ...treeDescriptor, entity: 'sale_tax', navLabel: 'Taxes' },
+          },
+        ],
+      })
+      .headerMenus()
+    expect(menus[0].menus[0].label).toBe('Taxes')
+  })
+
+  it('excludes a route flagged hideFromTopBar', () => {
+    const menus = new ModuleRegistry()
+      .register({
+        name: 'sale',
+        routes: [{ path: '/sale/tax', descriptor: { ...treeDescriptor, hideFromTopBar: true } }],
+      })
+      .headerMenus()
+    expect(menus[0].menus).toEqual([
+      {
+        name: 'configuration',
+        label: 'Configuration',
+        entries: [{ kind: 'line', label: 'Settings', path: '/settings/apps/sale' }],
+      },
+    ])
+  })
+
+  it('merges registerHeaderMenu entries into the Configuration menu, after the default Settings line', () => {
+    registerHeaderMenu('sale', 'configuration', {
+      entries: [
+        { kind: 'line', label: 'Taxes', path: '/sale/taxes', permission: 'sale_tax:sale_tax:read' },
+      ],
+    })
+    const menus = new ModuleRegistry().register({ name: 'sale', routes: [] }).headerMenus()
+    expect(menus[0].menus).toEqual([
+      {
+        name: 'configuration',
+        label: 'Configuration',
+        entries: [
+          { kind: 'line', label: 'Settings', path: '/settings/apps/sale' },
+          {
+            kind: 'line',
+            label: 'Taxes',
+            path: '/sale/taxes',
+            permission: 'sale_tax:sale_tax:read',
+          },
+        ],
+      },
+    ])
+  })
+
+  it('renders a custom-named header menu before Configuration, in registration order', () => {
+    registerHeaderMenu('sale', 'reporting', {
+      label: 'Reporting',
+      entries: [{ kind: 'line', label: 'Sales', path: '/sale/report' }],
+    })
+    const menus = new ModuleRegistry().register({ name: 'sale', routes: [] }).headerMenus()
+    expect(menus[0].menus.map((m) => m.name)).toEqual(['reporting', 'configuration'])
+  })
+
+  it('gives every module at least the Configuration menu, even with zero browsable routes', () => {
+    const menus = new ModuleRegistry()
       .register({ name: 'crm', routes: [{ path: '/crm/:id', descriptor: formDescriptor }] })
-      .moduleNav()
-    expect(nav).toEqual([])
+      .headerMenus()
+    expect(menus[0].menus.map((m) => m.name)).toEqual(['configuration'])
   })
 })
 
@@ -329,7 +437,12 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
         {
           path: '/crm/contacts/:id',
           operations: [
-            { op: 'addField', field: { name: 'date', label: 'Date', type: 'date' }, target: 'name', position: 'after' },
+            {
+              op: 'addField',
+              field: { name: 'date', label: 'Date', type: 'date' },
+              target: 'name',
+              position: 'after',
+            },
             { op: 'setField', name: 'date', patch: { required: true } },
           ],
         },
@@ -351,7 +464,9 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
     const extender: FrontModule = {
       name: 'ghost-extender',
       routes: [],
-      extends: [{ path: '/nowhere', operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }] }],
+      extends: [
+        { path: '/nowhere', operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }] },
+      ],
     }
     expect(() => registry.register(extender)).toThrowError(
       /module "ghost-extender" extends unknown path "\/nowhere"/,
@@ -363,9 +478,7 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
     const extender: FrontModule = {
       name: 'crminheritdemo',
       routes: [],
-      extends: [
-        { path: '/crm/contacts/:id', operations: [{ op: 'removeField', name: 'ghost' }] },
-      ],
+      extends: [{ path: '/crm/contacts/:id', operations: [{ op: 'removeField', name: 'ghost' }] }],
     }
     expect(() => registry.register(extender, { depends: ['crm'] })).toThrowError(
       /module "crminheritdemo" extending "\/crm\/contacts\/:id": removeField: field "ghost" not found/,
@@ -416,12 +529,17 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
         name: 'sloppy',
         routes: [],
         extends: [
-          { path: '/crm/contacts/:id', operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }] },
+          {
+            path: '/crm/contacts/:id',
+            operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }],
+          },
         ],
       },
       // No `depends` declared at all.
     )
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('module "sloppy" extends path "/crm/contacts/:id"'))
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('module "sloppy" extends path "/crm/contacts/:id"'),
+    )
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('without declaring "crm"'))
     warn.mockRestore()
   })
@@ -434,7 +552,10 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
         name: 'polite',
         routes: [],
         extends: [
-          { path: '/crm/contacts/:id', operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }] },
+          {
+            path: '/crm/contacts/:id',
+            operations: [{ op: 'setDescriptor', patch: { formPath: '/x' } }],
+          },
         ],
       },
       { depends: ['crm'] },
@@ -452,13 +573,18 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
         extends: [
           {
             path: '/crm/contacts/:id',
-            operations: [{ op: 'addField', field: { name: 'comment', label: 'Comment', type: 'text' } }],
+            operations: [
+              { op: 'addField', field: { name: 'comment', label: 'Comment', type: 'text' } },
+            ],
           },
         ],
       },
       { depends: ['crm'] },
     )
-    expect(registry.formDescriptorFor('crm')?.fields.map((f) => f.name)).toEqual(['name', 'comment'])
+    expect(registry.formDescriptorFor('crm')?.fields.map((f) => f.name)).toEqual([
+      'name',
+      'comment',
+    ])
   })
 
   it('re-registering the SAME module (idempotency) does not re-apply its extensions', () => {
@@ -467,15 +593,20 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
       name: 'crminheritdemo',
       routes: [],
       extends: [
-        { path: '/crm/contacts/:id', operations: [{ op: 'addField', field: { name: 'date', label: 'Date', type: 'date' } }] },
+        {
+          path: '/crm/contacts/:id',
+          operations: [{ op: 'addField', field: { name: 'date', label: 'Date', type: 'date' } }],
+        },
       ],
     }
     registry.register(extender, { depends: ['crm'] })
     registry.register(extender, { depends: ['crm'] }) // e.g. server + client manifest both evaluating during SSR
-    expect(registry.buildRegistry().get('/crm/contacts/:id')?.descriptor.fields.map((f) => f.name)).toEqual([
-      'name',
-      'date',
-    ])
+    expect(
+      registry
+        .buildRegistry()
+        .get('/crm/contacts/:id')
+        ?.descriptor.fields.map((f) => f.name),
+    ).toEqual(['name', 'date'])
   })
 
   it('a REPLACE (duplicate direct route registration) drops prior extensions on that path', () => {
@@ -485,7 +616,10 @@ describe('ModuleRegistry — view extensions (Phase 3)', () => {
         name: 'crminheritdemo',
         routes: [],
         extends: [
-          { path: '/crm/contacts/:id', operations: [{ op: 'addField', field: { name: 'date', label: 'Date', type: 'date' } }] },
+          {
+            path: '/crm/contacts/:id',
+            operations: [{ op: 'addField', field: { name: 'date', label: 'Date', type: 'date' } }],
+          },
         ],
       },
       { depends: ['crm'] },

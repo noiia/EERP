@@ -7,6 +7,7 @@ import {
   validateStatusBarDescriptor,
   type ViewDescriptor,
 } from '../views/descriptor'
+import { headerMenuRegistry, type HeaderMenu } from '../views/header-menu-registry'
 import { validateHeaderButtons } from '../views/header-button-actions'
 import { validateMenuActions } from '../views/menu-actions'
 import { validateReportDescriptor, type ReportDescriptor } from '../views/report-descriptor'
@@ -114,41 +115,35 @@ export interface MenuModule {
   displayName?: string
 }
 
-/**
- * The canonical top-level pages a module may expose, in display order. The module
- * nav (next to the breadcrumb) shows each page the module actually has — a module is
- * never required to provide all three. Identified by a route's last path segment, so a
- * module opts in simply by declaring a `/<module>/dashboard|list|settings` route.
- */
-export type MainPageKind = 'dashboard' | 'list' | 'settings'
-
-const MAIN_PAGE_ORDER: MainPageKind[] = ['dashboard', 'list', 'settings']
-const MAIN_PAGE_LABELS: Record<MainPageKind, string> = {
-  dashboard: 'Dashboard',
-  list: 'List',
-  settings: 'Settings',
-}
-
-/** One entry in a module's top-bar navigation. */
-export interface MainPage {
-  kind: MainPageKind
-  /** Human label shown in the nav (e.g. 'Dashboard'). */
-  label: string
-  /** Concrete path the entry links to. */
-  path: string
-  permission?: string
-}
-
-/** A module paired with the main pages it exposes, for the top-bar module nav. */
-export interface ModuleNav {
+/** A module paired with the header menus it exposes, for the top bar (see
+ * ModuleRegistry.headerMenus()). */
+export interface ModuleHeaderMenus {
   module: string
-  pages: MainPage[]
+  menus: HeaderMenu[]
 }
 
-/** Classify a route's last path segment as a main-page kind, or null if it isn't one. */
-function mainPageKind(path: string): MainPageKind | null {
-  const last = splitPath(path).pop()
-  return MAIN_PAGE_ORDER.includes(last as MainPageKind) ? (last as MainPageKind) : null
+/** The reserved name every module's Configuration dropdown lives under —
+ * ModuleRegistry.headerMenus() always seeds one per module; a module adds to
+ * it via `registerHeaderMenu(module, CONFIGURATION_MENU_NAME, {...})`. */
+const CONFIGURATION_MENU_NAME = 'configuration'
+
+/** View types whose route earns an automatic top-bar header menu (see
+ * ModuleRegistry.headerMenus()) — a browsable index (tree/catalog) or a
+ * module's own landing dashboard. */
+const HEADER_MENU_VIEW_TYPES: ReadonlySet<ViewDescriptor['viewType']> = new Set([
+  'tree',
+  'catalog',
+  'dashboard',
+])
+
+/** "sale_tax" -> "Sale Tax" — the default header-menu label when a route
+ * declares no `navLabel` of its own. */
+function humanizeEntity(entity: string): string {
+  return entity
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 }
 
 interface RegisteredModule {
@@ -228,7 +223,9 @@ export class ModuleRegistry {
         validateReportDescriptor(report)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        throw new Error(`module "${module.name}", report "${report.name}": ${message}`, { cause: e })
+        throw new Error(`module "${module.name}", report "${report.name}": ${message}`, {
+          cause: e,
+        })
       }
       this.resolvedReports.set(report.name, report)
     }
@@ -333,29 +330,60 @@ export class ModuleRegistry {
   }
 
   /**
-   * The top-bar module navigation: every registered module paired with the main pages
-   * it exposes (dashboard / list / settings), in canonical order. A module appears only
-   * with the pages it actually declares — "if it has it" — and modules with none are
-   * omitted. The shell renders the entry for the module the current route belongs to,
-   * next to the breadcrumb. The first declared route of each kind wins.
+   * The top-bar header menus: every registered module paired with the Odoo-style
+   * menu row it gets — one auto-generated menu per browsable route (`tree`/
+   * `catalog`/`dashboard` viewType, unless `hideFromTopBar`), each opening a
+   * one-line dropdown pointing at itself (label from `navLabel` or a
+   * humanized `entity`), any OTHER named menu the module registered via
+   * `registerHeaderMenu`, and — always last — a `Configuration` menu seeded
+   * with a `Settings` line to this module's Settings -> Apps page, merged
+   * with whatever `registerHeaderMenu(module, 'configuration', …)` added
+   * (e.g. sale's own Taxes entry). Every module gets at least the
+   * Configuration menu, even with zero browsable routes. The shell renders
+   * the entry for the module the current route belongs to, next to the
+   * breadcrumb.
    */
-  moduleNav(): ModuleNav[] {
-    const result: ModuleNav[] = []
+  headerMenus(): ModuleHeaderMenus[] {
+    const result: ModuleHeaderMenus[] = []
     for (const { module } of this.entries) {
-      const byKind = new Map<MainPageKind, MainPage>()
+      const menus: HeaderMenu[] = []
+      const autoNames = new Set<string>()
+
       for (const route of module.routes) {
-        const kind = mainPageKind(route.path)
-        if (kind && !byKind.has(kind)) {
-          byKind.set(kind, {
-            kind,
-            label: MAIN_PAGE_LABELS[kind],
-            path: route.path,
-            permission: route.permission,
-          })
-        }
+        const resolved = this.resolvedRoutes.get(route.path)?.descriptor ?? route.descriptor
+        if (!HEADER_MENU_VIEW_TYPES.has(resolved.viewType) || resolved.hideFromTopBar) continue
+        const label = resolved.navLabel ?? humanizeEntity(resolved.entity)
+        const permission = this.resolvedRoutes.get(route.path)?.permission ?? route.permission
+        menus.push({
+          name: route.path,
+          label,
+          entries: [{ kind: 'line', label, path: route.path, permission }],
+        })
+        autoNames.add(route.path)
       }
-      const pages = MAIN_PAGE_ORDER.filter((k) => byKind.has(k)).map((k) => byKind.get(k)!)
-      if (pages.length > 0) result.push({ module: module.name, pages })
+
+      for (const registered of headerMenuRegistry.forModule(module.name)) {
+        if (registered.name === CONFIGURATION_MENU_NAME || autoNames.has(registered.name)) continue
+        menus.push(registered)
+      }
+
+      const configOverride = headerMenuRegistry
+        .forModule(module.name)
+        .find((m) => m.name === CONFIGURATION_MENU_NAME)
+      menus.push({
+        // Always literally "Configuration" — a registerHeaderMenu call never
+        // needs to (and, via its own label-defaults-to-name fallback, would
+        // otherwise get a lowercase "configuration" title if it left `label`
+        // unset) rename this one, reserved menu.
+        name: CONFIGURATION_MENU_NAME,
+        label: 'Configuration',
+        entries: [
+          { kind: 'line', label: 'Settings', path: `/settings/apps/${module.name}` },
+          ...(configOverride?.entries ?? []),
+        ],
+      })
+
+      result.push({ module: module.name, menus })
     }
     return result
   }
@@ -421,7 +449,11 @@ export class ModuleRegistry {
       const resolved = this.resolvedRoutes.get(route.path)
       const descriptor = resolved?.descriptor ?? route.descriptor
       if (descriptor.viewType !== 'tree') continue
-      result.push({ path: route.path, descriptor, permission: resolved?.permission ?? route.permission })
+      result.push({
+        path: route.path,
+        descriptor,
+        permission: resolved?.permission ?? route.permission,
+      })
     }
     return result
   }

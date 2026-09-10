@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useRecordLabelStore, useSessionStore, type Identity, type ModuleNav } from '@eerp/core-front'
+import {
+  useRecordLabelStore,
+  useSessionStore,
+  type Identity,
+  type ModuleHeaderMenus,
+} from '@eerp/core-front'
 
 const pathnameMock = vi.fn<() => string>()
 const pushMock = vi.fn()
@@ -19,12 +24,25 @@ import { AppTopBar } from './AppTopBar'
 
 const identity: Identity = { userId: 'ada', tenantId: 't1', roles: [], permissions: [] }
 
-const crmNav: ModuleNav[] = [
+const crmHeaderMenus: ModuleHeaderMenus[] = [
   {
     module: 'crm',
-    pages: [
-      { kind: 'dashboard', label: 'Dashboard', path: '/crm/dashboard' },
-      { kind: 'list', label: 'List', path: '/crm/list' },
+    menus: [
+      {
+        name: '/crm/dashboard',
+        label: 'Dashboard',
+        entries: [{ kind: 'line', label: 'Dashboard', path: '/crm/dashboard' }],
+      },
+      {
+        name: '/crm/list',
+        label: 'List',
+        entries: [{ kind: 'line', label: 'List', path: '/crm/list' }],
+      },
+      {
+        name: 'configuration',
+        label: 'Configuration',
+        entries: [{ kind: 'line', label: 'Settings', path: '/settings/apps/crm' }],
+      },
     ],
   },
 ]
@@ -36,7 +54,10 @@ beforeEach(() => {
   setActiveCompanyMock.mockResolvedValue({ ok: true })
   useSessionStore.getState().setIdentity(identity)
   useRecordLabelStore.setState({ id: null, label: null })
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(null, { status: 204 })),
+  )
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -52,7 +73,7 @@ describe('AppTopBar', () => {
     expect(screen.getByText('Contacts')).toBeInTheDocument()
   })
 
-  it('shows the record\'s real name on a form route once record-label-store reports it, instead of the raw id', () => {
+  it("shows the record's real name on a form route once record-label-store reports it, instead of the raw id", () => {
     pathnameMock.mockReturnValue('/crm/contacts/3fa85f64-5717-4562-b3fc-2c963f66afa6')
     useRecordLabelStore.getState().setLabel('3fa85f64-5717-4562-b3fc-2c963f66afa6', 'Ada Lovelace')
     render(<AppTopBar identity={identity} />)
@@ -81,7 +102,9 @@ describe('AppTopBar', () => {
 
   it('inserts a "List" crumb before a flat "/<module>/<id>" form route (CRM\'s shape: form is a sibling of list, not nested under it)', () => {
     pathnameMock.mockReturnValue('/crm/42')
-    render(<AppTopBar identity={identity} nav={crmNav} knownPaths={['/crm/list']} />)
+    render(
+      <AppTopBar identity={identity} headerMenus={crmHeaderMenus} knownPaths={['/crm/list']} />,
+    )
 
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     const listLink = breadcrumb.getByRole('link', { name: 'List' })
@@ -102,7 +125,10 @@ describe('AppTopBar', () => {
     // triggers the collapse — see the dedicated test below — which is WHY
     // Sale/Quote themselves aren't asserted visible here).
     expect(breadcrumb.getAllByText('List')).toHaveLength(1)
-    expect(breadcrumb.getByRole('link', { name: 'List' })).toHaveAttribute('href', '/sale/quote/list')
+    expect(breadcrumb.getByRole('link', { name: 'List' })).toHaveAttribute(
+      'href',
+      '/sale/quote/list',
+    )
     expect(breadcrumb.getByText('99')).toBeInTheDocument()
   })
 
@@ -123,7 +149,9 @@ describe('AppTopBar', () => {
 
   it('does not insert a "List" crumb when already on the list page itself', () => {
     pathnameMock.mockReturnValue('/crm/list')
-    render(<AppTopBar identity={identity} nav={crmNav} knownPaths={['/crm/list']} />)
+    render(
+      <AppTopBar identity={identity} headerMenus={crmHeaderMenus} knownPaths={['/crm/list']} />,
+    )
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     // The trailing crumb is the plain-text current page, not a second "List" link.
     expect(breadcrumb.queryByRole('link', { name: 'List' })).not.toBeInTheDocument()
@@ -132,14 +160,16 @@ describe('AppTopBar', () => {
 
   it('does not insert a "List" crumb when no sibling list page is registered', () => {
     pathnameMock.mockReturnValue('/appstore/42')
-    render(<AppTopBar identity={identity} nav={[]} />)
+    render(<AppTopBar identity={identity} headerMenus={[]} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByText('List')).not.toBeInTheDocument()
   })
 
   it('does not insert a "List" crumb for a path deeper than "/<module>/<id>" when no matching sibling is registered', () => {
     pathnameMock.mockReturnValue('/crm/nested/42')
-    render(<AppTopBar identity={identity} nav={crmNav} knownPaths={['/crm/list']} />)
+    render(
+      <AppTopBar identity={identity} headerMenus={crmHeaderMenus} knownPaths={['/crm/list']} />,
+    )
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByRole('link', { name: 'List' })).not.toBeInTheDocument()
   })
@@ -153,7 +183,10 @@ describe('AppTopBar', () => {
     expect(breadcrumb.queryByRole('link', { name: 'Menu' })).not.toBeInTheDocument()
     expect(breadcrumb.queryByText('Sale')).not.toBeInTheDocument()
     expect(breadcrumb.queryByText('Quote')).not.toBeInTheDocument()
-    expect(breadcrumb.getByRole('link', { name: 'List' })).toHaveAttribute('href', '/sale/quote/list')
+    expect(breadcrumb.getByRole('link', { name: 'List' })).toHaveAttribute(
+      'href',
+      '/sale/quote/list',
+    )
     expect(breadcrumb.getByText('99')).toBeInTheDocument()
   })
 
@@ -238,17 +271,17 @@ describe('AppTopBar', () => {
     expect(breadcrumb.getByText('42')).toBeInTheDocument()
   })
 
-  it('shows the current module main pages next to the breadcrumb, marking the active one', () => {
+  it('shows the current module header menus next to the breadcrumb, each navigable through its dropdown', () => {
     pathnameMock.mockReturnValue('/crm/list')
-    render(<AppTopBar identity={identity} nav={crmNav} />)
+    render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
 
-    const dashboard = screen.getByRole('link', { name: 'Dashboard' })
-    const list = screen.getByRole('link', { name: 'List' })
-    expect(dashboard).toHaveAttribute('href', '/crm/dashboard')
-    expect(list).toHaveAttribute('href', '/crm/list')
-    // The page matching the current path is marked current.
-    expect(list).toHaveAttribute('aria-current', 'page')
-    expect(dashboard).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'List' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Configuration' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'List' }))
+    expect(pushMock).toHaveBeenCalledWith('/crm/list')
   })
 
   const acme = { id: 'co-1', name: 'Acme Corp' }
@@ -298,7 +331,7 @@ describe('AppTopBar', () => {
 
   it('shows no module nav for a route outside the registered modules', () => {
     pathnameMock.mockReturnValue('/settings')
-    render(<AppTopBar identity={identity} nav={crmNav} />)
+    render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
     expect(screen.queryByRole('navigation', { name: /module pages/i })).not.toBeInTheDocument()
   })
 

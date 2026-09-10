@@ -1,4 +1,4 @@
-import { type FrontRoute, type ViewDescriptor } from '@eerp/core-front'
+import { registerHeaderMenu, type FrontRoute, type ViewDescriptor } from '@eerp/core-front'
 
 // sale_tax — a reusable tax definition (core/modules/sale/module.go's
 // SaleTax): a percentage (0..1 ratio, applied to a line's own base price) or
@@ -59,9 +59,20 @@ const saleTaxListView: ViewDescriptor = {
   formPath: '/sale/taxes/:id',
   createPermission: 'sale_tax:sale_tax:write',
   permissions: ['sale_tax:sale_tax:read'],
+  // Lives inside sale's Configuration header menu (below) instead of getting
+  // its own top-bar button — a tax catalog is workspace configuration, not a
+  // day-to-day list like Orders/Products.
+  hideFromTopBar: true,
 }
 
 export const saleTaxRoutes: FrontRoute[] = [
   { path: '/sale/taxes', descriptor: saleTaxListView, permission: 'sale_tax:sale_tax:read' },
   { path: '/sale/taxes/:id', descriptor: saleTaxFormView, permission: 'sale_tax:sale_tax:read' },
 ]
+
+// Adds a "Taxes" line to sale's own Configuration header menu (see
+// ModuleRegistry.headerMenus(), which always seeds that menu with a default
+// "Settings" line first) — the first real user of registerHeaderMenu.
+registerHeaderMenu('sale', 'configuration', {
+  entries: [{ kind: 'line', label: 'Taxes', path: '/sale/taxes', permission: 'sale_tax:sale_tax:read' }],
+})

@@ -67,14 +67,16 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // Server-owned language preferences (user choice + workspace default) → LocaleSync
   // applies them to the client i18n store. Anonymous visitors keep the local state.
   const preferences = identity ? await getMyLocalePreferences() : null
-  // Per-module main pages for the top-bar nav (plain data → client AppTopBar).
-  // Discovery compiles every module regardless of `active` (ADR-009), so a
-  // deactivated module's nav entries are filtered out HERE, from the live
-  // Go-sourced active state — skipped entirely for an anonymous visitor
-  // (no session to authenticate the /api/v1/modules read with, and nothing
-  // renders the nav without an identity anyway).
+  // Per-module top-bar header menus (plain data → client AppTopBar) — see
+  // ModuleRegistry.headerMenus(). Discovery compiles every module regardless
+  // of `active` (ADR-009), so a deactivated module's menus are filtered out
+  // HERE, from the live Go-sourced active state — skipped entirely for an
+  // anonymous visitor (no session to authenticate the /api/v1/modules read
+  // with, and nothing renders the bar without an identity anyway).
   const activeSet = identity ? await activeModuleNames() : new Set<string>()
-  const nav = identity ? moduleRegistry.moduleNav().filter((m) => activeSet.has(m.module)) : []
+  const headerMenus = identity
+    ? moduleRegistry.headerMenus().filter((m) => activeSet.has(m.module))
+    : []
   // Every registered route path (AppTopBar's breadcrumb uses this ONLY to
   // detect a record's sibling list page — e.g. sale/quote/:id's parent
   // '/sale/quote' has a sibling '/sale/quote/list' — and splice a real
@@ -109,7 +111,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <Box sx={{ '@media print': { display: 'none' } }}>
               <AppTopBar
                 identity={identity}
-                nav={nav}
+                headerMenus={headerMenus}
                 knownPaths={knownPaths}
                 email={preferences?.email}
                 activeCompany={preferences?.active_company ?? null}
@@ -148,7 +150,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   {/* A record's own activity feed (the form chatter panel) —
                       per-record data like NotebookOps, its own context for the
                       same reason. */}
-                  <ChatterOpsProvider ops={{ list: listChatterMessages, create: createChatterMessage }}>
+                  <ChatterOpsProvider
+                    ops={{ list: listChatterMessages, create: createChatterMessage }}
+                  >
                     {/* The search bar's named, reusable filter combinations
                         (docs/adr/ADR-014-search-filter-bar.md) — independent
                         named rows a user creates/renames/deletes, the same
