@@ -24,8 +24,10 @@ import {
   useUiStore,
 } from '@eerp/core-front'
 import type { OSMConnector } from '@/lib/osm-settings'
+import type { TaxSettings as TaxSettingsValue } from '@/lib/tax-settings'
 import OSMConnectorSettings from './OSMConnectorSettings'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
+import TaxSettings from './TaxSettings'
 
 // Settings → Global settings (formerly "Appearance", docs/roadmaps/
 // pdf-reports.md's Reports settings subsection): three collapsible sections —
@@ -40,6 +42,8 @@ export default function AppearanceSettings({
   reportPageFormats,
   canEditIntegrations = false,
   initialOSMConnector = { enabled: false, base_url: '', user_agent: '' },
+  canEditTax = false,
+  initialTaxSettings = { price_mode: 'tax_excluded' },
 }: {
   canEditReports?: boolean
   initialFooter?: string
@@ -51,6 +55,8 @@ export default function AppearanceSettings({
   reportPageFormats?: ReactNode
   canEditIntegrations?: boolean
   initialOSMConnector?: OSMConnector
+  canEditTax?: boolean
+  initialTaxSettings?: TaxSettingsValue
 }) {
   const t = useT()
   const palette = useUiStore((s) => s.palette)
@@ -220,6 +226,17 @@ export default function AppearanceSettings({
           </AccordionSummary>
           <AccordionDetails>
             <OSMConnectorSettings canEdit={canEditIntegrations} initialConnector={initialOSMConnector} />
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Tax')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <TaxSettings canEdit={canEditTax} initialSettings={initialTaxSettings} />
           </AccordionDetails>
         </Accordion>
       </Stack>

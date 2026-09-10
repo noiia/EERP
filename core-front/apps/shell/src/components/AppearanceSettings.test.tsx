@@ -50,4 +50,11 @@ describe('AppearanceSettings', () => {
     expect(screen.getByLabelText('Enabled')).toBeInTheDocument()
     expect(screen.getByLabelText('Base URL')).toBeInTheDocument()
   })
+
+  it('renders the Tax section holding the tax price mode settings', () => {
+    render(<AppearanceSettings />)
+    expect(screen.getByText('Tax')).toBeInTheDocument()
+    expect(screen.getByLabelText(/tax computed on top of the price/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/tax computed on top of the price/i)).toBeChecked()
+  })
 })
