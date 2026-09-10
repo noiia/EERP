@@ -94,7 +94,10 @@ func TestSumLines(t *testing.T) {
 		{
 			name: "single line, single tax rate",
 			lines: []SaleLine{
-				{Quantity: 2, UnitPrice: 50, TaxRate: 0.2}, // 100 HT, 20 tax
+				// Subtotal/Total are normally computeLineTotal's own output (see
+				// TestComputeLineTotal) — set directly here since sumLines
+				// only ever reads the already-computed columns.
+				{Quantity: 2, UnitPrice: 50, TaxRate: 0.2, Subtotal: 100, Total: 120}, // 100 HT, 20 tax
 			},
 			wantSubtotal: 100,
 			wantTax:      20,
@@ -103,8 +106,8 @@ func TestSumLines(t *testing.T) {
 		{
 			name: "mixed tax rates per product sum independently",
 			lines: []SaleLine{
-				{Quantity: 1, UnitPrice: 100, TaxRate: 0.2}, // 100 HT, 20 tax
-				{Quantity: 3, UnitPrice: 10, TaxRate: 0.1},  // 30 HT, 3 tax
+				{Quantity: 1, UnitPrice: 100, TaxRate: 0.2, Subtotal: 100, Total: 120}, // 100 HT, 20 tax
+				{Quantity: 3, UnitPrice: 10, TaxRate: 0.1, Subtotal: 30, Total: 33},    // 30 HT, 3 tax
 			},
 			wantSubtotal: 130,
 			wantTax:      23,
@@ -119,6 +122,52 @@ func TestSumLines(t *testing.T) {
 				t.Errorf("sumLines() = (%v, %v, %v), want (%v, %v, %v)",
 					subtotal, tax, total,
 					tt.wantSubtotal, tt.wantTax, tt.wantTotal)
+			}
+		})
+	}
+}
+
+func TestComputeLineTotal(t *testing.T) {
+	tests := []struct {
+		name         string
+		base         float64
+		legacyRate   float64
+		taxes        []SaleTax
+		included     bool
+		wantSubtotal float64
+		wantTotal    float64
+	}{
+		{"no tax at all", 100, 0, nil, false, 100, 100},
+		{"legacy product tax rate only", 100, 0.2, nil, false, 100, 120},
+		{"one percentage tag, no legacy rate", 100, 0, []SaleTax{{Kind: "percentage", Rate: 0.1}}, false, 100, 110},
+		{"one fixed tag, no legacy rate", 100, 0, []SaleTax{{Kind: "fixed", Amount: 5}}, false, 100, 105},
+		{
+			"legacy rate stacks with a percentage tag and a fixed tag",
+			100, 0.2,
+			[]SaleTax{{Kind: "percentage", Rate: 0.1}, {Kind: "fixed", Amount: 5}},
+			false,
+			// 100 base + 20 (legacy) + 10 (percentage tag) + 5 (fixed tag)
+			100, 135,
+		},
+		// included: base is itself the final, tax-inclusive price — total
+		// stays exactly base, and subtotal is solved backwards. "12€
+		// including 20% tax" stays 12€, of which 10€ is pre-tax.
+		{"included, no tax at all", 12, 0, nil, true, 12, 12},
+		{"included, 20% tax baked in", 12, 0.2, nil, true, 10, 12},
+		{
+			"included, percentage tag + fixed tag baked in",
+			// subtotal*1.3 + 5 == 110 -> subtotal == 105/1.3
+			110, 0,
+			[]SaleTax{{Kind: "percentage", Rate: 0.3}, {Kind: "fixed", Amount: 5}},
+			true,
+			105.0 / 1.3, 110,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSubtotal, gotTotal := computeLineTotal(tt.base, tt.legacyRate, tt.taxes, tt.included)
+			if gotSubtotal != tt.wantSubtotal || gotTotal != tt.wantTotal {
+				t.Errorf("computeLineTotal() = (%v, %v), want (%v, %v)", gotSubtotal, gotTotal, tt.wantSubtotal, tt.wantTotal)
 			}
 		})
 	}

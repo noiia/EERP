@@ -23,6 +23,8 @@ describe('sale FrontModule', () => {
       '/sale/list',
       '/sale/:id',
       '/sale/lines/:id',
+      '/sale/taxes',
+      '/sale/taxes/:id',
     ])
   })
 
@@ -56,7 +58,11 @@ describe('sale FrontModule', () => {
 
   it('guards invoice routes with invoice:invoice:read', () => {
     const invoiceRoutes = sale.routes.filter(
-      (r) => r.path.startsWith('/sale') && !r.path.startsWith('/sale/quote') && r.path !== '/sale/lines/:id',
+      (r) =>
+        r.path.startsWith('/sale') &&
+        !r.path.startsWith('/sale/quote') &&
+        r.path !== '/sale/lines/:id' &&
+        !r.path.startsWith('/sale/taxes'),
     )
     expect(invoiceRoutes.every((r) => r.permission === 'invoice:invoice:read')).toBe(true)
   })
@@ -137,6 +143,7 @@ describe('sale FrontModule', () => {
       'quantity',
       'unit_price',
       'tax_rate',
+      'total',
     ])
   })
 
@@ -229,7 +236,7 @@ describe('sale — self-extended "Order lines" notebook page (registry-level)', 
 describe('sale — quote registers ahead of invoice (dashboard tile ordering)', () => {
   it('quote/list is the first tree route, invoice/list the second', () => {
     const treeRoutes = sale.routes.filter((r) => r.descriptor.viewType === 'tree')
-    expect(treeRoutes.map((r) => r.path)).toEqual(['/sale/quote/list', '/sale/list'])
+    expect(treeRoutes.map((r) => r.path)).toEqual(['/sale/quote/list', '/sale/list', '/sale/taxes'])
   })
 
   it('wires a tree list and a form over the quote entity, plus the quote_line form', () => {

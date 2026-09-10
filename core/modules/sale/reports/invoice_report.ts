@@ -104,6 +104,9 @@ export const invoiceReport: ReportDescriptor = {
         { name: 'quantity', label: 'Quantity' },
         { name: 'unit_price', label: 'Unit price' },
         { name: 'tax_rate', label: 'Tax' },
+        // Server-computed (handler.go's computeLineTotal) — quantity ×
+        // unit_price, tax_rate, AND every tagged sale_tax, all stacked.
+        { name: 'total', label: 'Total' },
       ],
     },
     {

@@ -157,6 +157,68 @@ type SaleLine struct {
 	Unit      string  `db:"unit" json:"unit"`
 	TaxRate   float64 `db:"tax_rate" json:"tax_rate"`
 	UnitPrice float64 `db:"unit_price" json:"unit_price"`
+	// Total is this line's own final price — quantity × unit_price, plus
+	// TaxRate above, PLUS every tax tagged on it via SaleLineTax below
+	// (percentage or fixed, see SaleTax) — computed server-side ONLY
+	// (handler.go's Create/Update and the sale_line_tax link handlers),
+	// never trusted from the client. Kept ADDITIVE to TaxRate rather than
+	// replacing it: TaxRate is still resolved from the product/variant as
+	// before (unchanged), and the many2many taxes below stack on top of it
+	// — an extra eco-tax/stamp-duty tagged onto a line, say, alongside its
+	// product's own VAT. See handler.go's computeLineTax doc comment for the
+	// exact formula. Whether this already includes every tax (price entered
+	// tax-inclusive) or tax sits entirely on top of UnitPrice*Quantity depends
+	// on the workspace's tax.price_mode setting (internal/settings.
+	// TaxPriceModeKey) at the moment the line was last computed — see
+	// handler.go's computeLineTotal.
+	Total float64 `db:"total" json:"total"`
+	// Subtotal is this line's own tax-EXCLUDED contribution — always
+	// Quantity×UnitPrice when price_mode is tax_excluded, but back-derived
+	// from Total when tax_included (the entered price already has tax baked
+	// in, so the excl.-tax figure has to be solved for). Persisted rather than
+	// re-derived at Invoice-rollup time (recomputeTotals/sumLines) because the
+	// rollup only has each line's own stored columns to work from, not its
+	// resolved tax tags.
+	Subtotal float64 `db:"subtotal" json:"subtotal"`
+}
+
+// SaleTax is one reusable tax definition — a percentage (0..1 ratio, applied
+// to a line's own base price) or a fixed flat amount, picked by Kind. Shared
+// across modules (sale_line AND propertymanagement's billing_line tag it via
+// their own many2many, see SaleLineTax below and
+// propertymanagement/module.go's PropertyManagementBillingLineTax) — lives
+// here, in sale, purely by naming convention; nothing about it is
+// sale-specific, and neither referencing module needs a Go import of this
+// package to use it (a many2many field only needs the entity name string,
+// and a junction struct only needs the tax's bare uuid).
+type SaleTax struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name     string    `db:"name" json:"name"`
+	// Kind is "percentage" or "fixed" — selects which of Rate/Amount below
+	// the computation actually reads; the other stays whatever the form left
+	// it at, unused. A selection field on the frontend (sale_tax_views.ts),
+	// not a bool, so a third kind can be added later without a migration.
+	Kind string `db:"kind" json:"kind"`
+	// Rate: 0..1 ratio (percent widget ×100 on the frontend), read only when
+	// Kind == "percentage" — same convention as SaleLine.TaxRate above.
+	Rate float64 `db:"rate" json:"rate"`
+	// Amount: a flat monetary value added once per line regardless of its
+	// base price, read only when Kind == "fixed".
+	Amount float64 `db:"amount" json:"amount"`
+}
+
+// SaleLineTax is the many2many junction behind SaleLine's own `taxes` tags
+// field (sale_line_views.ts) — one row per (line, tax) link, written/removed
+// at interaction time like any other many2many (core-front's
+// RelationTagsWidget), except Create/Delete are hand-mounted here (not
+// generic) so linking/unlinking a tax recomputes the line's own Total —
+// see handler.go's CreateLineTax/DeleteLineTax.
+type SaleLineTax struct {
+	model.BaseModel
+	TenantID   uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	SaleLineID uuid.UUID `db:"sale_line_id" json:"sale_line_id"`
+	SaleTaxID  uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
 }
 
 // Quote is a pre-invoice sales proposal ("devis") sent to a prospect before
@@ -234,6 +296,12 @@ func (m *saleModule) Register() error {
 		return err
 	}
 	if err := orm.Register[SaleLine](); err != nil {
+		return err
+	}
+	if err := orm.Register[SaleTax](); err != nil {
+		return err
+	}
+	if err := orm.Register[SaleLineTax](); err != nil {
 		return err
 	}
 	if err := orm.Register[Quote](); err != nil {

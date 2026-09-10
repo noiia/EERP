@@ -3,6 +3,7 @@ import { dashboardRoute, invoiceRoutes, orderLinesPageOperations } from './invoi
 import { quoteRoutes, quoteLinesPageOperations } from './quote_views'
 import { saleLineRoutes } from './sale_line_views'
 import { quoteLineRoutes } from './quote_line_views'
+import { saleTaxRoutes } from './sale_tax_views'
 import { invoiceReport } from '../reports/invoice_report'
 import { quoteReport } from '../reports/quote_report'
 
@@ -32,6 +33,7 @@ const sale: FrontModule = {
     ...quoteLineRoutes,
     ...invoiceRoutes,
     ...saleLineRoutes,
+    ...saleTaxRoutes,
   ],
   reports: [invoiceReport, quoteReport],
   extends: [
