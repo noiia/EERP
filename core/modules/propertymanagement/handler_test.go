@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"core/modules/sale"
+
 	"github.com/google/uuid"
 )
 
@@ -104,5 +106,43 @@ func TestEquipmentStatus_JSONUnmarshalsIDFields(t *testing.T) {
 	}
 	if status.State != "damaged" {
 		t.Errorf("State = %v, want damaged", status.State)
+	}
+}
+
+// computeBillingLineTotal mirrors sale/handler.go's computeLineTotal — same
+// three-source stack (legacy tax_rate + percentage tags + fixed tags), base
+// is just UnitPrice here (no quantity concept).
+func TestComputeBillingLineTotal(t *testing.T) {
+	tests := []struct {
+		name         string
+		base         float64
+		legacyRate   float64
+		taxes        []sale.SaleTax
+		included     bool
+		wantSubtotal float64
+		wantTotal    float64
+	}{
+		{"no tax at all", 1000, 0, nil, false, 1000, 1000},
+		{"legacy tax_rate only", 1000, 0.2, nil, false, 1000, 1200},
+		{"one percentage tag, no legacy rate", 100, 0, []sale.SaleTax{{Kind: "percentage", Rate: 0.1}}, false, 100, 110},
+		{"one fixed tag, no legacy rate", 100, 0, []sale.SaleTax{{Kind: "fixed", Amount: 5}}, false, 100, 105},
+		{
+			"legacy rate stacks with a percentage tag and a fixed tag",
+			1000, 0.2,
+			[]sale.SaleTax{{Kind: "percentage", Rate: 0.1}, {Kind: "fixed", Amount: 50}},
+			false,
+			// 1000 base + 200 (legacy) + 100 (percentage tag) + 50 (fixed tag)
+			1000, 1350,
+		},
+		// included: base is itself the final, tax-inclusive price.
+		{"included, 20% tax baked in", 1200, 0.2, nil, true, 1000, 1200},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSubtotal, gotTotal := computeBillingLineTotal(tt.base, tt.legacyRate, tt.taxes, tt.included)
+			if gotSubtotal != tt.wantSubtotal || gotTotal != tt.wantTotal {
+				t.Errorf("computeBillingLineTotal() = (%v, %v), want (%v, %v)", gotSubtotal, gotTotal, tt.wantSubtotal, tt.wantTotal)
+			}
+		})
 	}
 }

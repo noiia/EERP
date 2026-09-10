@@ -8,7 +8,7 @@
     "description": "Property management — list and follow real estate assets, their equipment, and rent receipts",
     "app_mode": true,
     "menu_icon": "building",
-    "depends": [],
+    "depends": ["sale"],
     "static_files": {
         "views": [
             "propertymanagement_views.ts"

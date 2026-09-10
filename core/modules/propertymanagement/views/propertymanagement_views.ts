@@ -3,13 +3,14 @@ import { dashboardRoute, propertyExtendOperations, propertyRoutes } from './prop
 import { equipmentExtendOperations, equipmentRoutes } from './property_management_equipment_views'
 import { equipmentStatusRoutes } from './property_management_equipment_status_views'
 import { receiptExtendOperations, rentReceiptRoutes } from './property_management_rent_receipt_views'
+import { billingLineRoutes } from './property_management_billing_line_views'
 import { rentReceiptReport } from '../reports/rent_receipt_report'
 
 // Property management frontend — DESCRIPTORS ONLY (same discipline as
 // core/modules/crm's crm_views.ts). This file is ONLY an assembler: one
 // FrontModule per module.json, per ModuleRegistry.register()'s "idempotent
 // by module name" contract (registry.ts) — a second register() call under
-// the same name is silently skipped, not merged, so this module's six
+// the same name is silently skipped, not merged, so this module's seven
 // entities can't each independently register their own FrontModule the way
 // separate modules do (see core/modules/propertymanagement/module.go's doc
 // comments for the full data model). Each entity instead owns a dedicated
@@ -34,6 +35,7 @@ const propertymanagement: FrontModule = {
     ...equipmentRoutes,
     ...equipmentStatusRoutes,
     ...rentReceiptRoutes,
+    ...billingLineRoutes,
   ],
   reports: [rentReceiptReport],
   extends: [

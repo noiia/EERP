@@ -28,6 +28,14 @@ export interface PropertyManagement {
   address_state?: string
   address_country?: string
   floor_area?: number
+  /** The mortgage/loan this property carries — a plain editable figure, not
+   * derived from anything else. */
+  loan_amount?: number
+  /** The apartment's own monthly rent — a plain editable figure. Not itself
+   * a billing line: the Billing lines page (below) is where the user
+   * actually enters a priced "Apartment" line, typically at this figure,
+   * alongside whatever other lines the month's receipt needs. */
+  rent_price?: number
   /** "2026-08"-shaped, null until the first Generate — set by the Generate
    * Rent Receipt header button. */
   last_receipt_month?: string | null
@@ -82,6 +90,30 @@ registerHeaderButtonAction({
     const generatedAt = new Date().toISOString()
     const addressLine = formatPropertyAddress(ctx.draft)
 
+    // Snapshot the property's own billing lines (property_management_
+    // billing_line_views.ts) the same way property_name/address/floor_area
+    // are already snapshotted below — a receipt must keep reading correctly
+    // even if the lines change later. subtotal/tax_amount/total below are
+    // just a SUM of each line's own `subtotal`/`total` — already fully
+    // computed server-side (handler.go's computeBillingLineTotal, covering
+    // tax_rate, every tagged sale_tax, AND the workspace's tax.price_mode
+    // setting), never re-derived here. `subtotal` (not `unit_price`) is what
+    // sums correctly regardless of that setting — once prices can be
+    // tax-inclusive, unit_price alone no longer tells you the tax-excluded
+    // figure. This is only an upfront estimate for the parent/child rows
+    // created below — each property_management_rent_receipt_line create
+    // that follows triggers its own backend recompute of these same three
+    // columns (handler.go's CreateRentReceiptLine/recomputeReceiptTotals),
+    // which is what actually double-checks them before the PDF is
+    // generated.
+    const billingLines = await ops.list('property_management_billing_line', {
+      filter: { property_management_id: ctx.recordId },
+      pageSize: 100,
+    })
+    const total = billingLines.reduce((sum, l) => sum + Number(l.total ?? 0), 0)
+    const subtotal = billingLines.reduce((sum, l) => sum + Number(l.subtotal ?? 0), 0)
+    const taxAmount = total - subtotal
+
     const links = await ops.list('property_management_tenant', {
       filter: { property_management_id: ctx.recordId },
       pageSize: 100,
@@ -103,6 +135,10 @@ registerHeaderButtonAction({
       property_name: ctx.draft.name,
       property_address: addressLine,
       floor_area: ctx.draft.floor_area,
+      rent_price: ctx.draft.rent_price,
+      subtotal,
+      tax_amount: taxAmount,
+      total,
       tenant_names: tenantNames.join(', '),
       // receipt_file is a plain NOT NULL bool column (module.go) — must be
       // present on Create even though BooleanFileWidget/CarouselSlide never
@@ -123,9 +159,27 @@ registerHeaderButtonAction({
         property_name: ctx.draft.name,
         property_address: addressLine,
         floor_area: ctx.draft.floor_area,
+        rent_price: ctx.draft.rent_price,
+        subtotal,
+        tax_amount: taxAmount,
+        total,
         tenant_names: name,
         receipt_file: false,
       })
+
+      // Copy the same billing lines onto this child (report-table's own
+      // source, rent_receipt_report.ts) — every tenant's receipt shows the
+      // property's full billing-lines table, same as the parent summary.
+      for (const line of billingLines) {
+        await ops.create('property_management_rent_receipt_line', {
+          rent_receipt_id: child.id,
+          name: line.name,
+          unit_price: line.unit_price,
+          tax_rate: line.tax_rate,
+          subtotal: line.subtotal,
+          total: line.total,
+        })
+      }
 
       // Best-effort: the receipt row is the workflow's real state — a PDF
       // failure (e.g. attachments' S3 store not configured in this
@@ -170,6 +224,8 @@ export const fields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'address', label: 'Address', type: 'address', widget: 'form' },
   { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float' },
+  { name: 'loan_amount', label: 'Loan amount', type: 'number', widget: 'monetary' },
+  { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary' },
 ]
 
 // Form-only: current_tenant (many2many, tags widget) stays in the default
@@ -233,6 +289,39 @@ const formFields: ViewDescriptor['fields'] = [
       formPath: '/propertymanagement/receipts/:id',
     },
   },
+  // The line items a rent receipt is actually built from (the apartment's
+  // own rent, condominium fees, an accrual for expenses, ...) — real child
+  // rows (property_management_billing_line), not a JSONB blob, creatable
+  // straight from this embedded grid via the engine's usual one2many
+  // "Create a new..." wizard (property_management_billing_line_views.ts's
+  // own descriptor is what the wizard renders).
+  {
+    name: 'billing_lines',
+    label: 'Billing lines',
+    type: 'relation',
+    relation: {
+      entity: 'property_management_billing_line',
+      kind: 'one2many',
+      inverseField: 'property_management_id',
+      labelField: 'name',
+      formPath: '/propertymanagement/billing-lines/:id',
+    },
+  },
+  // The same HT -> tax-by-rate -> TTC recap component sale's own
+  // sale_totals/quote_totals fields use (widgets.tsx's TaxTotalsWidget) —
+  // computes itself, live, from the SAME billing_lines above. store: false —
+  // nothing here round-trips to the server. Billing lines have no quantity
+  // column (a line is priced as a whole, not quantity × unit_price) —
+  // TaxTotalsWidget treats an absent quantity as 1, the identity, rather
+  // than zeroing every line out (see its own doc comment).
+  {
+    name: 'billing_totals',
+    label: 'Totals',
+    type: 'totals',
+    hideLabel: true,
+    store: false,
+    relation: { entity: 'property_management_billing_line', kind: 'one2many', inverseField: 'property_management_id' },
+  },
 ]
 
 const dashboardView: ViewDescriptor = {
@@ -278,6 +367,20 @@ export const propertyExtendOperations: Operation[] = [
   {
     op: 'addNode',
     node: { kind: 'page', title: 'Rent receipt', children: [{ kind: 'field', name: 'rent_receipts' }] },
+    target: FORM_NOTEBOOK_ID,
+    position: 'first',
+  },
+  // Added LAST (still position: 'first') so Billing lines lands as the very
+  // FIRST tab, ahead of Rent receipt — the form's whole purpose is
+  // generating a receipt off these lines, so they're what a user should
+  // land on.
+  {
+    op: 'addNode',
+    node: {
+      kind: 'page',
+      title: 'Billing lines',
+      children: [{ kind: 'field', name: 'billing_lines' }, { kind: 'field', name: 'billing_totals' }],
+    },
     target: FORM_NOTEBOOK_ID,
     position: 'first',
   },

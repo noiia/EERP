@@ -47,6 +47,13 @@ type PropertyManagement struct {
 	// FloorArea is in the workspace's own unit (m²/sqft — free-form like
 	// warehouse.Product.Unit, this module has no opinion).
 	FloorArea float64 `db:"floor_area" json:"floor_area"`
+	// LoanAmount/RentPrice are plain editable figures on the property's own
+	// form — the mortgage/loan this property carries, and the monthly rent
+	// its own "apartment" billing line (BillingLine, below) defaults to when
+	// a receipt's line items are put together. Neither is derived from
+	// anything else; both are just NOT NULL floats, same shape as FloorArea.
+	LoanAmount float64 `db:"loan_amount" json:"loan_amount"`
+	RentPrice  float64 `db:"rent_price" json:"rent_price"`
 	// LastReceiptMonth is "2026-08"-shaped, set by the Generate Rent Receipt
 	// header button's handler (property_management_views.ts's
 	// propertymanagement.generateRentReceipt) — what the Property GET
@@ -129,6 +136,63 @@ type PropertyManagementEquipmentPhoto struct {
 	Position                      int       `db:"position" json:"position"`
 }
 
+// PropertyManagementBillingLine is one billable line on a property — the
+// apartment's own rent, plus whatever additional costs get billed alongside
+// it (condominium fees, an accrual for future expenses, etc.), each a flat
+// Name + UnitPrice + TaxRate row with NO quantity concept (unlike
+// sale.SaleLine, which is always quantity × unit_price against a real
+// product/variant) — a billing line is priced as a whole, not per unit.
+// Same "free taxes" / 0..1 ratio convention as sale.SaleLine's own
+// UnitPrice/TaxRate, specifically so this table can reuse the exact same
+// totals recap component (relation-widgets.tsx's TaxTotalsWidget) unmodified
+// beyond its own "no quantity column ⇒ treat as 1" fallback.
+type PropertyManagementBillingLine struct {
+	model.BaseModel
+	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
+	Name                 string    `db:"name" json:"name"`
+	// UnitPrice is "free taxes" (excl. tax) — same field name as
+	// sale.SaleLine's own UnitPrice, read by TaxTotalsWidget.
+	UnitPrice float64 `db:"unit_price" json:"unit_price"`
+	// TaxRate is a 0..1 ratio (the percent widget displays it ×100) — same
+	// convention as sale.SaleLine.TaxRate. Kept alongside the many2many
+	// `taxes` tags below rather than replaced by them (sale.SaleLine.Total's
+	// doc comment has the full "stack, don't replace" rationale) — the two
+	// stack additively into Total.
+	TaxRate float64 `db:"tax_rate" json:"tax_rate"`
+	// Total is this line's own final price — UnitPrice (no quantity here,
+	// see the type doc comment) plus TaxRate above, plus every tax tagged on
+	// it via PropertyManagementBillingLineTax below — computed server-side
+	// ONLY (handler.go's CreateBillingLine/UpdateBillingLine and the tax
+	// link handlers), never trusted from the client. Same formula as
+	// sale.SaleLine.Total (handler.go's computeLineTotal), base is just
+	// UnitPrice instead of Quantity×UnitPrice — including whether Total
+	// already has tax baked in or not (the workspace's tax.price_mode
+	// setting, internal/settings.TaxPriceModeKey).
+	Total float64 `db:"total" json:"total"`
+	// Subtotal mirrors sale.SaleLine.Subtotal exactly — this line's own
+	// tax-EXCLUDED contribution, persisted (not re-derived) so
+	// recomputeReceiptTotals' rollup has something correct to sum even when
+	// tax_included back-derives it from Total rather than reading it
+	// straight off UnitPrice.
+	Subtotal float64 `db:"subtotal" json:"subtotal"`
+}
+
+// PropertyManagementBillingLineTax is the many2many junction behind
+// PropertyManagementBillingLine's own `taxes` tags field
+// (property_management_billing_line_views.ts) — mirrors sale.SaleLineTax
+// exactly, scoped to a billing line instead of a sale line. SaleTaxID
+// references sale.SaleTax by bare uuid only (see that type's own doc
+// comment on why no Go import of the sale package is needed for the
+// reference itself — a real import IS taken in handler.go, to actually
+// resolve/compute against the tax's Rate/Amount/Kind).
+type PropertyManagementBillingLineTax struct {
+	model.BaseModel
+	TenantID                        uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	PropertyManagementBillingLineID uuid.UUID `db:"property_management_billing_line_id" json:"property_management_billing_line_id"`
+	SaleTaxID                       uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
+}
+
 // PropertyManagementRentReceipt is one generated rent receipt — APPEND-ONLY
 // (handler.go hand-mounts Update/Delete to always reject, a real backend
 // guarantee mirroring internal/chatter's own append-only posture, not just a
@@ -178,11 +242,56 @@ type PropertyManagementRentReceipt struct {
 	// asked for, beyond the address.
 	FloorArea   float64 `db:"floor_area" json:"floor_area"`
 	TenantNames string  `db:"tenant_names" json:"tenant_names"`
+	// RentPrice snapshots PropertyManagement.RentPrice at generation time —
+	// the report's own headline figure (printed above the billing-lines
+	// table), same "capture at document time" reasoning as PropertyName/
+	// PropertyAddress/FloorArea above.
+	RentPrice float64 `db:"rent_price" json:"rent_price"`
+	// Subtotal/TaxAmount/Total mirror sale.Invoice's own three totals
+	// columns exactly (same names, same "excl. tax / tax / incl. tax"
+	// shape) — computed ONCE from this receipt's own Lines (below) by
+	// property_management_views.ts's propertymanagement.generateRentReceipt
+	// at generation time, not recomputed server-side on every line change
+	// the way sale_line's handler.go does: a receipt's lines are all
+	// created together, in one shot, and never edited afterward (append-
+	// only), so there is no later edit for a recompute to react to.
+	Subtotal  float64 `db:"subtotal" json:"subtotal"`
+	TaxAmount float64 `db:"tax_amount" json:"tax_amount"`
+	Total     float64 `db:"total" json:"total"`
 	// ReceiptFile is the boolean/file flag (internal/attachments) for the
 	// SAVED PDF — a fixed snapshot from generation time, never recomputed
 	// live on later downloads (the user's own explicit requirement). Always
 	// false on a parent row: no PDF is ever generated for it.
 	ReceiptFile bool `db:"receipt_file" json:"receipt_file"`
+}
+
+// PropertyManagementRentReceiptLine is one line of a rent receipt's own
+// billing-lines table — a snapshot copy of the property's
+// PropertyManagementBillingLine rows taken at generation time (one row per
+// property.BillingLine, same Name/UnitPrice/TaxRate shape), so a receipt
+// keeps reading correctly even if the property's billing lines change
+// later. Mirrors sale.SaleLine's relationship to sale.Invoice, minus the
+// variant/product to re-price from — a billing line has none, so this is a
+// literal copy, not a re-resolve.
+type PropertyManagementRentReceiptLine struct {
+	model.BaseModel
+	TenantID      uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	RentReceiptID uuid.UUID `db:"rent_receipt_id" json:"rent_receipt_id"`
+	Name          string    `db:"name" json:"name"`
+	UnitPrice     float64   `db:"unit_price" json:"unit_price"`
+	TaxRate       float64   `db:"tax_rate" json:"tax_rate"`
+	// Total is copied VERBATIM from the source PropertyManagementBillingLine
+	// at generation time (property_management_views.ts's
+	// generateRentReceipt) — already fully computed server-side there
+	// (tax_rate + every tagged tax), so there is nothing to recompute here;
+	// this row is a point-in-time snapshot, same discipline as every other
+	// field on it.
+	Total float64 `db:"total" json:"total"`
+	// Subtotal is likewise copied verbatim from the source billing line's
+	// own (already server-computed) Subtotal — recomputeReceiptTotals sums
+	// this rather than UnitPrice, since UnitPrice alone no longer tells you
+	// the tax-excluded figure once tax.price_mode is tax_included.
+	Subtotal float64 `db:"subtotal" json:"subtotal"`
 }
 
 type propertyManagementModule struct{}
@@ -208,7 +317,16 @@ func (m *propertyManagementModule) Register() error {
 	if err := orm.Register[PropertyManagementEquipmentPhoto](); err != nil {
 		return err
 	}
-	return orm.Register[PropertyManagementRentReceipt]()
+	if err := orm.Register[PropertyManagementBillingLine](); err != nil {
+		return err
+	}
+	if err := orm.Register[PropertyManagementBillingLineTax](); err != nil {
+		return err
+	}
+	if err := orm.Register[PropertyManagementRentReceipt](); err != nil {
+		return err
+	}
+	return orm.Register[PropertyManagementRentReceiptLine]()
 }
 
 // Migrate runs AFTER auto-migration's ADD COLUMN pass (internal/module's

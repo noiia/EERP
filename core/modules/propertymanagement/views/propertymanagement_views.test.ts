@@ -23,6 +23,7 @@ describe('propertymanagement FrontModule', () => {
       '/propertymanagement/equipment/statuses/:id',
       '/propertymanagement/receipts',
       '/propertymanagement/receipts/:id',
+      '/propertymanagement/billing-lines/:id',
     ])
   })
 
@@ -93,6 +94,39 @@ describe('propertymanagement FrontModule', () => {
     expect(field?.readOnly).toBe(true)
     expect(field?.relation?.entity).toBe('property_management_rent_receipt')
     expect(field?.relation?.formPath).toBe('/propertymanagement/receipts/:id')
+  })
+
+  it('loan_amount and rent_price are plain monetary fields, shown on the list too', () => {
+    const list = propertymanagement.routes.find((r) => r.path === '/propertymanagement/list')!
+    for (const name of ['loan_amount', 'rent_price']) {
+      const field = list.descriptor.fields.find((f) => f.name === name)
+      expect(field?.type).toBe('number')
+      expect(field?.widget).toBe('monetary')
+    }
+  })
+
+  it('billing_lines is a one2many over property_management_billing_line with a click-through formPath', () => {
+    const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
+    const field = form.descriptor.fields.find((f) => f.name === 'billing_lines')
+    expect(field?.relation).toEqual({
+      entity: 'property_management_billing_line',
+      kind: 'one2many',
+      inverseField: 'property_management_id',
+      labelField: 'name',
+      formPath: '/propertymanagement/billing-lines/:id',
+    })
+  })
+
+  it('billing_totals recaps billing_lines, store: false, same shape as sale\'s own totals fields', () => {
+    const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
+    const field = form.descriptor.fields.find((f) => f.name === 'billing_totals')
+    expect(field?.type).toBe('totals')
+    expect(field?.store).toBe(false)
+    expect(field?.relation).toEqual({
+      entity: 'property_management_billing_line',
+      kind: 'one2many',
+      inverseField: 'property_management_id',
+    })
   })
 
   it('wires the Generate Rent Receipt header button, disabled once already run this month', () => {
@@ -217,7 +251,7 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     return registry
   }
 
-  it('Photos/Equipment/Rent receipt each land on their own notebook tab', () => {
+  it('Billing lines/Rent receipt/Equipment/Photos each land on their own notebook tab, Billing lines first', () => {
     const registry = register()
     const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
     const nodes = normalizeLayout(resolved.descriptor)
@@ -225,10 +259,17 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     expect(notebook).toBeDefined()
     if (!notebook || notebook.kind === 'field') return
     const titles = notebook.children.map((p) => (p.kind !== 'field' ? p.title : null))
-    expect(titles).toEqual(['Rent receipt', 'Equipment', 'Photos', 'Settings'])
+    expect(titles).toEqual(['Billing lines', 'Rent receipt', 'Equipment', 'Photos', 'Settings'])
     const photosPage = notebook.children.find((p) => p.kind !== 'field' && p.title === 'Photos')
     if (photosPage && photosPage.kind !== 'field') {
       expect(photosPage.children).toEqual([{ kind: 'field', name: 'photos' }])
+    }
+    const billingPage = notebook.children.find((p) => p.kind !== 'field' && p.title === 'Billing lines')
+    if (billingPage && billingPage.kind !== 'field') {
+      expect(billingPage.children).toEqual([
+        { kind: 'field', name: 'billing_lines' },
+        { kind: 'field', name: 'billing_totals' },
+      ])
     }
   })
 
@@ -313,6 +354,35 @@ describe('propertymanagement — equipment form', () => {
       'Photos',
       'Settings',
     ])
+  })
+})
+
+describe('propertymanagement — billing line form', () => {
+  function billingLineForm() {
+    return propertymanagement.routes.find((r) => r.path === '/propertymanagement/billing-lines/:id')!
+  }
+
+  it('property_management_id is a required, hidden-by-the-wizard many2one — same shape as sale_line/quote_line', () => {
+    const field = billingLineForm().descriptor.fields.find((f) => f.name === 'property_management_id')
+    expect(field?.required).toBe(true)
+    expect(field?.relation).toEqual({ entity: 'property_management', kind: 'many2one', labelField: 'name' })
+  })
+
+  it('name/unit_price/tax_rate are plain editable fields — no product/variant to snapshot from', () => {
+    const fields = billingLineForm().descriptor.fields
+    const name = fields.find((f) => f.name === 'name')
+    const unitPrice = fields.find((f) => f.name === 'unit_price')
+    const taxRate = fields.find((f) => f.name === 'tax_rate')
+    expect(name).toMatchObject({ type: 'text', required: true })
+    expect(unitPrice).toMatchObject({ type: 'number', widget: 'float' })
+    expect(taxRate).toMatchObject({ type: 'number', widget: 'percent' })
+    expect(name?.readOnly).toBeFalsy()
+    expect(unitPrice?.readOnly).toBeFalsy()
+    expect(taxRate?.readOnly).toBeFalsy()
+  })
+
+  it('has no quantity field — a billing line is priced as a whole, not quantity x unit_price', () => {
+    expect(billingLineForm().descriptor.fields.find((f) => f.name === 'quantity')).toBeUndefined()
   })
 })
 
@@ -414,5 +484,59 @@ describe('propertymanagement.generateRentReceipt', () => {
     expect(created[1].body.property_management_id).toBeUndefined()
     expect(created[2].body).toMatchObject({ parent_id: 'parent1', is_parent: false, tenant_names: 'John Smith' })
     expect(committed).toEqual([{ last_receipt_month: period }])
+  })
+
+  it('snapshots the property billing lines onto each child, and computes subtotal/tax_amount/total', async () => {
+    const created: { entity: string; body: Record<string, unknown> }[] = []
+    const ops: RelationOps = {
+      list: async (entity) => {
+        if (entity === 'property_management_tenant') return [{ id: 'link1', contact_id: 'c1' }]
+        if (entity === 'property_management_billing_line') {
+          // subtotal/total are backend-computed (handler.go's
+          // computeBillingLineTotal) — the handler only ever SUMS subtotal,
+          // never re-derives tax from unit_price/tax_rate itself (subtotal
+          // isn't just unit_price once tax.price_mode can be tax_included).
+          return [
+            { id: 'bl1', name: 'Apartment', unit_price: 1000, tax_rate: 0.2, subtotal: 1000, total: 1200 },
+            { id: 'bl2', name: 'Condominium fees', unit_price: 100, tax_rate: 0, subtotal: 100, total: 100 },
+          ]
+        }
+        return []
+      },
+      get: async (entity, id) => (entity === 'contact' ? { id, name: 'Jane Doe' } : { id }),
+      create: async (entity, body) => {
+        created.push({ entity, body })
+        return { id: `row${created.length}`, ...body }
+      },
+      remove: async () => {},
+    }
+    const ctx = context({ relationOps: ops, draft: { ...context().draft, rent_price: 1000 } })
+
+    await headerButtonRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
+
+    // parent + 1 child + 2 receipt lines (copied onto the child only, not the parent).
+    const receipt = created.filter((c) => c.entity === 'property_management_rent_receipt')
+    const lines = created.filter((c) => c.entity === 'property_management_rent_receipt_line')
+    expect(receipt).toHaveLength(2)
+    for (const r of receipt) {
+      expect(r.body).toMatchObject({ rent_price: 1000, subtotal: 1100, tax_amount: 200, total: 1300 })
+    }
+    expect(lines).toHaveLength(2)
+    expect(lines[0].body).toMatchObject({
+      rent_receipt_id: 'row2',
+      name: 'Apartment',
+      unit_price: 1000,
+      tax_rate: 0.2,
+      subtotal: 1000,
+      total: 1200,
+    })
+    expect(lines[1].body).toMatchObject({
+      rent_receipt_id: 'row2',
+      name: 'Condominium fees',
+      unit_price: 100,
+      tax_rate: 0,
+      subtotal: 100,
+      total: 100,
+    })
   })
 })

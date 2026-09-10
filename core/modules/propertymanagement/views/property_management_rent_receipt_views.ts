@@ -31,6 +31,13 @@ export interface PropertyManagementRentReceipt {
    * see property_management_views.ts's formatPropertyAddress. */
   property_address?: string
   floor_area?: number
+  /** Snapshot of PropertyManagement.rent_price at generation time. */
+  rent_price?: number
+  /** Snapshot totals over this receipt's own lines (below) — same
+   * excl./tax/incl. shape as sale.invoice's subtotal/tax_amount/total. */
+  subtotal?: number
+  tax_amount?: number
+  total?: number
   /** The full comma-joined list on a parent row; a single tenant's name on a child row. */
   tenant_names?: string
   receipt_file?: boolean
@@ -46,6 +53,10 @@ const rentReceiptFields: ViewDescriptor['fields'] = [
   { name: 'property_name', label: 'Property', type: 'text', readOnly: true },
   { name: 'property_address', label: 'Address', type: 'text', readOnly: true },
   { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float', readOnly: true },
+  { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary', readOnly: true },
+  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'monetary', readOnly: true },
+  { name: 'tax_amount', label: 'Tax', type: 'number', widget: 'monetary', readOnly: true },
+  { name: 'total', label: 'Total (incl. tax)', type: 'number', widget: 'monetary', readOnly: true },
   { name: 'tenant_names', label: 'Tenant(s)', type: 'text', readOnly: true },
   { name: 'receipt_file', label: 'Receipt PDF', type: 'boolean', widget: 'file', readOnly: true },
 ]
