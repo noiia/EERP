@@ -80,6 +80,23 @@ func ModulePictureSizeKey(module string) string {
 // field per format; this key only ever holds the global default.
 const ReportsLayoutKey = "reports.layout"
 
+// TaxPriceModeKey is the app_settings key holding the workspace's tax
+// pricing mode — whether a line's entered/resolved price already has its
+// taxes baked in (TaxPriceModeIncluded, e.g. "12€ including 20% tax" stays
+// 12€) or has tax computed on top of it (TaxPriceModeExcluded, the original
+// behavior — "12€ + 20% tax" becomes 14.40€). Applies uniformly to both
+// SaleTax kinds (percentage and fixed). Stored as JSON: {"price_mode":
+// "tax_excluded"}. Absent means TaxPriceModeExcluded — every deployment/tax
+// computation predating this setting keeps behaving exactly as before.
+const TaxPriceModeKey = "tax.price_mode"
+
+// TaxPriceModeExcluded/TaxPriceModeIncluded are the only two valid
+// TaxPriceModeKey values (see its own doc comment above).
+const (
+	TaxPriceModeExcluded = "tax_excluded"
+	TaxPriceModeIncluded = "tax_included"
+)
+
 // OSMConnectorKey is the app_settings key holding the workspace's
 // OpenStreetMap (Nominatim) connector configuration — used to autocomplete
 // addresses as the user types into a `type: 'address'` field (see

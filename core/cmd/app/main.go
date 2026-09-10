@@ -221,6 +221,8 @@ func main() {
 	settingsGroup.PUT("/reports/layout", settingsHandler.PutReportsLayoutSettings)
 	settingsGroup.GET("/integrations/osm", settingsHandler.GetOSMSettings)
 	settingsGroup.PUT("/integrations/osm", settingsHandler.PutOSMSettings)
+	settingsGroup.GET("/tax", settingsHandler.GetTaxSettings)
+	settingsGroup.PUT("/tax", settingsHandler.PutTaxSettings)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new
@@ -466,11 +468,23 @@ func main() {
 		orm.MustRepo[sale.Invoice](app.DB),
 		orm.MustRepo[warehouse.ProductVariant](app.DB),
 		orm.MustRepo[warehouse.Product](app.DB),
+		orm.MustRepo[sale.SaleTax](app.DB),
+		orm.MustRepo[sale.SaleLineTax](app.DB),
+		settings.NewRepository(app.DB),
+		companyRepo,
 	)
 	saleLineGroup := srv.Echo().Group("/api/v1/sale_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	saleLineGroup.POST("", saleLineHandler.Create)
 	saleLineGroup.PUT("/:id", saleLineHandler.Update)
 	saleLineGroup.DELETE("/:id", saleLineHandler.Delete)
+
+	// ── sale: sale_line_tax Create/Delete overrides ──────────────────────────
+	// Tagging/untagging a tax onto a sale_line recomputes that line's own
+	// Total, then the invoice's rollup — GET stays generic. See
+	// modules/sale/handler.go's CreateLineTax/DeleteLineTax.
+	saleLineTaxGroup := srv.Echo().Group("/api/v1/sale_line_tax", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	saleLineTaxGroup.POST("", saleLineHandler.CreateLineTax)
+	saleLineTaxGroup.DELETE("/:id", saleLineHandler.DeleteLineTax)
 
 	// ── sale: quote_line Create/Update/Delete overrides ──────────────────────
 	// Same reasoning as sale_line above, scoped to Quote/QuoteLine instead of
@@ -501,11 +515,31 @@ func main() {
 		orm.MustRepo[propertymanagement.PropertyManagement](app.DB),
 		orm.MustRepo[propertymanagement.PropertyManagementEquipment](app.DB),
 		orm.MustRepo[propertymanagement.PropertyManagementEquipmentStatus](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementBillingLine](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementBillingLineTax](app.DB),
+		orm.MustRepo[sale.SaleTax](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementRentReceipt](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementRentReceiptLine](app.DB),
+		settings.NewRepository(app.DB),
+		companyRepo,
 	)
 	srv.Echo().GET("/api/v1/property_management/:id", propertyManagementHandler.GetProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().POST("/api/v1/property_management_equipment_status", propertyManagementHandler.CreateEquipmentStatus, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().PUT("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptMutation, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().DELETE("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptMutation, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().POST("/api/v1/property_management_rent_receipt_line", propertyManagementHandler.CreateRentReceiptLine, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── propertymanagement: billing_line Create/Update + billing_line_tax
+	// Create/Delete overrides ──────────────────────────────────────────────
+	// Same "compute Total on line/tax changes" shape as sale_line/
+	// sale_line_tax above, scoped to PropertyManagementBillingLine (GET/
+	// DELETE stay generic). See modules/propertymanagement/handler.go.
+	billingLineGroup := srv.Echo().Group("/api/v1/property_management_billing_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	billingLineGroup.POST("", propertyManagementHandler.CreateBillingLine)
+	billingLineGroup.PUT("/:id", propertyManagementHandler.UpdateBillingLine)
+	billingLineTaxGroup := srv.Echo().Group("/api/v1/property_management_billing_line_tax", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	billingLineTaxGroup.POST("", propertyManagementHandler.CreateBillingLineTax)
+	billingLineTaxGroup.DELETE("/:id", propertyManagementHandler.DeleteBillingLineTax)
 
 	for _, r := range srv.Routes() {
 		common.Logger.Info("route", zap.String("method", r.Method), zap.String("path", r.Path))

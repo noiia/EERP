@@ -799,6 +799,81 @@ func (h *Handler) PutReportsLayoutSettings(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// taxSettings is both the stored value of TaxPriceModeKey and the
+// request/response body of GET|PUT /settings/tax.
+type taxSettings struct {
+	PriceMode string `json:"price_mode"`
+}
+
+// GetTaxSettings handles GET /api/v1/settings/tax — the workspace's tax
+// pricing mode (see TaxPriceModeKey's doc comment). Absent returns
+// TaxPriceModeExcluded, not a 404: an unconfigured workspace keeps computing
+// totals the original way. Mounted behind the permission middleware, which
+// derives settings:tax:read from the route.
+func (h *Handler) GetTaxSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	included, err := resolveTaxIncluded(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: get tax price mode: %w", err)
+	}
+	mode := TaxPriceModeExcluded
+	if included {
+		mode = TaxPriceModeIncluded
+	}
+	return c.JSON(http.StatusOK, taxSettings{PriceMode: mode})
+}
+
+// PutTaxSettings handles PUT /api/v1/settings/tax. Mounted behind the
+// permission middleware, which derives settings:tax:write from the route.
+func (h *Handler) PutTaxSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	var req taxSettings
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if req.PriceMode != TaxPriceModeExcluded && req.PriceMode != TaxPriceModeIncluded {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("price_mode must be %q or %q", TaxPriceModeExcluded, TaxPriceModeIncluded))
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, TaxPriceModeKey, req.PriceMode); err != nil {
+		return fmt.Errorf("settings: set tax price mode: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// resolveTaxIncluded reports whether the workspace's active company has
+// opted into tax-inclusive pricing (Settings -> Global settings -> Tax) —
+// false (tax-exclusive, the original behavior) when unset. Takes interfaces
+// (not *Handler) so ResolveTaxIncluded below can reuse it for callers
+// outside this package (sale/propertymanagement's own tax computation,
+// which needs the exact same effective value this package's own GET handler
+// resolves) without either module depending on auth's echo.Context plumbing.
+func resolveTaxIncluded(ctx context.Context, store settingStore, companies companyResolver, tenantID, userID uuid.UUID) (bool, error) {
+	active, err := companies.ResolveActive(ctx, tenantID, userID)
+	if err != nil {
+		return false, err
+	}
+	raw, ok, err := store.Get(ctx, tenantID, active.ID, TaxPriceModeKey)
+	if err != nil {
+		return false, err
+	}
+	return ok && raw == TaxPriceModeIncluded, nil
+}
+
+// ResolveTaxIncluded is resolveTaxIncluded's exported twin, taking concrete
+// types so sale/propertymanagement can call it without importing this
+// package's unexported interfaces.
+func ResolveTaxIncluded(ctx context.Context, store *Repository, companies *company.Repository, tenantID, userID uuid.UUID) (bool, error) {
+	return resolveTaxIncluded(ctx, store, companies, tenantID, userID)
+}
+
 // osmConnector is both the stored value of OSMConnectorKey and the
 // request/response body of GET|PUT /settings/integrations/osm.
 type osmConnector struct {

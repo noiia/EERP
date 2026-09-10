@@ -1519,3 +1519,106 @@ func TestPutOSMSettings(t *testing.T) {
 		})
 	}
 }
+
+// ── GET/PUT /settings/tax ──────────────────────────────────────────────────
+
+func TestGetTaxSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name  string
+		store *stubStore
+		want  taxSettings
+	}{
+		{"unset defaults to tax_excluded", &stubStore{}, taxSettings{PriceMode: TaxPriceModeExcluded}},
+		{
+			"configured tax_included",
+			&stubStore{values: map[string]string{TaxPriceModeKey: TaxPriceModeIncluded}},
+			taxSettings{PriceMode: TaxPriceModeIncluded},
+		},
+		{
+			"unrecognized stored value degrades to tax_excluded",
+			&stubStore{values: map[string]string{TaxPriceModeKey: "garbage"}},
+			taxSettings{PriceMode: TaxPriceModeExcluded},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			rec := serve(t, h.GetTaxSettings, http.MethodGet, "/settings/tax", "", identity)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+			}
+			var resp taxSettings
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp != tt.want {
+				t.Errorf("got %+v, want %+v", resp, tt.want)
+			}
+		})
+	}
+}
+
+func TestPutTaxSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantValue  string
+	}{
+		{
+			name:       "saves tax_included",
+			body:       `{"price_mode":"tax_included"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  TaxPriceModeIncluded,
+		},
+		{
+			name:       "saves tax_excluded",
+			body:       `{"price_mode":"tax_excluded"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  TaxPriceModeExcluded,
+		},
+		{
+			name:       "unrecognized price_mode rejected",
+			body:       `{"price_mode":"garbage"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "malformed body rejected",
+			body:       `not json`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			rec := serve(t, h.PutTaxSettings, http.MethodPut, "/settings/tax", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotKey != TaxPriceModeKey {
+				t.Errorf("key = %q, want %q", store.gotKey, TaxPriceModeKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
