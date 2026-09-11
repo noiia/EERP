@@ -240,8 +240,13 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
 /**
  * The current module's own top-bar header menus (Odoo-style "Orders / To
  * Invoice / Products / Configuration"), shown next to the breadcrumb — see
- * ModuleRegistry.headerMenus(). Renders nothing when the current route
- * belongs to no registered module (e.g. the menu or Settings).
+ * ModuleRegistry.headerMenus(). This Box is ALWAYS the Toolbar's one
+ * flex-growing item — even with no current module, so it keeps doing the
+ * spacer's job of pushing CompanySwitcher/UserMenu to the right (there is no
+ * separate spacer Box any more; a second flexGrow item here would each only
+ * get HALF the Toolbar's free width, which is exactly what made
+ * AppHeaderMenuBar measure its available space as too narrow and collapse to
+ * the phone-style icon even with plenty of room on screen).
  */
 function CurrentModuleHeaderMenus({
   menus,
@@ -252,11 +257,14 @@ function CurrentModuleHeaderMenus({
 }) {
   const moduleSlug = pathname.split('/').filter(Boolean)[0]
   const current = moduleSlug ? menus.find((m) => m.module === moduleSlug) : undefined
-  if (!current) return null
 
   return (
-    <Box component="nav" aria-label="module pages" sx={{ ml: 3, minWidth: 0, display: 'flex' }}>
-      <AppHeaderMenuBar menus={current.menus} />
+    <Box
+      component="nav"
+      aria-label="module pages"
+      sx={{ ml: current ? 3 : 0, minWidth: 0, flexGrow: 1, display: 'flex' }}
+    >
+      {current && <AppHeaderMenuBar menus={current.menus} />}
     </Box>
   )
 }
@@ -469,7 +477,6 @@ export function AppTopBar({
         <Toolbar variant="dense">
           <PathBreadcrumbs pathname={pathname} knownPaths={new Set(knownPaths)} />
           <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />
-          <Box sx={{ flexGrow: 1 }} />
           {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
           <UserMenu identity={identity} email={email} />
         </Toolbar>

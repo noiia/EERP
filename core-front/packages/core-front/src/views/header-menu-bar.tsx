@@ -3,7 +3,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import ListItemText from '@mui/material/ListItemText'
 import ListSubheader from '@mui/material/ListSubheader'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
@@ -88,7 +91,11 @@ function renderMenuEntries(
  * close delay so moving from the button into the menu doesn't dismiss it), same
  * "hover intent" shape UserMenu/CompanySwitcher don't need (click-only) but a
  * top menu bar does. Renders nothing once permission-filtering leaves it with
- * no entries at all. */
+ * no entries at all. A menu whose only permitted content is a single line
+ * (every auto-generated list/catalog/dashboard menu, e.g. CRM's own single
+ * Contacts view — see ModuleRegistry.headerMenus()) skips the dropdown
+ * entirely: the button itself navigates, since opening a menu to show one
+ * item identical to the button's own label adds a click for no information. */
 export function HeaderMenuButton({ menu }: { menu: HeaderMenu }) {
   const t = useT()
   const router = useRouter()
@@ -110,6 +117,8 @@ export function HeaderMenuButton({ menu }: { menu: HeaderMenu }) {
 
   if (entries.length === 0) return null
 
+  const onlyLine = entries.length === 1 && entries[0].kind === 'line' ? entries[0] : null
+
   function cancelClose() {
     if (closeTimer.current) clearTimeout(closeTimer.current)
   }
@@ -129,6 +138,18 @@ export function HeaderMenuButton({ menu }: { menu: HeaderMenu }) {
     setOpen(true)
   }
 
+  if (onlyLine) {
+    return (
+      <Button
+        color="inherit"
+        onClick={() => router.push(onlyLine.path)}
+        sx={{ fontWeight: 700, textTransform: 'none', whiteSpace: 'nowrap' }}
+      >
+        {t(menu.label)}
+      </Button>
+    )
+  }
+
   return (
     <Box onMouseEnter={openOnHover} onMouseLeave={scheduleClose} sx={{ display: 'inline-flex' }}>
       <Button
@@ -146,8 +167,13 @@ export function HeaderMenuButton({ menu }: { menu: HeaderMenu }) {
         open={open}
         onClose={close}
         disableRestoreFocus
+        // An explicit, slightly longer-than-default duration so hover-opening
+        // reads as a deliberate "drop" rather than an instant pop-in — MUI's
+        // Menu already animates via Grow (scales down from anchorOrigin, "top
+        // left" here) on every open/close, click or hover alike.
         slotProps={{
           list: { onMouseEnter: cancelClose, onMouseLeave: scheduleClose, dense: true },
+          transition: { timeout: { enter: 220, exit: 150 } },
         }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       >
@@ -330,6 +356,18 @@ export function AppHeaderMenuBar({ menus }: { menus: HeaderMenu[] }) {
                   <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
                     <Paper elevation={4} sx={{ minWidth: 220 }}>
                       <MenuList dense>
+                        {/* Explicit way back to the parent (title) list — the
+                            rail on the left does the same thing on click, but
+                            at phone width that rail is narrow/icon-only and
+                            easy to miss, so the submenu also gets its own
+                            unmissable return line on top. */}
+                        <MenuItem onClick={() => setPhase('overview')}>
+                          <ListItemIcon>
+                            <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-left']} size="sm" />
+                          </ListItemIcon>
+                          <ListItemText>{t('Back')}</ListItemText>
+                        </MenuItem>
+                        <Divider />
                         {renderMenuEntries(
                           permittedEntries(selected.entries, permissions),
                           t,

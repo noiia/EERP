@@ -60,12 +60,22 @@ const configurationMenu: HeaderMenu = {
 }
 
 describe('HeaderMenuButton', () => {
-  it('opens its dropdown on click and navigates on a line click', () => {
+  it('navigates directly on click for a single-line menu — no dropdown for a list of one', () => {
     setIdentity([])
     render(<HeaderMenuButton menu={productsMenu} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Products' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Products' }))
+    const button = screen.getByRole('button', { name: 'Products' })
+    expect(button).not.toHaveAttribute('aria-haspopup')
+    fireEvent.click(button)
     expect(pushMock).toHaveBeenCalledWith('/sale/products')
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
+  })
+
+  it('opens its dropdown on click and navigates on a line click, for a multi-entry menu', () => {
+    setIdentity([])
+    render(<HeaderMenuButton menu={configurationMenu} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configuration' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
+    expect(pushMock).toHaveBeenCalledWith('/settings/apps/sale')
   })
 
   it('renders a group as a labeled cluster of its own lines', () => {

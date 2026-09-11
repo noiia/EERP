@@ -271,7 +271,7 @@ describe('AppTopBar', () => {
     expect(breadcrumb.getByText('42')).toBeInTheDocument()
   })
 
-  it('shows the current module header menus next to the breadcrumb, each navigable through its dropdown', () => {
+  it('shows the current module header menus next to the breadcrumb, each navigable', () => {
     pathnameMock.mockReturnValue('/crm/list')
     render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
 
@@ -279,8 +279,9 @@ describe('AppTopBar', () => {
     expect(screen.getByRole('button', { name: 'List' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Configuration' })).toBeInTheDocument()
 
+    // A single-line menu (Dashboard/List here) navigates straight from the
+    // button — no dropdown for a list of exactly one item.
     fireEvent.click(screen.getByRole('button', { name: 'List' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'List' }))
     expect(pushMock).toHaveBeenCalledWith('/crm/list')
   })
 
@@ -329,10 +330,14 @@ describe('AppTopBar', () => {
     expect(setActiveCompanyMock).not.toHaveBeenCalled()
   })
 
-  it('shows no module nav for a route outside the registered modules', () => {
+  it('shows no header menu buttons for a route outside the registered modules', () => {
+    // The "module pages" nav landmark still renders (it doubles as the
+    // Toolbar's flex-grow spacer, keeping CompanySwitcher/UserMenu pinned
+    // right even off a module route) but stays empty — no header menus.
     pathnameMock.mockReturnValue('/settings')
     render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
-    expect(screen.queryByRole('navigation', { name: /module pages/i })).not.toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: /module pages/i })
+    expect(nav).toBeEmptyDOMElement()
   })
 
   it('is hidden without a session', () => {
