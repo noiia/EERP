@@ -73,7 +73,7 @@ exactly the lifecycle switch this store exists to make safe and auditable; every
    is honest about that, not a workaround for it.
 7. **The Views/Reports notebook pages are sourced from the FRONTEND's own build-time module
    registry, not from Go.** "Which paths does this module create or edit, and from which file"
-   is exactly what `moduleRegistry` already resolves for the top nav (`moduleNav()`) and Settings
+   is exactly what `moduleRegistry` already resolves for the top nav (`headerMenus()`) and Settings
    → Views (`treeViewEntities()`) — a `FrontModule`'s `routes` (created) and `extends` (edited),
    cross-referenced with `module.json`'s `static_files.views` (the file each default-exports
    from). Go's `/api/v1/modules` knows NONE of this — it only ever reads `module.json`. This
@@ -549,7 +549,8 @@ active-gate/self-protection/unknown-module coverage and the `module_dir`/appstor
 >    landing menu and catch-all route COULD gate live — but two other `moduleRegistry` readers
 >    were missed in that pass: `app/settings/views/page.tsx` (`treeViewEntities()`, the
 >    Kanban-status-field/Calendar-date-field picker) and `app/layout.tsx` (`moduleNav()`, the
->    top-bar's per-module Dashboard/List/Settings tabs). Both now filter on the same
+>    top-bar's per-module Dashboard/List/Settings tabs — since replaced by `headerMenus()`'s
+>    per-app dropdown menus, `core-front/CLAUDE.md`'s "Top-bar header menus" row). Both now filter on the same
 >    `activeModuleNames()` live read the landing menu uses — `treeViewEntities()` gained a
 >    `module` field (the owning module, from `RouteConfig.module`) so its caller has something to
 >    filter on; `layout.tsx`'s nav fetch is skipped entirely for an anonymous visitor (no session
