@@ -2,6 +2,7 @@ package sale
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 
 	"core/modules/warehouse"
@@ -166,11 +167,21 @@ func TestComputeLineTotal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotSubtotal, gotTotal := computeLineTotal(tt.base, tt.legacyRate, tt.taxes, tt.included)
-			if gotSubtotal != tt.wantSubtotal || gotTotal != tt.wantTotal {
+			if !almostEqual(gotSubtotal, tt.wantSubtotal) || !almostEqual(gotTotal, tt.wantTotal) {
 				t.Errorf("computeLineTotal() = (%v, %v), want (%v, %v)", gotSubtotal, gotTotal, tt.wantSubtotal, tt.wantTotal)
 			}
 		})
 	}
+}
+
+// almostEqual compares two float64 results within a tight tolerance —
+// computeLineTotal's included-mode division (e.g. 105.0/1.3) can land a
+// single ULP away from the same ratio computed as a Go constant expression
+// at compile time, even though both are "the same number" for money
+// purposes; exact equality is the wrong check for any floating-point result
+// built from a division.
+func almostEqual(a, b float64) bool {
+	return math.Abs(a-b) < 1e-9
 }
 
 // Regression: QuoteHandler.Create/Update bind the request body straight onto
