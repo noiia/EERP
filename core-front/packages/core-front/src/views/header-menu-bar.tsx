@@ -244,7 +244,6 @@ export function AppHeaderMenuBar({ menus }: { menus: HeaderMenu[] }) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
   function closeDrilldown() {
