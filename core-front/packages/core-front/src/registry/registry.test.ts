@@ -225,11 +225,11 @@ describe('ModuleRegistry.headerMenus', () => {
         menus: [
           {
             name: '/crm/dashboard',
-            label: 'Crm',
+            label: 'Dashboard',
             entries: [
               {
                 kind: 'line',
-                label: 'Crm',
+                label: 'Dashboard',
                 path: '/crm/dashboard',
                 permission: 'crm:contacts:read',
               },

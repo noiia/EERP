@@ -333,8 +333,11 @@ export class ModuleRegistry {
    * The top-bar header menus: every registered module paired with the Odoo-style
    * menu row it gets — one auto-generated menu per browsable route (`tree`/
    * `catalog`/`dashboard` viewType, unless `hideFromTopBar`), each opening a
-   * one-line dropdown pointing at itself (label from `navLabel` or a
-   * humanized `entity`), any OTHER named menu the module registered via
+   * one-line dropdown pointing at itself — label from `navLabel`, else the
+   * literal, translatable "Dashboard" for a `dashboard` route (the module's
+   * own landing view — conventionally the FIRST route, per core/CLAUDE.md's
+   * "dashboard route pulled out and put first"), else a humanized `entity`
+   * for `tree`/`catalog` — any OTHER named menu the module registered via
    * `registerHeaderMenu`, and — always last — a `Configuration` menu seeded
    * with a `Settings` line to this module's Settings -> Apps page, merged
    * with whatever `registerHeaderMenu(module, 'configuration', …)` added
@@ -352,7 +355,9 @@ export class ModuleRegistry {
       for (const route of module.routes) {
         const resolved = this.resolvedRoutes.get(route.path)?.descriptor ?? route.descriptor
         if (!HEADER_MENU_VIEW_TYPES.has(resolved.viewType) || resolved.hideFromTopBar) continue
-        const label = resolved.navLabel ?? humanizeEntity(resolved.entity)
+        const label =
+          resolved.navLabel ??
+          (resolved.viewType === 'dashboard' ? 'Dashboard' : humanizeEntity(resolved.entity))
         const permission = this.resolvedRoutes.get(route.path)?.permission ?? route.permission
         menus.push({
           name: route.path,
