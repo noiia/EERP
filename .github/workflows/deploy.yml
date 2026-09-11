@@ -1,0 +1,30 @@
+name: Deploy
+
+# Rolls out an already-published release to the server. Deliberately
+# decoupled from test-build.yml's push-triggered image builds: pushes to
+# main/dev build and publish images to ghcr.io on every green build, but
+# nothing touches the live server until a GitHub Release is actually
+# published — that's the one deliberate signal gating this job.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Binds the GitHub Environment so its secrets/vars (DEPLOY_HOST,
+    # DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH) are in scope below, and lets
+    # required-reviewer/protection rules be attached to a production deploy
+    # (Settings -> Environments) without touching this file.
+    environment: production
+    steps:
+      - name: SSH in and roll out the release
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: cd ${{ vars.DEPLOY_PATH }} && docker compose pull && docker compose up -d

@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-front garage-init deploy
+.PHONY: rebuild-and-run clean build run run-back run-front garage-init
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -53,7 +53,3 @@ logs:
 garage-init:
 	docker compose up -d garage
 	bash $(root)/infra/garage/init.sh
-
-# Pulls the latest released images and recreates whatever changed.
-deploy:
-	sh $(root)/infra/deploy.sh
