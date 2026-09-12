@@ -50,6 +50,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      nats:
+        condition: service_healthy
 
   core-front:
     container_name: frontend
@@ -82,9 +84,12 @@ services:
   # default (no profile) so `docker compose up -d --build` alone is enough for report
   # generation to work — was profile-gated ("pdf") until report generation became a
   # regularly-used dev feature (rent receipts) and 502s from a missing pdf-service were
-  # a recurring surprise. Scale with `docker compose up -d --build --scale pdf-service=N`
-  # if needed (Phase 5's NATS worker mode). No container_name: a static name would
-  # collide across replicas. nats (below) starts alongside it unconditionally too.
+  # a recurring surprise. core-back now reaches it exclusively over NATS (Phase 5,
+  # see eerp-config.docker.json's nats_url) rather than direct HTTP — this replica's
+  # own HTTP server still runs too (its healthcheck below uses it), but core no longer
+  # calls it directly. Scale with `docker compose up -d --build --scale pdf-service=N`;
+  # N replicas subscribed to the same NATS queue group are competing consumers with
+  # zero code change. No container_name: a static name would collide across replicas.
   pdf-service:
     build:
       context: .
@@ -103,10 +108,10 @@ services:
       retries: 5
 
   # Message broker fronting pdf-service replicas for horizontal scaling
-  # (docs/roadmaps/pdf-reports.md Phase 5) — only used when core's own config sets
-  # nats_url (unset by default: the HTTP path from Phase 1-4 keeps working with zero
-  # extra infra, see eerp-config.docker.json). Started unconditionally alongside
-  # pdf-service anyway, so switching a deployment to NATS mode is a config-only change.
+  # (docs/roadmaps/pdf-reports.md Phase 5) — core-back's eerp-config.docker.json sets
+  # nats_url, so this is the active default render path, not an opt-in one; the direct
+  # HTTP path from Phase 1-4 (pdf_service_url) still exists in code and still works if
+  # nats_url is ever cleared, but isn't what a fresh `docker compose up` uses anymore.
   # Default max_payload (1MB) is plenty for the reports measured so far (10-60KB) —
   # nats-server only takes max_payload from a config file, not a CLI flag, so raising it
   # later means mounting one, not just editing this command.

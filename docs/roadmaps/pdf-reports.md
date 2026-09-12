@@ -321,10 +321,13 @@ PDF of it.
 
 > Implementation notes: built ahead of an actually-observed bottleneck, at explicit request
 > — the "deferred until needed" framing below is the ORIGINAL v1 reasoning (ADR-010
-> decision 3), kept as-written since it's still the right default advice for a fresh
-> deployment; NATS is opt-in (`nats_url` unset by default in both `eerp-config.json` and
-> `eerp-config.docker.json` — the HTTP path from Phases 1-4 is untouched and stays the
-> default).
+> decision 3, amended 2026-09). **Update (2026-09): NATS is now the default in the Docker
+> Compose deployment** — `eerp-config.docker.json` sets `nats_url` (`nats://nats:4222`), so
+> `docker compose up` routes every render through NATS request-reply out of the box. Local,
+> non-Compose dev (`eerp-config.json`, `make run-back`) still defaults to the direct HTTP path
+> (`pdf_service_url`) since there's no `nats` container running there unless started
+> separately — the HTTP path from Phases 1-4 is untouched and remains available in both
+> configs (NATS wins over HTTP only when `nats_url` is actually set).
 >
 > `PDFRenderer` (`core/internal/reports/renderer.go`) is unchanged — `natsPDFRenderer`
 > (`nats_renderer.go`) satisfies the exact same interface as `httpPDFRenderer`, so

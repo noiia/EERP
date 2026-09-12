@@ -150,12 +150,21 @@ flowchart LR
     Front -->|"BFF: server-side fetch"| Back
     Back --> DB[("PostgreSQL")]
     Back --> Garage[("Garage / S3")]
-    Back -->|"HTTP, or publish reports.render"| NATS(("NATS"))
+    Back -->|"publish reports.render (default, nats_url)"| NATS(("NATS"))
+    Back -.->|"direct HTTP fallback if nats_url unset"| PDF1
     NATS -->|"queue group: pdf-workers"| PDF1["pdf-service"]
     NATS -.->|"scale out"| PDF2["pdf-service (replica N)"]
 ```
 
-`core-back` reaches `pdf-service` (`tools/pdf-service/`) either directly over HTTP (`pdf_service_url`, the zero-extra-infra default) or, once `nats_url` is configured, by publishing a render request onto NATS instead — the latter is what lets `pdf-service` run as a horizontally-scaled pool of stateless worker replicas in the same `reports.render` queue group, load-balanced by NATS itself rather than any code in `core` (see `internal/reports/` above and `docs/adr/ADR-010-pdf-report-generation.md`).
+`core-back` reaches `pdf-service` (`tools/pdf-service/`) by publishing a render request onto NATS
+(`nats_url`) — this is what `eerp-config.docker.json` sets, so it's the default in the Docker
+Compose deployment, and what lets `pdf-service` run as a horizontally-scaled pool of stateless
+worker replicas in the same `reports.render` queue group, load-balanced by NATS itself rather than
+any code in `core`. The direct-HTTP path (`pdf_service_url`) still exists and still works — it's
+what local, non-Compose dev (`eerp-config.json`, `make run-back`) uses instead, since there's no
+`nats` container running there unless started separately — but NATS wins whenever `nats_url` is
+set, since setting it names real intent (see `internal/reports/` above and
+`docs/adr/ADR-010-pdf-report-generation.md`).
 
 ## Conventions
 
