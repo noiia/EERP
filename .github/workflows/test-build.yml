@@ -38,15 +38,19 @@ permissions:
 
 jobs:
   # 0. Which image(s) actually need rebuilding — compares against the base of
-  # the push/PR (dorny/paths-filter resolves that itself via the GitHub API,
-  # no checkout needed). Filter/output names are kept hyphen-free
-  # (`core_front`/`pdf_service`) since GitHub Actions expression dot-notation
-  # can't address a hyphenated property name. `core_front` also reacts to
-  # `core/modules/**` and the root `eerp-config.json`: the frontend image's
-  # own build (core-front/Dockerfile's "modules" stage) copies each module's
-  # views/reports/i18n files and reads eerp-config.json to discover them — a
-  # module's frontend contribution is genuinely part of that image even
-  # though it lives under core/.
+  # the push/PR. dorny/paths-filter resolves that via the GitHub API (no
+  # checkout needed) only for `pull_request` events; a `push` event needs a
+  # real local git history to diff against the base commit, so this job
+  # checks out first (fetch-depth: 0 — cheap for this repo's size, and avoids
+  # paths-filter failing to find the base commit in a shallow clone). Filter/
+  # output names are kept hyphen-free (`core_front`/`pdf_service`) since
+  # GitHub Actions expression dot-notation can't address a hyphenated
+  # property name. `core_front` also reacts to `core/modules/**` and the root
+  # `eerp-config.json`: the frontend image's own build (core-front/
+  # Dockerfile's "modules" stage) copies each module's views/reports/i18n
+  # files and reads eerp-config.json to discover them — a module's frontend
+  # contribution is genuinely part of that image even though it lives under
+  # core/.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -54,6 +58,9 @@ jobs:
       core_front: ${{ steps.filter.outputs.core_front }}
       pdf_service: ${{ steps.filter.outputs.pdf_service }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
