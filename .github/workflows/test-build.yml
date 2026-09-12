@@ -1,13 +1,19 @@
 name: Test & Build
 
 # Top-level pipeline: run the test + coverage checks, then (only if they pass)
-# build and publish the backend and frontend Docker images to ghcr.io.
+# build and publish whichever Docker image(s) actually changed to ghcr.io —
+# each image only rebuilds when the code it's actually built FROM changed
+# since the last push (the `changes` job below), so an unrelated change
+# (e.g. only core-front/ touched) never produces a redundant, identical
+# core/pdf-service image.
 #
 # It is the "summary" workflow wiring the reusable pieces together:
-#   - test-check.yml         (Go + frontend tests and coverage)
-#   - build-core.yml         (backend image -> ghcr)
-#   - build-core-front.yml   (frontend image -> ghcr)
-#   - build-pdf-service.yml  (PDF worker image -> ghcr)
+#   - test-check.yml         (Go + frontend tests and coverage — always runs)
+#   - build-core.yml         (backend image -> ghcr, only if `core` changed)
+#   - build-core-front.yml   (frontend image -> ghcr, only if `core_front` changed)
+#   - build-pdf-service.yml  (PDF worker image -> ghcr, only if `pdf_service` changed)
+# `workflow_dispatch` always builds all three regardless of what changed —
+# an explicit manual trigger is itself the "I want an image" signal.
 on:
   push:
     branches: [main, dev]
@@ -31,31 +37,64 @@ permissions:
   packages: write
 
 jobs:
+  # 0. Which image(s) actually need rebuilding — compares against the base of
+  # the push/PR (dorny/paths-filter resolves that itself via the GitHub API,
+  # no checkout needed). Filter/output names are kept hyphen-free
+  # (`core_front`/`pdf_service`) since GitHub Actions expression dot-notation
+  # can't address a hyphenated property name. `core_front` also reacts to
+  # `core/modules/**` and the root `eerp-config.json`: the frontend image's
+  # own build (core-front/Dockerfile's "modules" stage) copies each module's
+  # views/reports/i18n files and reads eerp-config.json to discover them — a
+  # module's frontend contribution is genuinely part of that image even
+  # though it lives under core/.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      core_front: ${{ steps.filter.outputs.core_front }}
+      pdf_service: ${{ steps.filter.outputs.pdf_service }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'core/**'
+            core_front:
+              - 'core-front/**'
+              - 'core/modules/**'
+              - 'eerp-config.json'
+            pdf_service:
+              - 'tools/pdf-service/**'
+
   # 1. Gate: reuse the exact same checks PRs run.
   test:
     uses: ./.github/workflows/test-check.yml
 
-  # 2a. Backend image (waits on green tests).
+  # 2a. Backend image — only when core/ changed (or a manual dispatch).
   build-core:
-    needs: test
+    needs: [test, changes]
+    if: needs.changes.outputs.core == 'true' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/build-core.yml
     with:
       image_tag: ${{ inputs.image_tag || 'latest' }}
       environment: ${{ inputs.environment || 'build' }}
     secrets: inherit
 
-  # 2b. Frontend image (waits on green tests).
+  # 2b. Frontend image — only when core-front (or a module it bundles) changed.
   build-core-front:
-    needs: test
+    needs: [test, changes]
+    if: needs.changes.outputs.core_front == 'true' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/build-core-front.yml
     with:
       image_tag: ${{ inputs.image_tag || 'latest' }}
       environment: ${{ inputs.environment || 'build' }}
     secrets: inherit
 
-  # 2c. PDF worker image (waits on green tests).
+  # 2c. PDF worker image — only when tools/pdf-service/ changed.
   build-pdf-service:
-    needs: test
+    needs: [test, changes]
+    if: needs.changes.outputs.pdf_service == 'true' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/build-pdf-service.yml
     with:
       image_tag: ${{ inputs.image_tag || 'latest' }}
