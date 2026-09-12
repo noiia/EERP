@@ -102,7 +102,11 @@ type AccountRoleTypes struct {
 // RoleViewPermission is one row of a role's "which views it can see" table —
 // the Role form's own first notebook page (roleFormDescriptor). Entity names
 // a frontend view by its Go route prefix, the same bare-string convention
-// internal/savedfilter.SavedFilter.Entity already uses; its own `rights`
+// internal/savedfilter.SavedFilter.Entity already uses — still just a plain
+// string column, but picked in the frontend from a live catalog of every
+// generic-CRUD-registered route prefix (GET /api/v1/views,
+// internal/settings.GetViewCatalog) rather than freehand typed, so it always
+// reflects this deployment's compiled-in modules. Its own `rights`
 // many2many (RoleViewPermissionRight, below) tags which of
 // deny/read/write/delete this role holds on it. Rides the generic CRUD
 // surface so the embedded RelationListWidget table needs no bespoke

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 
 	"core/internal/auth"
 	"core/internal/company"
@@ -871,6 +872,36 @@ func (h *Handler) PutAccountsSettings(c echo.Context) error {
 		return fmt.Errorf("settings: set accounts settings: %w", err)
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// viewCatalogEntry is one row of GET /api/v1/views. id and name are both the
+// entity's own route prefix (RoleViewPermission.Entity/internal/savedfilter.
+// SavedFilter.Entity's bare-string convention) — there is no separate
+// friendly label, and admins configuring role rights already read raw entity
+// names elsewhere on the same form.
+type viewCatalogEntry struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetViewCatalog handles GET /api/v1/views — the catalog backing the Role
+// form's "Views" table (RoleViewPermission.Entity, a many2one in the
+// frontend descriptor). Lists every entity on the generic CRUD surface
+// (core/orm.ExposedRoutePrefixes), i.e. exactly what this deployment's
+// compiled-in modules registered — DATA MODEL AND UI ONLY, like
+// RoleViewPermission itself: this is a read-only lookup, not a writable
+// resource, so no POST is mounted (a caller hitting the relation widget's
+// "Create a new view" affordance gets a plain 404 through the normal error
+// pipeline rather than a crash). Mounted behind the permission middleware,
+// which derives views:views:read from the route.
+func (h *Handler) GetViewCatalog(c echo.Context) error {
+	prefixes := orm.ExposedRoutePrefixes()
+	sort.Strings(prefixes)
+	data := make([]viewCatalogEntry, 0, len(prefixes))
+	for _, p := range prefixes {
+		data = append(data, viewCatalogEntry{ID: p, Name: p})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"data": data, "total": len(data)})
 }
 
 // taxSettings is both the stored value of TaxPriceModeKey and the

@@ -49,6 +49,21 @@ func ExposedTableNames() []string {
 	return names
 }
 
+// ExposedRoutePrefixes returns the URL route prefix (registry.TableMeta.
+// RoutePrefix — the actual `/api/v1/<prefix>` segment, normally identical to
+// the table name but overridable per api.yaml) of every table on the generic
+// HTTP CRUD surface. Backs internal/settings' GET /api/v1/views catalog: the
+// list of "views" a role's rights table (RoleViewPermission) can point at,
+// reflecting exactly what this deployment's compiled-in modules registered.
+func ExposedRoutePrefixes() []string {
+	all := registry.All()
+	prefixes := make([]string, len(all))
+	for i, m := range all {
+		prefixes[i] = m.RoutePrefix
+	}
+	return prefixes
+}
+
 // MigrationFieldsForTable returns the column DDL descriptors for a registered
 // table, derived from the struct's reflect.Type metadata.
 // Returns false when the table has not been registered yet.

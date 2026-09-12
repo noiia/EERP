@@ -79,6 +79,18 @@ describe('Settings → Users descriptors', () => {
     expect(field?.relation?.formPath).toBe('/settings/users/roles/rights/:id')
   })
 
+  it('picks the view from the live catalog, rights from a many2many tag', () => {
+    const entityField = roleViewPermissionFormDescriptor.fields.find((f) => f.name === 'entity')
+    expect(entityField?.type).toBe('relation')
+    expect(entityField?.relation?.kind).toBe('many2one')
+    expect(entityField?.relation?.entity).toBe('views')
+
+    const rightsField = roleViewPermissionFormDescriptor.fields.find((f) => f.name === 'rights')
+    expect(rightsField?.type).toBe('relation')
+    expect(rightsField?.relation?.kind).toBe('many2many')
+    expect(rightsField?.relation?.entity).toBe('account_role_types')
+  })
+
   it('guards every view with the derived admin permissions', () => {
     expect(usersListDescriptor.permissions).toContain('users:users:read')
     expect(userFormDescriptor.permissions).toContain('users:users:read')

@@ -181,7 +181,19 @@ export const roleViewPermissionFormDescriptor: ViewDescriptor<AdminRecord> = {
       required: true,
       relation: { entity: 'roles', kind: 'many2one', labelField: 'name' },
     },
-    { name: 'entity', label: 'View', type: 'text', required: true },
+    {
+      // Picked from the live catalog of every generic-CRUD-registered
+      // entity (GET /api/v1/views, core/internal/settings.GetViewCatalog) —
+      // reflects exactly what's installed/compiled into this deployment,
+      // rather than a freehand-typed string. Still just a plain string
+      // column server-side (id === name in the catalog, both the entity's
+      // own route prefix), so no migration or shape change was needed.
+      name: 'entity',
+      label: 'View',
+      type: 'relation',
+      required: true,
+      relation: { entity: 'views', kind: 'many2one', labelField: 'name' },
+    },
     {
       name: 'rights',
       label: 'Rights',

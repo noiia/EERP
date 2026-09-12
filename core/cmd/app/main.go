@@ -407,6 +407,14 @@ func main() {
 	modulesGroup.POST("/:id/reload", modulesHandler.Reload)
 	modulesGroup.GET("/:id/logs", modulesHandler.Logs)
 
+	// The catalog of "views" (entities) a role's rights table can point at
+	// (RoleViewPermission.Entity, a many2one in the frontend descriptor) —
+	// read-only, computed live from core/orm's registry, so it always
+	// reflects this deployment's compiled-in modules. The permission
+	// middleware derives views:views:read from the route.
+	viewsGroup := srv.Echo().Group("/api/v1/views", jwtMw, permMw)
+	viewsGroup.GET("", settingsHandler.GetViewCatalog)
+
 	// ── Users / roles administration ──────────────────────────────────────────
 	// The auth tables are excluded from the generic CRUD surface; these dedicated,
 	// field-whitelisting endpoints are the only HTTP path to them. The permission

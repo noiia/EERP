@@ -12,6 +12,7 @@ import (
 	"core/internal/auth"
 	"core/internal/company"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -1620,5 +1621,52 @@ func TestPutTaxSettings(t *testing.T) {
 				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
 			}
 		})
+	}
+}
+
+// viewCatalogFixture is a throwaway table registered only so TestGetViewCatalog
+// has at least one deterministic entry to assert against, alongside whatever
+// this test binary's own package imports happened to register.
+type viewCatalogFixture struct {
+	model.BaseModel
+}
+
+func TestGetViewCatalog(t *testing.T) {
+	const fixturePrefix = "zzz_view_catalog_fixture"
+	if err := orm.Register[viewCatalogFixture](orm.WithTableName(fixturePrefix)); err != nil {
+		t.Fatalf("register fixture: %v", err)
+	}
+
+	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{})
+	rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views", "", auth.Identity{UserID: uuid.New(), TenantID: uuid.New()})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data  []viewCatalogEntry `json:"data"`
+		Total int                `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Total != len(resp.Data) {
+		t.Errorf("total = %d, want len(data) = %d", resp.Total, len(resp.Data))
+	}
+
+	found := false
+	for i, entry := range resp.Data {
+		if entry.ID != entry.Name {
+			t.Errorf("entry %d: id = %q, name = %q, want equal", i, entry.ID, entry.Name)
+		}
+		if entry.ID == fixturePrefix {
+			found = true
+		}
+		if i > 0 && resp.Data[i-1].ID > entry.ID {
+			t.Errorf("entries not sorted: %q before %q", resp.Data[i-1].ID, entry.ID)
+		}
+	}
+	if !found {
+		t.Errorf("data = %+v, want an entry for %q", resp.Data, fixturePrefix)
 	}
 }
