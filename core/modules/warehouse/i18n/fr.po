@@ -1,0 +1,10 @@
+# warehouse — fr. Exported from Settings → Translations.
+# Save as i18n/fr.po inside the 'warehouse' module folder and rebuild.
+msgid ""
+msgstr ""
+"Project-Id-Version: warehouse\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Name"
+msgstr "Nom"

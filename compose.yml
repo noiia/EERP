@@ -1,9 +1,182 @@
 services:
   db:
     image: postgres:18
+    container_name: db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: poc
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3-compatible object storage for the picture service (see infra/garage/README.md).
+  # Starts empty: run `make garage-init` once to create the layout, dev key and bucket.
+  garage:
+    image: dxflrs/garage:v2.3.0
+    container_name: garage
+    environment:
+      RUST_LOG: garage=warn,garage_api_admin=warn
+    volumes:
+      - ./infra/garage/garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    ports:
+      # Host 3910 (3900 is commonly taken by other garage instances); in-network
+      # clients still use garage:3900. Kept host-reachable (unlike core-back/core-front,
+      # which the api-gateway now fronts exclusively) because host-native dev tooling —
+      # `make run-back-tests`, a native `go run`/`go test` — talks to it directly via
+      # eerp-config.json's s3_endpoint, same as db's fixed 5432 mapping above.
+      - "3910:3900"
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  core-back:
+    container_name: backend
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+    volumes:
+      - ./eerp-config.docker.json:/app/eerp-config.json:ro
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  core-front:
+    container_name: frontend
+    build:
+      context: .
+      dockerfile: core-front/Dockerfile
+      args:
+        API_BASE: "http://core-back:8080"
+        API_VERSION: "1"
+    environment:
+      # The api-gateway now terminates TLS on :443 (infra/nginx/nginx.conf) — Secure
+      # cookies work, so no COOKIE_SECURE override is needed; it falls back to its
+      # NODE_ENV=production default (true). Set COOKIE_SECURE: "false" here again
+      # if the gateway ever goes back to serving the app over plain HTTP only.
+      # The standalone image always runs with NODE_ENV=production (next start requires
+      # it), even for this local/dev compose stack — so the Settings > Developer seed
+      # tool's NODE_ENV-derived guard would stay permanently disabled here otherwise.
+      # This stack is dev-only, so opt back in explicitly. Never set this against a real
+      # tenant deployment.
+      ALLOW_DEMO_SEED: "true"
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      core-back:
+        condition: service_started
+
+  # Standalone PDF renderer (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Started by
+  # default (no profile) so `docker compose up -d --build` alone is enough for report
+  # generation to work — was profile-gated ("pdf") until report generation became a
+  # regularly-used dev feature (rent receipts) and 502s from a missing pdf-service were
+  # a recurring surprise. core-back now reaches it exclusively over NATS (Phase 5,
+  # see eerp-config.docker.json's nats_url) rather than direct HTTP — this replica's
+  # own HTTP server still runs too (its healthcheck below uses it), but core no longer
+  # calls it directly. Scale with `docker compose up -d --build --scale pdf-service=N`;
+  # N replicas subscribed to the same NATS queue group are competing consumers with
+  # zero code change. No container_name: a static name would collide across replicas.
+  pdf-service:
+    build:
+      context: .
+      dockerfile: tools/pdf-service/Dockerfile
+    environment:
+      NATS_URL: nats://nats:4222
+    expose:
+      - "8090"
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8090/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Message broker fronting pdf-service replicas for horizontal scaling
+  # (docs/roadmaps/pdf-reports.md Phase 5) — core-back's eerp-config.docker.json sets
+  # nats_url, so this is the active default render path, not an opt-in one; the direct
+  # HTTP path from Phase 1-4 (pdf_service_url) still exists in code and still works if
+  # nats_url is ever cleared, but isn't what a fresh `docker compose up` uses anymore.
+  # Default max_payload (1MB) is plenty for the reports measured so far (10-60KB) —
+  # nats-server only takes max_payload from a config file, not a CLI flag, so raising it
+  # later means mounting one, not just editing this command.
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats
+    expose:
+      - "4222"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: provisions api-gateway's self-signed TLS cert into the
+  # gateway-certs volume (infra/nginx/gen-certs.sh) BEFORE nginx starts, so
+  # `docker compose up` alone gets working HTTPS/HTTP2 with no separate manual
+  # step — idempotent (skips regenerating if the cert already exists in the
+  # volume from a previous run), same "no missing-piece surprise" posture
+  # pdf-service above takes. Exits after running; api-gateway waits on its
+  # successful completion via depends_on below.
+  gateway-certs:
+    image: alpine:3.20
+    container_name: gateway-certs
+    volumes:
+      - ./infra/nginx/gen-certs.sh:/gen-certs.sh:ro
+      - gateway-certs:/certs
+    entrypoint: ["sh", "/gen-certs.sh"]
+    restart: "no"
+
+  api-gateway:
+    image: nginx:1.31-alpine
+    container_name: api-gateway
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /run
+      - /tmp
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - gateway-certs:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      core-front:
+        condition: service_started
+      gateway-certs:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  garage-meta:
+  garage-data:
+  gateway-certs:

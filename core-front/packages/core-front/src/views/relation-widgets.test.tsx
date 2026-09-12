@@ -1,0 +1,590 @@
+import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
+import Typography from '@mui/material/Typography'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+
+// RelationListWidget navigates via the App Router when relation.formPath is declared.
+const pushMock = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
+}))
+
+import type { FieldDescriptor } from './descriptor'
+import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
+import { fieldWidget, type WidgetProps } from './widgets'
+
+// Relation widgets against stubbed RelationOps (the bound Server Actions the
+// host provides): search set/unset, wizard select round-trip, tags add/remove
+// over junction fixtures, o2m scoped rows.
+
+const companies: RelationRecord[] = [
+  { id: 'c1', name: 'Acme', status: 'customer' },
+  { id: 'c2', name: 'Globex', status: 'lead' },
+]
+
+function stubOps(overrides: Partial<RelationOps> = {}): RelationOps {
+  return {
+    list: vi.fn(async () => companies),
+    get: vi.fn(async (_entity: string, id: string) => companies.find((c) => c.id === id) ?? { id }),
+    create: vi.fn(async (_entity: string, body: Record<string, unknown>) => ({ id: 'j-new', ...body })),
+    remove: vi.fn(async () => undefined),
+    ...overrides,
+  }
+}
+
+function Harness({
+  field,
+  ops,
+  onChange,
+  initialValue,
+  recordId,
+}: {
+  field: FieldDescriptor
+  ops: RelationOps
+  onChange: (next: unknown) => void
+  initialValue: unknown
+  recordId: string | null
+}) {
+  const [value, setValue] = useState<unknown>(initialValue)
+  const Widget = fieldWidget(field)
+  return (
+    <RelationOpsProvider ops={ops}>
+      <Widget
+        field={field}
+        value={value}
+        onChange={(next) => {
+          onChange(next)
+          setValue(next)
+        }}
+        entity="crm"
+        recordId={recordId}
+      />
+    </RelationOpsProvider>
+  )
+}
+
+function renderWidget(
+  field: FieldDescriptor,
+  ops: RelationOps,
+  props: Partial<WidgetProps> = {},
+) {
+  const onChange = vi.fn()
+  render(
+    <Harness
+      field={field}
+      ops={ops}
+      onChange={onChange}
+      initialValue={props.value ?? null}
+      recordId={props.recordId !== undefined ? props.recordId : 'r1'}
+    />,
+  )
+  return { onChange }
+}
+
+const searchField: FieldDescriptor = {
+  name: 'contact_id',
+  label: 'Company',
+  type: 'relation',
+  relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+}
+
+const tagsField: FieldDescriptor = {
+  name: 'tags',
+  label: 'Tags',
+  type: 'relation',
+  relation: { entity: 'tag', kind: 'many2many', via: 'crm_tag', labelField: 'name' },
+}
+
+const listField: FieldDescriptor = {
+  name: 'crm_records',
+  label: 'CRM records',
+  type: 'relation',
+  relation: { entity: 'crm', kind: 'one2many', inverseField: 'contact_id', labelField: 'name' },
+}
+
+describe('relation/search (many2one)', () => {
+  it('searches the related entity and sets the FK on pick', async () => {
+    const ops = stubOps()
+    const { onChange } = renderWidget(searchField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+
+    // Debounced server-side search (Go authorizes; no client re-filtering).
+    // 6 result rows — the create line is the dropdown's 7th entry.
+    await waitFor(() =>
+      expect(ops.list).toHaveBeenCalledWith('contact', {
+        search: { name: 'ac' },
+        pageSize: 6,
+      }),
+    )
+    fireEvent.click(await screen.findByText('Acme'))
+    expect(onChange).toHaveBeenCalledWith('c1')
+    // The picked record renders as a tag.
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+  })
+
+  it('renders the current FK as a tag and unlinks to null from its cross', async () => {
+    const ops = stubOps()
+    const { onChange } = renderWidget(searchField, ops, { value: 'c2' })
+
+    // Label resolved through ops.get (the value is only the FK).
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    expect(ops.get).toHaveBeenCalledWith('contact', 'c2')
+
+    const tag = screen.getByText('Globex').closest('.MuiChip-root')!
+    fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+    expect(onChange).toHaveBeenCalledWith(null)
+    // Unlinked: back to the search input.
+    expect(await screen.findByRole('combobox')).toBeInTheDocument()
+  })
+
+  it('create-from-search: the last option creates the record and sets the FK', async () => {
+    const created = { id: 'c-new', name: 'Initech' }
+    const ops = stubOps({ create: vi.fn(async () => created) })
+    const { onChange } = renderWidget(searchField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'Initech' } })
+
+    // The 7th line, under the (up to 6) result rows.
+    fireEvent.click(await screen.findByText('Create a new Contact'))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Create a new Contact')
+
+    // No form view is registered for 'contact' here → the labelField fallback
+    // form, prefilled with the typed search text.
+    const nameInput = within(dialog).getByDisplayValue('Initech')
+    fireEvent.change(nameInput, { target: { value: 'Initech Ltd' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(ops.create).toHaveBeenCalledWith('contact', expect.objectContaining({ name: 'Initech Ltd' })),
+    )
+    // The new record becomes the FK, exactly like a pick.
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('c-new'))
+  })
+
+  it('wizard: opens from the link icon, picking a row sets the value', async () => {
+    const ops = stubOps()
+    const { onChange } = renderWidget(searchField, ops)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open selection wizard' }))
+    expect(await screen.findByText('Select a record')).toBeInTheDocument()
+
+    // The grid lists the related records; row click = select.
+    fireEvent.click(await screen.findByText('Globex'))
+    expect(onChange).toHaveBeenCalledWith('c2')
+    await waitFor(() => expect(screen.queryByText('Select a record')).not.toBeInTheDocument())
+  })
+
+  it('hideLabel: true suppresses the caption but the search input still works', async () => {
+    const ops = stubOps()
+    renderWidget({ ...searchField, hideLabel: true }, ops)
+    expect(screen.queryByText('Company')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toBeInTheDocument()
+  })
+})
+
+describe('relation/tags (many2many)', () => {
+  const junctions: RelationRecord[] = [
+    { id: 'j1', crm_id: 'r1', tag_id: 'c1' },
+    { id: 'j2', crm_id: 'r1', tag_id: 'c2' },
+  ]
+
+  it('loads junction rows as tags and unlinks by deleting the junction row', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) =>
+        entity === 'crm_tag' ? junctions : companies,
+      ),
+    })
+    renderWidget(tagsField, ops)
+
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    // Junction read is scoped to this record via the convention columns.
+    expect(ops.list).toHaveBeenCalledWith('crm_tag', {
+      filter: { crm_id: 'r1' },
+      pageSize: 100,
+    })
+
+    const tag = screen.getByText('Acme').closest('.MuiChip-root')!
+    fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+    await waitFor(() => expect(ops.remove).toHaveBeenCalledWith('crm_tag', 'j1'))
+    await waitFor(() => expect(screen.queryByText('Acme')).not.toBeInTheDocument())
+  })
+
+  it('adds a link by creating a junction row from the search input', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) =>
+        entity === 'crm_tag' ? [] : companies,
+      ),
+    })
+    renderWidget(tagsField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'glo' } })
+    fireEvent.click(await screen.findByText('Globex'))
+
+    await waitFor(() =>
+      expect(ops.create).toHaveBeenCalledWith('crm_tag', { crm_id: 'r1', tag_id: 'c2' }),
+    )
+    // The new link renders as a tag.
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+  })
+
+  it('create-from-search: the last option creates the tag AND its junction row', async () => {
+    const create = vi.fn(async (entity: string, body: Record<string, unknown>) =>
+      entity === 'tag' ? { id: 't-new', ...body } : { id: 'j-new', ...body },
+    )
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) =>
+        entity === 'crm_tag' ? [] : companies,
+      ),
+      create,
+    })
+    renderWidget(tagsField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'vip' } })
+    fireEvent.click(await screen.findByText('Create a new Tag'))
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    // First the tag itself (labelField prefilled with the typed text), then the
+    // junction row linking it to this record.
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith('tag', expect.objectContaining({ name: 'vip' })),
+    )
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith('crm_tag', { crm_id: 'r1', tag_id: 't-new' }),
+    )
+    expect(await screen.findByText('vip')).toBeInTheDocument()
+  })
+
+  it('shows a hint before the record exists', () => {
+    renderWidget(tagsField, stubOps(), { recordId: null })
+    expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
+  })
+
+  it('resolves every linked tag in ONE batched list call, never one get() per row (was N+1)', async () => {
+    const listMock = vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies))
+    const ops = stubOps({ list: listMock })
+    renderWidget(tagsField, ops)
+
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    // Exactly two calls total: junctions, then the batched related lookup —
+    // regardless of how many rows were linked.
+    expect(listMock).toHaveBeenCalledTimes(2)
+    expect(listMock).toHaveBeenCalledWith('tag', { in: { id: ['c1', 'c2'] }, pageSize: 100 })
+    expect(ops.get).not.toHaveBeenCalled()
+  })
+
+  it('a dangling junction (related record deleted) keeps the id as its own placeholder', async () => {
+    const danglingJunctions: RelationRecord[] = [
+      { id: 'j1', crm_id: 'r1', tag_id: 'c1' },
+      { id: 'j2', crm_id: 'r1', tag_id: 'missing' },
+    ]
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? danglingJunctions : companies)),
+    })
+    renderWidget(tagsField, ops)
+
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findByText('missing')).toBeInTheDocument()
+  })
+
+  it('hideLabel: true suppresses the caption but tags still render', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+    })
+    renderWidget({ ...tagsField, hideLabel: true }, ops)
+    expect(screen.queryByText('Tags')).not.toBeInTheDocument()
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+  })
+
+  describe('widgetOptions.deferred — stage instead of writing junction rows immediately', () => {
+    const deferredTagsField: FieldDescriptor = {
+      ...tagsField,
+      widgetOptions: { deferred: true },
+    }
+
+    it('adding a tag stages it (onChange with a pending diff) instead of calling ops.create', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'glo' } })
+      fireEvent.click(await screen.findByText('Globex'))
+
+      expect(await screen.findByText('Globex')).toBeInTheDocument()
+      expect(ops.create).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenCalledWith({
+        toLink: [{ id: 'c2', name: 'Globex', status: 'lead' }],
+        toUnlinkJunctionIds: [],
+      })
+    })
+
+    it('removing an already-persisted tag stages its junction id for removal instead of calling ops.remove', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops)
+      expect(await screen.findByText('Acme')).toBeInTheDocument()
+
+      const tag = screen.getByText('Acme').closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+
+      await waitFor(() => expect(screen.queryByText('Acme')).not.toBeInTheDocument())
+      expect(ops.remove).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenCalledWith({ toLink: [], toUnlinkJunctionIds: ['j1'] })
+    })
+
+    it('removing a just-staged (not yet persisted) tag drops it back out of the pending diff entirely', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'glo' } })
+      fireEvent.click(await screen.findByText('Globex'))
+      expect(await screen.findByText('Globex')).toBeInTheDocument()
+
+      const tag = screen.getByText('Globex').closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+
+      await waitFor(() => expect(screen.queryByText('Globex')).not.toBeInTheDocument())
+      expect(ops.create).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenLastCalledWith({ toLink: [], toUnlinkJunctionIds: [] })
+    })
+  })
+})
+
+describe('relation/list (one2many)', () => {
+  it('embeds the inverse records, scoped by the inverse FK', async () => {
+    const ops = stubOps()
+    renderWidget(listField, ops)
+
+    await waitFor(() =>
+      expect(ops.list).toHaveBeenCalledWith('crm', {
+        filter: { contact_id: 'r1' },
+        pageSize: 100,
+      }),
+    )
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+  })
+
+  it('with no relation.formPath declared, clicking a row does not navigate (sale_lines/quote_lines posture)', async () => {
+    const ops = stubOps()
+    renderWidget(listField, ops)
+    fireEvent.click(await screen.findByText('Acme'))
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('with relation.formPath declared, clicking a row navigates to that record\'s own form', async () => {
+    const ops = stubOps()
+    const navigableField: FieldDescriptor = {
+      ...listField,
+      relation: { ...listField.relation!, formPath: '/crm/lines/:id' },
+    }
+    renderWidget(navigableField, ops)
+    fireEvent.click(await screen.findByText('Acme'))
+    expect(pushMock).toHaveBeenCalledWith('/crm/lines/c1')
+  })
+
+  it('create line: creates with the inverse FK preset and hidden, row joins the grid', async () => {
+    const created = { id: 'n1', name: 'New deal', contact_id: 'r1' }
+    const ops = stubOps({ create: vi.fn(async () => created) })
+    renderWidget(listField, ops)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create a new Crm' }))
+    const dialog = await screen.findByRole('dialog')
+    // The context owns the link: the inverse FK is preset, never asked for.
+    expect(within(dialog).queryByText('contact_id')).not.toBeInTheDocument()
+
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'New deal' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(ops.create).toHaveBeenCalledWith(
+        'crm',
+        expect.objectContaining({ name: 'New deal', contact_id: 'r1' }),
+      ),
+    )
+    // The new record lands in the embedded list.
+    expect(await screen.findByText('New deal')).toBeInTheDocument()
+  })
+
+  it('shows a hint before the record exists', () => {
+    renderWidget(listField, stubOps(), { recordId: null })
+    expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
+  })
+
+  it('hideLabel: true suppresses the caption but the embedded grid still loads', async () => {
+    const ops = stubOps()
+    renderWidget({ ...listField, hideLabel: true }, ops)
+    expect(screen.queryByText('CRM records')).not.toBeInTheDocument()
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+  })
+
+  it('widgetOptions.reverse: the last fetched row renders first (e.g. propertymanagement.rent_receipts)', async () => {
+    const ops = stubOps()
+    renderWidget({ ...listField, widgetOptions: { reverse: true } }, ops)
+    await screen.findByText('Acme')
+    const names = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="name"]')].map((el) => el.textContent)
+    // Fetch order is [Acme, Globex] (the `companies` fixture); reversed puts
+    // Globex — the "last" one — first.
+    expect(names).toEqual(['Globex', 'Acme'])
+  })
+
+  it('without widgetOptions.reverse, rows render in fetch order (unchanged default)', async () => {
+    const ops = stubOps()
+    renderWidget(listField, ops)
+    await screen.findByText('Acme')
+    const names = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="name"]')].map((el) => el.textContent)
+    expect(names).toEqual(['Acme', 'Globex'])
+  })
+})
+
+describe('create-from-search: primary color', () => {
+  // The dropdown create rows are <Typography color="primary">: MUI bakes the
+  // resolved color into a dynamic css-hash class (no static "colorPrimary"
+  // utility class for Typography in this MUI version), so comparing against a
+  // same-render reference Typography's computed color is the reliable check —
+  // it resolves under whatever theme is active (this suite has no
+  // AppThemeProvider; the app's real ThemeProvider carries the same prop
+  // through to the same resolution).
+  function primaryReferenceColor() {
+    const { container, unmount } = render(
+      <Typography component="span" color="primary">
+        ref
+      </Typography>,
+    )
+    const color = getComputedStyle(container.querySelector('span')!).color
+    unmount()
+    return color
+  }
+
+  it('the m2o dropdown create row matches the primary text color', async () => {
+    const reference = primaryReferenceColor()
+    const ops = stubOps()
+    renderWidget(searchField, ops)
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    const createOption = await screen.findByText('Create a new Contact')
+    expect(getComputedStyle(createOption).color).toBe(reference)
+  })
+
+  it('the m2m dropdown create row matches the primary text color', async () => {
+    const reference = primaryReferenceColor()
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) =>
+        entity === 'crm_tag' ? [] : companies,
+      ),
+    })
+    renderWidget(tagsField, ops)
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    const createOption = await screen.findByText('Create a new Tag')
+    expect(getComputedStyle(createOption).color).toBe(reference)
+  })
+
+  it('the o2m "Create a new" button carries MUI\'s primary-color class', async () => {
+    // Button resolves color through CSS custom properties (--variant-textColor)
+    // that jsdom's computed-style engine doesn't fully thread through — the
+    // reliable check here is Button's own static "CSS API" class, which MUI
+    // documents as stable: MuiButton-colorPrimary is present iff color="primary".
+    renderWidget(listField, stubOps())
+    const button = await screen.findByRole('button', { name: 'Create a new Crm' })
+    expect(button.className).toContain('MuiButton-colorPrimary')
+  })
+})
+
+const totalsField: FieldDescriptor = {
+  name: 'sale_totals',
+  label: 'Totals',
+  type: 'totals',
+  hideLabel: true,
+  store: false,
+  relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id' },
+}
+
+describe('totals/recap', () => {
+  it('sums each line\'s own already-computed total into one aggregate tax row', async () => {
+    const lines: RelationRecord[] = [
+      // total is server-computed (handler.go's computeLineTotal) — the
+      // widget only ever sums it, never re-derives tax from tax_rate itself
+      // once it's present.
+      { id: 'l1', quantity: 2, unit_price: 50, tax_rate: 0.2, total: 120 }, // 100 HT, 20 tax
+      { id: 'l2', quantity: 3, unit_price: 10, tax_rate: 0.1, total: 33 }, // 30 HT, 3 tax
+      { id: 'l3', quantity: 1, unit_price: 100, tax_rate: 0.2, total: 120 }, // 100 HT, 20 tax
+    ]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'inv1' })
+
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('sale_line', expect.objectContaining({ filter: { invoice_id: 'inv1' } })))
+
+    // subtotal = 100 + 30 + 100 = 230; tax = (120-100) + (33-30) + (120-100) = 43; total = 273
+    expect(await screen.findByText('230.00')).toBeInTheDocument()
+    expect(screen.getByText('Tax:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('43.00')).toBeInTheDocument()
+    expect(screen.getByText('273.00')).toBeInTheDocument()
+  })
+
+  it('falls back to tax_rate applied inline when total is absent (quote_line, which never got the many2many taxes/Total column)', async () => {
+    const lines: RelationRecord[] = [
+      { id: 'l1', quantity: 2, unit_price: 50, tax_rate: 0.2 }, // 100 HT, 20 tax
+      { id: 'l2', quantity: 3, unit_price: 10, tax_rate: 0.1 }, // 30 HT, 3 tax
+    ]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'q1' })
+
+    // subtotal = 100 + 30 = 130; tax = 20 + 3 = 23; total = 153
+    expect(await screen.findByText('130.00')).toBeInTheDocument()
+    expect(screen.getByText('23.00')).toBeInTheDocument()
+    expect(screen.getByText('153.00')).toBeInTheDocument()
+  })
+
+  it('renders nothing for an unsaved record (no id to scope lines to)', () => {
+    renderWidget(totalsField, stubOps(), { recordId: null })
+    expect(screen.queryByText('Untaxed Amount:', { exact: false })).not.toBeInTheDocument()
+  })
+
+  it('treats a missing quantity column as 1, not 0 (e.g. propertymanagement billing lines, priced flat with no quantity concept)', async () => {
+    const lines: RelationRecord[] = [
+      { id: 'l1', unit_price: 800, tax_rate: 0 }, // rent — no `quantity` key at all
+      { id: 'l2', unit_price: 50, tax_rate: 0.2 }, // condo fees
+    ]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'p1' })
+
+    // subtotal = 800 + 50 = 850 (NOT 0 — a real 0 × price bug would render 0.00)
+    expect(await screen.findByText('850.00')).toBeInTheDocument()
+    expect(screen.getByText('10.00')).toBeInTheDocument()
+    expect(screen.getByText('860.00')).toBeInTheDocument()
+  })
+
+  it('still respects a REAL quantity of 0 on entities that do have the column (never silently upgraded to 1)', async () => {
+    const lines: RelationRecord[] = [{ id: 'l1', quantity: 0, unit_price: 100, tax_rate: 0.2 }]
+    const ops = stubOps({ list: vi.fn(async () => lines) })
+    renderWidget(totalsField, ops, { recordId: 'inv1' })
+
+    // Untaxed amount, the 20% tax line, and the grand total all read 0.00 —
+    // a wrongly-upgraded-to-1 quantity would instead show 100.00/20.00/120.00.
+    await waitFor(() => expect(screen.getAllByText('0.00')).toHaveLength(3))
+  })
+})

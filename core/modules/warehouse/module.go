@@ -1,0 +1,85 @@
+package warehouse
+
+import (
+	"core/internal/module"
+	"core/orm"
+	"core/orm/model"
+
+	"github.com/google/uuid"
+)
+
+func init() {
+	module.RegisterGoModule(&warehouseModule{})
+}
+
+// Product is the sellable catalog entry: name, unit of measure, and the
+// price/tax pair a sale line snapshots from ("unit price free taxes" +
+// "the tax from the product" in sale.SaleLine's doc comment). It is never
+// referenced directly by a sale line — see ProductVariant.
+// json tags mirror the db tags exactly: Echo's default Bind uses
+// encoding/json, which without an explicit `json` tag matches a JSON key to
+// a Go field name case-insensitively but NOT underscore-insensitively — a
+// snake_case key like "unit_price" never matches field UnitPrice on its own
+// (see warehouse/handler.go's Create, which c.Bind()s straight onto this
+// struct). Every field a dedicated handler binds from client JSON needs one.
+type Product struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name     string    `db:"name" json:"name"`
+	// Reference is a free-text SKU/internal code — optional, no uniqueness
+	// enforced (this ORM has no unique-constraint support yet).
+	Reference string `db:"reference" json:"reference"`
+	// Unit is the unit of measure (e.g. "pcs", "kg", "hour") — free text
+	// rather than a selection, since the set of units a business needs is
+	// open-ended.
+	Unit string `db:"unit" json:"unit"`
+	// UnitPrice is the price excl. tax ("free taxes" in the request).
+	UnitPrice float64 `db:"unit_price" json:"unit_price"`
+	// TaxRate is a 0..1 ratio (percent widget on the frontend), same
+	// contract as sale.Invoice's former single invoice-level TaxRate — here
+	// it lives per product, since sale.Invoice.TaxAmount is now the sum of
+	// each line's own product tax.
+	TaxRate float64 `db:"tax_rate" json:"tax_rate"`
+}
+
+// ProductVariant is a concrete, sellable instance of a Product — the entity
+// sale.SaleLine's first column actually points to (see sale/module.go). It
+// only ever exists off an already-existing Product (ProductID is required,
+// not a pointer): "a variant can be created only based on an existing
+// product.product." A Product may have zero variants until one is needed;
+// once created, it stays around and is reused for every later sale line on
+// that product ("once one is created, the original stays referenced, and
+// the variant exists") — see warehouse/handler.go for the auto-naming that
+// makes creating one from a product a one-field action.
+type ProductVariant struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	ProductID uuid.UUID `db:"product_id" json:"product_id"`
+	// Name is the variant's own label (e.g. "Red / XL"). Left blank on
+	// create, it defaults to the underlying Product's name — see
+	// warehouse/handler.go's Create override.
+	Name string `db:"name" json:"name"`
+	// UnitPrice, when set, overrides the parent Product's price for this one
+	// variant (e.g. "Red / XL" costs more than "Red / S") — nil means
+	// "inherit the product's price," the previous, only behavior. sale's
+	// snapshotFromVariant (handler.go and quote_handler.go) prefers this over
+	// Product.UnitPrice when present.
+	UnitPrice *float64 `db:"unit_price" json:"unit_price"`
+	// TaxRate, when set, overrides the parent Product's tax rate for this one
+	// variant — same "nil means inherit" contract as UnitPrice above. sale's
+	// snapshotFromVariant (handler.go and quote_handler.go) prefers this over
+	// Product.TaxRate when present, so a sale line's tax percent is always
+	// resolved from the specific variant sold, not just its product.
+	TaxRate *float64 `db:"tax_rate" json:"tax_rate"`
+}
+
+type warehouseModule struct{}
+
+func (m *warehouseModule) Name() string { return "warehouse" }
+
+func (m *warehouseModule) Register() error {
+	if err := orm.Register[Product](); err != nil {
+		return err
+	}
+	return orm.Register[ProductVariant]()
+}

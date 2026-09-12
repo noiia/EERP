@@ -1,0 +1,191 @@
+---
+title: ORM Class Diagram
+---
+classDiagram
+    direction TB
+
+    class DB {
+        +pool: pgxpool.Pool
+        +logger: Logger
+        +config: Config
+        +Query(ctx, sql, args) (Rows, error)
+        +QueryRow(ctx, sql, args) Row
+        +Exec(ctx, sql, args) (CommandTag, error)
+        +Transaction(ctx, fn) error
+    }
+
+    class Config {
+        +DSN: string
+        +MaxConns: int
+        +MinConns: int
+        +Debug: bool
+        +Validate() error
+    }
+
+    class Logger {
+        <<interface>>
+        +Log(ctx, LogEntry)
+    }
+
+    class ZapLogger {
+        +z: zap.Logger
+        +Log(ctx, LogEntry)
+        -toFields(LogEntry) []zap.Field
+    }
+
+    class NoopLogger {
+        +Log(ctx, LogEntry)
+    }
+
+    class LogEntry {
+        +SQL: string
+        +Args: []any
+        +Duration: time.Duration
+        +Err: error
+    }
+
+    class ZapFields {
+        <<zap fields>>
+        zap.String: sql
+        zap.Any: args
+        zap.Duration: duration
+        zap.Error: err
+    }
+
+    class Tx {
+        -tx: pgx.Tx
+        -logger: Logger
+        -savepoints: []string
+        +Query(ctx, sql, args) (Rows, error)
+        +Exec(ctx, sql, args) (CommandTag, error)
+        +Savepoint(ctx, name) error
+        +RollbackTo(ctx, name) error
+    }
+
+    class BaseModel {
+        <<embed>>
+        +ID: uuid.UUID
+        +CreatedAt: time.Time
+        +UpdatedAt: time.Time
+        +DeletedAt: *time.Time
+        +TableName() string
+    }
+
+    class MetadataCache {
+        -mu: sync.RWMutex
+        -cache: map[reflect.Type]StructMeta
+        +Get(T) StructMeta
+        -warm(T) StructMeta
+        +FieldMap(T) map[string]int
+    }
+
+    class StructMeta {
+        +Table: string
+        +PK: string
+        +Fields: []FieldMeta
+        +Columns() []string
+        +PKColumn() string
+    }
+
+    class FieldMeta {
+        +Name: string
+        +Column: string
+        +Index: int
+        +OmitEmpty: bool
+    }
+
+    class SelectBuilder~T~ {
+        -table: string
+        -columns: []string
+        -wheres: []Condition
+        -joins: []Join
+        -orderBy: []string
+        -limit: int
+        -offset: int
+        +Where(sql, args) SelectBuilder~T~
+        +Join(clause) SelectBuilder~T~
+        +OrderBy(col) SelectBuilder~T~
+        +Limit(n) SelectBuilder~T~
+        +Offset(n) SelectBuilder~T~
+        +ToSQL() (string, []any)
+        +All(ctx, db) ([]T, error)
+        +One(ctx, db) (T, error)
+    }
+
+    class InsertBuilder~T~ {
+        -table: string
+        -columns: []string
+        -returning: []string
+        -batch: []T
+        +Returning(cols) InsertBuilder~T~
+        +ToSQL() (string, []any)
+        +One(ctx, db) (T, error)
+        +Batch(ctx, db) ([]T, error)
+        +Exec(ctx, db) error
+    }
+
+    class UpdateBuilder~T~ {
+        -table: string
+        -wheres: []Condition
+        -sets: map[string]any
+        +Set(col, val) UpdateBuilder~T~
+        +Where(sql, args) UpdateBuilder~T~
+        +Returning(cols) UpdateBuilder~T~
+        +ToSQL() (string, []any)
+        +Exec(ctx, db) error
+    }
+
+    class ScanRows~T~ {
+        <<func>>
+        +ScanRows(rows, meta) ([]T, error)
+        +ScanRow(row, meta) (T, error)
+    }
+
+    class Repository~T~ {
+        -db: DB
+        -meta: StructMeta
+        +FindByID(ctx, id) (T, error)
+        +FindAll(ctx, where) ([]T, error)
+        +Save(ctx, entity) (T, error)
+        +Delete(ctx, id) error
+    }
+
+    %% Core relationships
+    DB *-- Config : configured by
+    DB *-- Logger : logs via
+    DB ..> Tx : creates
+    DB ..> MetadataCache : uses
+    DB ..> SelectBuilder : executes
+    DB ..> InsertBuilder : executes
+    DB ..> UpdateBuilder : executes
+
+    %% Logger implementations
+    Logger <|.. ZapLogger : implements
+    Logger <|.. NoopLogger : implements
+    Logger ..> LogEntry : logs
+    ZapLogger ..> ZapFields : builds
+
+    %% Tx mirrors DB interface
+    Tx *-- Logger : logs via
+
+    %% Metadata
+    MetadataCache "1" *-- "n" StructMeta : caches
+    StructMeta "1" *-- "n" FieldMeta : contains
+
+    %% Builders use metadata
+    SelectBuilder ..> StructMeta : reads
+    InsertBuilder ..> StructMeta : reads
+    UpdateBuilder ..> StructMeta : reads
+
+    %% Scanning
+    SelectBuilder ..> ScanRows : uses
+    InsertBuilder ..> ScanRows : uses
+
+    %% Repository orchestrates
+    Repository ..> SelectBuilder : builds
+    Repository ..> InsertBuilder : builds
+    Repository ..> UpdateBuilder : builds
+    Repository *-- DB : holds
+
+    %% BaseModel
+    BaseModel <|-- Repository : constrains T

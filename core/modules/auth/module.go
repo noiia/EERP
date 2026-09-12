@@ -1,0 +1,111 @@
+// Package auth registers the authentication entities with the ORM registry.
+// Import this package via core/modules/all to activate it.
+package auth
+
+import (
+	"context"
+	"fmt"
+
+	"core/internal/auth"
+	"core/internal/module"
+	"core/orm"
+)
+
+func init() {
+	module.RegisterGoModule(&authModule{})
+}
+
+type authModule struct{}
+
+func (m *authModule) Name() string { return "auth" }
+
+func (m *authModule) Register() error {
+	// The auth tables are registered with the ORM (so their schemas migrate and the
+	// typed repos work) but kept OFF the generic HTTP CRUD surface via WithExcluded.
+	// Auto-generated CRUD on these is a privilege-escalation and cross-tenant
+	// integrity risk (mutating the global permission catalog, creating password-less
+	// users, deleting roles). Account/role/permission management must go through
+	// dedicated, audited endpoints — never the generic CRUD. Enforced in code so the
+	// guarantee is fail-closed, not dependent on an external config file.
+	if err := orm.Register[auth.Users](
+		orm.WithTableName("users"),
+		orm.WithExcludeFields("password_hash"),
+		orm.WithExcluded(),
+	); err != nil {
+		return err
+	}
+	if err := orm.Register[auth.Roles](orm.WithExcluded()); err != nil {
+		return err
+	}
+	if err := orm.Register[auth.Permissions](orm.WithExcluded()); err != nil {
+		return err
+	}
+	if err := orm.Register[auth.RefreshTokens](orm.WithExcluded()); err != nil {
+		return err
+	}
+	// RoleBelongs is deliberately NOT WithExcluded: it rides the generic CRUD
+	// surface (like any module's own many2many junction) so the frontend's
+	// existing RelationTagsWidget/RelationOps drive the Roles form's "Belongs"
+	// tab with no bespoke endpoint or widget code. The coarse
+	// role_belongs:role_belongs:* permission this derives is granted to the
+	// default admin role in seed.go alongside roles:roles:*.
+	if err := orm.Register[auth.RoleBelongs](); err != nil {
+		return err
+	}
+	// The role "rights" table (Role form's own first notebook page) and its
+	// backing catalog/junction — all three ride the generic CRUD surface,
+	// same posture as RoleBelongs above, so the Role form's embedded
+	// RelationListWidget table and many2many tags widget need no bespoke
+	// endpoint. See RoleViewPermission's own doc comment: data model + UI
+	// only, not yet consulted by any permission check.
+	if err := orm.Register[auth.AccountRoleTypes](); err != nil {
+		return err
+	}
+	if err := orm.Register[auth.RoleViewPermission](); err != nil {
+		return err
+	}
+	if err := orm.Register[auth.RoleViewPermissionRight](); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Migrate creates the join tables (composite PK, no BaseModel) that the
+// auto-migration system cannot derive from Go structs.
+func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
+	if _, err := db.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS user_roles (
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+			PRIMARY KEY (user_id, role_id)
+		)
+	`); err != nil {
+		return fmt.Errorf("auth: create user_roles: %w", err)
+	}
+
+	if _, err := db.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS role_permissions (
+			role_id       UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+			permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+			PRIMARY KEY (role_id, permission_id)
+		)
+	`); err != nil {
+		return fmt.Errorf("auth: create role_permissions: %w", err)
+	}
+
+	// First unique constraint in the codebase: struct-tag auto-migration only
+	// supports plain (non-unique) indexes, so a per-tenant uniqueness
+	// guarantee on technical_name has to be hand-written here, like the
+	// junction tables above. Partial on technical_name IS NOT NULL (nullable
+	// column, see Roles.TechnicalName) and deleted_at IS NULL so a
+	// soft-deleted role doesn't permanently squat a slug.
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_tenant_technical_name
+		ON roles (tenant_id, technical_name)
+		WHERE technical_name IS NOT NULL AND deleted_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("auth: create roles technical_name index: %w", err)
+	}
+
+	return nil
+}

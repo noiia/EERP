@@ -1,0 +1,93 @@
+---
+title: ORM Sequence Diagram — Query lifecycle (FindAll + Transaction)
+---
+sequenceDiagram
+    autonumber
+
+    actor App
+    participant Repo as Repository[T]
+    participant SB as SelectBuilder[T]
+    participant DB as DB
+    participant MC as MetadataCache
+    participant PGX as pgx / pgxpool
+    participant PG as PostgreSQL
+
+    %% ── Build query ──────────────────────────────────
+    rect rgb(240, 235, 255)
+        Note over Repo,SB: build query
+        App->>Repo: FindAll(ctx, whereClause)
+        Repo->>SB: Select[T]().Where(clause).Limit(n)
+        SB->>DB: ToSQL() → sql, args
+        DB-->>SB: sql string
+    end
+
+    %% ── Metadata lookup ──────────────────────────────
+    rect rgb(235, 245, 235)
+        Note over DB,MC: metadata lookup (sync.RWMutex, cache hit O(1))
+        DB->>MC: Get(reflect.TypeOf(T))
+        MC-->>DB: StructMeta{Table, PK, Fields}
+    end
+
+    %% ── Acquire connection ───────────────────────────
+    rect rgb(230, 244, 255)
+        Note over DB,PGX: acquire connection from pool
+        DB->>PGX: pool.Acquire(ctx)
+        PGX-->>DB: *pgxpool.Conn
+    end
+
+    %% ── Execute query ────────────────────────────────
+    rect rgb(230, 244, 255)
+        Note over DB,PG: execute query
+        DB->>PGX: conn.Query(ctx, sql, args...)
+        PGX->>PG: wire protocol (extended query)
+        PG-->>PGX: RowDescription + DataRows
+        PGX-->>DB: pgx.Rows
+        DB->>PGX: defer conn.Release()
+    end
+
+    %% ── Scan rows ────────────────────────────────────
+    rect rgb(255, 245, 235)
+        Note over DB,Repo: scan rows → typed structs
+        DB->>DB: ScanRows[T](rows, meta.FieldMap())
+        Note right of DB: reflect.ValueOf(&t).Elem()<br/>sets fields by column index
+        DB-->>Repo: []T, nil
+    end
+
+    %% ── Logging ──────────────────────────────────────
+    rect rgb(245, 245, 245)
+        Note over DB: logging
+        DB->>DB: Logger.Log(LogEntry{SQL, Args, Duration, Err})
+        Note right of DB: time.Since(recordedStart)<br/>includes pool wait time
+    end
+
+    %% ── Return chain ─────────────────────────────────
+    DB-->>Repo: []T, nil
+    Repo-->>App: []T, nil
+
+    %% ── Optional: Transaction ────────────────────────
+    opt Transaction(ctx, fn func(*Tx) error)
+        App->>DB: Transaction(ctx, fn)
+        DB->>PGX: pool.Begin(ctx)
+        PGX-->>DB: pgx.Tx
+        DB->>DB: fn(tx) — runs user code
+        Note right of DB: All queries inside fn<br/>use the same pgx.Tx
+        alt fn() returns nil
+            DB->>PGX: tx.Commit(ctx)
+            PGX->>PG: COMMIT
+        else fn() returns error
+            DB->>PGX: tx.Rollback(ctx)
+            PGX->>PG: ROLLBACK
+        end
+        DB-->>App: error (nil on success)
+    end
+
+    %% ── Optional: Savepoint ──────────────────────────
+    opt Savepoint inside Transaction
+        DB->>PGX: tx.Exec("SAVEPOINT name")
+        Note right of DB: Supports nested<br/>ERP operations<br/>(order → lines → inventory)
+        alt inner op fails
+            DB->>PGX: tx.Exec("ROLLBACK TO SAVEPOINT name")
+        else inner op succeeds
+            DB->>PGX: tx.Exec("RELEASE SAVEPOINT name")
+        end
+    end

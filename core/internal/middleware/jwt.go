@@ -1,0 +1,52 @@
+package middleware
+
+import (
+	"net/http"
+	"strings"
+
+	"core/internal/auth"
+	"core/orm/access"
+
+	"github.com/labstack/echo/v4"
+)
+
+// JWTMiddleware validates Bearer tokens and injects Identity into the request context.
+// Returns 401 for any failure — never leaks which check failed.
+func JWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			header := c.Request().Header.Get("Authorization")
+			if !strings.HasPrefix(header, "Bearer ") {
+				return unauthenticated(c)
+			}
+			raw := strings.TrimPrefix(header, "Bearer ")
+
+			claims, err := tokens.ParseAccess(raw)
+			if err != nil {
+				return unauthenticated(c)
+			}
+
+			identity := auth.NewIdentityFromClaims(claims)
+			ctx := auth.SetIdentity(c.Request().Context(), identity)
+			// Stamp the tenant so the generic CRUD layer can isolate rows to this
+			// caller's tenant (fail-closed on tenant-owned tables).
+			ctx = access.WithTenant(ctx, identity.TenantID)
+			// Stamp the resolved group closure so the generic CRUD layer can
+			// omit group-gated fields (core/orm/internal/crud.BuildResponse)
+			// without importing this package.
+			ctx = access.WithGroups(ctx, identity.Groups)
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	}
+}
+
+func unauthenticated(c echo.Context) error {
+	return c.JSON(http.StatusUnauthorized, map[string]any{
+		"error": map[string]any{
+			"code":       "UNAUTHENTICATED",
+			"message":    "Authentication required.",
+			"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
+		},
+	})
+}

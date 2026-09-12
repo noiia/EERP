@@ -1,0 +1,311 @@
+package sale
+
+import (
+	"time"
+
+	"core/internal/module"
+	"core/orm"
+	"core/orm/model"
+
+	"github.com/google/uuid"
+)
+
+func init() {
+	module.RegisterGoModule(&saleModule{})
+}
+
+// Invoice is a billing document issued to a customer — the sale module's
+// dashboard has a single section, Invoice, over this entity. The table name
+// derives from the struct name: "invoice" (GET /api/v1/invoice). Field
+// layout mirrors a standard French "devis"/invoice template end to end
+// (docs/adr/ADR-011, views/reports/invoice_report.ts's sale.invoice report): logo,
+// issuer, client, line items, HT/TVA/TTC totals, payment terms.
+type Invoice struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id"`
+	// Logo backs the boolean/picture widget in the form's top-left corner —
+	// same flag-column contract as crm.CRM's Picture (true ⇔ a picture exists
+	// on the (invoice, record, logo) anchor; the picture service owns the
+	// bytes). The print route resolves it to a data: URL before rendering
+	// (docs/adr/ADR-011) — ReportRenderer never talks to the picture service.
+	Logo *bool `db:"logo"`
+	// Issuer* is the seller's own letterhead block — a snapshot on the
+	// invoice, not a live join to a workspace-wide "company profile" (no
+	// such concept exists yet in this codebase; app_settings would be the
+	// natural home for one once multiple invoices need to share a single
+	// issuer identity without re-entering it).
+	IssuerName string `db:"issuer_name"`
+	// IssuerAddress* — the type: 'address' composite field's 7 sibling
+	// columns (core-front's AddressWidget, core/CLAUDE.md's ORM section),
+	// prefixed to match the frontend field name 'issuer_address'. Real
+	// columns rather than a JSON blob for the same reason
+	// property_management.Address is: they stay filterable/searchable
+	// through the generic list endpoint.
+	IssuerAddressNumber     *int   `db:"issuer_address_number"`
+	IssuerAddressComplement string `db:"issuer_address_complement"`
+	IssuerAddressStreet     string `db:"issuer_address_street"`
+	IssuerAddressZipCode    string `db:"issuer_address_zip_code"`
+	IssuerAddressCity       string `db:"issuer_address_city"`
+	IssuerAddressState      string `db:"issuer_address_state"`
+	IssuerAddressCountry    string `db:"issuer_address_country"`
+	IssuerPhone             string `db:"issuer_phone"`
+	IssuerEmail             string `db:"issuer_email"`
+	// Number is the human-facing invoice reference (e.g. "INV-2026-0001"),
+	// distinct from the record's own UUID id.
+	Number    string     `db:"number"`
+	IssueDate *time.Time `db:"issue_date"`
+	// Subject is the invoice's one-line "Objet" — what the invoice is for.
+	Subject string `db:"subject"`
+	// CustomerID is the optional many2one FK behind the form's contact search
+	// widget (nullable, same contract as crm.CRM's Contacts).
+	CustomerID *uuid.UUID `db:"customer_id"`
+	// CustomerName/CustomerEmail/CustomerAddress* are the bill-to snapshot
+	// printed on the PDF — captured at invoice time on purpose, not resolved
+	// live through CustomerID: an invoice must keep reading correctly even if
+	// the linked contact is later renamed or moved (and the report layout,
+	// like crm.statement, only ever reads scalar fields already on the
+	// record — no FK join at print time). CustomerAddress* mirrors
+	// IssuerAddress*'s 7-column composite shape above.
+	CustomerName              string     `db:"customer_name"`
+	CustomerEmail             string     `db:"customer_email"`
+	CustomerAddressNumber     *int       `db:"customer_address_number"`
+	CustomerAddressComplement string     `db:"customer_address_complement"`
+	CustomerAddressStreet     string     `db:"customer_address_street"`
+	CustomerAddressZipCode    string     `db:"customer_address_zip_code"`
+	CustomerAddressCity       string     `db:"customer_address_city"`
+	CustomerAddressState      string     `db:"customer_address_state"`
+	CustomerAddressCountry    string     `db:"customer_address_country"`
+	DueDate                   *time.Time `db:"due_date"`
+	Status                    string     `db:"status"`    // "draft", "sent", "paid", "overdue", "cancelled"
+	Reference                 string     `db:"reference"` // customer PO / reference number
+	// QuoteID is the quote this invoice was raised FROM, when it was —
+	// nil for an invoice created directly, never through a quote's Accept
+	// flow. Set once, at creation, by the quote form's Accept header button
+	// (views/quote_views.ts's sale.acceptQuote) via the generic entity API —
+	// nothing on the Go side writes it itself.
+	QuoteID *uuid.UUID `db:"quote_id"`
+	// Subtotal/TaxAmount/Total are the invoice's HT -> TVA -> TTC breakdown,
+	// each a REAL stored column rather than a compute:store:false field —
+	// the print pipeline reads the raw record, never the client compute
+	// registry, so a value it must show has to actually be a column.
+	// TaxAmount is a ROLLUP over this invoice's SaleLine rows, each with its
+	// own tax rate from its product/variant — "the tax amount, depending on
+	// each product's own tax and price" — recomputed server-side by
+	// sale_line's Create/Update/Delete overrides (see handler.go's
+	// recomputeTotals) every time a line changes, not by a frontend
+	// on_change: only the backend sees every sibling line. Total = Subtotal
+	// + TaxAmount. There is no per-document Discount or Currency column
+	// anymore: discount is being rethought as a product-variant concept, not
+	// shipped yet, and currency is now a property of the issuing company
+	// (internal/company.Company.Currency, Settings -> Company) instead of
+	// being duplicated on every document.
+	Subtotal      *float64 `db:"subtotal"`
+	TaxAmount     *float64 `db:"tax_amount"`
+	Total         *float64 `db:"total"`
+	PaymentMethod string   `db:"payment_method"`
+	PaymentTerms  string   `db:"payment_terms"`
+	// LegalNotice is free text on purpose, not hardcoded boilerplate: the
+	// mandatory-late-payment-notice wording a real business must print is
+	// jurisdiction-specific (e.g. France's Loi n°92-1442), so baking one
+	// country's legal text into the module would be wrong everywhere else.
+	LegalNotice string `db:"legal_notice"`
+}
+
+// SaleLine is one row of an invoice's item table — the "table style
+// display" the invoice form and PDF report both render (see
+// views/invoice_views.ts, views/reports/invoice_report.ts's 'lines' table). It replaces the old
+// Invoice.Lines JSONB blob with a real table so a line can point at an
+// actual product.
+//
+// VariantID (not ProductID) is the line's first/real column — a sale line
+// is always struck against a specific warehouse.ProductVariant, never a
+// bare warehouse.Product directly (see warehouse/module.go's doc comment on
+// ProductVariant for why: a variant is what "automatically" gets created
+// off a product the first time it's needed, and then stays around to be
+// reused). Unit/TaxRate/UnitPrice are SNAPSHOTS copied from the variant's
+// underlying Product at line-creation time (handler.go's Create override)
+// — same "capture at document time, don't live-join" contract as
+// Invoice.CustomerName: a line must keep reading correctly even if the
+// product's price changes later, and the PDF report reads raw columns,
+// never a live join.
+// json tags mirror the db tags exactly: Echo's default Bind uses
+// encoding/json, which without an explicit `json` tag matches a JSON key to
+// a Go field name case-insensitively but NOT underscore-insensitively — a
+// snake_case key like "variant_id" never matches field VariantID on its own
+// (see handler.go's Create/Update, which c.Bind() straight onto this
+// struct). Every field the dedicated handler binds from client JSON needs
+// one.
+type SaleLine struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	// InvoiceID is the parent FK — the one2many inverse field the invoice
+	// form's line-items table filters on (views/invoice_views.ts).
+	InvoiceID uuid.UUID `db:"invoice_id" json:"invoice_id"`
+	// VariantID many2one -> warehouse.ProductVariant. First column per the
+	// request ("first column is product.variant many2one").
+	VariantID uuid.UUID `db:"variant_id" json:"variant_id"`
+	// VariantName is a display-only snapshot of the variant's own Name,
+	// same "don't live-join" reasoning as the other snapshots — it exists so
+	// the invoice form's embedded line-items table (a read-only grid over
+	// raw JSON rows, see views/invoice_views.ts) can show a product name instead
+	// of a bare variant_id uuid.
+	VariantName string  `db:"variant_name" json:"variant_name"`
+	Quantity    float64 `db:"quantity" json:"quantity"`
+	// Unit/TaxRate/UnitPrice: snapshotted from the variant's Product on
+	// create (see handler.go). TaxRate is a 0..1 ratio; UnitPrice is
+	// "free taxes" (excl. tax), matching warehouse.Product's own fields.
+	Unit      string  `db:"unit" json:"unit"`
+	TaxRate   float64 `db:"tax_rate" json:"tax_rate"`
+	UnitPrice float64 `db:"unit_price" json:"unit_price"`
+	// Total is this line's own final price — quantity × unit_price, plus
+	// TaxRate above, PLUS every tax tagged on it via SaleLineTax below
+	// (percentage or fixed, see SaleTax) — computed server-side ONLY
+	// (handler.go's Create/Update and the sale_line_tax link handlers),
+	// never trusted from the client. Kept ADDITIVE to TaxRate rather than
+	// replacing it: TaxRate is still resolved from the product/variant as
+	// before (unchanged), and the many2many taxes below stack on top of it
+	// — an extra eco-tax/stamp-duty tagged onto a line, say, alongside its
+	// product's own VAT. See handler.go's computeLineTax doc comment for the
+	// exact formula. Whether this already includes every tax (price entered
+	// tax-inclusive) or tax sits entirely on top of UnitPrice*Quantity depends
+	// on the workspace's tax.price_mode setting (internal/settings.
+	// TaxPriceModeKey) at the moment the line was last computed — see
+	// handler.go's computeLineTotal.
+	Total float64 `db:"total" json:"total"`
+	// Subtotal is this line's own tax-EXCLUDED contribution — always
+	// Quantity×UnitPrice when price_mode is tax_excluded, but back-derived
+	// from Total when tax_included (the entered price already has tax baked
+	// in, so the excl.-tax figure has to be solved for). Persisted rather than
+	// re-derived at Invoice-rollup time (recomputeTotals/sumLines) because the
+	// rollup only has each line's own stored columns to work from, not its
+	// resolved tax tags.
+	Subtotal float64 `db:"subtotal" json:"subtotal"`
+}
+
+// SaleTax is one reusable tax definition — a percentage (0..1 ratio, applied
+// to a line's own base price) or a fixed flat amount, picked by Kind. Shared
+// across modules (sale_line AND propertymanagement's billing_line tag it via
+// their own many2many, see SaleLineTax below and
+// propertymanagement/module.go's PropertyManagementBillingLineTax) — lives
+// here, in sale, purely by naming convention; nothing about it is
+// sale-specific, and neither referencing module needs a Go import of this
+// package to use it (a many2many field only needs the entity name string,
+// and a junction struct only needs the tax's bare uuid).
+type SaleTax struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name     string    `db:"name" json:"name"`
+	// Kind is "percentage" or "fixed" — selects which of Rate/Amount below
+	// the computation actually reads; the other stays whatever the form left
+	// it at, unused. A selection field on the frontend (sale_tax_views.ts),
+	// not a bool, so a third kind can be added later without a migration.
+	Kind string `db:"kind" json:"kind"`
+	// Rate: 0..1 ratio (percent widget ×100 on the frontend), read only when
+	// Kind == "percentage" — same convention as SaleLine.TaxRate above.
+	Rate float64 `db:"rate" json:"rate"`
+	// Amount: a flat monetary value added once per line regardless of its
+	// base price, read only when Kind == "fixed".
+	Amount float64 `db:"amount" json:"amount"`
+}
+
+// SaleLineTax is the many2many junction behind SaleLine's own `taxes` tags
+// field (sale_line_views.ts) — one row per (line, tax) link, written/removed
+// at interaction time like any other many2many (core-front's
+// RelationTagsWidget), except Create/Delete are hand-mounted here (not
+// generic) so linking/unlinking a tax recomputes the line's own Total —
+// see handler.go's CreateLineTax/DeleteLineTax.
+type SaleLineTax struct {
+	model.BaseModel
+	TenantID   uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	SaleLineID uuid.UUID `db:"sale_line_id" json:"sale_line_id"`
+	SaleTaxID  uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
+}
+
+// Quote is a pre-invoice sales proposal ("devis") sent to a prospect before
+// they commit — same field layout as Invoice, since both render off the same
+// letterhead template (Invoice's doc comment above). Kept a SEPARATE table
+// rather than an Invoice row with an "is_quote" flag: a quote and an invoice
+// are distinct documents with their own number sequence and status flow, and
+// a future quote -> invoice conversion needs two real rows to link between,
+// not a flag flip — that conversion isn't built yet.
+type Quote struct {
+	model.BaseModel
+	TenantID   uuid.UUID `db:"tenant_id"`
+	Logo       *bool     `db:"logo"`
+	IssuerName string    `db:"issuer_name"`
+	// IssuerAddress*/CustomerAddress* mirror Invoice's own 7-column
+	// type: 'address' composite shape (see Invoice's doc comment above).
+	IssuerAddressNumber       *int       `db:"issuer_address_number"`
+	IssuerAddressComplement   string     `db:"issuer_address_complement"`
+	IssuerAddressStreet       string     `db:"issuer_address_street"`
+	IssuerAddressZipCode      string     `db:"issuer_address_zip_code"`
+	IssuerAddressCity         string     `db:"issuer_address_city"`
+	IssuerAddressState        string     `db:"issuer_address_state"`
+	IssuerAddressCountry      string     `db:"issuer_address_country"`
+	IssuerPhone               string     `db:"issuer_phone"`
+	IssuerEmail               string     `db:"issuer_email"`
+	Number                    string     `db:"number"`
+	IssueDate                 *time.Time `db:"issue_date"`
+	Subject                   string     `db:"subject"`
+	CustomerID                *uuid.UUID `db:"customer_id"`
+	CustomerName              string     `db:"customer_name"`
+	CustomerEmail             string     `db:"customer_email"`
+	CustomerAddressNumber     *int       `db:"customer_address_number"`
+	CustomerAddressComplement string     `db:"customer_address_complement"`
+	CustomerAddressStreet     string     `db:"customer_address_street"`
+	CustomerAddressZipCode    string     `db:"customer_address_zip_code"`
+	CustomerAddressCity       string     `db:"customer_address_city"`
+	CustomerAddressState      string     `db:"customer_address_state"`
+	CustomerAddressCountry    string     `db:"customer_address_country"`
+	// DueDate is the quote's validity/expiry date — same column shape as
+	// Invoice.DueDate, different meaning ("valid until" vs "payment due by").
+	DueDate   *time.Time `db:"due_date"`
+	Status    string     `db:"status"` // "draft", "sent", "accepted", "declined", "expired"
+	Reference string     `db:"reference"`
+	// See Invoice's doc comment: Subtotal/TaxAmount/Total is the HT/TVA/TTC
+	// breakdown, no Discount/Currency column anymore.
+	Subtotal      *float64 `db:"subtotal"`
+	TaxAmount     *float64 `db:"tax_amount"`
+	Total         *float64 `db:"total"`
+	PaymentMethod string   `db:"payment_method"`
+	PaymentTerms  string   `db:"payment_terms"`
+	LegalNotice   string   `db:"legal_notice"`
+}
+
+// QuoteLine mirrors SaleLine exactly, scoped to a Quote instead of an
+// Invoice — see SaleLine's doc comment for the snapshot-at-line-creation
+// reasoning, which applies here unchanged.
+type QuoteLine struct {
+	model.BaseModel
+	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	QuoteID     uuid.UUID `db:"quote_id" json:"quote_id"`
+	VariantID   uuid.UUID `db:"variant_id" json:"variant_id"`
+	VariantName string    `db:"variant_name" json:"variant_name"`
+	Quantity    float64   `db:"quantity" json:"quantity"`
+	Unit        string    `db:"unit" json:"unit"`
+	TaxRate     float64   `db:"tax_rate" json:"tax_rate"`
+	UnitPrice   float64   `db:"unit_price" json:"unit_price"`
+}
+
+type saleModule struct{}
+
+func (m *saleModule) Name() string { return "sale" }
+
+func (m *saleModule) Register() error {
+	if err := orm.Register[Invoice](); err != nil {
+		return err
+	}
+	if err := orm.Register[SaleLine](); err != nil {
+		return err
+	}
+	if err := orm.Register[SaleTax](); err != nil {
+		return err
+	}
+	if err := orm.Register[SaleLineTax](); err != nil {
+		return err
+	}
+	if err := orm.Register[Quote](); err != nil {
+		return err
+	}
+	return orm.Register[QuoteLine]()
+}

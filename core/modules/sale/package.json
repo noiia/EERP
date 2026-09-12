@@ -1,0 +1,18 @@
+{
+  "name": "@eerp/sale",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Sale module frontend views (descriptors only) for the EERP engine.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@eerp/core-front": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6",
+    "vitest": "^4"
+  }
+}

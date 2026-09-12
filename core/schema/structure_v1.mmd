@@ -1,0 +1,41 @@
+flowchart LR
+    %% Frontend
+    subgraph Frontend
+        Svelte["SvelteKit Frontend"]
+    end
+
+    %% Core ERP Go container
+    subgraph Docker_Core
+        direction TB
+        Core["Core ERP Go\n(Binaire statique)"]
+        ORM["ORM Internal"]
+        WASM_Manager["WASM Loader / Manager"]
+    end
+
+    %% WASM Modules storage
+    subgraph WASM_Registry
+        direction TB
+        WASM_Repo["Registry / Bucket / Versioned Storage"]
+    end
+
+    %% Microservices dédiés
+    subgraph Microservices
+        direction TB
+        IA["IA Service Python / ONNX"]
+        Analytics["Analytics / Batch Service"]
+    end
+
+    %% Database
+    subgraph PostgreSQL
+        DB[(PostgreSQL Database)]
+    end
+
+    %% Flows
+    Svelte -->|HTTP / REST| Core
+    Core --> ORM
+    ORM --> DB
+    Core --> WASM_Manager
+    WASM_Manager -->|fetch/download| WASM_Repo
+
+    Core -->|gRPC / HTTP| IA
+    Core -->|gRPC / HTTP| Analytics

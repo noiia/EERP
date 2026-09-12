@@ -1,0 +1,17 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "crminheritdemo",
+    "display_name": "CRM Inherit Demo",
+    "version": "0.0.1",
+    "author": "Edwin Lecomte",
+    "description": "Demonstrates module inheritance: adds date and comment to the crm table without modifying the crm module.",
+    "depends": ["crm"],
+    "static_files": {
+        "views": [
+            "crminheritdemo_views.ts"
+        ]
+    },
+    "is_service": false,
+    "auto_install": false
+}
