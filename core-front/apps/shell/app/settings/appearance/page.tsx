@@ -55,6 +55,8 @@ export default async function AppearancePage() {
       initialOSMConnector={osmConnector}
       canEditTax={hasPermission(permissions, 'settings:tax:write')}
       initialTaxSettings={taxSettings}
+      canEditAccounts={hasPermission(permissions, 'settings:accounts:write')}
+      initialUsernameAtFormat={preferences?.username_at_format ?? false}
       reportPageFormats={
         <>
           <CreateBar descriptor={pageFormatListDescriptor} />

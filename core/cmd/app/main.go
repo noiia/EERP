@@ -223,6 +223,8 @@ func main() {
 	settingsGroup.PUT("/integrations/osm", settingsHandler.PutOSMSettings)
 	settingsGroup.GET("/tax", settingsHandler.GetTaxSettings)
 	settingsGroup.PUT("/tax", settingsHandler.PutTaxSettings)
+	settingsGroup.GET("/accounts", settingsHandler.GetAccountsSettings)
+	settingsGroup.PUT("/accounts", settingsHandler.PutAccountsSettings)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   roleFormDescriptor,
+  roleViewPermissionFormDescriptor,
   rolesListDescriptor,
   userFormDescriptor,
   usersDashboardDescriptor,
@@ -32,24 +33,50 @@ describe('Settings → Users descriptors', () => {
   })
 
   it('exposes only the backend-writable fields on the forms', () => {
-    // Go whitelists these on PUT; offering more would be dead inputs. `belongs`
-    // is the one exception — a virtual many2many, stripped from the PUT body
-    // and written instead through its own role_belongs junction endpoint.
-    expect(userFormDescriptor.fields.map((f) => f.name)).toEqual(['email'])
+    // Go whitelists these on PUT (userWriteRequest/toProfile in
+    // admin_handler.go); offering more would be dead inputs. `belongs` is the
+    // one exception on the role form — a virtual many2many, stripped from the
+    // PUT body and written instead through its own role_belongs junction
+    // endpoint.
+    expect(userFormDescriptor.fields.map((f) => f.name)).toEqual([
+      'email',
+      'username',
+      'password',
+      'name',
+      'surname',
+      'display_name',
+      'job_title',
+      'phone',
+      'address',
+    ])
     expect(roleFormDescriptor.fields.map((f) => f.name)).toEqual([
       'name',
       'description',
       'technical_name',
       'belongs',
+      'view_permissions',
+    ])
+    expect(roleViewPermissionFormDescriptor.fields.map((f) => f.name)).toEqual([
+      'role_id',
+      'entity',
+      'rights',
     ])
   })
 
-  it("puts the belongs relation on its own tab, not the two-column group", () => {
+  it('puts the Views table as the first notebook tab, belongs on its own tab', () => {
     const notebook = roleFormDescriptor.layout?.find((n) => 'kind' in n && n.kind === 'notebook')
     expect(notebook && 'children' in notebook ? notebook.children.map((p) => 'title' in p ? p.title : undefined) : []).toEqual([
+      'Views',
       'Settings',
       'Belongs',
     ])
+  })
+
+  it("opens a view's rights on its own dedicated form", () => {
+    const field = roleFormDescriptor.fields.find((f) => f.name === 'view_permissions')
+    expect(field?.relation?.entity).toBe('role_view_permission')
+    expect(field?.relation?.inverseField).toBe('role_id')
+    expect(field?.relation?.formPath).toBe('/settings/users/roles/rights/:id')
   })
 
   it('guards every view with the derived admin permissions', () => {
@@ -57,6 +84,9 @@ describe('Settings → Users descriptors', () => {
     expect(userFormDescriptor.permissions).toContain('users:users:read')
     expect(rolesListDescriptor.permissions).toContain('roles:roles:read')
     expect(roleFormDescriptor.permissions).toContain('roles:roles:read')
+    expect(roleViewPermissionFormDescriptor.permissions).toContain(
+      'role_view_permission:role_view_permission:read',
+    )
   })
 
   it('gates Create on the write permissions — lists only, never the dashboard', () => {

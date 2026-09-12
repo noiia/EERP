@@ -539,10 +539,12 @@ Response `404` — row not found.
 
 ### Error responses
 
-All errors use the same shape:
+All errors use the same shape — the same `{"error":{"code","message",
+"request_id"}}` envelope every dedicated (non-generic-CRUD) handler in this
+codebase produces:
 
 ```json
-{ "error": "not found", "code": "NOT_FOUND" }
+{ "error": { "code": "NOT_FOUND", "message": "not found", "request_id": "01J..." } }
 ```
 
 | HTTP status | Code              | When                                  |
@@ -552,13 +554,16 @@ All errors use the same shape:
 | `422`       | `VALIDATION_ERROR`| Missing required fields               |
 | `500`       | `INTERNAL_ERROR`  | Unexpected server error               |
 
-Validation errors also include a `fields` array:
+Validation errors also nest a `fields` array under `error`:
 
 ```json
 {
-  "error": "missing required fields: name, price_cents",
-  "code":  "VALIDATION_ERROR",
-  "fields": ["name", "price_cents"]
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "missing required fields: name, price_cents",
+    "request_id": "01J...",
+    "fields": ["name", "price_cents"]
+  }
 }
 ```
 

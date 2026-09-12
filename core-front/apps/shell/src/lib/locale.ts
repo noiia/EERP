@@ -35,6 +35,9 @@ export interface ActiveCompanyRef {
  * the frontend's built-in default. active_company rides along too (multi-company)
  * — never null once the backend has resolved it, since ResolveActive always
  * bootstraps one; only absent if the read itself failed upstream.
+ * username_at_format rides along too — the workspace's username display
+ * choice (settings.AccountsUsernameAtFormatKey); absent/false means no
+ * leading "@".
  */
 export interface LocalePreferences {
   /** The caller's own account email — the closest thing to a "display name"
@@ -44,6 +47,7 @@ export interface LocalePreferences {
   default_locale: string | null
   number_format?: NumberFormatPreference | null
   active_company?: ActiveCompanyRef | null
+  username_at_format?: boolean
 }
 
 /**

@@ -1,6 +1,12 @@
 'use client'
 import { useEffect } from 'react'
-import { translationRegistry, useCompanyStore, useFormatStore, useI18nStore } from '@eerp/core-front'
+import {
+  translationRegistry,
+  useAccountsStore,
+  useCompanyStore,
+  useFormatStore,
+  useI18nStore,
+} from '@eerp/core-front'
 import { resolveEffectiveLocale, type LocalePreferences } from '@/lib/locale'
 // Catalogs register as an import side effect; importing here guarantees the pool is
 // populated before the sync validates the server preference against it.
@@ -37,6 +43,8 @@ export function LocaleSync({ preferences }: { preferences: LocalePreferences | n
     if (preferences.active_company) {
       useCompanyStore.getState().setCurrency(preferences.active_company.currency)
     }
+
+    useAccountsStore.getState().setUsernameAtFormat(Boolean(preferences.username_at_format))
   }, [preferences])
   return null
 }

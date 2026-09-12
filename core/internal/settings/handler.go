@@ -116,6 +116,10 @@ type preferencesResponse struct {
 	// null once resolved, since ResolveActive always bootstraps one. Rides
 	// along here so the top bar's company switcher needs no separate fetch.
 	ActiveCompany *activeCompanyRef `json:"active_company"`
+	// UsernameAtFormat: the workspace's username display format (see
+	// AccountsUsernameAtFormatKey). Rides along here, same reasoning as
+	// NumberFormat, so any `text/username` widget needs no separate fetch.
+	UsernameAtFormat bool `json:"username_at_format"`
 }
 
 // activeCompanyRef is the minimal company shape callers need to render a
@@ -190,6 +194,19 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 		// than failing the whole preferences load — it is display config only.
 		if err := json.Unmarshal([]byte(rawFormat), &format); err == nil {
 			resp.NumberFormat = &format
+		}
+	}
+
+	rawAccounts, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, AccountsUsernameAtFormatKey)
+	if err != nil {
+		return fmt.Errorf("preferences: read accounts settings: %w", err)
+	}
+	if ok {
+		var accounts accountsSettings
+		// Same posture as NumberFormat above: an unparsable value degrades to
+		// false rather than failing the whole preferences load.
+		if err := json.Unmarshal([]byte(rawAccounts), &accounts); err == nil {
+			resp.UsernameAtFormat = accounts.UsernameAtFormat
 		}
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -795,6 +812,63 @@ func (h *Handler) PutReportsLayoutSettings(c echo.Context) error {
 	}
 	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ReportsLayoutKey, string(value)); err != nil {
 		return fmt.Errorf("settings: set reports layout: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// accountsSettings is both the stored value of AccountsUsernameAtFormatKey
+// and the request/response body of GET|PUT /settings/accounts.
+type accountsSettings struct {
+	UsernameAtFormat bool `json:"username_at_format"`
+}
+
+// GetAccountsSettings handles GET /api/v1/settings/accounts — the
+// workspace's username display format (see AccountsUsernameAtFormatKey's
+// doc comment). Absent returns false, not a 404: an unconfigured workspace
+// keeps rendering usernames the original way. Mounted behind the permission
+// middleware, which derives settings:accounts:read from the route.
+func (h *Handler) GetAccountsSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, AccountsUsernameAtFormatKey)
+	if err != nil {
+		return fmt.Errorf("settings: get accounts settings: %w", err)
+	}
+
+	resp := accountsSettings{}
+	if ok {
+		// An unparsable stored value degrades to false rather than failing the
+		// read — same posture every other settings GET here takes.
+		_ = json.Unmarshal([]byte(raw), &resp)
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutAccountsSettings handles PUT /api/v1/settings/accounts. Mounted behind
+// the permission middleware, which derives settings:accounts:write from the
+// route.
+func (h *Handler) PutAccountsSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	var req accountsSettings
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal accounts settings: %w", err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, AccountsUsernameAtFormatKey, string(value)); err != nil {
+		return fmt.Errorf("settings: set accounts settings: %w", err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

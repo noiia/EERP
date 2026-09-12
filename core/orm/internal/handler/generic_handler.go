@@ -203,9 +203,12 @@ func (h *GenericHandler) Create(c echo.Context) error {
 		var ve *crud.ValidationError
 		if errors.As(err, &ve) {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]any{
-				"error":  err.Error(),
-				"code":   "VALIDATION_ERROR",
-				"fields": ve.Missing,
+				"error": map[string]any{
+					"code":       "VALIDATION_ERROR",
+					"message":    err.Error(),
+					"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
+					"fields":     ve.Missing,
+				},
 			})
 		}
 		return err
@@ -237,9 +240,12 @@ func (h *GenericHandler) Update(c echo.Context) error {
 		var ve *crud.ValidationError
 		if errors.As(err, &ve) {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]any{
-				"error":  err.Error(),
-				"code":   "VALIDATION_ERROR",
-				"fields": ve.Missing,
+				"error": map[string]any{
+					"code":       "VALIDATION_ERROR",
+					"message":    err.Error(),
+					"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
+					"fields":     ve.Missing,
+				},
 			})
 		}
 		return err

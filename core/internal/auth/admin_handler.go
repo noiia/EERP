@@ -32,8 +32,8 @@ import (
 type adminUserStore interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Users, error)
 	FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Users, error)
-	CreateUser(ctx context.Context, tenantID uuid.UUID, email string) (Users, error)
-	UpdateEmail(ctx context.Context, tenantID, id uuid.UUID, email string) (Users, error)
+	CreateUser(ctx context.Context, tenantID uuid.UUID, profile UserProfile) (Users, error)
+	UpdateProfile(ctx context.Context, tenantID, id uuid.UUID, profile UserProfile) (Users, error)
 }
 
 type adminRoleStore interface {
@@ -64,20 +64,46 @@ func newAdminHandlerWith(users adminUserStore, roles adminRoleStore) *AdminHandl
 // JSON keys are the contract the frontend descriptors (field names) rely on.
 
 type adminUserResponse struct {
-	ID              uuid.UUID `json:"id"`
-	Email           string    `json:"email"`
-	PreferredLocale *string   `json:"preferred_locale"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                uuid.UUID `json:"id"`
+	Email             string    `json:"email"`
+	Username          *string   `json:"username"`
+	Name              string    `json:"name"`
+	Surname           string    `json:"surname"`
+	DisplayName       string    `json:"display_name"`
+	JobTitle          string    `json:"job_title"`
+	Phone             string    `json:"phone"`
+	AddressNumber     *int      `json:"address_number"`
+	AddressComplement string    `json:"address_complement"`
+	AddressStreet     string    `json:"address_street"`
+	AddressZipCode    string    `json:"address_zip_code"`
+	AddressCity       string    `json:"address_city"`
+	AddressState      string    `json:"address_state"`
+	AddressCountry    string    `json:"address_country"`
+	PreferredLocale   *string   `json:"preferred_locale"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 func toUserResponse(u Users) adminUserResponse {
 	return adminUserResponse{
-		ID:              u.ID,
-		Email:           u.Email,
-		PreferredLocale: u.PreferredLocale,
-		CreatedAt:       u.CreatedAt,
-		UpdatedAt:       u.UpdatedAt,
+		ID:                u.ID,
+		Email:             u.Email,
+		Username:          u.Username,
+		Name:              u.Name,
+		Surname:           u.Surname,
+		DisplayName:       u.DisplayName,
+		JobTitle:          u.JobTitle,
+		Phone:             u.Phone,
+		AddressNumber:     u.AddressNumber,
+		AddressComplement: u.AddressComplement,
+		AddressStreet:     u.AddressStreet,
+		AddressZipCode:    u.AddressZipCode,
+		AddressCity:       u.AddressCity,
+		AddressState:      u.AddressState,
+		AddressCountry:    u.AddressCountry,
+		PreferredLocale:   u.PreferredLocale,
+		CreatedAt:         u.CreatedAt,
+		UpdatedAt:         u.UpdatedAt,
 	}
 }
 
@@ -129,23 +155,76 @@ func (h *AdminHandler) ListUsers(c echo.Context) error {
 	return c.JSON(http.StatusOK, listEnvelope{Data: data, Total: len(data)})
 }
 
-// CreateUser handles POST /api/v1/users. The body carries only the email; the
-// account is created locked (see UserRepository.CreateUser) in the caller's tenant.
+// userWriteRequest is the wire shape CreateUser/UpdateUser bind — every
+// field the admin surface lets a caller write, matching UserProfile 1:1 (see
+// its own doc comment for Password's optional/write-only semantics).
+type userWriteRequest struct {
+	Email             string  `json:"email"`
+	Password          string  `json:"password"`
+	Username          *string `json:"username"`
+	Name              string  `json:"name"`
+	Surname           string  `json:"surname"`
+	DisplayName       string  `json:"display_name"`
+	JobTitle          string  `json:"job_title"`
+	Phone             string  `json:"phone"`
+	AddressNumber     *int    `json:"address_number"`
+	AddressComplement string  `json:"address_complement"`
+	AddressStreet     string  `json:"address_street"`
+	AddressZipCode    string  `json:"address_zip_code"`
+	AddressCity       string  `json:"address_city"`
+	AddressState      string  `json:"address_state"`
+	AddressCountry    string  `json:"address_country"`
+}
+
+func (req userWriteRequest) toProfile() UserProfile {
+	return UserProfile{
+		Email:             strings.TrimSpace(req.Email),
+		Password:          req.Password,
+		Username:          req.Username,
+		Name:              req.Name,
+		Surname:           req.Surname,
+		DisplayName:       req.DisplayName,
+		JobTitle:          req.JobTitle,
+		Phone:             req.Phone,
+		AddressNumber:     req.AddressNumber,
+		AddressComplement: req.AddressComplement,
+		AddressStreet:     req.AddressStreet,
+		AddressZipCode:    req.AddressZipCode,
+		AddressCity:       req.AddressCity,
+		AddressState:      req.AddressState,
+		AddressCountry:    req.AddressCountry,
+	}
+}
+
+// validateUserWrite checks the two fields with real format/length
+// constraints; every other profile field is free text with no validation,
+// same posture as Roles.Description.
+func validateUserWrite(profile UserProfile) string {
+	if !validEmail(profile.Email) {
+		return "email must be a valid address."
+	}
+	if profile.Password != "" && len(profile.Password) < 8 {
+		return "password must be at least 8 characters."
+	}
+	return ""
+}
+
+// CreateUser handles POST /api/v1/users. A blank password keeps the account
+// LOCKED (see UserRepository.CreateUser) — set one to make it usable
+// immediately instead of waiting on a separate credential flow.
 func (h *AdminHandler) CreateUser(c echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
-	var req struct {
-		Email string `json:"email"`
-	}
+	var req userWriteRequest
 	if err := c.Bind(&req); err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
-	email := strings.TrimSpace(req.Email)
-	if !validEmail(email) {
-		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "email must be a valid address.")
+	profile := req.toProfile()
+	if msg := validateUserWrite(profile); msg != "" {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
 	}
 
-	created, err := h.users.CreateUser(c.Request().Context(), identity.TenantID, email)
+	created, err := h.users.CreateUser(c.Request().Context(), identity.TenantID, profile)
 	if err != nil {
 		return fmt.Errorf("admin: create user: %w", err)
 	}
@@ -170,8 +249,9 @@ func (h *AdminHandler) GetUser(c echo.Context) error {
 	return c.JSON(http.StatusOK, toUserResponse(u))
 }
 
-// UpdateUser handles PUT /api/v1/users/:id. Only the email is writable — every
-// other field in the body (id, timestamps, locale, …) is ignored.
+// UpdateUser handles PUT /api/v1/users/:id. Every UserProfile field is
+// writable; a blank password leaves the existing credential untouched
+// (UserRepository.UpdateProfile) rather than locking the account back out.
 func (h *AdminHandler) UpdateUser(c echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
@@ -179,18 +259,16 @@ func (h *AdminHandler) UpdateUser(c echo.Context) error {
 	if err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid user id.")
 	}
-	var req struct {
-		Email string `json:"email"`
-	}
+	var req userWriteRequest
 	if err := c.Bind(&req); err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
-	email := strings.TrimSpace(req.Email)
-	if !validEmail(email) {
-		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "email must be a valid address.")
+	profile := req.toProfile()
+	if msg := validateUserWrite(profile); msg != "" {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
 	}
 
-	updated, err := h.users.UpdateEmail(c.Request().Context(), identity.TenantID, id, email)
+	updated, err := h.users.UpdateProfile(c.Request().Context(), identity.TenantID, id, profile)
 	if err != nil {
 		if errors.Is(err, orm.ErrNotFound) {
 			return adminErrorJSON(c, http.StatusNotFound, "NOT_FOUND", "User not found.")

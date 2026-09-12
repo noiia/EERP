@@ -25,6 +25,7 @@ import {
 } from '@eerp/core-front'
 import type { OSMConnector } from '@/lib/osm-settings'
 import type { TaxSettings as TaxSettingsValue } from '@/lib/tax-settings'
+import AccountsSettings from './AccountsSettings'
 import OSMConnectorSettings from './OSMConnectorSettings'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
 import TaxSettings from './TaxSettings'
@@ -44,6 +45,8 @@ export default function AppearanceSettings({
   initialOSMConnector = { enabled: false, base_url: '', user_agent: '' },
   canEditTax = false,
   initialTaxSettings = { price_mode: 'tax_excluded' },
+  canEditAccounts = false,
+  initialUsernameAtFormat = false,
 }: {
   canEditReports?: boolean
   initialFooter?: string
@@ -57,6 +60,8 @@ export default function AppearanceSettings({
   initialOSMConnector?: OSMConnector
   canEditTax?: boolean
   initialTaxSettings?: TaxSettingsValue
+  canEditAccounts?: boolean
+  initialUsernameAtFormat?: boolean
 }) {
   const t = useT()
   const palette = useUiStore((s) => s.palette)
@@ -237,6 +242,20 @@ export default function AppearanceSettings({
           </AccordionSummary>
           <AccordionDetails>
             <TaxSettings canEdit={canEditTax} initialSettings={initialTaxSettings} />
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Accounts')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <AccountsSettings
+              canEdit={canEditAccounts}
+              initialUsernameAtFormat={initialUsernameAtFormat}
+            />
           </AccordionDetails>
         </Accordion>
       </Stack>

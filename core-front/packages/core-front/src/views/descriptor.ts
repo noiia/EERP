@@ -81,7 +81,7 @@ export type JsonValue =
  * something else" posture `type: 'totals'` already has.
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
-  text: ['simple', 'long', 'phone', 'table', 'color', 'url'],
+  text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username'],
   number: ['float', 'int', 'percent', 'stars', 'phone', 'monetary'],
   boolean: ['switch', 'picture', 'signature', 'file'],
   date: ['simple'],

@@ -1,9 +1,11 @@
+import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { EntityViewServer } from '@eerp/core-front/server'
 import { T, type EntityActions } from '@eerp/core-front'
 import { requireAuth } from '@/lib/session'
+import UsersSettingsButton from '@/components/UsersSettingsButton'
 import { createRecord, removeRecord, updateRecord } from '../../[...module]/actions'
 import { usersDashboardDescriptor, usersDashboardListViews } from './descriptors'
 
@@ -28,9 +30,14 @@ export default async function UsersSettingsPage() {
     // inset, not MUI's own default "lg" cap — see [...module]/page.tsx's note.
     <Container maxWidth={false} sx={{ py: 4 }}>
       <Stack spacing={3}>
-        <Typography variant="h4" component="h1">
-          <T text="Users" />
-        </Typography>
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}
+        >
+          <Typography variant="h4" component="h1">
+            <T text="Users" />
+          </Typography>
+          <UsersSettingsButton />
+        </Box>
         <EntityViewServer
           descriptor={usersDashboardDescriptor}
           actions={actions}

@@ -37,6 +37,26 @@ describe('parseError', () => {
     expect(err.status).toBe(404)
   })
 
+  it('reads a validation error whose envelope also nests a fields array', async () => {
+    // core/orm's generic CRUD create/update (orm/internal/handler/generic_handler.go)
+    // used to respond with error as a bare string, which this function never read —
+    // the message silently fell back to the status text. Now it matches every other
+    // handler's {error:{code,message,request_id}} shape, plus a fields array.
+    const err = await parseError(
+      jsonResponse(422, {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'missing required fields: name, price_cents',
+          request_id: '01J-def',
+          fields: ['name', 'price_cents'],
+        },
+      }),
+    )
+    expect(err.code).toBe('VALIDATION_ERROR')
+    expect(err.message).toBe('missing required fields: name, price_cents')
+    expect(err.requestId).toBe('01J-def')
+  })
+
   it('synthesizes the code from status when the body is not the envelope', async () => {
     const err = await parseError(jsonResponse(500, { unexpected: true }))
     expect(err.code).toBe('INTERNAL_ERROR')

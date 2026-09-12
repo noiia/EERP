@@ -19,6 +19,7 @@ import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from 
 import { AddressWidget } from './address-widget'
 import { RelationCarouselWidget } from './carousel-widget'
 import { RelationSummaryWidget } from './relation-summary-widget'
+import { useAccountsStore } from './accounts-store'
 import { useCompanyStore } from './company-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { isHexColor } from './palette'
@@ -138,6 +139,47 @@ function TextColorWidget({ field, value, onChange, disabled }: WidgetProps) {
 }
 
 /**
+ * A masked TextField for a write-only credential (e.g. Users.password) — an
+ * eye/eye-slash IconButton toggles plain-text visibility, same "still
+ * round-trips through onChange as typed" lightness as text/color and
+ * text/url, no strength meter or format validation here (the backend's own
+ * length check is the real gate). Local `visible` state only, never
+ * persisted — reopening the form always starts masked.
+ */
+function TextPasswordWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const [visible, setVisible] = useState(false)
+  return (
+    <TextField
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      type={visible ? 'text' : 'password'}
+      autoComplete="new-password"
+      value={(value as string) ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      slotProps={{
+        input: {
+          endAdornment: (
+            <InputAdornment position="end">
+              <IconButton
+                aria-label={visible ? t('Hide password') : t('Show password')}
+                onClick={() => setVisible((v) => !v)}
+                edge="end"
+                size="small"
+              >
+                <FontAwesomeIcon icon={byPrefixAndName.fas[visible ? 'eye-slash' : 'eye']} size="sm" />
+              </IconButton>
+            </InputAdornment>
+          ),
+        },
+      }}
+    />
+  )
+}
+
+/**
  * A plain TextField that treats its string value as a URL: a trailing
  * open-in-new-tab IconButton, disabled while the field is empty (nothing to
  * open) — no format validation beyond that, matching text/color's "still
@@ -173,6 +215,34 @@ function TextUrlWidget({ field, value, onChange, disabled }: WidgetProps) {
           ),
         },
       }}
+    />
+  )
+}
+
+/**
+ * A plain TextField decorated with a leading "@" (like a handle) when the
+ * workspace's username display format is on — `useAccountsStore`
+ * (accounts-store.ts) is the client mirror the shell's LocaleSync seeds from
+ * GET /me/preferences' username_at_format, the SAME one-round-trip-seeds-
+ * every-mirror shape useCompanyStore/useFormatStore already use. Purely a
+ * DISPLAY decoration: the stored value is never rewritten with a leading "@".
+ */
+function TextUsernameWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const atFormat = useAccountsStore((s) => s.usernameAtFormat)
+  return (
+    <TextField
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      value={(value as string) ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      slotProps={
+        atFormat
+          ? { input: { startAdornment: <InputAdornment position="start">@</InputAdornment> } }
+          : undefined
+      }
     />
   )
 }
@@ -630,6 +700,8 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'text/table': TableWidget,
   'text/color': TextColorWidget,
   'text/url': TextUrlWidget,
+  'text/password': TextPasswordWidget,
+  'text/username': TextUsernameWidget,
   'number/float': NumberFloatWidget,
   'number/monetary': NumberMonetaryWidget,
   'number/int': NumberIntWidget,

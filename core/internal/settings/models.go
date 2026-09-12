@@ -97,6 +97,13 @@ const (
 	TaxPriceModeIncluded = "tax_included"
 )
 
+// AccountsUsernameAtFormatKey is the app_settings key holding whether the
+// workspace always renders a user's `username` (core/internal/auth.Users)
+// with a leading "@", like a handle — a pure DISPLAY choice, never rewriting
+// the stored value. Stored as JSON: {"username_at_format":true}. Absent
+// means false (no leading "@"), the original behavior.
+const AccountsUsernameAtFormatKey = "accounts.username_at_format"
+
 // OSMConnectorKey is the app_settings key holding the workspace's
 // OpenStreetMap (Nominatim) connector configuration — used to autocomplete
 // addresses as the user types into a `type: 'address'` field (see

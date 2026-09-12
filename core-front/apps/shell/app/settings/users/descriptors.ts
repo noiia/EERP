@@ -33,21 +33,39 @@ export const usersListDescriptor: ViewDescriptor<AdminRecord> = {
   viewType: 'tree',
   fields: [
     { name: 'email', label: 'Email', type: 'text', required: true },
+    { name: 'username', label: 'Username', type: 'text', widget: 'username' },
+    { name: 'display_name', label: 'Display name', type: 'text' },
     { name: 'created_at', label: 'Created', type: 'date' },
   ],
   // Clicking a row opens that user's form; Create opens it empty. A created
-  // account starts LOCKED (no password) until a credential flow sets one.
+  // account starts LOCKED (no password) until a password is set on it.
   formPath: '/settings/users/accounts/:id',
   createPermission: 'users:users:write',
   permissions: ['users:users:read'],
 }
 
-// Email is the only field Go lets this form write; the rest of the record rides
-// along in the draft and is ignored server-side.
+// Every field here is writable through Go's userWriteRequest (admin_handler.go) —
+// email, the optional username handle (rendered with a leading "@" when the
+// workspace's accounts.username_at_format setting is on — see
+// core-front's accounts-store.ts), profile fields, the 7-column address
+// composite (type: 'address' — see AddressWidget), and password (blank on an
+// existing record means "leave the credential unchanged"; blank on a new
+// record means the account is created LOCKED, same as before this field
+// existed).
 export const userFormDescriptor: ViewDescriptor<AdminRecord> = {
   entity: 'users',
   viewType: 'form',
-  fields: [{ name: 'email', label: 'Email', type: 'text', required: true }],
+  fields: [
+    { name: 'email', label: 'Email', type: 'text', required: true },
+    { name: 'username', label: 'Username', type: 'text', widget: 'username' },
+    { name: 'password', label: 'Password', type: 'text', widget: 'password' },
+    { name: 'name', label: 'First name', type: 'text' },
+    { name: 'surname', label: 'Surname', type: 'text' },
+    { name: 'display_name', label: 'Display name', type: 'text' },
+    { name: 'job_title', label: 'Job title', type: 'text' },
+    { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
+    { name: 'address', label: 'Address', type: 'address' },
+  ],
   permissions: ['users:users:read'],
 }
 
@@ -93,12 +111,35 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
         labelField: 'name',
       },
     },
+    {
+      // One row per "view" (entity) this role has any rights on — DATA MODEL
+      // AND UI ONLY (core/internal/auth.RoleViewPermission's own doc
+      // comment): not yet consulted by the actual module:resource:action
+      // permission check, which stays role_permissions/role_belongs alone.
+      // `role_view_permission` isn't a discovered module (no module.json —
+      // deliberately, since toggling `auth` in the App Store would be able
+      // to disable login itself), so it has no registered form for the
+      // create-wizard to pick up; the wizard falls back to a bare `entity`
+      // text field (labelField below) and the row's `rights` tags are set
+      // afterward on its own dedicated form (formPath).
+      name: 'view_permissions',
+      label: 'Views',
+      type: 'relation',
+      relation: {
+        entity: 'role_view_permission',
+        kind: 'one2many',
+        inverseField: 'role_id',
+        labelField: 'entity',
+        formPath: '/settings/users/roles/rights/:id',
+      },
+    },
   ],
-  // Explicit layout so `belongs` gets its own "Belongs" tab instead of
-  // landing in the synthesized default anatomy's two-column group — the
-  // header/columns/Settings-page nodes reuse the same well-known ids the
-  // default synthesis would have used, so nothing else about the form's
-  // appearance changes.
+  // Explicit layout so `view_permissions`/`belongs` get their own tabs
+  // instead of landing in the synthesized default anatomy's two-column
+  // group — the header/columns/Settings-page nodes reuse the same
+  // well-known ids the default synthesis would have used, so nothing else
+  // about the form's appearance changes. "Views" is the FIRST notebook page
+  // per the feature request.
   layout: [
     { kind: 'row', id: FORM_HEADER_ID, children: [{ kind: 'field', name: 'name', variant: 'title' }] },
     {
@@ -114,10 +155,45 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
       kind: 'notebook',
       id: FORM_NOTEBOOK_ID,
       children: [
+        { kind: 'page', title: 'Views', children: [{ kind: 'field', name: 'view_permissions' }] },
         { kind: 'page', id: PAGE_SETTINGS_ID, title: 'Settings', children: [] },
         { kind: 'page', title: 'Belongs', children: [{ kind: 'field', name: 'belongs' }] },
       ],
     },
   ],
   permissions: ['roles:roles:read'],
+}
+
+// role_view_permission's own dedicated form — needed for two reasons: it's
+// what the "Views" tab's one2many formPath opens when a row is clicked (to
+// set that row's `rights` tags, which the create-wizard's bare fallback form
+// can't offer — see view_permissions' own comment above), and it's a real
+// registered ViewDescriptor the SAME way sale_line's own form exists purely
+// to back its parent's one2many wizard/click-through.
+export const roleViewPermissionFormDescriptor: ViewDescriptor<AdminRecord> = {
+  entity: 'role_view_permission',
+  viewType: 'form',
+  fields: [
+    {
+      name: 'role_id',
+      label: 'Role',
+      type: 'relation',
+      required: true,
+      relation: { entity: 'roles', kind: 'many2one', labelField: 'name' },
+    },
+    { name: 'entity', label: 'View', type: 'text', required: true },
+    {
+      name: 'rights',
+      label: 'Rights',
+      type: 'relation',
+      relation: {
+        entity: 'account_role_types',
+        kind: 'many2many',
+        via: 'role_view_permission_right',
+        viaFields: { own: 'role_view_permission_id', related: 'account_role_type_id' },
+        labelField: 'name',
+      },
+    },
+  ],
+  permissions: ['role_view_permission:role_view_permission:read'],
 }

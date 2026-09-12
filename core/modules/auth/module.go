@@ -52,6 +52,21 @@ func (m *authModule) Register() error {
 	if err := orm.Register[auth.RoleBelongs](); err != nil {
 		return err
 	}
+	// The role "rights" table (Role form's own first notebook page) and its
+	// backing catalog/junction — all three ride the generic CRUD surface,
+	// same posture as RoleBelongs above, so the Role form's embedded
+	// RelationListWidget table and many2many tags widget need no bespoke
+	// endpoint. See RoleViewPermission's own doc comment: data model + UI
+	// only, not yet consulted by any permission check.
+	if err := orm.Register[auth.AccountRoleTypes](); err != nil {
+		return err
+	}
+	if err := orm.Register[auth.RoleViewPermission](); err != nil {
+		return err
+	}
+	if err := orm.Register[auth.RoleViewPermissionRight](); err != nil {
+		return err
+	}
 	return nil
 }
 

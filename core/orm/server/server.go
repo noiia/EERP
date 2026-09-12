@@ -35,10 +35,26 @@ type Server struct {
 	app  *orm.App
 }
 
-// ErrorResponse is the uniform error body shape.
+// ErrorResponse is the uniform error body shape — the same
+// {"error":{"code","message","request_id"}} envelope every dedicated
+// handler package's own errorJSON helper already produces (see
+// core-front/CLAUDE.md's Conventions table), so the frontend's parseError()
+// has exactly one shape to read regardless of which package produced the
+// error. Previously this was a flat {"error": "<string>", "code": "..."}
+// shape unique to this package — parseError() only ever recognized the
+// object form, so a caller falling through to this handler (or to generic
+// CRUD's own validation response, see internal/handler/generic_handler.go)
+// silently lost its real message and fell back to a generic one.
 type ErrorResponse struct {
-	Error string `json:"error"`
-	Code  string `json:"code"`
+	Error ErrorBody `json:"error"`
+}
+
+// ErrorBody is the nested {code, message, request_id} object every error
+// envelope in this codebase carries under "error".
+type ErrorBody struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // New creates a Server with the standard middleware stack:
@@ -232,23 +248,24 @@ func newErrorHandler(logger *zap.Logger) echo.HTTPErrorHandler {
 			return
 		}
 
+		requestID := c.Response().Header().Get(echo.HeaderXRequestID)
+
 		var he *echo.HTTPError
 		if errors.As(err, &he) {
 			code := he.Code
 			msg := fmt.Sprintf("%v", he.Message)
-			_ = c.JSON(code, ErrorResponse{Error: msg, Code: httpCode(code)})
+			_ = c.JSON(code, ErrorResponse{Error: ErrorBody{Code: httpCode(code), Message: msg, RequestID: requestID}})
 			return
 		}
 
 		if logger != nil {
 			logger.Error("unhandled error",
 				zap.Error(err),
-				zap.String("request_id", c.Response().Header().Get(echo.HeaderXRequestID)),
+				zap.String("request_id", requestID),
 			)
 		}
 		_ = c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error: "internal server error",
-			Code:  "INTERNAL_ERROR",
+			Error: ErrorBody{Code: "INTERNAL_ERROR", Message: "internal server error", RequestID: requestID},
 		})
 	}
 }

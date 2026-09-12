@@ -17,12 +17,12 @@ import (
 // ── Stubs ─────────────────────────────────────────────────────────────────────
 
 type stubAdminUsers struct {
-	users     []Users
-	user      Users
-	err       error
-	gotTenant uuid.UUID
-	gotID     uuid.UUID
-	gotEmail  string
+	users      []Users
+	user       Users
+	err        error
+	gotTenant  uuid.UUID
+	gotID      uuid.UUID
+	gotProfile UserProfile
 }
 
 func (s *stubAdminUsers) ListByTenant(_ context.Context, tenantID uuid.UUID) ([]Users, error) {
@@ -35,23 +35,23 @@ func (s *stubAdminUsers) FindInTenant(_ context.Context, tenantID, id uuid.UUID)
 	return s.user, s.err
 }
 
-func (s *stubAdminUsers) CreateUser(_ context.Context, tenantID uuid.UUID, email string) (Users, error) {
-	s.gotTenant, s.gotEmail = tenantID, email
+func (s *stubAdminUsers) CreateUser(_ context.Context, tenantID uuid.UUID, profile UserProfile) (Users, error) {
+	s.gotTenant, s.gotProfile = tenantID, profile
 	if s.err != nil {
 		return Users{}, s.err
 	}
 	u := s.user
-	u.Email = email
+	u.Email = profile.Email
 	return u, nil
 }
 
-func (s *stubAdminUsers) UpdateEmail(_ context.Context, tenantID, id uuid.UUID, email string) (Users, error) {
-	s.gotTenant, s.gotID, s.gotEmail = tenantID, id, email
+func (s *stubAdminUsers) UpdateProfile(_ context.Context, tenantID, id uuid.UUID, profile UserProfile) (Users, error) {
+	s.gotTenant, s.gotID, s.gotProfile = tenantID, id, profile
 	if s.err != nil {
 		return Users{}, s.err
 	}
 	u := s.user
-	u.Email = email
+	u.Email = profile.Email
 	return u, nil
 }
 
@@ -206,8 +206,8 @@ func TestAdminUpdateUser(t *testing.T) {
 			if tt.wantStatus != http.StatusOK {
 				return
 			}
-			if users.gotEmail != tt.wantEmail {
-				t.Errorf("saved email = %q, want %q", users.gotEmail, tt.wantEmail)
+			if users.gotProfile.Email != tt.wantEmail {
+				t.Errorf("saved email = %q, want %q", users.gotProfile.Email, tt.wantEmail)
 			}
 			if users.gotTenant != identity.TenantID || users.gotID != id {
 				t.Errorf("update scoped to (%s,%s), want (%s,%s)", users.gotTenant, users.gotID, identity.TenantID, id)
@@ -229,6 +229,8 @@ func TestAdminCreateUser(t *testing.T) {
 		{name: "extra fields ignored", body: `{"email":"new@x.io","password_hash":"evil","id":"11111111-1111-1111-1111-111111111111"}`, wantStatus: http.StatusCreated, wantEmail: "new@x.io"},
 		{name: "invalid email rejected", body: `{"email":"nope"}`, wantStatus: http.StatusBadRequest},
 		{name: "empty body rejected", body: `{}`, wantStatus: http.StatusBadRequest},
+		{name: "a real password creates an unlocked account", body: `{"email":"new@x.io","password":"longenough1"}`, wantStatus: http.StatusCreated, wantEmail: "new@x.io"},
+		{name: "too-short password rejected", body: `{"email":"new@x.io","password":"short"}`, wantStatus: http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -242,8 +244,8 @@ func TestAdminCreateUser(t *testing.T) {
 			if tt.wantStatus != http.StatusCreated {
 				return
 			}
-			if users.gotEmail != tt.wantEmail || users.gotTenant != identity.TenantID {
-				t.Errorf("created (%q, %s), want (%q, %s)", users.gotEmail, users.gotTenant, tt.wantEmail, identity.TenantID)
+			if users.gotProfile.Email != tt.wantEmail || users.gotTenant != identity.TenantID {
+				t.Errorf("created (%q, %s), want (%q, %s)", users.gotProfile.Email, users.gotTenant, tt.wantEmail, identity.TenantID)
 			}
 			if strings.Contains(rec.Body.String(), "password") {
 				t.Fatalf("password material leaked: %s", rec.Body.String())

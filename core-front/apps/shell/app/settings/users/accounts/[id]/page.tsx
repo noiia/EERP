@@ -8,9 +8,9 @@ import { createRecord, removeRecord, updateRecord } from '../../../../[...module
 import { userFormDescriptor } from '../../descriptors'
 
 // Settings → Users → Accounts → one account: the edit form, or ("new") the empty
-// create form the list/dashboard Create button opens. Email is the only field Go
-// accepts on save; a created account starts locked (no password) until a
-// credential flow sets one.
+// create form the list/dashboard Create button opens. Leaving the password
+// field blank on save keeps the account locked (new) or its existing
+// credential unchanged (edit) — see userFormDescriptor's own comment.
 
 type AnyRecord = { id: string } & Record<string, unknown>
 

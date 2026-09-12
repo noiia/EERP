@@ -61,45 +61,115 @@ func (r *UserRepository) FindInTenant(ctx context.Context, tenantID, id uuid.UUI
 	return u, nil
 }
 
-// UpdateEmail sets the user's email. The record is re-read tenant-scoped first, so
-// only whitelisted fields change and the tenant check cannot be bypassed by the id.
-func (r *UserRepository) UpdateEmail(ctx context.Context, tenantID, id uuid.UUID, email string) (Users, error) {
+// UserProfile carries every field the admin surface (AdminHandler) lets a
+// caller write, on both Create and Update. Password is a WRITE-ONLY
+// convenience: it never appears in any response (adminUserResponse has no
+// such field), and it's optional — blank on Create keeps the existing
+// LOCKED-account behavior (see CreateUser's own doc comment below); blank on
+// Update leaves the existing credential untouched rather than re-locking the
+// account.
+type UserProfile struct {
+	Email             string
+	Password          string
+	Username          *string
+	Name              string
+	Surname           string
+	DisplayName       string
+	JobTitle          string
+	Phone             string
+	AddressNumber     *int
+	AddressComplement string
+	AddressStreet     string
+	AddressZipCode    string
+	AddressCity       string
+	AddressState      string
+	AddressCountry    string
+}
+
+// applyProfile copies every UserProfile field onto u EXCEPT Password, which
+// each caller (CreateUser/UpdateProfile) handles on its own since "blank"
+// means something different in each direction (lock vs. leave untouched).
+func applyProfile(u *Users, profile UserProfile) {
+	u.Email = profile.Email
+	u.Username = profile.Username
+	u.Name = profile.Name
+	u.Surname = profile.Surname
+	u.DisplayName = profile.DisplayName
+	u.JobTitle = profile.JobTitle
+	u.Phone = profile.Phone
+	u.AddressNumber = profile.AddressNumber
+	u.AddressComplement = profile.AddressComplement
+	u.AddressStreet = profile.AddressStreet
+	u.AddressZipCode = profile.AddressZipCode
+	u.AddressCity = profile.AddressCity
+	u.AddressState = profile.AddressState
+	u.AddressCountry = profile.AddressCountry
+}
+
+// UpdateProfile sets every UserProfile field. The record is re-read
+// tenant-scoped first, so only whitelisted fields change and the tenant
+// check cannot be bypassed by the id. A blank profile.Password leaves the
+// existing credential untouched — Update is not how an account gets LOCKED
+// back out.
+func (r *UserRepository) UpdateProfile(ctx context.Context, tenantID, id uuid.UUID, profile UserProfile) (Users, error) {
 	u, err := r.FindInTenant(ctx, tenantID, id)
 	if err != nil {
 		return Users{}, err
 	}
-	u.Email = email
+	applyProfile(&u, profile)
+	if profile.Password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(profile.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return Users{}, fmt.Errorf("user: update profile: hash password: %w", err)
+		}
+		u.PasswordHash = string(hash)
+	}
 	updated, err := r.users.Update(ctx, u, id)
 	if err != nil {
-		return Users{}, fmt.Errorf("user: update email: %w", err)
+		return Users{}, fmt.Errorf("user: update profile: %w", err)
 	}
 	return updated, nil
 }
 
-// CreateUser creates a user in the tenant with a LOCKED credential: the password
-// hash is derived from random bytes that are immediately discarded, so no password
-// can ever match it. The account exists (assignable, listable, editable) but cannot
-// log in until a dedicated password/invitation flow sets a real credential — that
-// flow is deliberately separate from this admin surface.
-func (r *UserRepository) CreateUser(ctx context.Context, tenantID uuid.UUID, email string) (Users, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return Users{}, fmt.Errorf("user: create: generate locked credential: %w", err)
-	}
-	hash, err := bcrypt.GenerateFromPassword(raw, bcrypt.DefaultCost)
+// CreateUser creates a user in the tenant. A blank profile.Password creates a
+// LOCKED credential: the password hash is derived from random bytes that are
+// immediately discarded, so no password can ever match it — the account
+// exists (assignable, listable, editable) but cannot log in until a real
+// password is set (here, later via UpdateProfile, or a dedicated invitation
+// flow). A non-blank profile.Password is hashed and used directly, so the
+// account is usable immediately.
+func (r *UserRepository) CreateUser(ctx context.Context, tenantID uuid.UUID, profile UserProfile) (Users, error) {
+	hash, err := hashOrLock(profile.Password)
 	if err != nil {
-		return Users{}, fmt.Errorf("user: create: hash locked credential: %w", err)
+		return Users{}, fmt.Errorf("user: create: %w", err)
 	}
 
-	created, err := r.users.Create(ctx, Users{
-		TenantID:     tenantID,
-		Email:        email,
-		PasswordHash: string(hash),
-	})
+	u := Users{TenantID: tenantID, PasswordHash: hash}
+	applyProfile(&u, profile)
+
+	created, err := r.users.Create(ctx, u)
 	if err != nil {
 		return Users{}, fmt.Errorf("user: create: %w", err)
 	}
 	return created, nil
+}
+
+// hashOrLock hashes a real password, or — when password is blank — derives a
+// LOCKED hash from random, immediately-discarded bytes (see CreateUser's own
+// doc comment).
+func hashOrLock(password string) (string, error) {
+	if password == "" {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return "", fmt.Errorf("generate locked credential: %w", err)
+		}
+		password = string(raw)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("hash credential: %w", err)
+	}
+	return string(hash), nil
 }
 
 // RoleRepository provides the tenant-scoped role queries the admin endpoints need.

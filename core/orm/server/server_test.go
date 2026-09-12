@@ -154,8 +154,8 @@ func TestErrorHandler_404_ReturnsNotFoundCode(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if body.Code != "NOT_FOUND" {
-		t.Errorf("code = %q, want NOT_FOUND", body.Code)
+	if body.Error.Code != "NOT_FOUND" {
+		t.Errorf("code = %q, want NOT_FOUND", body.Error.Code)
 	}
 }
 
@@ -167,8 +167,8 @@ func TestErrorHandler_400_ReturnsBadRequestCode(t *testing.T) {
 	}
 	var body ormserver.ErrorResponse
 	json.Unmarshal(rec.Body.Bytes(), &body) //nolint:errcheck
-	if body.Code != "BAD_REQUEST" {
-		t.Errorf("code = %q, want BAD_REQUEST", body.Code)
+	if body.Error.Code != "BAD_REQUEST" {
+		t.Errorf("code = %q, want BAD_REQUEST", body.Error.Code)
 	}
 }
 
@@ -177,8 +177,8 @@ func TestErrorHandler_422_ReturnsUnprocessableCode(t *testing.T) {
 
 	var body ormserver.ErrorResponse
 	json.Unmarshal(rec.Body.Bytes(), &body) //nolint:errcheck
-	if body.Code != "UNPROCESSABLE" {
-		t.Errorf("code = %q, want UNPROCESSABLE", body.Code)
+	if body.Error.Code != "UNPROCESSABLE" {
+		t.Errorf("code = %q, want UNPROCESSABLE", body.Error.Code)
 	}
 }
 
@@ -187,8 +187,8 @@ func TestErrorHandler_401_ReturnsUnauthorizedCode(t *testing.T) {
 
 	var body ormserver.ErrorResponse
 	json.Unmarshal(rec.Body.Bytes(), &body) //nolint:errcheck
-	if body.Code != "UNAUTHORIZED" {
-		t.Errorf("code = %q, want UNAUTHORIZED", body.Code)
+	if body.Error.Code != "UNAUTHORIZED" {
+		t.Errorf("code = %q, want UNAUTHORIZED", body.Error.Code)
 	}
 }
 
@@ -197,8 +197,8 @@ func TestErrorHandler_403_ReturnsForbiddenCode(t *testing.T) {
 
 	var body ormserver.ErrorResponse
 	json.Unmarshal(rec.Body.Bytes(), &body) //nolint:errcheck
-	if body.Code != "FORBIDDEN" {
-		t.Errorf("code = %q, want FORBIDDEN", body.Code)
+	if body.Error.Code != "FORBIDDEN" {
+		t.Errorf("code = %q, want FORBIDDEN", body.Error.Code)
 	}
 }
 
@@ -207,8 +207,8 @@ func TestErrorHandler_UnknownHTTPStatus_ReturnsErrorCode(t *testing.T) {
 
 	var body ormserver.ErrorResponse
 	json.Unmarshal(rec.Body.Bytes(), &body) //nolint:errcheck
-	if body.Code != "ERROR" {
-		t.Errorf("code = %q, want ERROR for unknown status", body.Code)
+	if body.Error.Code != "ERROR" {
+		t.Errorf("code = %q, want ERROR for unknown status", body.Error.Code)
 	}
 }
 
@@ -228,11 +228,11 @@ func TestErrorHandler_PlainError_Returns500WithInternalCode(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if body.Code != "INTERNAL_ERROR" {
-		t.Errorf("code = %q, want INTERNAL_ERROR", body.Code)
+	if body.Error.Code != "INTERNAL_ERROR" {
+		t.Errorf("code = %q, want INTERNAL_ERROR", body.Error.Code)
 	}
-	if body.Error != "internal server error" {
-		t.Errorf("error = %q, want %q", body.Error, "internal server error")
+	if body.Error.Message != "internal server error" {
+		t.Errorf("message = %q, want %q", body.Error.Message, "internal server error")
 	}
 }
 

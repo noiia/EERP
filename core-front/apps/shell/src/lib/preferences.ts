@@ -71,3 +71,17 @@ export async function setWorkspaceNumberFormat(
     return failure(e, 'Could not save the workspace number format.')
   }
 }
+
+/**
+ * Save the workspace's username display format — whether a `text/username`
+ * field always renders with a leading "@". Go authorizes: callers without
+ * settings:accounts:write get the error envelope back as a message.
+ */
+export async function setUsernameAtFormat(usernameAtFormat: boolean): Promise<SaveResult> {
+  try {
+    await apiRequest('PUT', '/settings/accounts', { username_at_format: usernameAtFormat })
+    return { ok: true }
+  } catch (e) {
+    return failure(e, 'Could not save the workspace username format.')
+  }
+}
