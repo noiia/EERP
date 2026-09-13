@@ -47,6 +47,7 @@ import { HeaderButtonContainer } from './header-button-container'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
+import { useListNavStore } from './list-nav-store'
 import { PictureSizeProvider } from './picture-widgets'
 import { useRecordLabelStore } from './record-label-store'
 import { useRelationOps } from './relation-ops'
@@ -206,6 +207,50 @@ function summarizeFieldChanges(
     changes.push(`${fieldLabel(field)} : ${displayValue(prev)} → ${displayValue(next)}`)
   }
   return changes.length > 0 ? changes.join('\n') : null
+}
+
+/**
+ * The </> record stepper — top-right of the form's toolbar row, alongside
+ * Save. Reads the list-nav store's last-known filtered order for this entity
+ * (set by TreeRenderer, above) and, when the CURRENT record is in it, renders
+ * "position / total" plus prev/next buttons that route straight to the
+ * neighboring record's own form (`formPath`), never back through the list.
+ * Renders nothing without a formPath, an id-less draft (new record), or no
+ * known list order containing this id — e.g. a form reached by direct link.
+ */
+function FormListNav({ formPath, entity, recordId }: { formPath?: string; entity: string; recordId?: string }) {
+  const t = useT()
+  const router = useRouter()
+  const ids = useListNavStore((s) => s.ids[entity])
+  if (!formPath || !recordId || !ids) return null
+  const index = ids.indexOf(recordId)
+  if (index === -1) return null
+
+  const goTo = (i: number) => router.push(formPath.replace(':id', ids[i]))
+
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
+      <IconButton
+        size="small"
+        aria-label={t('Previous record')}
+        disabled={index <= 0}
+        onClick={() => goTo(index - 1)}
+      >
+        <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} size="xs" />
+      </IconButton>
+      <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums, whiteSpace: 'nowrap' }}>
+        {index + 1} / {ids.length}
+      </Typography>
+      <IconButton
+        size="small"
+        aria-label={t('Next record')}
+        disabled={index >= ids.length - 1}
+        onClick={() => goTo(index + 1)}
+      >
+        <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} size="xs" />
+      </IconButton>
+    </Box>
+  )
 }
 
 function FormRenderer<T extends HasId>({
@@ -409,6 +454,7 @@ function FormRenderer<T extends HasId>({
         {statusField && (
           <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />
         )}
+        <FormListNav formPath={descriptor.formPath} entity={descriptor.entity} recordId={recordId} />
       </Box>
       {/* The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
           the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
@@ -537,6 +583,13 @@ function TreeRenderer<T extends HasId>({
   useEffect(() => {
     setLiveRecords(initialData)
   }, [initialData])
+  // Mirrors the current filtered/searched/grouped order into the session-only
+  // list-nav store — a form navigated to from here (List/Kanban/Calendar all
+  // route through the same formPath click) can then step </> through this
+  // SAME order without coming back to this view (see FormListNav below).
+  useEffect(() => {
+    useListNavStore.getState().setIds(descriptor.entity, liveRecords.map((r) => r.id))
+  }, [liveRecords, descriptor.entity])
 
   let content: React.ReactNode
   if (mode === 'kanban' && effective.kanbanStatusField) {

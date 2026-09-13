@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
 import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
+import { useListNavStore } from './list-nav-store'
 import { useRecordLabelStore } from './record-label-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { CreateBar, EntityView } from './renderers'
@@ -26,6 +27,7 @@ beforeEach(() => {
   useSessionStore.setState({ identity: null })
   useUiStore.setState({ viewMode: {} })
   useRecordLabelStore.setState({ id: null, label: null })
+  useListNavStore.setState({ ids: {} })
 })
 
 interface Contact {
@@ -275,6 +277,55 @@ describe('EntityView', () => {
     )
     fireEvent.click(screen.getByText('Ada'))
     expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  describe('form record navigator (</>)', () => {
+    it('shows position/total and steps to the next record after browsing a filtered list', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = {
+        ...formDescriptor,
+        viewType: 'tree',
+        formPath: '/crm/:id',
+      }
+      // Browsing the (filtered) list is what populates the nav order.
+      const { unmount } = render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[
+            { id: '1', name: 'Ada' },
+            { id: '2', name: 'Grace' },
+          ]}
+          actions={noopActions}
+        />,
+      )
+      unmount()
+
+      render(
+        <EntityView
+          descriptor={{ ...formDescriptor, formPath: '/crm/:id' }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.getByText('1 / 2')).toBeInTheDocument()
+      const prev = screen.getByRole('button', { name: 'Previous record' })
+      const next = screen.getByRole('button', { name: 'Next record' })
+      expect(prev).toBeDisabled()
+      expect(next).toBeEnabled()
+
+      fireEvent.click(next)
+      expect(pushMock).toHaveBeenCalledWith('/crm/2')
+    })
+
+    it('renders nothing for a record reached directly, with no known list order', () => {
+      render(
+        <EntityView
+          descriptor={{ ...formDescriptor, formPath: '/crm/:id' }}
+          initialData={[{ id: '99', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.queryByRole('button', { name: 'Next record' })).not.toBeInTheDocument()
+    })
   })
 
   describe('form chatter panel', () => {
