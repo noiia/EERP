@@ -602,7 +602,7 @@ func TestIntegration_Login_EmbedsGroupsClaim(t *testing.T) {
 	}
 }
 
-func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithAllRights(t *testing.T) {
+func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithGrantedRights(t *testing.T) {
 	app, _ := integrationSetup(t)
 	ctx := context.Background()
 	tenantID := uuid.New()
@@ -641,9 +641,21 @@ func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithAllRights(t *testing
 	).Scan(&rightsCount); err != nil {
 		t.Fatalf("count role_view_permission_right: %v", err)
 	}
-	if want := len(prefixes) * len(accountRoleTypeNamesForTest); rightsCount != want {
+	if want := len(prefixes) * len(adminGrantedRightNamesForTest); rightsCount != want {
 		t.Errorf("role_view_permission_right rows = %d, want %d (%d rights per entity)",
-			rightsCount, want, len(accountRoleTypeNamesForTest))
+			rightsCount, want, len(adminGrantedRightNamesForTest))
+	}
+	var deniedCount int
+	if err := app.DB.QueryRow(ctx,
+		`SELECT count(*) FROM role_view_permission_right rvpr
+		 JOIN role_view_permission rvp ON rvp.id = rvpr.role_view_permission_id
+		 JOIN account_role_types art ON art.id = rvpr.account_role_type_id
+		 WHERE rvp.role_id = $1 AND art.name = 'deny'`, adminRoleID,
+	).Scan(&deniedCount); err != nil {
+		t.Fatalf("count admin deny rights: %v", err)
+	}
+	if deniedCount != 0 {
+		t.Errorf("admin role_view_permission_right 'deny' rows = %d, want 0 (deny is opt-in per view, never a default grant)", deniedCount)
 	}
 
 	// Re-running is idempotent — no duplicate rows.
@@ -661,7 +673,7 @@ func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithAllRights(t *testing
 	}
 }
 
-// accountRoleTypeNamesForTest mirrors auth.accountRoleTypeNames (unexported)
-// so this external test package doesn't need to reach into internals for
-// one constant.
-var accountRoleTypeNamesForTest = []string{"deny", "read", "write", "delete"}
+// adminGrantedRightNamesForTest mirrors auth.adminGrantedRightNames
+// (unexported) so this external test package doesn't need to reach into
+// internals for one constant.
+var adminGrantedRightNamesForTest = []string{"read", "write", "delete"}

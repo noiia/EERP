@@ -80,6 +80,13 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB) error {
 // RoleViewPermission's own doc comment.
 var accountRoleTypeNames = []string{"deny", "read", "write", "delete"}
 
+// adminGrantedRightNames are the rights the default Admin role's per-view
+// rows are seeded with. "deny" is deliberately excluded: it exists in the
+// account_role_types catalog (accountRoleTypeNames above) so an admin can
+// explicitly apply it to lock a specific view, but it must never be a
+// DEFAULT grant on a role meant to have full access.
+var adminGrantedRightNames = []string{"read", "write", "delete"}
+
 // seedUUID derives a stable, reproducible v5 UUID from a tenant + a fixed
 // label, so re-running SeedDefaultRoles for the same tenant is idempotent via
 // plain `ON CONFLICT (id) DO NOTHING` — the same idempotency shape
@@ -110,9 +117,10 @@ type seedStatement struct {
 // consulted by any enforcement path (see RoleViewPermission's own doc
 // comment) — Viewer/Deny leave it empty, but Admin gets one row per entity
 // currently on the generic CRUD surface (orm.ExposedRoutePrefixes, the SAME
-// catalog the frontend's `entity` many2one picks from), each carrying all
-// four rights, so a brand-new Admin role's own Views notebook table already
-// lists everything instead of starting blank.
+// catalog the frontend's `entity` many2one picks from), each carrying
+// read/write/delete (never "deny" — see adminGrantedRightNames), so a
+// brand-new Admin role's own Views notebook table already lists everything
+// instead of starting blank.
 //
 // Not currently called from any production tenant-provisioning flow — none
 // exists yet in this codebase (tenants aren't self-serve today). SeedDevAdmin
@@ -180,7 +188,7 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 			 VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
 			[]any{rvpID, tenantID, adminRoleID, entity},
 		})
-		for _, name := range accountRoleTypeNames {
+		for _, name := range adminGrantedRightNames {
 			statements = append(statements, seedStatement{
 				`INSERT INTO role_view_permission_right
 				 (id, tenant_id, role_view_permission_id, account_role_type_id, created_at, updated_at)
