@@ -81,13 +81,17 @@ const SKIPPED_SEGMENTS = new Set(['page-formats'])
  * itself a real page — CRM's form is '/crm/:id', a sibling of '/crm/list',
  * not nested under it; sale's quote form is '/sale/quote/:id', where
  * '/sale/quote' isn't a page at all (only '/sale/quote/list' and
- * '/sale/quote/:id' are) — so the raw path alone either has no segment for
- * "List", or (worse) a dead-link segment a user can click into a 404. Works
- * at ANY depth, one rule: if the record's own parent path (segments minus
- * the last) has a sibling registered at `<parent>/list` (`knownPaths` — every
- * non-dynamic route path the module registry produced), splice a "List"
- * crumb in right before the record. Skipped when no such list page is
- * registered, or the path already IS the list page itself.
+ * '/sale/quote/:id' are). Rather than a dead-link segment ("Quote" linking
+ * nowhere real) followed by a separate "List" crumb, the view's own segment
+ * and "List" are merged into ONE crumb ("Quote - List") pointing at the real
+ * list page — on the list page itself, AND spliced in before a record form
+ * the same way. Works at ANY depth: for a form route, the merge only fires
+ * when the record's own parent path (segments minus the last) has a sibling
+ * registered at `<parent>/list` (`knownPaths` — every non-dynamic route path
+ * the module registry produced); skipped when no such list page is
+ * registered. Each half is translated separately (`t(entity)` / `t('List')`)
+ * before joining, so a locale's "List" translation still applies even though
+ * the two now render as one crumb.
  */
 function crumbsFromPath(pathname: string, knownPaths: Set<string>, t: (msgid: string) => string): Crumb[] {
   const segments = pathname.split('/').filter(Boolean)
@@ -110,14 +114,24 @@ function crumbsFromPath(pathname: string, knownPaths: Set<string>, t: (msgid: st
     href: '/' + segments.slice(0, i + 1).join('/'),
   }))
 
+  /** "Quote" + "List" -> "Quote - List", each half translated on its own. */
+  function mergeWithList(entityCrumb: Crumb): string {
+    return `${t(entityCrumb.label)} - ${t('List')}`
+  }
+
   let result = crumbs
-  if (segments.length >= 2) {
+  if (segments.length >= 2 && segments[segments.length - 1] === 'list') {
+    // Already on the list page: the view's own segment (crumbs[length-2])
+    // never got its own real page anyway (see the splice branch below), so
+    // fold it into this one crumb instead of leaving it as a dead link.
+    result = [...crumbs.slice(0, -2), { label: mergeWithList(crumbs[crumbs.length - 2]), href: pathname }]
+  } else if (segments.length >= 2) {
     const parentPath = '/' + segments.slice(0, -1).join('/')
     const listPath = `${parentPath}/list`
     if (knownPaths.has(listPath) && listPath !== pathname) {
       result = [
-        ...crumbs.slice(0, -1),
-        { label: 'List', href: listPath },
+        ...crumbs.slice(0, -2),
+        { label: mergeWithList(crumbs[crumbs.length - 2]), href: listPath },
         crumbs[crumbs.length - 1],
       ]
     }
