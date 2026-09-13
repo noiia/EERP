@@ -4,7 +4,7 @@ import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { EntityViewServer } from '@eerp/core-front/server'
-import { T, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
+import { layout, T, type EntityActions, type ViewDescriptor } from '@eerp/core-front'
 // Side-effect import: registers every discovered module's FrontModule into the shared
 // registry before we resolve the route. Regenerated at build time (gitignored).
 import '@/generated/generated-modules'
@@ -67,11 +67,26 @@ export default async function ModulePage({ params }: ModulePageProps) {
     // would just re-narrow list/kanban/calendar/graph views a second time, wasting
     // the space the inset was meant to hand them. Forms don't need this override:
     // FormRenderer self-limits to layout.formMaxWidth regardless of the container.
-    // pt: 0 for tree views only — RootLayout's own pageInsetY already pads above this
-    // Container, and stacking this Container's py on top of it left a top gap that
-    // read as oversized specifically on the compact title row + mode switcher a list
-    // view opens with. Forms/dashboards/catalog keep the full py.
-    <Container maxWidth={false} sx={{ py: 4, ...(route.descriptor.viewType === 'tree' ? { pt: 0 } : {}) }}>
+    // pt: 0 for tree AND form views — RootLayout's own pageInsetY already pads above
+    // this Container, and stacking this Container's py on top of it left a top gap
+    // that read as oversized: on a list view's compact title row + mode switcher, and
+    // on a form's own top toolbar (Save/Reset/status), which renders its own chrome
+    // right at the Card's top edge with no title row above it. Dashboards/catalog
+    // (which DO render a title row here) keep the full py.
+    // A form ALSO cancels RootLayout's own pageInsetY top padding (negative margin
+    // exactly offsetting it) — its toolbar (Save/Reset/status/the record stepper)
+    // IS the page's top chrome, so it should sit flush, not float in the same 5vh
+    // gap every other view keeps above its own title/content.
+    <Container
+      maxWidth={false}
+      sx={{
+        py: 4,
+        ...(route.descriptor.viewType === 'tree' || route.descriptor.viewType === 'form'
+          ? { pt: 0 }
+          : {}),
+        ...(isForm ? { mt: `calc(${layout.pageInsetY} * -1)` } : {}),
+      }}
+    >
       <Stack spacing={3}>
         {/* The title is computed here (RSC) but the locale is client state, so the
             <T> leaf translates it at the client boundary. A form has no title row

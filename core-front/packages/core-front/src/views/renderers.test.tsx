@@ -316,7 +316,7 @@ describe('EntityView', () => {
       expect(pushMock).toHaveBeenCalledWith('/crm/2')
     })
 
-    it('renders nothing for a record reached directly, with no known list order', () => {
+    it('renders nothing for a record reached directly, with no RelationOps to fall back to', () => {
       render(
         <EntityView
           descriptor={{ ...formDescriptor, formPath: '/crm/:id' }}
@@ -325,6 +325,24 @@ describe('EntityView', () => {
         />,
       )
       expect(screen.queryByRole('button', { name: 'Next record' })).not.toBeInTheDocument()
+    })
+
+    it('falls back to the entity\'s own default list via RelationOps when no list was browsed yet', async () => {
+      const list = vi.fn(async () => [
+        { id: '1', name: 'Ada' },
+        { id: '2', name: 'Grace' },
+      ])
+      render(
+        <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView
+            descriptor={{ ...formDescriptor, formPath: '/crm/:id' }}
+            initialData={[{ id: '2', name: 'Grace' }]}
+            actions={noopActions}
+          />
+        </RelationOpsProvider>,
+      )
+      expect(list).toHaveBeenCalledWith('crm')
+      await waitFor(() => expect(screen.getByText('2 / 2')).toBeInTheDocument())
     })
   })
 

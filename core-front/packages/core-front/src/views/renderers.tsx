@@ -210,18 +210,40 @@ function summarizeFieldChanges(
 }
 
 /**
- * The </> record stepper — top-right of the form's toolbar row, alongside
- * Save. Reads the list-nav store's last-known filtered order for this entity
- * (set by TreeRenderer, above) and, when the CURRENT record is in it, renders
+ * The </> record stepper — a DEFAULT element of every form's toolbar row,
+ * alongside Save (not opt-in). Reads the list-nav store's last-known
+ * filtered order for this entity (set by TreeRenderer when the user actually
+ * browsed a list) and, when the CURRENT record is in it, renders
  * "position / total" plus prev/next buttons that route straight to the
  * neighboring record's own form (`formPath`), never back through the list.
- * Renders nothing without a formPath, an id-less draft (new record), or no
- * known list order containing this id — e.g. a form reached by direct link.
+ * A record reached with no such order yet (direct link, fresh tab) falls
+ * back to fetching the entity's own default (unfiltered) first page via
+ * RelationOps — the same "no explicit filter" set the list itself would show
+ * on a fresh visit — so the stepper still appears rather than requiring a
+ * list visit first. Renders nothing without a formPath, without RelationOps
+ * mounted, or for an id-less draft (a brand-new, unsaved record).
  */
 function FormListNav({ formPath, entity, recordId }: { formPath?: string; entity: string; recordId?: string }) {
   const t = useT()
   const router = useRouter()
+  const relationOps = useRelationOps()
   const ids = useListNavStore((s) => s.ids[entity])
+  useEffect(() => {
+    if (ids || !relationOps) return
+    let cancelled = false
+    relationOps
+      .list(entity)
+      .then((records) => {
+        if (!cancelled) useListNavStore.getState().setIds(entity, records.map((r) => r.id))
+      })
+      .catch(() => {
+        // No default order to fall back to — the stepper just stays hidden.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ids, relationOps, entity])
+
   if (!formPath || !recordId || !ids) return null
   const index = ids.indexOf(recordId)
   if (index === -1) return null
