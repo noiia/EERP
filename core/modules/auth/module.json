@@ -6,13 +6,8 @@
     "version": "0.0.1",
     "author": "Edwin Lecomte",
     "description": "User accounts, roles and permissions",
-    "app_mode": true,
-    "menu_icon": "users",
-    "static_files": {
-        "views": [
-            "auth_views.ts"
-        ]
-    },
+    "app_mode": false,
+    "depends": [],
     "is_service": true,
     "auto_install": true
 }

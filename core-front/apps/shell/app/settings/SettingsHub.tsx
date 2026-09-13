@@ -47,6 +47,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Installed applications and their settings.',
   },
   {
+    path: '/settings/users',
+    title: 'Users',
+    description: 'User accounts and roles of the workspace.',
+  },
+  {
     path: '/settings/developer',
     title: 'Developer',
     description: 'Seed the workspace with fake data for testing.',

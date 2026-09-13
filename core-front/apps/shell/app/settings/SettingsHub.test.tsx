@@ -53,8 +53,13 @@ describe('SettingsHub', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/formats')).toBe(false)
   })
 
-  it('no longer ships Users as a settings section — it is now the Accounts app', () => {
-    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/users')).toBe(false)
+  it('ships Users as a default section, linked from the hub', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/users')).toBe(true)
+    render(<SettingsHub />)
+    expect(screen.getByRole('link', { name: /^users/i })).toHaveAttribute(
+      'href',
+      '/settings/users',
+    )
   })
 
   it('ships Developer as a default section, linked from the hub', () => {
