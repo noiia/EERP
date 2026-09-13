@@ -19,6 +19,7 @@ export type AdminRecord = { id: string } & Record<string, unknown>
 export const usersDashboardListViews = [
   { entity: 'users', title: 'Users', href: '/settings/users/accounts' },
   { entity: 'roles', title: 'Roles', href: '/settings/users/roles' },
+  { entity: 'account_role_types', title: 'Rights', href: '/settings/users/rights' },
 ]
 
 export const usersDashboardDescriptor: ViewDescriptor<AdminRecord> = {
@@ -98,6 +99,19 @@ export const rolesListDescriptor: ViewDescriptor<AdminRecord> = {
   permissions: ['roles:roles:read'],
 }
 
+// account_role_types is the fixed deny/read/write/delete catalog a role's
+// own Views table tags rows with (RoleViewPermission's `rights` m2m below).
+// Rides the generic CRUD surface (core/internal/auth.AccountRoleTypes) —
+// seeded once per tenant, read-only here: not meant to be created/renamed
+// through the UI, so no formPath/createPermission (nothing stops an admin
+// doing so through the API, this list just doesn't offer it).
+export const rightsListDescriptor: ViewDescriptor<AdminRecord> = {
+  entity: 'account_role_types',
+  viewType: 'tree',
+  fields: [{ name: 'name', label: 'Name', type: 'text', required: true }],
+  permissions: ['account_role_types:account_role_types:read'],
+}
+
 export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
   entity: 'roles',
   viewType: 'form',
@@ -151,6 +165,11 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
         labelField: 'entity',
         formPath: '/settings/users/roles/rights/:id',
       },
+      // Resolves role_view_permission's own `rights` many2many (declared on
+      // roleViewPermissionFormDescriptor below) per row and merges it in as
+      // a plain joined-label column, so this table shows what each view is
+      // actually granted instead of just its name.
+      widgetOptions: { relatedRelationField: 'rights' },
     },
   ],
   // Explicit layout so `view_permissions`/`belongs` get their own tabs

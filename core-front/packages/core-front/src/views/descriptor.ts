@@ -690,12 +690,16 @@ export const PAGE_SETTINGS_ID = '__page_settings'
 /**
  * The default `viewType: 'form'` anatomy (docs/roadmaps/responsive-displays.md,
  * Phases 3–4): a header row — the first `widget: 'picture'` boolean field,
- * then the first plain (non-`long`) `text` field rendered big via `variant:
- * 'title'` — followed by a two-column group holding every other field
- * EXCEPT `widget: 'long'` ones, and a notebook whose first ("Settings") page
- * holds those long-text fields instead, in declaration order. Either header
- * half is omitted if the form has nothing for it (no picture field ⇒ no
- * picture; no eligible text field ⇒ no title; NEITHER ⇒ the header row
+ * then a plain (non-`long`) `text` field rendered big via `variant: 'title'`
+ * — followed by a two-column group holding every other field EXCEPT
+ * `widget: 'long'` ones, and a notebook whose first ("Settings") page holds
+ * those long-text fields instead, in declaration order. The title field is a
+ * literal `display_name` field when the entity declares one (the record's
+ * real, human-facing name — also what a host shell falls back to for the
+ * breadcrumb's trailing crumb via titleFieldName below, instead of the raw
+ * id), else the first eligible text field in declaration order. Either
+ * header half is omitted if the form has nothing for it (no picture field ⇒
+ * no picture; no eligible text field ⇒ no title; NEITHER ⇒ the header row
  * itself is omitted rather than rendering empty) — the notebook and its
  * Settings page always render, even with zero long fields, since the
  * Settings page is also where a record's own runtime-created pages will
@@ -708,7 +712,16 @@ export const PAGE_SETTINGS_ID = '__page_settings'
  */
 function synthesizeFormLayout(fields: FieldDescriptor[]): LayoutNode[] {
   const pictureField = fields.find((f) => f.type === 'boolean' && f.widget === 'picture')
-  const titleField = fields.find((f) => f.type === 'text' && f.widget !== 'long')
+  const eligibleTitleField = (f: FieldDescriptor) => f.type === 'text' && f.widget !== 'long'
+  // A real, STORED display_name column (e.g. Users.DisplayName) wins over
+  // declaration order — it's the record's actual human-facing name. A
+  // computed display_name (store: false, e.g. crm's "Name (Company)" UI
+  // projection off name+company) is a derived summary, not the record's own
+  // identity, so it stays out of this preference and falls through to the
+  // ordinary first-eligible-field rule below.
+  const titleField =
+    fields.find((f) => eligibleTitleField(f) && f.name === 'display_name' && f.store !== false) ??
+    fields.find(eligibleTitleField)
   const longFields = fields.filter((f) => f.type === 'text' && f.widget === 'long')
   const headerNames = new Set(
     [pictureField?.name, titleField?.name].filter((name): name is string => name != null),

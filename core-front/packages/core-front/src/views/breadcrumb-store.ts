@@ -1,22 +1,20 @@
 import { create } from 'zustand'
 
-// The shell's top-bar breadcrumb used to be PURELY derived from the current
-// pathname (one segment = one crumb) — correct for a single nested route
-// tree, but it forgets everything the moment the user jumps to an unrelated
-// section (e.g. Sale's own "Configuration" menu into /settings/apps/sale):
-// the old trail would just be replaced by the new path's own segments, so
-// there was no way back to where the user actually came from.
+// The shell's top-bar breadcrumb is a running trail of the PAGES THE USER
+// ACTUALLY VISITED, in order — never an ancestor chain inferred from the
+// current URL's own path segments. The host (AppTopBar's PathBreadcrumbs)
+// computes ONLY the current pathname's own single crumb (crumbForPath — no
+// sibling-list lookahead, no per-segment ancestor synthesis) and feeds it
+// through `visit` on every pathname change. This is what makes a record
+// reached WITHOUT visiting its list first (e.g. clicking a row inside an
+// unrelated record's embedded relation grid) show just that record's own
+// crumb — never a "List" ancestor the user never actually passed through —
+// while a record reached BY WAY of its list still shows both, because the
+// list's own crumb already landed in the trail from that real visit.
 //
-// This store instead keeps a running trail across navigations, session-only
-// (no persistence — a stale trail from a previous session/tenant is more
-// confusing than a trail that starts fresh on reload, and nothing here is
-// business data). The host (AppTopBar's PathBreadcrumbs) computes the
-// CURRENT location's own local chain (crumbsFromPath — unchanged) on every
-// pathname change and feeds it through `visit`, which decides whether that's
-// "diving deeper in the same section" (replaces the trailing run belonging
-// to that section) or "jumping to a new section" (appended after whatever
-// came before) or "returning to a page already in the trail" (truncates
-// forward history, same as clicking an ancestor crumb).
+// Session-only (no persistence — a stale trail from a previous session/
+// tenant is more confusing than a trail that starts fresh on reload, and
+// nothing here is business data).
 
 export interface Crumb {
   label: string
@@ -25,12 +23,11 @@ export interface Crumb {
 
 /**
  * Pure trail-transition function — exported for testing independent of the
- * store/React. `localCrumbs` is the CURRENT pathname's own root-to-leaf chain
- * (crumbsFromPath's output: index 0 is always the top-level segment, e.g.
- * "/sale" or "/settings").
+ * store/React. `current` is the pathname just navigated to, as ONE crumb
+ * (crumbForPath's output), or `null` on the menu root (resets the trail).
  */
-export function nextBreadcrumbTrail(trail: Crumb[], localCrumbs: Crumb[]): Crumb[] {
-  if (localCrumbs.length === 0) return []
+export function nextBreadcrumbTrail(trail: Crumb[], current: Crumb | null): Crumb[] {
+  if (!current) return []
 
   // Already-visited exact page (a plain <Link>, browser back/forward, or a
   // breadcrumb click landing here) — go back to it, dropping anything after.
@@ -39,32 +36,23 @@ export function nextBreadcrumbTrail(trail: Crumb[], localCrumbs: Crumb[]): Crumb
   // its real name resolves (record-label-store reports it asynchronously,
   // shortly after the form mounts), so the label can legitimately improve
   // on a later visit to the SAME href.
-  const currentHref = localCrumbs[localCrumbs.length - 1].href
-  const exactIdx = trail.findIndex((c) => c.href === currentHref)
-  if (exactIdx !== -1) {
-    return [...trail.slice(0, exactIdx), localCrumbs[localCrumbs.length - 1]]
-  }
+  const idx = trail.findIndex((c) => c.href === current.href)
+  if (idx !== -1) return [...trail.slice(0, idx), current]
 
-  // Same top-level section as somewhere already in the trail: the local
-  // chain IS the authoritative root-to-leaf chain for that section, so it
-  // replaces the trailing run belonging to it rather than duplicating the
-  // section's root crumb.
-  const sectionRoot = localCrumbs[0].href
-  const sectionIdx = trail.findIndex((c) => c.href === sectionRoot)
-  const base = sectionIdx !== -1 ? trail.slice(0, sectionIdx) : trail
-  return [...base, ...localCrumbs]
+  // A genuinely new page: append it as the newest visited view.
+  return [...trail, current]
 }
 
 export interface BreadcrumbState {
   trail: Crumb[]
-  /** Feed the current pathname's own local crumb chain into the trail — also
-   * how a breadcrumb click's navigation ends up truncating the trail (the
+  /** Feed the current pathname's own single crumb into the trail — also how
+   * a breadcrumb click's navigation ends up truncating the trail (the
    * clicked href is already IN the trail, so `nextBreadcrumbTrail` returns
-   * the slice up to it) and how landing back on "/" resets it (empty input). */
-  visit: (localCrumbs: Crumb[]) => void
+   * the slice up to it) and how landing back on "/" resets it (`null`). */
+  visit: (current: Crumb | null) => void
 }
 
 export const useBreadcrumbStore = create<BreadcrumbState>((set) => ({
   trail: [],
-  visit: (localCrumbs) => set((s) => ({ trail: nextBreadcrumbTrail(s.trail, localCrumbs) })),
+  visit: (current) => set((s) => ({ trail: nextBreadcrumbTrail(s.trail, current) })),
 }))

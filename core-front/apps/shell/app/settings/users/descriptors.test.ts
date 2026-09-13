@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  rightsListDescriptor,
   roleFormDescriptor,
   roleViewPermissionFormDescriptor,
   rolesListDescriptor,
@@ -13,12 +14,21 @@ import {
 // descriptors — entity/route pairing, row-click form paths, writable fields.
 
 describe('Settings → Users descriptors', () => {
-  it('rolls the dashboard up from the users and roles lists', () => {
+  it('rolls the dashboard up from the users, roles, and rights lists', () => {
     expect(usersDashboardDescriptor.viewType).toBe('dashboard')
     expect(usersDashboardListViews.map((v) => [v.entity, v.href])).toEqual([
       ['users', '/settings/users/accounts'],
       ['roles', '/settings/users/roles'],
+      ['account_role_types', '/settings/users/rights'],
     ])
+  })
+
+  it('lists the account_role_types catalog, read-only', () => {
+    expect(rightsListDescriptor.entity).toBe('account_role_types')
+    expect(rightsListDescriptor.viewType).toBe('tree')
+    expect(rightsListDescriptor.formPath).toBeUndefined()
+    expect(rightsListDescriptor.createPermission).toBeUndefined()
+    expect(rightsListDescriptor.permissions).toContain('account_role_types:account_role_types:read')
   })
 
   it('lists users and opens an account form on row click', () => {
@@ -85,11 +95,12 @@ describe('Settings → Users descriptors', () => {
     ])
   })
 
-  it("opens a view's rights on its own dedicated form", () => {
+  it("opens a view's rights on its own dedicated form, and shows them in the table", () => {
     const field = roleFormDescriptor.fields.find((f) => f.name === 'view_permissions')
     expect(field?.relation?.entity).toBe('role_view_permission')
     expect(field?.relation?.inverseField).toBe('role_id')
     expect(field?.relation?.formPath).toBe('/settings/users/roles/rights/:id')
+    expect(field?.widgetOptions).toEqual({ relatedRelationField: 'rights' })
   })
 
   it('picks the view from the live catalog, rights from a many2many tag', () => {

@@ -71,13 +71,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('AppTopBar', () => {
-  it('shows the module breadcrumb rooted at the menu', () => {
+  it('shows the current page rooted at the menu, on a fresh (first) visit', () => {
     pathnameMock.mockReturnValue('/crm/contacts')
     render(<AppTopBar identity={identity} />)
 
     expect(screen.getByRole('link', { name: /menu/i })).toHaveAttribute('href', '/')
-    expect(screen.getByRole('link', { name: 'Crm' })).toHaveAttribute('href', '/crm')
-    // The current (last) crumb is plain text, not a link.
+    // The current (only, on a first visit) crumb is plain text, not a link.
     expect(screen.queryByRole('link', { name: 'Contacts' })).not.toBeInTheDocument()
     expect(screen.getByText('Contacts')).toBeInTheDocument()
   })
@@ -109,58 +108,35 @@ describe('AppTopBar', () => {
     expect(screen.getByText('New Record Id')).toBeInTheDocument()
   })
 
-  it('merges the view name and "List" into one crumb ("Crm - List") before a flat "/<module>/<id>" form route (CRM\'s shape: form is a sibling of list, not nested under it)', () => {
+  it('a form reached directly (e.g. clicking a row in an unrelated record\'s embedded relation grid) shows only its own crumb — no "List" ancestor for a page never visited', () => {
     pathnameMock.mockReturnValue('/crm/42')
-    render(
-      <AppTopBar identity={identity} headerMenus={crmHeaderMenus} knownPaths={['/crm/list']} />,
-    )
+    render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
 
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    const listLink = breadcrumb.getByRole('link', { name: 'Crm - List' })
-    expect(listLink).toHaveAttribute('href', '/crm/list')
-    // Order: Menu > "Crm - List" > 42 — no separate dead "/crm" link.
+    // The user never visited "/crm/list" in this session, so it must not
+    // appear at all — not as a link, not as text.
+    expect(breadcrumb.queryByText('Crm - List')).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('List', { exact: false })).not.toBeInTheDocument()
     expect(breadcrumb.queryByRole('link', { name: 'Crm' })).not.toBeInTheDocument()
     expect(breadcrumb.getByText('42')).toBeInTheDocument()
   })
 
-  it('generalizes to ANY depth — sale\'s quote form ("/sale/quote/:id") merges "Quote" and "List" into one crumb, fixing the dead "/sale/quote" link', () => {
-    pathnameMock.mockReturnValue('/sale/quote/99')
-    render(<AppTopBar identity={identity} knownPaths={['/sale/list', '/sale/quote/list']} />)
-
-    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    // "Sale" itself must NOT also get a spurious merge from the sibling
-    // "/sale/list" — only "Quote"'s own immediate parent ("/sale/quote")
-    // matches, so exactly one merged crumb appears: Menu > Sale > Quote -
-    // List > 99 (only 4 total crumbs including Menu, so nothing collapses).
-    expect(breadcrumb.getByRole('link', { name: 'Sale' })).toHaveAttribute('href', '/sale')
-    expect(breadcrumb.getByRole('link', { name: 'Quote - List' })).toHaveAttribute(
-      'href',
-      '/sale/quote/list',
-    )
-    expect(breadcrumb.queryByText('Quote', { exact: true })).not.toBeInTheDocument()
-    expect(breadcrumb.getByText('99')).toBeInTheDocument()
-  })
-
-  it('generalizes to ANY depth without collapsing, when short enough to fit', () => {
-    // Same shape as above, but without the module prefix (3 total crumbs:
-    // Menu, "Quote - List", 99) — under maxItems, so nothing collapses.
-    pathnameMock.mockReturnValue('/quote/99')
-    render(<AppTopBar identity={identity} knownPaths={['/quote/list']} />)
-
-    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    expect(breadcrumb.getByRole('link', { name: 'Menu' })).toBeInTheDocument()
-    expect(breadcrumb.getByRole('link', { name: 'Quote - List' })).toHaveAttribute(
-      'href',
-      '/quote/list',
-    )
-    expect(breadcrumb.getByText('99')).toBeInTheDocument()
-  })
-
-  it('merges the view name and "List" into one crumb when already on the list page itself', () => {
+  it('a form reached BY WAY of its list keeps the list\'s own crumb — because the user actually visited it, not because it\'s inferred from the URL', () => {
     pathnameMock.mockReturnValue('/crm/list')
-    render(
-      <AppTopBar identity={identity} headerMenus={crmHeaderMenus} knownPaths={['/crm/list']} />,
-    )
+    const { rerender } = render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
+
+    // Now the user clicks a row: navigates on to the record's own form.
+    pathnameMock.mockReturnValue('/crm/42')
+    rerender(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
+
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByRole('link', { name: 'Crm - List' })).toHaveAttribute('href', '/crm/list')
+    expect(breadcrumb.getByText('42')).toBeInTheDocument()
+  })
+
+  it('being on a list page itself shows its own merged "<Entity> - List" crumb, not two separate crumbs', () => {
+    pathnameMock.mockReturnValue('/crm/list')
+    render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     // The trailing crumb is the plain-text current page — one merged crumb,
     // not a link, and not two separate "Crm"/"List" crumbs.
@@ -168,47 +144,53 @@ describe('AppTopBar', () => {
     expect(breadcrumb.getByText('Crm - List')).toBeInTheDocument()
   })
 
-  it('nested shape: "/sale/quote/list" reads as "Sale > Quote - List", not "Sale > Quote > List"', () => {
+  it('nested shape: "/sale/quote/list" reads as "Quote - List" on a fresh visit — no "Sale" ancestor the user never passed through', () => {
     pathnameMock.mockReturnValue('/sale/quote/list')
     render(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    expect(breadcrumb.getByRole('link', { name: 'Sale' })).toHaveAttribute('href', '/sale')
-    expect(breadcrumb.queryByRole('link', { name: 'Quote' })).not.toBeInTheDocument()
+    expect(breadcrumb.queryByRole('link', { name: 'Sale' })).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Sale')).not.toBeInTheDocument()
     expect(breadcrumb.queryByText('Quote', { exact: true })).not.toBeInTheDocument()
     expect(breadcrumb.getByText('Quote - List')).toBeInTheDocument()
   })
 
-  it('does not merge a "List" crumb when no sibling list page is registered', () => {
-    pathnameMock.mockReturnValue('/appstore/42')
-    render(<AppTopBar identity={identity} headerMenus={[]} />)
-    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    expect(breadcrumb.queryByText('List', { exact: false })).not.toBeInTheDocument()
-  })
-
-  it('does not merge a "List" crumb for a path deeper than "/<module>/<id>" when no matching sibling is registered', () => {
-    pathnameMock.mockReturnValue('/crm/nested/42')
-    render(
-      <AppTopBar identity={identity} headerMenus={crmHeaderMenus} knownPaths={['/crm/list']} />,
-    )
-    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    expect(breadcrumb.queryByText('List', { exact: false })).not.toBeInTheDocument()
-  })
-
-  it('collapses older crumbs under a single "…" once there are more than fit, leaving "… > parent > current"', () => {
-    // A synthetic extra nesting level ("orders") keeps this at 5 total crumbs
-    // (Menu, Sale, Orders, "Quote - List", 99) even after the view-name/List
-    // merge removes one — otherwise 4 total would no longer exceed maxItems.
+  it('the trail is exactly the sequence of pages actually visited — a deep jump straight to a nested form shows only that form, an earlier real visit is remembered', () => {
     pathnameMock.mockReturnValue('/sale/orders/quote/99')
-    render(<AppTopBar identity={identity} knownPaths={['/sale/orders/quote/list']} />)
-    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    expect(breadcrumb.queryByRole('link', { name: 'Menu' })).not.toBeInTheDocument()
+    const { rerender } = render(<AppTopBar identity={identity} />)
+    let breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByText('Sale')).not.toBeInTheDocument()
     expect(breadcrumb.queryByText('Orders')).not.toBeInTheDocument()
-    expect(breadcrumb.getByRole('link', { name: 'Quote - List' })).toHaveAttribute(
-      'href',
-      '/sale/orders/quote/list',
-    )
     expect(breadcrumb.getByText('99')).toBeInTheDocument()
+
+    // A genuinely separate real visit still accumulates onto the trail.
+    pathnameMock.mockReturnValue('/settings')
+    rerender(<AppTopBar identity={identity} />)
+    breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByRole('link', { name: '99' })).toHaveAttribute(
+      'href',
+      '/sale/orders/quote/99',
+    )
+    expect(breadcrumb.getByText('Settings')).toBeInTheDocument()
+  })
+
+  it('collapses older crumbs under a single "…" once more real visits accumulate than fit, leaving "… > parent > current"', () => {
+    // Five genuinely separate real visits (not one deep URL) build a trail
+    // long enough to exceed maxItems.
+    pathnameMock.mockReturnValue('/crm')
+    const { rerender } = render(<AppTopBar identity={identity} />)
+    for (const page of ['/sale', '/settings', '/propertymanagement', '/appstore']) {
+      pathnameMock.mockReturnValue(page)
+      rerender(<AppTopBar identity={identity} />)
+    }
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.queryByRole('link', { name: 'Menu' })).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Crm')).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Sale')).not.toBeInTheDocument()
+    expect(breadcrumb.getByRole('link', { name: 'Property Management' })).toHaveAttribute(
+      'href',
+      '/propertymanagement',
+    )
+    expect(breadcrumb.getByText('Appstore')).toBeInTheDocument()
   })
 
   describe('narrow-phone breadcrumb collapse (below layout.breadcrumbCollapseWidth)', () => {
@@ -249,9 +231,11 @@ describe('AppTopBar', () => {
       expect(screen.getByText('Menu')).toBeInTheDocument()
     })
 
-    it('clicking the summary button lists every crumb as a VERTICAL menu, current page non-clickable', () => {
+    it('clicking the summary button lists every VISITED page as a VERTICAL menu, current page non-clickable', () => {
+      pathnameMock.mockReturnValue('/crm')
+      const { rerender } = render(<AppTopBar identity={identity} />)
       pathnameMock.mockReturnValue('/crm/contacts')
-      render(<AppTopBar identity={identity} />)
+      rerender(<AppTopBar identity={identity} />)
       fireEvent.click(screen.getByRole('button', { name: /breadcrumb trail/i }))
 
       expect(screen.getByRole('menuitem', { name: 'Menu' })).toHaveAttribute('href', '/')
@@ -342,18 +326,30 @@ describe('AppTopBar', () => {
     expect(breadcrumb.queryByText('Propertymanagement', { exact: false })).not.toBeInTheDocument()
   })
 
-  it('omits the "page-formats" segment from a page format\'s breadcrumb (no page of its own — the list is embedded in Global settings)', () => {
+  it('never shows the "page-formats" segment itself (no page of its own — the list is embedded in Global settings)', () => {
+    // Cold/direct load: no "page-formats" text, and no "Global settings"
+    // ancestor either, since this render never actually visited it.
     pathnameMock.mockReturnValue('/settings/appearance/page-formats/42')
     render(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.queryByText('Page Formats')).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText(/page.?formats/i)).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Global settings')).not.toBeInTheDocument()
+    expect(breadcrumb.getByText('42')).toBeInTheDocument()
+  })
 
+  it('shows "Global settings" as an ancestor for a page-format record when the user actually visited it first (the only real way to get there)', () => {
+    pathnameMock.mockReturnValue('/settings/appearance')
+    const { rerender } = render(<AppTopBar identity={identity} />)
+    // A page-format row embedded there opens its own record form.
+    pathnameMock.mockReturnValue('/settings/appearance/page-formats/42')
+    rerender(<AppTopBar identity={identity} />)
+
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.getByRole('link', { name: 'Global settings' })).toHaveAttribute(
       'href',
       '/settings/appearance',
     )
-    expect(breadcrumb.queryByText('Page Formats')).not.toBeInTheDocument()
-    expect(breadcrumb.queryByText(/page.?formats/i)).not.toBeInTheDocument()
-    // Trailing crumb is still the record (raw id, absent a record-label-store entry).
     expect(breadcrumb.getByText('42')).toBeInTheDocument()
   })
 

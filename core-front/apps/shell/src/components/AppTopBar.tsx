@@ -68,33 +68,20 @@ const SEGMENT_LABEL_OVERRIDES: Record<string, string> = {
 }
 
 /**
- * Path segments that never correspond to a real page and so never earn a
- * breadcrumb crumb — e.g. "page-formats" in /settings/appearance/page-formats/:id:
- * the list lives embedded inline in /settings/appearance itself (no page.tsx
- * of its own), only the trailing :id route is real.
+ * The CURRENT pathname's own breadcrumb crumb — ONE crumb, never an ancestor
+ * chain inferred from the URL's path segments. The breadcrumb TRAIL
+ * (breadcrumb-store.ts) is what accumulates multiple crumbs, one per page
+ * the user actually navigated through; this only decides what the page at
+ * `pathname` itself should be called. That split is what keeps a page
+ * reached directly — e.g. clicking a row inside an unrelated record's
+ * embedded relation grid, never visiting that record's own list — from
+ * getting a synthetic "List" (or any other) ancestor spliced in for a page
+ * the user never actually passed through. `null` on the menu root itself
+ * (nothing to show — PathBreadcrumbs renders the root "Menu" crumb instead).
  */
-const SKIPPED_SEGMENTS = new Set(['page-formats'])
-
-/**
- * Build cumulative breadcrumb links from a pathname (excluding the menu root).
- * A record's form route sits directly off a "parent" path that is often NOT
- * itself a real page — CRM's form is '/crm/:id', a sibling of '/crm/list',
- * not nested under it; sale's quote form is '/sale/quote/:id', where
- * '/sale/quote' isn't a page at all (only '/sale/quote/list' and
- * '/sale/quote/:id' are). Rather than a dead-link segment ("Quote" linking
- * nowhere real) followed by a separate "List" crumb, the view's own segment
- * and "List" are merged into ONE crumb ("Quote - List") pointing at the real
- * list page — on the list page itself, AND spliced in before a record form
- * the same way. Works at ANY depth: for a form route, the merge only fires
- * when the record's own parent path (segments minus the last) has a sibling
- * registered at `<parent>/list` (`knownPaths` — every non-dynamic route path
- * the module registry produced); skipped when no such list page is
- * registered. Each half is translated separately (`t(entity)` / `t('List')`)
- * before joining, so a locale's "List" translation still applies even though
- * the two now render as one crumb.
- */
-function crumbsFromPath(pathname: string, knownPaths: Set<string>, t: (msgid: string) => string): Crumb[] {
+function crumbForPath(pathname: string, t: (msgid: string) => string): Crumb | null {
   const segments = pathname.split('/').filter(Boolean)
+  if (segments.length === 0) return null
 
   // "Settings > Apps > <module>" is three URL segments of internal path
   // structure that read as noise once the user arrived here from an
@@ -106,79 +93,63 @@ function crumbsFromPath(pathname: string, knownPaths: Set<string>, t: (msgid: st
   if (segments.length === 3 && segments[0] === 'settings' && segments[1] === 'apps') {
     const moduleName = segments[2]
     const displayName = moduleRegistry.displayNameFor(moduleName) ?? titleize(moduleName)
-    return [{ label: `${t('Configuration')} (${displayName})`, href: pathname }]
+    return { label: `${t('Configuration')} (${displayName})`, href: pathname }
   }
 
-  const crumbs = segments.map((segment, i) => ({
-    label: SEGMENT_LABEL_OVERRIDES[segment] ?? titleize(segment),
-    href: '/' + segments.slice(0, i + 1).join('/'),
-  }))
+  const lastSegment = segments[segments.length - 1]
 
-  /** "Quote" + "List" -> "Quote - List", each half translated on its own. */
-  function mergeWithList(entityCrumb: Crumb): string {
-    return `${t(entityCrumb.label)} - ${t('List')}`
+  // Already on a list page ("/<module>/list", "/sale/quote/list", ...): the
+  // view's own segment never got its own real page anyway (CRM's form is
+  // '/crm/:id', a sibling of '/crm/list', not nested under it), so fold it
+  // into ONE crumb ("Quote - List") instead of a dead-link "Quote" ancestor.
+  // Each half is translated separately before joining, so a locale's "List"
+  // translation still applies even though the two now render as one crumb.
+  if (segments.length >= 2 && lastSegment === 'list') {
+    const entitySegment = segments[segments.length - 2]
+    const entityLabel = SEGMENT_LABEL_OVERRIDES[entitySegment] ?? titleize(entitySegment)
+    return { label: `${t(entityLabel)} - ${t('List')}`, href: pathname }
   }
 
-  let result = crumbs
-  if (segments.length >= 2 && segments[segments.length - 1] === 'list') {
-    // Already on the list page: the view's own segment (crumbs[length-2])
-    // never got its own real page anyway (see the splice branch below), so
-    // fold it into this one crumb instead of leaving it as a dead link.
-    result = [...crumbs.slice(0, -2), { label: mergeWithList(crumbs[crumbs.length - 2]), href: pathname }]
-  } else if (segments.length >= 2) {
-    const parentPath = '/' + segments.slice(0, -1).join('/')
-    const listPath = `${parentPath}/list`
-    if (knownPaths.has(listPath) && listPath !== pathname) {
-      result = [
-        ...crumbs.slice(0, -2),
-        { label: mergeWithList(crumbs[crumbs.length - 2]), href: listPath },
-        crumbs[crumbs.length - 1],
-      ]
-    }
-  }
-  return result.filter((c) => !SKIPPED_SEGMENTS.has(c.href.split('/').filter(Boolean).at(-1) ?? ''))
+  return { label: SEGMENT_LABEL_OVERRIDES[lastSegment] ?? titleize(lastSegment), href: pathname }
 }
 
-function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPaths: Set<string> }) {
+function PathBreadcrumbs({ pathname }: { pathname: string }) {
   const t = useT()
-  const knownPathsKey = useMemo(() => Array.from(knownPaths).sort().join('|'), [knownPaths])
 
   const lastSegment = pathname.split('/').filter(Boolean).at(-1)
   // A form route's trailing crumb is otherwise the raw record id (it's just a URL
   // segment) — FormRenderer reports the record's real title-field value here
-  // (record-label-store) the moment it mounts. Baked into the crumb itself
-  // below (not just read at render time for the current page) so the
-  // friendly name STICKS once this page stops being the current one —
-  // otherwise every ancestor crumb behind it would fall back to the raw
-  // titleized id the moment the user navigates one step further.
+  // (record-label-store) the moment it mounts, preferring a `display_name`
+  // field when the entity has one (synthesizeFormLayout). Baked into the
+  // crumb itself below (not just read at render time for the current page)
+  // so the friendly name STICKS once this page stops being the current one
+  // — otherwise it would fall back to the raw titleized id the moment the
+  // user navigates one step further.
   const recordLabel = useRecordLabelStore((s) => (s.id === lastSegment ? s.label : null))
 
-  // The CURRENT location's own root-to-leaf chain — e.g. Sale > Products >
-  // List > "Widget" — with the trailing crumb's label swapped for the
-  // resolved record name once known.
-  const localCrumbs = useMemo(() => {
-    const base = crumbsFromPath(pathname, knownPaths, t)
-    if (!recordLabel || base.length === 0) return base
-    return [...base.slice(0, -1), { ...base[base.length - 1], label: recordLabel }]
-  }, [pathname, knownPathsKey, recordLabel])
+  // This page's own crumb (never an ancestor chain — see crumbForPath), with
+  // its label swapped for the resolved record name once known.
+  const currentCrumb = useMemo(() => {
+    const base = crumbForPath(pathname, t)
+    return base && recordLabel ? { ...base, label: recordLabel } : base
+  }, [pathname, recordLabel])
   // Merged with whatever was already in the cross-navigation trail (see
-  // breadcrumb-store.ts): diving deeper in the same section replaces its
-  // trailing run, jumping to a new section appends after it, and returning
-  // to an already-visited page truncates the forward history — computed
-  // here (not just inside the effect below) so the FIRST render after a
-  // navigation already shows the merged trail with no one-frame flash of
-  // the stale one.
+  // breadcrumb-store.ts): a genuinely new page appends after it, and
+  // returning to an already-visited page truncates the forward history —
+  // computed here (not just inside the effect below) so the FIRST render
+  // after a navigation already shows the merged trail with no one-frame
+  // flash of the stale one.
   const storedTrail = useBreadcrumbStore((s) => s.trail)
   const trail = useMemo(
-    () => nextBreadcrumbTrail(storedTrail, localCrumbs),
-    [storedTrail, localCrumbs],
+    () => nextBreadcrumbTrail(storedTrail, currentCrumb),
+    [storedTrail, currentCrumb],
   )
   useEffect(() => {
     // Also re-fires once recordLabel resolves (asynchronously, shortly after
     // a form route mounts) so the already-visited entry gets its baked-in
     // friendly name too, not just crumbs visited from here on.
-    useBreadcrumbStore.getState().visit(localCrumbs)
-  }, [pathname, knownPathsKey, recordLabel])
+    useBreadcrumbStore.getState().visit(currentCrumb)
+  }, [pathname, recordLabel])
   const narrow = useMediaQuery(`(max-width:${layout.breadcrumbCollapseWidth}px)`)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 
@@ -495,7 +466,6 @@ function CompanySwitcher({
 export function AppTopBar({
   identity,
   headerMenus = [],
-  knownPaths = [],
   email,
   activeCompany = null,
   companies = [],
@@ -504,13 +474,6 @@ export function AppTopBar({
   /** Per-module top-bar header menus, resolved server-side from the registry
    * (empty in isolation) — see ModuleRegistry.headerMenus(). */
   headerMenus?: ModuleHeaderMenus[]
-  /** Every registered NON-dynamic route path (tree/dashboard/catalog/settings
-   * pages — never a form's `:id` template), resolved server-side from the
-   * registry. Used ONLY by PathBreadcrumbs to detect a record's sibling list
-   * page for the breadcrumb's "List" splice (crumbsFromPath) — display
-   * routing only, never permission/security-relevant (Go re-authorizes
-   * every route regardless of what the breadcrumb offers to click). */
-  knownPaths?: string[]
   /** The caller's own account email — see UserMenu's displayName note. */
   email?: string
   /** The caller's current company (multi-company) — null while unresolved
@@ -534,7 +497,7 @@ export function AppTopBar({
           scroll container. */}
       <AppBar position="fixed">
         <Toolbar variant="dense">
-          <PathBreadcrumbs pathname={pathname} knownPaths={new Set(knownPaths)} />
+          <PathBreadcrumbs pathname={pathname} />
           <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />
           {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
           <UserMenu identity={identity} email={email} />

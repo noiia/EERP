@@ -7,10 +7,9 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
-import { fieldLabel, type RelationDescriptor } from './descriptor'
-import { moduleRegistry } from '../registry'
-import { junctionColumns, MissingOpsHint, relationOf, resolveManyToManyLinks } from './relation-widgets'
-import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
+import { fieldLabel } from './descriptor'
+import { loadSubRelation, MissingOpsHint, relationOf, subRelationOf } from './relation-widgets'
+import { useRelationOps, type RelationRecord } from './relation-ops'
 import type { WidgetProps } from './widgets'
 
 // relation/summary — a many2one-only OPT-IN override of the stock `search`
@@ -46,34 +45,6 @@ function widgetOptionsOf(field: WidgetProps['field']): RelationSummaryOptions {
     relatedRelationField: typeof raw.relatedRelationField === 'string' ? raw.relatedRelationField : undefined,
     relatedRelationLabel: typeof raw.relatedRelationLabel === 'string' ? raw.relatedRelationLabel : undefined,
   }
-}
-
-/** Resolve widgetOptions.relatedRelationField's OWN relation block off the
- * linked entity's registered descriptor — never redeclared here. */
-function subRelationOf(entity: string, fieldName: string): RelationDescriptor | null {
-  const descriptor = moduleRegistry.formDescriptorFor(entity)
-  const field = descriptor?.fields.find((f) => f.name === fieldName)
-  return field?.relation ?? null
-}
-
-/** Resolve subRel's linked records (both m2m via a junction and o2m
- * directly), scoped to the linked record's own id — same two data paths
- * RelationTagsWidget/RelationListWidget already use, just read-only here. */
-async function loadSubRelation(
-  ops: RelationOps,
-  subRel: RelationDescriptor,
-  ownEntity: string,
-  ownRecordId: string,
-): Promise<RelationRecord[]> {
-  if (subRel.kind === 'one2many' && subRel.inverseField) {
-    return ops.list(subRel.entity, { filter: { [subRel.inverseField]: ownRecordId }, pageSize: 100 })
-  }
-  if (subRel.kind === 'many2many' && subRel.via) {
-    const cols = junctionColumns(subRel, ownEntity)
-    const links = await resolveManyToManyLinks(ops, subRel.via, subRel.entity, cols, ownRecordId)
-    return links.map((l) => l.related)
-  }
-  return []
 }
 
 export function RelationSummaryWidget({ field, value }: WidgetProps) {

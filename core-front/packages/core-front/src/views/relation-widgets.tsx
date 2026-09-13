@@ -644,6 +644,37 @@ export async function resolveManyToManyLinks(
   return links
 }
 
+/** Resolve a relation field's own `relation` block off a registered entity's
+ * descriptor — the shared lookup relation-summary-widget.tsx and
+ * RelationListWidget's `relatedRelationField` expansion both use, rather
+ * than each redeclaring it. */
+export function subRelationOf(entity: string, fieldName: string): RelationDescriptor | null {
+  const descriptor = moduleRegistry.formDescriptorFor(entity)
+  const field = descriptor?.fields.find((f) => f.name === fieldName)
+  return field?.relation ?? null
+}
+
+/** subRel's own linked records for ONE row (both m2m via a junction and o2m
+ * directly) — the read-only counterpart of RelationTagsWidget/
+ * RelationListWidget's own data paths, shared by relation-summary-widget.tsx
+ * and RelationListWidget's `relatedRelationField` expansion. */
+export async function loadSubRelation(
+  ops: RelationOps,
+  subRel: RelationDescriptor,
+  ownEntity: string,
+  ownRecordId: string,
+): Promise<RelationRecord[]> {
+  if (subRel.kind === 'one2many' && subRel.inverseField) {
+    return ops.list(subRel.entity, { filter: { [subRel.inverseField]: ownRecordId }, pageSize: EMBED_PAGE_SIZE })
+  }
+  if (subRel.kind === 'many2many' && subRel.via) {
+    const cols = junctionColumns(subRel, ownEntity)
+    const links = await resolveManyToManyLinks(ops, subRel.via, subRel.entity, cols, ownRecordId)
+    return links.map((l) => l.related)
+  }
+  return []
+}
+
 export function RelationTagsWidget({ field, value, onChange, disabled, entity, recordId }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
@@ -835,6 +866,19 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   // order, unchanged.
   const reverse = field.widgetOptions?.reverse === true
 
+  // widgetOptions.relatedRelationField (opt-in, e.g. the Role form's "Views"
+  // table naming role_view_permission's own "rights" m2m): resolves one
+  // relation field DECLARED ON EACH ROW'S OWN registered descriptor
+  // (subRelationOf — the same lookup relation-summary-widget.tsx uses) per
+  // row, comma-joins the linked labels, and merges the result into that
+  // row under the SAME field name — relatedColumns then picks it up like
+  // any other row key, no column-system changes needed.
+  const expandField =
+    typeof field.widgetOptions?.relatedRelationField === 'string'
+      ? field.widgetOptions.relatedRelationField
+      : undefined
+  const [expanded, setExpanded] = useState<Record<string, string>>({})
+
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
@@ -851,8 +895,36 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
     }
   }, [ops, rel.entity, inverseField, recordId, refreshSignal, reverse])
 
+  useEffect(() => {
+    if (!ops || !expandField || rows.length === 0) {
+      setExpanded({})
+      return
+    }
+    const subRel = subRelationOf(rel.entity, expandField)
+    if (!subRel) return
+    const subLabelField = subRel.labelField ?? 'name'
+    let cancelled = false
+    // ponytail: one resolveManyToManyLinks/list round-trip per row — fine
+    // for the small per-record row counts this is used for (e.g. a role's
+    // handful of views); batch (a single `in[<own>]=` junction query) if a
+    // table ever grows large enough for this to matter.
+    Promise.all(
+      rows.map(async (row) => {
+        const linked = await loadSubRelation(ops, subRel, rel.entity, row.id)
+        return [row.id, linked.map((r) => String(r[subLabelField] ?? r.id)).join(', ')] as const
+      }),
+    ).then((pairs) => {
+      if (!cancelled) setExpanded(Object.fromEntries(pairs))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [ops, rel.entity, expandField, rows])
+
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
+
+  const displayRows = expandField ? rows.map((row) => ({ ...row, [expandField]: expanded[row.id] ?? '' })) : rows
 
   return (
     <Box>
@@ -867,8 +939,8 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
           absent for sale_lines/quote_lines, which intentionally stay inert on
           click) navigates to the clicked row's own dedicated form instead. */}
       <DataGrid
-        rows={rows}
-        columns={relatedColumns(rows, labelField, t, [inverseField])}
+        rows={displayRows}
+        columns={relatedColumns(displayRows, labelField, t, [inverseField])}
         autoHeight
         hideFooter
         disableRowSelectionOnClick

@@ -747,6 +747,18 @@ describe('titleFieldName', () => {
     expect(titleFieldName(normalizeLayout(descriptor))).toBe('name')
   })
 
+  it('prefers a literal display_name field over declaration order (the default breadcrumb name, e.g. Users)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'users',
+      viewType: 'form',
+      fields: [
+        { name: 'email', label: 'Email', type: 'text' },
+        { name: 'display_name', label: 'Display name', type: 'text' },
+      ],
+    }
+    expect(titleFieldName(normalizeLayout(descriptor))).toBe('display_name')
+  })
+
   it('finds an explicit layout\'s variant: title field regardless of position', () => {
     const layout: LayoutNode[] = [
       { kind: 'group', children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b', variant: 'title' }] },

@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import type { FieldDescriptor } from './descriptor'
+import { moduleRegistry } from '../registry'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { fieldWidget, type WidgetProps } from './widgets'
 
@@ -455,6 +456,50 @@ describe('relation/list (one2many)', () => {
     await screen.findByText('Acme')
     const names = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="name"]')].map((el) => el.textContent)
     expect(names).toEqual(['Acme', 'Globex'])
+  })
+
+  it('widgetOptions.relatedRelationField: resolves a m2m field declared on the row entity\'s own registered descriptor and merges it in as a plain column (e.g. the Role form\'s Views table showing each view\'s rights)', async () => {
+    moduleRegistry.register({
+      name: 'relation-list-test-fixture',
+      routes: [
+        {
+          path: '/__test__/crm/:id',
+          descriptor: {
+            entity: 'crm',
+            viewType: 'form',
+            fields: [
+              { name: 'name', type: 'text' },
+              {
+                name: 'labels',
+                type: 'relation',
+                relation: { entity: 'tag', kind: 'many2many', via: 'crm_tag' },
+              },
+            ],
+          },
+        },
+      ],
+    })
+
+    const junctions: RelationRecord[] = [
+      { id: 'j1', crm_id: 'c1', tag_id: 't1' },
+      { id: 'j2', crm_id: 'c1', tag_id: 't2' },
+    ]
+    const tags: Record<string, RelationRecord> = { t1: { id: 't1', name: 'Hot' }, t2: { id: 't2', name: 'VIP' } }
+    const ops = stubOps({
+      list: vi.fn(async (entity: string, opts?: { filter?: Record<string, unknown> }) => {
+        if (entity === 'crm') return companies
+        if (entity === 'crm_tag') return junctions.filter((j) => j.crm_id === opts?.filter?.crm_id)
+        if (entity === 'tag') return Object.values(tags)
+        return []
+      }),
+    })
+
+    renderWidget({ ...listField, widgetOptions: { relatedRelationField: 'labels' } }, ops)
+
+    // c1 (Acme) has two linked tags, comma-joined; c2 (Globex) has none.
+    expect(await screen.findByText('Hot, VIP')).toBeInTheDocument()
+    const cells = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="labels"]')].map((el) => el.textContent)
+    expect(cells).toEqual(['Hot, VIP', ''])
   })
 })
 
