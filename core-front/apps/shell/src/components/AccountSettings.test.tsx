@@ -32,7 +32,7 @@ describe('AccountSettings', () => {
   it('offers workspace default, source, and the enabled translations', () => {
     render(<AccountSettings preferences={prefs(null, 'de')} />)
 
-    fireEvent.mouseDown(screen.getByLabelText('Display language'))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Display language' }))
     const listbox = within(screen.getByRole('listbox'))
     expect(listbox.getByText(/Workspace default — Deutsch/)).toBeInTheDocument()
     expect(listbox.getByText('English (source)')).toBeInTheDocument()
@@ -44,7 +44,7 @@ describe('AccountSettings', () => {
   it('saves a picked language and applies it immediately', async () => {
     render(<AccountSettings preferences={prefs(null, null)} />)
 
-    fireEvent.mouseDown(screen.getByLabelText('Display language'))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Display language' }))
     fireEvent.click(within(screen.getByRole('listbox')).getByText('français'))
 
     await waitFor(() => expect(setMyPreferredLocaleMock).toHaveBeenCalledWith('fr'))
@@ -55,7 +55,7 @@ describe('AccountSettings', () => {
     useI18nStore.setState({ locale: 'fr', enabledLocales: ['fr'] })
     render(<AccountSettings preferences={prefs('fr', 'de')} />)
 
-    fireEvent.mouseDown(screen.getByLabelText('Display language'))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Display language' }))
     fireEvent.click(within(screen.getByRole('listbox')).getByText(/Workspace default/))
 
     await waitFor(() => expect(setMyPreferredLocaleMock).toHaveBeenCalledWith(null))
@@ -67,7 +67,7 @@ describe('AccountSettings', () => {
     useI18nStore.setState({ locale: 'fr', enabledLocales: ['fr'] })
     render(<AccountSettings preferences={prefs('fr', 'fr')} />)
 
-    fireEvent.mouseDown(screen.getByLabelText('Display language'))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Display language' }))
     fireEvent.click(within(screen.getByRole('listbox')).getByText('English (source)'))
 
     await waitFor(() => expect(setMyPreferredLocaleMock).toHaveBeenCalledWith('source'))
@@ -78,17 +78,17 @@ describe('AccountSettings', () => {
     setMyPreferredLocaleMock.mockResolvedValue({ ok: false, message: 'Validation failed' })
     render(<AccountSettings preferences={prefs(null, null)} />)
 
-    fireEvent.mouseDown(screen.getByLabelText('Display language'))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Display language' }))
     fireEvent.click(within(screen.getByRole('listbox')).getByText('français'))
 
     expect(await screen.findByText('Validation failed')).toBeInTheDocument()
-    expect(screen.getByLabelText('Display language')).toHaveTextContent(/Workspace default/)
+    expect(screen.getByRole('combobox', { name: 'Display language' })).toHaveTextContent(/Workspace default/)
     expect(useI18nStore.getState().locale).toBeNull()
   })
 
   it('renders read-only with a warning when preferences could not be read', () => {
     render(<AccountSettings preferences={null} />)
-    expect(screen.getByLabelText('Display language')).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('combobox', { name: 'Display language' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText(/could not be loaded/)).toBeInTheDocument()
   })
 })
