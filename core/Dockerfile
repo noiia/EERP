@@ -1,4 +1,4 @@
-FROM golang:1.26 AS builder
+FROM golang:1.27.1 AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN for dir in /app/core/modules/*/; do \
 RUN go build -C /app/core -o /app/eerp ./cmd/app
 
 # ── Runtime ────────────────────────────────────────────────────────────────
-FROM golang:1.26
+FROM golang:1.27.1
 
 # RUN apt-get update && apt-get install -y --no-install-recommends \
 #     ca-certificates \
