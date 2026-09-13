@@ -11,6 +11,7 @@ import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from '
 import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
 import { useListNavStore } from './list-nav-store'
+import { moduleRegistry } from '../registry'
 import { useRecordLabelStore } from './record-label-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { CreateBar, EntityView } from './renderers'
@@ -280,6 +281,28 @@ describe('EntityView', () => {
   })
 
   describe('form record navigator (</>)', () => {
+    // FormListNav resolves its formPath via moduleRegistry.formPathFor(entity)
+    // rather than off the FORM descriptor's own `formPath` — that field is
+    // only ever declared on an entity's LIST (tree) view (see crm_views.ts and
+    // every other module), never on the form view itself. Registering a tree
+    // route here is what a real module's `formView`/`listView` pair does.
+    beforeEach(() => {
+      moduleRegistry.register({
+        name: 'crm-nav-test-fixture',
+        routes: [
+          {
+            path: '/crm/list',
+            descriptor: {
+              entity: 'crm',
+              viewType: 'tree',
+              fields: formDescriptor.fields,
+              formPath: '/crm/:id',
+            },
+          },
+        ],
+      })
+    })
+
     it('shows position/total and steps to the next record after browsing a filtered list', () => {
       const treeDescriptor: ViewDescriptor<Contact> = {
         ...formDescriptor,
@@ -299,13 +322,7 @@ describe('EntityView', () => {
       )
       unmount()
 
-      render(
-        <EntityView
-          descriptor={{ ...formDescriptor, formPath: '/crm/:id' }}
-          initialData={[{ id: '1', name: 'Ada' }]}
-          actions={noopActions}
-        />,
-      )
+      render(<EntityView descriptor={formDescriptor} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />)
       expect(screen.getByText('1 / 2')).toBeInTheDocument()
       const prev = screen.getByRole('button', { name: 'Previous record' })
       const next = screen.getByRole('button', { name: 'Next record' })
@@ -317,13 +334,7 @@ describe('EntityView', () => {
     })
 
     it('renders nothing for a record reached directly, with no RelationOps to fall back to', () => {
-      render(
-        <EntityView
-          descriptor={{ ...formDescriptor, formPath: '/crm/:id' }}
-          initialData={[{ id: '99', name: 'Ada' }]}
-          actions={noopActions}
-        />,
-      )
+      render(<EntityView descriptor={formDescriptor} initialData={[{ id: '99', name: 'Ada' }]} actions={noopActions} />)
       expect(screen.queryByRole('button', { name: 'Next record' })).not.toBeInTheDocument()
     })
 
@@ -334,11 +345,7 @@ describe('EntityView', () => {
       ])
       render(
         <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
-          <EntityView
-            descriptor={{ ...formDescriptor, formPath: '/crm/:id' }}
-            initialData={[{ id: '2', name: 'Grace' }]}
-            actions={noopActions}
-          />
+          <EntityView descriptor={formDescriptor} initialData={[{ id: '2', name: 'Grace' }]} actions={noopActions} />
         </RelationOpsProvider>,
       )
       expect(list).toHaveBeenCalledWith('crm')

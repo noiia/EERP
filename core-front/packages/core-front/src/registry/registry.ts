@@ -415,6 +415,25 @@ export class ModuleRegistry {
   }
 
   /**
+   * A registered route's own `formPath` for viewing/editing one record of
+   * `entity`, or null. `formPath` is declared on that entity's LIST (tree)
+   * view — the route a row-click/Create navigates FROM — never on the form
+   * view itself, which has no reason to name its own path. The form record
+   * stepper (renderers.tsx's FormListNav) uses this to build prev/next URLs
+   * without its own descriptor needing to duplicate the list's formPath.
+   * First match wins, same "first registered" rule as formDescriptorFor.
+   */
+  formPathFor(entity: string): string | null {
+    for (const { module } of this.entries) {
+      for (const route of module.routes) {
+        const resolved = this.resolvedRoutes.get(route.path)?.descriptor ?? route.descriptor
+        if (resolved.entity === entity && resolved.formPath) return resolved.formPath
+      }
+    }
+    return null
+  }
+
+  /**
    * The first registered report over an entity, or null — same "first wins,
    * null if none" shape as formDescriptorFor. The catch-all's form route uses
    * this to decide whether to render an Export-to-PDF action: an entity with
@@ -426,6 +445,17 @@ export class ModuleRegistry {
       if (report.entity === entity) return report
     }
     return null
+  }
+
+  /**
+   * A module's own display label (RegisterOptions.displayName, module.json's
+   * `display_name`) — for naming a module by itself outside its landing-menu
+   * tile (e.g. the breadcrumb's collapsed "Configuration (<name>)" crumb for
+   * a module's Settings -> Apps page). undefined for an unknown module or one
+   * registered with no displayName (caller falls back to a titleized name).
+   */
+  displayNameFor(moduleName: string): string | undefined {
+    return this.entries.find((e) => e.module.name === moduleName)?.displayName
   }
 
   /**

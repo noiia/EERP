@@ -74,6 +74,21 @@ describe('ModuleRegistry', () => {
     expect(registry.formDescriptorFor('tag')).toBeNull()
   })
 
+  it("resolves an entity's formPath off its LIST view, not its form view", () => {
+    // formDescriptor itself declares no formPath (same as every real module's
+    // form view — see crm_views.ts) — only its list route does.
+    const listWithPath: ViewDescriptor = { ...treeDescriptor, formPath: '/crm/:id' }
+    const registry = new ModuleRegistry().register({
+      name: 'crm',
+      routes: [
+        { path: '/crm/contacts', descriptor: listWithPath },
+        { path: '/crm/contacts/:id', descriptor: formDescriptor },
+      ],
+    })
+    expect(registry.formPathFor('crm')).toBe('/crm/:id')
+    expect(registry.formPathFor('tag')).toBeNull()
+  })
+
   it('rejects a descriptor whose widget the field type forbids, naming module and route', () => {
     const bad: FrontModule = {
       name: 'broken',

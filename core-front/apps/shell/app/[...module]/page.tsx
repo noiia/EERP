@@ -74,9 +74,10 @@ export default async function ModulePage({ params }: ModulePageProps) {
     // right at the Card's top edge with no title row above it. Dashboards/catalog
     // (which DO render a title row here) keep the full py.
     // A form ALSO cancels RootLayout's own pageInsetY top padding (negative margin
-    // exactly offsetting it) — its toolbar (Save/Reset/status/the record stepper)
-    // IS the page's top chrome, so it should sit flush, not float in the same 5vh
-    // gap every other view keeps above its own title/content.
+    // exactly offsetting it, plus a flat 20px back) — its toolbar (Save/Reset/
+    // status/the record stepper) IS the page's top chrome, so it should sit close
+    // to flush, not float in the same 5vh gap every other view keeps above its
+    // own title/content.
     <Container
       maxWidth={false}
       sx={{
@@ -84,7 +85,7 @@ export default async function ModulePage({ params }: ModulePageProps) {
         ...(route.descriptor.viewType === 'tree' || route.descriptor.viewType === 'form'
           ? { pt: 0 }
           : {}),
-        ...(isForm ? { mt: `calc(${layout.pageInsetY} * -1)` } : {}),
+        ...(isForm ? { mt: `calc(${layout.pageInsetY} * -1 + 20px)` } : {}),
       }}
     >
       <Stack spacing={3}>

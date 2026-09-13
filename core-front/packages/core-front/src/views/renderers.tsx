@@ -27,6 +27,7 @@ import {
 } from '../api/view-fields'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
+import { moduleRegistry } from '../registry'
 import { CalendarRenderer } from './calendar-renderer'
 import { CatalogRenderer } from './catalog-renderer'
 import { ChatterPanel } from './chatter-panel'
@@ -220,13 +221,20 @@ function summarizeFieldChanges(
  * back to fetching the entity's own default (unfiltered) first page via
  * RelationOps — the same "no explicit filter" set the list itself would show
  * on a fresh visit — so the stepper still appears rather than requiring a
- * list visit first. Renders nothing without a formPath, without RelationOps
- * mounted, or for an id-less draft (a brand-new, unsaved record).
+ * list visit first. Renders nothing without a registered list formPath,
+ * without RelationOps mounted, or for an id-less draft (a brand-new, unsaved
+ * record).
+ *
+ * `formPath` is resolved via `moduleRegistry.formPathFor(entity)` rather than
+ * read off this view's OWN descriptor — `ViewDescriptor.formPath` is declared
+ * on an entity's LIST (tree) view (the route a row-click navigates FROM), not
+ * on its form view, which never had a reason to name its own path before this.
  */
-function FormListNav({ formPath, entity, recordId }: { formPath?: string; entity: string; recordId?: string }) {
+function FormListNav({ entity, recordId }: { entity: string; recordId?: string }) {
   const t = useT()
   const router = useRouter()
   const relationOps = useRelationOps()
+  const formPath = moduleRegistry.formPathFor(entity) ?? undefined
   const ids = useListNavStore((s) => s.ids[entity])
   useEffect(() => {
     if (ids || !relationOps) return
@@ -476,7 +484,7 @@ function FormRenderer<T extends HasId>({
         {statusField && (
           <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />
         )}
-        <FormListNav formPath={descriptor.formPath} entity={descriptor.entity} recordId={recordId} />
+        <FormListNav entity={descriptor.entity} recordId={recordId} />
       </Box>
       {/* The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
           the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
