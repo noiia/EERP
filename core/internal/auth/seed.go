@@ -105,10 +105,14 @@ type seedStatement struct {
 //
 // All three use the SAME role_permissions mechanism PermissionRepository.Has
 // already enforces, so they work as real, assignable roles today. Their own
-// per-view "rights" table (RoleViewPermission/RoleViewPermissionRight) is
-// left EMPTY — that table is a data model + UI for an admin to
-// document/refine access per view, not yet consulted by any enforcement
-// path (see RoleViewPermission's own doc comment).
+// per-view "rights" table (RoleViewPermission/RoleViewPermissionRight) is a
+// data model + UI for an admin to document/refine access per view, not yet
+// consulted by any enforcement path (see RoleViewPermission's own doc
+// comment) — Viewer/Deny leave it empty, but Admin gets one row per entity
+// currently on the generic CRUD surface (orm.ExposedRoutePrefixes, the SAME
+// catalog the frontend's `entity` many2one picks from), each carrying all
+// four rights, so a brand-new Admin role's own Views notebook table already
+// lists everything instead of starting blank.
 //
 // Not currently called from any production tenant-provisioning flow — none
 // exists yet in this codebase (tenants aren't self-serve today). SeedDevAdmin
@@ -162,6 +166,31 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 			 VALUES ($1, $2, $3, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
 			[]any{seedUUID(tenantID, "role_type:"+name), tenantID, name},
 		})
+	}
+
+	// Give the Admin role every right on every entity currently registered on
+	// the generic CRUD surface — same catalog GetViewCatalog/the frontend's
+	// `entity` many2one draws from, read in-process (no HTTP round-trip).
+	// Deterministic per-(tenant, entity[, right]) ids keep this idempotent,
+	// same shape as every other statement above.
+	for _, entity := range orm.ExposedRoutePrefixes() {
+		rvpID := seedUUID(tenantID, "role_view_permission:admin:"+entity)
+		statements = append(statements, seedStatement{
+			`INSERT INTO role_view_permission (id, tenant_id, role_id, entity, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
+			[]any{rvpID, tenantID, adminRoleID, entity},
+		})
+		for _, name := range accountRoleTypeNames {
+			statements = append(statements, seedStatement{
+				`INSERT INTO role_view_permission_right
+				 (id, tenant_id, role_view_permission_id, account_role_type_id, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
+				[]any{
+					seedUUID(tenantID, "role_view_permission_right:admin:"+entity+":"+name),
+					tenantID, rvpID, seedUUID(tenantID, "role_type:"+name),
+				},
+			})
+		}
 	}
 
 	for _, s := range statements {

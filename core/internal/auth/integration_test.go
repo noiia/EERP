@@ -18,11 +18,29 @@ import (
 	authmw "core/internal/middleware"
 	"core/internal/types"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// seedCatalogEntity is a throwaway table registered purely so
+// orm.ExposedRoutePrefixes() (SeedDefaultRoles' Admin-role catalog) has
+// something deterministic to iterate in this test binary — internal/auth's
+// own tests never load core/modules/all, so no real module registers
+// anything here otherwise. Registering it has no effect beyond adding one
+// name to the in-memory registry: RoleViewPermission.Entity is a bare string
+// column, never FK-checked against a real table.
+type seedCatalogEntity struct {
+	model.BaseModel
+}
+
+func init() {
+	if err := orm.Register[seedCatalogEntity](); err != nil {
+		panic(err)
+	}
+}
 
 func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 	t.Helper()
@@ -104,6 +122,32 @@ func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 			expires_at TIMESTAMPTZ NOT NULL,
 			revoked BOOLEAN NOT NULL DEFAULT FALSE
 		)`,
+		`CREATE TABLE IF NOT EXISTS account_role_types (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			deleted_at TIMESTAMPTZ,
+			tenant_id UUID NOT NULL,
+			name TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS role_view_permission (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			deleted_at TIMESTAMPTZ,
+			tenant_id UUID NOT NULL,
+			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+			entity TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS role_view_permission_right (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			deleted_at TIMESTAMPTZ,
+			tenant_id UUID NOT NULL,
+			role_view_permission_id UUID NOT NULL REFERENCES role_view_permission(id) ON DELETE CASCADE,
+			account_role_type_id UUID NOT NULL REFERENCES account_role_types(id) ON DELETE CASCADE
+		)`,
 	}
 	for _, sql := range tables {
 		if _, err := app.DB.Exec(ctx, sql); err != nil {
@@ -112,14 +156,17 @@ func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 	}
 
 	t.Cleanup(func() {
-		app.DB.Exec(ctx, "DELETE FROM refresh_tokens")   //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM role_belongs")     //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM user_roles")       //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM role_permissions") //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM users")            //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM roles")            //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM permissions")      //nolint:errcheck
-		app.Close()                                      //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM refresh_tokens")             //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM role_view_permission_right") //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM role_view_permission")       //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM account_role_types")         //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM role_belongs")               //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM user_roles")                 //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM role_permissions")           //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM users")                      //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM roles")                      //nolint:errcheck
+		app.DB.Exec(ctx, "DELETE FROM permissions")                //nolint:errcheck
+		app.Close()                                                //nolint:errcheck
 	})
 	return app, cfg
 }
@@ -554,3 +601,67 @@ func TestIntegration_Login_EmbedsGroupsClaim(t *testing.T) {
 		t.Errorf("groups claim = %v, want %v", claims.Groups, want)
 	}
 }
+
+func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithAllRights(t *testing.T) {
+	app, _ := integrationSetup(t)
+	ctx := context.Background()
+	tenantID := uuid.New()
+
+	if err := auth.SeedDefaultRoles(ctx, app.DB, tenantID); err != nil {
+		t.Fatalf("seed default roles: %v", err)
+	}
+
+	prefixes := orm.ExposedRoutePrefixes()
+	if len(prefixes) == 0 {
+		t.Fatal("expected at least one exposed route prefix (seedCatalogEntity) in this test binary")
+	}
+
+	var adminRoleID uuid.UUID
+	if err := app.DB.QueryRow(ctx,
+		`SELECT id FROM roles WHERE tenant_id = $1 AND technical_name = 'admin'`, tenantID,
+	).Scan(&adminRoleID); err != nil {
+		t.Fatalf("find admin role: %v", err)
+	}
+
+	var rvpCount int
+	if err := app.DB.QueryRow(ctx,
+		`SELECT count(*) FROM role_view_permission WHERE role_id = $1`, adminRoleID,
+	).Scan(&rvpCount); err != nil {
+		t.Fatalf("count role_view_permission: %v", err)
+	}
+	if rvpCount != len(prefixes) {
+		t.Errorf("role_view_permission rows = %d, want %d (one per exposed entity)", rvpCount, len(prefixes))
+	}
+
+	var rightsCount int
+	if err := app.DB.QueryRow(ctx,
+		`SELECT count(*) FROM role_view_permission_right rvpr
+		 JOIN role_view_permission rvp ON rvp.id = rvpr.role_view_permission_id
+		 WHERE rvp.role_id = $1`, adminRoleID,
+	).Scan(&rightsCount); err != nil {
+		t.Fatalf("count role_view_permission_right: %v", err)
+	}
+	if want := len(prefixes) * len(accountRoleTypeNamesForTest); rightsCount != want {
+		t.Errorf("role_view_permission_right rows = %d, want %d (%d rights per entity)",
+			rightsCount, want, len(accountRoleTypeNamesForTest))
+	}
+
+	// Re-running is idempotent — no duplicate rows.
+	if err := auth.SeedDefaultRoles(ctx, app.DB, tenantID); err != nil {
+		t.Fatalf("seed default roles (second run): %v", err)
+	}
+	var rvpCount2 int
+	if err := app.DB.QueryRow(ctx,
+		`SELECT count(*) FROM role_view_permission WHERE role_id = $1`, adminRoleID,
+	).Scan(&rvpCount2); err != nil {
+		t.Fatalf("count role_view_permission (second run): %v", err)
+	}
+	if rvpCount2 != rvpCount {
+		t.Errorf("role_view_permission rows after re-seed = %d, want unchanged %d", rvpCount2, rvpCount)
+	}
+}
+
+// accountRoleTypeNamesForTest mirrors auth.accountRoleTypeNames (unexported)
+// so this external test package doesn't need to reach into internals for
+// one constant.
+var accountRoleTypeNamesForTest = []string{"deny", "read", "write", "delete"}

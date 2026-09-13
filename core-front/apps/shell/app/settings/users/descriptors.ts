@@ -133,12 +133,14 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
       // AND UI ONLY (core/internal/auth.RoleViewPermission's own doc
       // comment): not yet consulted by the actual module:resource:action
       // permission check, which stays role_permissions/role_belongs alone.
-      // `role_view_permission` isn't a discovered module (no module.json —
-      // deliberately, since toggling `auth` in the App Store would be able
-      // to disable login itself), so it has no registered form for the
-      // create-wizard to pick up; the wizard falls back to a bare `entity`
-      // text field (labelField below) and the row's `rights` tags are set
-      // afterward on its own dedicated form (formPath).
+      // `role_view_permission` has no App Router route of its own (it's not
+      // a discovered module, and Settings → Users is a hand-built page
+      // tree), so its own form descriptor is registered directly with
+      // moduleRegistry by SettingsUsersRegistryInit (mounted in the root
+      // layout) purely so this field's create-wizard can find it — that
+      // registration carries no navigable path, it only makes
+      // moduleRegistry.formDescriptorFor('role_view_permission') resolve
+      // instead of falling back to a bare one-field form.
       name: 'view_permissions',
       label: 'Views',
       type: 'relation',
@@ -181,12 +183,13 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
   permissions: ['roles:roles:read'],
 }
 
-// role_view_permission's own dedicated form — needed for two reasons: it's
-// what the "Views" tab's one2many formPath opens when a row is clicked (to
-// set that row's `rights` tags, which the create-wizard's bare fallback form
-// can't offer — see view_permissions' own comment above), and it's a real
-// registered ViewDescriptor the SAME way sale_line's own form exists purely
-// to back its parent's one2many wizard/click-through.
+// role_view_permission's own dedicated form: what the "Views" tab's one2many
+// formPath opens when an EXISTING row is clicked, AND — via
+// SettingsUsersRegistryInit's moduleRegistry.register() call — what the
+// wizard's "+ create" popup renders too, so adding a view and setting its
+// rights happens in ONE dialog (`role_id` is the inverse FK, preset+hidden by
+// the wizard automatically, leaving just `entity` + `rights` visible) instead
+// of creating a bare row then clicking into a second full-page form.
 export const roleViewPermissionFormDescriptor: ViewDescriptor<AdminRecord> = {
   entity: 'role_view_permission',
   viewType: 'form',

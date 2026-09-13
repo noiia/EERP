@@ -20,6 +20,7 @@ import { AppTopBar } from '../src/components/AppTopBar'
 import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { ModulesInit } from '../src/components/ModulesInit'
+import { SettingsUsersRegistryInit } from '../src/components/SettingsUsersRegistryInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
 import {
   ChatterOpsProvider,
@@ -96,6 +97,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <AppThemeProvider>
             <I18nInit />
             <ModulesInit />
+            <SettingsUsersRegistryInit />
             <LocaleSync preferences={preferences} />
             <SessionHydrator identity={identity} />
             {/* The generic "undo a hard delete" toast (search-bar.tsx's saved-
