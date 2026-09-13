@@ -350,6 +350,110 @@ describe('EntityView', () => {
     })
   })
 
+  describe('rows-per-page (DataGrid footer, no separate custom selector)', () => {
+    it('shows a typeable number input in the DataGrid footer, not a Select', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      expect(screen.queryByRole('combobox', { name: /rows per page/i })).not.toBeInTheDocument()
+      const input = screen.getByRole('spinbutton', { name: /rows per page/i }) as HTMLInputElement
+      expect(input.value).toBe('20')
+    })
+
+    it('typing a custom value (committed on blur) re-pages the ALREADY-loaded rows — no fetch at all', async () => {
+      const list = vi.fn(async () => [])
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      render(
+        <RelationOpsProvider
+          ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as unknown as RelationOps}
+        >
+          <EntityView
+            descriptor={treeDescriptor}
+            initialData={[
+              { id: '1', name: 'Ada' },
+              { id: '2', name: 'Grace' },
+              { id: '3', name: 'Katherine' },
+            ]}
+            actions={noopActions}
+          />
+        </RelationOpsProvider>,
+      )
+      expect(screen.getAllByText(/^(Ada|Grace|Katherine)$/)).toHaveLength(3)
+
+      const input = screen.getByRole('spinbutton', { name: /rows per page/i })
+      fireEvent.change(input, { target: { value: '2' } })
+      fireEvent.blur(input)
+
+      await waitFor(() => expect(screen.getAllByText(/^(Ada|Grace|Katherine)$/)).toHaveLength(2))
+      expect(list).not.toHaveBeenCalled()
+    })
+
+    it('commits on Enter too, not just blur — same no-fetch re-page', async () => {
+      const list = vi.fn(async () => [])
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      render(
+        <RelationOpsProvider
+          ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as unknown as RelationOps}
+        >
+          <EntityView
+            descriptor={treeDescriptor}
+            initialData={[
+              { id: '1', name: 'Ada' },
+              { id: '2', name: 'Grace' },
+              { id: '3', name: 'Katherine' },
+            ]}
+            actions={noopActions}
+          />
+        </RelationOpsProvider>,
+      )
+      const input = screen.getByRole('spinbutton', { name: /rows per page/i })
+      fireEvent.change(input, { target: { value: '1' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      await waitFor(() => expect(screen.getAllByText(/^(Ada|Grace|Katherine)$/)).toHaveLength(1))
+      expect(list).not.toHaveBeenCalled()
+    })
+
+    it('clamps an out-of-range typed value to [1, 100] — the DataGrid Community edition\'s own hard ceiling', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      const input = screen.getByRole('spinbutton', { name: /rows per page/i }) as HTMLInputElement
+      fireEvent.change(input, { target: { value: '999999' } })
+      fireEvent.blur(input)
+      expect(input.value).toBe('100')
+
+      fireEvent.change(input, { target: { value: '0' } })
+      fireEvent.blur(input)
+      expect(input.value).toBe('1')
+    })
+
+    it('rejects non-numeric input by reverting to the last committed value', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      const input = screen.getByRole('spinbutton', { name: /rows per page/i }) as HTMLInputElement
+      fireEvent.change(input, { target: { value: 'abc' } })
+      fireEvent.blur(input)
+      expect(input.value).toBe('20')
+    })
+  })
+
   describe('form record navigator (</>)', () => {
     // FormListNav resolves its formPath via moduleRegistry.formPathFor(entity)
     // rather than off the FORM descriptor's own `formPath` — that field is

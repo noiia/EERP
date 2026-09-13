@@ -64,8 +64,13 @@ import { useUndoToastStore } from './undo-toast'
 
 const LIVE_SEARCH_DEBOUNCE_MS = 250
 const LIVE_SEARCH_PAGE_SIZE = 50
-const DEFAULT_PAGE_SIZE = 20
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200]
+/** How many rows a filtered/unfiltered fetch loads from the server — fixed,
+ * NOT the DataGrid's own rows-per-page control (TreeRenderer's
+ * `paginationModel.pageSize`, purely a client-side "how many of the already-
+ * loaded rows to show per page" concern, renderers.tsx's RowsPerPageInput).
+ * Changing how many rows are DISPLAYED per page should never itself trigger
+ * a new request — this is what makes that true. */
+const FETCH_LIMIT = 200
 
 const NO_GROUPS: string[] = []
 
@@ -228,12 +233,6 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
   const [query, setQuery] = useState('')
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [filters, setFilters] = useState<FilterCondition[]>([])
-  // The user-editable rows-per-page limit — replaces the old hardcoded
-  // APPLIED_FILTERS_PAGE_SIZE constant everywhere a filtered/unfiltered fetch
-  // sets its `pageSize`. Live-typing autocomplete keeps its own separate,
-  // smaller per-field cap (LIVE_SEARCH_PAGE_SIZE) — a different concern
-  // (merge-quality across up to 3 fields), not "how many rows the list shows".
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   // Which saved filter (if any) the current `filters`/`groupField` came from
   // — purely a DISPLAY flag: `filters` stays the single source of truth for
   // what's actually applied, this just decides "one consolidated chip" vs
@@ -301,27 +300,15 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
     }, LIVE_SEARCH_DEBOUNCE_MS)
   }
 
-  async function applyFilters(next: FilterCondition[], size: number = pageSize) {
+  async function applyFilters(next: FilterCondition[]) {
     setFilters(next)
     setAppliedSavedFilter(null)
     if (!relationOps) {
       if (next.length === 0) onResults(fallback)
       return
     }
-    // Always a real fetch, even with zero filters — a custom page size still
-    // has to apply to the "no filter" view, which `fallback` (the server's
-    // own default-page_size load) can't reflect on its own.
-    const records = await relationOps.list(descriptor.entity, toListOptions(next, size))
+    const records = await relationOps.list(descriptor.entity, toListOptions(next, FETCH_LIMIT))
     onResults(records as unknown as T[])
-  }
-
-  /** The rows-per-page control (below) re-runs whatever's currently applied
-   * (filters may be empty) at the new size — `applyFilters` takes an explicit
-   * size override since the `pageSize` state variable itself won't have
-   * updated yet within this same event handler. */
-  function onPageSizeChange(size: number) {
-    setPageSize(size)
-    void applyFilters(filters, size)
   }
 
   function addFilter() {
@@ -463,20 +450,6 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
             },
           }}
         />
-        {/* The rows-per-page limit — every fetch this bar makes (filtered or
-            not) passes this as `pageSize`, replacing the old fixed 200/20. */}
-        <Select
-          size="small"
-          value={pageSize}
-          onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          aria-label={t('Rows per page')}
-        >
-          {PAGE_SIZE_OPTIONS.map((size) => (
-            <MenuItem key={size} value={size}>
-              {t(`${size} rows`)}
-            </MenuItem>
-          ))}
-        </Select>
       </Stack>
       {(appliedSavedFilter || filters.length > 0) && (
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'center' }}>

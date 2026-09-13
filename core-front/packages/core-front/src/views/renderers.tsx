@@ -10,6 +10,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Grid from '@mui/material/Grid'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
@@ -531,6 +532,131 @@ function FormRenderer<T extends HasId>({
 
 // --- tree (hierarchy) with a flat DataGrid fallback, plus Kanban/Calendar/Graph modes ---
 
+// Module augmentation (MUI X's own documented mechanism for typing a slot's
+// extra props): DataGrid's `slotProps.basePagination` is typed narrowly (bare
+// HTML attributes) rather than as the full underlying TablePaginationProps it
+// actually forwards to at runtime — `slots.select` (below, RowsPerPageInput)
+// needs declaring here to type-check.
+declare module '@mui/x-data-grid' {
+  interface BasePaginationPropsOverrides {
+    slots?: { select?: React.ElementType }
+  }
+}
+
+/** How many of the already-loaded rows the grid shows per page, before the
+ * user (or a persisted preference) picks a different one — purely a DISPLAY
+ * default, unrelated to search-bar.tsx's own FETCH_LIMIT (how many rows get
+ * loaded from the server in the first place; changing this never refetches). */
+const DEFAULT_DISPLAY_PAGE_SIZE = 20
+
+/** Not a preference — a hard ceiling: `@mui/x-data-grid`'s MIT/Community
+ * edition throws ("upgrade to DataGridPro or DataGridPremium") if a
+ * controlled `paginationModel.pageSize` exceeds 100. Since this same value
+ * also drives the DataGrid's own `paginationModel` below, 100 is the real
+ * maximum until/unless this app moves to a paid X tier. */
+const MAX_PAGE_SIZE = 100
+
+/**
+ * Every valid page size, 1..MAX_PAGE_SIZE — passed to the DataGrid as a
+ * STATIC `pageSizeOptions` (below), deliberately not `[pageSize, ...]`
+ * derived from current state. `GridPagination` blanks its rowsPerPageOptions
+ * to `[]` whenever the current pageSize isn't "included," and it checks that
+ * against the grid's own INTERNAL apiRef state — which updates a render
+ * ahead of this component's controlled `pageSize` React state during a
+ * change. A derived two-value array misses that window and TablePagination
+ * (rowsPerPageOptions.length > 1 is its own condition for rendering the
+ * select slot at all) briefly unmounts/remounts RowsPerPageInput, losing
+ * whatever the user was mid-typing. Enumerating the whole valid range keeps
+ * the inclusion check true throughout, at every pageSize this app can ever
+ * reach — RowsPerPageInput ignores the options list's actual contents
+ * regardless, so there is no downside to it being wider than 2 entries.
+ */
+const ALL_PAGE_SIZES = Array.from({ length: MAX_PAGE_SIZE }, (_, i) => i + 1)
+
+/**
+ * Swaps ONLY the native rows-per-page dropdown for a free-typed number —
+ * wired in via `slotProps.basePagination.slots.select`, i.e. TablePagination's
+ * OWN `select` slot (docs.mui.com/material-ui/react-table-pagination "Custom
+ * rows per page" recipe extended to accept typed input instead of just
+ * preset options) — everything else in the footer (the "X–Y of Z" count and
+ * the Prev/Next page chevrons, `TablePaginationActions`) stays the real,
+ * untouched MUI component. Replacing the WHOLE footer (`slots.pagination`)
+ * loses those chevrons entirely, which is exactly the regression this fixes.
+ *
+ * TablePagination passes this component `value`/`onChange` exactly like it
+ * would its own Select (`onChange` ultimately reaches DataGrid's own
+ * `apiRef.setPageSize(Number(event.target.value))` adapter), so a plain
+ * fabricated `{ target: { value } }` on commit is all the native contract
+ * needs — no DataGrid-specific typing required. Committed on blur/Enter, not
+ * on every keystroke, so typing "80" doesn't re-page after every digit. This
+ * only changes how many of the ALREADY-LOADED rows the grid shows per page
+ * (client-side, via DataGrid's own default `paginationMode: 'client'`) — it
+ * never triggers a fetch; the server-side row limit is search-bar.tsx's own
+ * fixed `FETCH_LIMIT`, entirely decoupled from this control.
+ */
+function RowsPerPageInput({
+  value,
+  onChange,
+  id,
+  labelId,
+  disabled,
+}: {
+  value: number
+  onChange: React.ChangeEventHandler<HTMLInputElement>
+  id?: string
+  labelId?: string
+  disabled?: boolean
+}) {
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => setDraft(String(value)), [value])
+
+  function commit() {
+    // A native number input already discards non-numeric keystrokes down to
+    // '' — Number('') is 0, not NaN, so an explicit empty/blank check is
+    // needed too, or a cleared field would clamp to the MINIMUM instead of
+    // reverting to the last committed value.
+    const trimmed = draft.trim()
+    const parsed = Math.trunc(Number(trimmed))
+    const valid = trimmed !== '' && Number.isFinite(parsed)
+    const clamped = valid ? Math.min(Math.max(parsed, 1), MAX_PAGE_SIZE) : value
+    setDraft(String(clamped))
+    if (clamped !== value) {
+      onChange({ target: { value: String(clamped) } } as React.ChangeEvent<HTMLInputElement>)
+    }
+  }
+
+  return (
+    <TextField
+      size="small"
+      type="number"
+      variant="standard"
+      disabled={disabled}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter') return
+        e.preventDefault()
+        commit()
+        ;(e.target as HTMLInputElement).blur()
+      }}
+      // The native Select this replaces carries its own marginRight — a
+      // custom slot component starts with none, so without this the
+      // "X–Y of Z" displayed-rows text sits flush against the input.
+      sx={{ ml: 1, mr: 4 }}
+      slotProps={{
+        htmlInput: {
+          id,
+          'aria-labelledby': labelId,
+          min: 1,
+          max: MAX_PAGE_SIZE,
+          style: { width: 48, textAlign: 'right' },
+        },
+      }}
+    />
+  )
+}
+
 const MODE_LABELS: Record<DisplayMode, string> = {
   list: 'List',
   kanban: 'Kanban',
@@ -614,6 +740,15 @@ function TreeRenderer<T extends HasId>({
   useEffect(() => {
     setLiveRecords(initialData)
   }, [initialData])
+  // The DataGrid's own pagination state (page + rows shown per page) — purely
+  // a client-side view over whatever SearchBar already fetched (up to its own
+  // fixed FETCH_LIMIT), never fed back into a request. DataGrid's default
+  // paginationMode is 'client', so handing it back via onPaginationModelChange
+  // below is the entire mechanism — no other wiring needed.
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: DEFAULT_DISPLAY_PAGE_SIZE,
+  })
   // Mirrors the current filtered/searched/grouped order into the session-only
   // list-nav store — a form navigated to from here (List/Kanban/Calendar all
   // route through the same formPath click) can then step </> through this
@@ -720,6 +855,13 @@ function TreeRenderer<T extends HasId>({
                 : undefined
             }
             sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
+            // Controlled purely for RowsPerPageInput/page-navigation's sake —
+            // paginates client-side over whatever SearchBar already fetched
+            // (its own fixed FETCH_LIMIT), never triggers a new request.
+            paginationModel={paginationModel}
+            onPaginationModelChange={setPaginationModel}
+            pageSizeOptions={ALL_PAGE_SIZES}
+            slotProps={{ basePagination: { slots: { select: RowsPerPageInput } } }}
           />
         </Box>
       )
@@ -738,7 +880,9 @@ function TreeRenderer<T extends HasId>({
   // Width/overflow containment is RootLayout's job now (one page-wide inset around
   // everything but the top bar — see the `pageInsetX`/`pageInsetY` tokens), not this
   // renderer's — a view-specific fix here would just be a second, competing mechanism.
-  const searchBar = <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
+  const searchBar = (
+    <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
+  )
   // The selection toolbar (right of the search bar) only applies where
   // checkboxes actually exist — the flat grid in List mode.
   const selectionBar =
