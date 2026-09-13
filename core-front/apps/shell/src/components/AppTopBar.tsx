@@ -160,7 +160,6 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
     const base = crumbsFromPath(pathname, knownPaths, t)
     if (!recordLabel || base.length === 0) return base
     return [...base.slice(0, -1), { ...base[base.length - 1], label: recordLabel }]
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, knownPathsKey, recordLabel])
   // Merged with whatever was already in the cross-navigation trail (see
   // breadcrumb-store.ts): diving deeper in the same section replaces its
@@ -179,7 +178,6 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
     // a form route mounts) so the already-visited entry gets its baked-in
     // friendly name too, not just crumbs visited from here on.
     useBreadcrumbStore.getState().visit(localCrumbs)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, knownPathsKey, recordLabel])
   const narrow = useMediaQuery(`(max-width:${layout.breadcrumbCollapseWidth}px)`)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
