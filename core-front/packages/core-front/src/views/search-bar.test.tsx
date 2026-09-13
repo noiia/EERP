@@ -111,6 +111,39 @@ describe('SearchBar', () => {
     await waitFor(() => expect(onResults).toHaveBeenCalledWith(fallback))
   })
 
+  it('lets the user change the rows-per-page limit, refetching even with no filters applied', async () => {
+    const list = vi.fn(async () => [{ id: '9', name: 'Zoe' }])
+    const { onResults } = renderBar({ list })
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Rows per page' }))
+    fireEvent.click(await screen.findByRole('option', { name: '100 rows' }))
+
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith('crm', expect.objectContaining({ pageSize: 100 })),
+    )
+    await waitFor(() => expect(onResults).toHaveBeenCalledWith([{ id: '9', name: 'Zoe' }]))
+  })
+
+  it('applies the current rows-per-page limit to a structured filter, not the old fixed 200', async () => {
+    const distinctValues = vi.fn(async () => [{ value: 'open', total: 3 }])
+    const list = vi.fn(async () => [])
+    renderBar({ list, distinctValues })
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Rows per page' }))
+    fireEvent.click(await screen.findByRole('option', { name: '50 rows' }))
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1))
+    list.mockClear()
+
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    fireEvent.click(screen.getByText('Status'))
+    expect(await screen.findByText('open (3)')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('open (3)'))
+
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith('crm', expect.objectContaining({ pageSize: 50 })),
+    )
+  })
+
   it('a field gated to a group the caller lacks never appears as a group-by option', () => {
     useSessionStore.setState({ identity: identityWith(['someone_else']) })
     renderBar()

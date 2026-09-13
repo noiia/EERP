@@ -68,7 +68,9 @@ export function FormActionsMenu({ entity, actions, recordId }: FormActionsMenuPr
   )
 }
 
-function MenuNodeItem({ node, onRun }: { node: MenuNode; onRun: (name: string) => void }) {
+/** Exported for reuse by list-selection.tsx's bulk actions menu — the SAME
+ * recursive MenuNode rendering, just fed a different `onRun`. */
+export function MenuNodeItem({ node, onRun }: { node: MenuNode; onRun: (name: string) => void }) {
   const t = useT()
   const [subAnchor, setSubAnchor] = useState<HTMLElement | null>(null)
 

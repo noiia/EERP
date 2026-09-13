@@ -64,7 +64,8 @@ import { useUndoToastStore } from './undo-toast'
 
 const LIVE_SEARCH_DEBOUNCE_MS = 250
 const LIVE_SEARCH_PAGE_SIZE = 50
-const APPLIED_FILTERS_PAGE_SIZE = 200
+const DEFAULT_PAGE_SIZE = 20
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200]
 
 const NO_GROUPS: string[] = []
 
@@ -227,6 +228,12 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
   const [query, setQuery] = useState('')
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [filters, setFilters] = useState<FilterCondition[]>([])
+  // The user-editable rows-per-page limit — replaces the old hardcoded
+  // APPLIED_FILTERS_PAGE_SIZE constant everywhere a filtered/unfiltered fetch
+  // sets its `pageSize`. Live-typing autocomplete keeps its own separate,
+  // smaller per-field cap (LIVE_SEARCH_PAGE_SIZE) — a different concern
+  // (merge-quality across up to 3 fields), not "how many rows the list shows".
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   // Which saved filter (if any) the current `filters`/`groupField` came from
   // — purely a DISPLAY flag: `filters` stays the single source of truth for
   // what's actually applied, this just decides "one consolidated chip" vs
@@ -294,16 +301,27 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
     }, LIVE_SEARCH_DEBOUNCE_MS)
   }
 
-  async function applyFilters(next: FilterCondition[]) {
+  async function applyFilters(next: FilterCondition[], size: number = pageSize) {
     setFilters(next)
     setAppliedSavedFilter(null)
-    if (next.length === 0) {
-      onResults(fallback)
+    if (!relationOps) {
+      if (next.length === 0) onResults(fallback)
       return
     }
-    if (!relationOps) return
-    const records = await relationOps.list(descriptor.entity, toListOptions(next, APPLIED_FILTERS_PAGE_SIZE))
+    // Always a real fetch, even with zero filters — a custom page size still
+    // has to apply to the "no filter" view, which `fallback` (the server's
+    // own default-page_size load) can't reflect on its own.
+    const records = await relationOps.list(descriptor.entity, toListOptions(next, size))
     onResults(records as unknown as T[])
+  }
+
+  /** The rows-per-page control (below) re-runs whatever's currently applied
+   * (filters may be empty) at the new size — `applyFilters` takes an explicit
+   * size override since the `pageSize` state variable itself won't have
+   * updated yet within this same event handler. */
+  function onPageSizeChange(size: number) {
+    setPageSize(size)
+    void applyFilters(filters, size)
   }
 
   function addFilter() {
@@ -421,29 +439,45 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
 
   return (
     <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-      <TextField
-        size="small"
-        placeholder={t('Search…')}
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        onClick={(e) => void openMenu(e.currentTarget)}
-        sx={{
-          width: `${layout.searchBarMaxWidth}px`,
-          maxWidth: '100%',
-          [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
-            width: layout.searchBarNarrowWidth,
-          },
-        }}
-        slotProps={{
-          input: {
-            startAdornment: (
-              <InputAdornment position="start">
-                <FontAwesomeIcon icon={byPrefixAndName.fas['magnifying-glass']} size="sm" />
-              </InputAdornment>
-            ),
-          },
-        }}
-      />
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <TextField
+          size="small"
+          placeholder={t('Search…')}
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onClick={(e) => void openMenu(e.currentTarget)}
+          sx={{
+            width: `${layout.searchBarMaxWidth}px`,
+            maxWidth: '100%',
+            [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
+              width: layout.searchBarNarrowWidth,
+            },
+          }}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <FontAwesomeIcon icon={byPrefixAndName.fas['magnifying-glass']} size="sm" />
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+        {/* The rows-per-page limit — every fetch this bar makes (filtered or
+            not) passes this as `pageSize`, replacing the old fixed 200/20. */}
+        <Select
+          size="small"
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          aria-label={t('Rows per page')}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <MenuItem key={size} value={size}>
+              {t(`${size} rows`)}
+            </MenuItem>
+          ))}
+        </Select>
+      </Stack>
       {(appliedSavedFilter || filters.length > 0) && (
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'center' }}>
           {appliedSavedFilter ? (

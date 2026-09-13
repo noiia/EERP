@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // The flat list navigates to a record's form on row click via the App Router.
@@ -12,6 +12,7 @@ import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
 import { useListNavStore } from './list-nav-store'
 import { moduleRegistry } from '../registry'
+import { menuActionRegistry, registerMenuAction } from './menu-actions'
 import { useRecordLabelStore } from './record-label-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { CreateBar, EntityView } from './renderers'
@@ -278,6 +279,75 @@ describe('EntityView', () => {
     )
     fireEvent.click(screen.getByText('Ada'))
     expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  describe('list selection (checkboxes, Select all, bulk actions)', () => {
+    afterEach(() => {
+      menuActionRegistry.clear()
+    })
+
+    it('renders a checkbox per row plus a header checkbox to select the whole page', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[
+            { id: '1', name: 'Ada' },
+            { id: '2', name: 'Grace' },
+          ]}
+          actions={noopActions}
+        />,
+      )
+      // One header ("select the whole page") checkbox + one per row.
+      expect(screen.getAllByRole('checkbox')).toHaveLength(3)
+    })
+
+    it('"Select all" selects every loaded row and badges the count; a bulk action then runs once per selected id', async () => {
+      const handler = vi.fn()
+      registerMenuAction({ entity: 'crm', name: 'crm.bulkArchive', handler })
+      const treeDescriptor: ViewDescriptor<Contact> = {
+        ...formDescriptor,
+        viewType: 'tree',
+        actions: [{ kind: 'action', label: 'Archive', action: 'crm.bulkArchive' }],
+      }
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[
+            { id: '1', name: 'Ada' },
+            { id: '2', name: 'Grace' },
+          ]}
+          actions={noopActions}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+      expect(screen.getByText('2')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+      fireEvent.click(screen.getByText('Archive'))
+
+      await waitFor(() => expect(handler).toHaveBeenCalledTimes(2))
+      expect(handler).toHaveBeenCalledWith({ entity: 'crm', recordId: '1' })
+      expect(handler).toHaveBeenCalledWith({ entity: 'crm', recordId: '2' })
+    })
+
+    it('clicking "Select all" again clears the selection', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      const selectAll = screen.getByRole('button', { name: 'Select all' })
+      fireEvent.click(selectAll)
+      expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument()
+
+      fireEvent.click(selectAll)
+      expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument()
+    })
   })
 
   describe('form record navigator (</>)', () => {

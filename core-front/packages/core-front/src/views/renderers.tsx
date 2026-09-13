@@ -13,7 +13,7 @@ import Stack from '@mui/material/Stack'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
-import { DataGrid, type GridColDef } from '@mui/x-data-grid'
+import { DataGrid, type GridColDef, type GridRowSelectionModel } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import type { SerializedError } from '../api/errors'
@@ -49,6 +49,7 @@ import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
 import { useListNavStore } from './list-nav-store'
+import { SelectionBar } from './list-selection'
 import { PictureSizeProvider } from './picture-widgets'
 import { useRecordLabelStore } from './record-label-store'
 import { useRelationOps } from './relation-ops'
@@ -621,6 +622,36 @@ function TreeRenderer<T extends HasId>({
     useListNavStore.getState().setIds(descriptor.entity, liveRecords.map((r) => r.id))
   }, [liveRecords, descriptor.entity])
 
+  // Flat data (no parent links) renders as a grid, with row checkboxes; hierarchical
+  // data as a read-only tree (RichTreeView has no selection UI here — out of scope).
+  const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
+
+  // Row selection (checkboxes) — only meaningful for the flat grid. Reset on every
+  // liveRecords change: ids from a previous search/filter/page-size fetch are
+  // meaningless against a new result set, same as most list UIs (e.g. Gmail) drop
+  // selection on a new search.
+  const [selectionModel, setSelectionModel] = useState<GridRowSelectionModel>({
+    type: 'include',
+    ids: new Set(),
+  })
+  useEffect(() => {
+    setSelectionModel({ type: 'include', ids: new Set() })
+  }, [liveRecords])
+  const selectedIds =
+    selectionModel.type === 'include'
+      ? [...selectionModel.ids].map(String)
+      : liveRecords.map((r) => r.id).filter((id) => !selectionModel.ids.has(id))
+  function toggleSelectAll() {
+    setSelectionModel((prev) => {
+      const count =
+        prev.type === 'include' ? prev.ids.size : liveRecords.length - prev.ids.size
+      if (count === liveRecords.length && liveRecords.length > 0) {
+        return { type: 'include', ids: new Set() }
+      }
+      return { type: 'include', ids: new Set(liveRecords.map((r) => r.id)) }
+    })
+  }
+
   let content: React.ReactNode
   if (mode === 'kanban' && effective.kanbanStatusField) {
     content = (
@@ -657,8 +688,6 @@ function TreeRenderer<T extends HasId>({
     // switcher hides those buttons entirely, so this is defensive, not a
     // normal path — e.g. a persisted useUiStore mode from before an admin
     // turned a mode back off).
-    // Flat data (no parent links) renders as a grid; hierarchical data as a tree.
-    const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
     if (!hierarchical) {
       // Column order comes from the normalized layout, not a raw fields read —
       // for the common (no explicit `layout`) descriptor this is identical to
@@ -681,6 +710,10 @@ function TreeRenderer<T extends HasId>({
             rows={liveRecords}
             columns={columns}
             autoHeight
+            checkboxSelection
+            disableRowSelectionOnClick
+            rowSelectionModel={selectionModel}
+            onRowSelectionModelChange={setSelectionModel}
             onRowClick={
               formPath
                 ? (params) => router.push(formPath.replace(':id', String(params.id)))
@@ -706,6 +739,24 @@ function TreeRenderer<T extends HasId>({
   // everything but the top bar — see the `pageInsetX`/`pageInsetY` tokens), not this
   // renderer's — a view-specific fix here would just be a second, competing mechanism.
   const searchBar = <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
+  // The selection toolbar (right of the search bar) only applies where
+  // checkboxes actually exist — the flat grid in List mode.
+  const selectionBar =
+    mode === 'list' && !hierarchical ? (
+      <SelectionBar
+        entity={descriptor.entity}
+        actions={descriptor.actions ?? []}
+        selectedIds={selectedIds}
+        totalLoaded={liveRecords.length}
+        onSelectAll={toggleSelectAll}
+      />
+    ) : null
+  const searchRow = (
+    <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+      {searchBar}
+      {selectionBar}
+    </Stack>
+  )
   return (
     <Box>
       {title != null ? (
@@ -717,14 +768,16 @@ function TreeRenderer<T extends HasId>({
               every tree view gets it automatically, same "no opt-in" posture the
               mode switcher below takes. Writes into the SAME liveRecords state
               Kanban/Calendar drags already share, so a filter/search/group-by
-              result shows up identically across List/Kanban/Calendar/Graph. */}
-          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{searchBar}</Box>
+              result shows up identically across List/Kanban/Calendar/Graph. The
+              selection toolbar (SelectionBar) rides along on the SAME row, right
+              of the search bar. */}
+          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{searchRow}</Box>
           <Box sx={{ flexShrink: 0 }}>
             <CreateBar descriptor={descriptor} />
           </Box>
         </Box>
       ) : (
-        searchBar
+        searchRow
       )}
       <DisplayModeSwitcher
         entity={descriptor.entity}
