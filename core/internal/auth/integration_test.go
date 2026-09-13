@@ -72,9 +72,13 @@ func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 			module TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS user_roles (
+			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			deleted_at TIMESTAMPTZ,
+			tenant_id UUID NOT NULL,
 			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-			PRIMARY KEY (user_id, role_id)
+			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS role_permissions (
 			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
@@ -156,7 +160,7 @@ func seedRoleWithPermission(t *testing.T, db *orm.DB, userID uuid.UUID, tenantID
 		t.Fatalf("seed permission: %v", err)
 	}
 
-	if _, err := db.Exec(ctx, `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, userID, roleID); err != nil {
+	if _, err := db.Exec(ctx, `INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3)`, tenantID, userID, roleID); err != nil {
 		t.Fatalf("seed user_role: %v", err)
 	}
 	if _, err := db.Exec(ctx, `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)`, roleID, permID); err != nil {
@@ -177,7 +181,7 @@ func seedRole(t *testing.T, db *orm.DB, userID, tenantID uuid.UUID, technicalNam
 		t.Fatalf("seed role %q: %v", technicalName, err)
 	}
 	if _, err := db.Exec(context.Background(),
-		`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, userID, roleID,
+		`INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3)`, tenantID, userID, roleID,
 	); err != nil {
 		t.Fatalf("seed user_role for %q: %v", technicalName, err)
 	}
@@ -478,9 +482,14 @@ func TestIntegration_FindGroups_TransitiveClosure_CycleSafe(t *testing.T) {
 	// henry directly holds role "a". a belongs_to b, b belongs_to c, and c
 	// belongs_to a again (a cycle) — FindGroups must still terminate and
 	// return exactly {a, b, c}, not loop forever or miss the far end.
+	// roleB/roleC still need a real user_roles owner (the column FK's to
+	// users(id)) even though the test only cares that henry reaches them
+	// transitively, not directly — a second seeded user, never read again,
+	// stands in.
+	other := seedUser(t, app.DB, "other@example.com", "pass", tenantID)
 	roleA := seedRole(t, app.DB, userID, tenantID, "a")
-	roleB := seedRole(t, app.DB, uuid.New(), tenantID, "b") // not directly assigned to henry
-	roleC := seedRole(t, app.DB, uuid.New(), tenantID, "c")
+	roleB := seedRole(t, app.DB, other, tenantID, "b") // not directly assigned to henry
+	roleC := seedRole(t, app.DB, other, tenantID, "c")
 	seedBelongs(t, app.DB, tenantID, roleA, roleB)
 	seedBelongs(t, app.DB, tenantID, roleB, roleC)
 	seedBelongs(t, app.DB, tenantID, roleC, roleA) // closes the cycle
@@ -514,8 +523,9 @@ func TestIntegration_Login_EmbedsGroupsClaim(t *testing.T) {
 	app, cfg := integrationSetup(t)
 	tenantID := uuid.New()
 	userID := seedUser(t, app.DB, "iris@example.com", "pass", tenantID)
+	other := seedUser(t, app.DB, "other2@example.com", "pass", tenantID)
 	roleA := seedRole(t, app.DB, userID, tenantID, "support_agent")
-	roleB := seedRole(t, app.DB, uuid.New(), tenantID, "senior_support")
+	roleB := seedRole(t, app.DB, other, tenantID, "senior_support")
 	seedBelongs(t, app.DB, tenantID, roleA, roleB)
 
 	e, _ := buildTestStack(app, cfg)

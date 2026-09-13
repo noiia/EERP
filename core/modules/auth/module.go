@@ -67,22 +67,20 @@ func (m *authModule) Register() error {
 	if err := orm.Register[auth.RoleViewPermissionRight](); err != nil {
 		return err
 	}
+	// UserRoles is deliberately NOT WithExcluded — mirrors RoleBelongs above,
+	// so the User form's `role` many2many tags field needs no bespoke
+	// endpoint. FindRoleNames/FindGroups (user_repository.go) filter
+	// deleted_at IS NULL themselves since this junction is now soft-deletable.
+	if err := orm.Register[auth.UserRoles](); err != nil {
+		return err
+	}
 	return nil
 }
 
-// Migrate creates the join tables (composite PK, no BaseModel) that the
-// auto-migration system cannot derive from Go structs.
+// Migrate creates the role_permissions join table (composite PK, no
+// BaseModel — the auto-migration system cannot derive it from a Go struct)
+// and the unique constraints struct tags can't express.
 func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
-	if _, err := db.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS user_roles (
-			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-			PRIMARY KEY (user_id, role_id)
-		)
-	`); err != nil {
-		return fmt.Errorf("auth: create user_roles: %w", err)
-	}
-
 	if _, err := db.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS role_permissions (
 			role_id       UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
@@ -93,18 +91,57 @@ func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
 		return fmt.Errorf("auth: create role_permissions: %w", err)
 	}
 
-	// First unique constraint in the codebase: struct-tag auto-migration only
-	// supports plain (non-unique) indexes, so a per-tenant uniqueness
-	// guarantee on technical_name has to be hand-written here, like the
-	// junction tables above. Partial on technical_name IS NOT NULL (nullable
-	// column, see Roles.TechnicalName) and deleted_at IS NULL so a
-	// soft-deleted role doesn't permanently squat a slug.
+	// Struct-tag auto-migration only supports plain (non-unique) indexes, so a
+	// per-tenant uniqueness guarantee on technical_name has to be hand-written
+	// here. Partial on technical_name IS NOT NULL (nullable column, see
+	// Roles.TechnicalName) and deleted_at IS NULL so a soft-deleted role
+	// doesn't permanently squat a slug.
 	if _, err := db.Exec(ctx, `
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_tenant_technical_name
 		ON roles (tenant_id, technical_name)
 		WHERE technical_name IS NOT NULL AND deleted_at IS NULL
 	`); err != nil {
 		return fmt.Errorf("auth: create roles technical_name index: %w", err)
+	}
+
+	// UserRoles now rides model.BaseModel instead of the raw, composite-PK
+	// table it used to be. An installation that already ran the old shape has
+	// a real user_roles table on disk — ensureTable's CREATE TABLE IF NOT
+	// EXISTS no-ops once a table exists, so the generic auto-migration path
+	// never backfills id/created_at/updated_at/deleted_at onto it. Do that by
+	// hand, once, detected by the absence of `id` (a fresh install already
+	// has it — ensureTable created it from scratch — so this whole block is a
+	// no-op there).
+	if _, err := db.Exec(ctx, `
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_name = 'user_roles' AND column_name = 'id'
+			) THEN
+				ALTER TABLE user_roles ADD COLUMN id UUID NOT NULL DEFAULT gen_random_uuid();
+				ALTER TABLE user_roles ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+				ALTER TABLE user_roles ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+				ALTER TABLE user_roles ADD COLUMN deleted_at TIMESTAMPTZ;
+				ALTER TABLE user_roles DROP CONSTRAINT user_roles_pkey;
+				ALTER TABLE user_roles ADD PRIMARY KEY (id);
+			END IF;
+		END $$;
+	`); err != nil {
+		return fmt.Errorf("auth: backfill user_roles base columns: %w", err)
+	}
+
+	// A real uniqueness guarantee on the (user_id, role_id) pair needs the
+	// same hand-written treatment as technical_name above — struct tags can't
+	// express it, and it's what used to be the table's composite PK. Partial
+	// on deleted_at IS NULL so unassigning and reassigning the same role
+	// doesn't collide with its own soft-deleted row.
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_user_roles_user_role
+		ON user_roles (user_id, role_id)
+		WHERE deleted_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("auth: create user_roles unique index: %w", err)
 	}
 
 	return nil

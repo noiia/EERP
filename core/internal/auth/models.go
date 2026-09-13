@@ -142,10 +142,26 @@ type Permissions struct {
 	Module      string `db:"module"`
 }
 
-// UserRole is the join between users and roles (no BaseModel — composite PK).
+// UserRoles is the join between users and roles — a user's assigned roles,
+// which act as an Active Directory-style group membership (a user can hold
+// several). Carries model.BaseModel (like RoleBelongs) rather than a
+// composite PK, so it's registered on the generic CRUD surface and the
+// User form's `role` many2many tags field can address one link by its own
+// row id via RelationTagsWidget/RelationOps, with no bespoke endpoint.
 type UserRoles struct {
-	UserID uuid.UUID `db:"user_id,pk"`
-	RoleID uuid.UUID `db:"role_id,pk"`
+	model.BaseModel
+	// TenantID is a pointer — unlike RoleBelongs' — solely so the generic
+	// auto-migration's ADD COLUMN can add it to the pre-existing (pre-
+	// BaseModel) user_roles table without a NOT NULL failure on any row
+	// already there (module.go's Migrate backfills the BaseModel columns
+	// themselves by hand, since that table predates this struct). Every row
+	// written through the generic CRUD surface still gets a real value
+	// regardless: tenant_id is stamped by the CRUD layer purely by column
+	// name (core/orm/internal/crud/repository.go's tenantScoped), not by
+	// this field's Go type.
+	TenantID *uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	UserID   uuid.UUID  `db:"user_id" json:"user_id"`
+	RoleID   uuid.UUID  `db:"role_id" json:"role_id"`
 }
 
 // RolePermission is the join between roles and permissions (no BaseModel — composite PK).

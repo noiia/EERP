@@ -57,8 +57,8 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB) error {
 			[]any{devPermID},
 		},
 		{
-			`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			[]any{devUserID, devRoleID},
+			`INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+			[]any{DevTenantID, devUserID, devRoleID},
 		},
 		{
 			`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

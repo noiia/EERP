@@ -92,6 +92,7 @@ func (r *UserRepository) FindRoleNames(ctx context.Context, userID uuid.UUID) ([
 		FROM roles r
 		JOIN user_roles ur ON ur.role_id = r.id
 		WHERE ur.user_id = $1
+		  AND ur.deleted_at IS NULL
 		  AND r.deleted_at IS NULL
 	`, userID)
 	if err != nil {
@@ -123,7 +124,7 @@ func (r *UserRepository) FindRoleNames(ctx context.Context, userID uuid.UUID) ([
 func (r *UserRepository) FindGroups(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	rows, err := r.db.Query(ctx, `
 		WITH RECURSIVE closure(id) AS (
-			SELECT ur.role_id FROM user_roles ur WHERE ur.user_id = $1
+			SELECT ur.role_id FROM user_roles ur WHERE ur.user_id = $1 AND ur.deleted_at IS NULL
 			UNION
 			SELECT rb.belongs_to_role_id
 			FROM role_belongs rb
