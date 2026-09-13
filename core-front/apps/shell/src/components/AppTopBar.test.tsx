@@ -1,11 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import {
+  moduleRegistry,
+  useBreadcrumbStore,
   useRecordLabelStore,
   useSessionStore,
   type Identity,
   type ModuleHeaderMenus,
 } from '@eerp/core-front'
+
+// Real module registration (idempotent by name — see ModuleRegistry.register)
+// so the breadcrumb's "Configuration (<display name>)" collapse has a real
+// displayName to resolve, exactly as the generated discovery manifest would
+// register it from module.json's own display_name.
+moduleRegistry.register({ name: 'crm', routes: [] }, { displayName: 'CRM' })
 
 const pathnameMock = vi.fn<() => string>()
 const pushMock = vi.fn()
@@ -54,6 +62,7 @@ beforeEach(() => {
   setActiveCompanyMock.mockResolvedValue({ ok: true })
   useSessionStore.getState().setIdentity(identity)
   useRecordLabelStore.setState({ id: null, label: null })
+  useBreadcrumbStore.setState({ trail: [] })
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Response(null, { status: 204 })),
@@ -238,6 +247,71 @@ describe('AppTopBar', () => {
       const current = screen.getByRole('menuitem', { name: 'Contacts' })
       expect(current).not.toHaveAttribute('href')
     })
+  })
+
+  it('remembers the prior app when navigating into an unrelated section, appending rather than replacing', () => {
+    pathnameMock.mockReturnValue('/sale')
+    const { rerender } = render(<AppTopBar identity={identity} />)
+
+    // Jump to Settings — an unrelated section, not a child of /sale.
+    pathnameMock.mockReturnValue('/settings')
+    rerender(<AppTopBar identity={identity} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    // The prior "Sale" crumb is still there (now clickable), with the new
+    // "Settings" page appended as the current (non-link) crumb.
+    expect(breadcrumb.getByRole('link', { name: 'Sale' })).toHaveAttribute('href', '/sale')
+    expect(breadcrumb.getByText('Settings')).toBeInTheDocument()
+    expect(breadcrumb.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
+  })
+
+  it('clicking an earlier crumb truncates the forward history instead of leaving it dangling', () => {
+    pathnameMock.mockReturnValue('/sale')
+    const { rerender } = render(<AppTopBar identity={identity} />)
+
+    pathnameMock.mockReturnValue('/settings')
+    rerender(<AppTopBar identity={identity} />)
+
+    // Simulate following the "Sale" crumb back — the pathname returns to a
+    // page already in the trail, so it should truncate rather than append.
+    pathnameMock.mockReturnValue('/sale')
+    rerender(<AppTopBar identity={identity} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.queryByText('Settings')).not.toBeInTheDocument()
+    expect(breadcrumb.getByText('Sale')).toBeInTheDocument()
+  })
+
+  it('collapses "/settings/apps/:module" to one "Configuration (<display name>)" crumb instead of the full Settings > Apps > Crm path', () => {
+    pathnameMock.mockReturnValue('/settings/apps/crm')
+    render(<AppTopBar identity={identity} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+
+    expect(breadcrumb.getByText('Configuration (CRM)')).toBeInTheDocument()
+    expect(breadcrumb.queryByText('Settings')).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Apps')).not.toBeInTheDocument()
+    expect(breadcrumb.queryByText('Crm')).not.toBeInTheDocument()
+  })
+
+  it('falls back to a titleized module slug in the collapsed Configuration crumb when the module has no registered display name', () => {
+    pathnameMock.mockReturnValue('/settings/apps/unregisteredmod')
+    render(<AppTopBar identity={identity} />)
+    expect(
+      within(screen.getByRole('navigation', { name: 'breadcrumb' })).getByText(
+        'Configuration (Unregisteredmod)',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it("keeps a record's resolved display name once the user navigates away from its form, instead of falling back to the raw id", () => {
+    pathnameMock.mockReturnValue('/crm/42')
+    useRecordLabelStore.getState().setLabel('42', 'Widget Co')
+    const { rerender } = render(<AppTopBar identity={identity} />)
+
+    pathnameMock.mockReturnValue('/settings')
+    rerender(<AppTopBar identity={identity} />)
+
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByRole('link', { name: 'Widget Co' })).toHaveAttribute('href', '/crm/42')
+    expect(breadcrumb.queryByText('42')).not.toBeInTheDocument()
   })
 
   it('labels the /settings/appearance crumb "Global settings", not the titleized "Appearance" slug', () => {

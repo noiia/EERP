@@ -1,5 +1,5 @@
 'use client'
-import { useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import AppBar from '@mui/material/AppBar'
@@ -21,9 +21,13 @@ import {
   byPrefixAndName,
   FontAwesomeIcon,
   layout,
+  moduleRegistry,
+  nextBreadcrumbTrail,
+  useBreadcrumbStore,
   useRecordLabelStore,
   useSessionStore,
   useT,
+  type Crumb,
   type Identity,
   type ModuleHeaderMenus,
 } from '@eerp/core-front'
@@ -43,11 +47,6 @@ function titleize(slug: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
-}
-
-interface Crumb {
-  label: string
-  href: string
 }
 
 /**
@@ -90,8 +89,22 @@ const SKIPPED_SEGMENTS = new Set(['page-formats'])
  * crumb in right before the record. Skipped when no such list page is
  * registered, or the path already IS the list page itself.
  */
-function crumbsFromPath(pathname: string, knownPaths: Set<string>): Crumb[] {
+function crumbsFromPath(pathname: string, knownPaths: Set<string>, t: (msgid: string) => string): Crumb[] {
   const segments = pathname.split('/').filter(Boolean)
+
+  // "Settings > Apps > <module>" is three URL segments of internal path
+  // structure that read as noise once the user arrived here from an
+  // unrelated app or record — collapse it to the ONE crumb that actually
+  // names the page: the module's own Configuration screen. The module's
+  // display name is DATA (module.json's display_name, e.g. "CRM"), so — like
+  // a record's own name — it skips t(); only "Configuration" is a real
+  // translatable msgid.
+  if (segments.length === 3 && segments[0] === 'settings' && segments[1] === 'apps') {
+    const moduleName = segments[2]
+    const displayName = moduleRegistry.displayNameFor(moduleName) ?? titleize(moduleName)
+    return [{ label: `${t('Configuration')} (${displayName})`, href: pathname }]
+  }
+
   const crumbs = segments.map((segment, i) => ({
     label: SEGMENT_LABEL_OVERRIDES[segment] ?? titleize(segment),
     href: '/' + segments.slice(0, i + 1).join('/'),
@@ -114,12 +127,46 @@ function crumbsFromPath(pathname: string, knownPaths: Set<string>): Crumb[] {
 
 function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPaths: Set<string> }) {
   const t = useT()
-  const crumbs = crumbsFromPath(pathname, knownPaths)
+  const knownPathsKey = useMemo(() => Array.from(knownPaths).sort().join('|'), [knownPaths])
+
   const lastSegment = pathname.split('/').filter(Boolean).at(-1)
   // A form route's trailing crumb is otherwise the raw record id (it's just a URL
   // segment) — FormRenderer reports the record's real title-field value here
-  // (record-label-store) the moment it mounts, so swap it in when it matches.
+  // (record-label-store) the moment it mounts. Baked into the crumb itself
+  // below (not just read at render time for the current page) so the
+  // friendly name STICKS once this page stops being the current one —
+  // otherwise every ancestor crumb behind it would fall back to the raw
+  // titleized id the moment the user navigates one step further.
   const recordLabel = useRecordLabelStore((s) => (s.id === lastSegment ? s.label : null))
+
+  // The CURRENT location's own root-to-leaf chain — e.g. Sale > Products >
+  // List > "Widget" — with the trailing crumb's label swapped for the
+  // resolved record name once known.
+  const localCrumbs = useMemo(() => {
+    const base = crumbsFromPath(pathname, knownPaths, t)
+    if (!recordLabel || base.length === 0) return base
+    return [...base.slice(0, -1), { ...base[base.length - 1], label: recordLabel }]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, knownPathsKey, recordLabel])
+  // Merged with whatever was already in the cross-navigation trail (see
+  // breadcrumb-store.ts): diving deeper in the same section replaces its
+  // trailing run, jumping to a new section appends after it, and returning
+  // to an already-visited page truncates the forward history — computed
+  // here (not just inside the effect below) so the FIRST render after a
+  // navigation already shows the merged trail with no one-frame flash of
+  // the stale one.
+  const storedTrail = useBreadcrumbStore((s) => s.trail)
+  const trail = useMemo(
+    () => nextBreadcrumbTrail(storedTrail, localCrumbs),
+    [storedTrail, localCrumbs],
+  )
+  useEffect(() => {
+    // Also re-fires once recordLabel resolves (asynchronously, shortly after
+    // a form route mounts) so the already-visited entry gets its baked-in
+    // friendly name too, not just crumbs visited from here on.
+    useBreadcrumbStore.getState().visit(localCrumbs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, knownPathsKey, recordLabel])
   const narrow = useMediaQuery(`(max-width:${layout.breadcrumbCollapseWidth}px)`)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 
@@ -128,7 +175,7 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
   // it opens every crumb in a Menu (which stacks its MenuItems VERTICALLY by nature)
   // instead of falling through to MUI Breadcrumbs' own built-in collapse below, which
   // would re-expand everything back INLINE — still too wide for this screen.
-  if (narrow && crumbs.length > 0) {
+  if (narrow && trail.length > 0) {
     const open = Boolean(anchorEl)
     function close() {
       setAnchorEl(null)
@@ -151,7 +198,7 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
           color="inherit"
           sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         >
-          {recordLabel ?? t(crumbs[crumbs.length - 1].label)}
+          {recordLabel ?? t(trail[trail.length - 1].label)}
         </Typography>
         <Menu anchorEl={anchorEl} open={open} onClose={close}>
           <MenuItem component={Link} href="/" onClick={close}>
@@ -160,8 +207,8 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
             </ListItemIcon>
             <ListItemText>{t('Menu')}</ListItemText>
           </MenuItem>
-          {crumbs.map((crumb, i) =>
-            i === crumbs.length - 1 ? (
+          {trail.map((crumb, i) =>
+            i === trail.length - 1 ? (
               <MenuItem key={crumb.href} disabled>
                 <ListItemText>{recordLabel ?? t(crumb.label)}</ListItemText>
               </MenuItem>
@@ -192,7 +239,7 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
       sx={{ color: 'inherit', '& .MuiBreadcrumbs-separator': { color: 'inherit' } }}
     >
       {/* Root: the application menu. Plain text (current page) when already on the menu. */}
-      {crumbs.length === 0 ? (
+      {trail.length === 0 ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
           <Typography variant="subtitle2" component="span">
@@ -214,8 +261,8 @@ function PathBreadcrumbs({ pathname, knownPaths }: { pathname: string; knownPath
 
       {/* Crumb labels are titleized slugs used as msgids: known strings ('List',
           'Settings', module names) translate; ids fall back to themselves. */}
-      {crumbs.map((crumb, i) =>
-        i === crumbs.length - 1 ? (
+      {trail.map((crumb, i) =>
+        i === trail.length - 1 ? (
           <Typography key={crumb.href} variant="subtitle2" component="span" color="inherit">
             {/* The record's own name is never a translatable msgid, unlike every
                 other crumb segment (module/page slugs) — skip t() for it. */}

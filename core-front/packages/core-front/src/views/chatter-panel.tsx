@@ -78,7 +78,7 @@ function ChatterLogLine({ author, line }: { author: string; line: string }) {
   const arrowAt = line.indexOf(ARROW)
   if (arrowAt === -1) {
     return (
-      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
         {author} - {line}
       </Typography>
     )
@@ -87,13 +87,13 @@ function ChatterLogLine({ author, line }: { author: string; line: string }) {
     <Typography
       variant="body2"
       component="div"
-      sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}
+      sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', minWidth: 0 }}
     >
-      <span>
+      <span style={{ overflowWrap: 'anywhere' }}>
         {author} - {line.slice(0, arrowAt)}
       </span>
       <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-right-long']} size="xs" />
-      <span>{line.slice(arrowAt + ARROW.length)}</span>
+      <span style={{ overflowWrap: 'anywhere' }}>{line.slice(arrowAt + ARROW.length)}</span>
     </Typography>
   )
 }
@@ -101,7 +101,7 @@ function ChatterLogLine({ author, line }: { author: string; line: string }) {
 function ChatterEntry({ message }: { message: ChatterMessageRecord }) {
   const isLog = message.kind === 'log'
   return (
-    <Box sx={{ opacity: isLog ? 0.72 : 1 }}>
+    <Box sx={{ opacity: isLog ? 0.72 : 1, minWidth: 0, overflowWrap: 'anywhere' }}>
       {isLog ? (
         <Stack spacing={0.25}>
           {message.body.split('\n').map((line, i) => (
@@ -116,7 +116,11 @@ function ChatterEntry({ message }: { message: ChatterMessageRecord }) {
           <Typography variant="body2" component="span" color="text.secondary">
             {' : '}
           </Typography>
-          <Typography variant="body2" component="span" sx={{ whiteSpace: 'pre-wrap' }}>
+          <Typography
+            variant="body2"
+            component="span"
+            sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+          >
             {message.body}
           </Typography>
         </>
