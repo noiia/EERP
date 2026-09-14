@@ -27,7 +27,14 @@ describe('ChatterPanel', () => {
 
   it('renders a message as "author : body"', async () => {
     const messages: ChatterMessageRecord[] = [
-      { id: 'm1', author: 'alice@x.com', kind: 'message', body: 'Looks good', createdAt: '2026-01-01T00:00:00Z' },
+      {
+        id: 'm1',
+        author: 'alice@x.com',
+        authorId: 'u1',
+        kind: 'message',
+        body: 'Looks good',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
     ]
     const ops = { list: vi.fn(async () => messages), create: vi.fn() }
     render(
@@ -44,6 +51,7 @@ describe('ChatterPanel', () => {
       {
         id: 'm2',
         author: 'bob@x.com',
+        authorId: 'u2',
         kind: 'log',
         body: 'Status : open → won\nAmount : 10 → 20',
         createdAt: '2026-01-02T00:00:00Z',
@@ -67,7 +75,14 @@ describe('ChatterPanel', () => {
 
   it('falls back to plain "author - line" for a log line with no arrow', async () => {
     const messages: ChatterMessageRecord[] = [
-      { id: 'm3', author: 'bob@x.com', kind: 'log', body: 'legacy note', createdAt: '2026-01-02T00:00:00Z' },
+      {
+        id: 'm3',
+        author: 'bob@x.com',
+        authorId: 'u2',
+        kind: 'log',
+        body: 'legacy note',
+        createdAt: '2026-01-02T00:00:00Z',
+      },
     ]
     const ops = { list: vi.fn(async () => messages), create: vi.fn() }
     render(
@@ -82,6 +97,7 @@ describe('ChatterPanel', () => {
     const created: ChatterMessageRecord = {
       id: 'm3',
       author: 'me@x.com',
+      authorId: 'u3',
       kind: 'message',
       body: 'New comment',
       createdAt: '2026-01-03T00:00:00Z',
@@ -107,6 +123,7 @@ describe('ChatterPanel', () => {
     const created: ChatterMessageRecord = {
       id: 'm4',
       author: 'me@x.com',
+      authorId: 'u3',
       kind: 'message',
       body: 'Quick note',
       createdAt: '2026-01-04T00:00:00Z',

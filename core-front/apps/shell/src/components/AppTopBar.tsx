@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import AppBar from '@mui/material/AppBar'
-import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Divider from '@mui/material/Divider'
@@ -18,12 +17,16 @@ import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import {
   AppHeaderMenuBar,
+  AvatarWithPresence,
   byPrefixAndName,
   FontAwesomeIcon,
   layout,
   moduleRegistry,
   nextBreadcrumbTrail,
+  PresenceDot,
+  setPresenceStatus,
   useBreadcrumbStore,
+  usePresenceStore,
   useRecordLabelStore,
   useSessionStore,
   useT,
@@ -299,6 +302,17 @@ function CurrentModuleHeaderMenus({
   )
 }
 
+// The three manual overrides a user can pick for themselves — "Online" clears
+// the override (setPresenceStatus(null)) rather than being a distinct stored
+// value, since with no override an already-connected user shows online
+// anyway (see core/internal/presence/status.go's Effective). absent/offline
+// are never offered here — they're purely connection-derived.
+const STATUS_OPTIONS: { value: 'online' | 'busy' | 'do_not_disturb'; label: string }[] = [
+  { value: 'online', label: 'Online' },
+  { value: 'busy', label: 'Busy' },
+  { value: 'do_not_disturb', label: 'Do not disturb' },
+]
+
 function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
   const t = useT()
   const router = useRouter()
@@ -308,10 +322,15 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
   // carries no separate name field) — falls back to the raw user id only
   // when the preferences read that supplies it hasn't resolved yet.
   const displayName = email || identity.userId
-  const initial = displayName.trim().charAt(0).toUpperCase() || '?'
+  const ownStatus = usePresenceStore((s) => s.statuses[identity.userId] ?? 'offline')
 
   function close() {
     setAnchorEl(null)
+  }
+
+  function onSetStatus(value: 'online' | 'busy' | 'do_not_disturb') {
+    close()
+    void setPresenceStatus(value === 'online' ? null : value)
   }
 
   async function onLogout() {
@@ -332,9 +351,7 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
         aria-expanded={open}
         color="inherit"
       >
-        <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '0.875rem' }}>
-          {initial}
-        </Avatar>
+        <AvatarWithPresence userId={identity.userId} label={displayName} size={32} />
       </IconButton>
       <Menu
         anchorEl={anchorEl}
@@ -350,6 +367,19 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
         >
           {t('Signed in as')} {displayName}
         </Typography>
+        <Divider />
+        {STATUS_OPTIONS.map((opt) => (
+          <MenuItem
+            key={opt.value}
+            selected={ownStatus === opt.value}
+            onClick={() => onSetStatus(opt.value)}
+          >
+            <ListItemIcon>
+              <PresenceDot status={opt.value} size={15} />
+            </ListItemIcon>
+            <ListItemText>{t(opt.label)}</ListItemText>
+          </MenuItem>
+        ))}
         <Divider />
         <MenuItem component={Link} href="/settings" onClick={close}>
           <ListItemIcon>

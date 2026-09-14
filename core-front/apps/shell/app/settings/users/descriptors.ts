@@ -33,7 +33,11 @@ export const usersListDescriptor: ViewDescriptor<AdminRecord> = {
   entity: 'users',
   viewType: 'tree',
   fields: [
-    { name: 'email', label: 'Email', type: 'text', required: true },
+    // widget: 'user-presence' — renders this column's cell as the row's own
+    // avatar + live presence bubble (the row IS a user record) beside the
+    // email text, instead of plain text (renderers.tsx's DataGrid column
+    // builder).
+    { name: 'email', label: 'Email', type: 'text', required: true, widget: 'user-presence' },
     { name: 'username', label: 'Username', type: 'text', widget: 'username' },
     { name: 'display_name', label: 'Display name', type: 'text' },
     { name: 'created_at', label: 'Created', type: 'date' },

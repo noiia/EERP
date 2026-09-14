@@ -459,4 +459,33 @@ describe('AppTopBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
     expect(screen.getByText(/signed in as/i)).toHaveTextContent(`Signed in as ${identity.userId}`)
   })
+
+  it('picking "Busy" from the account menu PUTs the override and closes the menu', async () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} />)
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /^busy$/i }))
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/presence',
+        expect.objectContaining({ method: 'PUT', body: JSON.stringify({ status: 'busy' }) }),
+      ),
+    )
+    expect(screen.queryByRole('menuitem', { name: /^busy$/i })).not.toBeInTheDocument()
+  })
+
+  it('picking "Online" clears the override (sends an empty status)', async () => {
+    pathnameMock.mockReturnValue('/crm/contacts')
+    render(<AppTopBar identity={identity} />)
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /^online$/i }))
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/presence',
+        expect.objectContaining({ method: 'PUT', body: JSON.stringify({ status: '' }) }),
+      ),
+    )
+  })
 })

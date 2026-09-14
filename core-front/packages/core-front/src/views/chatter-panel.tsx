@@ -10,6 +10,7 @@ import Typography from '@mui/material/Typography'
 import { useChatterOps, type ChatterMessageRecord } from './chatter-ops'
 import { useT } from '../i18n/translate'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { AvatarWithPresence } from './presence-bubble'
 import { layout } from './tokens'
 import { useUiStore } from './ui-store'
 
@@ -100,8 +101,11 @@ function ChatterLogLine({ author, line }: { author: string; line: string }) {
 
 function ChatterEntry({ message }: { message: ChatterMessageRecord }) {
   const isLog = message.kind === 'log'
-  return (
-    <Box sx={{ opacity: isLog ? 0.72 : 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+  // Only real messages get an avatar — a "log" entry is the form's own
+  // muted summary of an edit, not really "from" someone the way a posted
+  // comment is, so it keeps its plain text-only look.
+  const body = (
+    <Box sx={{ opacity: isLog ? 0.72 : 1, minWidth: 0, overflowWrap: 'anywhere', flex: 1 }}>
       {isLog ? (
         <Stack spacing={0.25}>
           {message.body.split('\n').map((line, i) => (
@@ -129,6 +133,13 @@ function ChatterEntry({ message }: { message: ChatterMessageRecord }) {
         {new Date(message.createdAt).toLocaleString()}
       </Typography>
     </Box>
+  )
+  if (isLog) return body
+  return (
+    <Stack direction="row" spacing={1}>
+      <AvatarWithPresence userId={message.authorId} label={message.author} size={24} />
+      {body}
+    </Stack>
   )
 }
 

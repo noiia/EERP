@@ -9,6 +9,9 @@ import { createOpsContext } from './ops-context'
 export interface ChatterMessageRecord {
   id: string
   author: string
+  /** The author's user id — presence-bubble.tsx's AvatarWithPresence keys on
+   * this to show their live status next to the message. */
+  authorId: string
   /** "message" (posted from the composer) or "log" (the form's own summary
    * of an edit) — both render as "author : body", the log ones styled muted. */
   kind: 'message' | 'log'

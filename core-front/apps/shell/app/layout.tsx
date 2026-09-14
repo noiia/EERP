@@ -20,6 +20,7 @@ import { AppTopBar } from '../src/components/AppTopBar'
 import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { ModulesInit } from '../src/components/ModulesInit'
+import { PresenceInit } from '../src/components/PresenceInit'
 import { SettingsUsersRegistryInit } from '../src/components/SettingsUsersRegistryInit'
 import { SessionHydrator } from '../src/components/SessionHydrator'
 import {
@@ -92,6 +93,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <SettingsUsersRegistryInit />
             <LocaleSync preferences={preferences} />
             <SessionHydrator identity={identity} />
+            <PresenceInit />
             {/* The generic "undo a hard delete" toast (search-bar.tsx's saved-
                 filter delete, calendar-renderer.tsx's drag-to-unschedule) —
                 one instance app-wide, a plain Zustand store underneath so any

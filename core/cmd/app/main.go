@@ -21,6 +21,7 @@ import (
 	"core/internal/module"
 	"core/internal/notebook"
 	"core/internal/pictures"
+	"core/internal/presence"
 	"core/internal/reports"
 	"core/internal/savedfilter"
 	"core/internal/settings"
@@ -374,6 +375,28 @@ func main() {
 	chatterGroup.GET("", chatterHandler.List)
 	chatterGroup.POST("", chatterHandler.Create)
 
+	// ── Presence ──────────────────────────────────────────────────────────────
+	// Live user status (online/absent/offline/busy/do_not_disturb) over a
+	// WebSocket, docs/adr/ADR-019-user-presence-websocket.md. A native
+	// WebSocket handshake can't carry a custom Authorization header, so this
+	// group uses JWTOrCookieMiddleware instead of the plain jwtMw everywhere
+	// else — it falls back to the SAME httpOnly session cookie the Next BFF
+	// already sets (core-front's session-cookies.ts ACCESS_COOKIE, "eerp_access"
+	// — the two sides can't share a literal across the language boundary, so
+	// this is the single Go-side source of truth for that name) when there's
+	// no Bearer header, which is only ever true for a same-origin browser
+	// request. Every other route keeps requiring a real Bearer header. The
+	// snapshot read and the WebSocket upgrade share ONE route (dispatched on
+	// the Upgrade header inside Handler.Get) so they resolve to the same
+	// presence:presence:read permission instead of two separate grants. No
+	// external dependency to gate on, so this mounts unconditionally.
+	presenceHub := presence.NewHub()
+	presenceHandler := presence.NewHandler(presence.NewRepository(app.DB), presenceHub)
+	presenceAuthMw := authmw.JWTOrCookieMiddleware(tokenSvc, "eerp_access")
+	presenceGroup := srv.Echo().Group("/api/v1/presence", presenceAuthMw, permMw)
+	presenceGroup.GET("", presenceHandler.Get)
+	presenceGroup.PUT("", presenceHandler.SetStatus)
+
 	// ── Cron ──────────────────────────────────────────────────────────────────
 	// Background scheduled actions (docs/adr/ADR-016-cron-scheduler.md). Unlike
 	// chatter/notebook/savedfilter, cron/cron_history ride the GENERIC CRUD
@@ -585,6 +608,28 @@ func main() {
 			case <-ticker.C:
 				if err := sale.ExpireOverdueQuotes(ctx, quoteRepo); err != nil {
 					common.Logger.Warn("sale: expire overdue quotes", zap.Error(err))
+				}
+			}
+		}
+	}()
+
+	// Presence absent -> offline sweep (internal/presence/sweeper.go): every
+	// minute, push the status of any user who's been disconnected past
+	// absentAfter — nothing else triggers that transition, since no request
+	// happens at the exact moment the 30 minutes elapse. Same inline-ticker
+	// shape as the quote-expiry sweep above, since it's a single fixed job
+	// too (unlike the cron scheduler, which manages many user-defined rows).
+	presenceRepo := presence.NewRepository(app.DB)
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := presence.SweepAbsentToOffline(ctx, presenceRepo, presenceHub); err != nil {
+					common.Logger.Warn("presence: sweep absent to offline", zap.Error(err))
 				}
 			}
 		}

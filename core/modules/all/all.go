@@ -17,6 +17,7 @@ import (
 	_ "core/modules/cron"
 	_ "core/modules/notebook"
 	_ "core/modules/pictures"
+	_ "core/modules/presence"
 	_ "core/modules/reportlayout"
 	_ "core/modules/sale"
 	_ "core/modules/savedfilter"

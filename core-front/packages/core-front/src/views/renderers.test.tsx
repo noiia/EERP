@@ -534,6 +534,7 @@ describe('EntityView', () => {
         create: vi.fn(async (_table: string, _record: string, kind: 'message' | 'log', body: string) => ({
           id: 'm1',
           author: 'me@x.com',
+          authorId: 'u1',
           kind,
           body,
           createdAt: '2026-01-01T00:00:00Z',

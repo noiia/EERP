@@ -135,3 +135,104 @@ func TestJWTMiddleware_WrongKeyword_Returns401(t *testing.T) {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
 }
+
+// ── JWTOrCookieMiddleware ─────────────────────────────────────────────────────
+
+func issueToken(t *testing.T, svc *auth.TokenService) (string, auth.Users) {
+	t.Helper()
+	user := auth.Users{TenantID: uuid.New()}
+	user.BaseModel.ID = uuid.New()
+	raw, err := svc.IssueAccess(user, []string{"admin"}, nil, nil)
+	if err != nil {
+		t.Fatalf("IssueAccess: %v", err)
+	}
+	return raw, user
+}
+
+func TestJWTOrCookieMiddleware_NoHeaderNoCookie_Returns401(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	reached := false
+
+	e.GET("/test", recordingHandler(&reached), authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not be reached with neither header nor cookie")
+	}
+}
+
+func TestJWTOrCookieMiddleware_HeaderPresent_UsesHeaderNotCookie(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	raw, user := issueToken(t, svc)
+
+	var captured auth.Identity
+	e.GET("/test", func(c echo.Context) error {
+		captured, _ = auth.IdentityFromContext(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	}, authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Authorization", "Bearer "+raw)
+	req.AddCookie(&http.Cookie{Name: "eerp_access", Value: "garbage-should-be-ignored"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if captured.UserID != user.ID {
+		t.Errorf("UserID = %v, want %v (should authenticate off the header, not the garbage cookie)", captured.UserID, user.ID)
+	}
+}
+
+func TestJWTOrCookieMiddleware_NoHeader_FallsBackToCookie(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	raw, user := issueToken(t, svc)
+
+	var captured auth.Identity
+	e.GET("/test", func(c echo.Context) error {
+		captured, _ = auth.IdentityFromContext(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	}, authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "eerp_access", Value: raw})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if captured.UserID != user.ID {
+		t.Errorf("UserID = %v, want %v", captured.UserID, user.ID)
+	}
+}
+
+func TestJWTOrCookieMiddleware_InvalidCookie_Returns401(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	reached := false
+
+	e.GET("/test", recordingHandler(&reached), authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "eerp_access", Value: "not.a.real.token"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not be reached with an invalid cookie token")
+	}
+}

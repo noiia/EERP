@@ -52,6 +52,7 @@ import { LayoutForm } from './layout-renderer'
 import { useListNavStore } from './list-nav-store'
 import { SelectionBar } from './list-selection'
 import { PictureSizeProvider } from './picture-widgets'
+import { AvatarWithPresence } from './presence-bubble'
 import { useRecordLabelStore } from './record-label-store'
 import { useRelationOps } from './relation-ops'
 import { junctionColumns, relationOf, type PendingManyToMany } from './relation-widgets'
@@ -832,11 +833,22 @@ function TreeRenderer<T extends HasId>({
       const columns: GridColDef[] = layoutFieldOrder(normalizeLayout(descriptor))
         .map((name) => fieldsByName.get(name))
         .filter((f) => f != null)
-        .map((f) => ({
-          field: f.name,
-          headerName: t(fieldLabel(f)),
-          flex: 1,
-        }))
+        .map((f) => {
+          const col: GridColDef = { field: f.name, headerName: t(fieldLabel(f)), flex: 1 }
+          // 'user-presence' is display-only: the row IS a user record (its
+          // own id is the user id), so this renders that row's avatar + live
+          // presence bubble beside the field's own value instead of the bare
+          // text DataGrid renders by default (Settings -> Users' first user).
+          if (f.widget === 'user-presence') {
+            col.renderCell = (params) => (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', height: '100%' }}>
+                <AvatarWithPresence userId={String(params.row.id)} label={String(params.value ?? '')} size={20} />
+                <span>{String(params.value ?? '')}</span>
+              </Stack>
+            )
+          }
+          return col
+        })
       // A formPath makes rows navigable: clicking one opens that record's form.
       const { formPath } = descriptor
       content = (
