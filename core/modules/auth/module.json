@@ -1,0 +1,13 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "auth",
+    "display_name": "Accounts",
+    "version": "0.0.1",
+    "author": "Edwin Lecomte",
+    "description": "User accounts, roles and permissions",
+    "app_mode": false,
+    "depends": [],
+    "is_service": true,
+    "auto_install": true
+}

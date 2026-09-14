@@ -1,0 +1,13 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "company",
+    "display_name": "Company",
+    "version": "0.0.1",
+    "author": "Edwin Lecomte",
+    "description": "Multi-company: legal entities within a tenant, each with their own workspace settings",
+    "app_mode": false,
+    "depends": [],
+    "is_service": true,
+    "auto_install": true
+}

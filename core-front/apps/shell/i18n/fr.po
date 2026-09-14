@@ -1,0 +1,598 @@
+# EERP shell — French. Locale = this file's basename ('fr').
+msgid ""
+msgstr ""
+"Project-Id-Version: eerp-shell 0.0.0\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Menu"
+msgstr "Menu"
+
+msgid "Settings"
+msgstr "Paramètres"
+
+msgid "Logout"
+msgstr "Déconnexion"
+
+msgid "Signed in as"
+msgstr "Connecté en tant que"
+
+msgid "Dashboard"
+msgstr "Tableau de bord"
+
+msgid "List"
+msgstr "Liste"
+
+msgid "Manage your workspace preferences."
+msgstr "Gérez les préférences de votre espace de travail."
+
+msgid "Appearance"
+msgstr "Apparence"
+
+msgid "Brand colors and light/dark mode for the whole interface."
+msgstr "Couleurs de marque et mode clair/sombre pour toute l'interface."
+
+msgid "Translations"
+msgstr "Traductions"
+
+msgid "Workspace default language, plus the translations modules provide."
+msgstr "Langue par défaut de l'espace de travail et traductions fournies par les modules."
+
+msgid "Account"
+msgstr "Compte"
+
+msgid "Your personal preferences, like the display language."
+msgstr "Vos préférences personnelles, comme la langue d'affichage."
+
+msgid "Customize the brand colors used across the interface. Changes apply instantly and are saved on this device."
+msgstr "Personnalisez les couleurs de marque utilisées dans l'interface. Les modifications s'appliquent immédiatement et sont enregistrées sur cet appareil."
+
+msgid "Dark mode"
+msgstr "Mode sombre"
+
+msgid "Reset to defaults"
+msgstr "Réinitialiser les valeurs par défaut"
+
+msgid "Preview"
+msgstr "Aperçu"
+
+msgid "Choose the workspace default language and manage the translations installed modules provide."
+msgstr "Choisissez la langue par défaut de l'espace de travail et gérez les traductions fournies par les modules installés."
+
+msgid "Default language"
+msgstr "Langue par défaut"
+
+msgid "The interface language for every user who has not picked one in Settings → Account."
+msgstr "La langue de l'interface pour chaque utilisateur qui n'en a pas choisi une dans Paramètres → Compte."
+
+msgid "Changing the workspace default language requires the settings:i18n:write permission."
+msgstr "Modifier la langue par défaut de l'espace de travail nécessite la permission settings:i18n:write."
+
+msgid "English (source)"
+msgstr "Anglais (source)"
+
+msgid "Your personal preferences. They follow your account on every device."
+msgstr "Vos préférences personnelles. Elles suivent votre compte sur tous vos appareils."
+
+msgid "Display language"
+msgstr "Langue d'affichage"
+
+msgid "Workspace default"
+msgstr "Défaut de l'espace de travail"
+
+msgid "Languages come from the translations enabled in Settings → Translations. \"Workspace default\" follows whatever the workspace administrator picks."
+msgstr "Les langues proviennent des traductions activées dans Paramètres → Traductions. « Défaut de l'espace de travail » suit le choix de l'administrateur de l'espace de travail."
+
+msgid "Your preferences could not be loaded — try reloading the page."
+msgstr "Vos préférences n'ont pas pu être chargées — essayez de recharger la page."
+
+msgid "Available translations"
+msgstr "Traductions disponibles"
+
+msgid "Discovered from the i18n folder of each module (.po files, one per language). Add a translation to offer it as a display language in Settings → Account."
+msgstr "Découvertes dans le dossier i18n de chaque module (fichiers .po, un par langue). Ajoutez une traduction pour la proposer comme langue d'affichage dans Paramètres → Compte."
+
+msgid "No translations found. Modules ship them as i18n/<locale>.po files."
+msgstr "Aucune traduction trouvée. Les modules les fournissent sous forme de fichiers i18n/<locale>.po."
+
+msgid "Add"
+msgstr "Ajouter"
+
+msgid "Remove"
+msgstr "Retirer"
+
+msgid "strings"
+msgstr "chaînes"
+
+msgid "from"
+msgstr "depuis"
+
+msgid "Export translation files"
+msgstr "Exporter les fichiers de traduction"
+
+msgid "Download one .po file per selected module with every translatable string, pre-filled with the existing translations for the target language. Save each file as i18n/<locale>.po inside its module folder and rebuild."
+msgstr "Téléchargez un fichier .po par module sélectionné contenant toutes les chaînes traduisibles, prérempli avec les traductions existantes pour la langue cible. Enregistrez chaque fichier sous i18n/<locale>.po dans le dossier de son module puis reconstruisez."
+
+msgid "Modules"
+msgstr "Modules"
+
+msgid "Target language"
+msgstr "Langue cible"
+
+msgid "Export"
+msgstr "Exporter"
+
+msgid "Users"
+msgstr "Utilisateurs"
+
+msgid "User accounts and roles of the workspace."
+msgstr "Comptes utilisateurs et rôles de l'espace de travail."
+
+msgid "User accounts"
+msgstr "Comptes utilisateurs"
+
+msgid "Edit user"
+msgstr "Modifier l'utilisateur"
+
+msgid "New user"
+msgstr "Nouvel utilisateur"
+
+msgid "Roles"
+msgstr "Rôles"
+
+msgid "Edit role"
+msgstr "Modifier le rôle"
+
+msgid "New role"
+msgstr "Nouveau rôle"
+
+msgid "Email"
+msgstr "E-mail"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Created"
+msgstr "Créé le"
+
+msgid "No applications are available for your account."
+msgstr "Aucune application n'est disponible pour votre compte."
+
+msgid "Reset"
+msgstr "Réinitialiser"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+msgid "Saving…"
+msgstr "Enregistrement…"
+
+msgid "Create"
+msgstr "Créer"
+
+msgid "Formats"
+msgstr "Formats"
+
+msgid "How numbers display across the workspace, for everyone."
+msgstr "Comment les nombres s'affichent dans l'espace de travail, pour tout le monde."
+
+msgid "Decimal separator"
+msgstr "Séparateur décimal"
+
+msgid "Thousands separator"
+msgstr "Séparateur de milliers"
+
+msgid "Period"
+msgstr "Point"
+
+msgid "Comma"
+msgstr "Virgule"
+
+msgid "None"
+msgstr "Aucun"
+
+msgid "Space"
+msgstr "Espace"
+
+msgid "Apostrophe"
+msgstr "Apostrophe"
+
+msgid "Preview:"
+msgstr "Aperçu :"
+
+msgid "The decimal and thousands separators must differ."
+msgstr "Les séparateurs décimal et de milliers doivent être différents."
+
+msgid "Changing the workspace number format requires the settings:format:write permission."
+msgstr "Modifier le format des nombres de l'espace de travail nécessite la permission settings:format:write."
+
+msgid "Country"
+msgstr "Pays"
+
+# ── List display modes: List/Kanban/Calendar/Graph switcher + Settings → Views
+# (docs/roadmaps/list-view-modes.md) ──────────────────────────────────────────
+
+msgid "Display mode"
+msgstr "Mode d'affichage"
+
+msgid "Kanban"
+msgstr "Kanban"
+
+msgid "Calendar"
+msgstr "Calendrier"
+
+msgid "Graph"
+msgstr "Graphique"
+
+msgid "Configure in Settings → Views"
+msgstr "Configurer dans Paramètres → Vues"
+
+msgid "No status"
+msgstr "Aucun statut"
+
+msgid "Unscheduled"
+msgstr "Non planifié"
+
+msgid "Previous"
+msgstr "Précédent"
+
+msgid "Next"
+msgstr "Suivant"
+
+msgid "Previous month"
+msgstr "Mois précédent"
+
+msgid "Next month"
+msgstr "Mois suivant"
+
+msgid "Sun"
+msgstr "dim."
+
+msgid "Mon"
+msgstr "lun."
+
+msgid "Tue"
+msgstr "mar."
+
+msgid "Wed"
+msgstr "mer."
+
+msgid "Thu"
+msgstr "jeu."
+
+msgid "Fri"
+msgstr "ven."
+
+msgid "Sat"
+msgstr "sam."
+
+msgid "Graph layouts are not available in this deployment."
+msgstr "Les dispositions Graphique ne sont pas disponibles dans ce déploiement."
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "Edit"
+msgstr "Modifier"
+
+msgid "Configure widget"
+msgstr "Configurer le widget"
+
+msgid "Hide widget"
+msgstr "Masquer le widget"
+
+msgid "+ Add widget"
+msgstr "+ Ajouter un widget"
+
+msgid "Add widget"
+msgstr "Ajouter un widget"
+
+msgid "Hidden widgets:"
+msgstr "Widgets masqués :"
+
+msgid "Widget type"
+msgstr "Type de widget"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "X field (date)"
+msgstr "Champ X (date)"
+
+msgid "Y field (number)"
+msgstr "Champ Y (nombre)"
+
+msgid "Aggregate"
+msgstr "Agrégat"
+
+msgid "Bucket"
+msgstr "Intervalle"
+
+msgid "Series field (optional)"
+msgstr "Champ de série (optionnel)"
+
+msgid "None (single line)"
+msgstr "Aucun (ligne unique)"
+
+msgid "Bar mode"
+msgstr "Mode des barres"
+
+msgid "Group by field"
+msgstr "Regrouper par champ"
+
+msgid "Value field (shown in tooltip only)"
+msgstr "Champ de valeur (affiché dans l'infobulle uniquement)"
+
+msgid "Slices are always sized by how many records fall in each group."
+msgstr "Les parts sont toujours proportionnelles au nombre d'enregistrements de chaque groupe."
+
+msgid "Field"
+msgstr "Champ"
+
+msgid "Filter field"
+msgstr "Champ de filtre"
+
+msgid "Filter value"
+msgstr "Valeur du filtre"
+
+msgid "Columns to show"
+msgstr "Colonnes à afficher"
+
+msgid "Pick a date field for X."
+msgstr "Choisissez un champ date pour X."
+
+msgid "Pick a number field for Y."
+msgstr "Choisissez un champ nombre pour Y."
+
+msgid "Pick a field to group by."
+msgstr "Choisissez un champ de regroupement."
+
+msgid "Pick a field."
+msgstr "Choisissez un champ."
+
+msgid "Mean, median and sum need a number field."
+msgstr "La moyenne, la médiane et la somme nécessitent un champ numérique."
+
+msgid "Pick a field to filter on."
+msgstr "Choisissez un champ sur lequel filtrer."
+
+msgid "Enter a value to filter on."
+msgstr "Saisissez une valeur à filtrer."
+
+msgid "Pick at least one column to display."
+msgstr "Choisissez au moins une colonne à afficher."
+
+msgid "No data"
+msgstr "Aucune donnée"
+
+msgid "No matching records."
+msgstr "Aucun enregistrement correspondant."
+
+msgid "Related-record lookups are not available in this deployment."
+msgstr "Les recherches d'enregistrements liés ne sont pas disponibles dans ce déploiement."
+
+msgid "Line chart"
+msgstr "Graphique en courbes"
+
+msgid "Bar chart"
+msgstr "Graphique en barres"
+
+msgid "Stacked bar chart"
+msgstr "Graphique en barres empilées"
+
+msgid "Pie chart"
+msgstr "Graphique circulaire"
+
+msgid "Other"
+msgstr "Autre"
+
+# Aggregate display labels (stat widget) vs. the lowercase raw option values
+# the config dialog's Selects render (e.g. Aggregate: xy/stat) — two different
+# msgids per concept, same split as everywhere else in the engine (source
+# string = value, display goes through t()).
+
+msgid "Sum"
+msgstr "Somme"
+
+msgid "Average"
+msgstr "Moyenne"
+
+msgid "Mean"
+msgstr "Moyenne"
+
+msgid "Count"
+msgstr "Nombre"
+
+msgid "Median"
+msgstr "Médiane"
+
+msgid "sum"
+msgstr "somme"
+
+msgid "avg"
+msgstr "moyenne"
+
+msgid "mean"
+msgstr "moyenne"
+
+msgid "count"
+msgstr "nombre"
+
+msgid "median"
+msgstr "médiane"
+
+msgid "day"
+msgstr "jour"
+
+msgid "week"
+msgstr "semaine"
+
+msgid "month"
+msgstr "mois"
+
+msgid "grouped"
+msgstr "groupées"
+
+msgid "stacked"
+msgstr "empilées"
+
+# Graph tile types: the widget-type picker's options AND a tile's default
+# title fallback (t(tile.type)) share these same lowercase msgids.
+
+msgid "xy"
+msgstr "Courbe (X/Y)"
+
+msgid "bar"
+msgstr "Barres"
+
+msgid "pie"
+msgstr "Camembert"
+
+msgid "stat"
+msgstr "Statistique"
+
+msgid "list"
+msgstr "Liste"
+
+# ── Settings → Views (docs/adr/ADR-006) ───────────────────────────────────────
+
+msgid "Views"
+msgstr "Vues"
+
+msgid "Which field powers each list's Kanban and Calendar display modes."
+msgstr "Quel champ alimente les modes d'affichage Kanban et Calendrier de chaque liste."
+
+msgid "No list views are registered yet."
+msgstr "Aucune vue liste n'est encore enregistrée."
+
+msgid "Entity"
+msgstr "Entité"
+
+msgid "Kanban status field"
+msgstr "Champ de statut Kanban"
+
+msgid "Calendar date field"
+msgstr "Champ de date Calendrier"
+
+msgid "Status field"
+msgstr "Champ de statut"
+
+msgid "Date field"
+msgstr "Champ de date"
+
+msgid "Changing view field configuration requires the settings:views:write permission."
+msgstr "Modifier la configuration des champs de vue nécessite la permission settings:views:write."
+
+# ── Runtime notebook pages (docs/roadmaps/responsive-displays.md, Phase 5) ──
+
+msgid "Content"
+msgstr "Contenu"
+
+msgid "Delete"
+msgstr "Supprimer"
+
+msgid "+ Add page"
+msgstr "+ Ajouter une page"
+
+msgid "New page"
+msgstr "Nouvelle page"
+
+msgid "Available once the record has been saved."
+msgstr "Disponible une fois l'enregistrement sauvegardé."
+
+msgid "Nothing here yet."
+msgstr "Rien ici pour le moment."
+
+# ── App Store (docs/roadmaps/app-store.md, Phases 2-3) ──────────────────────
+
+msgid "Activate"
+msgstr "Activer"
+
+msgid "Deactivate"
+msgstr "Désactiver"
+
+msgid "The App Store cannot deactivate itself."
+msgstr "L'App Store ne peut pas se désactiver lui-même."
+
+# ── App Store (docs/roadmaps/app-store.md, Phase 4) ─────────────────────────
+
+msgid "Saved to module.json — takes effect after backend restart + frontend rebuild"
+msgstr "Enregistré dans module.json — prend effet après redémarrage du backend + reconstruction du frontend"
+
+msgid "Updated"
+msgstr "Mis à jour"
+
+msgid "Display name"
+msgstr "Nom affiché"
+
+msgid "Version"
+msgstr "Version"
+
+msgid "Author"
+msgstr "Auteur"
+
+msgid "Type"
+msgstr "Type"
+
+msgid "Icon"
+msgstr "Icône"
+
+msgid "Active"
+msgstr "Actif"
+
+msgid "App mode"
+msgstr "Mode application"
+
+msgid "Views"
+msgstr "Vues"
+
+msgid "Reports"
+msgstr "Rapports"
+
+msgid "View"
+msgstr "Vue"
+
+msgid "File"
+msgstr "Fichier"
+
+msgid "Kind"
+msgstr "Type"
+
+msgid "Report"
+msgstr "Rapport"
+
+msgid "Reports are not available yet."
+msgstr "Les rapports ne sont pas encore disponibles."
+
+msgid "Developer"
+msgstr "Développeur"
+
+msgid "Seed the workspace with fake data for testing."
+msgstr "Peupler l'espace de travail avec des données fictives pour les tests."
+
+msgid "Tools for testing the software against realistic data."
+msgstr "Outils pour tester le logiciel avec des données réalistes."
+
+msgid "Seed demo data"
+msgstr "Générer des données de démonstration"
+
+msgid "Creates a batch of fake contacts, CRM opportunities, and tags through the normal entity API, for exercising the UI with realistic-looking data."
+msgstr "Crée un lot de contacts, d'opportunités CRM et d'étiquettes fictifs via l'API d'entités habituelle, pour tester l'interface avec des données réalistes."
+
+msgid "Seeding…"
+msgstr "Génération…"
+
+msgid "Seeding demo data is only available outside production."
+msgstr "La génération de données de démonstration n'est disponible qu'en dehors de la production."
+
+msgid "Results"
+msgstr "Résultats"
+
+msgid "created"
+msgstr "créé(s)"
+
+msgid "failed"
+msgstr "échoué(s)"

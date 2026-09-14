@@ -1,0 +1,44 @@
+import type { ViewDescriptor } from '@eerp/core-front'
+
+// Settings → Company: descriptors only, like core/modules/reportlayout's
+// page-formats descriptors. The entity maps to core/modules/company's
+// generic-CRUD table (GET/POST /api/v1/company, GET/PUT/DELETE .../:id) — a
+// plain Go module, not one discovered via the module-registry FrontModule
+// pipeline, since Company has no on-screen route of its own outside this
+// hand-built top-level Settings tile (same posture as Users/Roles).
+
+/** The record shape at this boundary — the engine only needs HasId. */
+export type CompanyRecord = { id: string } & Record<string, unknown>
+
+export const companyListDescriptor: ViewDescriptor<CompanyRecord> = {
+  entity: 'company',
+  viewType: 'tree',
+  fields: [
+    { name: 'name', label: 'Name', type: 'text', required: true },
+    { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
+    { name: 'email', label: 'Email', type: 'text' },
+  ],
+  formPath: '/settings/company/:id',
+  createPermission: 'company:company:write',
+  permissions: ['company:company:read'],
+}
+
+export const companyFormDescriptor: ViewDescriptor<CompanyRecord> = {
+  entity: 'company',
+  viewType: 'form',
+  fields: [
+    // First widget:'picture' field: the engine's default form anatomy
+    // (core-front/CLAUDE.md's "Default form anatomy" row) synthesizes it,
+    // with no explicit layout needed, into a top row on its own — logo top
+    // left, same convention crm's own picture field already uses.
+    { name: 'logo', hideLabel: true, label: 'Company logo', type: 'boolean', widget: 'picture' },
+    { name: 'name', label: 'Name', type: 'text', required: true },
+    { name: 'address', label: 'Address', type: 'address', widget: 'form' },
+    { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
+    { name: 'email', label: 'Email', type: 'text' },
+    // This company's own global currency — sale documents (invoice/quote)
+    // no longer carry a per-document currency field; they read this instead.
+    { name: 'currency', label: 'Currency', type: 'selection', selection: { options: ['USD', 'EUR', 'GBP'] } },
+  ],
+  permissions: ['company:company:read'],
+}

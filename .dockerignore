@@ -1,0 +1,14 @@
+# Build-time context excludes for the repo-root Docker builds (core-back + core-front).
+# Only build artifacts / VCS — both services COPY source explicitly.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+**/build
+.git
+target
+graphify-out
+# The frontend module manifest is regenerated at build (keep the dir, drop contents).
+core-front/apps/shell/src/generated/*
+!core-front/apps/shell/src/generated/.gitkeep

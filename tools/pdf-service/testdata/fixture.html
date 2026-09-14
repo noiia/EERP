@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><style>
+body { font-family: sans-serif; }
+.page-break { page-break-before: always; }
+</style></head>
+<body>
+<h1>Fixture report</h1>
+<p id="marker" style="display:none">not ready</p>
+<div class="page-break">Second page content</div>
+<script>
+  // Simulates a print route resolving async data before signalling ready —
+  // the same contract core-front's print route uses (data-report-ready).
+  setTimeout(function () {
+    var m = document.getElementById('marker');
+    m.textContent = 'ready';
+    m.setAttribute('data-report-ready', '');
+    m.style.display = 'block';
+  }, 150);
+</script>
+</body>
+</html>

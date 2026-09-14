@@ -1,0 +1,34 @@
+# Garage (S3-compatible object storage) — DEV configuration.
+#
+# Single-node deployment backing the picture service (docs/roadmaps/field-widgets.md):
+# module binaries stay on disk, but user-generated binary content (pictures, signatures)
+# goes to S3. Garage was chosen over MinIO for its permissive license and tiny footprint;
+# the backend only ever speaks the S3 API, so the provider is swappable.
+#
+# Mounted read-only at /etc/garage.toml by compose.yml (service `garage`). The secrets
+# below are DEV-ONLY (same stance as postgres/postgres in compose) — a real deployment
+# generates its own rpc_secret and never commits it.
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+# Single node: every object lives exactly once.
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+# Single-node cluster: the node only ever talks to itself, and the CLI (docker exec)
+# reaches it on the loopback inside the container.
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret = "12b7b61ac975edebc0771d38d63997b2d364dead6e4254bbcdea0c837887065f"
+
+[s3_api]
+# The region name the backend must send (eerp-config.json s3_region).
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage.localhost"
+
+[admin]
+# Bound but tokenless: only the unauthenticated /health endpoint is usable — which is
+# exactly what the compose healthcheck needs. Set admin_token before enabling more.
+api_bind_addr = "[::]:3903"

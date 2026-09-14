@@ -1,13 +1,32 @@
 {
     "module_root": [
-        "/home/noiq/EERP/modules"
+        "core/modules"
     ],
     "master_key": "ueioiehsiuehfs",
-    "container_pool": 5,
-    "thread_pool": 20,
-    "db_name": "Test",
+    "access_ttl_seconds": 3600,
+    "refresh_ttl_seconds": 604800,
+    "db_name": "poc",
     "db_port": 5432,
     "db_host": "localhost",
     "db_user": "postgres",
-    "db_password": "Test123!"
+    "db_password": "postgres",
+    "max_connection": 10,
+    "min_connection": 4,
+    "max_conn_idle_time": 1800,
+    "max_conn_life_time": 3600,
+    "health_check_period": 60,
+    "connect_timeout": 10,
+    "public_address": "localhost",
+    "backend_port": 8080,
+    "backend_host": "127.0.0.1",
+    "backend_version": "v1",
+    "seed_dev_admin": true,
+    "api_config_path": "api.yaml",
+    "s3_endpoint": "http://127.0.0.1:3910",
+    "s3_region": "garage",
+    "s3_bucket": "eerp",
+    "s3_access_key": "GKd570a36db0c8d20a660b41bc",
+    "s3_secret_key": "5f479b0c0600d9777c76d65bd0dd85f3e6dd347c1c0252da0f36ed2d34d749a7",
+    "pdf_service_url": "http://127.0.0.1:8090",
+    "frontend_base_url": "http://127.0.0.1:3000"
 }

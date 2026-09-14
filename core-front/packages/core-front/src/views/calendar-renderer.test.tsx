@@ -1,0 +1,296 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+// A card click (no drag) navigates to the record's form via the App Router.
+const pushMock = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
+}))
+
+import { CalendarRenderer } from './calendar-renderer'
+import type { ViewDescriptor } from './descriptor'
+import type { EntityActions } from './stores'
+import { useUndoToastStore } from './undo-toast'
+import { ApiError } from '../api/errors'
+
+interface Task {
+  id: string
+  name: string
+  due_date?: string | null
+}
+
+const descriptor: ViewDescriptor<Task> = {
+  entity: 'tasks',
+  viewType: 'tree',
+  fields: [
+    { name: 'name', label: 'Name', type: 'text' },
+    { name: 'due_date', label: 'Due date', type: 'date' },
+  ],
+}
+
+function iso(year: number, month: number, day: number): string {
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+const now = new Date()
+const thisYear = now.getFullYear()
+const thisMonth = now.getMonth()
+const day15 = iso(thisYear, thisMonth, 15)
+const day20 = iso(thisYear, thisMonth, 20)
+
+const records: Task[] = [
+  { id: '1', name: 'Alpha', due_date: day15 },
+  { id: '2', name: 'Beta', due_date: null },
+]
+
+function drag(fromId: string, toLabel: string) {
+  fireEvent.dragStart(screen.getByTestId(`calendar-card-${fromId}`))
+  const target = screen.getByRole('group', { name: toLabel })
+  fireEvent.dragOver(target)
+  fireEvent.drop(target)
+}
+
+describe('CalendarRenderer', () => {
+  let update: ReturnType<typeof vi.fn<(id: string, body: Partial<Task>) => Promise<Task>>>
+  let actions: EntityActions<Task>
+
+  beforeEach(() => {
+    update = vi.fn(async (id: string, body: Partial<Task>) => ({ id, ...body }) as Task)
+    actions = { create: vi.fn(async (b) => b as Task), update }
+    pushMock.mockReset()
+    useUndoToastStore.setState({ pending: null })
+  })
+
+  it('positions a scheduled record on its day and lists a dateless one as Unscheduled', () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+    expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Beta')
+  })
+
+  it('positions a record whose date field is a full RFC3339 timestamp (a real Go time.Time column), not just a bare date string', () => {
+    // A `time.Time` column round-trips as "2026-07-10T00:00:00Z", never a bare
+    // 'YYYY-MM-DD' — bucketing by the raw value would never match an
+    // isoDate() day key, silently dropping the record from BOTH the grid and
+    // Unscheduled (the exact bug this guards against).
+    const timestampRecords: Task[] = [{ id: '3', name: 'Gamma', due_date: `${day15}T00:00:00Z` }]
+    render(
+      <CalendarRenderer
+        descriptor={descriptor}
+        initialData={timestampRecords}
+        actions={actions}
+        dateField="due_date"
+      />,
+    )
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Gamma')
+    // Not just absent from Unscheduled — with nothing left unscheduled, the whole
+    // panel is gone (see the dedicated "hides the Unscheduled panel" test below).
+    expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toBeInTheDocument()
+  })
+
+  it('reports its working record set to onRecordsChange, including after an optimistic move', async () => {
+    const onRecordsChange = vi.fn()
+    render(
+      <CalendarRenderer
+        descriptor={descriptor}
+        initialData={records}
+        actions={actions}
+        dateField="due_date"
+        onRecordsChange={onRecordsChange}
+      />,
+    )
+    expect(onRecordsChange).toHaveBeenCalledWith(records)
+
+    drag('1', day20)
+    await waitFor(() =>
+      expect(onRecordsChange).toHaveBeenLastCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: '1', due_date: day20 })]),
+      ),
+    )
+  })
+
+  it('dragging a scheduled record to another day PATCHes the date field', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    drag('1', day20)
+    // Optimistic: moves before the Server Action resolves.
+    expect(screen.getByRole('group', { name: day20 })).toHaveTextContent('Alpha')
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day20 }))
+  })
+
+  it('dragging an unscheduled record onto a day schedules it', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    drag('2', day20)
+    await waitFor(() => expect(update).toHaveBeenCalledWith('2', { due_date: day20 }))
+    expect(screen.getByRole('group', { name: day20 })).toHaveTextContent('Beta')
+  })
+
+  it('dragging a scheduled record into Unscheduled clears its date', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    drag('1', 'Unscheduled')
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: null }))
+    expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Alpha')
+  })
+
+  it('dropping on the same day is a no-op', () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    drag('1', day15)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('navigating months re-filters the SAME records instead of refetching', () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument()
+    // Unaffected by month navigation — it isn't month-scoped.
+    expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Beta')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+  })
+
+  it('clicking a card (no drag) navigates to its form when the descriptor has one', () => {
+    render(
+      <CalendarRenderer
+        descriptor={{ ...descriptor, formPath: '/tasks/:id' }}
+        initialData={records}
+        actions={actions}
+        dateField="due_date"
+      />,
+    )
+    fireEvent.click(screen.getByTestId('calendar-card-1'))
+    expect(pushMock).toHaveBeenCalledWith('/tasks/1')
+  })
+
+  it('does nothing on click when the descriptor has no formPath', () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.click(screen.getByTestId('calendar-card-1'))
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('hides the Unscheduled panel entirely when every record is scheduled', () => {
+    const allScheduled: Task[] = [{ id: '1', name: 'Alpha', due_date: day15 }]
+    render(
+      <CalendarRenderer
+        descriptor={descriptor}
+        initialData={allScheduled}
+        actions={actions}
+        dateField="due_date"
+      />,
+    )
+    expect(screen.queryByRole('group', { name: 'Unscheduled' })).not.toBeInTheDocument()
+  })
+
+  it('dropping a scheduled card outside the calendar clears its date immediately and offers an undo toast', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.dragStart(screen.getByTestId('calendar-card-1'))
+    // No dragOver/drop on any drop target in between — a real "released outside
+    // the calendar" drag never fires our onDrop handlers at all.
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
+
+    // Optimistic: cleared before the Server Action resolves, no confirmation needed.
+    expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Alpha')
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: null }))
+    expect(useUndoToastStore.getState().pending?.message).toContain('Alpha')
+  })
+
+  it('recovering from the undo toast restores the cleared date', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.dragStart(screen.getByTestId('calendar-card-1'))
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: null }))
+
+    useUndoToastStore.getState().recover()
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day15 }))
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+  })
+
+  it('dropping an already-unscheduled card outside the calendar does nothing (nothing to remove)', () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    fireEvent.dragStart(screen.getByTestId('calendar-card-2'))
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-2'))
+
+    expect(update).not.toHaveBeenCalled()
+    expect(useUndoToastStore.getState().pending).toBeNull()
+  })
+
+  it('dropping on a real drop target (a day cell) never triggers the undo toast', async () => {
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    drag('1', day20)
+    fireEvent.dragEnd(screen.getByTestId('calendar-card-1'))
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day20 }))
+    expect(useUndoToastStore.getState().pending).toBeNull()
+  })
+
+  it('reverts the move and surfaces the error on a rejected write', async () => {
+    update.mockRejectedValue(new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 }))
+    render(
+      <CalendarRenderer descriptor={descriptor} initialData={records} actions={actions} dateField="due_date" />,
+    )
+    drag('1', day20)
+
+    await screen.findByText('FORBIDDEN')
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+    expect(screen.getByRole('group', { name: day20 })).not.toHaveTextContent('Alpha')
+  })
+
+  it('colorField: a record whose named boolean field is true renders red; false/absent does not', () => {
+    interface Run {
+      id: string
+      name: string
+      due_date?: string | null
+      failed?: boolean
+    }
+    const runDescriptor: ViewDescriptor<Run> = {
+      entity: 'cron_history',
+      viewType: 'tree',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'due_date', label: 'Ran at', type: 'date' },
+        { name: 'failed', label: 'Failed', type: 'boolean' },
+      ],
+    }
+    const runs: Run[] = [
+      { id: '1', name: 'ok-run', due_date: day15, failed: false },
+      { id: '2', name: 'bad-run', due_date: day15, failed: true },
+    ]
+    render(
+      <CalendarRenderer
+        descriptor={runDescriptor}
+        initialData={runs}
+        actions={actions as unknown as EntityActions<Run>}
+        dateField="due_date"
+        colorField="failed"
+      />,
+    )
+    const okCard = screen.getByTestId('calendar-card-1')
+    const badCard = screen.getByTestId('calendar-card-2')
+    // sx only applies the error-colored branch's extra classes when flagged
+    // — asserting via the generated class name (not a computed color, which
+    // jsdom doesn't resolve theme tokens for) is what actually distinguishes
+    // "colored" from "not colored" here.
+    expect(badCard.className).not.toBe(okCard.className)
+  })
+})

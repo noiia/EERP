@@ -1,0 +1,66 @@
+---
+title: ORM Query Activity Diagram
+---
+flowchart TD
+    START([Start]) --> CALL
+
+    subgraph APP["Application layer"]
+        CALL["Call db.Query() / db.Exec() / db.QueryRow()"]
+        RETURN_OK["Return []T, nil to caller"]
+        RETURN_ERR_POOL["Return error pool exhausted / ctx cancelled"]
+        RETURN_ERR_PG["Return error PostgreSQL error"]
+        RETURN_ERR_SCAN["Return error type mismatch / scan failure"]
+        COMMIT["Commit / Rollback fn() nil → Commit fn() err → Rollback"]
+        END_NODE([End])
+    end
+
+    subgraph ORM["ORM core"]
+        TIMER["Record start time time.Now()"]
+        ACQUIRE["Acquire connection pgxpool.Acquire(ctx)"]
+        CONN_OK{"conn available?"}
+        SEND["Send SQL + args via pgx wire protocol"]
+        PG_ERR{"PostgreSQL error?"}
+        SCAN["ScanRows[T] reflect → field map via MetadataCache"]
+        SCAN_ERR{"scan error?"}
+        DURATION["Compute duration time.Since(start)"]
+        LOG_OK["Logger.Log(entry) SQL, args, duration, nil"]
+        LOG_ERR_POOL["Logger.Log(entry) err = pool exhausted"]
+        LOG_ERR_PG["Logger.Log(entry) err = pg error"]
+        LOG_ERR_SCAN["Logger.Log(entry) err = scan error"]
+    end
+
+    subgraph PG["PostgreSQL / pgx"]
+        PLAN["Parse + Plan query planner"]
+        EXEC["Execute plan fetch rows"]
+        RELEASE["conn.Release() deferred"]
+    end
+
+    CALL --> TIMER
+    TIMER --> ACQUIRE
+    ACQUIRE --> CONN_OK
+
+    CONN_OK -- "no" --> LOG_ERR_POOL --> RETURN_ERR_POOL
+    CONN_OK -- "yes" --> SEND
+
+    SEND --> PLAN --> EXEC
+    EXEC --> PG_ERR
+
+    PG_ERR -- "yes" --> RELEASE --> LOG_ERR_PG --> RETURN_ERR_PG
+    PG_ERR -- "no" --> SCAN
+
+    SCAN --> SCAN_ERR
+    SCAN_ERR -- "yes" --> RELEASE --> LOG_ERR_SCAN --> RETURN_ERR_SCAN
+    SCAN_ERR -- "no" --> RELEASE --> DURATION
+
+    DURATION --> LOG_OK --> RETURN_OK
+
+    RETURN_OK -.->|"if inside Transaction()"| COMMIT
+    COMMIT --> END_NODE
+    RETURN_OK --> END_NODE
+    RETURN_ERR_POOL --> END_NODE
+    RETURN_ERR_PG --> END_NODE
+    RETURN_ERR_SCAN --> END_NODE
+
+    style APP fill:transparent,stroke:#534AB7,stroke-width:1.5px,stroke-dasharray:4 2
+    style ORM fill:transparent,stroke:#993C1D,stroke-width:1.5px,stroke-dasharray:4 2
+    style PG  fill:transparent,stroke:#0F6E56,stroke-width:1.5px,stroke-dasharray:4 2

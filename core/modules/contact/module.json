@@ -1,0 +1,18 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "contact",
+    "display_name": "Contact",
+    "version": "0.0.1",
+    "author": "Edwin Lecomte",
+    "description": "Contact core module",
+    "app_mode": true,
+    "menu_icon": "address-book",
+    "static_files": {
+        "views": [
+            "contact_views.ts"
+        ]
+    },
+    "is_service": true,
+    "auto_install": true
+}

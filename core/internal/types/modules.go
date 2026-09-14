@@ -26,11 +26,18 @@ type Operation struct {
 	Column   string `json:"column"`
 	SQLType  string `json:"sql_type"`
 	Nullable bool   `json:"nullable"`
+	// Index requests a secondary index on Column. Set it on an "add_column"
+	// op to index the new column, or use Type "create_index" on an existing
+	// one. IndexType is the PostgreSQL index method (btree, hash, gin, …);
+	// empty means btree.
+	Index     bool   `json:"index"`
+	IndexType string `json:"index_type"`
 }
 
 // Module fields
 type Module struct {
 	Active           bool                `json:"active"`
+	Type             string              `json:"type"` // "wasm" (default) or "go"
 	Path             string              `json:"path"`
 	WasmPath         string              `json:"wasm_path"`
 	Name             string              `json:"name"`

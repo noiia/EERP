@@ -1,0 +1,40 @@
+import Container from '@mui/material/Container'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
+import { EntityViewServer } from '@eerp/core-front/server'
+import { T, type EntityActions } from '@eerp/core-front'
+import { requireAuth } from '@/lib/session'
+import { createRecord, removeRecord, updateRecord } from '../../../../[...module]/actions'
+import { userFormDescriptor } from '../../descriptors'
+
+// Settings → Users → Accounts → one account: the edit form, or ("new") the empty
+// create form the list/dashboard Create button opens. Leaving the password
+// field blank on save keeps the account locked (new) or its existing
+// credential unchanged (edit) — see userFormDescriptor's own comment.
+
+type AnyRecord = { id: string } & Record<string, unknown>
+
+export default async function UserAccountPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  await requireAuth(`/settings/users/accounts/${id}`)
+
+  const actions = {
+    create: createRecord.bind(null, 'users'),
+    update: updateRecord.bind(null, 'users'),
+    remove: removeRecord.bind(null, 'users'),
+  } as unknown as EntityActions<AnyRecord>
+
+  return (
+    // maxWidth={false}: the page's width bound is RootLayout's pageInsetX/pageInsetY
+    // inset, not MUI's own default "lg" cap — see [...module]/page.tsx's note. The
+    // form itself still self-limits via layout.formMaxWidth regardless.
+    <Container maxWidth={false} sx={{ py: 4 }}>
+      <Stack spacing={3}>
+        <Typography variant="h4" component="h1">
+          <T text={id === 'new' ? 'New user' : 'Edit user'} />
+        </Typography>
+        <EntityViewServer descriptor={userFormDescriptor} actions={actions} recordId={id} />
+      </Stack>
+    </Container>
+  )
+}

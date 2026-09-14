@@ -1,0 +1,15 @@
+# crminheritdemo module — French. Locale = this file's basename ('fr').
+# Labels for the fields this module's `extends` operations add to crm's own
+# /crm/list and /crm/:id (see CrmInheritViews.ts) — crm's OWN catalog never
+# needs these, since crm's views file has no idea this extension exists.
+msgid ""
+msgstr ""
+"Project-Id-Version: crminheritdemo 0.0.1\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Date"
+msgstr "Date"
+
+msgid "Comment"
+msgstr "Commentaire"

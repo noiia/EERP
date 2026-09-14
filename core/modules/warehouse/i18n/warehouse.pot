@@ -1,0 +1,8 @@
+# Warehouse module — translation template. Copy to <locale>.po per language.
+msgid ""
+msgstr ""
+"Project-Id-Version: warehouse 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Name"
+msgstr ""
