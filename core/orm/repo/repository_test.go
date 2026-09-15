@@ -248,6 +248,26 @@ func TestQuery_ReturnsSelectBuilder(t *testing.T) {
 	assertSQL(t, c.sql, "status = $1")
 }
 
+func TestUpdateQuery_ReturnsUpdateBuilder(t *testing.T) {
+	t.Parallel()
+
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+	id := uuid.New()
+
+	// Builder should be usable — calling Exec must hit the executor. Only ONE
+	// column set, unlike Update()'s always-full-row replace.
+	r.UpdateQuery().
+		Set("status", "shipped").
+		Where(query.NewCondition("id = $1", id)).
+		Exec(context.Background(), ex)
+
+	c := ex.last()
+	assertSQL(t, c.sql, "UPDATE order_entity SET status = $1")
+	assertSQL(t, c.sql, "WHERE id = $2")
+	assertNotSQL(t, c.sql, "customer_id")
+}
+
 // ── Create ────────────────────────────────────────────────────────────────────
 
 func TestCreate_BuildsInsertSQL(t *testing.T) {
@@ -273,6 +293,81 @@ func TestCreate_PropagatesError(t *testing.T) {
 	r := newRepo(t, ex)
 
 	_, err := r.Create(context.Background(), orderEntity{})
+	if !errors.Is(err, boom) {
+		t.Errorf("expected boom, got %v", err)
+	}
+}
+
+// ── Upsert ────────────────────────────────────────────────────────────────────
+
+func TestUpsert_BuildsInsertOnConflictDoUpdateSQL(t *testing.T) {
+	t.Parallel()
+
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+	entity := orderEntity{Status: "pending", CustomerID: 5}
+
+	r.Upsert(context.Background(), entity, //nolint:errcheck
+		[]string{"customer_id"}, "status = EXCLUDED.status, updated_at = now()")
+
+	c := ex.last()
+	assertSQL(t, c.sql, "INSERT INTO order_entity")
+	assertSQL(t, c.sql, "ON CONFLICT (customer_id)")
+	assertSQL(t, c.sql, "DO UPDATE SET status = EXCLUDED.status, updated_at = now()")
+	assertSQL(t, c.sql, "RETURNING *")
+}
+
+func TestUpsert_MultiColumnConflictTarget_JoinedWithComma(t *testing.T) {
+	t.Parallel()
+
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+
+	r.Upsert(context.Background(), orderEntity{}, //nolint:errcheck
+		[]string{"customer_id", "status"}, "updated_at = now()")
+
+	c := ex.last()
+	assertSQL(t, c.sql, "ON CONFLICT (customer_id, status)")
+}
+
+func TestUpsert_DoNothingConflict_ReReadsByConflictColumns(t *testing.T) {
+	t.Parallel()
+
+	// Query defaults to emptyRows for every call — simulates an
+	// ON CONFLICT DO NOTHING that skipped an existing row (no RETURNING
+	// output), so Upsert falls back to a second, re-read query.
+	ex := &mockExecutor{}
+	r := newRepo(t, ex)
+	entity := orderEntity{Status: "pending", CustomerID: 5}
+
+	_, err := r.Upsert(context.Background(), entity, []string{"customer_id"}, "")
+
+	if len(ex.calls) != 2 {
+		t.Fatalf("expected 2 Query calls (insert + re-read), got %d: %+v", len(ex.calls), ex.calls)
+	}
+	assertSQL(t, ex.calls[0].sql, "DO NOTHING")
+	assertSQL(t, ex.calls[1].sql, "SELECT")
+	assertSQL(t, ex.calls[1].sql, "FROM order_entity")
+	assertSQL(t, ex.calls[1].sql, "customer_id = $1")
+	assertSQL(t, ex.calls[1].sql, "deleted_at IS NULL")
+	if len(ex.calls[1].args) != 1 || ex.calls[1].args[0] != 5 {
+		t.Errorf("expected re-read to filter by customer_id=5, got args %v", ex.calls[1].args)
+	}
+	// The re-read itself found nothing either (emptyRows) — Upsert surfaces
+	// that as an error rather than silently returning a zero entity.
+	if err == nil {
+		t.Error("expected an error when the re-read also finds nothing")
+	}
+}
+
+func TestUpsert_PropagatesError(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("constraint violation")
+	ex := &mockExecutor{queryErr: boom}
+	r := newRepo(t, ex)
+
+	_, err := r.Upsert(context.Background(), orderEntity{}, []string{"customer_id"}, "updated_at = now()")
 	if !errors.Is(err, boom) {
 		t.Errorf("expected boom, got %v", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -31,46 +32,55 @@ var (
 // "admin" role granting the "*:*:*" wildcard permission, so it can log in AND pass the
 // permission middleware on every data route. Idempotent and DEV ONLY — never enable
 // seed_dev_admin in production.
+//
+// Every insert below goes through Repository.Upsert with an explicit, fixed id and an
+// empty setFragment ("" = ON CONFLICT ... DO NOTHING) — the same idempotent,
+// deterministic-id shape SeedDefaultRoles uses per-tenant, just with hardcoded ids
+// since this always seeds the SAME dev tenant. role_permissions is the one exception:
+// its PK is the composite (role_id, permission_id), which orm.Repository[T] — built
+// around a single surrogate uuid PK — has no representation for, so it stays raw SQL.
 func SeedDevAdmin(ctx context.Context, db *orm.DB) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(DevAdminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("seed dev admin: hash password: %w", err)
 	}
 
-	statements := []struct {
-		sql  string
-		args []any
-	}{
-		{
-			`INSERT INTO users (id, tenant_id, email, password_hash, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{devUserID, DevTenantID, DevAdminEmail, string(hash)},
-		},
-		{
-			`INSERT INTO roles (id, tenant_id, name, description, created_at, updated_at)
-			 VALUES ($1, $2, 'admin', 'Development administrator', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{devRoleID, DevTenantID},
-		},
-		{
-			`INSERT INTO permissions (id, code, description, module, created_at, updated_at)
-			 VALUES ($1, '*:*:*', 'Full access (dev admin)', '*', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{devPermID},
-		},
-		{
-			`INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-			[]any{DevTenantID, devUserID, devRoleID},
-		},
-		{
-			`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			[]any{devRoleID, devPermID},
-		},
+	users := orm.MustRepo[Users](db)
+	roles := orm.MustRepo[Roles](db)
+	perms := orm.MustRepo[Permissions](db)
+	userRoles := orm.MustRepo[UserRoles](db)
+
+	if _, err := users.Upsert(ctx,
+		Users{BaseModel: model.BaseModel{ID: devUserID}, TenantID: DevTenantID, Email: DevAdminEmail, PasswordHash: string(hash)},
+		[]string{"id"}, ""); err != nil {
+		return fmt.Errorf("seed dev admin: users: %w", err)
+	}
+	if _, err := roles.Upsert(ctx,
+		Roles{BaseModel: model.BaseModel{ID: devRoleID}, TenantID: DevTenantID, Name: "admin", Description: "Development administrator"},
+		[]string{"id"}, ""); err != nil {
+		return fmt.Errorf("seed dev admin: roles: %w", err)
+	}
+	if _, err := perms.Upsert(ctx,
+		Permissions{BaseModel: model.BaseModel{ID: devPermID}, Code: "*:*:*", Description: "Full access (dev admin)", Module: "*"},
+		[]string{"id"}, ""); err != nil {
+		return fmt.Errorf("seed dev admin: permissions: %w", err)
+	}
+	// (user_id, role_id) is the auth module's own hand-written unique index
+	// (struct tags can't express one — CLAUDE.md's ORM section) — the id
+	// column itself is left to the DB default since nothing else needs to
+	// name this row by a fixed id.
+	if _, err := userRoles.Upsert(ctx,
+		UserRoles{TenantID: &DevTenantID, UserID: devUserID, RoleID: devRoleID},
+		[]string{"user_id", "role_id"}, ""); err != nil {
+		return fmt.Errorf("seed dev admin: user_roles: %w", err)
+	}
+	if _, err := db.Exec(ctx,
+		`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		devRoleID, devPermID,
+	); err != nil {
+		return fmt.Errorf("seed dev admin: role_permissions: %w", err)
 	}
 
-	for _, s := range statements {
-		if _, err := db.Exec(ctx, s.sql, s.args...); err != nil {
-			return fmt.Errorf("seed dev admin: %w", err)
-		}
-	}
 	return SeedDefaultRoles(ctx, db, DevTenantID)
 }
 
@@ -89,16 +99,12 @@ var adminGrantedRightNames = []string{"read", "write", "delete"}
 
 // seedUUID derives a stable, reproducible v5 UUID from a tenant + a fixed
 // label, so re-running SeedDefaultRoles for the same tenant is idempotent via
-// plain `ON CONFLICT (id) DO NOTHING` — the same idempotency shape
-// SeedDevAdmin's own fixed IDs already rely on, just parameterized per tenant
-// instead of hardcoded, since this runs for any tenant, not only the dev one.
+// plain `ON CONFLICT (id) DO NOTHING` (Repository.Upsert with an empty
+// setFragment) — the same idempotency shape SeedDevAdmin's own fixed IDs
+// already rely on, just parameterized per tenant instead of hardcoded, since
+// this runs for any tenant, not only the dev one.
 func seedUUID(tenantID uuid.UUID, label string) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(tenantID.String()+":"+label))
-}
-
-type seedStatement struct {
-	sql  string
-	args []any
 }
 
 // SeedDefaultRoles idempotently seeds a tenant's account_role_types catalog
@@ -122,89 +128,92 @@ type seedStatement struct {
 // brand-new Admin role's own Views notebook table already lists everything
 // instead of starting blank.
 //
+// Every insert goes through Repository.Upsert(id, "") — deterministic
+// per-(tenant, entity[, right]) ids (seedUUID) keep it idempotent, same
+// shape SeedDevAdmin uses. role_permissions is the one exception — see
+// SeedDevAdmin's own doc comment on why its composite PK stays raw SQL.
+//
 // Not currently called from any production tenant-provisioning flow — none
 // exists yet in this codebase (tenants aren't self-serve today). SeedDevAdmin
 // calls this for the dev tenant so the feature is exercised end-to-end in
 // dev; a future real "create tenant" flow should call this too.
 func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error {
+	roles := orm.MustRepo[Roles](db)
+	perms := orm.MustRepo[Permissions](db)
+	roleTypes := orm.MustRepo[AccountRoleTypes](db)
+	viewPerms := orm.MustRepo[RoleViewPermission](db)
+	viewPermRights := orm.MustRepo[RoleViewPermissionRight](db)
+
 	adminRoleID := seedUUID(tenantID, "role:admin")
 	viewerRoleID := seedUUID(tenantID, "role:viewer")
 	denyRoleID := seedUUID(tenantID, "role:deny")
 	adminPermID := seedUUID(tenantID, "permission:*:*:*")
 	viewerPermID := seedUUID(tenantID, "permission:*:*:read")
 
-	statements := []seedStatement{
-		{
-			`INSERT INTO roles (id, tenant_id, name, description, technical_name, created_at, updated_at)
-			 VALUES ($1, $2, 'Admin', 'Full access to every model.', 'admin', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{adminRoleID, tenantID},
-		},
-		{
-			`INSERT INTO roles (id, tenant_id, name, description, technical_name, created_at, updated_at)
-			 VALUES ($1, $2, 'Viewer', 'Read-only access to every model.', 'viewer', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{viewerRoleID, tenantID},
-		},
-		{
-			`INSERT INTO roles (id, tenant_id, name, description, technical_name, created_at, updated_at)
-			 VALUES ($1, $2, 'Deny', 'No access to anything.', 'deny', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{denyRoleID, tenantID},
-		},
-		{
-			`INSERT INTO permissions (id, code, description, module, created_at, updated_at)
-			 VALUES ($1, '*:*:*', 'Full access (default Admin role)', '*', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{adminPermID},
-		},
-		{
-			`INSERT INTO permissions (id, code, description, module, created_at, updated_at)
-			 VALUES ($1, '*:*:read', 'Read-only access (default Viewer role)', '*', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{viewerPermID},
-		},
-		{
-			`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			[]any{adminRoleID, adminPermID},
-		},
-		{
-			`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			[]any{viewerRoleID, viewerPermID},
-		},
+	for _, r := range []Roles{
+		{BaseModel: model.BaseModel{ID: adminRoleID}, TenantID: tenantID, Name: "Admin", Description: "Full access to every model.", TechnicalName: ptr("admin")},
+		{BaseModel: model.BaseModel{ID: viewerRoleID}, TenantID: tenantID, Name: "Viewer", Description: "Read-only access to every model.", TechnicalName: ptr("viewer")},
+		{BaseModel: model.BaseModel{ID: denyRoleID}, TenantID: tenantID, Name: "Deny", Description: "No access to anything.", TechnicalName: ptr("deny")},
+	} {
+		if _, err := roles.Upsert(ctx, r, []string{"id"}, ""); err != nil {
+			return fmt.Errorf("seed default roles: roles: %w", err)
+		}
 	}
+
+	for _, p := range []Permissions{
+		{BaseModel: model.BaseModel{ID: adminPermID}, Code: "*:*:*", Description: "Full access (default Admin role)", Module: "*"},
+		{BaseModel: model.BaseModel{ID: viewerPermID}, Code: "*:*:read", Description: "Read-only access (default Viewer role)", Module: "*"},
+	} {
+		if _, err := perms.Upsert(ctx, p, []string{"id"}, ""); err != nil {
+			return fmt.Errorf("seed default roles: permissions: %w", err)
+		}
+	}
+
+	for _, rp := range []struct{ roleID, permID uuid.UUID }{
+		{adminRoleID, adminPermID},
+		{viewerRoleID, viewerPermID},
+	} {
+		if _, err := db.Exec(ctx,
+			`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			rp.roleID, rp.permID,
+		); err != nil {
+			return fmt.Errorf("seed default roles: role_permissions: %w", err)
+		}
+	}
+
 	for _, name := range accountRoleTypeNames {
-		statements = append(statements, seedStatement{
-			`INSERT INTO account_role_types (id, tenant_id, name, created_at, updated_at)
-			 VALUES ($1, $2, $3, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{seedUUID(tenantID, "role_type:"+name), tenantID, name},
-		})
+		rt := AccountRoleTypes{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role_type:"+name)}, TenantID: tenantID, Name: name}
+		if _, err := roleTypes.Upsert(ctx, rt, []string{"id"}, ""); err != nil {
+			return fmt.Errorf("seed default roles: account_role_types: %w", err)
+		}
 	}
 
 	// Give the Admin role every right on every entity currently registered on
 	// the generic CRUD surface — same catalog GetViewCatalog/the frontend's
 	// `entity` many2one draws from, read in-process (no HTTP round-trip).
-	// Deterministic per-(tenant, entity[, right]) ids keep this idempotent,
-	// same shape as every other statement above.
+	// Deterministic per-(tenant, entity[, right]) ids keep this idempotent.
 	for _, entity := range orm.ExposedRoutePrefixes() {
 		rvpID := seedUUID(tenantID, "role_view_permission:admin:"+entity)
-		statements = append(statements, seedStatement{
-			`INSERT INTO role_view_permission (id, tenant_id, role_id, entity, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-			[]any{rvpID, tenantID, adminRoleID, entity},
-		})
+		rvp := RoleViewPermission{BaseModel: model.BaseModel{ID: rvpID}, TenantID: tenantID, RoleID: adminRoleID, Entity: entity}
+		if _, err := viewPerms.Upsert(ctx, rvp, []string{"id"}, ""); err != nil {
+			return fmt.Errorf("seed default roles: role_view_permission: %w", err)
+		}
 		for _, name := range adminGrantedRightNames {
-			statements = append(statements, seedStatement{
-				`INSERT INTO role_view_permission_right
-				 (id, tenant_id, role_view_permission_id, account_role_type_id, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`,
-				[]any{
-					seedUUID(tenantID, "role_view_permission_right:admin:"+entity+":"+name),
-					tenantID, rvpID, seedUUID(tenantID, "role_type:"+name),
-				},
-			})
+			right := RoleViewPermissionRight{
+				BaseModel:            model.BaseModel{ID: seedUUID(tenantID, "role_view_permission_right:admin:"+entity+":"+name)},
+				TenantID:             tenantID,
+				RoleViewPermissionID: rvpID,
+				AccountRoleTypeID:    seedUUID(tenantID, "role_type:"+name),
+			}
+			if _, err := viewPermRights.Upsert(ctx, right, []string{"id"}, ""); err != nil {
+				return fmt.Errorf("seed default roles: role_view_permission_right: %w", err)
+			}
 		}
 	}
 
-	for _, s := range statements {
-		if _, err := db.Exec(ctx, s.sql, s.args...); err != nil {
-			return fmt.Errorf("seed default roles: %w", err)
-		}
-	}
 	return nil
 }
+
+// ptr returns a pointer to a copy of v — Roles.TechnicalName is *string, and
+// a string literal has no address of its own to take inline.
+func ptr[T any](v T) *T { return &v }

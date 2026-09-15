@@ -9,7 +9,10 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"time"
 
 	"core/orm/internal/cache"
@@ -18,6 +21,7 @@ import (
 	"core/orm/query"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // Repository is a generic CRUD repository for any T that embeds model.BaseModel.
@@ -188,6 +192,21 @@ func (r *Repository[T]) Query() query.SelectBuilder[T] {
 	return query.Select[T](r.meta)
 }
 
+// UpdateQuery returns an UpdateBuilder pre-configured for T — the WRITE-side
+// counterpart to Query() — for a partial or conditionally-scoped update
+// Update()'s full-row-replace-by-PK contract doesn't fit: bumping only SOME
+// columns, or matching on something other than the primary key.
+//
+//	n, err := users.UpdateQuery().
+//	    Set("preferred_locale", locale).
+//	    Set("updated_at", time.Now()).
+//	    Where(orm.Cond("id = $1", userID)).
+//	    Where(orm.Cond("deleted_at IS NULL")).
+//	    Exec(ctx, db)
+func (r *Repository[T]) UpdateQuery() query.UpdateBuilder[T] {
+	return query.Update[T](r.meta)
+}
+
 // ── Write ─────────────────────────────────────────────────────────────────────
 
 // Create inserts a new entity and returns it with server-set values populated
@@ -200,6 +219,72 @@ func (r *Repository[T]) Create(ctx context.Context, entity T) (T, error) {
 	if err != nil {
 		var zero T
 		return zero, fmt.Errorf("repo: Create: %w", err)
+	}
+	return result, nil
+}
+
+// Upsert inserts entity, or — on a conflict against conflictColumns — applies
+// setFragment instead of failing. conflictColumns must be backed by a real
+// unique index or constraint (struct tags have no unique-constraint support —
+// a module's own Migrate() hook adds one by hand, e.g. a natural-key table
+// like "one row per (tenant, user)" that has no meaningful surrogate-id
+// lookup for Update to key off).
+//
+// setFragment is the same raw "col = EXCLUDED.col, other = now()" fragment
+// InsertBuilder.DoUpdate already takes — deliberately NOT auto-derived from
+// every writable column the way Update() replaces the whole row: a natural-key
+// upsert commonly writes only SOME columns (e.g. bumping a "connected" flag)
+// and must leave every other column — including one set by an unrelated
+// concurrent write — untouched, which only an explicit fragment can express.
+// EXCLUDED refers to the row that would have been inserted; a column left out
+// of entity's non-zero writable fields is still available on EXCLUDED as long
+// as it isn't also one of the zero-value audit timestamps InsertBuilder drops
+// (see insertableColumns' timestampCols filter).
+//
+// setFragment == "" means DO NOTHING on conflict — idempotent, deterministic-
+// id seeding (e.g. internal/auth/seed.go's INSERT ... ON CONFLICT (id) DO
+// NOTHING statements) rather than an update. Postgres's own RETURNING never
+// produces a row for a skipped DO NOTHING conflict, so that case re-reads the
+// existing row by conflictColumns instead of surfacing a spurious not-found.
+//
+// Returns the resulting row (inserted, updated, or — DO NOTHING only —
+// already-existing) via RETURNING *.
+//
+//	updated, err := presence.Upsert(ctx, row,
+//	    []string{"tenant_id", "user_id"},
+//	    "connected = EXCLUDED.connected, last_seen = now(), updated_at = now()")
+//
+//	role, err := roles.Upsert(ctx, Roles{BaseModel: model.BaseModel{ID: fixedID}, ...},
+//	    []string{"id"}, "") // insert if absent; read back unchanged if not
+func (r *Repository[T]) Upsert(ctx context.Context, entity T, conflictColumns []string, setFragment string) (T, error) {
+	result, err := query.Insert[T](r.meta, entity).
+		OnConflict(strings.Join(conflictColumns, ", ")).
+		DoUpdate(setFragment).
+		Returning("*").
+		One(ctx, r.db)
+	if err != nil {
+		if setFragment == "" && errors.Is(err, pgx.ErrNoRows) {
+			return r.findByConflictColumns(ctx, conflictColumns, entity)
+		}
+		var zero T
+		return zero, fmt.Errorf("repo: Upsert: %w", err)
+	}
+	return result, nil
+}
+
+// findByConflictColumns re-reads the row Upsert's DO NOTHING just left
+// untouched, matching on conflictColumns' values from entity.
+func (r *Repository[T]) findByConflictColumns(ctx context.Context, conflictColumns []string, entity T) (T, error) {
+	rv := reflect.ValueOf(entity)
+	conds := make([]query.Condition, 0, len(conflictColumns))
+	for _, col := range conflictColumns {
+		if fidx := r.meta.ColumnIndex(col); fidx >= 0 {
+			conds = append(conds, query.NewCondition(col+" = $1", r.meta.Fields[fidx].FieldValue(rv).Interface()))
+		}
+	}
+	result, err := r.FindOne(ctx, conds...)
+	if err != nil {
+		return result, fmt.Errorf("repo: Upsert: re-read after DO NOTHING conflict: %w", err)
 	}
 	return result, nil
 }

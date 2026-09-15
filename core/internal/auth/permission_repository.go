@@ -63,22 +63,19 @@ func (r *PermissionRepository) ForRoles(ctx context.Context, roles []string) ([]
 		return nil, nil
 	}
 
-	placeholders := make([]string, len(roles))
-	args := make([]any, len(roles))
-	for i, role := range roles {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = role
-	}
-
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+	// r.name = ANY($1) — one array parameter, not a hand-built "IN
+	// ($1,$2,…)" placeholder list (see orm.In, the builder-tier version of
+	// the same idiom; this query's JOIN/DISTINCT projection doesn't fit a
+	// single-struct SelectBuilder, so it stays raw SQL).
+	rows, err := r.db.Query(ctx, `
 		SELECT DISTINCT p.code
 		FROM permissions p
 		JOIN role_permissions rp ON rp.permission_id = p.id
 		JOIN roles r ON r.id = rp.role_id
-		WHERE r.name IN (%s)
+		WHERE r.name = ANY($1)
 		  AND r.deleted_at IS NULL
 		  AND p.deleted_at IS NULL
-	`, strings.Join(placeholders, ", ")), args...)
+	`, roles)
 	if err != nil {
 		return nil, fmt.Errorf("permission: for roles: query: %w", err)
 	}

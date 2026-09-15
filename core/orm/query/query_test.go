@@ -346,6 +346,43 @@ func TestInsert_ToSQL_ZeroTimestamps_LeftToDBDefault(t *testing.T) {
 	}
 }
 
+func TestInsert_ToSQL_ZeroPK_LeftToDBDefault(t *testing.T) {
+	t.Parallel()
+
+	// A zero PK (the common case — every Create() caller today) still relies
+	// on the schema's DEFAULT gen_random_uuid()/serial, same reasoning as the
+	// zero-timestamp case above.
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, args := query.Insert[lineItem](meta, row).ToSQL()
+
+	assertNotContains(t, sql, "(id, ")
+	if len(args) != 3 { // order_id, product, quantity — not id
+		t.Errorf("expected 3 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestInsert_ToSQL_ExplicitPK_Kept(t *testing.T) {
+	t.Parallel()
+
+	// A caller-chosen PK must insert rather than being silently dropped —
+	// idempotent, deterministic-id seeding (ON CONFLICT (id) DO NOTHING,
+	// internal/auth/seed.go) has no other way to name its own id.
+	meta := mustMeta[lineItem](t)
+	row := lineItem{ID: 42, OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, args := query.Insert[lineItem](meta, row).ToSQL()
+
+	assertContains(t, sql, "(id, order_id, product, quantity)")
+	if len(args) != 4 {
+		t.Errorf("expected 4 args, got %d: %v", len(args), args)
+	}
+	if args[0] != 42 {
+		t.Errorf("expected id=42 as the first arg, got %v", args[0])
+	}
+}
+
 func TestInsert_ToSQL_ExplicitTimestamps_Kept(t *testing.T) {
 	t.Parallel()
 
@@ -370,6 +407,45 @@ func TestInsert_ToSQL_Returning(t *testing.T) {
 	sql, _ := query.Insert[lineItem](meta, row).Returning("id", "order_id").ToSQL()
 
 	assertContains(t, sql, "RETURNING id, order_id")
+}
+
+func TestInsert_ToSQL_OnConflictDoUpdate(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("order_id, product").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		Returning("*").
+		ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT (order_id, product)")
+	assertContains(t, sql, "DO UPDATE SET quantity = EXCLUDED.quantity")
+	assertContains(t, sql, "RETURNING *")
+}
+
+func TestInsert_ToSQL_OnConflictNoDoUpdate_FallsBackToDoNothing(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).OnConflict("order_id, product").ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT (order_id, product) DO NOTHING")
+}
+
+func TestInsert_ToSQL_OnConflictDoNothing(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).OnConflictDoNothing().ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT DO NOTHING")
 }
 
 func TestInsert_ToSQL_BatchMultipleRows(t *testing.T) {
@@ -424,6 +500,22 @@ func TestInsert_Exec_CallsExec(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertContains(t, ex.lastSQL, "INSERT INTO")
+}
+
+func TestInsert_One_ZeroRowsReturned_WrapsPgxErrNoRows(t *testing.T) {
+	t.Parallel()
+
+	// An ON CONFLICT DO NOTHING that skips an existing row produces zero
+	// RETURNING rows — Repository.Upsert's fallback re-read relies on this
+	// wrapping pgx.ErrNoRows (not a bespoke string) to detect that case.
+	meta := mustMeta[lineItem](t)
+	ex := &mockExecutor{} // Query defaults to emptyRows
+	row := lineItem{OrderID: 1, Product: "x", Quantity: 1}
+
+	_, err := query.Insert[lineItem](meta, row).Returning("*").One(context.Background(), ex)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("expected error wrapping pgx.ErrNoRows, got: %v", err)
+	}
 }
 
 func TestInsert_NoRows_ExecIsNoop(t *testing.T) {

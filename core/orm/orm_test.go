@@ -151,6 +151,43 @@ func TestCond_MultiArg(t *testing.T) {
 	}
 }
 
+// ── In ────────────────────────────────────────────────────────────────────────
+
+func TestIn_BuildsAnyEqualsCondition(t *testing.T) {
+	ex := &mockExec{}
+	r := orm.MustRepo[invoice](ex)
+
+	r.FindAll(context.Background(), orm.In("customer_id", []int{1, 2, 3})) //nolint:errcheck
+
+	if !strings.Contains(ex.lastSQL, "customer_id = ANY($1)") {
+		t.Errorf("expected customer_id = ANY($1), got: %s", ex.lastSQL)
+	}
+	// ONE array arg, not one per value.
+	if len(ex.lastArgs) != 1 {
+		t.Fatalf("expected 1 arg (the whole slice), got %d: %v", len(ex.lastArgs), ex.lastArgs)
+	}
+	if got, ok := ex.lastArgs[0].([]int); !ok || len(got) != 3 {
+		t.Errorf("expected the []int{1,2,3} slice as the arg, got %v", ex.lastArgs[0])
+	}
+}
+
+func TestIn_ComposesWithOtherConditions(t *testing.T) {
+	ex := &mockExec{}
+	r := orm.MustRepo[invoice](ex)
+
+	r.FindAll(context.Background(), //nolint:errcheck
+		orm.Cond("amount > $1", 100),
+		orm.In("customer_id", []int{1, 2}),
+	)
+
+	if !strings.Contains(ex.lastSQL, "amount > $1") {
+		t.Errorf("expected amount > $1, got: %s", ex.lastSQL)
+	}
+	if !strings.Contains(ex.lastSQL, "customer_id = ANY($2)") {
+		t.Errorf("expected customer_id = ANY($2) (rebased after amount's arg), got: %s", ex.lastSQL)
+	}
+}
+
 // ── WithTx ────────────────────────────────────────────────────────────────────
 
 func TestWithTx_ScopesExecutorToTx(t *testing.T) {

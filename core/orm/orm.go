@@ -154,6 +154,17 @@ func Cond(sql string, args ...any) query.Condition {
 	return query.NewCondition(sql, args...)
 }
 
+// In matches col against any of values — the idiomatic Postgres way ("col =
+// ANY($1)", one array parameter pgx encodes natively) to express what SQL's
+// IN (…) does, without hand-building an "IN ($1,$2,$3,…)" placeholder list
+// per call site (core/orm/internal/crud's own generic ?in[col]= filter uses
+// this exact idiom internally).
+//
+//	roles.FindAll(ctx, orm.In("name", []string{"admin", "viewer"}))
+func In[V any](col string, values []V) query.Condition {
+	return query.NewCondition(col+" = ANY($1)", values)
+}
+
 // ── Transaction ───────────────────────────────────────────────────────────────
 
 // Transact runs fn inside a PostgreSQL transaction on db.
