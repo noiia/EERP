@@ -28,6 +28,7 @@ export interface PropertyManagement {
   address_state?: string
   address_country?: string
   floor_area?: number
+  uom_id?: string
   /** The mortgage/loan this property carries — a plain editable figure, not
    * derived from anything else. */
   loan_amount?: number
@@ -127,6 +128,10 @@ registerHeaderButtonAction({
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .map((c) => String(c.name ?? ''))
 
+    const uomRecord =
+      typeof ctx.draft.uom_id === 'string' ? await ops.get('product_uoms', ctx.draft.uom_id).catch(() => null) : null
+    const uomLabel = uomRecord ? String(uomRecord.name ?? '') : ''
+
     const parent = await ops.create('property_management_rent_receipt', {
       property_management_id: ctx.recordId,
       is_parent: true,
@@ -135,6 +140,7 @@ registerHeaderButtonAction({
       property_name: ctx.draft.name,
       property_address: addressLine,
       floor_area: ctx.draft.floor_area,
+      uom: uomLabel,
       rent_price: ctx.draft.rent_price,
       subtotal,
       tax_amount: taxAmount,
@@ -159,6 +165,7 @@ registerHeaderButtonAction({
         property_name: ctx.draft.name,
         property_address: addressLine,
         floor_area: ctx.draft.floor_area,
+        uom: uomLabel,
         rent_price: ctx.draft.rent_price,
         subtotal,
         tax_amount: taxAmount,
@@ -244,6 +251,10 @@ const formFields: ViewDescriptor['fields'] = [
     name: 'current_tenant',
     label: 'Current tenant(s)',
     type: 'relation',
+    // Blocks commit for a NEW property with no tenant picked yet — see
+    // requiredMissing's doc comment (descriptor.ts) for why this only
+    // enforces on create, not on editing an existing property down to zero.
+    required: true,
     relation: {
       entity: 'contact',
       kind: 'many2many',
@@ -252,6 +263,16 @@ const formFields: ViewDescriptor['fields'] = [
       labelField: 'name',
     },
     widgetOptions: { deferred: true },
+  },
+  {
+    name: 'uom_id',
+    label: 'Unit',
+    type: 'relation',
+    relation: {
+      entity: 'product_uoms',
+      kind: 'many2one',
+      labelField: 'name',
+    },
   },
   {
     name: 'photos',

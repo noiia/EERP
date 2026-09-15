@@ -47,6 +47,10 @@ type PropertyManagement struct {
 	// FloorArea is in the workspace's own unit (m²/sqft — free-form like
 	// warehouse.Product.Unit, this module has no opinion).
 	FloorArea float64 `db:"floor_area" json:"floor_area"`
+	// UomID: many2one -> warehouse.ProductUoms, the unit FloorArea is
+	// expressed in (m²/sqft/...). Optional — a property predating this field
+	// simply has no unit picked.
+	UomID *uuid.UUID `db:"uom_id" json:"uom_id"`
 	// LoanAmount/RentPrice are plain editable figures on the property's own
 	// form — the mortgage/loan this property carries, and the monthly rent
 	// its own "apartment" billing line (BillingLine, below) defaults to when
@@ -193,13 +197,23 @@ type PropertyManagementBillingLineTax struct {
 	SaleTaxID                       uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
 }
 
-// PropertyManagementRentReceipt is one generated rent receipt — APPEND-ONLY
-// (handler.go hand-mounts Update/Delete to always reject, a real backend
-// guarantee mirroring internal/chatter's own append-only posture, not just a
-// hidden UI control). Snapshots what the PDF needs to show at generation
-// time — same "capture at document time, don't live-join" discipline
-// sale.SaleLine/Invoice already follow, since a receipt must keep reading
-// correctly even if the property/tenants are edited afterward.
+// PropertyManagementRentReceipt is one generated rent receipt — append-ONLY,
+// never DELETED (handler.go hand-mounts RejectReceiptDelete to always reject
+// DELETE, a real backend guarantee mirroring internal/chatter's own
+// append-only posture, not just a hidden UI control) but fully EDITABLE:
+// every field, including ReceiptFile, rides the generic CRUD PUT like any
+// other entity's, so a generated receipt can be corrected after the fact.
+// Fields still snapshot what the PDF needs to show at generation time — same
+// "capture at document time, don't live-join" discipline sale.SaleLine/
+// Invoice already follow, since a receipt must keep reading correctly even
+// if the property/tenants are edited afterward; editing a receipt's own
+// fields edits THIS snapshot, it never reaches back to re-read the property.
+// A CHILD row's own "Regenerate report" header button
+// (property_management_rent_receipt_views.ts's
+// propertymanagement.regenerateReceipt) is how a NEW version is produced
+// instead — a sibling row (same ParentID) with its own fresh snapshot/PDF,
+// so every regeneration is kept side by side in the parent's own "Tenant
+// receipts" notebook table (below) rather than overwriting one in place.
 //
 // One generation click produces a PARENT row (one per property+period,
 // PropertyManagementID set, ParentID nil, no PDF of its own — TenantNames
@@ -211,8 +225,9 @@ type PropertyManagementBillingLineTax struct {
 // The property form's own rent_receipts field (property_management_views.ts,
 // inverseField: property_management_id) therefore lists PARENTS only —
 // children never match that filter, since they carry no
-// property_management_id — and a parent's own read-only form embeds its
-// children through a SECOND relation field (inverseField: parent_id).
+// property_management_id — and a parent's own form embeds its children
+// (every generated version, original and regenerated alike) through a
+// SECOND relation field (inverseField: parent_id).
 type PropertyManagementRentReceipt struct {
 	model.BaseModel
 	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
@@ -240,8 +255,13 @@ type PropertyManagementRentReceipt struct {
 	// FloorArea snapshots PropertyManagement.FloorArea at generation time —
 	// the printed report's own "Property management form content" the user
 	// asked for, beyond the address.
-	FloorArea   float64 `db:"floor_area" json:"floor_area"`
-	TenantNames string  `db:"tenant_names" json:"tenant_names"`
+	FloorArea float64 `db:"floor_area" json:"floor_area"`
+	// Uom snapshots the property's UomID label (e.g. "m²") at generation
+	// time — same "capture at document time" reasoning as PropertyName/
+	// PropertyAddress/FloorArea, and why this is text, not a FK: a receipt
+	// must keep reading correctly even if product_uoms changes later.
+	Uom         string `db:"uom" json:"uom"`
+	TenantNames string `db:"tenant_names" json:"tenant_names"`
 	// RentPrice snapshots PropertyManagement.RentPrice at generation time —
 	// the report's own headline figure (printed above the billing-lines
 	// table), same "capture at document time" reasoning as PropertyName/

@@ -8,6 +8,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
+import { useBreadcrumbStore } from './breadcrumb-store'
 import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
 import { useListNavStore } from './list-nav-store'
@@ -30,6 +31,7 @@ beforeEach(() => {
   useUiStore.setState({ viewMode: {} })
   useRecordLabelStore.setState({ id: null, label: null })
   useListNavStore.setState({ ids: {} })
+  useBreadcrumbStore.setState({ trail: [] })
 })
 
 interface Contact {
@@ -505,6 +507,43 @@ describe('EntityView', () => {
 
       fireEvent.click(next)
       expect(pushMock).toHaveBeenCalledWith('/crm/2')
+    })
+
+    it('stepping to the next record REPLACES the current record\'s breadcrumb entry instead of appending', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = {
+        ...formDescriptor,
+        viewType: 'tree',
+        formPath: '/crm/:id',
+      }
+      const { unmount } = render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[
+            { id: '1', name: 'Ada' },
+            { id: '2', name: 'Grace' },
+          ]}
+          actions={noopActions}
+        />,
+      )
+      unmount()
+
+      // Mirrors what PathBreadcrumbs (apps/shell) would already have in the
+      // trail by the time this form is on screen: the list crumb, then this
+      // record's own.
+      useBreadcrumbStore.setState({
+        trail: [
+          { label: 'CRM - List', href: '/crm/list' },
+          { label: 'Ada', href: '/crm/1' },
+        ],
+      })
+      render(<EntityView descriptor={formDescriptor} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Next record' }))
+
+      // The record-2 crumb isn't pushed here (that's PathBreadcrumbs' own
+      // pathname-watching effect, not rendered in this test) — what matters
+      // is record 1's crumb is already gone, leaving nothing for the
+      // upcoming visit() to append after but the list.
+      expect(useBreadcrumbStore.getState().trail).toEqual([{ label: 'CRM - List', href: '/crm/list' }])
     })
 
     it('renders nothing for a record reached directly, with no RelationOps to fall back to', () => {

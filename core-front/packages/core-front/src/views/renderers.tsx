@@ -29,6 +29,7 @@ import {
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import { moduleRegistry } from '../registry'
+import { useBreadcrumbStore } from './breadcrumb-store'
 import { CalendarRenderer } from './calendar-renderer'
 import { CatalogRenderer } from './catalog-renderer'
 import { ChatterPanel } from './chatter-panel'
@@ -42,6 +43,7 @@ import {
   type FieldDescriptor,
   type ViewDescriptor,
 } from './descriptor'
+import { useEntityRefreshStore } from './entity-refresh-store'
 import { ErrorAlert } from './error-alert'
 import { FormActionsMenu } from './form-actions-menu'
 import { GraphRenderer } from './graph-renderer'
@@ -259,7 +261,13 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
   const index = ids.indexOf(recordId)
   if (index === -1) return null
 
-  const goTo = (i: number) => router.push(formPath.replace(':id', ids[i]))
+  // Stepping through the list REPLACES this record's own breadcrumb entry
+  // instead of piling on a new one per step — see breadcrumb-store.ts's
+  // dropLast doc comment.
+  const goTo = (i: number) => {
+    useBreadcrumbStore.getState().dropLast()
+    router.push(formPath.replace(':id', ids[i]))
+  }
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
@@ -404,9 +412,23 @@ function FormRenderer<T extends HasId>({
               ...pending.toLink.map((related) =>
                 relationOps.create(via, { [cols.own]: saved.id, [cols.related]: related.id }),
               ),
-            ]).catch(() => {
-              // Swallowed — see the comment above.
-            })
+            ])
+              .catch(() => {
+                // Swallowed — see the comment above.
+              })
+              .finally(() => {
+                // The reconcile above (`seed(saved)`) just wiped this field's
+                // staged diff from the draft — Go's response has no column
+                // for a virtual m2m field, so the widget's `value` goes back
+                // to `undefined`/empty pending. Without this, RelationTagsWidget
+                // would keep showing its OWN stale `links` (loaded once at
+                // mount, never re-fetched since recordId hasn't changed) —
+                // e.g. a just-removed tag silently reappearing. Bumping `via`
+                // (the junction entity) makes any mounted tags widget for
+                // this field re-fetch and show the truth, whatever the flush
+                // above actually landed (even on partial failure).
+                useEntityRefreshStore.getState().bump(via)
+              })
           }
         }
         lastPersistedRef.current = saved

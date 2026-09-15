@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import mod from './warehouse_views'
 
 describe('warehouse FrontModule', () => {
-  it('registers the expected routes: one dashboard, two list/form pairs', () => {
+  it('registers the expected routes: one dashboard, three list/form pairs', () => {
     expect(mod.name).toBe('warehouse')
     expect(mod.routes.map((r) => r.path)).toEqual([
       '/warehouse',
@@ -10,6 +10,8 @@ describe('warehouse FrontModule', () => {
       '/warehouse/products/:id',
       '/warehouse/variants/list',
       '/warehouse/variants/:id',
+      '/warehouse/uoms/list',
+      '/warehouse/uoms/:id',
     ])
   })
 
@@ -35,13 +37,29 @@ describe('warehouse FrontModule', () => {
     expect(productField?.required).toBe(true)
   })
 
-  it('exactly two tree (list) views exist, over distinct entities — one dashboard tile each', () => {
+  it('exactly three tree (list) views exist, over distinct entities — one dashboard tile each', () => {
     // The dashboard itself names no tiles: apps/shell/app/[...module]/resolve.ts's
     // dashboardListViews rolls up every 'tree' viewType route this module owns
     // (ModuleRegistry.listViews) into one card each — so this precondition is
-    // what actually produces the Product / Product Variant tiles.
+    // what actually produces the Product / Product Variant / Unit tiles.
     const treeRoutes = mod.routes.filter((r) => r.descriptor.viewType === 'tree')
-    expect(treeRoutes.map((r) => r.path)).toEqual(['/warehouse/products/list', '/warehouse/variants/list'])
-    expect(treeRoutes.map((r) => r.descriptor.entity)).toEqual(['product', 'product_variant'])
+    expect(treeRoutes.map((r) => r.path)).toEqual([
+      '/warehouse/products/list',
+      '/warehouse/variants/list',
+      '/warehouse/uoms/list',
+    ])
+    expect(treeRoutes.map((r) => r.descriptor.entity)).toEqual(['product', 'product_variant', 'product_uoms'])
+  })
+
+  it('uom routes target the product_uoms entity, name and type required', () => {
+    const uomRoutes = mod.routes.filter((r) => r.path.startsWith('/warehouse/uoms'))
+    for (const route of uomRoutes) {
+      expect(route.descriptor.entity).toBe('product_uoms')
+    }
+    const formRoute = mod.routes.find((r) => r.path === '/warehouse/uoms/:id')!
+    expect(formRoute.descriptor.fields.find((f) => f.name === 'name')?.required).toBe(true)
+    const typeField = formRoute.descriptor.fields.find((f) => f.name === 'type')
+    expect(typeField?.required).toBe(true)
+    expect(typeField?.selection?.options).toEqual(['piece', 'length', 'weight', 'volume', 'surface', 'custom'])
   })
 })

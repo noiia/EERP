@@ -1,6 +1,9 @@
 package warehouse
 
 import (
+	"context"
+	"fmt"
+
 	"core/internal/module"
 	"core/orm"
 	"core/orm/model"
@@ -73,6 +76,20 @@ type ProductVariant struct {
 	TaxRate *float64 `db:"tax_rate" json:"tax_rate"`
 }
 
+// ProductUoms is the unit-of-measure catalog other modules' many2one fields
+// pick from (e.g. propertymanagement.PropertyManagement.UomID, for
+// FloorArea). Type is a closed set (see product_uoms_views.ts's `selection`)
+// a picker filters on: "piece", "length", "weight", "volume", "surface", or
+// "custom" for anything a tenant defines itself. Every tenant starts with
+// defaultUoms already seeded (seedDefaultUoms, below) rather than an empty
+// table.
+type ProductUoms struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name     string    `db:"name" json:"name"`
+	Type     string    `db:"type" json:"type"`
+}
+
 type warehouseModule struct{}
 
 func (m *warehouseModule) Name() string { return "warehouse" }
@@ -81,5 +98,111 @@ func (m *warehouseModule) Register() error {
 	if err := orm.Register[Product](); err != nil {
 		return err
 	}
-	return orm.Register[ProductVariant]()
+	if err := orm.Register[ProductVariant](); err != nil {
+		return err
+	}
+	return orm.Register[ProductUoms]()
+}
+
+// defaultUoms is the starter catalog every tenant is seeded with — enough of
+// the metric and imperial systems to cover piece/length/weight/volume/
+// surface out of the box (e.g. propertymanagement's FloorArea unit picker),
+// so a fresh product_uoms table isn't empty. Not exhaustive — a tenant can
+// always add its own via product_uoms' own quick-create wizard
+// (product_uoms_views.ts, whose `type` options this list must keep matching).
+var defaultUoms = []struct{ name, kind string }{
+	{"Unit", "piece"},
+
+	{"Meter (m)", "length"},
+	{"Centimeter (cm)", "length"},
+	{"Millimeter (mm)", "length"},
+	{"Kilometer (km)", "length"},
+	{"Foot (ft)", "length"},
+	{"Inch (in)", "length"},
+	{"Yard (yd)", "length"},
+	{"Mile (mi)", "length"},
+
+	{"Kilogram (kg)", "weight"},
+	{"Gram (g)", "weight"},
+	{"Tonne (t)", "weight"},
+	{"Pound (lb)", "weight"},
+	{"Ounce (oz)", "weight"},
+
+	{"Liter (L)", "volume"},
+	{"Milliliter (mL)", "volume"},
+	{"Cubic meter (m³)", "volume"},
+	{"Gallon (gal)", "volume"},
+	{"Fluid ounce (fl oz)", "volume"},
+
+	{"Square meter (m²)", "surface"},
+	{"Square centimeter (cm²)", "surface"},
+	{"Hectare (ha)", "surface"},
+	{"Square foot (sqft)", "surface"},
+	{"Acre (ac)", "surface"},
+}
+
+// seedUUID derives a stable, reproducible v5 UUID from a tenant + a fixed
+// label, so re-seeding the same tenant is idempotent via plain
+// Repository.Upsert(id, "") — ON CONFLICT (id) DO NOTHING. Mirrors
+// core/internal/auth/seed.go's own helper of the same name and shape,
+// duplicated rather than imported: auth's is unexported, and this needs no
+// other symbol from that package.
+func seedUUID(tenantID uuid.UUID, label string) uuid.UUID {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(tenantID.String()+":"+label))
+}
+
+// seedDefaultUoms idempotently seeds defaultUoms for every tenant that
+// already has at least one user — this codebase has no tenants table to
+// enumerate directly, so "every distinct tenant_id on a table guaranteed to
+// have one row per real tenant" is the same idiom
+// core/internal/company.Repository.BackfillCompanyID already uses (raw SQL:
+// table is a fixed constant here, never user input).
+//
+// ponytail: a tenant created AFTER this Migrate() runs won't be seeded until
+// the next full boot — there's no self-serve tenant-provisioning flow in
+// this codebase yet to hook into (the same accepted gap
+// core/internal/auth/seed.go's SeedDefaultRoles doc comment already notes).
+// Upgrade path: call seedDefaultUoms from whatever "create tenant" flow
+// eventually ships.
+func seedDefaultUoms(ctx context.Context, db *orm.DB) error {
+	rows, err := db.Query(ctx, `SELECT DISTINCT tenant_id FROM users`)
+	if err != nil {
+		return fmt.Errorf("warehouse: find tenants to seed default uoms: %w", err)
+	}
+	var tenantIDs []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("warehouse: scan tenant id: %w", err)
+		}
+		tenantIDs = append(tenantIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("warehouse: iterate tenants: %w", err)
+	}
+
+	uoms := orm.MustRepo[ProductUoms](db)
+	for _, tenantID := range tenantIDs {
+		for _, u := range defaultUoms {
+			row := ProductUoms{
+				BaseModel: model.BaseModel{ID: seedUUID(tenantID, "product_uoms:"+u.name)},
+				TenantID:  tenantID,
+				Name:      u.name,
+				Type:      u.kind,
+			}
+			if _, err := uoms.Upsert(ctx, row, []string{"id"}, ""); err != nil {
+				return fmt.Errorf("warehouse: seed default uom %q: %w", u.name, err)
+			}
+		}
+	}
+	return nil
+}
+
+// Migrate implements module.Migrator — called once at boot, after Register()
+// and the struct-derived table auto-migration, same as any other module's DDL
+// step (core/internal/module/go_module.go's loadGoModule).
+func (m *warehouseModule) Migrate(ctx context.Context, db *orm.DB) error {
+	return seedDefaultUoms(ctx, db)
 }

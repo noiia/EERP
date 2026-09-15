@@ -597,22 +597,44 @@ export function isFieldVisible(
  * is unset — among fields that are currently VISIBLE (isFieldVisible). A
  * hidden field never blocks: the user has no way to fill in what they can't
  * see, so a required condition on an invisible field is inert by design
- * (mirrors Odoo). Virtual relations (o2m/m2m) are skipped — they have no
- * column on this record, so "required" has no meaning for them. Used by the
- * form store to block commit.
+ * (mirrors Odoo). One2many and eager (non-deferred) many2many fields are
+ * skipped — they write immediately on interaction and carry nothing in the
+ * draft to check. A DEFERRED many2many (relation-widgets.tsx's
+ * `widgetOptions.deferred`) is the one virtual-relation case checkable here.
+ * For a brand-new record (`draft.id == null`) its staged diff (duck-typed
+ * below to avoid importing the widget layer from the descriptor layer) is
+ * complete truth on its own. For an EXISTING record, the pre-existing links
+ * live only in the widget's own resolved state, never surfaced to the draft
+ * — `hasDeferredLinks`, when given, is consulted instead (the form store's
+ * commit() wires it to required-relation-store.ts's live widget-reported
+ * signal); `undefined` (no report registered — hidden field, RelationOps not
+ * mounted, or a race with the widget's own async fetch) fails OPEN rather
+ * than risk blocking a valid save. Omitting the callback entirely (e.g. in a
+ * unit test) reproduces the old new-record-only behavior. Used by the form
+ * store to block commit.
  */
 export function requiredMissing<T>(
   descriptor: ViewDescriptor<T>,
   draft: Record<string, unknown>,
+  hasDeferredLinks?: (fieldName: string) => boolean | undefined,
 ): string[] {
   const missing: string[] = []
   for (const field of descriptor.fields) {
-    if (isVirtualRelation(field)) continue
     if (!isFieldVisible(field, draft)) continue
     const required =
       field.required === true ||
       (field.states?.required ? evaluateCondition(field.states.required, draft) : false)
     if (!required) continue
+    if (isVirtualRelation(field)) {
+      if (field.relation?.kind !== 'many2many' || field.widgetOptions?.deferred !== true) continue
+      if (draft.id == null) {
+        const pending = draft[field.name] as { toLink?: unknown[] } | undefined
+        if (!pending?.toLink?.length) missing.push(field.name)
+        continue
+      }
+      if (hasDeferredLinks?.(field.name) === false) missing.push(field.name)
+      continue
+    }
     if (isUnset(draft[field.name])) missing.push(field.name)
   }
   return missing

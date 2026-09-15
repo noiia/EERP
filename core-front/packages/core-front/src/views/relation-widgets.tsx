@@ -27,6 +27,7 @@ import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { LayoutForm } from './layout-renderer'
 import { useNumberFormat } from './format-store'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
+import { useHasLinksStore } from './required-relation-store'
 import { createFormStore, useFormDraft, useFormError } from './stores'
 import { layout, tabularNums } from './tokens'
 import type { WidgetProps } from './widgets'
@@ -135,15 +136,22 @@ function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
  * out of layout flow entirely (not just invisible) so the tag is exactly as
  * wide as its text. On hover/keyboard focus: the label makes room on the
  * right (padding transition) while the cross fades in over that space —
- * activating it unlinks (m2o -> null, m2m -> junction row removed).
+ * activating it unlinks (m2o -> null, m2m -> junction row removed). Clicking
+ * anywhere else on the tag navigates to the linked record's own form
+ * (`onNavigate`, omitted when the target entity has no registered form
+ * route) — MUI's Chip wires its delete icon's click with its own
+ * `stopPropagation` before the icon click ever reaches the root, so the two
+ * handlers never fire off the same click.
  */
 function RelationTag({
   label,
   onUnlink,
+  onNavigate,
   disabled,
 }: {
   label: string
   onUnlink: () => void
+  onNavigate?: () => void
   disabled?: boolean
 }) {
   return (
@@ -151,6 +159,7 @@ function RelationTag({
       label={label}
       size="small"
       onDelete={disabled ? undefined : onUnlink}
+      onClick={onNavigate}
       sx={{
         position: 'relative',
         '& .MuiChip-label': { textAlign: 'center', transition: 'padding-right 120ms' },
@@ -440,6 +449,8 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
+  const router = useRouter()
+  const formPath = moduleRegistry.formPathFor(rel.entity)
   const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -492,6 +503,7 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
               setSelectedLabel(null)
               onChange(null)
             }}
+            onNavigate={formPath ? () => router.push(formPath.replace(':id', selectedId)) : undefined}
           />
         ) : (
           <Autocomplete<RelationRecord>
@@ -679,6 +691,8 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
+  const router = useRouter()
+  const formPath = moduleRegistry.formPathFor(rel.entity)
   const via = rel.via as string // registration validated presence
   const cols = junctionColumns(rel, entity ?? '')
   const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
@@ -697,6 +711,13 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
     toLink: [],
     toUnlinkJunctionIds: [],
   }
+  // Bumped by FormRenderer's onSubmit right after it flushes a deferred m2m
+  // field's staged diff into real junction rows (renderers.tsx) — without
+  // this, a deferred field's own re-fetch below never re-runs after Save
+  // (recordId doesn't change), so it would keep showing its stale, mount-time
+  // `links` once the post-commit reconcile wipes `pending` back to empty
+  // (e.g. a just-removed tag reappearing). See entity-refresh-store.ts.
+  const refreshSignal = useEntityRefreshStore((s) => s.bumps[via])
 
   // Links are junction rows: load them, then resolve their related records
   // in one batched call (resolveManyToManyLinks) rather than one per row.
@@ -713,8 +734,22 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
     return () => {
       cancelled = true
     }
-    // Load once per anchor — links then evolve through add/unlink below.
-  }, [ops, via, recordId, rel.entity, cols.own, cols.related])
+    // Re-runs on the anchor OR a post-save refresh bump — links otherwise
+    // evolve through add/unlink below.
+  }, [ops, via, recordId, rel.entity, cols.own, cols.related, refreshSignal])
+
+  // Publishes this field's live "has at least one link" state — existing
+  // junction rows minus staged unlinks, plus staged links — for
+  // requiredMissing() (descriptor.ts) to consult on an EXISTING record, the
+  // one case its own pure draft-only check can't resolve by itself. Only
+  // required fields bother reporting; nothing depends on this signal
+  // otherwise. See required-relation-store.ts.
+  useEffect(() => {
+    if (field.required !== true) return
+    const hasAny =
+      links.some((l) => !pending.toUnlinkJunctionIds.includes(l.junctionId)) || pending.toLink.length > 0
+    useHasLinksStore.getState().setHasLinks(field.name, hasAny)
+  }, [field.required, field.name, links, pending.toUnlinkJunctionIds, pending.toLink])
 
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
@@ -776,6 +811,7 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
             label={labelOf(link.related, labelField)}
             disabled={disabled}
             onUnlink={() => unlink(link)}
+            onNavigate={formPath ? () => router.push(formPath.replace(':id', link.related.id)) : undefined}
           />
         ))}
         <Autocomplete<RelationRecord>

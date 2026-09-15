@@ -133,6 +133,29 @@
   text-align: right;
 }
 
+/* SAMPLE: property management's rent receipt (reports/rent_receipt_report.ts)
+   opts its issuer block into this SECOND class alongside the shared
+   .eerp-report-issuer above — a bordered "card" look distinct from sale's
+   plain masthead, scoped so editing it can't affect any other report. Swap
+   any of these values (border color, radius, background, padding) to taste;
+   duplicate this block under a new class name for another report's own look. */
+.eerp-report-issuer--pm {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--eerp-report-border, #ccc);
+  border-radius: 6px;
+  background: var(--eerp-report-accent, #f2f2f2);
+}
+
+/* SAMPLE: the "add a class with nothing to inherit" half of the pair above —
+   property management's tenant_names field had no className before, so this
+   rule is introduced fresh rather than layered onto an existing one. This is
+   the font-weight: bold example: swap 700 for "normal"/400 to see the
+   difference, or add font-style: italic / text-transform: uppercase the
+   same way — one declaration, one class, one node. */
+.eerp-report-tenant-names {
+  font-weight: 700;
+}
+
 /* reportTitleSection (report-descriptor.ts) — a big document name/title
    under the masthead, editable as a plain field on the record's own form. */
 .eerp-report-title {

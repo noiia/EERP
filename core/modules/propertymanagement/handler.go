@@ -181,10 +181,15 @@ func latestStatus(entries []PropertyManagementEquipmentStatus) PropertyManagemen
 	return latest
 }
 
-// RejectReceiptMutation handles PUT and DELETE /api/v1/property_management_rent_receipt/:id
-// — a receipt is append-only, so both always reject.
-func (h *Handler) RejectReceiptMutation(c echo.Context) error {
-	return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "Rent receipts are append-only; they cannot be edited or deleted.")
+// RejectReceiptDelete handles DELETE /api/v1/property_management_rent_receipt/:id
+// — a receipt row is never removed, only ever added to (a "Regenerate
+// report" click on a child creates a new sibling row, property_management_
+// rent_receipt_views.ts's propertymanagement.regenerateReceipt, rather than
+// mutating an existing one) — so DELETE always rejects. PUT no longer does:
+// it rides the generic CRUD surface again, since every field on a generated
+// receipt is meant to stay editable after the fact.
+func (h *Handler) RejectReceiptDelete(c echo.Context) error {
+	return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "Rent receipts are append-only; they cannot be deleted.")
 }
 
 // CreateBillingLine handles POST /api/v1/property_management_billing_line.

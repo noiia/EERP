@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import Typography from '@mui/material/Typography'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -12,6 +12,7 @@ vi.mock('next/navigation', () => ({
 import type { FieldDescriptor } from './descriptor'
 import { moduleRegistry } from '../registry'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
+import { useHasLinksStore } from './required-relation-store'
 import { fieldWidget, type WidgetProps } from './widgets'
 
 // Relation widgets against stubbed RelationOps (the bound Server Actions the
@@ -187,6 +188,40 @@ describe('relation/search (many2one)', () => {
     expect(screen.queryByText('Company')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox')).toBeInTheDocument()
   })
+
+  describe('click-to-navigate', () => {
+    beforeEach(() => {
+      pushMock.mockClear()
+      // moduleRegistry.formPathFor('contact') — resolved off the target
+      // entity's own registered LIST view, same lookup FormListNav uses
+      // (renderers.test.tsx's 'form record navigator' describe block).
+      moduleRegistry.register({
+        name: 'contact-nav-test-fixture',
+        routes: [
+          {
+            path: '/contact/list',
+            descriptor: { entity: 'contact', viewType: 'tree', fields: [], formPath: '/contact/:id' },
+          },
+        ],
+      })
+    })
+
+    it('clicking the tag label navigates to the linked record\'s own form', async () => {
+      const ops = stubOps()
+      renderWidget(searchField, ops, { value: 'c2' })
+      fireEvent.click(await screen.findByText('Globex'))
+      expect(pushMock).toHaveBeenCalledWith('/contact/c2')
+    })
+
+    it('clicking the unlink cross unlinks instead of navigating', async () => {
+      const ops = stubOps()
+      const { onChange } = renderWidget(searchField, ops, { value: 'c2' })
+      const tag = (await screen.findByText('Globex')).closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+      expect(onChange).toHaveBeenCalledWith(null)
+      expect(pushMock).not.toHaveBeenCalled()
+    })
+  })
 })
 
 describe('relation/tags (many2many)', () => {
@@ -310,6 +345,41 @@ describe('relation/tags (many2many)', () => {
     expect(await screen.findByText('Acme')).toBeInTheDocument()
   })
 
+  describe('click-to-navigate', () => {
+    beforeEach(() => {
+      pushMock.mockClear()
+      moduleRegistry.register({
+        name: 'tag-nav-test-fixture',
+        routes: [
+          {
+            path: '/tag/list',
+            descriptor: { entity: 'tag', viewType: 'tree', fields: [], formPath: '/tag/:id' },
+          },
+        ],
+      })
+    })
+
+    it('clicking a tag\'s label navigates to its linked record\'s own form', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+      })
+      renderWidget(tagsField, ops)
+      fireEvent.click(await screen.findByText('Acme'))
+      expect(pushMock).toHaveBeenCalledWith('/tag/c1')
+    })
+
+    it('clicking the unlink cross unlinks instead of navigating', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+      })
+      renderWidget(tagsField, ops)
+      const tag = (await screen.findByText('Acme')).closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+      await waitFor(() => expect(ops.remove).toHaveBeenCalledWith('crm_tag', 'j1'))
+      expect(pushMock).not.toHaveBeenCalled()
+    })
+  })
+
   describe('widgetOptions.deferred — stage instead of writing junction rows immediately', () => {
     const deferredTagsField: FieldDescriptor = {
       ...tagsField,
@@ -368,6 +438,53 @@ describe('relation/tags (many2many)', () => {
       await waitFor(() => expect(screen.queryByText('Globex')).not.toBeInTheDocument())
       expect(ops.create).not.toHaveBeenCalled()
       expect(onChange).toHaveBeenLastCalledWith({ toLink: [], toUnlinkJunctionIds: [] })
+    })
+
+    describe('required: reports live fill state to required-relation-store', () => {
+      const requiredDeferredTagsField: FieldDescriptor = { ...deferredTagsField, required: true }
+
+      beforeEach(() => useHasLinksStore.setState({ hasLinks: {} }))
+
+      it('reports true once the existing links resolve', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+        })
+        renderWidget(requiredDeferredTagsField, ops)
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(true))
+      })
+
+      it('reports false once the last existing link is staged for removal', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [junctions[0]] : companies)),
+        })
+        renderWidget(requiredDeferredTagsField, ops)
+        const tag = (await screen.findByText('Acme')).closest('.MuiChip-root')!
+        fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(false))
+      })
+
+      it('reports false with no links at all, true once one is staged to link', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+        })
+        renderWidget(requiredDeferredTagsField, ops)
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(false))
+
+        const input = screen.getByRole('combobox')
+        fireEvent.click(input)
+        fireEvent.change(input, { target: { value: 'glo' } })
+        fireEvent.click(await screen.findByText('Globex'))
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(true))
+      })
+
+      it('a non-required deferred field never reports', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+        })
+        renderWidget(deferredTagsField, ops)
+        await waitFor(() => expect(ops.list).toHaveBeenCalled())
+        expect(useHasLinksStore.getState().hasLinks.tags).toBeUndefined()
+      })
     })
   })
 })

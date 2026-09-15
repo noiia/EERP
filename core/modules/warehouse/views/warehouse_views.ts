@@ -1,10 +1,12 @@
 import type { FrontModule } from '@eerp/core-front'
 import { dashboardRoute, productRoutes } from './product_views'
 import { productVariantRoutes } from './product_variant_views'
+import { productUomsRoutes } from './product_uoms_views'
 
 // warehouse frontend — DESCRIPTORS ONLY (same discipline as core/modules/crm's
-// crm_views.ts). Two entities, one module: `product` (the catalog entry) and
-// `product_variant` (see core/modules/warehouse/module.go's doc comments).
+// crm_views.ts). Three entities, one module: `product` (the catalog entry),
+// `product_variant`, and `product_uoms` (see
+// core/modules/warehouse/module.go's doc comments).
 // This file is ONLY an assembler — see core/modules/sale/views/sale_views.ts
 // for the full rationale (ModuleRegistry.register() is idempotent by module
 // name, so only ONE file may export the FrontModule). Each entity owns a
@@ -19,6 +21,7 @@ const warehouse: FrontModule = {
     dashboardRoute,
     ...productRoutes,
     ...productVariantRoutes,
+    ...productUomsRoutes,
   ],
 }
 

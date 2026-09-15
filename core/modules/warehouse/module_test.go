@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"core/orm"
+
+	"github.com/google/uuid"
 )
 
 // Every ERP table must carry a tenant_id column so the generic CRUD layer
@@ -46,5 +48,41 @@ func TestProductVariant_RequiresProduct(t *testing.T) {
 		if f.Column == "product_id" && f.Nullable {
 			t.Error("product_variant.product_id must be NOT NULL")
 		}
+	}
+}
+
+// defaultUoms' `kind` values must stay inside product_uoms_views.ts's closed
+// `type` selection — a typo here would seed rows the frontend's quick-create
+// wizard could never itself produce, and would silently drop out of any
+// type-filtered picker.
+func TestDefaultUoms_KindsMatchFrontendSelection(t *testing.T) {
+	allowed := map[string]bool{"piece": true, "length": true, "weight": true, "volume": true, "surface": true, "custom": true}
+	seenNames := map[string]bool{}
+	for _, u := range defaultUoms {
+		if !allowed[u.kind] {
+			t.Errorf("default uom %q has kind %q, not in the frontend's selection options", u.name, u.kind)
+		}
+		if seenNames[u.name] {
+			t.Errorf("default uom %q is declared more than once", u.name)
+		}
+		seenNames[u.name] = true
+	}
+}
+
+// seedUUID must be deterministic per (tenant, label) — that's the whole
+// mechanism that makes re-running seedDefaultUoms on every boot idempotent
+// via Upsert's ON CONFLICT (id) DO NOTHING.
+func TestSeedUUID_DeterministicPerTenantAndLabel(t *testing.T) {
+	t1, t2 := uuid.New(), uuid.New()
+
+	first, second := seedUUID(t1, "a"), seedUUID(t1, "a")
+	if first != second {
+		t.Error("same tenant + label must yield the same id every time")
+	}
+	if seedUUID(t1, "a") == seedUUID(t1, "b") {
+		t.Error("different labels for the same tenant must yield different ids")
+	}
+	if seedUUID(t1, "a") == seedUUID(t2, "a") {
+		t.Error("the same label for different tenants must yield different ids")
 	}
 }

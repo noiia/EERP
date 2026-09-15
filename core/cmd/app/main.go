@@ -534,16 +534,18 @@ func main() {
 	quoteLineGroup.DELETE("/:id", quoteLineHandler.Delete)
 
 	// ── propertymanagement: property_management GET + equipment-status
-	// Create + rent-receipt Update/Delete overrides ──────────────────────────
+	// Create + rent-receipt Delete override ──────────────────────────────────
 	// property_management/property_management_equipment/... ride the generic
 	// CRUD surface (module.go's Register, no WithExcluded) — same posture as
 	// cron — with three hand-mounted overrides: GET on property_management
 	// injects the computed receipt_generated_this_month key the "Generate
 	// Rent Receipt" header button reads; POST on
 	// property_management_equipment_status rolls the entry's State up onto
-	// its parent Equipment's CurrentState; PUT/DELETE on
-	// property_management_rent_receipt always reject (a receipt is
-	// append-only). See modules/propertymanagement/handler.go.
+	// its parent Equipment's CurrentState; DELETE on
+	// property_management_rent_receipt always rejects (a receipt row is
+	// never removed — see RejectReceiptDelete). PUT stays generic: every
+	// snapshot field on a receipt is meant to stay editable after the fact.
+	// See modules/propertymanagement/handler.go.
 	propertyManagementHandler := propertymanagement.NewHandler(
 		orm.MustRepo[propertymanagement.PropertyManagement](app.DB),
 		orm.MustRepo[propertymanagement.PropertyManagementEquipment](app.DB),
@@ -558,8 +560,7 @@ func main() {
 	)
 	srv.Echo().GET("/api/v1/property_management/:id", propertyManagementHandler.GetProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().POST("/api/v1/property_management_equipment_status", propertyManagementHandler.CreateEquipmentStatus, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
-	srv.Echo().PUT("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptMutation, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
-	srv.Echo().DELETE("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptMutation, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().DELETE("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().POST("/api/v1/property_management_rent_receipt_line", propertyManagementHandler.CreateRentReceiptLine, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	// ── propertymanagement: billing_line Create/Update + billing_line_tax

@@ -50,9 +50,21 @@ export interface BreadcrumbState {
    * clicked href is already IN the trail, so `nextBreadcrumbTrail` returns
    * the slice up to it) and how landing back on "/" resets it (`null`). */
   visit: (current: Crumb | null) => void
+  /** Drop the trail's own last entry. `renderers.tsx`'s FormListNav (the
+   * </> chevron stepper on a form) calls this right before it `router.push`es
+   * to the next/previous record in the SAME list — without it, each step
+   * would append yet another crumb (visit() sees a never-before-seen href and
+   * appends by default) and stepping through a long list would blow up the
+   * trail into one crumb per record visited along the way. Popping the
+   * current record's own crumb first means the upcoming visit() for the
+   * next/previous record's page has nothing to match, so it appends in the
+   * SAME slot instead — net effect: replace, not grow. Synchronous, so it's
+   * always applied before the route change reaches PathBreadcrumbs' effect. */
+  dropLast: () => void
 }
 
 export const useBreadcrumbStore = create<BreadcrumbState>((set) => ({
   trail: [],
   visit: (current) => set((s) => ({ trail: nextBreadcrumbTrail(s.trail, current) })),
+  dropLast: () => set((s) => ({ trail: s.trail.slice(0, -1) })),
 }))

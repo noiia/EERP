@@ -47,18 +47,23 @@ export const rentReceiptReport: ReportDescriptor = {
       kind: 'section',
       className: 'eerp-report-parties',
       children: [
-        { kind: 'section', className: 'eerp-report-issuer', children: reportPartyAddressFields('issuer', true) },
+        {
+          // eerp-report-issuer--pm is a SECOND, additive class (not a
+          // replacement) — the base eerp-report-issuer rule in report.css
+          // still applies (font/layout shared with every other report), this
+          // one just layers property management's own look on top. Scoping
+          // it this way means tweaking it can't accidentally change how
+          // sale's invoice/quote issuer block prints.
+          kind: 'section',
+          className: 'eerp-report-issuer eerp-report-issuer--pm',
+          children: reportPartyAddressFields('issuer', true),
+        },
         {
           kind: 'section',
-          className: 'eerp-report-client',
           children: [
             { kind: 'text', text: 'Tenant(s):', className: 'eerp-report-label' },
-            { kind: 'field', name: 'tenant_names' },
-            { kind: 'text', text: 'Property:', className: 'eerp-report-label' },
-            { kind: 'field', name: 'property_name' },
-            { kind: 'field', name: 'property_address' },
-            { kind: 'field', name: 'floor_area', format: 'number' },
-          ],
+            { kind: 'field', name: 'tenant_names', className: 'eerp-report-tenant-names' },
+          ]
         },
       ],
     },
@@ -81,6 +86,23 @@ export const rentReceiptReport: ReportDescriptor = {
       children: [
         { kind: 'text', text: 'Rent price:', className: 'eerp-report-label' },
         { kind: 'field', name: 'rent_price', format: 'number', className: 'eerp-report-title' },
+      ],
+    },
+    {
+      kind: 'section',
+      className: 'eerp-report-client',
+      children: [
+        { kind: 'text', text: 'Property:', className: 'eerp-report-label' },
+        { kind: 'field', name: 'property_name' },
+        { kind: 'field', name: 'property_address' },
+        {
+          kind: 'section',
+          className: 'eerp-pm-report-property',
+          children: [
+            { kind: 'field', name: 'floor_area', format: 'number' },
+            { kind: 'field', name: 'uom'},
+          ]
+        }
       ],
     },
     {

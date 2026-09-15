@@ -9,6 +9,7 @@ import {
   type DraftRecord,
 } from './behaviors'
 import { requiredMissing, type ViewDescriptor } from './descriptor'
+import { useHasLinksStore } from './required-relation-store'
 
 // Per-view client stores. Each is SEEDED with server-fetched initialData and never
 // fetches on mount — the server owns data + caching, the client owns interaction
@@ -121,7 +122,11 @@ export function createFormStore<T extends HasId>(
       // currently VISIBLE fields — Phase 2) blocks commit client-side, the
       // same validation Go's generic handler runs server-side, surfaced
       // through the same error slot the renderer already displays.
-      const missing = requiredMissing(descriptor, draft as Record<string, unknown>)
+      const missing = requiredMissing(
+        descriptor,
+        draft as Record<string, unknown>,
+        (fieldName) => useHasLinksStore.getState().hasLinks[fieldName],
+      )
       if (missing.length > 0) {
         set({
           error: new ApiError({

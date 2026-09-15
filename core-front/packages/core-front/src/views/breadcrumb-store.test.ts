@@ -58,4 +58,25 @@ describe('useBreadcrumbStore', () => {
     useBreadcrumbStore.getState().visit(sale)
     expect(useBreadcrumbStore.getState().trail).toEqual([sale])
   })
+
+  it('dropLast removes only the trail\'s own last entry', () => {
+    useBreadcrumbStore.getState().visit(sale)
+    useBreadcrumbStore.getState().visit(products)
+    useBreadcrumbStore.getState().dropLast()
+    expect(useBreadcrumbStore.getState().trail).toEqual([sale])
+  })
+
+  it('dropLast then visiting a new page replaces in place — the chevron-stepper contract', () => {
+    useBreadcrumbStore.getState().visit(sale)
+    useBreadcrumbStore.getState().visit(productA)
+    // FormListNav's goTo: pop the record just left, then visit() the next one.
+    useBreadcrumbStore.getState().dropLast()
+    useBreadcrumbStore.getState().visit(settings)
+    expect(useBreadcrumbStore.getState().trail).toEqual([sale, settings])
+  })
+
+  it('dropLast on an empty trail is a no-op', () => {
+    useBreadcrumbStore.getState().dropLast()
+    expect(useBreadcrumbStore.getState().trail).toEqual([])
+  })
 })

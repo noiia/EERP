@@ -971,6 +971,76 @@ describe('requiredMissing', () => {
     expect(requiredMissing(d, {})).toEqual([])
   })
 
+  it('a required DEFERRED many2many blocks a NEW record with nothing staged to link', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    expect(requiredMissing(d, { toLink: [] })).toEqual(['current_tenant'])
+    expect(requiredMissing(d, { current_tenant: { toLink: [], toUnlinkJunctionIds: [] } })).toEqual([
+      'current_tenant',
+    ])
+  })
+
+  it('a required DEFERRED many2many is satisfied once something is staged to link', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    expect(
+      requiredMissing(d, {
+        current_tenant: { toLink: [{ id: 'c1' }], toUnlinkJunctionIds: [] },
+      }),
+    ).toEqual([])
+  })
+
+  it('a required DEFERRED many2many never blocks an EXISTING record (draft has an id)', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    // Untouched (no toLink staged) but the record already has an id — with
+    // no hasDeferredLinks callback given (the old signature), there's no way
+    // to see this field's real state, so it stays unenforced rather than risk
+    // blocking a save that already has tenants.
+    expect(requiredMissing(d, { id: 'p1' })).toEqual([])
+  })
+
+  it('a required DEFERRED many2many on an EXISTING record defers to hasDeferredLinks', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    // The widget positively reported zero links (e.g. the user just removed
+    // the last one) — blocks.
+    expect(requiredMissing(d, { id: 'p1' }, () => false)).toEqual(['current_tenant'])
+    // The widget positively reported at least one link — satisfied.
+    expect(requiredMissing(d, { id: 'p1' }, () => true)).toEqual([])
+    // No report yet (hidden field, RelationOps not mounted, or a race with
+    // the widget's own async fetch) — fails OPEN, never blocks on a guess.
+    expect(requiredMissing(d, { id: 'p1' }, () => undefined)).toEqual([])
+  })
+
   it('reports every missing field, in descriptor order', () => {
     const d = descriptor([
       { name: 'a', type: 'text', required: true },

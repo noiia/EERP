@@ -208,17 +208,26 @@ describe('propertymanagement.regenerateReceiptPdf', () => {
           },
         },
       },
+      {
+        name: 'propertymanagement.regenerateReceipt',
+        label: 'Regenerate report',
+        states: {
+          visible: { field: 'parent_id', op: 'set' },
+        },
+      },
     ])
   })
 
   it('is registered against property_management_rent_receipt', () => {
     const registered = headerButtonRegistry.get('propertymanagement.regenerateReceiptPdf')
     expect(registered?.entity).toBe('property_management_rent_receipt')
+    const regenerate = headerButtonRegistry.get('propertymanagement.regenerateReceipt')
+    expect(regenerate?.entity).toBe('property_management_rent_receipt')
   })
 
-  it('embeds the batch\'s child receipts as a one2many over parent_id', () => {
+  it('embeds the batch\'s child receipts (and every later regenerated version of each) as a one2many over parent_id, not read-only', () => {
     const field = receiptForm().descriptor.fields.find((f) => f.name === 'children')
-    expect(field?.readOnly).toBe(true)
+    expect(field?.readOnly).toBeFalsy()
     expect(field?.relation).toEqual({
       entity: 'property_management_rent_receipt',
       kind: 'one2many',
@@ -226,6 +235,12 @@ describe('propertymanagement.regenerateReceiptPdf', () => {
       labelField: 'tenant_names',
       formPath: '/propertymanagement/receipts/:id',
     })
+  })
+
+  it('none of the receipt fields are read-only — a generated receipt stays fully editable', () => {
+    for (const field of receiptForm().descriptor.fields) {
+      expect(field.readOnly).toBeFalsy()
+    }
   })
 
   it('self-extension puts the children table on its own "Tenant receipts" notebook tab', () => {
