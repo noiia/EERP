@@ -172,8 +172,14 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
       // Resolves role_view_permission's own `rights` many2many (declared on
       // roleViewPermissionFormDescriptor below) per row and merges it in as
       // a plain joined-label column, so this table shows what each view is
-      // actually granted instead of just its name.
-      widgetOptions: { relatedRelationField: 'rights' },
+      // actually granted instead of just its name. multiCreate swaps the
+      // single-record "+ Create a new role_view_permission" wizard for
+      // RelationMultiCreateWizard's checkbox picker over the SAME `entity`
+      // field's own `views` catalog (now search-filterable server-side,
+      // internal/settings.GetViewCatalog) — check several, or filter down to
+      // one app (groupByModule) and check its header checkbox to add
+      // everything that app registers, in one Add.
+      widgetOptions: { relatedRelationField: 'rights', multiCreate: { field: 'entity', groupByModule: true } },
     },
   ],
   // Explicit layout so `view_permissions`/`belongs` get their own tabs

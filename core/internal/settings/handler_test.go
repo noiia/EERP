@@ -1670,3 +1670,51 @@ func TestGetViewCatalog(t *testing.T) {
 		t.Errorf("data = %+v, want an entry for %q", resp.Data, fixturePrefix)
 	}
 }
+
+// TestGetViewCatalog_SearchAndPageSize covers the bug the frontend's
+// RelationSearchWidget hit: it always sends search[name]=<typed text> +
+// page_size (core-front's ApiClient.appendListParams, the SAME two params
+// every generic-CRUD-backed many2one honors) — before this, GetViewCatalog
+// ignored both and always returned the full, unfiltered catalog.
+func TestGetViewCatalog_SearchAndPageSize(t *testing.T) {
+	const fixturePrefix = "zzz_view_catalog_search_fixture"
+	if err := orm.Register[viewCatalogFixture](orm.WithTableName(fixturePrefix)); err != nil {
+		t.Fatalf("register fixture: %v", err)
+	}
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{})
+
+	unmarshal := func(rec *httptest.ResponseRecorder) []viewCatalogEntry {
+		t.Helper()
+		var resp struct {
+			Data []viewCatalogEntry `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return resp.Data
+	}
+
+	t.Run("search[name] filters by substring, case-insensitively", func(t *testing.T) {
+		rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views?search[name]=SEARCH_FIXTURE", "", identity)
+		data := unmarshal(rec)
+		if len(data) != 1 || data[0].ID != fixturePrefix {
+			t.Errorf("data = %+v, want exactly [%q]", data, fixturePrefix)
+		}
+	})
+
+	t.Run("search[name] with no match returns an empty list, not the full catalog", func(t *testing.T) {
+		rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views?search[name]=no_such_entity_xyz", "", identity)
+		if data := unmarshal(rec); len(data) != 0 {
+			t.Errorf("data = %+v, want empty", data)
+		}
+	})
+
+	t.Run("page_size caps the number of rows returned", func(t *testing.T) {
+		rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views?page_size=1", "", identity)
+		data := unmarshal(rec)
+		if len(data) != 1 {
+			t.Errorf("len(data) = %d, want 1", len(data))
+		}
+	})
+}

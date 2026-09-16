@@ -305,7 +305,12 @@ export class ModuleRegistry {
    * is not a menu entry; the list/tree view that links to it is. Preserves registration
    * order; non-app modules and modules left with no navigable route are omitted (their
    * routes stay reachable — they just get no tile). The landing page renders this
-   * (permission-filtered) as the menu.
+   * AS-IS, with no permission filtering — every authenticated user sees every active
+   * app-mode module's tile by design (apps/shell/app/page.tsx's own comment): menu
+   * visibility is deliberately not a signal for role permissions, only real
+   * authentication is required to reach it. Individual routes still enforce their own
+   * `permissions` once clicked (the catch-all's guard), so a role with no rights on a
+   * module still sees its tile but gets 403'd opening it.
    */
   menu(): MenuModule[] {
     const result: MenuModule[] = []
@@ -428,6 +433,27 @@ export class ModuleRegistry {
       for (const route of module.routes) {
         const resolved = this.resolvedRoutes.get(route.path)?.descriptor ?? route.descriptor
         if (resolved.entity === entity && resolved.formPath) return resolved.formPath
+      }
+    }
+    return null
+  }
+
+  /**
+   * The module that registers a route over `entity`, or null — "which app
+   * owns this entity," derived purely from what's already registered (no
+   * server round-trip, no hardcoded module/entity mapping). First match
+   * wins, same rule as formDescriptorFor/formPathFor. Used by
+   * relation-widgets.tsx's multi-select create wizard
+   * (`widgetOptions.multiCreate.groupByModule`) to let an admin filter a
+   * picker's rows down to "everything one app owns" — e.g. the Role form's
+   * Views table grouping the view catalog by which installed app each view
+   * belongs to, entirely client-side.
+   */
+  moduleForEntity(entity: string): { name: string; displayName?: string } | null {
+    for (const { module, displayName } of this.entries) {
+      for (const route of module.routes) {
+        const resolved = this.resolvedRoutes.get(route.path)?.descriptor ?? route.descriptor
+        if (resolved.entity === entity) return { name: module.name, displayName }
       }
     }
     return null

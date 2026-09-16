@@ -89,6 +89,18 @@ describe('ModuleRegistry', () => {
     expect(registry.formPathFor('tag')).toBeNull()
   })
 
+  it('resolves which module owns an entity, by displayName when registered with one', () => {
+    const registry = new ModuleRegistry()
+    registry.register(crm, { displayName: 'Customers' })
+    registry.register({
+      name: 'inventory',
+      routes: [{ path: '/inventory/items', descriptor: { ...treeDescriptor, entity: 'item' } }],
+    })
+    expect(registry.moduleForEntity('crm')).toEqual({ name: 'crm', displayName: 'Customers' })
+    expect(registry.moduleForEntity('item')).toEqual({ name: 'inventory', displayName: undefined })
+    expect(registry.moduleForEntity('no-such-entity')).toBeNull()
+  })
+
   it('rejects a descriptor whose widget the field type forbids, naming module and route', () => {
     const bad: FrontModule = {
       name: 'broken',

@@ -8,11 +8,20 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
+import InputLabel from '@mui/material/InputLabel'
+import MenuItem from '@mui/material/MenuItem'
+import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { DataGrid, type GridColDef, type GridRowParams } from '@mui/x-data-grid'
+import {
+  DataGrid,
+  type GridColDef,
+  type GridRowParams,
+  type GridRowSelectionModel,
+} from '@mui/x-data-grid'
 import { useRouter } from 'next/navigation'
 import { useT } from '../i18n/translate'
 import { moduleRegistry } from '../registry'
@@ -92,8 +101,16 @@ export function relationOf(field: FieldDescriptor): RelationDescriptor {
   return field.relation as RelationDescriptor
 }
 
-/** Debounced related-entity search, bound to one relation target. */
-function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
+/**
+ * Debounced related-entity search, bound to one relation target.
+ * `excludeId` (by design, on every relation field, no per-field opt-in —
+ * same posture as click-to-navigate below) drops the CURRENT record's own
+ * id from the results: a record can never sensibly pick itself as its own
+ * related value (a role "belonging to" itself, a category nesting under
+ * itself, ...). Harmless no-op for a relation pointing at a different
+ * entity — its rows' ids never collide with this record's own.
+ */
+function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor, excludeId?: string | null) {
   const labelField = rel.labelField ?? 'name'
   const [options, setOptions] = useState<RelationRecord[]>([])
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -115,7 +132,7 @@ function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
           search: text ? { [labelField]: text } : undefined,
           pageSize: SEARCH_PAGE_SIZE,
         })
-        .then(setOptions)
+        .then((found) => setOptions(excludeId ? found.filter((o) => o.id !== excludeId) : found))
         .catch(() => setOptions([]))
     }, SEARCH_DEBOUNCE_MS)
   }
@@ -365,6 +382,181 @@ function RelationCreateWizard({
 }
 
 /**
+ * A one2many field's OPT-IN bulk-create dialog (`widgetOptions.multiCreate:
+ * { field, groupByModule? }`) — the Role form's "Views" table is the first
+ * user (`field: 'entity'`, `groupByModule: true`), but this is generic
+ * engine machinery, not Roles-specific: any one2many whose child rows are
+ * "this record + one picked value" can opt in. `field` names the many2one on
+ * the CHILD entity's own registered form (`role_view_permission`'s `entity`,
+ * pointing at the `views` catalog) — its OWN `relation` block says which
+ * entity's rows to offer. Unlike the single-record RelationCreateWizard
+ * (a real form store, one commit = one row), this creates MANY rows in one
+ * submission: check several, hit Add, one `ops.create` per pick.
+ *
+ * The target list is fetched ONCE (`EMBED_PAGE_SIZE`) and filtered
+ * CLIENT-SIDE from there — a deliberate departure from useRelationSearch's
+ * per-keystroke server debounce, since what this backs (a view catalog, an
+ * account-role-types list, ...) is a small, fully-loadable reference table,
+ * not a potentially-huge one; re-fetching per keystroke would just be
+ * network chatter for no benefit here.
+ *
+ * `groupByModule` adds an "App" filter dropdown (moduleRegistry.
+ * moduleForEntity, entirely client-side) — checking DataGrid's own built-in
+ * header checkbox while filtered to one app is "select an entire app": still
+ * just ordinary rows getting checked, no live/dynamic group is ever created
+ * — regenerating a role's rights later means reopening this dialog, exactly
+ * like adding one more view by hand.
+ */
+function RelationMultiCreateWizard({
+  rel,
+  targetField,
+  groupByModule,
+  ops,
+  preset = {},
+  excludeIds = [],
+  onClose,
+  onCreated,
+}: {
+  rel: RelationDescriptor
+  targetField: string
+  groupByModule: boolean
+  ops: RelationOps
+  preset?: Record<string, unknown>
+  /** Already-used target ids (e.g. views this role already has a row for) —
+   * dropped from the pickable list so the same one can't be added twice. */
+  excludeIds?: unknown[]
+  onClose: () => void
+  onCreated: (records: RelationRecord[]) => void
+}) {
+  const t = useT()
+  const targetRel = (() => {
+    const child = moduleRegistry.formDescriptorFor(rel.entity)
+    const field = child?.fields.find((f) => f.name === targetField)
+    if (!field?.relation) throw new Error(`multiCreate: "${rel.entity}"."${targetField}" has no relation block`)
+    return field.relation
+  })()
+  const targetLabelField = targetRel.labelField ?? 'name'
+  const excluded = new Set(excludeIds.map(String))
+
+  const [rows, setRows] = useState<RelationRecord[]>([])
+  const [text, setText] = useState('')
+  const [app, setApp] = useState<string>('')
+  const [selection, setSelection] = useState<GridRowSelectionModel>({ type: 'include', ids: new Set() })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ops
+      .list(targetRel.entity, { pageSize: EMBED_PAGE_SIZE })
+      .then((found) => {
+        if (!cancelled) setRows(found.filter((r) => !excluded.has(String(r.id))))
+      })
+      .catch(() => {
+        if (!cancelled) setRows([])
+      })
+    return () => {
+      cancelled = true
+    }
+    // excludeIds/excluded intentionally NOT a dependency — it's a snapshot of
+    // what's already used when the dialog opened; re-deriving it from a
+    // fresh array identity every render would refetch in a loop.
+  }, [ops, targetRel.entity])
+
+  const apps = groupByModule
+    ? [...new Set(rows.map((r) => moduleRegistry.moduleForEntity(String(r.id))?.name).filter((n) => n != null))]
+    : []
+
+  const visible = rows.filter((r) => {
+    if (text && !String(r[targetLabelField] ?? r.id).toLowerCase().includes(text.toLowerCase())) return false
+    if (app && moduleRegistry.moduleForEntity(String(r.id))?.name !== app) return false
+    return true
+  })
+
+  const selectedIds =
+    selection.type === 'include'
+      ? [...selection.ids].map(String)
+      : visible.map((r) => r.id).filter((id) => !selection.ids.has(id))
+
+  async function submit() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const created = await Promise.all(
+        selectedIds.map((id) => ops.create(rel.entity, { ...preset, [targetField]: id })),
+      )
+      onCreated(created)
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
+      <DialogTitle>
+        {t('Add')} {t(entityDisplayName(targetRel.entity))}
+      </DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          {error ? (
+            <Typography variant="caption" color="error">
+              {error}
+            </Typography>
+          ) : null}
+          <Stack direction="row" spacing={2}>
+            <TextField
+              label={t('Search')}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              fullWidth
+              autoFocus
+            />
+            {groupByModule && apps.length > 0 ? (
+              <FormControl sx={{ minWidth: 200 }}>
+                <InputLabel id="multi-create-app-filter">{t('App')}</InputLabel>
+                <Select
+                  labelId="multi-create-app-filter"
+                  label={t('App')}
+                  value={app}
+                  onChange={(e) => setApp(e.target.value)}
+                >
+                  <MenuItem value="">{t('All apps')}</MenuItem>
+                  {apps.map((name) => (
+                    <MenuItem key={name} value={name}>
+                      {t(moduleRegistry.displayNameFor(name as string) ?? (name as string))}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : null}
+          </Stack>
+          <DataGrid
+            rows={visible}
+            columns={relatedColumns(visible, targetLabelField, t)}
+            autoHeight
+            hideFooter
+            checkboxSelection
+            rowSelectionModel={selection}
+            onRowSelectionModelChange={setSelection}
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
+          {t('Cancel')}
+        </Button>
+        <Button variant="contained" onClick={submit} disabled={submitting || selectedIds.length === 0}>
+          {t('Add')} {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+/**
  * Append the create line as the dropdown's last option (the 7th — result rows
  * are capped at SEARCH_PAGE_SIZE by the server query).
  */
@@ -385,12 +577,15 @@ function RelationWizard({
   onPick,
   rel,
   ops,
+  excludeId,
 }: {
   open: boolean
   onClose: () => void
   onPick: (record: RelationRecord) => void
   rel: RelationDescriptor
   ops: RelationOps
+  /** By design, no per-field opt-in — see useRelationSearch's doc comment. */
+  excludeId?: string | null
 }) {
   const t = useT()
   const labelField = rel.labelField ?? 'name'
@@ -406,7 +601,7 @@ function RelationWizard({
         pageSize: EMBED_PAGE_SIZE,
       })
       .then((found) => {
-        if (!cancelled) setRows(found)
+        if (!cancelled) setRows(excludeId ? found.filter((o) => o.id !== excludeId) : found)
       })
       .catch(() => {
         if (!cancelled) setRows([])
@@ -445,13 +640,13 @@ function RelationWizard({
   )
 }
 
-export function RelationSearchWidget({ field, value, onChange, disabled }: WidgetProps) {
+export function RelationSearchWidget({ field, value, onChange, disabled, recordId }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
   const router = useRouter()
   const formPath = moduleRegistry.formPathFor(rel.entity)
-  const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
+  const { labelField, options, search, prefill } = useRelationSearch(ops, rel, recordId)
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -570,6 +765,7 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
         onPick={pick}
         rel={rel}
         ops={ops}
+        excludeId={recordId}
       />
       {createOpen ? (
         <RelationCreateWizard
@@ -695,7 +891,7 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   const formPath = moduleRegistry.formPathFor(rel.entity)
   const via = rel.via as string // registration validated presence
   const cols = junctionColumns(rel, entity ?? '')
-  const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
+  const { labelField, options, search, prefill } = useRelationSearch(ops, rel, recordId)
   const [links, setLinks] = useState<TagLink[]>([])
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -915,6 +1111,15 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
       : undefined
   const [expanded, setExpanded] = useState<Record<string, string>>({})
 
+  // widgetOptions.multiCreate (opt-in, e.g. the Role form's Views table):
+  // swaps the single-record "+ Create a new X" wizard for
+  // RelationMultiCreateWizard's checkbox picker — see that component's own
+  // doc comment for the full contract.
+  const multiCreate =
+    field.widgetOptions?.multiCreate && typeof field.widgetOptions.multiCreate === 'object'
+      ? (field.widgetOptions.multiCreate as { field: string; groupByModule?: boolean })
+      : null
+
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
@@ -996,9 +1201,29 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
         disabled={disabled}
         sx={{ mt: 0.5 }}
       >
-        {t('Create a new')} {t(entityDisplayName(rel.entity))}
+        {multiCreate ? (
+          <>
+            {t('Add')} {t(fieldLabel(field))}
+          </>
+        ) : (
+          <>
+            {t('Create a new')} {t(entityDisplayName(rel.entity))}
+          </>
+        )}
       </Button>
-      {createOpen ? (
+      {createOpen && multiCreate ? (
+        <RelationMultiCreateWizard
+          rel={rel}
+          targetField={multiCreate.field}
+          groupByModule={multiCreate.groupByModule === true}
+          ops={ops}
+          preset={{ [inverseField]: recordId }}
+          excludeIds={rows.map((r) => r[multiCreate.field])}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(records) => setRows((prev) => [...prev, ...records])}
+        />
+      ) : null}
+      {createOpen && !multiCreate ? (
         <RelationCreateWizard
           rel={rel}
           ops={ops}

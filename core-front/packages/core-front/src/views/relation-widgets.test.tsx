@@ -9,7 +9,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }))
 
-import type { FieldDescriptor } from './descriptor'
+import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { moduleRegistry } from '../registry'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { useHasLinksStore } from './required-relation-store'
@@ -127,6 +127,19 @@ describe('relation/search (many2one)', () => {
     expect(await screen.findByText('Acme')).toBeInTheDocument()
   })
 
+  it('excludes the current record\'s own id from the results — by design, no per-field opt-in', async () => {
+    const ops = stubOps()
+    renderWidget(searchField, ops, { recordId: 'c1' })
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'a' } })
+
+    await waitFor(() => expect(ops.list).toHaveBeenCalled())
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    expect(screen.queryByText('Acme')).not.toBeInTheDocument()
+  })
+
   it('renders the current FK as a tag and unlinks to null from its cross', async () => {
     const ops = stubOps()
     const { onChange } = renderWidget(searchField, ops, { value: 'c2' })
@@ -229,6 +242,21 @@ describe('relation/tags (many2many)', () => {
     { id: 'j1', crm_id: 'r1', tag_id: 'c1' },
     { id: 'j2', crm_id: 'r1', tag_id: 'c2' },
   ]
+
+  it('excludes the current record\'s own id from the dropdown options — by design, no per-field opt-in', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+    })
+    renderWidget(tagsField, ops, { recordId: 'c1' })
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'a' } })
+
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('tag', expect.anything()))
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    expect(screen.queryByText('Acme')).not.toBeInTheDocument()
+  })
 
   it('loads junction rows as tags and unlinks by deleting the junction row', async () => {
     const ops = stubOps({
@@ -617,6 +645,135 @@ describe('relation/list (one2many)', () => {
     expect(await screen.findByText('Hot, VIP')).toBeInTheDocument()
     const cells = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="labels"]')].map((el) => el.textContent)
     expect(cells).toEqual(['Hot, VIP', ''])
+  })
+
+  describe('widgetOptions.multiCreate — bulk-add checkbox wizard (e.g. the Role form\'s Views table)', () => {
+    const permissionRowForm: ViewDescriptor = {
+      entity: 'permission_row',
+      viewType: 'form',
+      fields: [
+        { name: 'owner_id', type: 'relation', relation: { entity: 'owner', kind: 'many2one' } },
+        { name: 'view', type: 'relation', relation: { entity: 'catalog', kind: 'many2one', labelField: 'name' } },
+      ],
+    }
+    const multiCreateField: FieldDescriptor = {
+      name: 'view_permissions',
+      label: 'Views',
+      type: 'relation',
+      relation: { entity: 'permission_row', kind: 'one2many', inverseField: 'owner_id', labelField: 'view' },
+      widgetOptions: { multiCreate: { field: 'view', groupByModule: true } },
+    }
+    const catalogRows: RelationRecord[] = [
+      { id: 'view_a', name: 'Alpha view' },
+      { id: 'view_b', name: 'Beta view' },
+    ]
+
+    beforeEach(() => {
+      moduleRegistry.register({
+        name: 'permission-row-fixture',
+        routes: [{ path: '/__test__/permission-row/:id', descriptor: permissionRowForm }],
+      })
+      moduleRegistry.register(
+        {
+          name: 'app-a-fixture',
+          routes: [{ path: '/__test__/app-a/list', descriptor: { entity: 'view_a', viewType: 'tree', fields: [] } }],
+        },
+        { appMode: true, displayName: 'App A' },
+      )
+      moduleRegistry.register(
+        {
+          name: 'app-b-fixture',
+          routes: [{ path: '/__test__/app-b/list', descriptor: { entity: 'view_b', viewType: 'tree', fields: [] } }],
+        },
+        { appMode: true, displayName: 'App B' },
+      )
+    })
+
+    function opsFor(existingRows: RelationRecord[] = []) {
+      const created: Record<string, unknown>[] = []
+      const ops: RelationOps = {
+        list: vi.fn(async (entity: string) => {
+          if (entity === 'permission_row') return existingRows
+          if (entity === 'catalog') return catalogRows
+          return []
+        }),
+        get: vi.fn(async (_entity, id) => ({ id })),
+        create: vi.fn(async (_entity, body) => {
+          created.push(body as Record<string, unknown>)
+          return { id: `pr${created.length}`, ...(body as object) }
+        }),
+        remove: vi.fn(async () => {}),
+      }
+      return { ops, created }
+    }
+
+    it('shows "Add <label>" instead of "Create a new <entity>", opening the bulk picker over the target catalog', async () => {
+      const { ops } = opsFor()
+      renderWidget(multiCreateField, ops)
+      expect(screen.queryByRole('button', { name: /Create a new/i })).not.toBeInTheDocument()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      expect(await screen.findByText('Alpha view')).toBeInTheDocument()
+      expect(screen.getByText('Beta view')).toBeInTheDocument()
+    })
+
+    it('typing filters the picker client-side', async () => {
+      const { ops } = opsFor()
+      renderWidget(multiCreateField, ops)
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Alpha view')
+
+      fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'beta' } })
+      expect(screen.queryByText('Alpha view')).not.toBeInTheDocument()
+      expect(screen.getByText('Beta view')).toBeInTheDocument()
+    })
+
+    it('excludes views this owner already has a row for — no adding the same one twice', async () => {
+      const { ops } = opsFor([{ id: 'pr1', owner_id: 'r1', view: 'view_a' }])
+      renderWidget(multiCreateField, ops)
+      await waitFor(() => expect(ops.list).toHaveBeenCalledWith('permission_row', expect.anything()))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Beta view')
+      expect(screen.queryByText('Alpha view')).not.toBeInTheDocument()
+    })
+
+    it('groupByModule offers an App filter — picking one narrows the picker to that app\'s own views', async () => {
+      const { ops } = opsFor()
+      renderWidget(multiCreateField, ops)
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Alpha view')
+      expect(screen.getByText('Beta view')).toBeInTheDocument()
+
+      fireEvent.mouseDown(screen.getByLabelText('App'))
+      fireEvent.click(await screen.findByRole('option', { name: 'App A' }))
+
+      expect(await screen.findByText('Alpha view')).toBeInTheDocument()
+      expect(screen.queryByText('Beta view')).not.toBeInTheDocument()
+    })
+
+    it('checking rows then Add creates one row per selection, each preset with the inverse FK', async () => {
+      const { ops, created } = opsFor()
+      renderWidget(multiCreateField, ops)
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Alpha view')
+
+      // Clicking a DataGrid row toggles its checkbox (checkboxSelection is on,
+      // disableRowSelectionOnClick is NOT set) — avoids poking MUI's own
+      // internal checkbox DOM structure directly.
+      fireEvent.click(screen.getByText('Alpha view'))
+      fireEvent.click(screen.getByText('Beta view'))
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Add (2)' }))
+
+      await waitFor(() => expect(created).toHaveLength(2))
+      expect(created).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ owner_id: 'r1', view: 'view_a' }),
+          expect.objectContaining({ owner_id: 'r1', view: 'view_b' }),
+        ]),
+      )
+    })
   })
 })
 

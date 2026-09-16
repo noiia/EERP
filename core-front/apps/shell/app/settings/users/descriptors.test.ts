@@ -100,7 +100,10 @@ describe('Settings → Users descriptors', () => {
     expect(field?.relation?.entity).toBe('role_view_permission')
     expect(field?.relation?.inverseField).toBe('role_id')
     expect(field?.relation?.formPath).toBe('/settings/users/roles/rights/:id')
-    expect(field?.widgetOptions).toEqual({ relatedRelationField: 'rights' })
+    expect(field?.widgetOptions).toEqual({
+      relatedRelationField: 'rights',
+      multiCreate: { field: 'entity', groupByModule: true },
+    })
   })
 
   it('picks the view from the live catalog, rights from a many2many tag', () => {

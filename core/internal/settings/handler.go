@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"core/internal/auth"
 	"core/internal/company"
@@ -894,9 +896,33 @@ type viewCatalogEntry struct {
 // "Create a new view" affordance gets a plain 404 through the normal error
 // pipeline rather than a crash). Mounted behind the permission middleware,
 // which derives views:views:read from the route.
+//
+// Honors search[name]= and page_size= — the SAME two query params the
+// generic CRUD list endpoint reads for every other many2one's
+// RelationSearchWidget (core-front's ApiClient.appendListParams). This isn't
+// the generic CRUD surface (a route prefix is a bare string, not a real
+// table row), so it can't reuse Repository/checkColumn — it just re-applies
+// the same two params by hand over the in-memory prefix list. Without this,
+// typing into this one field's autocomplete did nothing: every other
+// query param was silently ignored and the full, unfiltered catalog came
+// back every time.
 func (h *Handler) GetViewCatalog(c echo.Context) error {
 	prefixes := orm.ExposedRoutePrefixes()
 	sort.Strings(prefixes)
+
+	if q := strings.ToLower(strings.TrimSpace(c.QueryParam("search[name]"))); q != "" {
+		filtered := prefixes[:0:0]
+		for _, p := range prefixes {
+			if strings.Contains(strings.ToLower(p), q) {
+				filtered = append(filtered, p)
+			}
+		}
+		prefixes = filtered
+	}
+	if size, err := strconv.Atoi(c.QueryParam("page_size")); err == nil && size > 0 && size < len(prefixes) {
+		prefixes = prefixes[:size]
+	}
+
 	data := make([]viewCatalogEntry, 0, len(prefixes))
 	for _, p := range prefixes {
 		data = append(data, viewCatalogEntry{ID: p, Name: p})
