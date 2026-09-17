@@ -11,6 +11,7 @@ import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
+import TableContainer from '@mui/material/TableContainer'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -308,27 +309,33 @@ function TableWidget({ field, value }: WidgetProps) {
           {t(emptyLabel)}
         </Typography>
       ) : (
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              {columns.map((col) => (
-                <TableCell key={col.key}>{t(col.label)}</TableCell>
-              ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row, i) => (
-              // Rows are anonymous records with no natural id, and this table
-              // never reorders — index-as-key is safe here.
-              <TableRow key={i}>
-                {columns.map((col) => {
-                  const cell = row[col.key]
-                  return <TableCell key={col.key}>{cell != null ? String(cell) : ''}</TableCell>
-                })}
+        // TableContainer's own overflow-x: auto scopes the horizontal
+        // scrollbar to just this table when its declared columns don't fit —
+        // a wide notebook-page table (e.g. the App Store's Views/Reports
+        // pages) never pushes the surrounding page/tab sideways.
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                {columns.map((col) => (
+                  <TableCell key={col.key}>{t(col.label)}</TableCell>
+                ))}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {rows.map((row, i) => (
+                // Rows are anonymous records with no natural id, and this
+                // table never reorders — index-as-key is safe here.
+                <TableRow key={i}>
+                  {columns.map((col) => {
+                    const cell = row[col.key]
+                    return <TableCell key={col.key}>{cell != null ? String(cell) : ''}</TableCell>
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
     </Box>
   )

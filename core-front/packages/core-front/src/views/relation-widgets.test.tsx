@@ -647,7 +647,51 @@ describe('relation/list (one2many)', () => {
     expect(cells).toEqual(['Hot, VIP', ''])
   })
 
-  describe('widgetOptions.multiCreate — bulk-add checkbox wizard (e.g. the Role form\'s Views table)', () => {
+  describe('widgetOptions.deletable — trailing trash-icon column (e.g. sale_line/billing_line rows)', () => {
+  it('without the flag, no delete column renders', async () => {
+    const ops = stubOps()
+    renderWidget(listField, ops)
+    await screen.findByText('Acme')
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+
+  it('clicking the trash icon removes the row only after ops.remove resolves (never optimistic)', async () => {
+    let resolveRemove: () => void = () => {}
+    const removePromise = new Promise<void>((resolve) => {
+      resolveRemove = resolve
+    })
+    const ops = stubOps({ remove: vi.fn(() => removePromise) })
+    renderWidget({ ...listField, widgetOptions: { deletable: true } }, ops)
+    await screen.findByText('Acme')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0])
+    expect(ops.remove).toHaveBeenCalledWith('crm', 'c1')
+
+    // Still visible while the request is in flight.
+    expect(screen.getByText('Acme')).toBeInTheDocument()
+
+    resolveRemove()
+    await waitFor(() => expect(screen.queryByText('Acme')).not.toBeInTheDocument())
+    expect(screen.getByText('Globex')).toBeInTheDocument()
+  })
+
+  it('a rejected delete leaves the row in place and surfaces the error', async () => {
+    const ops = stubOps({
+      remove: vi.fn(async () => {
+        throw new Error('boom')
+      }),
+    })
+    renderWidget({ ...listField, widgetOptions: { deletable: true } }, ops)
+    await screen.findByText('Acme')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0])
+
+    expect(await screen.findByText('boom')).toBeInTheDocument()
+    expect(screen.getByText('Acme')).toBeInTheDocument()
+  })
+})
+
+describe('widgetOptions.multiCreate — bulk-add checkbox wizard (e.g. the Role form\'s Views table)', () => {
     const permissionRowForm: ViewDescriptor = {
       entity: 'permission_row',
       viewType: 'form',

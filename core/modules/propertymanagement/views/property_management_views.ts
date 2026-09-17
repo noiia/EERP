@@ -320,6 +320,7 @@ const formFields: ViewDescriptor['fields'] = [
     name: 'billing_lines',
     label: 'Billing lines',
     type: 'relation',
+    widgetOptions: { deletable: true },
     relation: {
       entity: 'property_management_billing_line',
       kind: 'one2many',

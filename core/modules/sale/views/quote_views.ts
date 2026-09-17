@@ -239,6 +239,7 @@ const quoteFormFields: ViewDescriptor['fields'] = [
     label: 'Line items',
     type: 'relation',
     relation: { entity: 'quote_line', kind: 'one2many', inverseField: 'quote_id', labelField: 'variant_name' },
+    widgetOptions: { deletable: true },
   },
   // Same totals recap as invoice's sale_totals, scoped to this quote's own
   // lines — see invoice_views.ts's formFields for the full doc comment.

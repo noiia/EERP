@@ -148,6 +148,7 @@ const formFields: ViewDescriptor['fields'] = [
     label: 'Line items',
     type: 'relation',
     relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id', labelField: 'variant_name' },
+    widgetOptions: { deletable: true },
   },
   // The HT -> tax-by-rate -> TTC recap block (docs/roadmaps — sale totals):
   // computes itself, live, from the SAME sale_lines above (each line's own

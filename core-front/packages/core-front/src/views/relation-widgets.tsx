@@ -19,6 +19,7 @@ import Typography from '@mui/material/Typography'
 import {
   DataGrid,
   type GridColDef,
+  type GridRenderCellParams,
   type GridRowParams,
   type GridRowSelectionModel,
 } from '@mui/x-data-grid'
@@ -222,6 +223,40 @@ function relatedColumns(
     headerName: key === labelField ? t('Name') : key,
     flex: 1,
   }))
+}
+
+/** RelationListWidget's widgetOptions.deletable column — always last, a
+ * fixed-width trash icon rather than a flex column like the rest, since it
+ * carries no data of its own. */
+function deleteColumn(
+  t: (s: string) => string,
+  disabled: boolean | undefined,
+  deletingId: string | null,
+  onDelete: (id: string) => void,
+): GridColDef {
+  return {
+    field: '__delete',
+    headerName: '',
+    sortable: false,
+    filterable: false,
+    disableColumnMenu: true,
+    width: 56,
+    align: 'center',
+    headerAlign: 'center',
+    renderCell: (params: GridRenderCellParams) => (
+      <IconButton
+        size="small"
+        disabled={disabled || deletingId === String(params.id)}
+        aria-label={t('Delete')}
+        onClick={(e) => {
+          e.stopPropagation() // don't also trigger the row's own onRowClick navigation
+          onDelete(String(params.id))
+        }}
+      >
+        <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} size="xs" />
+      </IconButton>
+    ),
+  }
 }
 
 /** Exported so other relation-backed widgets (carousel-widget.tsx,
@@ -1120,6 +1155,33 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
       ? (field.widgetOptions.multiCreate as { field: string; groupByModule?: boolean })
       : null
 
+  // widgetOptions.deletable (opt-in, e.g. sale's sale_line/quote_line and
+  // propertymanagement's billing/rent-receipt lines): renders a trailing
+  // trash-icon column so a row can be removed inline instead of only
+  // through the row's own dedicated form. Off by default — every other
+  // one2many table (Role Views, notebook pages' own tables, ...) stays
+  // exactly as it was before this existed.
+  const deletable = field.widgetOptions?.deletable === true
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // The row is only ever dropped from local state AFTER ops.remove resolves
+  // — i.e. after Go's ORM has actually committed the delete — never
+  // optimistically. A failed request leaves the row exactly where it was,
+  // with the error surfaced below the grid.
+  const handleDeleteRow = (id: string) => {
+    if (!ops) return
+    setDeletingId(id)
+    ops
+      .remove(rel.entity, id)
+      .then(() => {
+        setRows((prev) => prev.filter((r) => r.id !== id))
+        setDeleteError(null)
+      })
+      .catch((e: unknown) => setDeleteError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setDeletingId(null))
+  }
+
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
@@ -1179,19 +1241,36 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
           new record lands in this list by construction. rel.formPath (opt-in —
           absent for sale_lines/quote_lines, which intentionally stay inert on
           click) navigates to the clicked row's own dedicated form instead. */}
-      <DataGrid
-        rows={displayRows}
-        columns={relatedColumns(displayRows, labelField, t, [inverseField])}
-        autoHeight
-        hideFooter
-        disableRowSelectionOnClick
-        onRowClick={
-          rel.formPath
-            ? (params: GridRowParams) => router.push(rel.formPath!.replace(':id', String(params.id)))
-            : undefined
-        }
-        sx={rel.formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
-      />
+      {/* overflowX: auto scopes the horizontal scrollbar to just this table
+          when its columns don't fit — the surrounding notebook page (and the
+          rest of the form) never scrolls sideways because of one wide grid. */}
+      <Box sx={{ overflowX: 'auto' }}>
+        <DataGrid
+          rows={displayRows}
+          columns={
+            deletable
+              ? [
+                  ...relatedColumns(displayRows, labelField, t, [inverseField]),
+                  deleteColumn(t, disabled, deletingId, handleDeleteRow),
+                ]
+              : relatedColumns(displayRows, labelField, t, [inverseField])
+          }
+          autoHeight
+          hideFooter
+          disableRowSelectionOnClick
+          onRowClick={
+            rel.formPath
+              ? (params: GridRowParams) => router.push(rel.formPath!.replace(':id', String(params.id)))
+              : undefined
+          }
+          sx={rel.formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
+        />
+      </Box>
+      {deleteError && (
+        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+          {deleteError}
+        </Typography>
+      )}
       {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
           rather than relying on the Button default staying primary. */}
       <Button
