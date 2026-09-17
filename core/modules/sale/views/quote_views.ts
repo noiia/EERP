@@ -201,7 +201,11 @@ const quoteHeaderButtons: HeaderButtonDescriptor[] = [
 // invoice's draft/sent/paid/overdue/cancelled.
 const quoteFields: ViewDescriptor['fields'] = [
   { name: 'number', label: 'Number', type: 'text', required: true },
-  { name: 'customer_name', label: 'Customer', type: 'text', required: true },
+  // See invoice_views.ts's own fields' identical field for the full
+  // rationale — kept in the compact/list set (a many2one's raw FK id isn't
+  // list-renderable); customer_id below (form-only) is the primary way to
+  // fill it now, auto-filling this via widgetOptions.fillFields.
+  { name: 'customer_name', label: 'Customer name', type: 'text', required: true },
   {
     name: 'status',
     label: 'Status',
@@ -222,13 +226,17 @@ const quoteFormFields: ViewDescriptor['fields'] = [
     widget: 'picture',
   },
   ...quoteFields,
-  { name: 'subject', label: 'Subject', type: 'text' },
   {
+    // See invoice_views.ts's own customer_id field for the full rationale —
+    // identical fillFields contract.
     name: 'customer_id',
-    label: 'Linked customer',
+    label: 'Customer',
     type: 'relation',
+    required: true,
     relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+    widgetOptions: { fillFields: { name: 'customer_name', email: 'customer_email' } },
   },
+  { name: 'subject', label: 'Subject', type: 'text' },
   { name: 'customer_email', label: 'Customer email', type: 'text' },
   { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field — same as invoice's formFields (invoice_views.ts):

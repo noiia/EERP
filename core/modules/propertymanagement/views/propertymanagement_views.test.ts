@@ -383,17 +383,29 @@ describe('propertymanagement — billing line form', () => {
     expect(field?.relation).toEqual({ entity: 'property_management', kind: 'many2one', labelField: 'name' })
   })
 
-  it('name/unit_price/tax_rate are plain editable fields — no product/variant to snapshot from', () => {
+  it('name/unit_price are plain editable fields — no product/variant to snapshot from', () => {
     const fields = billingLineForm().descriptor.fields
     const name = fields.find((f) => f.name === 'name')
     const unitPrice = fields.find((f) => f.name === 'unit_price')
-    const taxRate = fields.find((f) => f.name === 'tax_rate')
     expect(name).toMatchObject({ type: 'text', required: true })
     expect(unitPrice).toMatchObject({ type: 'number', widget: 'float' })
-    expect(taxRate).toMatchObject({ type: 'number', widget: 'percent' })
     expect(name?.readOnly).toBeFalsy()
     expect(unitPrice?.readOnly).toBeFalsy()
-    expect(taxRate?.readOnly).toBeFalsy()
+  })
+
+  it('has no plain tax_rate field — tax comes only from the taxes table now, by design', () => {
+    expect(billingLineForm().descriptor.fields.find((f) => f.name === 'tax_rate')).toBeUndefined()
+  })
+
+  it('taxes is a many2many over the shared sale_tax catalog, via property_management_billing_line_tax', () => {
+    const taxes = billingLineForm().descriptor.fields.find((f) => f.name === 'taxes')
+    expect(taxes?.type).toBe('relation')
+    expect(taxes?.relation).toEqual({
+      entity: 'sale_tax',
+      kind: 'many2many',
+      via: 'property_management_billing_line_tax',
+      labelField: 'name',
+    })
   })
 
   it('has no quantity field — a billing line is priced as a whole, not quantity x unit_price', () => {

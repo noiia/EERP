@@ -100,6 +100,31 @@ describe('sale FrontModule', () => {
     expect(formFieldNames).toContain('legal_notice')
   })
 
+  it.each([
+    ['invoice', '/sale/:id'],
+    ['quote', '/sale/quote/:id'],
+  ])(
+    '%s: customer_id is the required, primary Customer many2one, auto-filling the customer_name/email snapshot on pick',
+    (_entity, path) => {
+      const fields = sale.routes.find((r) => r.path === path)!.descriptor.fields
+      const customerId = fields.find((f) => f.name === 'customer_id')
+      expect(customerId).toMatchObject({
+        label: 'Customer',
+        type: 'relation',
+        required: true,
+        relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+      })
+      expect(customerId?.widgetOptions).toEqual({
+        fillFields: { name: 'customer_name', email: 'customer_email' },
+      })
+      // The bill-to snapshot itself is relabeled so it reads as distinct
+      // from customer_id's own "Customer" — still required (a customer with
+      // no linked contact still needs SOME printed name).
+      const customerName = fields.find((f) => f.name === 'customer_name')
+      expect(customerName).toMatchObject({ label: 'Customer name', type: 'text', required: true })
+    },
+  )
+
   it('exposes sale_lines as a real one2many relation over sale_line, scoped by invoice_id', () => {
     const linesField = sale.routes
       .find((r) => r.path === '/sale/:id')!

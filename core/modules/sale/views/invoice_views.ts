@@ -85,7 +85,14 @@ registerMenuAction({
 
 export const fields: ViewDescriptor['fields'] = [
   { name: 'number', label: 'Number', type: 'text', required: true },
-  { name: 'customer_name', label: 'Customer', type: 'text', required: true },
+  // The bill-to snapshot printed on the PDF (Invoice.CustomerName's own doc
+  // comment, module.go) — kept in the compact/list set since it's what the
+  // List's DataGrid can actually render as a readable column (a many2one's
+  // raw FK id would not). customer_id below (form-only) is the PRIMARY way
+  // to fill it now: picking a contact there auto-fills this via
+  // widgetOptions.fillFields, though it stays manually editable/overridable
+  // for a customer with no real Contact record.
+  { name: 'customer_name', label: 'Customer name', type: 'text', required: true },
   {
     name: 'status',
     label: 'Status',
@@ -108,13 +115,23 @@ const formFields: ViewDescriptor['fields'] = [
     widget: 'picture',
   },
   ...fields,
-  { name: 'subject', label: 'Subject', type: 'text' },
   {
+    // The PRIMARY way to set the customer now: picking a real contact here
+    // auto-fills customer_name/customer_email above via widgetOptions.
+    // fillFields (relation-widgets.tsx's RelationSearchWidget — a plain
+    // { sourceColumn: targetField } map applied from the picked record the
+    // moment it's chosen, no extra fetch). Still just a many2one FK
+    // (nullable) behind those snapshot fields, never resolved live at print
+    // time — see Invoice.CustomerID/CustomerName's own doc comments
+    // (module.go) for why the snapshot exists at all.
     name: 'customer_id',
-    label: 'Linked customer',
+    label: 'Customer',
     type: 'relation',
+    required: true,
     relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+    widgetOptions: { fillFields: { name: 'customer_name', email: 'customer_email' } },
   },
+  { name: 'subject', label: 'Subject', type: 'text' },
   { name: 'customer_email', label: 'Customer email', type: 'text' },
   { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field: currency is now the ISSUING COMPANY's own property

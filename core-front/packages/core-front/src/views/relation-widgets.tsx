@@ -675,7 +675,14 @@ function RelationWizard({
   )
 }
 
-export function RelationSearchWidget({ field, value, onChange, disabled, recordId }: WidgetProps) {
+export function RelationSearchWidget({
+  field,
+  value,
+  onChange,
+  onChangeField,
+  disabled,
+  recordId,
+}: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
@@ -712,9 +719,27 @@ export function RelationSearchWidget({ field, value, onChange, disabled, recordI
 
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
+  // widgetOptions.fillFields (opt-in, e.g. sale's invoice/quote customer_id
+  // picking a contact): a plain { sourceColumn: targetFieldName } map,
+  // mirroring SelectionLinkedWidget's own widgetOptions.presets — patches
+  // sibling fields via onChangeField the moment a record is picked, using
+  // columns ALREADY on the picked record (the search list()/create-wizard
+  // result), never a second fetch. Lets a "capture at document time"
+  // snapshot (customer_name/customer_email, printed on the PDF, deliberately
+  // never live-resolved through the FK later — see sale/module.go's Invoice
+  // doc comment) still start from a real contact's current data instead of
+  // being retyped by hand, while staying just as editable/overridable
+  // afterward as it always was.
+  const fillFields = field.widgetOptions?.fillFields as Record<string, string> | undefined
+
   const pick = (record: RelationRecord) => {
     setSelectedLabel(labelOf(record, labelField))
     onChange(record.id)
+    if (fillFields && onChangeField) {
+      for (const [sourceColumn, targetField] of Object.entries(fillFields)) {
+        onChangeField(targetField, record[sourceColumn])
+      }
+    }
   }
 
   return (
@@ -1391,20 +1416,26 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
     // default align-items: stretch otherwise pins a maxWidth-capped item to
     // the START of the cross axis regardless of margin.
     <Stack spacing={0.5} sx={{ maxWidth: 360, alignSelf: 'flex-end' }}>
-      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+      {/* gap: 1 (by design, not a one-off fix): justifyContent: 'space-between'
+          alone squeezes to near-zero once a row's label is long enough
+          relative to the Stack's own maxWidth (e.g. "Untaxed Amount" versus
+          "Tax") — label and value visually run together with no gap at all.
+          A fixed minimum gap keeps every row legible regardless of how much
+          space-between has left to work with. */}
+      <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="body2">{t('Untaxed Amount')}:</Typography>
         <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
           {format(subtotal, { decimals: 2 })}
         </Typography>
       </Stack>
-      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="body2">{t('Tax')}:</Typography>
         <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
           {format(taxAmount, { decimals: 2 })}
         </Typography>
       </Stack>
       <Box sx={{ borderTop: '0.5px solid', borderColor: 'divider' }} />
-      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="subtitle2">{t('Total')}:</Typography>
         <Typography variant="subtitle2" sx={{ fontVariantNumeric: tabularNums }}>
           {format(total, { decimals: 2 })}

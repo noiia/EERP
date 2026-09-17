@@ -38,12 +38,14 @@ function Harness({
   field,
   ops,
   onChange,
+  onChangeField,
   initialValue,
   recordId,
 }: {
   field: FieldDescriptor
   ops: RelationOps
   onChange: (next: unknown) => void
+  onChangeField: (name: string, value: unknown) => void
   initialValue: unknown
   recordId: string | null
 }) {
@@ -58,6 +60,7 @@ function Harness({
           onChange(next)
           setValue(next)
         }}
+        onChangeField={onChangeField}
         entity="crm"
         recordId={recordId}
       />
@@ -71,16 +74,18 @@ function renderWidget(
   props: Partial<WidgetProps> = {},
 ) {
   const onChange = vi.fn()
+  const onChangeField = vi.fn()
   render(
     <Harness
       field={field}
       ops={ops}
       onChange={onChange}
+      onChangeField={onChangeField}
       initialValue={props.value ?? null}
       recordId={props.recordId !== undefined ? props.recordId : 'r1'}
     />,
   )
-  return { onChange }
+  return { onChange, onChangeField }
 }
 
 const searchField: FieldDescriptor = {
@@ -125,6 +130,37 @@ describe('relation/search (many2one)', () => {
     expect(onChange).toHaveBeenCalledWith('c1')
     // The picked record renders as a tag.
     expect(await screen.findByText('Acme')).toBeInTheDocument()
+  })
+
+  it('widgetOptions.fillFields: picking a record patches sibling fields via onChangeField (e.g. sale\'s customer_id -> customer_name/email)', async () => {
+    const ops = stubOps()
+    const { onChange, onChangeField } = renderWidget(
+      { ...searchField, widgetOptions: { fillFields: { name: 'customer_name', status: 'customer_status' } } },
+      ops,
+    )
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    fireEvent.click(await screen.findByText('Acme'))
+
+    expect(onChange).toHaveBeenCalledWith('c1')
+    // Both mapped columns come straight off the ALREADY-loaded search result
+    // (companies' own 'Acme' row) — no second fetch.
+    expect(onChangeField).toHaveBeenCalledWith('customer_name', 'Acme')
+    expect(onChangeField).toHaveBeenCalledWith('customer_status', 'customer')
+  })
+
+  it('with no widgetOptions.fillFields declared, picking a record never touches onChangeField', async () => {
+    const ops = stubOps()
+    const { onChangeField } = renderWidget(searchField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    fireEvent.click(await screen.findByText('Acme'))
+
+    expect(onChangeField).not.toHaveBeenCalled()
   })
 
   it('excludes the current record\'s own id from the results — by design, no per-field opt-in', async () => {
