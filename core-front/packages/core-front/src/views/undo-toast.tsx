@@ -21,11 +21,22 @@ import { byPrefixAndName, FontAwesomeIcon } from './icons'
 //   - DEFERRED commit: the caller hasn't actually done the delete yet: pass
 //     `onExpire` to do it once the window elapses un-recovered; `onRecover`
 //     is then a no-op restore of local state only (zero backend calls if
-//     the user clicks Recover).
+//     the user clicks Recover). CAUTION: `onExpire`'s `setTimeout` lives only
+//     in this tab's JS memory — a page refresh or a navigation that drops
+//     the component before the window elapses loses it silently, leaving
+//     whatever this was supposed to delete un-deleted server-side with no
+//     further sign anything went wrong. Fine for something cheap to re-fetch
+//     and re-derive (a saved filter, a field value); wrong for an action the
+//     UI has already told the user succeeded (e.g. a record Delete) — use
+//     EAGER commit for those instead, see FormRenderer/TreeRenderer's own
+//     handleDelete in renderers.tsx.
 //   - EAGER commit with reversal: the caller already performed the action
-//     optimistically (matching how this app's other optimistic mutations —
+//     for real (matching how this app's other optimistic mutations —
 //     Kanban/Calendar drags — already work) and only needs `onRecover` to
-//     undo it; `onExpire` is omitted.
+//     undo it (a real reversal call, e.g. a restore endpoint — not just
+//     local state, unless the action itself never left this tab); `onExpire`
+//     is omitted. Survives a refresh by construction: the action already
+//     committed before the toast even appears.
 //
 // ponytail: a single pending slot, not a queue — triggering a second show()
 // while one is still pending immediately expires the first rather than

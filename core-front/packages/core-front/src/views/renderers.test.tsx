@@ -384,7 +384,7 @@ describe('EntityView', () => {
         expect(screen.queryByRole('menuitem', { name: /Delete/ })).not.toBeInTheDocument()
       })
 
-      it('hides the selected rows immediately (no backend call yet) and shows the undo toast', () => {
+      it('commits immediately, not deferred — rows hidden AND remove called right away, toast follows', async () => {
         useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
         const remove = vi.fn(async () => {})
         render(
@@ -396,13 +396,40 @@ describe('EntityView', () => {
 
         expect(screen.queryByText('Ada')).not.toBeInTheDocument()
         expect(screen.queryByText('Grace')).not.toBeInTheDocument()
-        expect(remove).not.toHaveBeenCalled()
-        expect(useUndoToastStore.getState().pending?.message).toContain('2')
+        expect(remove).toHaveBeenCalledWith('1')
+        expect(remove).toHaveBeenCalledWith('2')
+        await waitFor(() => expect(useUndoToastStore.getState().pending?.message).toContain('2'))
       })
 
-      it('recovering restores both rows with zero backend calls', async () => {
+      it('recovering calls restore for each id (a real reversal) and re-adds the rows', async () => {
         useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
         const remove = vi.fn(async () => {})
+        const restore = vi.fn(async (id: string) => ({ id, name: '' }))
+        render(
+          <EntityView
+            descriptor={treeDescriptor}
+            initialData={rows}
+            actions={{ ...noopActions, remove, restore }}
+          />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+        await waitFor(() => expect(useUndoToastStore.getState().pending).not.toBeNull())
+
+        useUndoToastStore.getState().recover()
+
+        await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument())
+        expect(screen.getByText('Grace')).toBeInTheDocument()
+        expect(restore).toHaveBeenCalledWith('1')
+        expect(restore).toHaveBeenCalledWith('2')
+      })
+
+      it('a rejected delete restores just that row and shows an error, a succeeding sibling stays deleted', async () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        const remove = vi.fn(async (id: string) => {
+          if (id === '2') throw new Error('boom')
+        })
         render(
           <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
         )
@@ -410,31 +437,11 @@ describe('EntityView', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
         fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
 
-        useUndoToastStore.getState().recover()
-
-        await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument())
-        expect(screen.getByText('Grace')).toBeInTheDocument()
-        expect(remove).not.toHaveBeenCalled()
-      })
-
-      it('letting the undo window elapse actually removes each selected id', async () => {
-        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
-        const remove = vi.fn(async () => {})
-        render(
-          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
-        )
-        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
-        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
-
-        vi.useFakeTimers()
-        try {
-          fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
-          vi.advanceTimersByTime(6000)
-        } finally {
-          vi.useRealTimers()
-        }
-        await waitFor(() => expect(remove).toHaveBeenCalledWith('1'))
-        expect(remove).toHaveBeenCalledWith('2')
+        // '2' (Grace) failed and comes back; '1' (Ada) succeeded and stays gone.
+        await waitFor(() => expect(screen.getByText('Grace')).toBeInTheDocument())
+        expect(screen.queryByText('Ada')).not.toBeInTheDocument()
+        expect(screen.getByText('Some records could not be deleted.')).toBeInTheDocument()
+        expect(useUndoToastStore.getState().pending?.message).toContain('1')
       })
     })
   })
@@ -564,7 +571,7 @@ describe('EntityView', () => {
       expect(screen.getByRole('button', { name: 'Options' })).toBeDisabled()
     })
 
-    it('navigates to the list (this form path minus its trailing id) and shows the undo toast immediately, with no backend call yet', () => {
+    it('commits immediately (not deferred): remove is called right away, navigation + toast follow its success', async () => {
       useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
       const remove = vi.fn(async () => {})
       mockPathname = '/crm/c1'
@@ -579,14 +586,39 @@ describe('EntityView', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Options' }))
       fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
 
-      expect(pushMock).toHaveBeenCalledWith('/crm')
-      expect(remove).not.toHaveBeenCalled()
+      expect(remove).toHaveBeenCalledWith('c1')
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/crm'))
       expect(useUndoToastStore.getState().pending?.message).toBeTruthy()
     })
 
-    it('recovering navigates back to the form, with zero backend calls', () => {
+    it('recovering calls restore (a real reversal) and navigates back to the form', async () => {
       useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
       const remove = vi.fn(async () => {})
+      const restore = vi.fn(async (id: string) => ({ id, name: 'Ada' }))
+      mockPathname = '/crm/c1'
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove, restore }}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+      await waitFor(() => expect(useUndoToastStore.getState().pending).not.toBeNull())
+
+      useUndoToastStore.getState().recover()
+
+      await waitFor(() => expect(restore).toHaveBeenCalledWith('c1'))
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/crm/c1'))
+    })
+
+    it('a rejected delete never navigates away and shows an inline error instead', async () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      const remove = vi.fn(async () => {
+        throw new Error('boom')
+      })
       mockPathname = '/crm/c1'
       render(
         <EntityView
@@ -598,33 +630,10 @@ describe('EntityView', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Options' }))
       fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
-      useUndoToastStore.getState().recover()
 
-      expect(pushMock).toHaveBeenCalledWith('/crm/c1')
-      expect(remove).not.toHaveBeenCalled()
-    })
-
-    it('letting the undo window elapse actually deletes the record', async () => {
-      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
-      const remove = vi.fn(async () => {})
-      mockPathname = '/crm/c1'
-      render(
-        <EntityView
-          descriptor={formDescriptor}
-          initialData={[{ id: 'c1', name: 'Ada' }]}
-          actions={{ ...noopActions, remove }}
-        />,
-      )
-
-      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
-      vi.useFakeTimers()
-      try {
-        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
-        vi.advanceTimersByTime(6000)
-      } finally {
-        vi.useRealTimers()
-      }
-      await waitFor(() => expect(remove).toHaveBeenCalledWith('c1'))
+      expect(await screen.findByText('boom')).toBeInTheDocument()
+      expect(pushMock).not.toHaveBeenCalled()
+      expect(useUndoToastStore.getState().pending).toBeNull()
     })
   })
 

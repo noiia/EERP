@@ -10,7 +10,7 @@ import { layout, T, type EntityActions, type ViewDescriptor } from '@eerp/core-f
 import '@/generated/generated-modules'
 import { activeModuleNames } from '@/lib/module-state'
 import { requireAuth } from '@/lib/session'
-import { createRecord, removeRecord, updateRecord } from './actions'
+import { createRecord, removeRecord, restoreRecord, updateRecord } from './actions'
 import {
   dashboardListViews,
   modulePageTitle,
@@ -52,6 +52,7 @@ export default async function ModulePage({ params }: ModulePageProps) {
     create: createRecord.bind(null, entity),
     update: updateRecord.bind(null, entity),
     remove: removeRecord.bind(null, entity),
+    restore: restoreRecord.bind(null, entity),
   } as unknown as EntityActions<AnyRecord>
 
   // A dashboard rolls the owning module's list views into count blocks; other views ignore this.

@@ -257,6 +257,9 @@ export interface ServerApiClient {
   update<T>(entity: string, id: string, body: unknown): Promise<T>
   /** Soft delete by default (ADR-003) — archives the record server-side. */
   remove(entity: string, id: string): Promise<void>
+  /** Undoes a SOFT delete via Go's generic `POST /:id/restore` — returns the
+   * restored record. */
+  restore<T>(entity: string, id: string): Promise<T>
   /**
    * entity's Kanban status field / Calendar date field, as configured from
    * Settings -> Views (docs/roadmaps/list-view-modes.md, ADR-006). Never
@@ -383,6 +386,23 @@ class ServerApiClientImpl implements ServerApiClient {
   async remove(entity: string, id: string): Promise<void> {
     await request<void>('DELETE', `/${entity}/${id}`, [entity], undefined, this.tokenOverride)
     revalidateTag(entity, REVALIDATE_PROFILE)
+  }
+
+  /** Undoes a SOFT delete — Go's generic CRUD mounts `POST /:id/restore` for
+   * every soft-deletable table (`core/orm/server`'s own route, 404 for a
+   * table that isn't). Returns the restored record so a caller (the undo
+   * toast's onRecover) can put it straight back into local state instead of
+   * re-fetching. */
+  async restore<T>(entity: string, id: string): Promise<T> {
+    const restored = await request<T>(
+      'POST',
+      `/${entity}/${id}/restore`,
+      [entity],
+      undefined,
+      this.tokenOverride,
+    )
+    revalidateTag(entity, REVALIDATE_PROFILE)
+    return restored
   }
 
   async getViewFields(entity: string): Promise<ViewFieldsConfig> {

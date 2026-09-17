@@ -153,7 +153,7 @@ describe('AppHeaderMenuBar', () => {
 
   // Forces the collapsed (icon + drill-down Menu) rendering — see the probe/
   // scrollWidth comment inside the test below for why this needs a rerender.
-  function collapse(container: HTMLElement, menus: HeaderMenu[]) {
+  function collapse(container: HTMLElement) {
     const probe = container.querySelector('[data-testid="header-menu-probe"]') as HTMLElement
     Object.defineProperty(probe, 'scrollWidth', { value: 2000, configurable: true })
     useContainerWidthMock.mockReturnValue({
@@ -178,7 +178,7 @@ describe('AppHeaderMenuBar', () => {
     // the next layout-effect run detects overflow — jsdom reports 0 for both
     // scrollWidth and the measured width by default, so this simulates a
     // narrow top bar without a real ResizeObserver.
-    collapse(container, [productsMenu, configurationMenu])
+    collapse(container)
     rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
 
     await screen.findByRole('button', { name: 'App menus' })
@@ -195,7 +195,7 @@ describe('AppHeaderMenuBar', () => {
     const { container, rerender } = render(
       <AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />,
     )
-    collapse(container, [productsMenu, configurationMenu])
+    collapse(container)
     rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'App menus' }))
@@ -217,7 +217,7 @@ describe('AppHeaderMenuBar', () => {
     const { container, rerender } = render(
       <AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />,
     )
-    collapse(container, [productsMenu, configurationMenu])
+    collapse(container)
     rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'App menus' }))
@@ -244,7 +244,7 @@ describe('AppHeaderMenuBar', () => {
     const { container, rerender } = render(
       <AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />,
     )
-    collapse(container, [productsMenu, configurationMenu])
+    collapse(container)
     rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'App menus' }))

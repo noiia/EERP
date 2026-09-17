@@ -16,3 +16,7 @@ export async function updateRecord(entity: string, id: string, body: unknown): P
 export async function removeRecord(entity: string, id: string): Promise<void> {
   await createServerApiClient().remove(entity, id)
 }
+
+export async function restoreRecord(entity: string, id: string): Promise<unknown> {
+  return createServerApiClient().restore(entity, id)
+}

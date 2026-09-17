@@ -17,7 +17,7 @@ import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef, type GridRowSelectionModel } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
-import type { SerializedError } from '../api/errors'
+import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import {
   availableDisplayModes,
   DISPLAY_MODES,
@@ -318,6 +318,7 @@ function FormRenderer<T extends HasId>({
   // unconditionally (rules of hooks) — same '' -never-matches posture
   // CreateBar's own createPermission check already takes.
   const canDelete = usePermission(`${descriptor.entity}:${descriptor.entity}:delete`)
+  const [deleteError, setDeleteError] = useState<SerializedError | null>(null)
   // The record's field values as of the last successful load/save — the
   // BEFORE side of the chatter log's diff. Re-seeded from a fresh navigation
   // (`initialData` prop change) and after every successful commit below, so a
@@ -372,31 +373,37 @@ function FormRenderer<T extends HasId>({
   }
 
   // Delete via the DEFAULT hard-delete affordance (docs/adr/ADR-015-undo-
-  // toast.md) rather than a confirm dialog: navigates away to the record's
-  // own list (this form's path minus its trailing /:id segment — the same
-  // "<list>/:id" convention every formPath in this codebase already follows,
-  // e.g. breadcrumb-store's own crumb derivation) immediately, and shows the
-  // undo toast. DEFERRED commit — actions.remove is only actually called
-  // from onExpire if the user lets the window elapse; onRecover just
-  // navigates back, no backend call, since nothing was ever deleted while
-  // the toast was up. idToRemove/listPath/formPathNow are captured here, at
-  // click time, into plain consts the callbacks close over — never re-read
-  // from component state later, so a re-render between the click and the
-  // toast resolving (or a second, unrelated delete elsewhere) can't feed
-  // either callback a value that's since drifted.
+  // toast.md) rather than a confirm dialog — EAGER commit, not deferred:
+  // actions.remove runs immediately, and only navigates/shows the toast once
+  // it actually succeeds. A deferred commit (only calling remove from the
+  // toast's own onExpire timer) never survives a page refresh or a
+  // navigation elsewhere in the meantime — the pending setTimeout lives in
+  // this tab's JS memory alone, so the record silently stayed undeleted
+  // server-side while the UI had already moved on. The toast here is purely
+  // a REVERSAL affordance: onRecover calls actions.restore (Go's generic
+  // POST /:id/restore) to actually undo the already-committed delete, not a
+  // "did you really mean it" wait. idToRemove/listPath/formPathNow are
+  // captured at click time into plain consts the callbacks close over —
+  // never re-read from component state later, so a re-render between the
+  // click and the toast resolving can't feed either callback a stale value.
   const handleDelete = () => {
     if (!recordId || !actions.remove) return
     const idToRemove = recordId
     const formPathNow = pathname
     const listPath = formPathNow.replace(/\/[^/]+$/, '')
-    router.push(listPath)
-    useUndoToastStore.getState().show({
-      message: t('Record deleted.'),
-      onRecover: () => router.push(formPathNow),
-      onExpire: () => {
-        void actions.remove?.(idToRemove)
-      },
-    })
+    setDeleteError(null)
+    actions
+      .remove(idToRemove)
+      .then(() => {
+        router.push(listPath)
+        useUndoToastStore.getState().show({
+          message: t('Record deleted.'),
+          onRecover: () => {
+            void actions.restore?.(idToRemove).then(() => router.push(formPathNow))
+          },
+        })
+      })
+      .catch((e: unknown) => setDeleteError(serializeError(toApiError(e))))
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -573,6 +580,7 @@ function FormRenderer<T extends HasId>({
                   error={{ code: error.code, message: error.message, requestId: error.requestId }}
                 />
               ) : null}
+              {deleteError ? <ErrorAlert error={deleteError} /> : null}
               <PictureSizeProvider size={pictureSize}>
                 <LayoutForm
                   descriptor={descriptor}
@@ -848,26 +856,46 @@ function TreeRenderer<T extends HasId>({
     })
   }
 
-  // Built-in bulk Delete (list-selection.tsx's own doc comment) — same
-  // deferred-commit undo-toast shape as FormRenderer's own handleDelete: hide
-  // the rows immediately, only call actions.remove per id from onExpire if
-  // the window elapses un-recovered. removedRecords is captured here, at
-  // click time, so onRecover re-inserts exactly those rows regardless of
-  // whatever liveRecords/selectedIds have done since (both setters below use
-  // the functional form, so they're safe against a stale closure over
-  // liveRecords itself too).
+  // Built-in bulk Delete (list-selection.tsx's own doc comment) — EAGER
+  // commit, not deferred: actions.remove fires immediately per id, and the
+  // toast only shows for whichever ones actually succeeded. A deferred
+  // commit (only calling remove once the toast's own timer elapses) never
+  // survives a refresh/navigation away in the meantime — see
+  // FormRenderer's own handleDelete doc comment for the full rationale, this
+  // is the same fix applied to the bulk path. The toast's onRecover calls
+  // actions.restore (Go's generic POST /:id/restore) to actually undo the
+  // already-committed deletes, a real reversal rather than "don't commit
+  // yet." removedRecords/deletedRecords are captured at click/settle time
+  // into plain consts, never re-read from component state later — every
+  // setter below still uses the functional form, so this stays safe even if
+  // liveRecords/selectedIds have moved on by the time a promise resolves.
   const canDelete = usePermission(`${descriptor.entity}:${descriptor.entity}:delete`)
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
   const handleBulkDelete = (ids: string[]) => {
+    if (!actions.remove) return
     const idSet = new Set(ids)
     const removedRecords = liveRecords.filter((r) => idSet.has(r.id))
+    setBulkDeleteError(null)
     setLiveRecords((prev) => prev.filter((r) => !idSet.has(r.id)))
     setSelectionModel({ type: 'include', ids: new Set() })
-    useUndoToastStore.getState().show({
-      message: `${ids.length} ${t('record(s) deleted.')}`,
-      onRecover: () => setLiveRecords((prev) => [...prev, ...removedRecords]),
-      onExpire: () => {
-        void Promise.all(ids.map((id) => actions.remove?.(id)))
-      },
+    void Promise.allSettled(ids.map((id) => actions.remove!(id))).then((results) => {
+      const failedIds = new Set(ids.filter((_, i) => results[i].status === 'rejected'))
+      if (failedIds.size > 0) {
+        // Only the ones that actually failed come back — whatever DID
+        // delete stays deleted; re-adding those too would show a row the
+        // backend has already dropped.
+        setLiveRecords((prev) => [...prev, ...removedRecords.filter((r) => failedIds.has(r.id))])
+        setBulkDeleteError(t('Some records could not be deleted.'))
+      }
+      const deletedRecords = removedRecords.filter((r) => !failedIds.has(r.id))
+      if (deletedRecords.length === 0) return
+      useUndoToastStore.getState().show({
+        message: `${deletedRecords.length} ${t('record(s) deleted.')}`,
+        onRecover: () => {
+          setLiveRecords((prev) => [...prev, ...deletedRecords])
+          void Promise.all(deletedRecords.map((r) => actions.restore?.(r.id)))
+        },
+      })
     })
   }
 
@@ -1019,6 +1047,11 @@ function TreeRenderer<T extends HasId>({
       ) : (
         searchRow
       )}
+      {bulkDeleteError ? (
+        <Typography variant="caption" color="error" sx={{ display: 'block', mb: 1 }}>
+          {bulkDeleteError}
+        </Typography>
+      ) : null}
       <DisplayModeSwitcher
         entity={descriptor.entity}
         mode={mode}

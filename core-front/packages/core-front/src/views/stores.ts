@@ -30,6 +30,16 @@ export interface EntityActions<T extends HasId> {
   create: (body: Partial<T>) => Promise<T>
   update: (id: string, body: Partial<T>) => Promise<T>
   remove?: (id: string) => Promise<void>
+  /** Undoes a `remove()` — optional, and only ever meaningful alongside
+   * `remove` (a host that binds one binds both; see
+   * `apps/shell/app/[...module]/actions.ts`). The built-in Delete
+   * affordance (`form-actions-menu.tsx`/`list-selection.tsx`) commits the
+   * delete immediately and uses this from the undo toast's `onRecover` to
+   * actually reverse it — see their own doc comments for why: a DEFERRED
+   * commit (delete only on the toast's timeout) never survives a page
+   * refresh/navigation that drops the pending timer, silently leaving the
+   * record undeleted server-side while the UI already moved on. */
+  restore?: (id: string) => Promise<T>
 }
 
 // --- entity store (list + selection) ---
