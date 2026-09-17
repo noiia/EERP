@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -62,6 +62,7 @@ import { SearchBar } from './search-bar'
 import { StatusBar } from './status-bar'
 import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
+import { useUndoToastStore } from './undo-toast'
 import {
   createDashboardStore,
   createFormStore,
@@ -302,6 +303,8 @@ function FormRenderer<T extends HasId>({
   chatterVisible = true,
 }: EntityViewProps<T>) {
   const t = useT()
+  const router = useRouter()
+  const pathname = usePathname()
   const [store] = useState(() => createFormStore(descriptor, actions, initialData[0] ?? {}))
   const draft = useFormDraft(store)
   const dirty = useFormDirty(store)
@@ -309,6 +312,12 @@ function FormRenderer<T extends HasId>({
   const { setField } = store.getState()
   const chatterOps = useChatterOps()
   const relationOps = useRelationOps()
+  // Built-in Delete (form-actions-menu.tsx's own doc comment): gated on the
+  // route-derived permission AND on a bound remove Server Action actually
+  // existing (EntityActions.remove is optional). The hook runs
+  // unconditionally (rules of hooks) — same '' -never-matches posture
+  // CreateBar's own createPermission check already takes.
+  const canDelete = usePermission(`${descriptor.entity}:${descriptor.entity}:delete`)
   // The record's field values as of the last successful load/save — the
   // BEFORE side of the chatter log's diff. Re-seeded from a fresh navigation
   // (`initialData` prop change) and after every successful commit below, so a
@@ -360,6 +369,34 @@ function FormRenderer<T extends HasId>({
     }
     const saved = await commit()
     return saved as Record<string, unknown> | null
+  }
+
+  // Delete via the DEFAULT hard-delete affordance (docs/adr/ADR-015-undo-
+  // toast.md) rather than a confirm dialog: navigates away to the record's
+  // own list (this form's path minus its trailing /:id segment — the same
+  // "<list>/:id" convention every formPath in this codebase already follows,
+  // e.g. breadcrumb-store's own crumb derivation) immediately, and shows the
+  // undo toast. DEFERRED commit — actions.remove is only actually called
+  // from onExpire if the user lets the window elapse; onRecover just
+  // navigates back, no backend call, since nothing was ever deleted while
+  // the toast was up. idToRemove/listPath/formPathNow are captured here, at
+  // click time, into plain consts the callbacks close over — never re-read
+  // from component state later, so a re-render between the click and the
+  // toast resolving (or a second, unrelated delete elsewhere) can't feed
+  // either callback a value that's since drifted.
+  const handleDelete = () => {
+    if (!recordId || !actions.remove) return
+    const idToRemove = recordId
+    const formPathNow = pathname
+    const listPath = formPathNow.replace(/\/[^/]+$/, '')
+    router.push(listPath)
+    useUndoToastStore.getState().show({
+      message: t('Record deleted.'),
+      onRecover: () => router.push(formPathNow),
+      onExpire: () => {
+        void actions.remove?.(idToRemove)
+      },
+    })
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -498,6 +535,7 @@ function FormRenderer<T extends HasId>({
           entity={descriptor.entity}
           actions={descriptor.actions ?? []}
           recordId={recordId ?? 'new'}
+          onDelete={canDelete && actions.remove ? handleDelete : undefined}
         />
         <HeaderButtonContainer
           entity={descriptor.entity}
@@ -810,6 +848,29 @@ function TreeRenderer<T extends HasId>({
     })
   }
 
+  // Built-in bulk Delete (list-selection.tsx's own doc comment) — same
+  // deferred-commit undo-toast shape as FormRenderer's own handleDelete: hide
+  // the rows immediately, only call actions.remove per id from onExpire if
+  // the window elapses un-recovered. removedRecords is captured here, at
+  // click time, so onRecover re-inserts exactly those rows regardless of
+  // whatever liveRecords/selectedIds have done since (both setters below use
+  // the functional form, so they're safe against a stale closure over
+  // liveRecords itself too).
+  const canDelete = usePermission(`${descriptor.entity}:${descriptor.entity}:delete`)
+  const handleBulkDelete = (ids: string[]) => {
+    const idSet = new Set(ids)
+    const removedRecords = liveRecords.filter((r) => idSet.has(r.id))
+    setLiveRecords((prev) => prev.filter((r) => !idSet.has(r.id)))
+    setSelectionModel({ type: 'include', ids: new Set() })
+    useUndoToastStore.getState().show({
+      message: `${ids.length} ${t('record(s) deleted.')}`,
+      onRecover: () => setLiveRecords((prev) => [...prev, ...removedRecords]),
+      onExpire: () => {
+        void Promise.all(ids.map((id) => actions.remove?.(id)))
+      },
+    })
+  }
+
   let content: React.ReactNode
   if (mode === 'kanban' && effective.kanbanStatusField) {
     content = (
@@ -927,6 +988,7 @@ function TreeRenderer<T extends HasId>({
         selectedIds={selectedIds}
         totalLoaded={liveRecords.length}
         onSelectAll={toggleSelectAll}
+        onDelete={canDelete && actions.remove ? handleBulkDelete : undefined}
       />
     ) : null
   const searchRow = (

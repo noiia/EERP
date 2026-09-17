@@ -152,14 +152,25 @@ export const layout = {
   searchBarMaxWidth: 450,
   searchBarNarrowWidth: '95%',
   searchBarNarrowBreakpoint: 720,
-  /** Viewport width (px) below which the top bar's breadcrumb (`AppTopBar.tsx`)
-   * collapses to a single "…" summary button plus the current page only, instead
-   * of MUI Breadcrumbs' own count-based collapse (which still lays the visible
-   * crumbs out horizontally) — a plain viewport media query, like
-   * `chatterBreakpoint`, since the fixed top bar always spans the full viewport.
-   * 375px is the narrowest common phone width (iPhone SE and similar) where even
-   * a two-crumb trail plus the nav/avatar realistically stops fitting. */
-  breadcrumbCollapseWidth: 375,
+  /** Viewport width (px) below which the top bar (`AppTopBar.tsx`) switches to
+   * its compact "phone" layout — a plain viewport media query, like
+   * `chatterBreakpoint`, since the fixed top bar always spans the full
+   * viewport. Two independent pieces read this SAME threshold, so they
+   * always flip together:
+   *   - The breadcrumb collapses to two bare icon buttons — a trail-summary
+   *     icon (opens every visited crumb as a vertical Menu, current page
+   *     non-clickable, same menu the wide layout's collapse already builds)
+   *     and a home/"Menu" icon — with NO text label next to either, instead
+   *     of MUI Breadcrumbs' own count-based collapse (which still lays the
+   *     visible crumbs out horizontally) or the wide layout's "icon + current
+   *     page title" pairing.
+   *   - CompanySwitcher drops its company-name text, showing only the
+   *     building icon.
+   * Left at 1024 rather than reusing `mobileBreakpoint` (720): those two
+   * pieces read as visual clutter well before a real phone width, on any
+   * screen too narrow to comfortably fit breadcrumb text + the module header
+   * menu + a company name + the user avatar on one row — not just phones. */
+  topBarCompactWidth: 1024,
   /** Form chatter panel (chatter-panel.tsx): a resizable side panel to the
    * RIGHT of the form on a wide screen, stacked full-width BELOW it once the
    * viewport narrows past `chatterBreakpoint` — a plain viewport media query

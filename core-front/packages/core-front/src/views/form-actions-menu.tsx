@@ -1,5 +1,6 @@
 'use client'
 import { useState, type MouseEvent } from 'react'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
@@ -25,14 +26,26 @@ export interface FormActionsMenuProps {
   /** The form route's :id — 'new' for an unsaved draft, which disables the
    * button entirely: every action here acts on a real, saved record. */
   recordId: string
+  /**
+   * Built-in Delete entry — engine chrome, not a module-declared
+   * ViewDescriptor.action, so every form gets it with no per-descriptor
+   * opt-in (same posture Save/Reset already take). Omitted (no handler)
+   * hides the entry entirely: the caller (FormRenderer) only passes one when
+   * both `${entity}:${entity}:delete` is granted AND the bound
+   * EntityActions.remove exists (it's optional — a host that never wired a
+   * remove Server Action just doesn't get the entry). Rendered last, below a
+   * Divider when custom actions exist above it.
+   */
+  onDelete?: () => void
 }
 
-export function FormActionsMenu({ entity, actions, recordId }: FormActionsMenuProps) {
+export function FormActionsMenu({ entity, actions, recordId, onDelete }: FormActionsMenuProps) {
   const t = useT()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasRecord = recordId !== 'new'
+  const hasAnyItem = actions.length > 0 || onDelete != null
 
   const run = (name: string) => {
     setAnchorEl(null)
@@ -54,7 +67,7 @@ export function FormActionsMenu({ entity, actions, recordId }: FormActionsMenuPr
       ) : null}
       <IconButton
         aria-label={t('Options')}
-        disabled={actions.length === 0 || !hasRecord || busy}
+        disabled={!hasAnyItem || !hasRecord || busy}
         onClick={(event: MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget)}
       >
         <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
@@ -63,6 +76,22 @@ export function FormActionsMenu({ entity, actions, recordId }: FormActionsMenuPr
         {actions.map((node, i) => (
           <MenuNodeItem key={i} node={node} onRun={run} />
         ))}
+        {onDelete
+          ? [
+              actions.length > 0 ? <Divider key="delete-divider" /> : null,
+              <MenuItem
+                key="delete"
+                onClick={() => {
+                  setAnchorEl(null)
+                  onDelete()
+                }}
+                sx={{ color: 'error.main' }}
+              >
+                <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} size="sm" style={{ marginRight: 8 }} />
+                {t('Delete')}
+              </MenuItem>,
+            ]
+          : null}
       </Menu>
     </>
   )

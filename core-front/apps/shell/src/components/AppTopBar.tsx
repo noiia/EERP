@@ -153,14 +153,18 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
     // friendly name too, not just crumbs visited from here on.
     useBreadcrumbStore.getState().visit(currentCrumb)
   }, [pathname, recordLabel])
-  const narrow = useMediaQuery(`(max-width:${layout.breadcrumbCollapseWidth}px)`)
+  const narrow = useMediaQuery(`(max-width:${layout.topBarCompactWidth}px)`)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 
-  // Below breadcrumbCollapseWidth, a full trail rarely fits next to the nav/avatar —
-  // collapse it to a single "…" summary button plus the current page only. Clicking
-  // it opens every crumb in a Menu (which stacks its MenuItems VERTICALLY by nature)
-  // instead of falling through to MUI Breadcrumbs' own built-in collapse below, which
-  // would re-expand everything back INLINE — still too wide for this screen.
+  // Below topBarCompactWidth, a full trail (crumb text, let alone the module
+  // header menu/company name/avatar sharing the same row) rarely fits —
+  // collapse to two BARE icon buttons, no text at all: a trail-summary icon
+  // (opens every visited crumb as a vertical Menu — MenuItems stack that way
+  // by nature, unlike falling through to MUI Breadcrumbs' own built-in
+  // collapse below, which would re-expand everything back INLINE, still too
+  // wide for this screen) and a home/"Menu" icon beside it, since the wide
+  // layout's own root crumb (the `else` branch below) is what this compact
+  // mode replaces, not something still reachable elsewhere on this row.
   if (narrow && trail.length > 0) {
     const open = Boolean(anchorEl)
     function close() {
@@ -178,14 +182,9 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
         >
           <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} size="sm" />
         </IconButton>
-        <Typography
-          variant="subtitle2"
-          component="span"
-          color="inherit"
-          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-        >
-          {recordLabel ?? t(trail[trail.length - 1].label)}
-        </Typography>
+        <IconButton size="small" color="inherit" component={Link} href="/" aria-label={t('Menu')}>
+          <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
+        </IconButton>
         <Menu anchorEl={anchorEl} open={open} onClose={close}>
           <MenuItem component={Link} href="/" onClick={close}>
             <ListItemIcon>
@@ -421,6 +420,11 @@ function CompanySwitcher({
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [switching, setSwitching] = useState(false)
   const open = Boolean(anchorEl)
+  // Below topBarCompactWidth (layout's own doc comment): icon-only, no
+  // company-name text — the row already dropped the breadcrumb's own text
+  // labels at this width, so the building icon alone (real aria-label below,
+  // since the visible text it used to double as is gone) is what's left.
+  const compact = useMediaQuery(`(max-width:${layout.topBarCompactWidth}px)`)
 
   function close() {
     setAnchorEl(null)
@@ -443,6 +447,7 @@ function CompanySwitcher({
         onClick={(e: MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget)}
         aria-haspopup="true"
         aria-expanded={open}
+        aria-label={activeCompany.name}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -457,7 +462,7 @@ function CompanySwitcher({
         }}
       >
         <FontAwesomeIcon icon={byPrefixAndName.fas['building']} size="sm" />
-        {activeCompany.name}
+        {!compact && activeCompany.name}
       </Box>
       <Menu
         anchorEl={anchorEl}

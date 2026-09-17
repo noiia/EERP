@@ -3,8 +3,10 @@ import { useState } from 'react'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
 import type { MenuNode } from './descriptor'
@@ -34,9 +36,27 @@ export interface SelectionBarProps {
    * "Select all" toggles against this count, not some cross-page total. */
   totalLoaded: number
   onSelectAll: () => void
+  /**
+   * Built-in Delete entry — engine chrome, not a module-declared
+   * ViewDescriptor.action, mirroring FormActionsMenu's own `onDelete` (same
+   * doc comment there has the full rationale). Omitted hides the entry: the
+   * caller (TreeRenderer) only passes one when both
+   * `${entity}:${entity}:delete` is granted AND EntityActions.remove is
+   * bound. Receives the currently selected ids — TreeRenderer owns
+   * liveRecords, so it's the one that actually hides/restores rows and runs
+   * the undo-toast dance; this component only surfaces the click.
+   */
+  onDelete?: (ids: string[]) => void
 }
 
-export function SelectionBar({ entity, actions, selectedIds, totalLoaded, onSelectAll }: SelectionBarProps) {
+export function SelectionBar({
+  entity,
+  actions,
+  selectedIds,
+  totalLoaded,
+  onSelectAll,
+  onDelete,
+}: SelectionBarProps) {
   const t = useT()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [busy, setBusy] = useState(false)
@@ -77,7 +97,7 @@ export function SelectionBar({ entity, actions, selectedIds, totalLoaded, onSele
         <>
           <IconButton
             aria-label={t('Actions')}
-            disabled={actions.length === 0 || busy}
+            disabled={(actions.length === 0 && !onDelete) || busy}
             onClick={(e) => setAnchorEl(e.currentTarget)}
           >
             <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
@@ -86,6 +106,22 @@ export function SelectionBar({ entity, actions, selectedIds, totalLoaded, onSele
             {actions.map((node, i) => (
               <MenuNodeItem key={i} node={node} onRun={(name) => void run(name)} />
             ))}
+            {onDelete
+              ? [
+                  actions.length > 0 ? <Divider key="delete-divider" /> : null,
+                  <MenuItem
+                    key="delete"
+                    onClick={() => {
+                      setAnchorEl(null)
+                      onDelete(selectedIds)
+                    }}
+                    sx={{ color: 'error.main' }}
+                  >
+                    <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} size="sm" style={{ marginRight: 8 }} />
+                    {t('Delete')}
+                  </MenuItem>,
+                ]
+              : null}
           </Menu>
         </>
       )}

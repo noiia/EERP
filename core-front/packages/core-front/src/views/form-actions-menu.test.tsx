@@ -65,4 +65,37 @@ describe('FormActionsMenu', () => {
 
     expect(await screen.findByText('Action failed.')).toBeInTheDocument()
   })
+
+  describe('onDelete — built-in entry, not a declared action', () => {
+    it('with no onDelete, no Delete entry appears and the button stays disabled with zero declared actions', () => {
+      render(<FormActionsMenu entity="invoice" actions={[]} recordId="r1" />)
+      expect(screen.getByRole('button', { name: 'Options' })).toBeDisabled()
+    })
+
+    it('enables the button and shows Delete even with zero declared actions', () => {
+      const onDelete = vi.fn()
+      render(<FormActionsMenu entity="invoice" actions={[]} recordId="r1" onDelete={onDelete} />)
+      expect(screen.getByRole('button', { name: 'Options' })).toBeEnabled()
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      expect(screen.getByRole('menuitem', { name: /Delete/ })).toBeInTheDocument()
+    })
+
+    it('clicking Delete calls onDelete and closes the menu, alongside declared actions', () => {
+      const onDelete = vi.fn()
+      registerMenuAction({ entity: 'invoice', name: 'sale.printInvoice', handler: () => undefined })
+      render(<FormActionsMenu entity="invoice" actions={printMenu} recordId="r1" onDelete={onDelete} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      expect(screen.getByRole('menuitem', { name: 'Print' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+      expect(onDelete).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('menuitem', { name: /Delete/ })).not.toBeInTheDocument()
+    })
+
+    it('still disabled on an unsaved record even with onDelete given', () => {
+      render(<FormActionsMenu entity="invoice" actions={[]} recordId="new" onDelete={vi.fn()} />)
+      expect(screen.getByRole('button', { name: 'Options' })).toBeDisabled()
+    })
+  })
 })

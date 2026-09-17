@@ -2,9 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // The flat list navigates to a record's form on row click via the App Router.
+// mockPathname backs FormRenderer's own handleDelete (its own doc comment) —
+// a plain mutable var a test can reassign before rendering, mirroring how
+// pushMock is a plain shared mock every test already reads/clears.
 const pushMock = vi.fn()
+let mockPathname = '/crm/c1'
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
+  usePathname: () => mockPathname,
 }))
 
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
@@ -19,6 +24,7 @@ import { RelationOpsProvider, type RelationOps, type RelationRecord } from './re
 import { CreateBar, EntityView } from './renderers'
 import { useSessionStore, type Identity } from './session-store'
 import { useUiStore } from './ui-store'
+import { useUndoToastStore } from './undo-toast'
 import type { EntityActions } from './stores'
 
 function identityWith(permissions: string[]): Identity {
@@ -27,11 +33,13 @@ function identityWith(permissions: string[]): Identity {
 
 beforeEach(() => {
   pushMock.mockClear()
+  mockPathname = '/crm/c1'
   useSessionStore.setState({ identity: null })
   useUiStore.setState({ viewMode: {} })
   useRecordLabelStore.setState({ id: null, label: null })
   useListNavStore.setState({ ids: {} })
   useBreadcrumbStore.setState({ trail: [] })
+  useUndoToastStore.setState({ pending: null })
 })
 
 interface Contact {
@@ -350,6 +358,85 @@ describe('EntityView', () => {
       fireEvent.click(selectAll)
       expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument()
     })
+
+    describe('built-in bulk Delete (docs/adr/ADR-015-undo-toast.md)', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      const rows = [
+        { id: '1', name: 'Ada' },
+        { id: '2', name: 'Grace' },
+      ]
+
+      it('hidden with no crm:crm:delete permission, even with remove bound', () => {
+        const remove = vi.fn(async () => {})
+        render(
+          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        expect(screen.queryByRole('menuitem', { name: /Delete/ })).not.toBeInTheDocument()
+      })
+
+      it('hidden with permission but no bound remove Server Action', () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        render(<EntityView descriptor={treeDescriptor} initialData={rows} actions={noopActions} />)
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        expect(screen.queryByRole('menuitem', { name: /Delete/ })).not.toBeInTheDocument()
+      })
+
+      it('hides the selected rows immediately (no backend call yet) and shows the undo toast', () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        const remove = vi.fn(async () => {})
+        render(
+          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+        expect(screen.queryByText('Ada')).not.toBeInTheDocument()
+        expect(screen.queryByText('Grace')).not.toBeInTheDocument()
+        expect(remove).not.toHaveBeenCalled()
+        expect(useUndoToastStore.getState().pending?.message).toContain('2')
+      })
+
+      it('recovering restores both rows with zero backend calls', async () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        const remove = vi.fn(async () => {})
+        render(
+          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+        useUndoToastStore.getState().recover()
+
+        await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument())
+        expect(screen.getByText('Grace')).toBeInTheDocument()
+        expect(remove).not.toHaveBeenCalled()
+      })
+
+      it('letting the undo window elapse actually removes each selected id', async () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        const remove = vi.fn(async () => {})
+        render(
+          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+
+        vi.useFakeTimers()
+        try {
+          fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+          vi.advanceTimersByTime(6000)
+        } finally {
+          vi.useRealTimers()
+        }
+        await waitFor(() => expect(remove).toHaveBeenCalledWith('1'))
+        expect(remove).toHaveBeenCalledWith('2')
+      })
+    })
   })
 
   describe('rows-per-page (DataGrid footer, no separate custom selector)', () => {
@@ -453,6 +540,91 @@ describe('EntityView', () => {
       fireEvent.change(input, { target: { value: 'abc' } })
       fireEvent.blur(input)
       expect(input.value).toBe('20')
+    })
+  })
+
+  describe('built-in form Delete (docs/adr/ADR-015-undo-toast.md)', () => {
+    it('hidden with no crm:crm:delete permission, even with remove bound', () => {
+      const remove = vi.fn(async () => {})
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove }}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Options' })).toBeDisabled()
+    })
+
+    it('hidden with permission but no bound remove Server Action', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      render(
+        <EntityView descriptor={formDescriptor} initialData={[{ id: 'c1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.getByRole('button', { name: 'Options' })).toBeDisabled()
+    })
+
+    it('navigates to the list (this form path minus its trailing id) and shows the undo toast immediately, with no backend call yet', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      const remove = vi.fn(async () => {})
+      mockPathname = '/crm/c1'
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove }}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+      expect(pushMock).toHaveBeenCalledWith('/crm')
+      expect(remove).not.toHaveBeenCalled()
+      expect(useUndoToastStore.getState().pending?.message).toBeTruthy()
+    })
+
+    it('recovering navigates back to the form, with zero backend calls', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      const remove = vi.fn(async () => {})
+      mockPathname = '/crm/c1'
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove }}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+      useUndoToastStore.getState().recover()
+
+      expect(pushMock).toHaveBeenCalledWith('/crm/c1')
+      expect(remove).not.toHaveBeenCalled()
+    })
+
+    it('letting the undo window elapse actually deletes the record', async () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      const remove = vi.fn(async () => {})
+      mockPathname = '/crm/c1'
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove }}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      vi.useFakeTimers()
+      try {
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+        vi.advanceTimersByTime(6000)
+      } finally {
+        vi.useRealTimers()
+      }
+      await waitFor(() => expect(remove).toHaveBeenCalledWith('c1'))
     })
   })
 

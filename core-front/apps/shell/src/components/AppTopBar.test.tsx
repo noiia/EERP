@@ -193,11 +193,12 @@ describe('AppTopBar', () => {
     expect(breadcrumb.getByText('Appstore')).toBeInTheDocument()
   })
 
-  describe('narrow-phone breadcrumb collapse (below layout.breadcrumbCollapseWidth)', () => {
+  describe('compact top bar (below layout.topBarCompactWidth)', () => {
     const realMatchMedia = window.matchMedia
     beforeEach(() => {
-      // Simulate every media query matching (i.e. "narrow") — AppTopBar only ever
-      // queries the one breadcrumbCollapseWidth breakpoint, so a single stub covers it.
+      // Simulate every media query matching (i.e. "compact") — AppTopBar only
+      // ever queries the one topBarCompactWidth breakpoint, so a single stub
+      // covers both the breadcrumb collapse and the company switcher below.
       window.matchMedia = ((query: string) => ({
         matches: true,
         media: query,
@@ -213,14 +214,15 @@ describe('AppTopBar', () => {
       window.matchMedia = realMatchMedia
     })
 
-    it('collapses to a "…" summary button plus only the current page', () => {
+    it('collapses to two bare icon buttons — a "…" trail summary and a home/Menu icon — with no text at all', () => {
       pathnameMock.mockReturnValue('/crm/contacts')
       render(<AppTopBar identity={identity} />)
 
       expect(screen.getByRole('button', { name: /breadcrumb trail/i })).toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: /menu/i })).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /menu/i })).toHaveAttribute('href', '/')
       expect(screen.queryByText('Crm')).not.toBeInTheDocument()
-      expect(screen.getByText('Contacts')).toBeInTheDocument()
+      // The current-page title is gone too — replaced by the bare trail icon.
+      expect(screen.queryByText('Contacts')).not.toBeInTheDocument()
     })
 
     it('never collapses the bare root — nothing to summarize on the menu page itself', () => {
@@ -242,6 +244,16 @@ describe('AppTopBar', () => {
       expect(screen.getByRole('menuitem', { name: 'Crm' })).toHaveAttribute('href', '/crm')
       const current = screen.getByRole('menuitem', { name: 'Contacts' })
       expect(current).not.toHaveAttribute('href')
+    })
+
+    it('drops the company-name text, keeping the building icon accessible via aria-label', () => {
+      pathnameMock.mockReturnValue('/crm/contacts')
+      render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
+
+      // Still findable by its accessible name (explicit aria-label, not the
+      // now-absent visible text) — same query the wide-layout test above uses.
+      expect(screen.getByRole('button', { name: /acme corp/i })).toBeInTheDocument()
+      expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument()
     })
   })
 
