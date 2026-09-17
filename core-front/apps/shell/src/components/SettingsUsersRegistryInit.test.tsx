@@ -18,4 +18,13 @@ describe('SettingsUsersRegistryInit', () => {
       roleViewPermissionFormDescriptor,
     )
   })
+
+  it('makes many2many tags pointing at a role or a user click-to-navigate (RelationTagsWidget reads formPathFor)', () => {
+    // Without this registration, formPathFor found nothing for 'roles'/
+    // 'users' even though rolesListDescriptor/usersListDescriptor declare
+    // their own formPath — a many2many field like the User form's `role`
+    // rendered its tags but a click never went anywhere.
+    expect(moduleRegistry.formPathFor('roles')).toBe('/settings/users/roles/:id')
+    expect(moduleRegistry.formPathFor('users')).toBe('/settings/users/accounts/:id')
+  })
 })
