@@ -158,13 +158,18 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
 
   // Below topBarCompactWidth, a full trail (crumb text, let alone the module
   // header menu/company name/avatar sharing the same row) rarely fits —
-  // collapse to two BARE icon buttons, no text at all: a trail-summary icon
-  // (opens every visited crumb as a vertical Menu — MenuItems stack that way
-  // by nature, unlike falling through to MUI Breadcrumbs' own built-in
-  // collapse below, which would re-expand everything back INLINE, still too
-  // wide for this screen) and a home/"Menu" icon beside it, since the wide
-  // layout's own root crumb (the `else` branch below) is what this compact
-  // mode replaces, not something still reachable elsewhere on this row.
+  // collapse to ONE bare icon button, no text and no separate home button:
+  // 'angles-right' (three>>) reads as "a breadcrumb trail" the same way the
+  // wide layout's own separator glyph (chevron-right) already does, just
+  // repeated — the closest match Font Awesome's free solid set actually
+  // ships (no literal 3-chevron/"breadcrumb" icon exists there; angles-right
+  // is 2 chevrons, its own alias is "angle-double-right"). Clicking it opens
+  // every visited crumb as a vertical Menu (MenuItems stack that way by
+  // nature, unlike falling through to MUI Breadcrumbs' own built-in collapse
+  // below, which would re-expand everything back INLINE, still too wide for
+  // this screen) — that Menu's own first line is still the "Menu"/home
+  // entry, so going home stays one tap away without a second, dedicated
+  // button competing for this narrow row's space.
   if (narrow && trail.length > 0) {
     const open = Boolean(anchorEl)
     function close() {
@@ -180,10 +185,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
           aria-expanded={open}
           onClick={(e: MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget)}
         >
-          <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} size="sm" />
-        </IconButton>
-        <IconButton size="small" color="inherit" component={Link} href="/" aria-label={t('Menu')}>
-          <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
+          <FontAwesomeIcon icon={byPrefixAndName.fas['angles-right']} size="sm" />
         </IconButton>
         <Menu anchorEl={anchorEl} open={open} onClose={close}>
           <MenuItem component={Link} href="/" onClick={close}>

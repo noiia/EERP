@@ -157,20 +157,22 @@ export const layout = {
    * `chatterBreakpoint`, since the fixed top bar always spans the full
    * viewport. Two independent pieces read this SAME threshold, so they
    * always flip together:
-   *   - The breadcrumb collapses to two bare icon buttons — a trail-summary
+   *   - The breadcrumb collapses to ONE bare icon button — a trail-summary
    *     icon (opens every visited crumb as a vertical Menu, current page
-   *     non-clickable, same menu the wide layout's collapse already builds)
-   *     and a home/"Menu" icon — with NO text label next to either, instead
-   *     of MUI Breadcrumbs' own count-based collapse (which still lays the
-   *     visible crumbs out horizontally) or the wide layout's "icon + current
-   *     page title" pairing.
+   *     non-clickable, its own first line still the "Menu"/home entry) with
+   *     no text label and no separate home button beside it, instead of MUI
+   *     Breadcrumbs' own count-based collapse (which still lays the visible
+   *     crumbs out horizontally) or the wide layout's "icon + current page
+   *     title" pairing.
    *   - CompanySwitcher drops its company-name text, showing only the
    *     building icon.
-   * Left at 1024 rather than reusing `mobileBreakpoint` (720): those two
-   * pieces read as visual clutter well before a real phone width, on any
-   * screen too narrow to comfortably fit breadcrumb text + the module header
-   * menu + a company name + the user avatar on one row — not just phones. */
-  topBarCompactWidth: 1024,
+   * Deliberately its own number, not reused from `mobileBreakpoint` (720):
+   * this is tablet/small-laptop width (768, the iPad portrait boundary many
+   * responsive scales already treat as the phone/tablet line), where the
+   * breadcrumb + module header menu + company name + avatar sharing one row
+   * starts crowding — narrower than that and `mobileBreakpoint`'s OWN
+   * simplifications (icon-only Save, etc.) are already active too. */
+  topBarCompactWidth: 768,
   /** Form chatter panel (chatter-panel.tsx): a resizable side panel to the
    * RIGHT of the form on a wide screen, stacked full-width BELOW it once the
    * viewport narrows past `chatterBreakpoint` — a plain viewport media query

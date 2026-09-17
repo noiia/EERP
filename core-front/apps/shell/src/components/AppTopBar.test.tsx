@@ -214,12 +214,14 @@ describe('AppTopBar', () => {
       window.matchMedia = realMatchMedia
     })
 
-    it('collapses to two bare icon buttons — a "…" trail summary and a home/Menu icon — with no text at all', () => {
+    it('collapses to ONE bare trail-summary icon button — no separate home button, no text at all', () => {
       pathnameMock.mockReturnValue('/crm/contacts')
       render(<AppTopBar identity={identity} />)
 
       expect(screen.getByRole('button', { name: /breadcrumb trail/i })).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: /menu/i })).toHaveAttribute('href', '/')
+      // No dedicated home/Menu button beside it — the trail Menu's own first
+      // line (asserted below) is still the way home.
+      expect(screen.queryByRole('link', { name: /menu/i })).not.toBeInTheDocument()
       expect(screen.queryByText('Crm')).not.toBeInTheDocument()
       // The current-page title is gone too — replaced by the bare trail icon.
       expect(screen.queryByText('Contacts')).not.toBeInTheDocument()
