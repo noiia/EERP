@@ -103,6 +103,7 @@ describe('Settings → Users descriptors', () => {
     expect(field?.widgetOptions).toEqual({
       relatedRelationField: 'rights',
       multiCreate: { field: 'entity', groupByModule: true },
+      deletable: true,
     })
   })
 

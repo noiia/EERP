@@ -178,8 +178,17 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
       // field's own `views` catalog (now search-filterable server-side,
       // internal/settings.GetViewCatalog) — check several, or filter down to
       // one app (groupByModule) and check its header checkbox to add
-      // everything that app registers, in one Add.
-      widgetOptions: { relatedRelationField: 'rights', multiCreate: { field: 'entity', groupByModule: true } },
+      // everything that app registers, in one Add. deletable: true adds the
+      // trailing trash-icon column (relation-widgets.tsx's RelationListWidget)
+      // so a view can be pulled off the role directly from this table — its
+      // own DELETE route (RightsHandler.DeleteViewPermission) revokes every
+      // real role_permissions grant that row's rights produced, same as
+      // untagging each right by hand would.
+      widgetOptions: {
+        relatedRelationField: 'rights',
+        multiCreate: { field: 'entity', groupByModule: true },
+        deletable: true,
+      },
     },
   ],
   // Explicit layout so `view_permissions`/`belongs` get their own tabs
