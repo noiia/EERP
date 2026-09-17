@@ -7,7 +7,6 @@ import (
 
 	"core/internal/common"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -20,14 +19,24 @@ import (
 // ensureTable/ensureColumns primitives migration.go already uses for
 // module-owned tables, not orm.Register[T] (which would mount generic CRUD
 // routes for it).
+//
+// Deliberately does NOT embed model.BaseModel: it now carries a promoted
+// TenantID, and this table is intentionally workspace-wide (same "hand-
+// declare the fields you actually want" opt-out auth.Permissions takes) —
+// it's also built via the hand-written ensureTable/ensureColumns DDL below,
+// not the reflection-driven auto-migration a promoted tenant_id column would
+// otherwise need adding to.
 type ModuleOperationLog struct {
-	model.BaseModel
-	OperationID uuid.UUID `db:"operation_id,index"`
-	ModuleName  string    `db:"module_name,index"`
-	Operation   string    `db:"operation"` // activate | deactivate | reload
-	Source      string    `db:"source"`    // backend | db
-	Level       string    `db:"level"`     // info | warn | error
-	Message     string    `db:"message"`
+	ID          uuid.UUID  `db:"id,pk"`
+	CreatedAt   time.Time  `db:"created_at"`
+	UpdatedAt   time.Time  `db:"updated_at"`
+	DeletedAt   *time.Time `db:"deleted_at,softdelete"`
+	OperationID uuid.UUID  `db:"operation_id,index"`
+	ModuleName  string     `db:"module_name,index"`
+	Operation   string     `db:"operation"` // activate | deactivate | reload
+	Source      string     `db:"source"`    // backend | db
+	Level       string     `db:"level"`     // info | warn | error
+	Message     string     `db:"message"`
 }
 
 var operationLogFields = []orm.MigrationField{

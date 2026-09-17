@@ -33,8 +33,7 @@ func init() {
 // the generic list endpoint (docs/CLAUDE.md's FIELD_WIDGETS doc comment).
 type PropertyManagement struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name     string    `db:"name" json:"name"`
+	Name string `db:"name" json:"name"`
 	// Address* — the type: 'address' composite field's 7 sibling columns,
 	// prefixed "address_" to match the frontend field name 'address'.
 	AddressNumber     *int   `db:"address_number" json:"address_number"`
@@ -78,7 +77,6 @@ type PropertyManagement struct {
 // tenants per property, no outbound FK added to Contact).
 type PropertyManagementTenant struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	ContactID            uuid.UUID `db:"contact_id" json:"contact_id"`
 }
@@ -90,7 +88,6 @@ type PropertyManagementTenant struct {
 // backend work needed for that half, pictures is entity-agnostic already.
 type PropertyManagementPhoto struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	Position             int       `db:"position" json:"position"`
 }
@@ -100,7 +97,6 @@ type PropertyManagementPhoto struct {
 // real FK same shape as sale_line belonging to one invoice).
 type PropertyManagementEquipment struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	Name                 string    `db:"name" json:"name"`
 	Quantity             int       `db:"quantity" json:"quantity"`
@@ -124,7 +120,6 @@ type PropertyManagementEquipment struct {
 // selection-field shape as sale.Invoice.Status.
 type PropertyManagementEquipmentStatus struct {
 	model.BaseModel
-	TenantID                      uuid.UUID  `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementEquipmentID uuid.UUID  `db:"property_management_equipment_id" json:"property_management_equipment_id"`
 	Date                          *time.Time `db:"date" json:"date"`
 	// State: "good", "damaged", "under_repair", "out_of_service".
@@ -135,7 +130,6 @@ type PropertyManagementEquipmentStatus struct {
 // scoped to equipment instead of the property itself.
 type PropertyManagementEquipmentPhoto struct {
 	model.BaseModel
-	TenantID                      uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementEquipmentID uuid.UUID `db:"property_management_equipment_id" json:"property_management_equipment_id"`
 	Position                      int       `db:"position" json:"position"`
 }
@@ -152,7 +146,6 @@ type PropertyManagementEquipmentPhoto struct {
 // beyond its own "no quantity column ⇒ treat as 1" fallback.
 type PropertyManagementBillingLine struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	Name                 string    `db:"name" json:"name"`
 	// UnitPrice is "free taxes" (excl. tax) — same field name as
@@ -192,7 +185,6 @@ type PropertyManagementBillingLine struct {
 // resolve/compute against the tax's Rate/Amount/Kind).
 type PropertyManagementBillingLineTax struct {
 	model.BaseModel
-	TenantID                        uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementBillingLineID uuid.UUID `db:"property_management_billing_line_id" json:"property_management_billing_line_id"`
 	SaleTaxID                       uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
 }
@@ -230,7 +222,6 @@ type PropertyManagementBillingLineTax struct {
 // SECOND relation field (inverseField: parent_id).
 type PropertyManagementRentReceipt struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	// PropertyManagementID: set on a parent row, nil on a child (see the
 	// type doc comment above). A pointer for the same reason
 	// LastReceiptMonth is: a child's Create body omits it entirely.
@@ -295,7 +286,6 @@ type PropertyManagementRentReceipt struct {
 // literal copy, not a re-resolve.
 type PropertyManagementRentReceiptLine struct {
 	model.BaseModel
-	TenantID      uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	RentReceiptID uuid.UUID `db:"rent_receipt_id" json:"rent_receipt_id"`
 	Name          string    `db:"name" json:"name"`
 	UnitPrice     float64   `db:"unit_price" json:"unit_price"`

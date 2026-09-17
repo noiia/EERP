@@ -27,8 +27,7 @@ func init() {
 // struct). Every field a dedicated handler binds from client JSON needs one.
 type Product struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name     string    `db:"name" json:"name"`
+	Name string `db:"name" json:"name"`
 	// Reference is a free-text SKU/internal code — optional, no uniqueness
 	// enforced (this ORM has no unique-constraint support yet).
 	Reference string `db:"reference" json:"reference"`
@@ -56,7 +55,6 @@ type Product struct {
 // makes creating one from a product a one-field action.
 type ProductVariant struct {
 	model.BaseModel
-	TenantID  uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	ProductID uuid.UUID `db:"product_id" json:"product_id"`
 	// Name is the variant's own label (e.g. "Red / XL"). Left blank on
 	// create, it defaults to the underlying Product's name — see
@@ -85,9 +83,8 @@ type ProductVariant struct {
 // table.
 type ProductUoms struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name     string    `db:"name" json:"name"`
-	Type     string    `db:"type" json:"type"`
+	Name string `db:"name" json:"name"`
+	Type string `db:"type" json:"type"`
 }
 
 type warehouseModule struct{}
@@ -187,8 +184,7 @@ func seedDefaultUoms(ctx context.Context, db *orm.DB) error {
 	for _, tenantID := range tenantIDs {
 		for _, u := range defaultUoms {
 			row := ProductUoms{
-				BaseModel: model.BaseModel{ID: seedUUID(tenantID, "product_uoms:"+u.name)},
-				TenantID:  tenantID,
+				BaseModel: model.BaseModel{ID: seedUUID(tenantID, "product_uoms:"+u.name), TenantID: tenantID},
 				Name:      u.name,
 				Type:      u.kind,
 			}

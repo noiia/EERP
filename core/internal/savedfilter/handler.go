@@ -9,6 +9,7 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -124,7 +125,7 @@ func (h *Handler) Create(c echo.Context) error {
 	}
 
 	created, err := h.store.Create(c.Request().Context(), SavedFilter{
-		TenantID: identity.TenantID, UserID: identity.UserID,
+		BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: identity.UserID,
 		Entity: req.Entity, Name: req.Name, Shared: req.Shared, Config: req.Config,
 	})
 	if err != nil {

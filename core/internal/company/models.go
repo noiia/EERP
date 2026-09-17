@@ -7,8 +7,6 @@ package company
 
 import (
 	"core/orm/model"
-
-	"github.com/google/uuid"
 )
 
 // Company is a legal entity within a tenant — the "who are we" profile other
@@ -16,8 +14,7 @@ import (
 // re-entering the same name/address/phone/email repeatedly.
 type Company struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id,index"`
-	Name     string    `db:"name"`
+	Name string `db:"name"`
 	// Address* — the type: 'address' composite field's 7 sibling columns
 	// (core-front's AddressWidget, core/CLAUDE.md's ORM section), prefixed
 	// "address_" to match the frontend field name 'address'. Real columns

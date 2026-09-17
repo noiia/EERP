@@ -27,6 +27,7 @@ import (
 	"core/internal/settings"
 	"core/internal/types"
 	_ "core/modules/all"
+	authmodule "core/modules/auth"
 	"core/modules/crminheritdemo"
 	cronmodule "core/modules/cron"
 	"core/modules/propertymanagement"
@@ -387,13 +388,17 @@ func main() {
 	// no Bearer header, which is only ever true for a same-origin browser
 	// request. Every other route keeps requiring a real Bearer header. The
 	// snapshot read and the WebSocket upgrade share ONE route (dispatched on
-	// the Upgrade header inside Handler.Get) so they resolve to the same
-	// presence:presence:read permission instead of two separate grants. No
-	// external dependency to gate on, so this mounts unconditionally.
+	// the Upgrade header inside Handler.Get). NOT behind permMw: presence is
+	// app-shell chrome every authenticated user needs (the top-bar status
+	// bubble, on every page), not gated business data, and PUT only ever
+	// touches the caller's OWN row — there's no admin-only subset to protect
+	// here the way modules' PUT/reload are. A role with zero role_permissions
+	// grants (any freshly created custom role, admin_handler.go's CreateRole)
+	// must still get this like every other identity.
 	presenceHub := presence.NewHub()
 	presenceHandler := presence.NewHandler(presence.NewRepository(app.DB), presenceHub)
 	presenceAuthMw := authmw.JWTOrCookieMiddleware(tokenSvc, "eerp_access")
-	presenceGroup := srv.Echo().Group("/api/v1/presence", presenceAuthMw, permMw)
+	presenceGroup := srv.Echo().Group("/api/v1/presence", presenceAuthMw)
 	presenceGroup.GET("", presenceHandler.Get)
 	presenceGroup.PUT("", presenceHandler.SetStatus)
 
@@ -421,14 +426,18 @@ func main() {
 	// data). List/Get re-walk module_root on every call (no snapshot/cache);
 	// PUT/reload act on moduleRuntime first (live, no restart) and only then
 	// persist module.json. The permission middleware derives
-	// modules:modules:read|write from the route.
+	// modules:modules:read|write from the route for the admin-only actions
+	// below. The bare list (GET "") is NOT behind permMw — every logged-in
+	// user's app shell calls it unconditionally to build the top-bar module
+	// menu (core-front's module-state.ts), so it needs to work for any
+	// identity, including a custom role with zero role_permissions grants.
 	modulesHandler := module.NewHandler(module.NewManager(configContent.ModuleRoot), moduleRuntime)
-	modulesGroup := srv.Echo().Group("/api/v1/modules", jwtMw, permMw)
+	modulesGroup := srv.Echo().Group("/api/v1/modules", jwtMw)
 	modulesGroup.GET("", modulesHandler.List)
-	modulesGroup.GET("/:id", modulesHandler.Get)
-	modulesGroup.PUT("/:id", modulesHandler.Update)
-	modulesGroup.POST("/:id/reload", modulesHandler.Reload)
-	modulesGroup.GET("/:id/logs", modulesHandler.Logs)
+	modulesGroup.GET("/:id", modulesHandler.Get, permMw)
+	modulesGroup.PUT("/:id", modulesHandler.Update, permMw)
+	modulesGroup.POST("/:id/reload", modulesHandler.Reload, permMw)
+	modulesGroup.GET("/:id/logs", modulesHandler.Logs, permMw)
 
 	// The catalog of "views" (entities) a role's rights table can point at
 	// (RoleViewPermission.Entity, a many2one in the frontend descriptor) —
@@ -518,6 +527,25 @@ func main() {
 	saleLineTaxGroup := srv.Echo().Group("/api/v1/sale_line_tax", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	saleLineTaxGroup.POST("", saleLineHandler.CreateLineTax)
 	saleLineTaxGroup.DELETE("/:id", saleLineHandler.DeleteLineTax)
+
+	// ── auth: role_view_permission[_right] Create/Update/Delete overrides ───
+	// Wires the Rights UI (Settings → Users → Roles → a view's rights) into
+	// REAL enforcement — see modules/auth/handler.go's RightsHandler doc
+	// comment for why: RoleViewPermission was originally data-model-and-UI
+	// only, never touching role_permissions (what PermissionRepository.Has
+	// actually reads), so a freshly created custom role had no working way to
+	// ever get real access to anything. Create is also overridden: a freshly
+	// added view defaults to read+write+delete already tagged on (see
+	// CreateViewPermission's own doc comment) instead of a blank row. GET/list
+	// on both tables stay fully generic.
+	rightsHandler := authmodule.NewRightsHandler(app.DB, permRepo)
+	roleViewPermGroup := srv.Echo().Group("/api/v1/role_view_permission", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	roleViewPermGroup.POST("", rightsHandler.CreateViewPermission)
+	roleViewPermGroup.PUT("/:id", rightsHandler.UpdateViewPermission)
+	roleViewPermGroup.DELETE("/:id", rightsHandler.DeleteViewPermission)
+	roleViewPermRightGroup := srv.Echo().Group("/api/v1/role_view_permission_right", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	roleViewPermRightGroup.POST("", rightsHandler.CreateRight)
+	roleViewPermRightGroup.DELETE("/:id", rightsHandler.DeleteRight)
 
 	// ── sale: quote_line Create/Update/Delete overrides ──────────────────────
 	// Same reasoning as sale_line above, scoped to Quote/QuoteLine instead of

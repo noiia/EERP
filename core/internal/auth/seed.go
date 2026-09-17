@@ -51,27 +51,31 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB) error {
 	userRoles := orm.MustRepo[UserRoles](db)
 
 	if _, err := users.Upsert(ctx,
-		Users{BaseModel: model.BaseModel{ID: devUserID}, TenantID: DevTenantID, Email: DevAdminEmail, PasswordHash: string(hash)},
+		Users{BaseModel: model.BaseModel{ID: devUserID, TenantID: DevTenantID}, Email: DevAdminEmail, PasswordHash: string(hash)},
 		[]string{"id"}, ""); err != nil {
 		return fmt.Errorf("seed dev admin: users: %w", err)
 	}
 	if _, err := roles.Upsert(ctx,
-		Roles{BaseModel: model.BaseModel{ID: devRoleID}, TenantID: DevTenantID, Name: "admin", Description: "Development administrator"},
+		Roles{BaseModel: model.BaseModel{ID: devRoleID, TenantID: DevTenantID}, Name: "admin", Description: "Development administrator"},
 		[]string{"id"}, ""); err != nil {
 		return fmt.Errorf("seed dev admin: roles: %w", err)
 	}
 	if _, err := perms.Upsert(ctx,
-		Permissions{BaseModel: model.BaseModel{ID: devPermID}, Code: "*:*:*", Description: "Full access (dev admin)", Module: "*"},
+		Permissions{ID: devPermID, Code: "*:*:*", Description: "Full access (dev admin)", Module: "*"},
 		[]string{"id"}, ""); err != nil {
 		return fmt.Errorf("seed dev admin: permissions: %w", err)
 	}
 	// (user_id, role_id) is the auth module's own hand-written unique index
 	// (struct tags can't express one — CLAUDE.md's ORM section) — the id
 	// column itself is left to the DB default since nothing else needs to
-	// name this row by a fixed id.
-	if _, err := userRoles.Upsert(ctx,
-		UserRoles{TenantID: &DevTenantID, UserID: devUserID, RoleID: devRoleID},
-		[]string{"user_id", "role_id"}, ""); err != nil {
+	// name this row by a fixed id. It's PARTIAL (WHERE deleted_at IS NULL,
+	// so unassigning and reassigning the same role doesn't collide with its
+	// own soft-deleted row) — UpsertPartial, not Upsert, or Postgres can't
+	// infer it as the ON CONFLICT arbiter (core/orm/repo's UpsertPartial doc
+	// comment has the full explanation).
+	if _, err := userRoles.UpsertPartial(ctx,
+		UserRoles{BaseModel: model.BaseModel{TenantID: DevTenantID}, UserID: devUserID, RoleID: devRoleID},
+		[]string{"user_id", "role_id"}, "deleted_at IS NULL", ""); err != nil {
 		return fmt.Errorf("seed dev admin: user_roles: %w", err)
 	}
 	if _, err := db.Exec(ctx,
@@ -107,6 +111,30 @@ func seedUUID(tenantID uuid.UUID, label string) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(tenantID.String()+":"+label))
 }
 
+// EnsureAccountRoleTypes idempotently seeds a tenant's account_role_types
+// catalog — the four fixed rights (deny/read/write/delete) the Rights UI's
+// "rights" tags widget offers (RoleViewPermission's own doc comment). Safe
+// to call as often as needed: deterministic per-(tenant, name) ids (seedUUID)
+// make every call after the first a no-op.
+//
+// Split out of SeedDefaultRoles (below) so a caller that only needs THIS
+// catalog — not the bundled Admin/Viewer/Deny starter roles SeedDefaultRoles
+// also creates — doesn't have to take the rest. modules/auth's RightsHandler
+// calls this alone (both at boot, for every tenant already on record, and
+// per-request when a role's first view is added) — forcing three new roles
+// onto an existing tenant just because its rights catalog was empty would be
+// a surprising side effect nobody asked for.
+func EnsureAccountRoleTypes(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error {
+	roleTypes := orm.MustRepo[AccountRoleTypes](db)
+	for _, name := range accountRoleTypeNames {
+		rt := AccountRoleTypes{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role_type:"+name), TenantID: tenantID}, Name: name}
+		if _, err := roleTypes.Upsert(ctx, rt, []string{"id"}, ""); err != nil {
+			return fmt.Errorf("ensure account role types: %w", err)
+		}
+	}
+	return nil
+}
+
 // SeedDefaultRoles idempotently seeds a tenant's account_role_types catalog
 // (deny/read/write/delete) and three starter roles:
 //   - Admin: the existing "*:*:*" wildcard permission — reads/writes/deletes
@@ -140,7 +168,6 @@ func seedUUID(tenantID uuid.UUID, label string) uuid.UUID {
 func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error {
 	roles := orm.MustRepo[Roles](db)
 	perms := orm.MustRepo[Permissions](db)
-	roleTypes := orm.MustRepo[AccountRoleTypes](db)
 	viewPerms := orm.MustRepo[RoleViewPermission](db)
 	viewPermRights := orm.MustRepo[RoleViewPermissionRight](db)
 
@@ -151,9 +178,9 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 	viewerPermID := seedUUID(tenantID, "permission:*:*:read")
 
 	for _, r := range []Roles{
-		{BaseModel: model.BaseModel{ID: adminRoleID}, TenantID: tenantID, Name: "Admin", Description: "Full access to every model.", TechnicalName: ptr("admin")},
-		{BaseModel: model.BaseModel{ID: viewerRoleID}, TenantID: tenantID, Name: "Viewer", Description: "Read-only access to every model.", TechnicalName: ptr("viewer")},
-		{BaseModel: model.BaseModel{ID: denyRoleID}, TenantID: tenantID, Name: "Deny", Description: "No access to anything.", TechnicalName: ptr("deny")},
+		{BaseModel: model.BaseModel{ID: adminRoleID, TenantID: tenantID}, Name: "Admin", Description: "Full access to every model.", TechnicalName: ptr("admin")},
+		{BaseModel: model.BaseModel{ID: viewerRoleID, TenantID: tenantID}, Name: "Viewer", Description: "Read-only access to every model.", TechnicalName: ptr("viewer")},
+		{BaseModel: model.BaseModel{ID: denyRoleID, TenantID: tenantID}, Name: "Deny", Description: "No access to anything.", TechnicalName: ptr("deny")},
 	} {
 		if _, err := roles.Upsert(ctx, r, []string{"id"}, ""); err != nil {
 			return fmt.Errorf("seed default roles: roles: %w", err)
@@ -161,8 +188,8 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 	}
 
 	for _, p := range []Permissions{
-		{BaseModel: model.BaseModel{ID: adminPermID}, Code: "*:*:*", Description: "Full access (default Admin role)", Module: "*"},
-		{BaseModel: model.BaseModel{ID: viewerPermID}, Code: "*:*:read", Description: "Read-only access (default Viewer role)", Module: "*"},
+		{ID: adminPermID, Code: "*:*:*", Description: "Full access (default Admin role)", Module: "*"},
+		{ID: viewerPermID, Code: "*:*:read", Description: "Read-only access (default Viewer role)", Module: "*"},
 	} {
 		if _, err := perms.Upsert(ctx, p, []string{"id"}, ""); err != nil {
 			return fmt.Errorf("seed default roles: permissions: %w", err)
@@ -181,11 +208,8 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 		}
 	}
 
-	for _, name := range accountRoleTypeNames {
-		rt := AccountRoleTypes{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role_type:"+name)}, TenantID: tenantID, Name: name}
-		if _, err := roleTypes.Upsert(ctx, rt, []string{"id"}, ""); err != nil {
-			return fmt.Errorf("seed default roles: account_role_types: %w", err)
-		}
+	if err := EnsureAccountRoleTypes(ctx, db, tenantID); err != nil {
+		return fmt.Errorf("seed default roles: %w", err)
 	}
 
 	// Give the Admin role every right on every entity currently registered on
@@ -194,14 +218,13 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 	// Deterministic per-(tenant, entity[, right]) ids keep this idempotent.
 	for _, entity := range orm.ExposedRoutePrefixes() {
 		rvpID := seedUUID(tenantID, "role_view_permission:admin:"+entity)
-		rvp := RoleViewPermission{BaseModel: model.BaseModel{ID: rvpID}, TenantID: tenantID, RoleID: adminRoleID, Entity: entity}
+		rvp := RoleViewPermission{BaseModel: model.BaseModel{ID: rvpID, TenantID: tenantID}, RoleID: adminRoleID, Entity: entity}
 		if _, err := viewPerms.Upsert(ctx, rvp, []string{"id"}, ""); err != nil {
 			return fmt.Errorf("seed default roles: role_view_permission: %w", err)
 		}
 		for _, name := range adminGrantedRightNames {
 			right := RoleViewPermissionRight{
-				BaseModel:            model.BaseModel{ID: seedUUID(tenantID, "role_view_permission_right:admin:"+entity+":"+name)},
-				TenantID:             tenantID,
+				BaseModel:            model.BaseModel{ID: seedUUID(tenantID, "role_view_permission_right:admin:"+entity+":"+name), TenantID: tenantID},
 				RoleViewPermissionID: rvpID,
 				AccountRoleTypeID:    seedUUID(tenantID, "role_type:"+name),
 			}

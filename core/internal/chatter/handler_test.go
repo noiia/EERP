@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"core/internal/auth"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -89,9 +90,9 @@ func TestList(t *testing.T) {
 	target := "/api/v1/chatter_messages?table=crm&record=" + recordID.String()
 
 	t.Run("returns messages, envelope shape, tenant-pinned lookup", func(t *testing.T) {
-		m1 := ChatterMessage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, AuthorEmail: "a@x.com", Kind: "message", Body: "First"}
+		m1 := ChatterMessage{BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: recordID, AuthorEmail: "a@x.com", Kind: "message", Body: "First"}
 		m1.ID = uuid.New()
-		m2 := ChatterMessage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, AuthorEmail: "b@x.com", Kind: "log", Body: "Second"}
+		m2 := ChatterMessage{BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: recordID, AuthorEmail: "b@x.com", Kind: "log", Body: "Second"}
 		m2.ID = uuid.New()
 		store := &stubStore{listed: []ChatterMessage{m1, m2}}
 

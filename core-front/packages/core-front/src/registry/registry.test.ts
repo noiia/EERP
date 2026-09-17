@@ -224,6 +224,44 @@ describe('ModuleRegistry.menu', () => {
       .register(inventory, { appMode: true })
     expect(registry.menu().map((m) => m.name)).toEqual(['crm', 'inventory'])
   })
+
+  it('callerPermissions: drops a route the caller lacks permission for', () => {
+    const twoRoutes: FrontModule = {
+      name: 'crm2',
+      routes: [
+        { path: '/crm2/contacts', descriptor: treeDescriptor, permission: 'crm2:contacts:read' },
+        { path: '/crm2/leads', descriptor: treeDescriptor, permission: 'crm2:leads:read' },
+      ],
+    }
+    const registry = new ModuleRegistry().register(twoRoutes, { appMode: true })
+    const menu = registry.menu(['crm2:contacts:read'])
+    expect(menu).toHaveLength(1)
+    expect(menu[0].routes.map((r) => r.path)).toEqual(['/crm2/contacts'])
+  })
+
+  it('callerPermissions: drops the whole tile when every route is denied', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true })
+    expect(registry.menu(['unrelated:module:read'])).toEqual([])
+  })
+
+  it('callerPermissions: keeps a route with no declared permission regardless', () => {
+    const open: FrontModule = {
+      name: 'open',
+      routes: [{ path: '/open', descriptor: treeDescriptor }],
+    }
+    const registry = new ModuleRegistry().register(open, { appMode: true })
+    expect(registry.menu(['unrelated:module:read'])).toHaveLength(1)
+  })
+
+  it('callerPermissions: a wildcard grant keeps every route', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true })
+    expect(registry.menu(['*:*:*'])).toHaveLength(1)
+  })
+
+  it('omitting callerPermissions keeps every route, unfiltered', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true })
+    expect(registry.menu()).toHaveLength(1)
+  })
 })
 
 describe('ModuleRegistry.headerMenus', () => {

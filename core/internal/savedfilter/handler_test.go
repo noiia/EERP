@@ -11,6 +11,7 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -104,9 +105,9 @@ func TestList(t *testing.T) {
 	target := "/api/v1/saved_filters?entity=crm"
 
 	t.Run("returns visible filters, marking which the caller owns", func(t *testing.T) {
-		mine := SavedFilter{TenantID: identity.TenantID, UserID: identity.UserID, Entity: "crm", Name: "Mine", Shared: false}
+		mine := SavedFilter{BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: identity.UserID, Entity: "crm", Name: "Mine", Shared: false}
 		mine.ID = uuid.New()
-		other := SavedFilter{TenantID: identity.TenantID, UserID: uuid.New(), Entity: "crm", Name: "Team", Shared: true}
+		other := SavedFilter{BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: uuid.New(), Entity: "crm", Name: "Team", Shared: true}
 		other.ID = uuid.New()
 		store := &stubStore{listed: []SavedFilter{mine, other}}
 
@@ -217,7 +218,7 @@ func TestUpdate(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 
 	t.Run("owner can rename/reconfigure/reshare", func(t *testing.T) {
-		existing := SavedFilter{TenantID: identity.TenantID, UserID: identity.UserID, Entity: "crm", Name: "Old", Shared: false}
+		existing := SavedFilter{BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: identity.UserID, Entity: "crm", Name: "Old", Shared: false}
 		existing.ID = uuid.New()
 		store := &stubStore{found: existing}
 		body := `{"name":"New","shared":true,"config":"{\"filters\":[]}"}`
@@ -238,7 +239,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("non-owner is 403, even on a shared filter", func(t *testing.T) {
-		existing := SavedFilter{TenantID: identity.TenantID, UserID: uuid.New(), Entity: "crm", Name: "Team", Shared: true}
+		existing := SavedFilter{BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: uuid.New(), Entity: "crm", Name: "Team", Shared: true}
 		existing.ID = uuid.New()
 		store := &stubStore{found: existing}
 		body := `{"name":"Hijacked","shared":true,"config":"{}"}`
@@ -256,7 +257,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("duplicate name in scope is 409", func(t *testing.T) {
-		existing := SavedFilter{TenantID: identity.TenantID, UserID: identity.UserID, Entity: "crm", Name: "Old"}
+		existing := SavedFilter{BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: identity.UserID, Entity: "crm", Name: "Old"}
 		existing.ID = uuid.New()
 		store := &stubStore{found: existing, updateErr: ErrDuplicateSavedFilterName}
 		rec := serve(t, newHandlerWith(store).Update,
@@ -306,7 +307,7 @@ func TestDelete(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 
 	t.Run("owner removes the filter, tenant-pinned", func(t *testing.T) {
-		existing := SavedFilter{TenantID: identity.TenantID, UserID: identity.UserID, Entity: "crm", Name: "Mine"}
+		existing := SavedFilter{BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: identity.UserID, Entity: "crm", Name: "Mine"}
 		existing.ID = uuid.New()
 		store := &stubStore{found: existing}
 		rec := serve(t, newHandlerWith(store).Delete,
@@ -322,7 +323,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	t.Run("non-owner is 403, even on a shared filter", func(t *testing.T) {
-		existing := SavedFilter{TenantID: identity.TenantID, UserID: uuid.New(), Entity: "crm", Name: "Team", Shared: true}
+		existing := SavedFilter{BaseModel: model.BaseModel{TenantID: identity.TenantID}, UserID: uuid.New(), Entity: "crm", Name: "Team", Shared: true}
 		existing.ID = uuid.New()
 		store := &stubStore{found: existing}
 		rec := serve(t, newHandlerWith(store).Delete,

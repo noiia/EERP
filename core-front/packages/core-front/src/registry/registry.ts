@@ -1,3 +1,4 @@
+import { hasPermission } from '../auth/permissions'
 import { buildBehaviorPlan } from '../views/behaviors'
 import {
   normalizeLayout,
@@ -304,15 +305,22 @@ export class ModuleRegistry {
    * with no `:param` segment. A form route like '/crm/contacts/:id' needs an id, so it
    * is not a menu entry; the list/tree view that links to it is. Preserves registration
    * order; non-app modules and modules left with no navigable route are omitted (their
-   * routes stay reachable — they just get no tile). The landing page renders this
-   * AS-IS, with no permission filtering — every authenticated user sees every active
-   * app-mode module's tile by design (apps/shell/app/page.tsx's own comment): menu
-   * visibility is deliberately not a signal for role permissions, only real
-   * authentication is required to reach it. Individual routes still enforce their own
-   * `permissions` once clicked (the catch-all's guard), so a role with no rights on a
-   * module still sees its tile but gets 403'd opening it.
+   * routes stay reachable — they just get no tile).
+   *
+   * `callerPermissions`, when given, filters BOTH levels: a route the caller's
+   * permissions don't cover (`hasPermission`) is dropped from the module's route
+   * list, and a module left with zero routes after that gets no tile at all — the
+   * whole point being a role with no rights anywhere in a module shouldn't see its
+   * icon on the landing menu. A route with no declared `permission` is always kept
+   * (same fail-open posture header-menu-bar.tsx's `permittedEntries` already takes
+   * for the per-app dropdown) — omitting it was never a gate. Omitting
+   * `callerPermissions` entirely keeps the old unfiltered behavior (every route from
+   * every app-mode module), which no caller in this codebase uses anymore but keeps
+   * the method callable from a context with no identity to hand it. This is display
+   * gating only: the catch-all route's own server-side guard re-authorizes every
+   * click regardless of what made it onto this list.
    */
-  menu(): MenuModule[] {
+  menu(callerPermissions?: string[]): MenuModule[] {
     const result: MenuModule[] = []
     for (const { module, appMode, icon, displayName } of this.entries) {
       if (!appMode) continue
@@ -323,10 +331,12 @@ export class ModuleRegistry {
         // since the module declared it. Falls back to the declared one in
         // the (unreachable in practice) case a path was never resolved.
         const resolved = this.resolvedRoutes.get(route.path)
+        const permission = resolved?.permission ?? route.permission
+        if (callerPermissions && permission && !hasPermission(callerPermissions, permission)) continue
         routes.push({
           path: route.path,
           descriptor: resolved?.descriptor ?? route.descriptor,
-          permission: resolved?.permission ?? route.permission,
+          permission,
         })
       }
       if (routes.length > 0) result.push({ name: module.name, routes, icon, displayName })

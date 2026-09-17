@@ -11,6 +11,7 @@ import (
 
 	"core/internal/auth"
 	"core/internal/pictures"
+	"core/orm/model"
 
 	"github.com/labstack/echo/v4"
 )
@@ -90,8 +91,7 @@ func (h *Handler) GeneratePDF(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("reports: resolve permissions: %w", err)
 	}
-	user := auth.Users{TenantID: identity.TenantID}
-	user.ID = identity.UserID
+	user := auth.Users{BaseModel: model.BaseModel{ID: identity.UserID, TenantID: identity.TenantID}}
 	token, err := h.tokens.IssueAccessWithTTL(user, identity.Roles, identity.Groups, perms, printTokenTTL)
 	if err != nil {
 		return fmt.Errorf("reports: issue print token: %w", err)

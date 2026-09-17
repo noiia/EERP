@@ -6,6 +6,7 @@ import (
 
 	"core/internal/auth"
 	"core/internal/types"
+	"core/orm/model"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -21,7 +22,7 @@ func testConfig() *types.Config {
 
 func testUser() auth.Users {
 	return auth.Users{
-		TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+		BaseModel: model.BaseModel{TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001")},
 	}
 }
 

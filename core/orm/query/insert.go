@@ -36,12 +36,13 @@ import (
 //	    Returning("*").
 //	    One(ctx, db)
 type InsertBuilder[T any] struct {
-	meta       cache.StructMeta
-	rows       []T
-	returning  []string
-	conflictOn string // column(s) for ON CONFLICT (…)
-	doUpdate   string // SET fragment for DO UPDATE SET …; empty = DO NOTHING
-	doNothing  bool
+	meta          cache.StructMeta
+	rows          []T
+	returning     []string
+	conflictOn    string // column(s) for ON CONFLICT (…)
+	conflictWhere string // partial-index predicate repeated after the target — see OnConflictWhere
+	doUpdate      string // SET fragment for DO UPDATE SET …; empty = DO NOTHING
+	doNothing     bool
 }
 
 // Insert creates an InsertBuilder for one or more values of type T.
@@ -70,7 +71,23 @@ func (b InsertBuilder[T]) OnConflictDoNothing() InsertBuilder[T] {
 //	    OnConflict("id").DoUpdate("status = EXCLUDED.status")
 func (b InsertBuilder[T]) OnConflict(target string) InsertBuilder[T] {
 	b.conflictOn = target
+	b.conflictWhere = ""
 	b.doNothing = false
+	return b
+}
+
+// OnConflictWhere repeats a PARTIAL unique index's own predicate (e.g.
+// "deleted_at IS NULL") after the ON CONFLICT target columns. Postgres can
+// only infer a partial index as the ON CONFLICT arbiter when the INSERT
+// statement's own conflict clause carries that exact predicate — a bare
+// "ON CONFLICT (cols)" against a partial index fails with 42P10 ("no unique
+// or exclusion constraint matching the ON CONFLICT specification") even
+// though the index exists and genuinely is unique. Omit this for a conflict
+// target backed by a full (non-partial) index or constraint, such as a
+// plain primary key — adding it there would make Postgres look for a
+// partial index that doesn't exist, which fails the exact same way.
+func (b InsertBuilder[T]) OnConflictWhere(predicate string) InsertBuilder[T] {
+	b.conflictWhere = predicate
 	return b
 }
 
@@ -158,6 +175,10 @@ func (b InsertBuilder[T]) ToSQL() (string, []any) {
 		sb.WriteString(" ON CONFLICT (")
 		sb.WriteString(b.conflictOn)
 		sb.WriteString(")")
+		if b.conflictWhere != "" {
+			sb.WriteString(" WHERE ")
+			sb.WriteString(b.conflictWhere)
+		}
 		if b.doUpdate != "" {
 			sb.WriteString(" DO UPDATE SET ")
 			sb.WriteString(b.doUpdate)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -38,7 +39,7 @@ func NewRepository(db *orm.DB) *Repository {
 // survives a connect/disconnect (see status.go's Effective doc comment).
 func (r *Repository) SetConnected(ctx context.Context, tenantID, userID uuid.UUID, connected bool) (UserPresence, error) {
 	row, err := r.presence.Upsert(ctx,
-		UserPresence{TenantID: tenantID, UserID: userID, Connected: connected, LastSeen: time.Now()},
+		UserPresence{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: userID, Connected: connected, LastSeen: time.Now()},
 		conflictColumns,
 		"connected = EXCLUDED.connected, last_seen = now(), updated_at = now()",
 	)
@@ -58,7 +59,7 @@ func (r *Repository) SetManualStatus(ctx context.Context, tenantID, userID uuid.
 		manual = &status
 	}
 	row, err := r.presence.Upsert(ctx,
-		UserPresence{TenantID: tenantID, UserID: userID, ManualStatus: manual, LastSeen: time.Now()},
+		UserPresence{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: userID, ManualStatus: manual, LastSeen: time.Now()},
 		conflictColumns,
 		"manual_status = EXCLUDED.manual_status, updated_at = now()",
 	)

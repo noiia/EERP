@@ -27,8 +27,7 @@ import (
 // back into the cron repository), the same way any other side effect works.
 type Cron struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id,index"`
-	Name     string    `db:"name"`
+	Name string `db:"name"`
 	// ActionID names a registered Action (see registry.go) — which Go code
 	// runs. Plain text, not validated against the registry at write time:
 	// the generic CRUD surface has no per-field validation hook, and an
@@ -72,8 +71,7 @@ type Cron struct {
 // what BaseModel already provides.
 type CronHistory struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id,index"`
-	CronID   uuid.UUID `db:"cron_id,index"`
+	CronID uuid.UUID `db:"cron_id,index"`
 	// Failed is true when the run errored (unknown action, missing/under-
 	// permissioned run-as user, or the action's own Run returning an
 	// error) — named so a truthy value always means "highlight this row,"

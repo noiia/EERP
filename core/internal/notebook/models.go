@@ -27,7 +27,6 @@ import (
 // in docs/roadmaps/list-view-modes.md.
 type NotebookPage struct {
 	model.BaseModel
-	TenantID  uuid.UUID `db:"tenant_id,index"`
 	TableName string    `db:"table_name"`
 	RecordID  uuid.UUID `db:"record_id,index"`
 	Title     string    `db:"title"`

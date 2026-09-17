@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"core/orm/access"
 	"core/orm/internal/crud"
@@ -18,32 +19,48 @@ import (
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
-// tenantItem carries a tenant_id column, so the repository must isolate it.
+// tenantItem carries a tenant_id column, so the repository must isolate it —
+// now BaseModel's own promoted field, same as most real entities.
 type tenantItem struct {
-	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
-	Label    string    `db:"label"`
-}
-
-// globalItem has no tenant_id, so it stays global (no scoping applied).
-type globalItem struct {
 	model.BaseModel
 	Label string `db:"label"`
 }
 
-// gatedItem carries one field gated to a group, for the filter/search
-// group-gating tests (ADR-013's documented follow-up).
-type gatedItem struct {
-	model.BaseModel
-	Label  string `db:"label"`
-	Secret string `db:"secret"`
+// globalItem has no tenant_id, so it stays global (no scoping applied).
+// Deliberately does NOT embed model.BaseModel (which now carries a promoted
+// TenantID) — hand-declares the other three fields instead, the same
+// "opt out of one promoted field" shape auth.Permissions/RefreshTokens/
+// module.ModuleOperationLog use for the same reason.
+type globalItem struct {
+	ID        uuid.UUID  `db:"id,pk"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at,softdelete"`
+	Label     string     `db:"label"`
 }
 
-// rangeItem carries a numeric and a time column, for the range-filter cast tests.
+// gatedItem carries one field gated to a group, for the filter/search
+// group-gating tests (ADR-013's documented follow-up) — kept tenant-less
+// (see globalItem's own doc comment) since tenant scoping is orthogonal to
+// what these tests exercise.
+type gatedItem struct {
+	ID        uuid.UUID  `db:"id,pk"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at,softdelete"`
+	Label     string     `db:"label"`
+	Secret    string     `db:"secret"`
+}
+
+// rangeItem carries a numeric and a time column, for the range-filter cast
+// tests — kept tenant-less for the same reason gatedItem is.
 type rangeItem struct {
-	model.BaseModel
-	Label string  `db:"label"`
-	Price float64 `db:"price"`
+	ID        uuid.UUID  `db:"id,pk"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at,softdelete"`
+	Label     string     `db:"label"`
+	Price     float64    `db:"price"`
 }
 
 func rangeMeta(t *testing.T) registry.TableMeta {

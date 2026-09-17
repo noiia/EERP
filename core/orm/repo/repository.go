@@ -257,8 +257,29 @@ func (r *Repository[T]) Create(ctx context.Context, entity T) (T, error) {
 //	role, err := roles.Upsert(ctx, Roles{BaseModel: model.BaseModel{ID: fixedID}, ...},
 //	    []string{"id"}, "") // insert if absent; read back unchanged if not
 func (r *Repository[T]) Upsert(ctx context.Context, entity T, conflictColumns []string, setFragment string) (T, error) {
-	result, err := query.Insert[T](r.meta, entity).
-		OnConflict(strings.Join(conflictColumns, ", ")).
+	return r.upsert(ctx, entity, conflictColumns, "", setFragment)
+}
+
+// UpsertPartial is Upsert's counterpart for a conflictColumns target backed
+// by a PARTIAL unique index/constraint — one declared with its own WHERE
+// clause, e.g. "UNIQUE (code) WHERE deleted_at IS NULL", the soft-delete-safe
+// natural-key shape this codebase hand-writes when a column can legitimately
+// repeat across a live row and a soft-deleted one. Postgres can only use such
+// an index as the ON CONFLICT arbiter when the INSERT repeats its exact
+// predicate (see InsertBuilder.OnConflictWhere) — plain Upsert against a
+// partial index fails with 42P10 regardless of whether any row actually
+// conflicts. conflictWhere is that predicate, verbatim (e.g. "deleted_at IS
+// NULL"); everything else matches Upsert exactly.
+func (r *Repository[T]) UpsertPartial(ctx context.Context, entity T, conflictColumns []string, conflictWhere string, setFragment string) (T, error) {
+	return r.upsert(ctx, entity, conflictColumns, conflictWhere, setFragment)
+}
+
+func (r *Repository[T]) upsert(ctx context.Context, entity T, conflictColumns []string, conflictWhere string, setFragment string) (T, error) {
+	b := query.Insert[T](r.meta, entity).OnConflict(strings.Join(conflictColumns, ", "))
+	if conflictWhere != "" {
+		b = b.OnConflictWhere(conflictWhere)
+	}
+	result, err := b.
 		DoUpdate(setFragment).
 		Returning("*").
 		One(ctx, r.db)

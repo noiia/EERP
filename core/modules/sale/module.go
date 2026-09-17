@@ -22,7 +22,6 @@ func init() {
 // issuer, client, line items, HT/TVA/TTC totals, payment terms.
 type Invoice struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
 	// Logo backs the boolean/picture widget in the form's top-left corner —
 	// same flag-column contract as crm.CRM's Picture (true ⇔ a picture exists
 	// on the (invoice, record, logo) anchor; the picture service owns the
@@ -137,7 +136,6 @@ type Invoice struct {
 // one.
 type SaleLine struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	// InvoiceID is the parent FK — the one2many inverse field the invoice
 	// form's line-items table filters on (views/invoice_views.ts).
 	InvoiceID uuid.UUID `db:"invoice_id" json:"invoice_id"`
@@ -193,8 +191,7 @@ type SaleLine struct {
 // and a junction struct only needs the tax's bare uuid).
 type SaleTax struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name     string    `db:"name" json:"name"`
+	Name string `db:"name" json:"name"`
 	// Kind is "percentage" or "fixed" — selects which of Rate/Amount below
 	// the computation actually reads; the other stays whatever the form left
 	// it at, unused. A selection field on the frontend (sale_tax_views.ts),
@@ -216,7 +213,6 @@ type SaleTax struct {
 // see handler.go's CreateLineTax/DeleteLineTax.
 type SaleLineTax struct {
 	model.BaseModel
-	TenantID   uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	SaleLineID uuid.UUID `db:"sale_line_id" json:"sale_line_id"`
 	SaleTaxID  uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
 }
@@ -230,9 +226,8 @@ type SaleLineTax struct {
 // not a flag flip — that conversion isn't built yet.
 type Quote struct {
 	model.BaseModel
-	TenantID   uuid.UUID `db:"tenant_id"`
-	Logo       *bool     `db:"logo"`
-	IssuerName string    `db:"issuer_name"`
+	Logo       *bool  `db:"logo"`
+	IssuerName string `db:"issuer_name"`
 	// IssuerAddress*/CustomerAddress* mirror Invoice's own 7-column
 	// type: 'address' composite shape (see Invoice's doc comment above).
 	IssuerAddressNumber       *int       `db:"issuer_address_number"`
@@ -277,7 +272,6 @@ type Quote struct {
 // reasoning, which applies here unchanged.
 type QuoteLine struct {
 	model.BaseModel
-	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	QuoteID     uuid.UUID `db:"quote_id" json:"quote_id"`
 	VariantID   uuid.UUID `db:"variant_id" json:"variant_id"`
 	VariantName string    `db:"variant_name" json:"variant_name"`

@@ -8,22 +8,23 @@ import Menu from './Menu'
 
 // Landing route. Anonymous users are redirected to /login (requireAuth). A signed-in
 // user who hits the app root gets the application menu: every module registered as an
-// application (module.json app_mode: true) and its navigable views. This is the fallback
-// any logged-in user lands on after login or when opening the service by its URL.
+// application (module.json app_mode: true) whose views the caller actually has
+// permission for. This is the fallback any logged-in user lands on after login or when
+// opening the service by its URL.
 //
-// We gate on AUTHENTICATION only here — the same stance the catch-all module route takes
-// — and let Go authorize each data call. The frontend can't yet permission-filter the
-// menu: the access token carries no `permissions` claim (see lib/jwt.ts), so the session
-// mirror's permission set is empty and filtering would hide everything. Once Go exposes
-// permissions in the token, re-introduce a per-route gate via `hasPermission`.
+// requireAuth's returned identity already carries the JWT `permissions` claim
+// (lib/jwt.ts), so it's handed straight to moduleRegistry.menu() — a module with zero
+// permitted routes gets no tile (registry.ts's own doc comment has the full contract).
+// Go still re-authorizes every actual data call regardless; this only decides what the
+// menu offers to click.
 //
 // Discovery now compiles every module's tile regardless of module.json
 // `active` (docs/roadmaps/app-store.md, live lifecycle) — a deactivated
 // module's tile is filtered out HERE, from the live Go-sourced active state,
 // not baked into the build.
 export default async function HomePage() {
-  await requireAuth()
+  const identity = await requireAuth()
   const active = await activeModuleNames()
-  const menu = moduleRegistry.menu().filter((m) => active.has(m.name))
+  const menu = moduleRegistry.menu(identity.permissions).filter((m) => active.has(m.name))
   return <Menu menu={menu} />
 }

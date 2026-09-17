@@ -25,7 +25,6 @@ import (
 // always recomputed from Connected/LastSeen at read time.
 type UserPresence struct {
 	model.BaseModel
-	TenantID     uuid.UUID `db:"tenant_id,index"`
 	UserID       uuid.UUID `db:"user_id,index"`
 	ManualStatus *string   `db:"manual_status"`
 	Connected    bool      `db:"connected"`

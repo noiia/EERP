@@ -13,7 +13,6 @@ import (
 // nullable-pointer idiom sale.Invoice already uses for its optional columns.
 type ReportPageFormat struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id,index"`
 	// CompanyID scopes a page format to one company (multi-company: docs
 	// roadmap). Nullable at the schema level like AppSettings.CompanyID —
 	// backfilled once at boot (module.go's Migrate) for pre-existing rows.

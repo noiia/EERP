@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"core/internal/auth"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -150,7 +151,7 @@ func (h *Handler) Create(c echo.Context) error {
 	}
 
 	created, err := h.store.Create(c.Request().Context(), ChatterMessage{
-		TenantID: identity.TenantID, TableName: req.TableName, RecordID: recordID,
+		BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: req.TableName, RecordID: recordID,
 		AuthorID: identity.UserID, AuthorEmail: author.Email,
 		Kind: req.Kind, Body: body,
 	})

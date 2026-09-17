@@ -8,6 +8,7 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -48,7 +49,7 @@ func TestDownloadLog_StreamsExistingFile(t *testing.T) {
 	}
 
 	store := &stubHistoryStore{byID: map[uuid.UUID]CronHistory{
-		histID: {TenantID: tenant, LogsFilepath: path},
+		histID: {BaseModel: model.BaseModel{TenantID: tenant}, LogsFilepath: path},
 	}}
 	h := newHandlerWith(store)
 
@@ -74,7 +75,7 @@ func TestDownloadLog_NotFoundForOtherTenant(t *testing.T) {
 	histID := uuid.New()
 
 	store := &stubHistoryStore{byID: map[uuid.UUID]CronHistory{
-		histID: {TenantID: otherTenant, LogsFilepath: "/does/not/matter"},
+		histID: {BaseModel: model.BaseModel{TenantID: otherTenant}, LogsFilepath: "/does/not/matter"},
 	}}
 	h := newHandlerWith(store)
 

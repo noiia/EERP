@@ -8,6 +8,7 @@ import (
 	"core/internal/auth"
 	authmw "core/internal/middleware"
 	"core/internal/types"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -80,7 +81,7 @@ func TestJWTMiddleware_ValidToken_InjectsIdentityAndCalls200(t *testing.T) {
 	svc := newSvc()
 
 	user := auth.Users{
-		TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+		BaseModel: model.BaseModel{TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001")},
 	}
 	user.BaseModel.ID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
@@ -122,7 +123,7 @@ func TestJWTMiddleware_WrongKeyword_Returns401(t *testing.T) {
 
 	e.GET("/test", recordingHandler(&reached), authmw.JWTMiddleware(svc))
 
-	user := auth.Users{TenantID: uuid.New()}
+	user := auth.Users{BaseModel: model.BaseModel{TenantID: uuid.New()}}
 	user.BaseModel.ID = uuid.New()
 	raw, _ := svc.IssueAccess(user, nil, nil, nil)
 
@@ -140,7 +141,7 @@ func TestJWTMiddleware_WrongKeyword_Returns401(t *testing.T) {
 
 func issueToken(t *testing.T, svc *auth.TokenService) (string, auth.Users) {
 	t.Helper()
-	user := auth.Users{TenantID: uuid.New()}
+	user := auth.Users{BaseModel: model.BaseModel{TenantID: uuid.New()}}
 	user.BaseModel.ID = uuid.New()
 	raw, err := svc.IssueAccess(user, []string{"admin"}, nil, nil)
 	if err != nil {

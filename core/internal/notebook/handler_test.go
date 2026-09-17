@@ -11,6 +11,7 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -103,9 +104,9 @@ func TestList(t *testing.T) {
 	target := "/api/v1/notebook_pages?table=crm&record=" + recordID.String()
 
 	t.Run("returns pages ordered by position, envelope shape", func(t *testing.T) {
-		p1 := NotebookPage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, Title: "First", Position: 0}
+		p1 := NotebookPage{BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: recordID, Title: "First", Position: 0}
 		p1.ID = uuid.New()
-		p2 := NotebookPage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, Title: "Second", Position: 1}
+		p2 := NotebookPage{BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: recordID, Title: "Second", Position: 1}
 		p2.ID = uuid.New()
 		store := &stubStore{listed: []NotebookPage{p1, p2}}
 
@@ -219,7 +220,7 @@ func TestUpdate(t *testing.T) {
 
 	t.Run("rewrites title and content, leaves the anchor/position alone", func(t *testing.T) {
 		existing := NotebookPage{
-			TenantID: identity.TenantID, TableName: "crm", RecordID: uuid.New(),
+			BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: uuid.New(),
 			Title: "Old title", Position: 2, Content: "old body",
 		}
 		existing.ID = uuid.New()

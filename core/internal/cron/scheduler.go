@@ -9,6 +9,7 @@ import (
 	"core/internal/chatter"
 	"core/internal/common"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -133,7 +134,7 @@ func (s *Scheduler) runOne(ctx context.Context, c Cron) {
 		common.Logger.Error("cron: could not write run log", zap.String("cron_id", c.ID.String()), zap.Error(err))
 	}
 
-	history := CronHistory{TenantID: c.TenantID, CronID: c.ID, Failed: failed, LogsFilepath: logPath}
+	history := CronHistory{BaseModel: model.BaseModel{TenantID: c.TenantID}, CronID: c.ID, Failed: failed, LogsFilepath: logPath}
 	if _, err := s.histories.Create(ctx, history); err != nil {
 		common.Logger.Error("cron: could not record run history", zap.String("cron_id", c.ID.String()), zap.Error(err))
 	}
@@ -214,7 +215,7 @@ func (s *Scheduler) postChatterError(ctx context.Context, c Cron, message string
 		return
 	}
 	_, err = s.chatter.Create(ctx, chatter.ChatterMessage{
-		TenantID: c.TenantID, TableName: "cron", RecordID: c.ID,
+		BaseModel: model.BaseModel{TenantID: c.TenantID}, TableName: "cron", RecordID: c.ID,
 		AuthorID: user.ID, AuthorEmail: user.Email,
 		Kind: "log", Body: message,
 	})

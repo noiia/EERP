@@ -13,9 +13,8 @@ import (
 // it is intentionally not relying on api.yaml for that guarantee.
 type Users struct {
 	model.BaseModel
-	TenantID     uuid.UUID `db:"tenant_id"`
-	Email        string    `db:"email"`
-	PasswordHash string    `db:"password_hash"`
+	Email        string `db:"email"`
+	PasswordHash string `db:"password_hash"`
 	// Username is an optional handle, separate from Email — nullable (not every
 	// tenant/user needs one) and NOT unique-constrained (same posture as
 	// Name/Surname below: a display convenience, not an identifier anything
@@ -58,9 +57,8 @@ type Users struct {
 // Role is a named set of permissions scoped to a tenant.
 type Roles struct {
 	model.BaseModel
-	TenantID    uuid.UUID `db:"tenant_id"`
-	Name        string    `db:"name"`
-	Description string    `db:"description"`
+	Name        string `db:"name"`
+	Description string `db:"description"`
 	// TechnicalName is a stable slug distinct from Name (which stays mutable
 	// and is the identifier the existing permission system/JWT roles claim
 	// already relies on — untouched by this field). It's what a field's
@@ -81,7 +79,6 @@ type Roles struct {
 // widget can address one link by its own row id.
 type RoleBelongs struct {
 	model.BaseModel
-	TenantID        uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	RoleID          uuid.UUID `db:"role_id" json:"role_id"`
 	BelongsToRoleID uuid.UUID `db:"belongs_to_role_id" json:"belongs_to_role_id"`
 }
@@ -95,8 +92,7 @@ type RoleBelongs struct {
 // bespoke widget.
 type AccountRoleTypes struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name     string    `db:"name" json:"name"`
+	Name string `db:"name" json:"name"`
 }
 
 // RoleViewPermission is one row of a role's "which views it can see" table —
@@ -119,9 +115,8 @@ type AccountRoleTypes struct {
 // Wiring this table into enforcement is a deliberate, separate follow-up.
 type RoleViewPermission struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	RoleID   uuid.UUID `db:"role_id" json:"role_id"`
-	Entity   string    `db:"entity" json:"entity"`
+	RoleID uuid.UUID `db:"role_id" json:"role_id"`
+	Entity string    `db:"entity" json:"entity"`
 }
 
 // RoleViewPermissionRight is the many2many junction behind
@@ -129,17 +124,26 @@ type RoleViewPermission struct {
 // exactly, scoped to a role-view row instead of a sale line.
 type RoleViewPermissionRight struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	RoleViewPermissionID uuid.UUID `db:"role_view_permission_id" json:"role_view_permission_id"`
 	AccountRoleTypeID    uuid.UUID `db:"account_role_type_id" json:"account_role_type_id"`
 }
 
 // Permission represents a single capability using the "module:resource:action" DSL.
+//
+// Deliberately does NOT embed model.BaseModel: it now carries a promoted
+// TenantID, and Permissions is a global catalog shared across every tenant
+// (its Code is the natural key — see handler.go's RightsHandler.reconcile,
+// which Upserts on it) — the same "hand-declare the fields you actually
+// want" opt-out pictures.Picture/attachments.Attachment already use to skip
+// BaseModel's DeletedAt.
 type Permissions struct {
-	model.BaseModel
-	Code        string `db:"code"`
-	Description string `db:"description"`
-	Module      string `db:"module"`
+	ID          uuid.UUID  `db:"id,pk"`
+	CreatedAt   time.Time  `db:"created_at"`
+	UpdatedAt   time.Time  `db:"updated_at"`
+	DeletedAt   *time.Time `db:"deleted_at,softdelete"`
+	Code        string     `db:"code"`
+	Description string     `db:"description"`
+	Module      string     `db:"module"`
 }
 
 // UserRoles is the join between users and roles — a user's assigned roles,
@@ -148,20 +152,18 @@ type Permissions struct {
 // composite PK, so it's registered on the generic CRUD surface and the
 // User form's `role` many2many tags field can address one link by its own
 // row id via RelationTagsWidget/RelationOps, with no bespoke endpoint.
+//
+// TenantID used to be hand-declared here as a *uuid.UUID (nullable) purely
+// so auto-migration's ADD COLUMN could add it to the pre-existing (pre-
+// BaseModel) user_roles table without a NOT NULL failure on any row already
+// there. Now that TenantID is BaseModel's own (non-pointer) promoted field,
+// module.go's Migrate backfills any NULL row left over from that era and
+// ALTERs the column to NOT NULL before this struct's shape can drift from
+// the actual DDL — see that Migrate's own doc comment.
 type UserRoles struct {
 	model.BaseModel
-	// TenantID is a pointer — unlike RoleBelongs' — solely so the generic
-	// auto-migration's ADD COLUMN can add it to the pre-existing (pre-
-	// BaseModel) user_roles table without a NOT NULL failure on any row
-	// already there (module.go's Migrate backfills the BaseModel columns
-	// themselves by hand, since that table predates this struct). Every row
-	// written through the generic CRUD surface still gets a real value
-	// regardless: tenant_id is stamped by the CRUD layer purely by column
-	// name (core/orm/internal/crud/repository.go's tenantScoped), not by
-	// this field's Go type.
-	TenantID *uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	UserID   uuid.UUID  `db:"user_id" json:"user_id"`
-	RoleID   uuid.UUID  `db:"role_id" json:"role_id"`
+	UserID uuid.UUID `db:"user_id" json:"user_id"`
+	RoleID uuid.UUID `db:"role_id" json:"role_id"`
 }
 
 // RolePermission is the join between roles and permissions (no BaseModel — composite PK).
@@ -172,10 +174,18 @@ type RolePermissions struct {
 
 // RefreshToken stores a bcrypt hash of an issued refresh token.
 // The raw token is never persisted — only its hash.
+//
+// Deliberately does NOT embed model.BaseModel: it now carries a promoted
+// TenantID, and a refresh token is scoped by UserID, not directly by
+// tenant — the same "hand-declare the fields you actually want" opt-out
+// Permissions above takes.
 type RefreshTokens struct {
-	model.BaseModel
-	UserID    uuid.UUID `db:"user_id"`
-	TokenHash string    `db:"token_hash"`
-	ExpiresAt time.Time `db:"expires_at"`
-	Revoked   bool      `db:"revoked"`
+	ID        uuid.UUID  `db:"id,pk"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at,softdelete"`
+	UserID    uuid.UUID  `db:"user_id"`
+	TokenHash string     `db:"token_hash"`
+	ExpiresAt time.Time  `db:"expires_at"`
+	Revoked   bool       `db:"revoked"`
 }

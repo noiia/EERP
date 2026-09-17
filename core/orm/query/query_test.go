@@ -437,6 +437,63 @@ func TestInsert_ToSQL_OnConflictNoDoUpdate_FallsBackToDoNothing(t *testing.T) {
 	assertContains(t, sql, "ON CONFLICT (order_id, product) DO NOTHING")
 }
 
+func TestInsert_ToSQL_OnConflictWhere_RepeatsPartialIndexPredicate(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("product").
+		OnConflictWhere("deleted_at IS NULL").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		Returning("*").
+		ToSQL()
+
+	// The predicate must land BETWEEN the target columns and DO UPDATE/DO
+	// NOTHING — Postgres only accepts "ON CONFLICT (cols) WHERE pred DO …",
+	// never the reverse order.
+	assertContains(t, sql, "ON CONFLICT (product) WHERE deleted_at IS NULL DO UPDATE SET quantity = EXCLUDED.quantity")
+}
+
+func TestInsert_ToSQL_OnConflict_NoWhereByDefault(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("product").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		ToSQL()
+
+	// No OnConflictWhere call → no WHERE clause at all, matching every
+	// pre-existing caller's behavior unchanged (a full, non-partial index).
+	if strings.Contains(sql, "WHERE") {
+		t.Errorf("ToSQL() = %q, want no WHERE clause when OnConflictWhere was never called", sql)
+	}
+}
+
+func TestInsert_ToSQL_OnConflict_ResetsWhere(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	// A second OnConflict() call (e.g. via a shared builder base) must not
+	// leak an earlier OnConflictWhere's predicate onto a new conflict target.
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("product").
+		OnConflictWhere("deleted_at IS NULL").
+		OnConflict("order_id, product").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		ToSQL()
+
+	if strings.Contains(sql, "WHERE") {
+		t.Errorf("ToSQL() = %q, want the predicate cleared by the second OnConflict() call", sql)
+	}
+}
+
 func TestInsert_ToSQL_OnConflictDoNothing(t *testing.T) {
 	t.Parallel()
 

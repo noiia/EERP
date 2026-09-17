@@ -26,9 +26,9 @@ func TestBaseModel_EmbeddedMeta(t *testing.T) {
 		t.Errorf("PK = %q, want %q", meta.PK, "id")
 	}
 
-	// Expect: id, created_at, updated_at, deleted_at, name = 5 fields.
-	if len(meta.Fields) != 5 {
-		t.Errorf("Fields len = %d, want 5", len(meta.Fields))
+	// Expect: id, created_at, updated_at, deleted_at, tenant_id, name = 6 fields.
+	if len(meta.Fields) != 6 {
+		t.Errorf("Fields len = %d, want 6", len(meta.Fields))
 	}
 }
 

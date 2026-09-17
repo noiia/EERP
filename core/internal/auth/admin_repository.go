@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -144,7 +145,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, tenantID uuid.UUID, pro
 		return Users{}, fmt.Errorf("user: create: %w", err)
 	}
 
-	u := Users{TenantID: tenantID, PasswordHash: hash}
+	u := Users{BaseModel: model.BaseModel{TenantID: tenantID}, PasswordHash: hash}
 	applyProfile(&u, profile)
 
 	created, err := r.users.Create(ctx, u)
@@ -209,7 +210,7 @@ func (r *RoleRepository) FindInTenant(ctx context.Context, tenantID, id uuid.UUI
 // Roles.TechnicalName on why it's nullable).
 func (r *RoleRepository) CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string, technicalName *string) (Roles, error) {
 	created, err := r.roles.Create(ctx, Roles{
-		TenantID:      tenantID,
+		BaseModel:     model.BaseModel{TenantID: tenantID},
 		Name:          name,
 		Description:   description,
 		TechnicalName: technicalName,

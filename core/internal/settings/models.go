@@ -127,7 +127,6 @@ const OSMConnectorKey = "integrations.osm"
 // at boot, before the new index is created.
 type AppSettings struct {
 	model.BaseModel
-	TenantID  uuid.UUID  `db:"tenant_id,index"`
 	CompanyID *uuid.UUID `db:"company_id"`
 	Key       string     `db:"key"`
 	Value     string     `db:"value"`
