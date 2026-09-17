@@ -151,7 +151,19 @@ describe('AppHeaderMenuBar', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('collapses to a single icon once the row does not fit, and drills into a menu with the previous list rendered as a rail', async () => {
+  // Forces the collapsed (icon + drill-down Menu) rendering — see the probe/
+  // scrollWidth comment inside the test below for why this needs a rerender.
+  function collapse(container: HTMLElement, menus: HeaderMenu[]) {
+    const probe = container.querySelector('[data-testid="header-menu-probe"]') as HTMLElement
+    Object.defineProperty(probe, 'scrollWidth', { value: 2000, configurable: true })
+    useContainerWidthMock.mockReturnValue({
+      width: 500,
+      containerRef: { current: null },
+      mounted: true,
+    })
+  }
+
+  it('collapses to a single icon once the row does not fit', async () => {
     setIdentity([])
     useContainerWidthMock.mockReturnValue({
       width: 1000,
@@ -166,27 +178,81 @@ describe('AppHeaderMenuBar', () => {
     // the next layout-effect run detects overflow — jsdom reports 0 for both
     // scrollWidth and the measured width by default, so this simulates a
     // narrow top bar without a real ResizeObserver.
-    const probe = container.querySelector('[data-testid="header-menu-probe"]') as HTMLElement
-    Object.defineProperty(probe, 'scrollWidth', { value: 2000, configurable: true })
+    collapse(container, [productsMenu, configurationMenu])
+    rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
+
+    await screen.findByRole('button', { name: 'App menus' })
+    expect(screen.queryByRole('button', { name: 'Products' })).not.toBeInTheDocument()
+  })
+
+  it('picking a lonely-line menu from the overview navigates directly — no one-item drilldown', async () => {
+    setIdentity([])
     useContainerWidthMock.mockReturnValue({
-      width: 500,
+      width: 1000,
       containerRef: { current: null },
       mounted: true,
     })
+    const { container, rerender } = render(
+      <AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />,
+    )
+    collapse(container, [productsMenu, configurationMenu])
     rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
 
-    const icon = await screen.findByRole('button', { name: 'App menus' })
-    expect(screen.queryByRole('button', { name: 'Products' })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'App menus' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Products' }))
 
-    fireEvent.click(icon)
-    const productsTitle = await screen.findByRole('menuitem', { name: 'Products' })
-    fireEvent.click(productsTitle)
+    expect(pushMock).toHaveBeenCalledWith('/sale/products')
+    // The menu closed straight to navigation — no lingering "Back" line from
+    // a drilldown that was never entered.
+    expect(screen.queryByRole('menuitem', { name: 'Back' })).not.toBeInTheDocument()
+  })
 
-    // Drilldown: the selected menu's own line renders (centered panel)...
-    await waitFor(() =>
-      expect(screen.getAllByRole('menuitem', { name: 'Products' })).toHaveLength(2),
+  it('picking a multi-entry menu from the overview drills into its own entries, with a Back line to return', async () => {
+    setIdentity([])
+    useContainerWidthMock.mockReturnValue({
+      width: 1000,
+      containerRef: { current: null },
+      mounted: true,
+    })
+    const { container, rerender } = render(
+      <AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />,
     )
-    // ...and the title list is still there (now the left rail), Configuration included.
+    collapse(container, [productsMenu, configurationMenu])
+    rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'App menus' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Configuration' }))
+
+    // Drilldown: Configuration's own entries render, with a Back line above
+    // them — the overview's "Products"/"Configuration" titles are gone,
+    // replaced entirely (one Menu, swapped content), not a second panel.
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument())
+    expect(screen.getByRole('menuitem', { name: 'Back' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Products' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
+    expect(pushMock).toHaveBeenCalledWith('/settings/apps/sale')
+  })
+
+  it('the Back line returns to the overview without navigating', async () => {
+    setIdentity([])
+    useContainerWidthMock.mockReturnValue({
+      width: 1000,
+      containerRef: { current: null },
+      mounted: true,
+    })
+    const { container, rerender } = render(
+      <AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />,
+    )
+    collapse(container, [productsMenu, configurationMenu])
+    rerender(<AppHeaderMenuBar menus={[productsMenu, configurationMenu]} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'App menus' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Configuration' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Back' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Products' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Configuration' })).toBeInTheDocument()
+    expect(pushMock).not.toHaveBeenCalled()
   })
 })
