@@ -766,10 +766,33 @@ export function RelationSearchWidget({
     }
   }
 
+  // widgetOptions.boxedLabel (opt-in, e.g. propertymanagement's uom_id):
+  // the SAME `component="legend"` this widget already renders (present for
+  // exactly this reason) now sits inside a REAL `<fieldset>` instead of a
+  // bare `<Box>` — a native fieldset/legend pair gets the "label notched
+  // into the border" look for free, from the browser itself (fitting INSIDE
+  // the block, never adding its own row), no absolutely-positioned label
+  // hack needed. Off by default: every other caller keeps the plain
+  // caption-above-the-row look unchanged; this is a per-field opt-in, not a
+  // widget-wide restyle.
+  const boxedLabel = field.widgetOptions?.boxedLabel === true
+
   return (
-    <Box>
+    <Box
+      component={boxedLabel ? 'fieldset' : 'div'}
+      sx={
+        boxedLabel
+          ? { border: '1px solid', borderColor: 'divider', borderRadius: 1, m: 0, px: 1.5, py: 1 }
+          : undefined
+      }
+    >
       {!field.hideLabel && (
-        <Typography variant="caption" color="text.secondary" component="legend">
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          component="legend"
+          sx={boxedLabel ? { px: 0.5, ml: -0.5 } : undefined}
+        >
           {t(fieldLabel(field))}
         </Typography>
       )}

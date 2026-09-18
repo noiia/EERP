@@ -372,6 +372,12 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
       { kind: 'field', name: 'uom_id' },
     ])
   })
+
+  it('uom_id opts into boxedLabel — a real fieldset/legend, so its label lines up with floor_area\'s own floating one instead of sitting well above the row', () => {
+    const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
+    const field = form.descriptor.fields.find((f) => f.name === 'uom_id')
+    expect(field?.widgetOptions).toEqual({ boxedLabel: true })
+  })
 })
 
 describe('propertymanagement — equipment form', () => {

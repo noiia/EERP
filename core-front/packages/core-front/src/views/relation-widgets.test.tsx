@@ -323,6 +323,34 @@ describe('relation/search (many2one)', () => {
       expect(pushMock).not.toHaveBeenCalled()
     })
   })
+
+  describe('widgetOptions.boxedLabel — a real fieldset/legend instead of a caption-above-the-row (e.g. propertymanagement\'s uom_id, beside a plain number field whose own label floats inside its box)', () => {
+    // MUI's OWN outlined TextField already renders an internal <fieldset>
+    // for its border/notch — present either way, so the precise check is
+    // whether THIS field's own label (rendered as <legend> regardless,
+    // since that's the pre-existing part) has a <fieldset> ANCESTOR, not
+    // just whether a <fieldset> exists anywhere in the tree.
+    it('without the flag, the field\'s own legend has no fieldset ancestor — an orphaned caption', () => {
+      const ops = stubOps()
+      render(<Harness field={searchField} ops={ops} onChange={vi.fn()} onChangeField={vi.fn()} initialValue={null} recordId="r1" />)
+      expect(screen.getByText('Company').closest('fieldset')).toBeNull()
+    })
+
+    it('with the flag, the field\'s own legend sits inside a real <fieldset> — notched into the border natively, adding no row of its own', () => {
+      const ops = stubOps()
+      render(
+        <Harness
+          field={{ ...searchField, widgetOptions: { boxedLabel: true } }}
+          ops={ops}
+          onChange={vi.fn()}
+          onChangeField={vi.fn()}
+          initialValue={null}
+          recordId="r1"
+        />,
+      )
+      expect(screen.getByText('Company').closest('fieldset')).not.toBeNull()
+    })
+  })
 })
 
 describe('relation/tags (many2many)', () => {
