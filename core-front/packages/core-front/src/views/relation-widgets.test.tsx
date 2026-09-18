@@ -324,19 +324,19 @@ describe('relation/search (many2one)', () => {
     })
   })
 
-  describe('widgetOptions.boxedLabel — a bordered box with the label overlapping its top border, like a plain number field\'s own MUI label (e.g. propertymanagement\'s uom_id, beside floor_area)', () => {
-    it('without the flag, the label renders as a plain block-level caption (no absolute positioning, no bordered box)', () => {
+  describe('widgetOptions.matchFieldHeight — no border, just a content-row min-height matching a sibling TextField (e.g. propertymanagement\'s uom_id, beside floor_area)', () => {
+    it('without the flag, the content row has no extra min-height', async () => {
       const ops = stubOps()
       render(<Harness field={searchField} ops={ops} onChange={vi.fn()} onChangeField={vi.fn()} initialValue={null} recordId="r1" />)
-      const label = screen.getByText('Company')
-      expect(getComputedStyle(label).position).not.toBe('absolute')
+      const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
+      expect(getComputedStyle(row).minHeight).not.toBe('56px')
     })
 
-    it('with the flag, the label is absolutely positioned to overlap the box\'s own top border, and the box carries a fixed min-height matching a default-size TextField', () => {
+    it('with the flag, the content row gets minHeight: 56px (MUI\'s own default outlined-input height) — no border, no repositioned label', async () => {
       const ops = stubOps()
       render(
         <Harness
-          field={{ ...searchField, widgetOptions: { boxedLabel: true } }}
+          field={{ ...searchField, widgetOptions: { matchFieldHeight: true } }}
           ops={ops}
           onChange={vi.fn()}
           onChangeField={vi.fn()}
@@ -345,11 +345,10 @@ describe('relation/search (many2one)', () => {
         />,
       )
       const label = screen.getByText('Company')
-      expect(getComputedStyle(label).position).toBe('absolute')
-      // The box is the label's own positioned ancestor.
-      const box = label.parentElement!
-      expect(getComputedStyle(box).position).toBe('relative')
-      expect(getComputedStyle(box).minHeight).toBe('56px')
+      // Still the plain caption — matchFieldHeight never touches the label.
+      expect(getComputedStyle(label).position).not.toBe('absolute')
+      const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
+      expect(getComputedStyle(row).minHeight).toBe('56px')
     })
   })
 })

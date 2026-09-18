@@ -352,20 +352,19 @@ const formFields: ViewDescriptor['fields'] = [
     // synchronous field-function default system can do — handler.go's
     // CreateProperty resolves it server-side instead (defaultFloorAreaUom),
     // filling it in only when the create request left uom_id unset.
-    // widgetOptions.boxedLabel (relation-widgets.tsx's own doc comment):
-    // this field sits beside floor_area, a plain number/float field whose
-    // MUI label already floats inside its own bordered box — boxedLabel
-    // gives this relation field the SAME "label notched into the border,
-    // never its own row" look via a real fieldset/legend, so the two line
-    // up instead of uom_id's label sitting well above the row like every
-    // other relation field's caption does.
+    // widgetOptions.matchFieldHeight (relation-widgets.tsx's own doc
+    // comment): this field sits beside floor_area, a plain number/float
+    // field whose MUI box is ~56px tall — matchFieldHeight gives this
+    // relation field's own (visually shorter) chip/autocomplete row the
+    // same minimum height, no border, so the two don't look mismatched in
+    // height sitting side by side.
     relation: {
       entity: 'product_uoms',
       kind: 'many2one',
       labelField: 'name',
       filter: { type: 'surface' },
     },
-    widgetOptions: { boxedLabel: true },
+    widgetOptions: { matchFieldHeight: true },
   },
   {
     name: 'photos',

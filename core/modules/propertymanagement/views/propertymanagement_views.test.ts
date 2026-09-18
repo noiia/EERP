@@ -373,10 +373,10 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     ])
   })
 
-  it('uom_id opts into boxedLabel — a real fieldset/legend, so its label lines up with floor_area\'s own floating one instead of sitting well above the row', () => {
+  it('uom_id opts into matchFieldHeight, so its content row is at least as tall as floor_area\'s own box beside it', () => {
     const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
     const field = form.descriptor.fields.find((f) => f.name === 'uom_id')
-    expect(field?.widgetOptions).toEqual({ boxedLabel: true })
+    expect(field?.widgetOptions).toEqual({ matchFieldHeight: true })
   })
 })
 
