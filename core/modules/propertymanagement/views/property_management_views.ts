@@ -488,11 +488,27 @@ const formView: ViewDescriptor = {
 // their own notebook pages — same self-extension shape
 // core/modules/sale/views/invoice_views.ts's orderLinesPageOperations uses.
 export const propertyExtendOperations: Operation[] = [
-  // A dedicated full-width row BELOW the default 2-column body (__form_columns
-  // — name/loan_amount/rent_price/current_tenant), so it structurally sits
-  // under all of them regardless of how many fields that grid happens to
-  // hold — address on the left, floor_area+uom split on the right (its own
-  // nested columns: 2, floor_area left / uom right within that half).
+  // loan_amount and rent_price BOTH sit in the right-hand column of
+  // __form_columns' 2-col grid: stacked into their own single-column group
+  // (no `columns` — a plain vertical Stack) placed right after
+  // current_tenant, so the pair becomes ONE grid item occupying that row's
+  // second column, current_tenant alone filling the first.
+  {
+    op: 'addNode',
+    node: { kind: 'group', children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }] },
+    target: 'current_tenant',
+    position: 'after',
+  },
+  // A dedicated full-width row BELOW the default 2-column body, so it
+  // structurally sits under everything in __form_columns regardless of how
+  // many fields that grid holds — address on the left, floor_area+uom split
+  // on the right (its own nested columns: 2, floor_area left / uom right).
+  // offsetTop nudges that right-hand group down to line up with address's
+  // OWN zip-code/city row (AddressWidget's 4th internal row, after its
+  // label + number/street + complement) — a calibrated approximation
+  // (descriptor.ts's own doc comment on offsetTop), not a structural
+  // binding to AddressWidget; nudge this single number if it drifts once
+  // AddressWidget's own spacing changes.
   {
     op: 'addNode',
     node: {
@@ -503,6 +519,7 @@ export const propertyExtendOperations: Operation[] = [
         {
           kind: 'group',
           columns: 2,
+          offsetTop: 8.75,
           children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
         },
       ],

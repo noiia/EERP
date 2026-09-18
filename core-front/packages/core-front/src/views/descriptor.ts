@@ -692,6 +692,18 @@ export interface LayoutContainerNode {
    * relation wizard's narrow dialog). JSON-only, like every other hint here.
    */
   columns?: number
+  /**
+   * Rendering hint: a top margin (rem), for the one case `columns`/`kind`
+   * can't express — visually lining a container up against a ROW inside a
+   * sibling composite widget the layout tree has no leaf for (e.g. `type:
+   * 'address'`'s own zip-code/city row, which AddressWidget renders
+   * internally — there is no `address_zip_code` field node to anchor a
+   * `row`/`group` against). A calibrated approximation tied to that
+   * widget's OWN current spacing, not a structural binding — it drifts if
+   * AddressWidget's own rows/gaps change size. JSON-only, like every other
+   * hint here.
+   */
+  offsetTop?: number
   children: LayoutNode[]
 }
 

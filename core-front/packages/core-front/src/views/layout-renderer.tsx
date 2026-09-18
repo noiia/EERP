@@ -509,7 +509,7 @@ function LayoutNodeView({
   // dialog — no cooperation needed from the caller.
   if (node.columns) {
     return (
-      <Box sx={{ containerType: 'inline-size' }}>
+      <Box sx={{ containerType: 'inline-size', mt: node.offsetTop ? `${node.offsetTop}rem` : undefined }}>
         {node.title ? (
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
             {t(node.title)}
@@ -545,7 +545,10 @@ function LayoutNodeView({
       <Stack
         direction={isHeader ? 'row' : { xs: 'column', sm: 'row' }}
         spacing={2}
-        sx={{ alignItems: isHeader ? 'center' : { xs: 'stretch', sm: 'flex-start' } }}
+        sx={{
+          alignItems: isHeader ? 'center' : { xs: 'stretch', sm: 'flex-start' },
+          mt: node.offsetTop ? `${node.offsetTop}rem` : undefined,
+        }}
       >
         {node.title ? (
           <Typography variant="subtitle2" sx={{ width: '100%' }}>
@@ -559,7 +562,7 @@ function LayoutNodeView({
 
   if (node.kind === 'section') {
     return (
-      <Box>
+      <Box sx={{ mt: node.offsetTop ? `${node.offsetTop}rem` : undefined }}>
         {node.title ? (
           <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
             {t(node.title)}
@@ -576,7 +579,7 @@ function LayoutNodeView({
   // the exact same vertical rhythm as the old single flat Stack did — nesting
   // doesn't compound MUI's Stack spacing, it only adds a transparent wrapper.
   return (
-    <Stack spacing={2.5}>
+    <Stack spacing={2.5} sx={{ mt: node.offsetTop ? `${node.offsetTop}rem` : undefined }}>
       {node.title ? <Typography variant="subtitle2">{t(node.title)}</Typography> : null}
       {children}
     </Stack>

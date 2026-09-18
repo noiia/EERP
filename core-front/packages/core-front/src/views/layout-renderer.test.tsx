@@ -83,6 +83,50 @@ describe('LayoutForm', () => {
     expect(screen.getByLabelText('A')).toBeInTheDocument()
   })
 
+  it('offsetTop on a columns group applies an approximate top margin (rem) — the AddressWidget-row alignment hint', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          offsetTop: 8.75,
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    const { container } = render(
+      <LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />,
+    )
+    const outer = [...container.querySelectorAll('div')].find(
+      (el) => getComputedStyle(el).containerType === 'inline-size',
+    )
+    expect(outer).toBeDefined()
+    // jsdom doesn't resolve rem to px in getComputedStyle — the raw value is
+    // still proof the hint reached the rendered style, which is what this
+    // test checks; a real browser resolves it to 140px (8.75rem × 16px root).
+    expect(getComputedStyle(outer!).marginTop).toBe('8.75rem')
+  })
+
+  it('omitting offsetTop leaves the columns group with no extra top margin', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [{ kind: 'group', columns: 2, children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }] }],
+    }
+    const { container } = render(
+      <LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />,
+    )
+    const outer = [...container.querySelectorAll('div')].find(
+      (el) => getComputedStyle(el).containerType === 'inline-size',
+    )
+    expect(outer).toBeDefined()
+    expect(getComputedStyle(outer!).marginTop).toBe('0')
+  })
+
   it('a row groups its fields — both render, side by side in the tree', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',

@@ -322,7 +322,7 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     ).not.toContain('equipment')
   })
 
-  it('__form_columns keeps only loan_amount/rent_price/current_tenant — address/floor_area/uom move out to their own row below it', () => {
+  it('__form_columns pairs current_tenant (left) with a stacked loan_amount/rent_price group (right) — both in the right column', () => {
     const registry = register()
     const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
     const nodes = normalizeLayout(resolved.descriptor)
@@ -331,14 +331,19 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     if (!columns || columns.kind === 'field') return
     // 'name' lands in the synthesized header instead (the first plain text
     // field), not here — see normalizeLayout's own default anatomy.
-    expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind))).toEqual([
-      'loan_amount',
-      'rent_price',
-      'current_tenant',
+    expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind))).toEqual(['current_tenant', 'group'])
+
+    const amountsGroup = columns.children[1]
+    expect(amountsGroup.kind).not.toBe('field')
+    if (amountsGroup.kind === 'field') return
+    expect(amountsGroup.columns).toBeUndefined() // a plain vertical stack, not another 2-col split
+    expect(amountsGroup.children).toEqual([
+      { kind: 'field', name: 'loan_amount' },
+      { kind: 'field', name: 'rent_price' },
     ])
   })
 
-  it('address (left) sits beside a floor_area|uom split (right) in their own full-width row, right after __form_columns', () => {
+  it('address (left) sits beside a floor_area|uom split (right, offset to line up with address\'s own zip/city row) in their own full-width row, right after __form_columns', () => {
     const registry = register()
     const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
     const nodes = normalizeLayout(resolved.descriptor)
@@ -356,6 +361,7 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     expect(floorGroup.kind).not.toBe('field')
     if (floorGroup.kind === 'field') return
     expect(floorGroup.columns).toBe(2)
+    expect(floorGroup.offsetTop).toBeGreaterThan(0)
     expect(floorGroup.children).toEqual([
       { kind: 'field', name: 'floor_area' },
       { kind: 'field', name: 'uom_id' },
