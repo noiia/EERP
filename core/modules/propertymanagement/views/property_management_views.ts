@@ -2,10 +2,10 @@ import {
   createAttachmentClient,
   fetchReportPDF,
   FORM_NOTEBOOK_ID,
-  registerHeaderButtonAction,
+  registerMenuAction,
   useEntityRefreshStore,
   type FrontRoute,
-  type HeaderButtonDescriptor,
+  type MenuNode,
   type Operation,
   type ViewDescriptor,
 } from '@eerp/core-front'
@@ -38,7 +38,7 @@ export interface PropertyManagement {
    * alongside whatever other lines the month's receipt needs. */
   rent_price?: number
   /** "2026-08"-shaped, null until the first Generate — set by the Generate
-   * Rent Receipt header button. */
+   * Rent Receipt menu action. */
   last_receipt_month?: string | null
   /** Server-computed, non-stored (GetProperty override, handler.go) — never
    * a real column, never sent back on write. */
@@ -79,17 +79,26 @@ function formatPropertyAddress(draft: Record<string, unknown>): string {
 // later download — the user's own explicit requirement) — a tenant moving
 // out/in later never changes what an already-generated receipt shows.
 // Mirrors modules/sale/views/quote_views.ts's sale.acceptQuote shape (read
-// via relationOps, create, then setFieldAndCommit).
-registerHeaderButtonAction({
+// via relationOps, create, then setFieldAndCommit). Lives in the form's
+// options menu (propertyActions below), not a standalone header button —
+// registerMenuAction's own MenuActionContext carries the SAME
+// draft/setFieldAndCommit/relationOps a header button gets, so the workflow
+// logic below is completely unchanged from when this was a header button;
+// draft/setFieldAndCommit are only OPTIONAL on MenuActionContext because the
+// same type also backs the bulk actions menu (menu-actions.ts's own doc
+// comment) — this action is only ever wired onto a FORM descriptor's
+// `actions`, where FormActionsMenu always supplies both, so the guard below
+// never actually fires; TypeScript just needs it narrowed.
+registerMenuAction({
   entity: 'property_management',
   name: 'propertymanagement.generateRentReceipt',
   handler: async (ctx) => {
-    const ops = ctx.relationOps
-    if (!ops) return
+    const { relationOps: ops, draft, setFieldAndCommit } = ctx
+    if (!ops || !draft || !setFieldAndCommit) return
 
     const period = new Date().toISOString().slice(0, 7)
     const generatedAt = new Date().toISOString()
-    const addressLine = formatPropertyAddress(ctx.draft)
+    const addressLine = formatPropertyAddress(draft)
 
     // Snapshot the property's own billing lines (property_management_
     // billing_line_views.ts) the same way property_name/address/floor_area
@@ -129,7 +138,7 @@ registerHeaderButtonAction({
       .map((c) => String(c.name ?? ''))
 
     const uomRecord =
-      typeof ctx.draft.uom_id === 'string' ? await ops.get('product_uoms', ctx.draft.uom_id).catch(() => null) : null
+      typeof draft.uom_id === 'string' ? await ops.get('product_uoms', draft.uom_id).catch(() => null) : null
     const uomLabel = uomRecord ? String(uomRecord.name ?? '') : ''
 
     const parent = await ops.create('property_management_rent_receipt', {
@@ -137,11 +146,11 @@ registerHeaderButtonAction({
       is_parent: true,
       period,
       generated_at: generatedAt,
-      property_name: ctx.draft.name,
+      property_name: draft.name,
       property_address: addressLine,
-      floor_area: ctx.draft.floor_area,
+      floor_area: draft.floor_area,
       uom: uomLabel,
-      rent_price: ctx.draft.rent_price,
+      rent_price: draft.rent_price,
       subtotal,
       tax_amount: taxAmount,
       total,
@@ -162,11 +171,11 @@ registerHeaderButtonAction({
         is_parent: false,
         period,
         generated_at: generatedAt,
-        property_name: ctx.draft.name,
+        property_name: draft.name,
         property_address: addressLine,
-        floor_area: ctx.draft.floor_area,
+        floor_area: draft.floor_area,
         uom: uomLabel,
-        rent_price: ctx.draft.rent_price,
+        rent_price: draft.rent_price,
         subtotal,
         tax_amount: taxAmount,
         total,
@@ -211,18 +220,24 @@ registerHeaderButtonAction({
     // bump once so any mounted widget over this entity re-fetches.
     useEntityRefreshStore.getState().bump('property_management_rent_receipt')
 
-    await ctx.setFieldAndCommit({ last_receipt_month: period })
+    await setFieldAndCommit({ last_receipt_month: period })
   },
 })
 
-const propertyHeaderButtons: HeaderButtonDescriptor[] = [
+// Moved out of the always-visible header-button row into the form's own
+// options menu (the three-dot FormActionsMenu) — the user's own explicit
+// choice: a monthly, occasional action doesn't need permanent header real
+// estate. states.readOnly is MenuActionNode's own parity with
+// HeaderButtonDescriptor's (form-actions-menu.tsx/descriptor.ts) — the item
+// stays VISIBLE but DISABLED once already run this month, never hidden, a
+// server-computed key (PropertyManagement.receipt_generated_this_month
+// above), never a stored column, so this Condition needs no dynamic "now"
+// operator.
+const propertyActions: MenuNode[] = [
   {
-    name: 'propertymanagement.generateRentReceipt',
+    kind: 'action',
     label: 'Generate Rent Receipt',
-    // Stays VISIBLE but DISABLED once already run this month — a server-
-    // computed key (see PropertyManagement.receipt_generated_this_month
-    // above), never a stored column, so this Condition needs no dynamic
-    // "now" operator.
+    action: 'propertymanagement.generateRentReceipt',
     states: { readOnly: { field: 'receipt_generated_this_month', op: 'eq', value: true } },
   },
 ]
@@ -367,7 +382,7 @@ const formView: ViewDescriptor = {
   viewType: 'form',
   fields: formFields,
   permissions: ['property_management:property_management:read'],
-  headerButtons: propertyHeaderButtons,
+  actions: propertyActions,
 }
 
 // Moves photos/equipment/rent_receipts off the default two-column body into

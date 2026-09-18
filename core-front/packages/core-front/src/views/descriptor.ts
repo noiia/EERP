@@ -929,6 +929,18 @@ export interface MenuActionNode {
   /** A name registered via `registerMenuAction` for this SAME descriptor's
    * entity — validated at registration (validateMenuActions), not at click. */
   action: string
+  /**
+   * Parity with `HeaderButtonDescriptor.states.readOnly` — the SAME
+   * `Condition` DSL, reevaluated against the CURRENT DRAFT on every render.
+   * Renders the item DISABLED (never unmounted) when it holds, for a menu
+   * action that's a workflow step rather than a one-off (e.g.
+   * propertymanagement's "Generate Rent Receipt", moved from a header
+   * button into this menu but still needing to stay visible-but-unclickable
+   * once already run this month). No `visible` counterpart — unlike a
+   * header button, a menu action isn't meant to change its OWN label/slot
+   * across a workflow, just its clickability.
+   */
+  states?: { readOnly?: Condition }
 }
 
 export interface MenuSubmenuNode {

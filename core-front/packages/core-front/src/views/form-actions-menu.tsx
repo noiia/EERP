@@ -7,9 +7,10 @@ import MenuItem from '@mui/material/MenuItem'
 import ListItemText from '@mui/material/ListItemText'
 import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
+import { evaluateCondition, type MenuNode } from './descriptor'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { menuActionRegistry } from './menu-actions'
-import type { MenuNode } from './descriptor'
+import { useRelationOps } from './relation-ops'
 
 // The form actions menu (docs/adr/ADR-011): default chrome for every
 // `viewType: 'form'` route (rendered by FormRenderer's top toolbar, alongside
@@ -37,10 +38,28 @@ export interface FormActionsMenuProps {
    * Divider when custom actions exist above it.
    */
   onDelete?: () => void
+  /**
+   * The record's current draft — threaded into each action's
+   * MenuActionContext (menu-actions.ts) and used to evaluate a
+   * MenuActionNode's own `states.readOnly` condition, the same parity
+   * HeaderButtonContainer already has with its own buttons.
+   */
+  draft: Record<string, unknown>
+  /** Patch field(s) on this record and commit via the form's own commit
+   * path — see MenuActionContext.setFieldAndCommit. */
+  onFieldsCommit: (patch: Record<string, unknown>) => Promise<Record<string, unknown> | null>
 }
 
-export function FormActionsMenu({ entity, actions, recordId, onDelete }: FormActionsMenuProps) {
+export function FormActionsMenu({
+  entity,
+  actions,
+  recordId,
+  onDelete,
+  draft,
+  onFieldsCommit,
+}: FormActionsMenuProps) {
   const t = useT()
+  const relationOps = useRelationOps()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,7 +72,9 @@ export function FormActionsMenu({ entity, actions, recordId, onDelete }: FormAct
     if (!action) return
     setBusy(true)
     setError(null)
-    void Promise.resolve(action.handler({ entity, recordId }))
+    void Promise.resolve(
+      action.handler({ entity, recordId, draft, setFieldAndCommit: onFieldsCommit, relationOps }),
+    )
       .catch(() => setError(t('Action failed.')))
       .finally(() => setBusy(false))
   }
@@ -74,7 +95,7 @@ export function FormActionsMenu({ entity, actions, recordId, onDelete }: FormAct
       </IconButton>
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
         {actions.map((node, i) => (
-          <MenuNodeItem key={i} node={node} onRun={run} />
+          <MenuNodeItem key={i} node={node} onRun={run} draft={draft} />
         ))}
         {onDelete
           ? [
@@ -98,13 +119,30 @@ export function FormActionsMenu({ entity, actions, recordId, onDelete }: FormAct
 }
 
 /** Exported for reuse by list-selection.tsx's bulk actions menu — the SAME
- * recursive MenuNode rendering, just fed a different `onRun`. */
-export function MenuNodeItem({ node, onRun }: { node: MenuNode; onRun: (name: string) => void }) {
+ * recursive MenuNode rendering, just fed a different `onRun`. `draft` is
+ * optional and only ever supplied by FormActionsMenu (a single real
+ * record) — the bulk actions menu has none to offer, so a MenuActionNode's
+ * own `states.readOnly` condition just never disables there (see
+ * MenuActionNode's own doc comment). */
+export function MenuNodeItem({
+  node,
+  onRun,
+  draft,
+}: {
+  node: MenuNode
+  onRun: (name: string) => void
+  draft?: Record<string, unknown>
+}) {
   const t = useT()
   const [subAnchor, setSubAnchor] = useState<HTMLElement | null>(null)
 
   if (node.kind === 'action') {
-    return <MenuItem onClick={() => onRun(node.action)}>{t(node.label)}</MenuItem>
+    const readOnly = node.states?.readOnly && draft ? evaluateCondition(node.states.readOnly, draft) : false
+    return (
+      <MenuItem onClick={() => onRun(node.action)} disabled={readOnly}>
+        {t(node.label)}
+      </MenuItem>
+    )
   }
 
   return (
@@ -121,7 +159,7 @@ export function MenuNodeItem({ node, onRun }: { node: MenuNode; onRun: (name: st
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       >
         {node.children.map((child, i) => (
-          <MenuNodeItem key={i} node={child} onRun={onRun} />
+          <MenuNodeItem key={i} node={child} onRun={onRun} draft={draft} />
         ))}
       </Menu>
     </>

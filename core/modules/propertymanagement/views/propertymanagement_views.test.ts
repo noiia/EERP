@@ -5,8 +5,10 @@ import {
   FORM_NOTEBOOK_ID,
   ModuleRegistry,
   headerButtonRegistry,
+  menuActionRegistry,
   normalizeLayout,
   type HeaderButtonContext,
+  type MenuActionContext,
   type RelationOps,
 } from '@eerp/core-front'
 import propertymanagement from './propertymanagement_views'
@@ -129,12 +131,14 @@ describe('propertymanagement FrontModule', () => {
     })
   })
 
-  it('wires the Generate Rent Receipt header button, disabled once already run this month', () => {
+  it('wires Generate Rent Receipt as an options-menu action, disabled once already run this month', () => {
     const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
-    expect(form.descriptor.headerButtons).toEqual([
+    expect(form.descriptor.headerButtons).toBeUndefined()
+    expect(form.descriptor.actions).toEqual([
       {
-        name: 'propertymanagement.generateRentReceipt',
+        kind: 'action',
         label: 'Generate Rent Receipt',
+        action: 'propertymanagement.generateRentReceipt',
         states: { readOnly: { field: 'receipt_generated_this_month', op: 'eq', value: true } },
       },
     ])
@@ -414,7 +418,7 @@ describe('propertymanagement — billing line form', () => {
 })
 
 describe('propertymanagement.generateRentReceipt', () => {
-  function context(overrides: Partial<HeaderButtonContext> = {}): HeaderButtonContext {
+  function context(overrides: Partial<MenuActionContext> = {}): MenuActionContext {
     return {
       entity: 'property_management',
       recordId: 'p1',
@@ -443,7 +447,7 @@ describe('propertymanagement.generateRentReceipt', () => {
         return { id: 'p1', ...patch }
       },
     })
-    await headerButtonRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
+    await menuActionRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
     expect(committed).toBe(false)
   })
 
@@ -476,7 +480,7 @@ describe('propertymanagement.generateRentReceipt', () => {
       },
     })
 
-    await headerButtonRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
+    await menuActionRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
 
     const period = new Date().toISOString().slice(0, 7)
     // The parent: linked to the property, no parent_id, the FULL joined
@@ -539,7 +543,7 @@ describe('propertymanagement.generateRentReceipt', () => {
     }
     const ctx = context({ relationOps: ops, draft: { ...context().draft, rent_price: 1000 } })
 
-    await headerButtonRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
+    await menuActionRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
 
     // parent + 1 child + 2 receipt lines (copied onto the child only, not the parent).
     const receipt = created.filter((c) => c.entity === 'property_management_rent_receipt')

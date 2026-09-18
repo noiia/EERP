@@ -543,6 +543,8 @@ function FormRenderer<T extends HasId>({
           actions={descriptor.actions ?? []}
           recordId={recordId ?? 'new'}
           onDelete={canDelete && actions.remove ? handleDelete : undefined}
+          draft={draft as Record<string, unknown>}
+          onFieldsCommit={onHeaderButtonCommit}
         />
         <HeaderButtonContainer
           entity={descriptor.entity}

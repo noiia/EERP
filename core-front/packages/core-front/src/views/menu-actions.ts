@@ -1,4 +1,5 @@
 import type { MenuNode, ViewDescriptor } from './descriptor'
+import type { RelationOps } from './relation-ops'
 
 // The form actions menu's behavior layer (docs/adr/ADR-011), mirroring
 // behaviors.ts's compute/on_change registry exactly: a MenuActionNode names
@@ -10,10 +11,46 @@ import type { MenuNode, ViewDescriptor } from './descriptor'
 //   registerMenuAction({ entity: 'invoice', name: 'sale.printInvoice',
 //     handler: ({ recordId }) => exportReportPDF('sale.invoice', recordId) })
 
-/** What a menu action handler receives — just enough to act on THIS record. */
+/**
+ * What a menu action handler receives — as of `draft`/`setFieldAndCommit`/
+ * `relationOps` below, the SAME shape as HeaderButtonContext
+ * (header-button-actions.ts) when run from FormActionsMenu, so a workflow
+ * action can move between the always-visible header-button row and this
+ * menu with NO change to its own handler body (propertymanagement's
+ * "Generate Rent Receipt" is the first mover — reads the current draft,
+ * calls into RelationOps to create the receipt rows, then setFieldAndCommit
+ * to stamp last_receipt_month back onto the property). The three extra
+ * fields are optional because the SAME context shape also backs
+ * list-selection.tsx's bulk actions menu, which has no single draft/commit
+ * target to offer — a simple, recordId-only action like sale.printInvoice
+ * still works unchanged either way.
+ */
 export interface MenuActionContext {
   entity: string
   recordId: string
+  /**
+   * The record's current field values, as displayed (the live draft — may
+   * include unsaved edits, same as any other in-progress form state).
+   * Present when run from FormActionsMenu (a single, real record); absent
+   * from list-selection.tsx's bulk actions menu, which has no single draft
+   * to offer (it runs the SAME handler once per selected id instead) — an
+   * action reading this must be a form-only action, never also wired onto a
+   * tree descriptor's own `actions`.
+   */
+  draft?: Record<string, unknown>
+  /**
+   * Patch one or more fields on THIS record and persist them through the
+   * SAME commit path Save uses (server action -> Go -> reconcile) — the
+   * menu-action equivalent of the user editing a field and clicking Save.
+   * Resolves to the saved record, or null if the commit was blocked/failed.
+   * Same form-only availability as `draft` above.
+   */
+  setFieldAndCommit?: (patch: Record<string, unknown>) => Promise<Record<string, unknown> | null>
+  /** Entity-generic reads/creates for OTHER entities (RelationOps — the SAME
+   * ops the relation widgets use) — null when the host hasn't mounted a
+   * RelationOpsProvider, the same inert posture every Ops context takes.
+   * Available from BOTH FormActionsMenu and the bulk actions menu. */
+  relationOps?: RelationOps | null
 }
 
 export interface MenuActionHandler {
