@@ -766,23 +766,41 @@ export function RelationSearchWidget({
     }
   }
 
-  // widgetOptions.boxedLabel (opt-in, e.g. propertymanagement's uom_id):
-  // the SAME `component="legend"` this widget already renders (present for
-  // exactly this reason) now sits inside a REAL `<fieldset>` instead of a
-  // bare `<Box>` — a native fieldset/legend pair gets the "label notched
-  // into the border" look for free, from the browser itself (fitting INSIDE
-  // the block, never adding its own row), no absolutely-positioned label
-  // hack needed. Off by default: every other caller keeps the plain
-  // caption-above-the-row look unchanged; this is a per-field opt-in, not a
-  // widget-wide restyle.
+  // widgetOptions.boxedLabel (opt-in, e.g. propertymanagement's uom_id,
+  // beside a plain number field): a bordered box with the label overlapping
+  // its top border — same VISUAL result MUI's own outlined TextField gets,
+  // and the SAME technique (an absolutely-positioned label with a
+  // background patch masking the border behind it, never a native
+  // `<fieldset>`/`<legend>`). A real fieldset was tried first and reverted:
+  // browsers reserve LAYOUT SPACE above a fieldset's own border for its
+  // legend, so the fieldset's box — the thing align-items: start in the
+  // parent grid actually aligns — starts HIGHER and taller than a sibling
+  // TextField's box, whose label overlaps via absolute positioning that
+  // consumes no layout space at all. That mismatch is exactly what made
+  // this field and floor_area look offset and differently sized once they
+  // were finally side by side. minHeight: '56px' (MUI's own default
+  // outlined-input height) plus vertical centering is what then makes the
+  // box match a sibling TextField's height regardless of this widget's own
+  // (shorter) chip/autocomplete content. backgroundColor: 'background.paper'
+  // assumes the form Card's own background, which is what this field
+  // renders inside of — right for the property form, not a general-purpose
+  // guarantee for every possible container.
   const boxedLabel = field.widgetOptions?.boxedLabel === true
 
   return (
     <Box
-      component={boxedLabel ? 'fieldset' : 'div'}
       sx={
         boxedLabel
-          ? { border: '1px solid', borderColor: 'divider', borderRadius: 1, m: 0, px: 1.5, py: 1 }
+          ? {
+              position: 'relative',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              px: '14px',
+              minHeight: '56px',
+              display: 'flex',
+              alignItems: 'center',
+            }
           : undefined
       }
     >
@@ -790,13 +808,24 @@ export function RelationSearchWidget({
         <Typography
           variant="caption"
           color="text.secondary"
-          component="legend"
-          sx={boxedLabel ? { px: 0.5, ml: -0.5 } : undefined}
+          component={boxedLabel ? 'span' : 'legend'}
+          sx={
+            boxedLabel
+              ? {
+                  position: 'absolute',
+                  top: '-9px',
+                  left: '10px',
+                  px: 0.5,
+                  lineHeight: 1,
+                  backgroundColor: 'background.paper',
+                }
+              : undefined
+          }
         >
           {t(fieldLabel(field))}
         </Typography>
       )}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: boxedLabel ? '100%' : undefined }}>
         {selectedId ? (
           <RelationTag
             label={selectedLabel ?? selectedId}
