@@ -17,7 +17,7 @@ import { byPrefixAndName, FontAwesomeIcon, layout, useT, type MenuModule } from 
 // always has a tile.
 //
 // Responsive (docs/roadmaps/responsive-displays.md): at/above `layout.mobileBreakpoint`
-// (720px) keeps the desktop look — 100×100 tiles, label inside, centered wrapping rows
+// (768px) keeps the desktop look — 100×100 tiles, label inside, centered wrapping rows
 // spanning 2/3 of the screen. Below it the board becomes a fixed TWO-COLUMN grid of
 // compact 75×75 tiles (still label inside) — small enough that two sit side by side on
 // a phone screen, rather than one oversized tile per row.

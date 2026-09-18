@@ -120,8 +120,13 @@ export const layout = {
    * `@media (min-width:${mobileBreakpoint}px)` key) — nothing here changes a
    * render TREE, so this is deliberately a second, independent number from
    * `phoneMaxWidth` (which IS a JS branch point, pinned to MUI's own `sm`)
-   * rather than reusing it at a different value. */
-  mobileBreakpoint: 720,
+   * rather than reusing it at a different value. Set to the same 768 as
+   * `topBarCompactWidth` by design — both are "phone mode" starts to this
+   * app's own responsive scale — but kept as its own token rather than
+   * merged into one, the same posture `phoneMaxWidth` already takes: these
+   * three simplifications and the top bar's own compact layout are free to
+   * diverge again later without one changing the other. */
+  mobileBreakpoint: 768,
   /** Container-query threshold (px) below which a form's two-column group
    * (`LayoutContainerNode.columns`) collapses to one. Deliberately a CSS
    * CONTAINER query keyed off this width, never a viewport media query: the
@@ -166,12 +171,11 @@ export const layout = {
    *     title" pairing.
    *   - CompanySwitcher drops its company-name text, showing only the
    *     building icon.
-   * Deliberately its own number, not reused from `mobileBreakpoint` (720):
-   * this is tablet/small-laptop width (768, the iPad portrait boundary many
-   * responsive scales already treat as the phone/tablet line), where the
-   * breadcrumb + module header menu + company name + avatar sharing one row
-   * starts crowding — narrower than that and `mobileBreakpoint`'s OWN
-   * simplifications (icon-only Save, etc.) are already active too. */
+   * Kept as its own token rather than read off `mobileBreakpoint` directly
+   * (both are 768 — the iPad portrait boundary many responsive scales
+   * already treat as the phone/tablet line, this app's own "phone mode"
+   * start) — see `mobileBreakpoint`'s own doc comment for why they stay two
+   * names sharing one value instead of one shared constant. */
   topBarCompactWidth: 768,
   /** Form chatter panel (chatter-panel.tsx): a resizable side panel to the
    * RIGHT of the form on a wide screen, stacked full-width BELOW it once the
