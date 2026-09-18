@@ -324,15 +324,16 @@ describe('relation/search (many2one)', () => {
     })
   })
 
-  describe('widgetOptions.matchFieldHeight — no border, just a content-row min-height matching a sibling TextField (e.g. propertymanagement\'s uom_id, beside floor_area)', () => {
-    it('without the flag, the content row has no extra min-height', async () => {
+  describe('widgetOptions.matchFieldHeight — no border, just a content-row min-height and a tight label gap matching a sibling TextField (e.g. propertymanagement\'s uom_id, beside floor_area)', () => {
+    it('without the flag, the content row has no extra min-height and the label keeps its default spacing', async () => {
       const ops = stubOps()
       render(<Harness field={searchField} ops={ops} onChange={vi.fn()} onChangeField={vi.fn()} initialValue={null} recordId="r1" />)
       const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
       expect(getComputedStyle(row).minHeight).not.toBe('56px')
+      expect(getComputedStyle(screen.getByText('Company')).marginBottom).not.toBe('5px')
     })
 
-    it('with the flag, the content row gets minHeight: 56px (MUI\'s own default outlined-input height) — no border, no repositioned label', async () => {
+    it('with the flag, the content row gets minHeight: 56px (MUI\'s own default outlined-input height) and the label gets a tight 5px bottom margin — no border, no repositioned label', async () => {
       const ops = stubOps()
       render(
         <Harness
@@ -345,8 +346,9 @@ describe('relation/search (many2one)', () => {
         />,
       )
       const label = screen.getByText('Company')
-      // Still the plain caption — matchFieldHeight never touches the label.
+      // Still a plain, non-repositioned caption — just its own bottom margin.
       expect(getComputedStyle(label).position).not.toBe('absolute')
+      expect(getComputedStyle(label).marginBottom).toBe('5px')
       const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
       expect(getComputedStyle(row).minHeight).toBe('56px')
     })

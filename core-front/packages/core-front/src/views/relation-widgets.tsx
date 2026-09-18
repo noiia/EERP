@@ -769,18 +769,26 @@ export function RelationSearchWidget({
   // widgetOptions.matchFieldHeight (opt-in, e.g. propertymanagement's
   // uom_id, beside a plain number field): no border, no repositioned label
   // — the plain caption-above-the-row look every RelationSearchWidget
-  // already has, unchanged. Just a minHeight on the content row itself, so
-  // its chip/autocomplete (visually short) occupies roughly the same
-  // vertical space as a sibling TextField's own input box instead of
-  // looking cramped next to it. (An earlier attempt drew a bordered box
-  // with the label overlapping it, mimicking MUI's own outlined-input
-  // notch — reverted: not what was asked for here.)
+  // already has, unchanged. A minHeight on the content row itself, so its
+  // chip/autocomplete (visually short) occupies roughly the same vertical
+  // space as a sibling TextField's own input box instead of looking cramped
+  // next to it, plus a tight 5px gap under the caption instead of the
+  // default Typography line-height's own visual space (which read as a much
+  // bigger gap than a TextField's own label-to-border distance). (An
+  // earlier attempt drew a bordered box with the label overlapping it,
+  // mimicking MUI's own outlined-input notch — reverted: not what was
+  // asked for here.)
   const matchFieldHeight = field.widgetOptions?.matchFieldHeight === true
 
   return (
     <Box>
       {!field.hideLabel && (
-        <Typography variant="caption" color="text.secondary" component="legend">
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          component="legend"
+          sx={matchFieldHeight ? { mb: '5px' } : undefined}
+        >
           {t(fieldLabel(field))}
         </Typography>
       )}
