@@ -706,6 +706,18 @@ export interface LayoutContainerNode {
    */
   columnWidths?: number[]
   /**
+   * Rendering hint, `columns` only: the container-query breakpoint (px)
+   * below which the grid collapses to one column, overriding the default
+   * `layout.formTwoColumnMinWidth` (640px). That default is calibrated for
+   * a TOP-LEVEL form body's own 2-column split — a `columns` group NESTED
+   * inside an already-halved column needs a much smaller width to ever
+   * activate (two short fields side by side fit in a couple hundred px;
+   * waiting for that nested container to reach 640px on its own would need
+   * the whole form to be well over a thousand px wide first). JSON-only,
+   * like every other hint here.
+   */
+  minWidth?: number
+  /**
    * Rendering hint: a top margin (rem), for the one case `columns`/`kind`
    * can't express — visually lining a container up against a ROW inside a
    * sibling composite widget the layout tree has no leaf for (e.g. `type:

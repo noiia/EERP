@@ -176,6 +176,39 @@ describe('LayoutForm', () => {
     expect(injectedCss()).toContain('grid-template-columns:repeat(2, 1fr)')
   })
 
+  it('minWidth overrides the default 640px container-query breakpoint (e.g. a columns group nested inside an already-halved column)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          minWidth: 280,
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    // Emotion's style cache persists across tests in this file (old <style>
+    // tags aren't cleaned up between renders), so a positive check for the
+    // override is the reliable assertion here — an EARLIER test's own 640px
+    // rule can legitimately still be present from prior renders.
+    expect(injectedCss()).toContain('@container (min-width: 280px)')
+  })
+
+  it('omitting minWidth keeps the default 640px breakpoint', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [{ kind: 'group', columns: 2, children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }] }],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    expect(injectedCss()).toContain('@container (min-width: 640px)')
+  })
+
   it('omitting offsetTop leaves the columns group with no extra top margin', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',

@@ -322,7 +322,7 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     ).not.toContain('equipment')
   })
 
-  it('__form_columns pairs current_tenant (left) with a stacked loan_amount/rent_price group (right) — both in the right column', () => {
+  it('__form_columns lays out a 2x2 grid: row 1 address|loan+rent, row 2 current_tenant|floor_area+uom', () => {
     const registry = register()
     const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
     const nodes = normalizeLayout(resolved.descriptor)
@@ -330,49 +330,43 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     expect(columns).toBeDefined()
     if (!columns || columns.kind === 'field') return
     // 'name' lands in the synthesized header instead (the first plain text
-    // field), not here — see normalizeLayout's own default anatomy.
-    expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind))).toEqual(['current_tenant', 'group'])
+    // field), not here — see normalizeLayout's own default anatomy. Four
+    // top-level items, two per row (the outer grid's own columns: 2): row 1
+    // is [address, loan/rent-group], row 2 is [current_tenant, floor/uom-group].
+    expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind))).toEqual([
+      'address',
+      'group',
+      'current_tenant',
+      'group',
+    ])
 
     const amountsGroup = columns.children[1]
     expect(amountsGroup.kind).not.toBe('field')
     if (amountsGroup.kind === 'field') return
     expect(amountsGroup.columns).toBeUndefined() // a plain vertical stack, not another 2-col split
-    // Reserves a blank line as tall as current_tenant's own field caption,
-    // so loan_amount's actual input — not just the grid cell — starts level
-    // with current_tenant's tags row.
+    // Reserves a blank line as tall as address's own field caption, so
+    // loan_amount's actual input — not just the grid cell — starts level
+    // with address's first real row ("Number and street").
     expect(amountsGroup.offsetTop).toBe(1.25)
     expect(amountsGroup.children).toEqual([
       { kind: 'field', name: 'loan_amount' },
       { kind: 'field', name: 'rent_price' },
     ])
-  })
 
-  it('address (left) sits beside a floor_area|uom split (right, offset to line up with address\'s own zip/city row) in their own full-width row, flush against __form_columns', () => {
-    const registry = register()
-    const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
-    const nodes = normalizeLayout(resolved.descriptor)
-    const columnsIndex = nodes.findIndex((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
-    expect(columnsIndex).toBeGreaterThanOrEqual(0)
-
-    const row = nodes[columnsIndex + 1]
-    expect(row.kind).not.toBe('field')
-    if (row.kind === 'field') return
-    expect(row.columns).toBe(2)
-    // Cancels the outer form Stack's own spacing={2.5} gap above this row —
-    // flush against __form_columns instead of the default 20px every other
-    // pair of top-level nodes gets.
-    expect(row.offsetTop).toBe(-1.25)
-    expect(row.children).toHaveLength(2)
-
-    const [addressNode, floorGroup] = row.children
-    expect(addressNode).toEqual({ kind: 'field', name: 'address' })
+    const floorGroup = columns.children[3]
     expect(floorGroup.kind).not.toBe('field')
     if (floorGroup.kind === 'field') return
+    // A REAL side-by-side split — floor_area (a decimal number) gets more
+    // room than uom_id (a short symbol picker), a 2:1 ratio.
     expect(floorGroup.columns).toBe(2)
-    // floor_area (a decimal number input) gets more room than uom_id (a
-    // short symbol picker) — a 2:1 split, not the default even one.
     expect(floorGroup.columnWidths).toEqual([2, 1])
-    expect(floorGroup.offsetTop).toBeGreaterThan(0)
+    // minWidth overrides the 640px default container-query breakpoint —
+    // this pair is nested inside __form_columns' OWN right column, already
+    // halved, so 640px would need a 1300px+ wide form before it ever
+    // activated (why it rendered stacked instead of side by side before).
+    expect(floorGroup.minWidth).toBe(280)
+    // Matches current_tenant's own field caption, same reasoning as row 1.
+    expect(floorGroup.offsetTop).toBe(1.25)
     expect(floorGroup.children).toEqual([
       { kind: 'field', name: 'floor_area' },
       { kind: 'field', name: 'uom_id' },

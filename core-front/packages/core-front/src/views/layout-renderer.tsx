@@ -534,6 +534,11 @@ function LayoutNodeView({
       node.columnWidths && node.columnWidths.length === node.columns
         ? node.columnWidths.map((w) => `${w}fr`).join(' ')
         : `repeat(${node.columns}, 1fr)`
+    // minWidth (opt-in, e.g. a `columns` group NESTED inside another
+    // column): overrides the 640px default, which never activates for a
+    // sub-split that never reaches that width on its own — see
+    // descriptor.ts's own doc comment on minWidth.
+    const containerMinWidth = node.minWidth ?? layoutTokens.formTwoColumnMinWidth
     return (
       <Box sx={{ containerType: 'inline-size', mt: offsetTopSx(node) }}>
         {node.title ? (
@@ -547,7 +552,7 @@ function LayoutNodeView({
             gridTemplateColumns: '1fr',
             gap: 2.5,
             alignItems: 'start',
-            [`@container (min-width: ${layoutTokens.formTwoColumnMinWidth}px)`]: {
+            [`@container (min-width: ${containerMinWidth}px)`]: {
               gridTemplateColumns,
             },
           }}

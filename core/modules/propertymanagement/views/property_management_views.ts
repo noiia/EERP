@@ -1,7 +1,6 @@
 import {
   createAttachmentClient,
   fetchReportPDF,
-  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   registerMenuAction,
   useEntityRefreshStore,
@@ -488,61 +487,53 @@ const formView: ViewDescriptor = {
 // their own notebook pages — same self-extension shape
 // core/modules/sale/views/invoice_views.ts's orderLinesPageOperations uses.
 export const propertyExtendOperations: Operation[] = [
-  // loan_amount and rent_price BOTH sit in the right-hand column of
-  // __form_columns' 2-col grid: stacked into their own single-column group
-  // (no `columns` — a plain vertical Stack) placed right after
-  // current_tenant, so the pair becomes ONE grid item occupying that row's
-  // second column, current_tenant alone filling the first. offsetTop: 1.25
-  // reserves a blank line the same height as current_tenant's OWN field
-  // caption ("Current tenant(s)", a variant="caption" Typography line —
-  // relation-widgets.tsx's RelationTagsWidget) above loan_amount, so both
-  // columns' actual FIELD content — not just the grid cell — starts at the
-  // same y: loan_amount/rent_price have no caption line of their own to
-  // match current_tenant's.
+  // Row 1 of __form_columns' 2-col grid: address (left) beside
+  // loan_amount+rent_price stacked into their own single-column group
+  // (right) — placed right after address, so the pair becomes ONE grid
+  // item occupying that row's second column. offsetTop: 1.25 reserves a
+  // blank line as tall as address's OWN field caption ("Address", a
+  // variant="caption" Typography line — AddressWidget's leading label,
+  // same shape RelationTagsWidget's own field caption has), so
+  // loan_amount's actual input — not just the grid cell — starts level
+  // with address's first real row ("Number and street").
   {
     op: 'addNode',
     node: {
       kind: 'group',
+      // Needs an id: row 2 (below) targets it by id to land immediately
+      // after it, since 'after a field' would insert INSIDE this group
+      // instead of as its own next sibling.
+      id: 'property-loan-rent-group',
       offsetTop: 1.25,
       children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }],
     },
-    target: 'current_tenant',
+    target: 'address',
     position: 'after',
   },
-  // A dedicated full-width row BELOW the default 2-column body, so it
-  // structurally sits under everything in __form_columns regardless of how
-  // many fields that grid holds — address on the left, floor_area+uom split
-  // on the right. offsetTop: -1.25 cancels the OUTER form Stack's own
-  // spacing={2.5} gap above this row (renderers.tsx's FormRenderer) — flush
-  // against __form_columns instead of the default 20px gap every other pair
-  // of top-level nodes gets.
-  //
-  // The right-hand floor_area|uom_id group: columnWidths: [2, 1] gives
-  // floor_area (a decimal number input) more room than uom_id (a short
-  // symbol picker) — descriptor.ts's own doc comment on columnWidths.
-  // offsetTop: 8.75 nudges the WHOLE group down to line up with address's
-  // OWN zip-code/city row (AddressWidget's 4th internal row, after its
-  // label + number/street + complement) — a calibrated approximation, not
-  // a structural binding to AddressWidget; nudge this single number if it
-  // drifts once AddressWidget's own spacing changes.
+  // Row 2, left: current_tenant moves down to sit right after row 1 (a
+  // plain sibling in __form_columns, not wrapped in anything — same "even
+  // index starts a fresh row" mechanic row 1 relies on).
+  { op: 'move', name: 'current_tenant', target: 'property-loan-rent-group', position: 'after' },
+  // Row 2, right: a REAL side-by-side floor_area|uom_id split.
+  // columnWidths: [2, 1] gives floor_area (a decimal number) more room
+  // than uom_id (a short symbol picker). minWidth: 280 overrides the 640px
+  // default container-query breakpoint (calibrated for a TOP-LEVEL form
+  // body): this pair is nested inside __form_columns' OWN right column,
+  // already halved, so 640px would need a 1300px+ wide form before this
+  // nested split ever activated — which is why it rendered stacked instead
+  // of side by side. offsetTop: 1.25 matches current_tenant's own field
+  // caption, same reasoning as row 1's loan_amount/rent_price group.
   {
     op: 'addNode',
     node: {
       kind: 'group',
       columns: 2,
-      offsetTop: -1.25,
-      children: [
-        { kind: 'field', name: 'address' },
-        {
-          kind: 'group',
-          columns: 2,
-          columnWidths: [2, 1],
-          offsetTop: 8.75,
-          children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
-        },
-      ],
+      columnWidths: [2, 1],
+      minWidth: 280,
+      offsetTop: 1.25,
+      children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
     },
-    target: FORM_COLUMNS_ID,
+    target: 'current_tenant',
     position: 'after',
   },
   {
