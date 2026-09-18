@@ -3,6 +3,7 @@ package propertymanagement
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"core/internal/company"
 	"core/internal/settings"
 	"core/modules/sale"
+	"core/modules/warehouse"
 	"core/orm"
 
 	"github.com/google/uuid"
@@ -59,6 +61,7 @@ type Handler struct {
 	taxes            *orm.Repository[sale.SaleTax]
 	rentReceipts     *orm.Repository[PropertyManagementRentReceipt]
 	rentReceiptLines *orm.Repository[PropertyManagementRentReceiptLine]
+	uoms             *orm.Repository[warehouse.ProductUoms]
 	settingsStore    *settings.Repository
 	companies        *company.Repository
 }
@@ -72,6 +75,7 @@ func NewHandler(
 	taxes *orm.Repository[sale.SaleTax],
 	rentReceipts *orm.Repository[PropertyManagementRentReceipt],
 	rentReceiptLines *orm.Repository[PropertyManagementRentReceiptLine],
+	uoms *orm.Repository[warehouse.ProductUoms],
 	settingsStore *settings.Repository,
 	companies *company.Repository,
 ) *Handler {
@@ -84,6 +88,7 @@ func NewHandler(
 		taxes:            taxes,
 		rentReceipts:     rentReceipts,
 		rentReceiptLines: rentReceiptLines,
+		uoms:             uoms,
 		settingsStore:    settingsStore,
 		companies:        companies,
 	}
@@ -112,6 +117,74 @@ func (h *Handler) GetProperty(c echo.Context) error {
 	out := toColumnMap(h.properties, property)
 	out["receipt_generated_this_month"] = receiptGeneratedThisMonth(property.LastReceiptMonth, time.Now())
 	return c.JSON(http.StatusOK, out)
+}
+
+// CreateProperty handles POST /api/v1/property_management. Defaults UomID to
+// the workspace's default surface unit (square meter for metric, square foot
+// for imperial — Settings -> Global settings -> Units,
+// internal/settings.ResolveUnitSystem) whenever the client didn't pick one,
+// so a new property's floor_area starts in a sensible unit instead of blank
+// — never overwrites an explicitly chosen uom_id, and this is a CREATE-time
+// convenience only: uom_id stays freely re-pickable afterward, scoped to
+// surface UOMs only by property_management_views.ts's own `uom_id.relation.
+// filter`.
+func (h *Handler) CreateProperty(c echo.Context) error {
+	ctx := c.Request().Context()
+	identity := auth.MustIdentity(ctx)
+
+	var body PropertyManagement
+	if err := c.Bind(&body); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	body.TenantID = identity.TenantID
+
+	if body.UomID == nil {
+		uomID, err := h.defaultFloorAreaUom(ctx, identity)
+		if err != nil {
+			return fmt.Errorf("propertymanagement: default floor area uom: %w", err)
+		}
+		body.UomID = uomID
+	}
+
+	created, err := h.properties.Create(ctx, body)
+	if err != nil {
+		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the property.")
+	}
+	return c.JSON(http.StatusCreated, toColumnMap(h.properties, created))
+}
+
+// defaultFloorAreaUomName is the pure branch (no DB) behind
+// defaultFloorAreaUom below — which defaultUoms row name to look up for a
+// given units.system value. Split out so it's testable on its own without a
+// database, mirroring receiptGeneratedThisMonth/latestStatus above.
+func defaultFloorAreaUomName(system string) string {
+	if system == settings.UnitSystemImperial {
+		return warehouse.DefaultSurfaceUomNameImperial
+	}
+	return warehouse.DefaultSurfaceUomNameMetric
+}
+
+// defaultFloorAreaUom resolves the workspace's default surface uom
+// (defaultFloorAreaUomName, picked by settings.ResolveUnitSystem) as a
+// *uuid.UUID ready to assign to PropertyManagement.UomID — nil (not an
+// error) when no matching row exists (a fresh tenant whose warehouse module
+// hasn't seeded defaultUoms yet, or the row was renamed/deleted): a property
+// stays creatable with no default, same as before this feature existed.
+func (h *Handler) defaultFloorAreaUom(ctx context.Context, identity auth.Identity) (*uuid.UUID, error) {
+	system, err := settings.ResolveUnitSystem(ctx, h.settingsStore, h.companies, identity.TenantID, identity.UserID)
+	if err != nil {
+		return nil, err
+	}
+	name := defaultFloorAreaUomName(system)
+	rows, err := h.uoms.FindAll(ctx, orm.Cond("tenant_id = $1 AND type = 'surface' AND name = $2", identity.TenantID, name))
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	id := rows[0].ID
+	return &id, nil
 }
 
 // receiptGeneratedThisMonth is a pure function (no DB/HTTP) so the nil case

@@ -69,6 +69,38 @@ func TestDefaultUoms_KindsMatchFrontendSelection(t *testing.T) {
 	}
 }
 
+// Every default uom carries a real symbol — a blank one would print as
+// "<value> " (a trailing space, no unit) on a report table cell.
+func TestDefaultUoms_HaveASymbol(t *testing.T) {
+	for _, u := range defaultUoms {
+		if u.symbol == "" {
+			t.Errorf("default uom %q has no symbol", u.name)
+		}
+	}
+}
+
+// DefaultSurfaceUomNameMetric/Imperial must each name a REAL defaultUoms row
+// of type "surface" — propertymanagement's own Create override looks them up
+// by exactly this (name, type) pair to default a new property's floor_area
+// uom_id (handler.go's defaultFloorAreaUom); a name drifting out of sync here
+// would silently fall back to no default instead of failing loudly.
+func TestDefaultSurfaceUomNames_ExistAsSurfaceUoms(t *testing.T) {
+	for _, name := range []string{DefaultSurfaceUomNameMetric, DefaultSurfaceUomNameImperial} {
+		found := false
+		for _, u := range defaultUoms {
+			if u.name == name {
+				found = true
+				if u.kind != "surface" {
+					t.Errorf("%q is declared with kind %q, want \"surface\"", name, u.kind)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%q is not declared in defaultUoms at all", name)
+		}
+	}
+}
+
 // seedUUID must be deterministic per (tenant, label) — that's the whole
 // mechanism that makes re-running seedDefaultUoms on every boot idempotent
 // via Upsert's ON CONFLICT (id) DO NOTHING.

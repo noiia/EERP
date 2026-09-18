@@ -1624,6 +1624,109 @@ func TestPutTaxSettings(t *testing.T) {
 	}
 }
 
+// ── GET/PUT /settings/units ─────────────────────────────────────────────────
+
+func TestGetUnitSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name  string
+		store *stubStore
+		want  unitSettings
+	}{
+		{"unset defaults to metric", &stubStore{}, unitSettings{System: UnitSystemMetric}},
+		{
+			"configured imperial",
+			&stubStore{values: map[string]string{UnitSystemKey: UnitSystemImperial}},
+			unitSettings{System: UnitSystemImperial},
+		},
+		{
+			"unrecognized stored value degrades to metric",
+			&stubStore{values: map[string]string{UnitSystemKey: "garbage"}},
+			unitSettings{System: UnitSystemMetric},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			rec := serve(t, h.GetUnitSettings, http.MethodGet, "/settings/units", "", identity)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+			}
+			var resp unitSettings
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp != tt.want {
+				t.Errorf("got %+v, want %+v", resp, tt.want)
+			}
+		})
+	}
+}
+
+func TestPutUnitSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantValue  string
+	}{
+		{
+			name:       "saves imperial",
+			body:       `{"system":"imperial"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  UnitSystemImperial,
+		},
+		{
+			name:       "saves metric",
+			body:       `{"system":"metric"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  UnitSystemMetric,
+		},
+		{
+			name:       "unrecognized system rejected",
+			body:       `{"system":"garbage"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "malformed body rejected",
+			body:       `not json`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			rec := serve(t, h.PutUnitSettings, http.MethodPut, "/settings/units", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotKey != UnitSystemKey {
+				t.Errorf("key = %q, want %q", store.gotKey, UnitSystemKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
 // viewCatalogFixture is a throwaway table registered only so TestGetViewCatalog
 // has at least one deterministic entry to assert against, alongside whatever
 // this test binary's own package imports happened to register.

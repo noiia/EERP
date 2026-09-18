@@ -17,10 +17,15 @@ export interface ProductUoms {
   tenant_id: string
   name: string
   type: string
+  /** The short printable unit symbol ("m²", "ft²", "kg", ...) — what a
+   * report prints next to a value, as opposed to `name`, the picker's own
+   * human-readable label ("Square meter (m²)"). */
+  symbol: string
 }
 
 const uomFields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
+  { name: 'symbol', label: 'Symbol', type: 'text', required: true },
   {
     name: 'type',
     label: 'Type',

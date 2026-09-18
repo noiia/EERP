@@ -137,9 +137,13 @@ registerMenuAction({
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .map((c) => String(c.name ?? ''))
 
+    // The report prints the short SYMBOL ("m²", "ft²") next to floor_area,
+    // not product_uoms' own picker label ("Square meter (m²)") — the
+    // receipt's own `uom` column is this printable snapshot, same "capture
+    // at document time" discipline as every other field here.
     const uomRecord =
       typeof draft.uom_id === 'string' ? await ops.get('product_uoms', draft.uom_id).catch(() => null) : null
-    const uomLabel = uomRecord ? String(uomRecord.name ?? '') : ''
+    const uomLabel = uomRecord ? String(uomRecord.symbol ?? '') : ''
 
     const parent = await ops.create('property_management_rent_receipt', {
       property_management_id: ctx.recordId,
@@ -283,11 +287,18 @@ const formFields: ViewDescriptor['fields'] = [
     name: 'uom_id',
     label: 'Unit',
     type: 'relation',
+    // filter: { type: 'surface' } scopes every search/wizard read to the
+    // surface UOMs only (m², ft², ...) — floor_area is always a surface
+    // measurement, so the piece/length/weight/volume/custom rows the shared
+    // product_uoms catalog also carries would just be wrong picks here.
+    // default: 'propertymanagement.defaultFloorAreaUom' below.
     relation: {
       entity: 'product_uoms',
       kind: 'many2one',
       labelField: 'name',
+      filter: { type: 'surface' },
     },
+    default: 'propertymanagement.defaultFloorAreaUom',
   },
   {
     name: 'photos',

@@ -58,6 +58,8 @@ describe('warehouse FrontModule', () => {
     }
     const formRoute = mod.routes.find((r) => r.path === '/warehouse/uoms/:id')!
     expect(formRoute.descriptor.fields.find((f) => f.name === 'name')?.required).toBe(true)
+    const symbolField = formRoute.descriptor.fields.find((f) => f.name === 'symbol')
+    expect(symbolField).toMatchObject({ type: 'text', required: true })
     const typeField = formRoute.descriptor.fields.find((f) => f.name === 'type')
     expect(typeField?.required).toBe(true)
     expect(typeField?.selection?.options).toEqual(['piece', 'length', 'weight', 'volume', 'surface', 'custom'])

@@ -238,6 +238,53 @@ describe('relation/search (many2one)', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument()
   })
 
+  describe('relation.filter — static server-side scope (e.g. propertymanagement\'s uom_id: surface only)', () => {
+    const scopedField: FieldDescriptor = {
+      ...searchField,
+      relation: { ...searchField.relation!, filter: { type: 'surface' } },
+    }
+
+    it('applies the filter to the dropdown\'s search read', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'ac' } })
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith(
+          'contact',
+          expect.objectContaining({ filter: { type: 'surface' } }),
+        ),
+      )
+    })
+
+    it('applies the filter to the link-icon wizard\'s own grid read', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open selection wizard' }))
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith(
+          'contact',
+          expect.objectContaining({ filter: { type: 'surface' } }),
+        ),
+      )
+    })
+
+    it('with no relation.filter declared, filter is omitted — unchanged for every existing many2one', async () => {
+      const ops = stubOps()
+      renderWidget(searchField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'ac' } })
+      await waitFor(() => expect(ops.list).toHaveBeenCalled())
+      const [, options] = vi.mocked(ops.list).mock.calls[0]
+      expect(options?.filter).toBeUndefined()
+    })
+  })
+
   describe('click-to-navigate', () => {
     beforeEach(() => {
       pushMock.mockClear()

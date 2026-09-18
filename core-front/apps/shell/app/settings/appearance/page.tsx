@@ -5,6 +5,7 @@ import { getReportsLayout } from '@/lib/report-settings'
 import { getMyLocalePreferences } from '@/lib/preferences'
 import { getOSMConnector } from '@/lib/osm-settings'
 import { getTaxSettings } from '@/lib/tax-settings'
+import { getUnitSettings } from '@/lib/unit-settings'
 import { createRecord, removeRecord, updateRecord } from '../../[...module]/actions'
 import { pageFormatListDescriptor, type ReportPageFormatRecord } from './page-formats/descriptors'
 import AppearanceSettings from '@/components/AppearanceSettings'
@@ -26,12 +27,13 @@ import AppearanceSettings from '@/components/AppearanceSettings'
 // generic CRUD surface rather than a dedicated handler like app_settings.
 export default async function AppearancePage() {
   await requireAuth('/settings/appearance')
-  const [permissions, reportsLayout, preferences, osmConnector, taxSettings] = await Promise.all([
+  const [permissions, reportsLayout, preferences, osmConnector, taxSettings, unitSettings] = await Promise.all([
     getEffectivePermissions(),
     getReportsLayout(),
     getMyLocalePreferences(),
     getOSMConnector(),
     getTaxSettings(),
+    getUnitSettings(),
   ])
   const activeCompanyId = preferences?.active_company?.id
 
@@ -55,6 +57,8 @@ export default async function AppearancePage() {
       initialOSMConnector={osmConnector}
       canEditTax={hasPermission(permissions, 'settings:tax:write')}
       initialTaxSettings={taxSettings}
+      canEditUnits={hasPermission(permissions, 'settings:units:write')}
+      initialUnitSettings={unitSettings}
       canEditAccounts={hasPermission(permissions, 'settings:accounts:write')}
       initialUsernameAtFormat={preferences?.username_at_format ?? false}
       reportPageFormats={

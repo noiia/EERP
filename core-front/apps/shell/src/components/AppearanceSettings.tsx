@@ -25,10 +25,12 @@ import {
 } from '@eerp/core-front'
 import type { OSMConnector } from '@/lib/osm-settings'
 import type { TaxSettings as TaxSettingsValue } from '@/lib/tax-settings'
+import type { UnitSettings as UnitSettingsValue } from '@/lib/unit-settings'
 import AccountsSettings from './AccountsSettings'
 import OSMConnectorSettings from './OSMConnectorSettings'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
 import TaxSettings from './TaxSettings'
+import UnitSettings from './UnitSettings'
 
 // Settings → Global settings (formerly "Appearance", docs/roadmaps/
 // pdf-reports.md's Reports settings subsection): three collapsible sections —
@@ -45,6 +47,8 @@ export default function AppearanceSettings({
   initialOSMConnector = { enabled: false, base_url: '', user_agent: '' },
   canEditTax = false,
   initialTaxSettings = { price_mode: 'tax_excluded' },
+  canEditUnits = false,
+  initialUnitSettings = { system: 'metric' },
   canEditAccounts = false,
   initialUsernameAtFormat = false,
 }: {
@@ -60,6 +64,8 @@ export default function AppearanceSettings({
   initialOSMConnector?: OSMConnector
   canEditTax?: boolean
   initialTaxSettings?: TaxSettingsValue
+  canEditUnits?: boolean
+  initialUnitSettings?: UnitSettingsValue
   canEditAccounts?: boolean
   initialUsernameAtFormat?: boolean
 }) {
@@ -242,6 +248,17 @@ export default function AppearanceSettings({
           </AccordionSummary>
           <AccordionDetails>
             <TaxSettings canEdit={canEditTax} initialSettings={initialTaxSettings} />
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Units')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <UnitSettings canEdit={canEditUnits} initialSettings={initialUnitSettings} />
           </AccordionDetails>
         </Accordion>
 

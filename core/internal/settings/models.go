@@ -97,6 +97,24 @@ const (
 	TaxPriceModeIncluded = "tax_included"
 )
 
+// UnitSystemKey is the app_settings key holding the workspace's default unit
+// system — metric (UnitSystemMetric) or imperial (UnitSystemImperial).
+// Stored as JSON: {"system":"metric"}. Absent means UnitSystemMetric.
+// Consumed by propertymanagement's own property Create override
+// (handler.go's defaultFloorAreaUom) to pick a sensible starting `uom_id`
+// (square meter vs. square foot) for a new property's floor_area — never
+// forced afterward, still freely re-pickable from the surface-only catalog
+// (see property_management_views.ts's `uom_id` field, filtered to
+// `type: 'surface'`).
+const UnitSystemKey = "units.system"
+
+// UnitSystemMetric/UnitSystemImperial are the only two valid UnitSystemKey
+// values (see its own doc comment above).
+const (
+	UnitSystemMetric   = "metric"
+	UnitSystemImperial = "imperial"
+)
+
 // AccountsUsernameAtFormatKey is the app_settings key holding whether the
 // workspace always renders a user's `username` (core/internal/auth.Users)
 // with a leading "@", like a handle — a pure DISPLAY choice, never rewriting

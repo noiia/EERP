@@ -131,6 +131,7 @@ function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor, exc
       ops
         .list(rel.entity, {
           search: text ? { [labelField]: text } : undefined,
+          filter: rel.filter,
           pageSize: SEARCH_PAGE_SIZE,
         })
         .then((found) => setOptions(excludeId ? found.filter((o) => o.id !== excludeId) : found))
@@ -633,6 +634,7 @@ function RelationWizard({
     ops
       .list(rel.entity, {
         search: text ? { [labelField]: text } : undefined,
+        filter: rel.filter,
         pageSize: EMBED_PAGE_SIZE,
       })
       .then((found) => {
@@ -644,7 +646,7 @@ function RelationWizard({
     return () => {
       cancelled = true
     }
-  }, [open, text, rel.entity, labelField, ops])
+  }, [open, text, rel.entity, rel.filter, labelField, ops])
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth={false} sx={wizardDialogSx}>

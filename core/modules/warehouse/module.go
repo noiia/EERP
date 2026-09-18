@@ -85,6 +85,13 @@ type ProductUoms struct {
 	model.BaseModel
 	Name string `db:"name" json:"name"`
 	Type string `db:"type" json:"type"`
+	// Symbol is the short printable unit symbol ("m²", "ft²", "kg", ...) —
+	// what a REPORT prints next to a value (propertymanagement's rent
+	// receipt: `<floor_area> <symbol>`), as opposed to Name, which is the
+	// picker's own human-readable label ("Square meter (m²)"). Free text,
+	// no uniqueness constraint — a tenant can leave it blank for a custom
+	// UOM with no conventional symbol.
+	Symbol string `db:"symbol" json:"symbol"`
 }
 
 type warehouseModule struct{}
@@ -107,36 +114,53 @@ func (m *warehouseModule) Register() error {
 // so a fresh product_uoms table isn't empty. Not exhaustive — a tenant can
 // always add its own via product_uoms' own quick-create wizard
 // (product_uoms_views.ts, whose `type` options this list must keep matching).
-var defaultUoms = []struct{ name, kind string }{
-	{"Unit", "piece"},
+var defaultUoms = []struct{ name, kind, symbol string }{
+	{"Unit", "piece", "u"},
 
-	{"Meter (m)", "length"},
-	{"Centimeter (cm)", "length"},
-	{"Millimeter (mm)", "length"},
-	{"Kilometer (km)", "length"},
-	{"Foot (ft)", "length"},
-	{"Inch (in)", "length"},
-	{"Yard (yd)", "length"},
-	{"Mile (mi)", "length"},
+	{"Meter (m)", "length", "m"},
+	{"Centimeter (cm)", "length", "cm"},
+	{"Millimeter (mm)", "length", "mm"},
+	{"Kilometer (km)", "length", "km"},
+	{"Foot (ft)", "length", "ft"},
+	{"Inch (in)", "length", "in"},
+	{"Yard (yd)", "length", "yd"},
+	{"Mile (mi)", "length", "mi"},
 
-	{"Kilogram (kg)", "weight"},
-	{"Gram (g)", "weight"},
-	{"Tonne (t)", "weight"},
-	{"Pound (lb)", "weight"},
-	{"Ounce (oz)", "weight"},
+	{"Kilogram (kg)", "weight", "kg"},
+	{"Gram (g)", "weight", "g"},
+	{"Tonne (t)", "weight", "t"},
+	{"Pound (lb)", "weight", "lb"},
+	{"Ounce (oz)", "weight", "oz"},
 
-	{"Liter (L)", "volume"},
-	{"Milliliter (mL)", "volume"},
-	{"Cubic meter (m³)", "volume"},
-	{"Gallon (gal)", "volume"},
-	{"Fluid ounce (fl oz)", "volume"},
+	{"Liter (L)", "volume", "L"},
+	{"Milliliter (mL)", "volume", "mL"},
+	{"Cubic meter (m³)", "volume", "m³"},
+	{"Gallon (gal)", "volume", "gal"},
+	{"Fluid ounce (fl oz)", "volume", "fl oz"},
 
-	{"Square meter (m²)", "surface"},
-	{"Square centimeter (cm²)", "surface"},
-	{"Hectare (ha)", "surface"},
-	{"Square foot (sqft)", "surface"},
-	{"Acre (ac)", "surface"},
+	// DefaultSurfaceUomName(Metric|Imperial) below name these two exact
+	// entries — propertymanagement's own Create override looks them up BY
+	// NAME (scoped to tenant + type=surface) to pick floor_area's default
+	// uom_id from the workspace's units.system setting. Renaming either
+	// breaks that lookup silently (it just falls back to no default) — keep
+	// them in sync if either ever changes.
+	{"Square meter (m²)", "surface", "m²"},
+	{"Square centimeter (cm²)", "surface", "cm²"},
+	{"Hectare (ha)", "surface", "ha"},
+	{"Square foot (sqft)", "surface", "ft²"},
+	{"Acre (ac)", "surface", "ac"},
 }
+
+// DefaultSurfaceUomNameMetric/DefaultSurfaceUomNameImperial name the exact
+// defaultUoms row propertymanagement's own Create override (handler.go)
+// looks up by (tenant, type=surface, name) to default a new property's
+// floor_area uom_id from the workspace's units.system setting — exported so
+// that module can resolve the SAME two rows without duplicating this list or
+// depending on warehouse's own internal seeding order.
+const (
+	DefaultSurfaceUomNameMetric   = "Square meter (m²)"
+	DefaultSurfaceUomNameImperial = "Square foot (sqft)"
+)
 
 // seedUUID derives a stable, reproducible v5 UUID from a tenant + a fixed
 // label, so re-seeding the same tenant is idempotent via plain
@@ -187,8 +211,15 @@ func seedDefaultUoms(ctx context.Context, db *orm.DB) error {
 				BaseModel: model.BaseModel{ID: seedUUID(tenantID, "product_uoms:"+u.name), TenantID: tenantID},
 				Name:      u.name,
 				Type:      u.kind,
+				Symbol:    u.symbol,
 			}
-			if _, err := uoms.Upsert(ctx, row, []string{"id"}, ""); err != nil {
+			// symbol = EXCLUDED.symbol (not the usual "" empty-fragment
+			// DO NOTHING) so an existing deployment seeded before Symbol
+			// existed gets backfilled on the next boot — safe: the ON
+			// CONFLICT target is this row's own deterministic seed id, so it
+			// can only ever touch a defaultUoms row, never a tenant's own
+			// custom UOM (a real, random id).
+			if _, err := uoms.Upsert(ctx, row, []string{"id"}, "symbol = EXCLUDED.symbol"); err != nil {
 				return fmt.Errorf("warehouse: seed default uom %q: %w", u.name, err)
 			}
 		}

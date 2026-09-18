@@ -1005,6 +1005,79 @@ func ResolveTaxIncluded(ctx context.Context, store *Repository, companies *compa
 	return resolveTaxIncluded(ctx, store, companies, tenantID, userID)
 }
 
+// unitSettings is both the stored value of UnitSystemKey and the
+// request/response body of GET|PUT /settings/units.
+type unitSettings struct {
+	System string `json:"system"`
+}
+
+// GetUnitSettings handles GET /api/v1/settings/units — the workspace's
+// default unit system (see UnitSystemKey's doc comment). Absent returns
+// UnitSystemMetric, not a 404: an unconfigured workspace defaults to metric.
+// Mounted behind the permission middleware, which derives settings:units:read
+// from the route.
+func (h *Handler) GetUnitSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	system, err := resolveUnitSystem(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: get unit system: %w", err)
+	}
+	return c.JSON(http.StatusOK, unitSettings{System: system})
+}
+
+// PutUnitSettings handles PUT /api/v1/settings/units. Mounted behind the
+// permission middleware, which derives settings:units:write from the route.
+func (h *Handler) PutUnitSettings(c echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	var req unitSettings
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if req.System != UnitSystemMetric && req.System != UnitSystemImperial {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("system must be %q or %q", UnitSystemMetric, UnitSystemImperial))
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, UnitSystemKey, req.System); err != nil {
+		return fmt.Errorf("settings: set unit system: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// resolveUnitSystem reports the workspace's active company's default unit
+// system (Settings -> Global settings -> Units) — UnitSystemMetric when
+// unset. Takes interfaces (not *Handler) so ResolveUnitSystem below can
+// reuse it for callers outside this package (propertymanagement's own
+// default-UOM pick), same split resolveTaxIncluded/ResolveTaxIncluded
+// already establish.
+func resolveUnitSystem(ctx context.Context, store settingStore, companies companyResolver, tenantID, userID uuid.UUID) (string, error) {
+	active, err := companies.ResolveActive(ctx, tenantID, userID)
+	if err != nil {
+		return "", err
+	}
+	raw, ok, err := store.Get(ctx, tenantID, active.ID, UnitSystemKey)
+	if err != nil {
+		return "", err
+	}
+	if ok && raw == UnitSystemImperial {
+		return UnitSystemImperial, nil
+	}
+	return UnitSystemMetric, nil
+}
+
+// ResolveUnitSystem is resolveUnitSystem's exported twin, taking concrete
+// types so propertymanagement can call it without importing this package's
+// unexported interfaces.
+func ResolveUnitSystem(ctx context.Context, store *Repository, companies *company.Repository, tenantID, userID uuid.UUID) (string, error) {
+	return resolveUnitSystem(ctx, store, companies, tenantID, userID)
+}
+
 // osmConnector is both the stored value of OSMConnectorKey and the
 // request/response body of GET|PUT /settings/integrations/osm.
 type osmConnector struct {

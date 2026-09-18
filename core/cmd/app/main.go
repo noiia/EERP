@@ -225,6 +225,8 @@ func main() {
 	settingsGroup.PUT("/integrations/osm", settingsHandler.PutOSMSettings)
 	settingsGroup.GET("/tax", settingsHandler.GetTaxSettings)
 	settingsGroup.PUT("/tax", settingsHandler.PutTaxSettings)
+	settingsGroup.GET("/units", settingsHandler.GetUnitSettings)
+	settingsGroup.PUT("/units", settingsHandler.PutUnitSettings)
 	settingsGroup.GET("/accounts", settingsHandler.GetAccountsSettings)
 	settingsGroup.PUT("/accounts", settingsHandler.PutAccountsSettings)
 
@@ -583,9 +585,14 @@ func main() {
 		orm.MustRepo[sale.SaleTax](app.DB),
 		orm.MustRepo[propertymanagement.PropertyManagementRentReceipt](app.DB),
 		orm.MustRepo[propertymanagement.PropertyManagementRentReceiptLine](app.DB),
+		orm.MustRepo[warehouse.ProductUoms](app.DB),
 		settings.NewRepository(app.DB),
 		companyRepo,
 	)
+	// POST overridden to default uom_id from the workspace's units.system
+	// setting when the client didn't pick one (handler.go's CreateProperty);
+	// GET overridden to inject the computed receipt_generated_this_month key.
+	srv.Echo().POST("/api/v1/property_management", propertyManagementHandler.CreateProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().GET("/api/v1/property_management/:id", propertyManagementHandler.GetProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().POST("/api/v1/property_management_equipment_status", propertyManagementHandler.CreateEquipmentStatus, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().DELETE("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())

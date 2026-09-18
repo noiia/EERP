@@ -148,6 +148,19 @@ export interface RelationDescriptor {
    * always: opt-in, not a behavior change for existing declarations.
    */
   formPath?: string
+  /**
+   * many2one/many2many only: a static `filter[col]=value` scope (the SAME
+   * exact-match param the generic list endpoint's own `filter[]` accepts)
+   * applied to every search/prefill/wizard read of the related entity — the
+   * server-side counterpart to "only offer records matching this," rather
+   * than a client-side post-filter that would still let a typed search find
+   * a row outside the intended scope. E.g. propertymanagement's `uom_id`
+   * picker: `{ type: 'surface' }` so only surface UOMs (m², ft², ...) are
+   * ever offered, not the full piece/length/weight/volume/custom catalog.
+   * Omitted (every relation field before this existed) means unscoped,
+   * unchanged.
+   */
+  filter?: Record<string, string>
 }
 
 /**

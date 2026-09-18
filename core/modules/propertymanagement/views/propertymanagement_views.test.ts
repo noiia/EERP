@@ -517,6 +517,28 @@ describe('propertymanagement.generateRentReceipt', () => {
     expect(committed).toEqual([{ last_receipt_month: period }])
   })
 
+  it('snapshots the uom as its short SYMBOL, not product_uoms\' own picker label', async () => {
+    const created: { entity: string; body: Record<string, unknown> }[] = []
+    const ops: RelationOps = {
+      list: async () => [],
+      get: async (entity, id) => {
+        if (entity === 'product_uoms') return { id, name: 'Square meter (m²)', symbol: 'm²' }
+        return { id }
+      },
+      create: async (entity, body) => {
+        created.push({ entity, body })
+        return { id: `row${created.length}`, ...body }
+      },
+      remove: async () => {},
+    }
+    const ctx = context({ relationOps: ops, draft: { ...context().draft, uom_id: 'uom1' } })
+
+    await menuActionRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
+
+    const receipt = created.find((c) => c.entity === 'property_management_rent_receipt')
+    expect(receipt?.body.uom).toBe('m²')
+  })
+
   it('snapshots the property billing lines onto each child, and computes subtotal/tax_amount/total', async () => {
     const created: { entity: string; body: Record<string, unknown> }[] = []
     const ops: RelationOps = {

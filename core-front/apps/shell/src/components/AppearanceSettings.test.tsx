@@ -57,4 +57,11 @@ describe('AppearanceSettings', () => {
     expect(screen.getByLabelText(/tax computed on top of the price/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/tax computed on top of the price/i)).toBeChecked()
   })
+
+  it('renders the Units section holding the default unit system settings', () => {
+    render(<AppearanceSettings />)
+    expect(screen.getByText('Units')).toBeInTheDocument()
+    expect(screen.getByLabelText(/metric/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/metric/i)).toBeChecked()
+  })
 })
