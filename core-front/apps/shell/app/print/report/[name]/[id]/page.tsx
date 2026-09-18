@@ -115,6 +115,14 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
     ? await client.get<Record<string, unknown>>('company', activeCompany.id).catch(() => null)
     : null
 
+  // A `format: 'monetary'` field node (ReportRenderer) reads its currency
+  // code off this SAME sibling-field convention `record[recordField]`
+  // company-fallback already uses — currency is implicit, whichever company
+  // issued the document (sale/module.go's own doc comment on why Invoice/
+  // Quote carry no Currency column of their own anymore), so it's always the
+  // active company's, never a per-record value to fall back FROM.
+  record.currency = company?.currency ?? ''
+
   // Multi-company: fields opted into companyFallback (e.g. sale.invoice's
   // issuer_name/address/phone/email) fall back to the active company profile
   // when the record's own value is empty — never overwriting a value the

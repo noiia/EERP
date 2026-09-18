@@ -39,7 +39,7 @@ function ReportNodeView({ node, record }: { node: ReportNode; record: Record<str
       )
     case 'field':
       if (node.display && !evaluateCondition(node.display, record)) return null
-      return <div className={node.className}>{formatFieldValue(record[node.name], node.format)}</div>
+      return <div className={node.className}>{formatFieldValue(record[node.name], node.format, record.currency)}</div>
     case 'table':
       return <ReportTableView node={node} record={record} />
     case 'text':
@@ -88,10 +88,14 @@ function ReportTableView({ node, record }: { node: ReportTableNode; record: Reco
 // ever needs translated date formatting; every other value formatter in this
 // engine is already locale-aware (useNumberFormat), this one deliberately
 // isn't yet, since no report has asked for it.
-function formatFieldValue(value: unknown, format?: ReportFieldNode['format']): string {
+function formatFieldValue(value: unknown, format?: ReportFieldNode['format'], currency?: unknown): string {
   if (value == null) return ''
   if (format === 'number' && typeof value === 'number') {
     return formatNumber(value, DEFAULT_NUMBER_FORMAT)
+  }
+  if (format === 'monetary' && typeof value === 'number') {
+    const amount = formatNumber(value, DEFAULT_NUMBER_FORMAT)
+    return currency ? `${amount} ${String(currency)}` : amount
   }
   if ((format === 'date' || format === 'datetime') && typeof value === 'string') {
     const date = new Date(value)

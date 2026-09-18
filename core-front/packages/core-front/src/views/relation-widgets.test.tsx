@@ -11,6 +11,7 @@ vi.mock('next/navigation', () => ({
 
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { moduleRegistry } from '../registry'
+import { useCompanyStore } from './company-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { useHasLinksStore } from './required-relation-store'
 import { fieldWidget, type WidgetProps } from './widgets'
@@ -41,6 +42,7 @@ function Harness({
   onChangeField,
   initialValue,
   recordId,
+  draft,
 }: {
   field: FieldDescriptor
   ops: RelationOps
@@ -48,6 +50,7 @@ function Harness({
   onChangeField: (name: string, value: unknown) => void
   initialValue: unknown
   recordId: string | null
+  draft?: Record<string, unknown>
 }) {
   const [value, setValue] = useState<unknown>(initialValue)
   const Widget = fieldWidget(field)
@@ -63,6 +66,7 @@ function Harness({
         onChangeField={onChangeField}
         entity="crm"
         recordId={recordId}
+        draft={draft}
       />
     </RelationOpsProvider>
   )
@@ -83,6 +87,7 @@ function renderWidget(
       onChangeField={onChangeField}
       initialValue={props.value ?? null}
       recordId={props.recordId !== undefined ? props.recordId : 'r1'}
+      draft={props.draft}
     />,
   )
   return { onChange, onChangeField }
@@ -774,6 +779,97 @@ describe('relation/list (one2many)', () => {
   })
 })
 
+describe('widgetOptions.columns — explicit column override (e.g. propertymanagement\'s billing_lines)', () => {
+  it('renders Name (labelField) then the declared columns, in order, instead of the generic row-key derivation', async () => {
+    const ops = stubOps()
+    renderWidget(
+      { ...listField, widgetOptions: { columns: [{ key: 'status', label: 'Status' }] } },
+      ops,
+    )
+    await screen.findByText('Acme')
+    const headers = [...document.querySelectorAll('.MuiDataGrid-columnHeaderTitle')].map((el) => el.textContent)
+    expect(headers).toEqual(['Name', 'Status'])
+    expect(
+      [...document.querySelectorAll('.MuiDataGrid-cell[data-field="status"]')].map((el) => el.textContent),
+    ).toEqual(['customer', 'lead'])
+  })
+
+  it('a column with a literal `value` shows that same value on every row, ignoring the row\'s own data', async () => {
+    const ops = stubOps()
+    renderWidget(
+      { ...listField, widgetOptions: { columns: [{ key: 'quantity', label: 'Quantity', value: 1 }] } },
+      ops,
+    )
+    await screen.findByText('Acme')
+    expect(
+      [...document.querySelectorAll('.MuiDataGrid-cell[data-field="quantity"]')].map((el) => el.textContent),
+    ).toEqual(['1', '1'])
+  })
+})
+
+describe('widgetOptions.previewRow — synthetic leading row from sibling draft fields (e.g. propertymanagement\'s rent_price line)', () => {
+  it('prepends one row built from the named draft fields, named by the record\'s own name field', async () => {
+    const ops = stubOps()
+    renderWidget(
+      {
+        ...listField,
+        widgetOptions: {
+          columns: [{ key: 'unit_price', label: 'Price' }],
+          previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: ['unit_price'] },
+        },
+      },
+      ops,
+      { draft: { name: 'Studio 4B', rent_price: 900 } },
+    )
+    await screen.findByText('Acme')
+    const names = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="name"]')].map((el) => el.textContent)
+    expect(names).toEqual(['Studio 4B', 'Acme', 'Globex'])
+    const prices = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="unit_price"]')].map(
+      (el) => el.textContent,
+    )
+    expect(prices[0]).toBe('900')
+  })
+
+  it('gets no delete button, unlike the real rows beside it', async () => {
+    const ops = stubOps()
+    renderWidget(
+      {
+        ...listField,
+        widgetOptions: {
+          deletable: true,
+          previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: [] },
+        },
+      },
+      ops,
+      { draft: { name: 'Studio 4B', rent_price: 900 } },
+    )
+    await screen.findByText('Acme')
+    expect(screen.getByText('Studio 4B')).toBeInTheDocument()
+    // Only the two real rows (Acme, Globex) get a delete button — none for the preview row.
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+
+  it('is not clickable even when relation.formPath would otherwise navigate on row click', async () => {
+    pushMock.mockClear()
+    const ops = stubOps()
+    renderWidget(
+      {
+        ...listField,
+        widgetOptions: { previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: [] } },
+        relation: { ...listField.relation, formPath: '/crm/:id' } as FieldDescriptor['relation'],
+      },
+      ops,
+      { draft: { name: 'Studio 4B', rent_price: 900 } },
+    )
+    await screen.findByText('Studio 4B')
+    fireEvent.click(screen.getByText('Studio 4B'))
+    expect(pushMock).not.toHaveBeenCalled()
+
+    fireEvent.click(await screen.findByText('Acme'))
+    expect(pushMock).toHaveBeenCalledWith('/crm/c1')
+  })
+})
+
 describe('widgetOptions.multiCreate — bulk-add checkbox wizard (e.g. the Role form\'s Views table)', () => {
     const permissionRowForm: ViewDescriptor = {
       entity: 'permission_row',
@@ -1032,5 +1128,20 @@ describe('totals/recap', () => {
     // Untaxed amount, the 20% tax line, and the grand total all read 0.00 —
     // a wrongly-upgraded-to-1 quantity would instead show 100.00/20.00/120.00.
     await waitFor(() => expect(screen.getAllByText('0.00')).toHaveLength(3))
+  })
+
+  it('suffixes every figure with the active company\'s currency, same as any number/monetary field', async () => {
+    useCompanyStore.getState().setCurrency('USD')
+    try {
+      const lines: RelationRecord[] = [{ id: 'l1', quantity: 1, unit_price: 100, tax_rate: 0.2 }]
+      const ops = stubOps({ list: vi.fn(async () => lines) })
+      renderWidget(totalsField, ops, { recordId: 'inv1' })
+
+      expect(await screen.findByText('100.00 USD')).toBeInTheDocument()
+      expect(screen.getByText('20.00 USD')).toBeInTheDocument()
+      expect(screen.getByText('120.00 USD')).toBeInTheDocument()
+    } finally {
+      useCompanyStore.getState().setCurrency('')
+    }
   })
 })

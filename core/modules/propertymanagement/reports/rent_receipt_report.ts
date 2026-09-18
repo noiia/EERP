@@ -1,13 +1,17 @@
 import type { ReportDescriptor } from '@eerp/core-front'
 
-/** One right-aligned "label / amount" row in the totals recap block — same shape as sale/reports/invoice_report.ts's own totalsRow. */
+/** One right-aligned "label / amount" row in the totals recap block — `format:
+ * 'monetary'` prints the active company's own currency code alongside the
+ * figure (report-renderer.tsx reads it off the record's own `currency`
+ * field, set by the print route from the same active company the header's
+ * logo/address already come from). */
 function totalsRow(label: string, field: string, grand = false): ReportDescriptor['layout'][number] {
   return {
     kind: 'section',
     className: grand ? 'eerp-report-totals-row eerp-report-totals-row--grand' : 'eerp-report-totals-row',
     children: [
       { kind: 'text', text: label },
-      { kind: 'field', name: field, format: 'number' },
+      { kind: 'field', name: field, format: 'monetary' },
     ],
   }
 }

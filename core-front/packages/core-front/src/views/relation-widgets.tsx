@@ -32,6 +32,7 @@ import {
   type RelationDescriptor,
   type ViewDescriptor,
 } from './descriptor'
+import { useCompanyStore } from './company-store'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { LayoutForm } from './layout-renderer'
@@ -226,14 +227,32 @@ function relatedColumns(
   }))
 }
 
+/** RelationListWidget's widgetOptions.columns override — the Name/labelField
+ * column always leads (same convention relatedColumns follows), then every
+ * declared column verbatim, in order. See RelationListWidget's own doc
+ * comment on why a table ever needs this instead of the generic derivation. */
+function explicitRelationColumns(
+  columns: { key: string; label: string }[],
+  labelField: string,
+  t: (s: string) => string,
+): GridColDef[] {
+  return [
+    { field: labelField, headerName: t('Name'), flex: 1 },
+    ...columns.map((c) => ({ field: c.key, headerName: c.label, flex: 1 })),
+  ]
+}
+
 /** RelationListWidget's widgetOptions.deletable column — always last, a
  * fixed-width trash icon rather than a flex column like the rest, since it
- * carries no data of its own. */
+ * carries no data of its own. `hiddenRowId` (opt-in — RelationListWidget's
+ * own synthetic preview row) renders no button at all for that one row: a
+ * row nothing was ever created for has nothing to delete. */
 function deleteColumn(
   t: (s: string) => string,
   disabled: boolean | undefined,
   deletingId: string | null,
   onDelete: (id: string) => void,
+  hiddenRowId?: string,
 ): GridColDef {
   return {
     field: '__delete',
@@ -244,19 +263,22 @@ function deleteColumn(
     width: 56,
     align: 'center',
     headerAlign: 'center',
-    renderCell: (params: GridRenderCellParams) => (
-      <IconButton
-        size="small"
-        disabled={disabled || deletingId === String(params.id)}
-        aria-label={t('Delete')}
-        onClick={(e) => {
-          e.stopPropagation() // don't also trigger the row's own onRowClick navigation
-          onDelete(String(params.id))
-        }}
-      >
-        <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} size="xs" />
-      </IconButton>
-    ),
+    renderCell: (params: GridRenderCellParams) => {
+      if (hiddenRowId !== undefined && String(params.id) === hiddenRowId) return null
+      return (
+        <IconButton
+          size="small"
+          disabled={disabled || deletingId === String(params.id)}
+          aria-label={t('Delete')}
+          onClick={(e) => {
+            e.stopPropagation() // don't also trigger the row's own onRowClick navigation
+            onDelete(String(params.id))
+          }}
+        >
+          <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} size="xs" />
+        </IconButton>
+      )
+    },
   }
 }
 
@@ -1139,7 +1161,26 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
 
 // ── relation/list (one2many) ──────────────────────────────────────────────────
 
-export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
+/** widgetOptions.columns (opt-in) — see RelationListWidget's own doc comment. */
+interface RelationListColumnConfig {
+  key: string
+  label: string
+  /** A literal shown on EVERY row instead of reading `row[key]` — for a
+   * column with no real backing data at all (e.g. billing lines have no
+   * quantity column; every line is priced as a flat whole, always "1"). */
+  value?: string | number
+}
+
+/** widgetOptions.previewRow (opt-in) — see RelationListWidget's own doc comment. */
+interface RelationListPreviewRowConfig {
+  nameField: string
+  amountField: string
+  amountColumns: string[]
+}
+
+const PREVIEW_ROW_ID = '__preview__'
+
+export function RelationListWidget({ field, disabled, recordId, draft }: WidgetProps) {
   const t = useT()
   const router = useRouter()
   const ops = useRelationOps()
@@ -1148,6 +1189,32 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   const labelField = rel.labelField ?? 'name'
   const [rows, setRows] = useState<RelationRecord[]>([])
   const [createOpen, setCreateOpen] = useState(false)
+
+  // widgetOptions.columns (opt-in, e.g. propertymanagement's billing_lines):
+  // an EXPLICIT, ordered column list replacing relatedColumns' generic
+  // row-key derivation — for a table whose real DB columns don't match the
+  // shape a user should see (a legacy scalar that shouldn't print, a
+  // many2many that needs relatedRelationField's resolution first, a column
+  // with no backing data at all). The Name/labelField column always leads,
+  // exactly as it does under the generic derivation.
+  const explicitColumns = Array.isArray(field.widgetOptions?.columns)
+    ? (field.widgetOptions.columns as unknown as RelationListColumnConfig[])
+    : null
+
+  // widgetOptions.previewRow (opt-in, e.g. propertymanagement's billing_lines
+  // showing the property's own rent_price as a leading "line" before any
+  // real billing line has been entered): a SYNTHETIC row, never persisted
+  // and never fetched, built from two SIBLING fields on this SAME record's
+  // draft (the read-side counterpart to a compute/on_change reading
+  // `WidgetProps.draft`) — `nameField`'s value becomes the row's label,
+  // `amountField`'s value is copied onto every column named in
+  // `amountColumns` (a flat, untaxed preview line has the same figure in
+  // its price/subtotal/total columns). Requires `draft` (present on every
+  // widget) and only ever prepends ONE row.
+  const previewRowConfig =
+    field.widgetOptions?.previewRow && typeof field.widgetOptions.previewRow === 'object'
+      ? (field.widgetOptions.previewRow as unknown as RelationListPreviewRowConfig)
+      : null
   // Bumped by a host action that created/changed rel.entity rows OUTSIDE
   // this widget's own create wizard (e.g. a header button using relationOps
   // directly) — see entity-refresh-store.ts.
@@ -1197,7 +1264,7 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   // optimistically. A failed request leaves the row exactly where it was,
   // with the error surfaced below the grid.
   const handleDeleteRow = (id: string) => {
-    if (!ops) return
+    if (!ops || id === PREVIEW_ROW_ID) return
     setDeletingId(id)
     ops
       .remove(rel.entity, id)
@@ -1254,7 +1321,29 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
-  const displayRows = expandField ? rows.map((row) => ({ ...row, [expandField]: expanded[row.id] ?? '' })) : rows
+  const expandedRows = expandField ? rows.map((row) => ({ ...row, [expandField]: expanded[row.id] ?? '' })) : rows
+  // Literal-value columns (widgetOptions.columns' own `value`) apply to
+  // EVERY row, real or synthetic — same rule, no special case for either.
+  const literalRows = explicitColumns
+    ? expandedRows.map((row) => {
+        const patched = { ...row }
+        for (const col of explicitColumns) if (col.value !== undefined) patched[col.key] = col.value
+        return patched
+      })
+    : expandedRows
+  const previewRow: RelationRecord | null =
+    previewRowConfig && draft
+      ? {
+          id: PREVIEW_ROW_ID,
+          [labelField]: draft[previewRowConfig.nameField] ?? '',
+          ...Object.fromEntries(previewRowConfig.amountColumns.map((col) => [col, draft[previewRowConfig.amountField] ?? 0])),
+          ...Object.fromEntries((explicitColumns ?? []).filter((c) => c.value !== undefined).map((c) => [c.key, c.value])),
+        }
+      : null
+  const displayRows = previewRow ? [previewRow, ...literalRows] : literalRows
+  const columns = explicitColumns
+    ? explicitRelationColumns(explicitColumns, labelField, t)
+    : relatedColumns(displayRows, labelField, t, [inverseField])
 
   return (
     <Box>
@@ -1276,18 +1365,18 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
           rows={displayRows}
           columns={
             deletable
-              ? [
-                  ...relatedColumns(displayRows, labelField, t, [inverseField]),
-                  deleteColumn(t, disabled, deletingId, handleDeleteRow),
-                ]
-              : relatedColumns(displayRows, labelField, t, [inverseField])
+              ? [...columns, deleteColumn(t, disabled, deletingId, handleDeleteRow, PREVIEW_ROW_ID)]
+              : columns
           }
           autoHeight
           hideFooter
           disableRowSelectionOnClick
           onRowClick={
             rel.formPath
-              ? (params: GridRowParams) => router.push(rel.formPath!.replace(':id', String(params.id)))
+              ? (params: GridRowParams) => {
+                  if (params.id === PREVIEW_ROW_ID) return
+                  router.push(rel.formPath!.replace(':id', String(params.id)))
+                }
               : undefined
           }
           sx={rel.formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
@@ -1360,10 +1449,15 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
  * round-trip behind what's actually on the form, and never reimplements tax
  * math on the client — only sums numbers Go already computed.
  */
-export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
+export function TaxTotalsWidget({ field, recordId, draft }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const { format } = useNumberFormat()
+  // Same active-company currency code every number/monetary field already
+  // decorates its value with (widgets.tsx's NumberMonetaryWidget) — this
+  // recap is three more monetary figures with nowhere else to pick it up
+  // from, since it computes them itself rather than reading stored fields.
+  const currency = useCompanyStore((s) => s.currency)
   const rel = relationOf(field)
   const inverseField = rel.inverseField as string
   const [rows, setRows] = useState<RelationRecord[]>([])
@@ -1410,6 +1504,17 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
     // widget used everywhere before Total existed.
     total += row.total === undefined ? amount + amount * (Number(row.tax_rate) || 0) : Number(row.total) || 0
   }
+  // widgetOptions.previewAmountField (opt-in, e.g. propertymanagement's
+  // rent_price): a SIBLING draft field folded into subtotal/total alongside
+  // the fetched lines, same untaxed treatment RelationListWidget's own
+  // widgetOptions.previewRow gives it when showing it as a leading row in
+  // the grid this recap sits under — the two stay consistent readings of
+  // the same "rent counts as a line too" rule.
+  if (typeof field.widgetOptions?.previewAmountField === 'string' && draft) {
+    const previewAmount = Number(draft[field.widgetOptions.previewAmountField]) || 0
+    subtotal += previewAmount
+    total += previewAmount
+  }
   const taxAmount = total - subtotal
 
   return (
@@ -1427,20 +1532,20 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
       <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="body2">{t('Untaxed Amount')}:</Typography>
         <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
-          {format(subtotal, { decimals: 2 })}
+          {format(subtotal, { decimals: 2 })} {currency}
         </Typography>
       </Stack>
       <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="body2">{t('Tax')}:</Typography>
         <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
-          {format(taxAmount, { decimals: 2 })}
+          {format(taxAmount, { decimals: 2 })} {currency}
         </Typography>
       </Stack>
       <Box sx={{ borderTop: '0.5px solid', borderColor: 'divider' }} />
       <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="subtitle2">{t('Total')}:</Typography>
         <Typography variant="subtitle2" sx={{ fontVariantNumeric: tabularNums }}>
-          {format(total, { decimals: 2 })}
+          {format(total, { decimals: 2 })} {currency}
         </Typography>
       </Stack>
     </Stack>

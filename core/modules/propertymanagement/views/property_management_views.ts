@@ -1,6 +1,7 @@
 import {
   createAttachmentClient,
   fetchReportPDF,
+  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   registerMenuAction,
   useEntityRefreshStore,
@@ -400,12 +401,36 @@ const formFields: ViewDescriptor['fields'] = [
   // rows (property_management_billing_line), not a JSONB blob, creatable
   // straight from this embedded grid via the engine's usual one2many
   // "Create a new..." wizard (property_management_billing_line_views.ts's
-  // own descriptor is what the wizard renders).
+  // own descriptor is what the wizard renders). An EXPLICIT widgetOptions.
+  // columns (relation-widgets.tsx's own doc comment) replaces the generic
+  // row-key derivation, which would otherwise surface the legacy tax_rate
+  // scalar as a raw, unlabeled column — `taxes` here is resolved by
+  // widgetOptions.relatedRelationField from the line's own `taxes` many2many
+  // (billingLineFields' own tags field), and `quantity` is a plain literal
+  // 1 on every row: a billing line has no quantity concept of its own (same
+  // "treat absent as 1" rule TaxTotalsWidget already applies below), shown
+  // anyway for the same line-items look sale's own tables have.
+  // widgetOptions.previewRow prepends the property's own rent_price as a
+  // synthetic leading "Rent" line, named after the property itself (this
+  // record's own `name` field) — a preview of what the NEXT generated
+  // receipt's billing table will actually show (rent first, then these
+  // lines — rent_receipt_report.ts), before any receipt has been generated.
   {
     name: 'billing_lines',
     label: 'Billing lines',
     type: 'relation',
-    widgetOptions: { deletable: true },
+    widgetOptions: {
+      deletable: true,
+      relatedRelationField: 'taxes',
+      columns: [
+        { key: 'quantity', label: 'Quantity', value: 1 },
+        { key: 'unit_price', label: 'Price' },
+        { key: 'subtotal', label: 'Subtotal' },
+        { key: 'taxes', label: 'Taxes' },
+        { key: 'total', label: 'Total' },
+      ],
+      previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: ['unit_price', 'subtotal', 'total'] },
+    },
     relation: {
       entity: 'property_management_billing_line',
       kind: 'one2many',
@@ -421,12 +446,16 @@ const formFields: ViewDescriptor['fields'] = [
   // column (a line is priced as a whole, not quantity × unit_price) —
   // TaxTotalsWidget treats an absent quantity as 1, the identity, rather
   // than zeroing every line out (see its own doc comment).
+  // widgetOptions.previewAmountField folds rent_price into subtotal/total
+  // too, staying consistent with billing_lines' own previewRow above (both
+  // show the SAME rent line, one as a grid row, one summed into the recap).
   {
     name: 'billing_totals',
     label: 'Totals',
     type: 'totals',
     hideLabel: true,
     store: false,
+    widgetOptions: { previewAmountField: 'rent_price' },
     relation: { entity: 'property_management_billing_line', kind: 'one2many', inverseField: 'property_management_id' },
   },
 ]
@@ -459,6 +488,28 @@ const formView: ViewDescriptor = {
 // their own notebook pages — same self-extension shape
 // core/modules/sale/views/invoice_views.ts's orderLinesPageOperations uses.
 export const propertyExtendOperations: Operation[] = [
+  // A dedicated full-width row BELOW the default 2-column body (__form_columns
+  // — name/loan_amount/rent_price/current_tenant), so it structurally sits
+  // under all of them regardless of how many fields that grid happens to
+  // hold — address on the left, floor_area+uom split on the right (its own
+  // nested columns: 2, floor_area left / uom right within that half).
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      columns: 2,
+      children: [
+        { kind: 'field', name: 'address' },
+        {
+          kind: 'group',
+          columns: 2,
+          children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
+        },
+      ],
+    },
+    target: FORM_COLUMNS_ID,
+    position: 'after',
+  },
   {
     op: 'addNode',
     node: { kind: 'page', title: 'Photos', children: [{ kind: 'field', name: 'photos' }] },

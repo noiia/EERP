@@ -30,8 +30,16 @@ export interface ReportFieldNode {
   /** Property name on the fetched record. */
   name: string
   className?: string
-  /** Built-in value formatter; omitted renders the raw value coerced to a string. */
-  format?: 'number' | 'date' | 'datetime'
+  /**
+   * Built-in value formatter; omitted renders the raw value coerced to a
+   * string. 'monetary' is 'number' plus the printing company's own currency
+   * code as a suffix (ReportRenderer reads it off the fetched record's own
+   * `currency` field — see the print route's own doc comment on where that
+   * comes from) — the report-side counterpart to `widget: 'monetary'`
+   * already established for form fields (core-front/CLAUDE.md's Field
+   * widgets row).
+   */
+  format?: 'number' | 'monetary' | 'date' | 'datetime'
   /**
    * Multi-company: when the record's own `name` value is empty, the print
    * route substitutes this field from the caller's active company profile

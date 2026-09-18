@@ -38,6 +38,24 @@ describe('ReportRenderer', () => {
     expect(screen.getByText('1,234.5')).toBeInTheDocument()
   })
 
+  it('formats a monetary field with the record\'s own currency field as a suffix', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'field', name: 'total', format: 'monetary' }],
+    }
+    render(<ReportRenderer descriptor={descriptor} record={{ total: 1234.5, currency: 'USD' }} />)
+    expect(screen.getByText('1,234.5 USD')).toBeInTheDocument()
+  })
+
+  it('formats a monetary field with no suffix when the record carries no currency', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'field', name: 'total', format: 'monetary' }],
+    }
+    render(<ReportRenderer descriptor={descriptor} record={{ total: 1234.5 }} />)
+    expect(screen.getByText('1,234.5')).toBeInTheDocument()
+  })
+
   it('formats a date field as a localized date, not the raw ISO string', () => {
     const descriptor: ReportDescriptor = {
       ...baseDescriptor,

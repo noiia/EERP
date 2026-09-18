@@ -119,6 +119,23 @@ describe('propertymanagement FrontModule', () => {
     })
   })
 
+  it('billing_lines overrides the generic column derivation: Quantity(1)/Price/Subtotal/Taxes/Total, taxes resolved from the many2many, plus a rent-price preview row', () => {
+    const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
+    const field = form.descriptor.fields.find((f) => f.name === 'billing_lines')
+    expect(field?.widgetOptions).toEqual({
+      deletable: true,
+      relatedRelationField: 'taxes',
+      columns: [
+        { key: 'quantity', label: 'Quantity', value: 1 },
+        { key: 'unit_price', label: 'Price' },
+        { key: 'subtotal', label: 'Subtotal' },
+        { key: 'taxes', label: 'Taxes' },
+        { key: 'total', label: 'Total' },
+      ],
+      previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: ['unit_price', 'subtotal', 'total'] },
+    })
+  })
+
   it('billing_totals recaps billing_lines, store: false, same shape as sale\'s own totals fields', () => {
     const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
     const field = form.descriptor.fields.find((f) => f.name === 'billing_totals')
@@ -129,6 +146,12 @@ describe('propertymanagement FrontModule', () => {
       kind: 'one2many',
       inverseField: 'property_management_id',
     })
+  })
+
+  it('billing_totals folds rent_price in too, staying consistent with billing_lines\' own preview row', () => {
+    const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
+    const field = form.descriptor.fields.find((f) => f.name === 'billing_totals')
+    expect(field?.widgetOptions).toEqual({ previewAmountField: 'rent_price' })
   })
 
   it('wires Generate Rent Receipt as an options-menu action, disabled once already run this month', () => {
@@ -297,6 +320,46 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     expect(
       registry.buildRegistry().get('/propertymanagement/list')?.descriptor.fields.map((f) => f.name),
     ).not.toContain('equipment')
+  })
+
+  it('__form_columns keeps only loan_amount/rent_price/current_tenant — address/floor_area/uom move out to their own row below it', () => {
+    const registry = register()
+    const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const columns = nodes.find((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
+    expect(columns).toBeDefined()
+    if (!columns || columns.kind === 'field') return
+    // 'name' lands in the synthesized header instead (the first plain text
+    // field), not here — see normalizeLayout's own default anatomy.
+    expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind))).toEqual([
+      'loan_amount',
+      'rent_price',
+      'current_tenant',
+    ])
+  })
+
+  it('address (left) sits beside a floor_area|uom split (right) in their own full-width row, right after __form_columns', () => {
+    const registry = register()
+    const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
+    const nodes = normalizeLayout(resolved.descriptor)
+    const columnsIndex = nodes.findIndex((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
+    expect(columnsIndex).toBeGreaterThanOrEqual(0)
+
+    const row = nodes[columnsIndex + 1]
+    expect(row.kind).not.toBe('field')
+    if (row.kind === 'field') return
+    expect(row.columns).toBe(2)
+    expect(row.children).toHaveLength(2)
+
+    const [addressNode, floorGroup] = row.children
+    expect(addressNode).toEqual({ kind: 'field', name: 'address' })
+    expect(floorGroup.kind).not.toBe('field')
+    if (floorGroup.kind === 'field') return
+    expect(floorGroup.columns).toBe(2)
+    expect(floorGroup.children).toEqual([
+      { kind: 'field', name: 'floor_area' },
+      { kind: 'field', name: 'uom_id' },
+    ])
   })
 })
 
