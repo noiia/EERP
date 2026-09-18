@@ -1,7 +1,0 @@
-.eerp-pm-report-property {
-  display: flex;
-  gap: 0.4rem;
-  /* font-size: 0.85rem; */
-  color: var(--eerp-report-text-muted, #333);
-  /* padding-bottom: 0.35rem; */
-}

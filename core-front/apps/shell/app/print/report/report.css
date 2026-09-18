@@ -133,6 +133,15 @@
   text-align: right;
 }
 
+/* SAMPLE: property management's rent receipt moved this block to a
+   full-width section of its own (not the masthead's right column), where
+   the shared right-align above reads wrong — this second, additive class
+   puts it back on the left. */
+.eerp-report-client--pm {
+  text-align: left;
+  max-width: none;
+}
+
 /* SAMPLE: property management's rent receipt (reports/rent_receipt_report.ts)
    opts its issuer block into this SECOND class alongside the shared
    .eerp-report-issuer above — a bordered "card" look distinct from sale's
@@ -154,6 +163,19 @@
    same way — one declaration, one class, one node. */
 .eerp-report-tenant-names {
   font-weight: 700;
+}
+
+/* SAMPLE: property management's rent receipt — floor_area + uom, printed
+   side by side. align-items: baseline keeps the number and its unit sitting
+   on the same text line instead of the number's taller line-box pushing the
+   unit down. */
+.eerp-pm-report-property {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--eerp-report-text-muted, #333);
+  padding-bottom: 0.35rem;
 }
 
 /* reportTitleSection (report-descriptor.ts) — a big document name/title

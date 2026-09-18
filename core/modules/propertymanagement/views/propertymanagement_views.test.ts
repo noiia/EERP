@@ -503,8 +503,10 @@ describe('propertymanagement.generateRentReceipt', () => {
     expect(created[0].body.parent_id).toBeUndefined()
     // One dedicated child per tenant: linked to the PARENT, not the property,
     // each with just its own tenant's name — same full address + floor_area
-    // snapshot as the parent.
-    expect(created).toHaveLength(3)
+    // snapshot as the parent. Each child is immediately followed by its own
+    // synthetic "Rent" line (unconditional, even with no billing lines and
+    // no rent_price on the draft — the report always prints a Rent row).
+    expect(created).toHaveLength(5)
     expect(created[1].body).toMatchObject({
       parent_id: 'parent1',
       is_parent: false,
@@ -513,7 +515,15 @@ describe('propertymanagement.generateRentReceipt', () => {
       floor_area: 42,
     })
     expect(created[1].body.property_management_id).toBeUndefined()
-    expect(created[2].body).toMatchObject({ parent_id: 'parent1', is_parent: false, tenant_names: 'John Smith' })
+    expect(created[2]).toEqual({
+      entity: 'property_management_rent_receipt_line',
+      body: expect.objectContaining({ rent_receipt_id: 'child1', name: 'Rent' }),
+    })
+    expect(created[3].body).toMatchObject({ parent_id: 'parent1', is_parent: false, tenant_names: 'John Smith' })
+    expect(created[4]).toEqual({
+      entity: 'property_management_rent_receipt_line',
+      body: expect.objectContaining({ rent_receipt_id: 'child3', name: 'Rent' }),
+    })
     expect(committed).toEqual([{ last_receipt_month: period }])
   })
 
@@ -567,27 +577,39 @@ describe('propertymanagement.generateRentReceipt', () => {
 
     await menuActionRegistry.get('propertymanagement.generateRentReceipt')!.handler(ctx)
 
-    // parent + 1 child + 2 receipt lines (copied onto the child only, not the parent).
+    // parent + 1 child + 3 receipt lines (a synthetic "Rent" row first, then
+    // the 2 copied billing lines — all on the child only, not the parent).
     const receipt = created.filter((c) => c.entity === 'property_management_rent_receipt')
     const lines = created.filter((c) => c.entity === 'property_management_rent_receipt_line')
     expect(receipt).toHaveLength(2)
+    // rent_price (1000, untaxed) plus the two billing lines' own
+    // subtotal/total (1000+100 / 1200+100) — the receipt's upfront estimate
+    // must count the synthetic Rent row too, not just the copied lines.
     for (const r of receipt) {
-      expect(r.body).toMatchObject({ rent_price: 1000, subtotal: 1100, tax_amount: 200, total: 1300 })
+      expect(r.body).toMatchObject({ rent_price: 1000, subtotal: 2100, tax_amount: 200, total: 2300 })
     }
-    expect(lines).toHaveLength(2)
+    expect(lines).toHaveLength(3)
     expect(lines[0].body).toMatchObject({
       rent_receipt_id: 'row2',
-      name: 'Apartment',
+      name: 'Rent',
       unit_price: 1000,
-      tax_rate: 0.2,
+      tax_label: '',
       subtotal: 1000,
-      total: 1200,
+      total: 1000,
     })
     expect(lines[1].body).toMatchObject({
       rent_receipt_id: 'row2',
+      name: 'Apartment',
+      unit_price: 1000,
+      tax_label: '',
+      subtotal: 1000,
+      total: 1200,
+    })
+    expect(lines[2].body).toMatchObject({
+      rent_receipt_id: 'row2',
       name: 'Condominium fees',
       unit_price: 100,
-      tax_rate: 0,
+      tax_label: '',
       subtotal: 100,
       total: 100,
     })

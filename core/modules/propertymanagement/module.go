@@ -289,7 +289,18 @@ type PropertyManagementRentReceiptLine struct {
 	RentReceiptID uuid.UUID `db:"rent_receipt_id" json:"rent_receipt_id"`
 	Name          string    `db:"name" json:"name"`
 	UnitPrice     float64   `db:"unit_price" json:"unit_price"`
-	TaxRate       float64   `db:"tax_rate" json:"tax_rate"`
+	// TaxRate is legacy — kept only so an OLD receipt line (generated before
+	// TaxLabel existed) still reads back correctly; generateRentReceipt
+	// (property_management_views.ts) no longer writes it. TaxLabel is what
+	// every new line carries instead: the source billing line's own `taxes`
+	// many2many (property_management_billing_line_tax -> sale.SaleTax),
+	// resolved to a printable "name (rate%)"/"name (amount)" comma-joined
+	// string at generation time — a plain snapshot, not a live FK, same
+	// "capture at document time" discipline as every other field here (a
+	// tax's own name/rate changing later must never alter an already-
+	// generated receipt).
+	TaxRate  float64 `db:"tax_rate" json:"tax_rate"`
+	TaxLabel string  `db:"tax_label" json:"tax_label"`
 	// Total is copied VERBATIM from the source PropertyManagementBillingLine
 	// at generation time (property_management_views.ts's
 	// generateRentReceipt) — already fully computed server-side there

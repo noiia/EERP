@@ -3,6 +3,7 @@ import {
   reportCompanyFallbackFields,
   reportImageSources,
   reportMastheadSection,
+  reportPartyAddressFields,
   reportTableRelations,
   reportTitleSection,
   validateReportDescriptor,
@@ -254,6 +255,38 @@ describe('reportMastheadSection', () => {
       'customer_address_city',
       'customer_address_country',
     ])
+  })
+})
+
+describe('reportPartyAddressFields', () => {
+  it('puts zip/city/country on separate rows by default', () => {
+    const fields = reportPartyAddressFields('issuer', false)
+    const lastRow = fields[fields.length - 1]
+    expect(lastRow).toEqual({ kind: 'field', name: 'issuer_address_country', companyFallback: undefined })
+  })
+
+  it('groupCountryWithCity: true folds country into the zip/city row instead', () => {
+    const fields = reportPartyAddressFields('issuer', false, { groupCountryWithCity: true })
+    const cityRow = fields[fields.length - 1] as { children: { name?: string }[] }
+    expect(cityRow.children.map((n) => n.name)).toEqual([
+      'issuer_address_zip_code',
+      'issuer_address_city',
+      'issuer_address_country',
+    ])
+  })
+
+  it('gates address number and complement behind a "set" display condition, so a blank one prints no line', () => {
+    const fields = reportPartyAddressFields('issuer', false)
+    const numberRow = fields[1] as { children: { name?: string; display?: unknown }[] }
+    expect(numberRow.children[0]).toMatchObject({
+      name: 'issuer_address_number',
+      display: { field: 'issuer_address_number', op: 'set' },
+    })
+    const complement = fields[2] as { name?: string; display?: unknown }
+    expect(complement).toMatchObject({
+      name: 'issuer_address_complement',
+      display: { field: 'issuer_address_complement', op: 'set' },
+    })
   })
 })
 

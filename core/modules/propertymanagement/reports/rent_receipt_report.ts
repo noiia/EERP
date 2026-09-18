@@ -23,21 +23,32 @@ function totalsRow(label: string, field: string, grand = false): ReportDescripto
 // companyFallback — the receipt itself has no issuer_* columns of its own
 // (there's only ever one party issuing a rent receipt: the printing user's
 // active company), so every one of those fields resolves entirely from the
-// active company profile, never the record. Top-right stays the
-// property/tenant(s) snapshot this entity actually has — a flat address
-// string (formatPropertyAddress's FULL line, not just number+street — the
-// earlier truncation was why a generated report read "barely empty") plus
-// floor_area and a comma-joined tenant list, not the 7-column composite (no
-// per-tenant address exists to decompose: tenants live at the property's
-// own address). The title is a STATIC bigger label, not `reportTitleSection`
-// over a record field — the receipt form has no writable field at all
-// (handler.go rejects every PUT/DELETE; the document is append-only), so
-// there is no field here a user could ever "edit manually later". rent_price
-// prints right under the title, ahead of everything else — the receipt's
-// single most important figure — then the billing-lines table (module.go's
+// active company profile, never the record. `groupCountryWithCity: true`
+// (opt-in, this report only) puts the issuer's zip/city/country on ONE row
+// instead of country on its own line below — a plain locale convention
+// choice, scoped so it can't change how sale's invoice/quote issuer block
+// prints its own address. Top-right stays the property/tenant(s) snapshot
+// this entity actually has — a flat address string (formatPropertyAddress's
+// FULL line, not just number+street — the earlier truncation was why a
+// generated report read "barely empty") plus floor_area and a comma-joined
+// tenant list, not the 7-column composite (no per-tenant address exists to
+// decompose: tenants live at the property's own address); its own
+// eerp-report-client--pm class LEFT-aligns it (report.css) — the shared
+// eerp-report-client rule it also carries right-aligns text for sale's own
+// masthead-column client block, wrong once this section moved to a
+// full-width block of its own (see the layout below). The title is a STATIC
+// bigger label, not `reportTitleSection` over a record field — the receipt
+// form has no writable field at all (handler.go rejects every PUT/DELETE;
+// the document is append-only), so there is no field here a user could ever
+// "edit manually later". rent_price is no longer its own headline block —
+// it prints as the billing-lines table's own FIRST row instead (a "Rent"
+// line, property_management_views.ts's generateRentReceipt creates it
+// report-only, ahead of the copied billing lines — the property's own
+// rent_price field is untouched by this). The table itself (module.go's
 // PropertyManagementRentReceiptLine, a generation-time snapshot copy of the
-// property's own billing lines) and a totals recap, same eerp-report-table /
-// eerp-report-totals styling and structure as sale's own invoice_report.ts.
+// property's own billing lines) and a totals recap use the same
+// eerp-report-table / eerp-report-totals styling and structure as sale's own
+// invoice_report.ts.
 export const rentReceiptReport: ReportDescriptor = {
   name: 'propertymanagement.rentReceipt',
   entity: 'property_management_rent_receipt',
@@ -56,7 +67,7 @@ export const rentReceiptReport: ReportDescriptor = {
           // sale's invoice/quote issuer block prints.
           kind: 'section',
           className: 'eerp-report-issuer eerp-report-issuer--pm',
-          children: reportPartyAddressFields('issuer', true),
+          children: reportPartyAddressFields('issuer', true, { groupCountryWithCity: true }),
         },
         {
           kind: 'section',
@@ -76,21 +87,9 @@ export const rentReceiptReport: ReportDescriptor = {
         { kind: 'field', name: 'generated_at', format: 'date' },
       ],
     },
-    // The headline figure, printed big and first — ahead of the table it's
-    // NOT part of (rent_price is the apartment's own monthly rent, a plain
-    // property figure; the billing lines below are what's actually charged
-    // this period, which may include the rent line plus others).
     {
       kind: 'section',
-      className: 'eerp-report-payment',
-      children: [
-        { kind: 'text', text: 'Rent price:', className: 'eerp-report-label' },
-        { kind: 'field', name: 'rent_price', format: 'number', className: 'eerp-report-title' },
-      ],
-    },
-    {
-      kind: 'section',
-      className: 'eerp-report-client',
+      className: 'eerp-report-client eerp-report-client--pm',
       children: [
         { kind: 'text', text: 'Property:', className: 'eerp-report-label' },
         { kind: 'field', name: 'property_name' },
@@ -118,7 +117,12 @@ export const rentReceiptReport: ReportDescriptor = {
       columns: [
         { name: 'name', label: 'Description' },
         { name: 'unit_price', label: 'Price' },
-        { name: 'tax_rate', label: 'Tax' },
+        // The source billing line's own `taxes` many2many, resolved to a
+        // printable "name (rate%)" label at generation time
+        // (property_management_views.ts's resolveLineTaxLabel) — the
+        // now-unused TaxRate scalar's replacement (module.go's own doc
+        // comment on PropertyManagementRentReceiptLine.TaxRate/TaxLabel).
+        { name: 'tax_label', label: 'Tax' },
         // Copied verbatim from the source billing line at generation time —
         // already server-computed (propertymanagement/handler.go's
         // computeBillingLineTotal). See module.go's

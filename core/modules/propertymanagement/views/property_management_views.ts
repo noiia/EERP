@@ -7,6 +7,7 @@ import {
   type FrontRoute,
   type MenuNode,
   type Operation,
+  type RelationOps,
   type ViewDescriptor,
 } from '@eerp/core-front'
 
@@ -70,6 +71,35 @@ function formatPropertyAddress(draft: Record<string, unknown>): string {
     .join(', ')
 }
 
+// resolveLineTaxLabel prints what a billing line's own `taxes` many2many
+// actually carries (property_management_billing_line_tax junction ->
+// sale_tax) as a single comma-joined label — "VAT (20%), Eco-tax (2)" — the
+// receipt-line snapshot's replacement for the old, now-unused TaxRate scalar
+// (property_management_billing_line_views.ts's own `tax_rate` field doc
+// comment: no longer editable through the form, real tax comes from `taxes`
+// exclusively). A dangling/unresolvable link is silently skipped, same
+// posture generateRentReceipt already takes for a deleted contact.
+async function resolveLineTaxLabel(ops: RelationOps, billingLineId: string): Promise<string> {
+  const links = await ops.list('property_management_billing_line_tax', {
+    filter: { property_management_billing_line_id: billingLineId },
+    pageSize: 50,
+  })
+  const taxes = await Promise.all(
+    links.map((link) =>
+      typeof link.sale_tax_id === 'string' ? ops.get('sale_tax', link.sale_tax_id).catch(() => null) : null,
+    ),
+  )
+  return taxes
+    .filter((t): t is NonNullable<typeof t> => t !== null)
+    .map((t) => {
+      const name = String(t.name ?? '')
+      return t.kind === 'fixed'
+        ? `${name} (${Number(t.amount ?? 0)})`
+        : `${name} (${(Number(t.rate ?? 0) * 100).toFixed(0)}%)`
+    })
+    .join(', ')
+}
+
 // Generate Rent Receipt: creates one PARENT row for this property+period
 // (the summary the property form's own rent_receipts field lists — see
 // module.go's doc comment on PropertyManagementRentReceipt) plus one
@@ -120,8 +150,15 @@ registerMenuAction({
       filter: { property_management_id: ctx.recordId },
       pageSize: 100,
     })
-    const total = billingLines.reduce((sum, l) => sum + Number(l.total ?? 0), 0)
-    const subtotal = billingLines.reduce((sum, l) => sum + Number(l.subtotal ?? 0), 0)
+    // rent_price prints as the billing-lines table's OWN first row now (a
+    // synthetic "Rent" line, report-only — the property's own rent_price
+    // field is untouched, still a plain figure, not itself a real billing
+    // line), so it must also count toward the upfront estimate below —
+    // otherwise Subtotal/Total would under-count by leaving it out. No tax
+    // of its own: contributes equally to subtotal and total.
+    const rentPrice = Number(draft.rent_price ?? 0)
+    const total = rentPrice + billingLines.reduce((sum, l) => sum + Number(l.total ?? 0), 0)
+    const subtotal = rentPrice + billingLines.reduce((sum, l) => sum + Number(l.subtotal ?? 0), 0)
     const taxAmount = total - subtotal
 
     const links = await ops.list('property_management_tenant', {
@@ -187,15 +224,34 @@ registerMenuAction({
         receipt_file: false,
       })
 
+      // rent_price prints as the table's own FIRST row — created ahead of
+      // the copied billing lines below, report-only (the property's own
+      // rent_price field is untouched; this is a real
+      // property_management_rent_receipt_line row, but nothing on the
+      // property/billing_lines side ever reads it back). No taxes of its
+      // own: subtotal/total both equal the plain figure.
+      await ops.create('property_management_rent_receipt_line', {
+        rent_receipt_id: child.id,
+        name: 'Rent',
+        unit_price: rentPrice,
+        tax_label: '',
+        subtotal: rentPrice,
+        total: rentPrice,
+      })
+
       // Copy the same billing lines onto this child (report-table's own
       // source, rent_receipt_report.ts) — every tenant's receipt shows the
       // property's full billing-lines table, same as the parent summary.
+      // tax_label resolves the line's OWN `taxes` many2many (the plain
+      // tax_rate scalar is legacy, no longer settable through the form —
+      // see property_management_billing_line_views.ts's own doc comment).
       for (const line of billingLines) {
+        const taxLabel = await resolveLineTaxLabel(ops, String(line.id))
         await ops.create('property_management_rent_receipt_line', {
           rent_receipt_id: child.id,
           name: line.name,
           unit_price: line.unit_price,
-          tax_rate: line.tax_rate,
+          tax_label: taxLabel,
           subtotal: line.subtotal,
           total: line.total,
         })
@@ -291,14 +347,17 @@ const formFields: ViewDescriptor['fields'] = [
     // surface UOMs only (m², ft², ...) — floor_area is always a surface
     // measurement, so the piece/length/weight/volume/custom rows the shared
     // product_uoms catalog also carries would just be wrong picks here.
-    // default: 'propertymanagement.defaultFloorAreaUom' below.
+    // No client `default` here on purpose: picking one needs the workspace's
+    // units.system setting plus a DB lookup, both beyond what the
+    // synchronous field-function default system can do — handler.go's
+    // CreateProperty resolves it server-side instead (defaultFloorAreaUom),
+    // filling it in only when the create request left uom_id unset.
     relation: {
       entity: 'product_uoms',
       kind: 'many2one',
       labelField: 'name',
       filter: { type: 'surface' },
     },
-    default: 'propertymanagement.defaultFloorAreaUom',
   },
   {
     name: 'photos',

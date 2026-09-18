@@ -1,3 +1,4 @@
+import { evaluateCondition } from './descriptor'
 import { DEFAULT_NUMBER_FORMAT, formatNumber } from './format-store'
 import type { ReportDescriptor, ReportFieldNode, ReportNode, ReportTableNode } from './report-descriptor'
 
@@ -28,6 +29,7 @@ export function ReportRenderer({ descriptor, record }: ReportRendererProps) {
 function ReportNodeView({ node, record }: { node: ReportNode; record: Record<string, unknown> }) {
   switch (node.kind) {
     case 'section':
+      if (node.display && !evaluateCondition(node.display, record)) return null
       return (
         <div className={node.className}>
           {node.children.map((child, i) => (
@@ -36,6 +38,7 @@ function ReportNodeView({ node, record }: { node: ReportNode; record: Record<str
         </div>
       )
     case 'field':
+      if (node.display && !evaluateCondition(node.display, record)) return null
       return <div className={node.className}>{formatFieldValue(record[node.name], node.format)}</div>
     case 'table':
       return <ReportTableView node={node} record={record} />

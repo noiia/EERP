@@ -173,4 +173,45 @@ describe('ReportRenderer', () => {
     const { container } = render(<ReportRenderer descriptor={descriptor} record={{}} />)
     expect(container.querySelector('.eerp-page-break')).not.toBeNull()
   })
+
+  it('renders nothing for a field node whose display condition is unmet, avoiding a blank line', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [
+        {
+          kind: 'field',
+          name: 'address_complement',
+          className: 'complement',
+          display: { field: 'address_complement', op: 'set' },
+        },
+      ],
+    }
+    const { container } = render(<ReportRenderer descriptor={descriptor} record={{ address_complement: '' }} />)
+    expect(container.querySelector('.complement')).toBeNull()
+  })
+
+  it('renders a field node whose display condition is met', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'field', name: 'address_complement', display: { field: 'address_complement', op: 'set' } }],
+    }
+    render(<ReportRenderer descriptor={descriptor} record={{ address_complement: 'Suite 4' }} />)
+    expect(screen.getByText('Suite 4')).toBeInTheDocument()
+  })
+
+  it('renders nothing for a section node whose display condition is unmet, avoiding an empty wrapper', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [
+        {
+          kind: 'section',
+          className: 'optional-block',
+          display: { field: 'show_block', op: 'eq', value: true },
+          children: [{ kind: 'text', text: 'Hidden' }],
+        },
+      ],
+    }
+    const { container } = render(<ReportRenderer descriptor={descriptor} record={{ show_block: false }} />)
+    expect(container.querySelector('.optional-block')).toBeNull()
+  })
 })

@@ -7,12 +7,22 @@
 // field LEAF's `name` is looked up directly on the fetched record — so there
 // is no widget/type matrix here, only structural validation.
 
+import type { Condition } from './descriptor'
+
 export interface ReportSectionNode {
   kind: 'section'
   /** Tailwind/MUI class applied to the rendered wrapper — the report's
    * styling hook, since ReportRenderer renders plain DOM, not MUI components. */
   className?: string
   children: ReportNode[]
+  /**
+   * Same `Condition` DSL as `FieldDescriptor.states` (descriptor.ts),
+   * evaluated by ReportRenderer against the fetched record — omitted always
+   * renders. Hides the whole section, e.g. a locale/party-specific block
+   * that would otherwise print as an empty wrapper (borders/padding still
+   * apply to an empty div) when its fields have nothing to show.
+   */
+  display?: Condition
 }
 
 export interface ReportFieldNode {
@@ -41,6 +51,16 @@ export interface ReportFieldNode {
     | 'address_country'
     | 'phone'
     | 'email'
+
+  /**
+   * Same `Condition` DSL as `ReportSectionNode.display` — evaluated against
+   * the fetched record (companyFallback is applied to that record BEFORE
+   * ReportRenderer runs, so a condition here already sees the resolved
+   * value). Omitted always renders. Hides a field that would otherwise
+   * print as a blank line, e.g. an address complement most records leave
+   * empty — `{ field: 'issuer_address_complement', op: 'set' }`.
+   */
+  display?: Condition
 }
 
 /**
@@ -234,30 +254,46 @@ function partyFieldNames(prefix: string) {
  * issuer masthead hit this first; kept here so every caller gets the fix for
  * free instead of rediscovering it).
  */
-export function reportPartyAddressFields(prefix: string, companyFallback: boolean): ReportNode[] {
+export function reportPartyAddressFields(
+  prefix: string,
+  companyFallback: boolean,
+  options?: { groupCountryWithCity?: boolean },
+): ReportNode[] {
   const fields = partyFieldNames(prefix)
   const fb = <T extends ReportFieldNode['companyFallback']>(suffix: T): T | undefined =>
     companyFallback ? suffix : undefined
+  const country: ReportNode = { kind: 'field', name: fields.addressCountry, companyFallback: fb('address_country') }
   return [
     { kind: 'field', name: fields.name, companyFallback: fb('name') },
     {
       kind: 'section',
       className: 'eerp-report-subject',
       children: [
-        { kind: 'field', name: fields.addressNumber },
+        { kind: 'field', name: fields.addressNumber, display: { field: fields.addressNumber, op: 'set' } },
         { kind: 'field', name: fields.addressStreet, companyFallback: fb('address_street') },
       ],
     },
-    { kind: 'field', name: fields.addressComplement, companyFallback: fb('address_complement') },
+    {
+      kind: 'field',
+      name: fields.addressComplement,
+      companyFallback: fb('address_complement'),
+      display: { field: fields.addressComplement, op: 'set' },
+    },
     {
       kind: 'section',
       className: 'eerp-report-subject',
-      children: [
-        { kind: 'field', name: fields.addressZipCode, companyFallback: fb('address_zip_code') },
-        { kind: 'field', name: fields.addressCity, companyFallback: fb('address_city') },
-      ],
+      children: options?.groupCountryWithCity
+        ? [
+            { kind: 'field', name: fields.addressZipCode, companyFallback: fb('address_zip_code') },
+            { kind: 'field', name: fields.addressCity, companyFallback: fb('address_city') },
+            country,
+          ]
+        : [
+            { kind: 'field', name: fields.addressZipCode, companyFallback: fb('address_zip_code') },
+            { kind: 'field', name: fields.addressCity, companyFallback: fb('address_city') },
+          ],
     },
-    { kind: 'field', name: fields.addressCountry, companyFallback: fb('address_country') },
+    ...(options?.groupCountryWithCity ? [] : [country]),
   ]
 }
 
