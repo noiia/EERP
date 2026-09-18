@@ -52,24 +52,78 @@
   page-break-before: always;
 }
 
+/* .eerp-report-page (page.tsx's root wrapper): a print-context sticky-footer
+   layout — a flex column at least one full page tall, so .eerp-report-footer
+   below lands at the PAGE's real bottom instead of immediately trailing
+   whatever height the content happens to be (a short report used to leave
+   the footer floating right under the content, nowhere near the bottom
+   edge). `100vh` inside Chromium's print/PDF engine resolves against the
+   PAGE box (the `@page` rule above, or its US-Letter default), not a
+   browser viewport, which is what makes this work for PrintToPDF too. Only
+   ever pins the LAST page's worth of chrome — pdf-service's own
+   WithFooterTemplate (tools/pdf-service/renderer/renderer.go) is the
+   separate, per-physical-page "Page X/Y" running footer; this is a single,
+   one-time page-number-adjacent block instead. */
+.eerp-report-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
 /* .eerp-report-content: the print route (page.tsx) applies its resolved
    padding to this wrapper INLINE (100px by default, per-report_page_format
-   override) — no rule needed here. Distinct concern from Chrome's own page
-   margins (WithMarginTop/Bottom in pdf-service, reserved for the page-number
-   footer template): this is padding around the report's content, not the
-   printed page itself. */
+   override) — no rule needed here besides flex:1, which is what actually
+   pushes .eerp-report-footer down to .eerp-report-page's bottom edge.
+   Distinct concern from Chrome's own page margins (WithMarginTop/Bottom in
+   pdf-service, reserved for the page-number footer template): this is
+   padding around the report's content, not the printed page itself. */
+.eerp-report-content {
+  flex: 1;
+}
 
-/* Global-letterhead chrome (docs/roadmaps/pdf-reports.md's Reports settings)
-   — the workspace-wide footer/address text, stamped BELOW whatever a
-   report's own descriptor/layout already prints. Distinct class names from
-   .eerp-report-footer (a descriptor's own layout, e.g. sale.invoice's legal
-   notice) so the two never collide. */
-.eerp-report-chrome-footer,
+/* Global-letterhead header (docs/roadmaps/pdf-reports.md's Reports settings)
+   — the workspace's own company details text + logo, stamped ABOVE whatever
+   a report's own descriptor/layout prints, right-aligned. page.tsx renders
+   this unconditionally (any report, not just ones with their own masthead
+   node) since it's chrome, not descriptor-declared layout. */
+.eerp-report-chrome-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--eerp-report-border, #ccc);
+}
+
 .eerp-report-chrome-address {
   font-family: Helvetica, Arial, sans-serif;
   font-size: 0.8rem;
   color: var(--eerp-report-text-muted, #555);
   white-space: pre-wrap;
+  text-align: right;
+  /* Space from whatever sits to its left in the header row (the logo, when
+     the row order ever changes, or the row's own left edge otherwise) —
+     without it the text runs flush against the row's start. */
+  padding-left: 1rem;
+}
+
+.eerp-report-chrome-logo {
+  max-width: 120px;
+  max-height: 60px;
+  object-fit: contain;
+}
+
+/* Distinct class name from .eerp-report-footer (a descriptor's own layout,
+   e.g. sale.invoice's legal notice) so the two never collide. Centered per
+   the letterhead convention this workspace text follows regardless of what
+   a report's own footer content does. */
+.eerp-report-chrome-footer {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 0.8rem;
+  color: var(--eerp-report-text-muted, #555);
+  white-space: pre-wrap;
+  text-align: center;
   padding-top: 0.75rem;
   margin-top: 0.75rem;
   border-top: 1px solid var(--eerp-report-border, #ccc);
@@ -140,19 +194,6 @@
 .eerp-report-client--pm {
   text-align: left;
   max-width: none;
-}
-
-/* SAMPLE: property management's rent receipt (reports/rent_receipt_report.ts)
-   opts its issuer block into this SECOND class alongside the shared
-   .eerp-report-issuer above — a bordered "card" look distinct from sale's
-   plain masthead, scoped so editing it can't affect any other report. Swap
-   any of these values (border color, radius, background, padding) to taste;
-   duplicate this block under a new class name for another report's own look. */
-.eerp-report-issuer--pm {
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--eerp-report-border, #ccc);
-  border-radius: 6px;
-  background: var(--eerp-report-accent, #f2f2f2);
 }
 
 /* SAMPLE: the "add a class with nothing to inherit" half of the pair above —

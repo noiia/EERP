@@ -261,20 +261,10 @@ describe('reportPartyAddressFields', () => {
     expect(fields[1]).toEqual({ kind: 'field', name: 'issuer_address_street', companyFallback: undefined })
   })
 
-  it('puts zip/city/country on separate rows by default', () => {
+  it('puts zip/city on a row, country on its own line after', () => {
     const fields = reportPartyAddressFields('issuer', false)
     const lastRow = fields[fields.length - 1]
     expect(lastRow).toEqual({ kind: 'field', name: 'issuer_address_country', companyFallback: undefined })
-  })
-
-  it('groupCountryWithCity: true folds country into the zip/city row instead', () => {
-    const fields = reportPartyAddressFields('issuer', false, { groupCountryWithCity: true })
-    const cityRow = fields[fields.length - 1] as { children: { name?: string }[] }
-    expect(cityRow.children.map((n) => n.name)).toEqual([
-      'issuer_address_zip_code',
-      'issuer_address_city',
-      'issuer_address_country',
-    ])
   })
 
   it('gates the complement behind a "set" display condition, so a blank one prints no line', () => {

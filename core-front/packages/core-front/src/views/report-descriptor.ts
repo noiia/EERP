@@ -251,15 +251,10 @@ function partyFieldNames(prefix: string) {
  * never printed on its own line here — only `address_street` prints.
  * `companyFallback` opts every field into the active-company fallback.
  */
-export function reportPartyAddressFields(
-  prefix: string,
-  companyFallback: boolean,
-  options?: { groupCountryWithCity?: boolean },
-): ReportNode[] {
+export function reportPartyAddressFields(prefix: string, companyFallback: boolean): ReportNode[] {
   const fields = partyFieldNames(prefix)
   const fb = <T extends ReportFieldNode['companyFallback']>(suffix: T): T | undefined =>
     companyFallback ? suffix : undefined
-  const country: ReportNode = { kind: 'field', name: fields.addressCountry, companyFallback: fb('address_country') }
   return [
     { kind: 'field', name: fields.name, companyFallback: fb('name') },
     { kind: 'field', name: fields.addressStreet, companyFallback: fb('address_street') },
@@ -272,18 +267,12 @@ export function reportPartyAddressFields(
     {
       kind: 'section',
       className: 'eerp-report-subject',
-      children: options?.groupCountryWithCity
-        ? [
-            { kind: 'field', name: fields.addressZipCode, companyFallback: fb('address_zip_code') },
-            { kind: 'field', name: fields.addressCity, companyFallback: fb('address_city') },
-            country,
-          ]
-        : [
-            { kind: 'field', name: fields.addressZipCode, companyFallback: fb('address_zip_code') },
-            { kind: 'field', name: fields.addressCity, companyFallback: fb('address_city') },
-          ],
+      children: [
+        { kind: 'field', name: fields.addressZipCode, companyFallback: fb('address_zip_code') },
+        { kind: 'field', name: fields.addressCity, companyFallback: fb('address_city') },
+      ],
     },
-    ...(options?.groupCountryWithCity ? [] : [country]),
+    { kind: 'field', name: fields.addressCountry, companyFallback: fb('address_country') },
   ]
 }
 

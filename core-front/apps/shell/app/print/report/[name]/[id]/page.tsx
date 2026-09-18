@@ -106,24 +106,33 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       .catch(() => [])
   }
 
+  // The printing user's active company profile — fetched once, unconditionally
+  // (unlike before): it now backs BOTH the multi-company fallback below AND
+  // the document header's own logo, so every report's header can show one
+  // regardless of whether its descriptor declares any companyFallback field.
+  const activeCompany = await client.getMyActiveCompany().catch(() => null)
+  const company = activeCompany
+    ? await client.get<Record<string, unknown>>('company', activeCompany.id).catch(() => null)
+    : null
+
   // Multi-company: fields opted into companyFallback (e.g. sale.invoice's
-  // issuer_name/address/phone/email) fall back to the printing user's
-  // active company profile when the record's own value is empty — never
-  // overwriting a value the record actually has. Same additive, never-404
-  // posture as the chrome reads below: a failed company lookup just leaves
-  // the record's own (possibly empty) fields as-is.
-  const fallbackFields = reportCompanyFallbackFields(descriptor)
-  if (fallbackFields.length > 0) {
-    const activeCompany = await client.getMyActiveCompany().catch(() => null)
-    const company = activeCompany
-      ? await client.get<Record<string, unknown>>('company', activeCompany.id).catch(() => null)
-      : null
-    if (company) {
-      for (const { recordField, companyField } of fallbackFields) {
-        if (!record[recordField]) record[recordField] = company[companyField] ?? ''
-      }
+  // issuer_name/address/phone/email) fall back to the active company profile
+  // when the record's own value is empty — never overwriting a value the
+  // record actually has.
+  if (company) {
+    for (const { recordField, companyField } of reportCompanyFallbackFields(descriptor)) {
+      if (!record[recordField]) record[recordField] = company[companyField] ?? ''
     }
   }
+
+  // The header's own company picture (below) — same boolean/picture anchor
+  // contract as any other picture field (ADR-011), just read directly off
+  // the active company rather than a per-descriptor `image` node, since the
+  // header isn't part of any report's own layout.
+  const companyLogo =
+    company?.logo === true
+      ? await resolvePictureDataURL({ table: 'company', recordId: String(company.id), field: 'logo' }, token)
+      : null
 
   // Effective chrome (docs/roadmaps/pdf-reports.md's Reports settings):
   // global footer/address, plus size/padding/colors/footer/address from the
@@ -143,6 +152,7 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
   return (
     <div
       data-report-ready=""
+      className="eerp-report-page"
       style={
         {
           '--eerp-report-text': chrome.colors.text,
@@ -153,11 +163,16 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       }
     >
       {chrome.pageSizeCss && <style>{`@page { size: ${chrome.pageSizeCss}; }`}</style>}
+      {(chrome.address || companyLogo) && (
+        <div className="eerp-report-chrome-header" style={{ padding: `0 ${chrome.paddingPx}px` }}>
+          {chrome.address && <div className="eerp-report-chrome-address">{chrome.address}</div>}
+          {companyLogo && <img className="eerp-report-chrome-logo" src={companyLogo} alt="Company logo" />}
+        </div>
+      )}
       <div className="eerp-report-content" style={{ padding: chrome.paddingPx }}>
         <ReportRenderer descriptor={descriptor} record={record} />
       </div>
       {chrome.footer && <div className="eerp-report-chrome-footer">{chrome.footer}</div>}
-      {chrome.address && <div className="eerp-report-chrome-address">{chrome.address}</div>}
     </div>
   )
 }
