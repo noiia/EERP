@@ -227,10 +227,7 @@ describe('reportMastheadSection', () => {
     expect(masthead.children[1]).toMatchObject({ className: 'eerp-report-client' })
   })
 
-  it('falls back every company-side address field to the active company profile, except the address number', () => {
-    // address_number is deliberately excluded: company[companyField] ?? ''
-    // can't distinguish "blank" from a legitimate 0 the way it can for the
-    // string fields (see reportPartyAddressFields' own doc comment).
+  it('falls back every company-side address field to the active company profile', () => {
     const descriptor: ReportDescriptor = { ...valid, layout: [masthead] }
     expect(reportCompanyFallbackFields(descriptor)).toEqual([
       { recordField: 'issuer_name', companyField: 'name' },
@@ -248,7 +245,6 @@ describe('reportMastheadSection', () => {
       .map((n) => n.name)
     expect(contactFieldNames).toEqual([
       'customer_name',
-      'customer_address_number',
       'customer_address_street',
       'customer_address_complement',
       'customer_address_zip_code',
@@ -259,6 +255,12 @@ describe('reportMastheadSection', () => {
 })
 
 describe('reportPartyAddressFields', () => {
+  it('never prints the address-number sub-column as its own line — only the street', () => {
+    const fields = reportPartyAddressFields('issuer', false)
+    expect(fields.map((n) => ('name' in n ? n.name : n.kind))).not.toContain('issuer_address_number')
+    expect(fields[1]).toEqual({ kind: 'field', name: 'issuer_address_street', companyFallback: undefined })
+  })
+
   it('puts zip/city/country on separate rows by default', () => {
     const fields = reportPartyAddressFields('issuer', false)
     const lastRow = fields[fields.length - 1]
@@ -275,13 +277,8 @@ describe('reportPartyAddressFields', () => {
     ])
   })
 
-  it('gates address number and complement behind a "set" display condition, so a blank one prints no line', () => {
+  it('gates the complement behind a "set" display condition, so a blank one prints no line', () => {
     const fields = reportPartyAddressFields('issuer', false)
-    const numberRow = fields[1] as { children: { name?: string; display?: unknown }[] }
-    expect(numberRow.children[0]).toMatchObject({
-      name: 'issuer_address_number',
-      display: { field: 'issuer_address_number', op: 'set' },
-    })
     const complement = fields[2] as { name?: string; display?: unknown }
     expect(complement).toMatchObject({
       name: 'issuer_address_complement',

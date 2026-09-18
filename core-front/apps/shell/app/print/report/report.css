@@ -188,10 +188,13 @@
   padding: 0.5rem 0 1rem;
 }
 
+/* No vertical padding of its own — the party block's own column `gap`
+   (.eerp-report-issuer/.eerp-report-client above) already spaces every
+   line, including this one; adding padding here on top of that gap was
+   what made the zip/city row read as a bigger gap than every other line. */
 .eerp-report-subject {
   display: flex;
   gap: 0.35rem;
-  padding: 0.5rem 0;
   font-family: Helvetica, Arial, sans-serif;
   font-size: 0.95rem;
 }

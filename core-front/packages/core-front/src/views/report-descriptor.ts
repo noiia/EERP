@@ -234,7 +234,6 @@ export function reportTableRelations(
 function partyFieldNames(prefix: string) {
   return {
     name: `${prefix}_name`,
-    addressNumber: `${prefix}_address_number`,
     addressStreet: `${prefix}_address_street`,
     addressComplement: `${prefix}_address_complement`,
     addressZipCode: `${prefix}_address_zip_code`,
@@ -244,15 +243,13 @@ function partyFieldNames(prefix: string) {
 }
 
 /**
- * The address block's field lines, in print order: name, then (number,
- * street) as a row, complement, then (zip code, city) as a row, then
- * country — the shape every "current company data" / "contact data" ask
- * boils down to. `companyFallback` opts every field EXCEPT address number
- * into the active-company fallback: `address_number` is deliberately left
- * out — company[companyField] ?? '' can't distinguish "blank" from a
- * legitimate 0 the way it can for the string fields (sale.invoice's own
- * issuer masthead hit this first; kept here so every caller gets the fix for
- * free instead of rediscovering it).
+ * The address block's field lines, in print order: name, street, complement,
+ * then (zip code, city) as a row, then country — the shape every "current
+ * company data" / "contact data" ask boils down to. The composite address's
+ * own `_address_number` sub-column (the form's AddressWidget splits "12 Main
+ * Street" into a separate number + street column on blur) is deliberately
+ * never printed on its own line here — only `address_street` prints.
+ * `companyFallback` opts every field into the active-company fallback.
  */
 export function reportPartyAddressFields(
   prefix: string,
@@ -265,14 +262,7 @@ export function reportPartyAddressFields(
   const country: ReportNode = { kind: 'field', name: fields.addressCountry, companyFallback: fb('address_country') }
   return [
     { kind: 'field', name: fields.name, companyFallback: fb('name') },
-    {
-      kind: 'section',
-      className: 'eerp-report-subject',
-      children: [
-        { kind: 'field', name: fields.addressNumber, display: { field: fields.addressNumber, op: 'set' } },
-        { kind: 'field', name: fields.addressStreet, companyFallback: fb('address_street') },
-      ],
-    },
+    { kind: 'field', name: fields.addressStreet, companyFallback: fb('address_street') },
     {
       kind: 'field',
       name: fields.addressComplement,
