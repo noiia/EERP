@@ -337,13 +337,17 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     expect(amountsGroup.kind).not.toBe('field')
     if (amountsGroup.kind === 'field') return
     expect(amountsGroup.columns).toBeUndefined() // a plain vertical stack, not another 2-col split
+    // Reserves a blank line as tall as current_tenant's own field caption,
+    // so loan_amount's actual input — not just the grid cell — starts level
+    // with current_tenant's tags row.
+    expect(amountsGroup.offsetTop).toBe(1.25)
     expect(amountsGroup.children).toEqual([
       { kind: 'field', name: 'loan_amount' },
       { kind: 'field', name: 'rent_price' },
     ])
   })
 
-  it('address (left) sits beside a floor_area|uom split (right, offset to line up with address\'s own zip/city row) in their own full-width row, right after __form_columns', () => {
+  it('address (left) sits beside a floor_area|uom split (right, offset to line up with address\'s own zip/city row) in their own full-width row, flush against __form_columns', () => {
     const registry = register()
     const resolved = registry.buildRegistry().get('/propertymanagement/:id')!
     const nodes = normalizeLayout(resolved.descriptor)
@@ -354,6 +358,10 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     expect(row.kind).not.toBe('field')
     if (row.kind === 'field') return
     expect(row.columns).toBe(2)
+    // Cancels the outer form Stack's own spacing={2.5} gap above this row —
+    // flush against __form_columns instead of the default 20px every other
+    // pair of top-level nodes gets.
+    expect(row.offsetTop).toBe(-1.25)
     expect(row.children).toHaveLength(2)
 
     const [addressNode, floorGroup] = row.children
@@ -361,6 +369,9 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     expect(floorGroup.kind).not.toBe('field')
     if (floorGroup.kind === 'field') return
     expect(floorGroup.columns).toBe(2)
+    // floor_area (a decimal number input) gets more room than uom_id (a
+    // short symbol picker) — a 2:1 split, not the default even one.
+    expect(floorGroup.columnWidths).toEqual([2, 1])
     expect(floorGroup.offsetTop).toBeGreaterThan(0)
     expect(floorGroup.children).toEqual([
       { kind: 'field', name: 'floor_area' },

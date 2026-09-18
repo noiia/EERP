@@ -492,33 +492,51 @@ export const propertyExtendOperations: Operation[] = [
   // __form_columns' 2-col grid: stacked into their own single-column group
   // (no `columns` — a plain vertical Stack) placed right after
   // current_tenant, so the pair becomes ONE grid item occupying that row's
-  // second column, current_tenant alone filling the first.
+  // second column, current_tenant alone filling the first. offsetTop: 1.25
+  // reserves a blank line the same height as current_tenant's OWN field
+  // caption ("Current tenant(s)", a variant="caption" Typography line —
+  // relation-widgets.tsx's RelationTagsWidget) above loan_amount, so both
+  // columns' actual FIELD content — not just the grid cell — starts at the
+  // same y: loan_amount/rent_price have no caption line of their own to
+  // match current_tenant's.
   {
     op: 'addNode',
-    node: { kind: 'group', children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }] },
+    node: {
+      kind: 'group',
+      offsetTop: 1.25,
+      children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }],
+    },
     target: 'current_tenant',
     position: 'after',
   },
   // A dedicated full-width row BELOW the default 2-column body, so it
   // structurally sits under everything in __form_columns regardless of how
   // many fields that grid holds — address on the left, floor_area+uom split
-  // on the right (its own nested columns: 2, floor_area left / uom right).
-  // offsetTop nudges that right-hand group down to line up with address's
+  // on the right. offsetTop: -1.25 cancels the OUTER form Stack's own
+  // spacing={2.5} gap above this row (renderers.tsx's FormRenderer) — flush
+  // against __form_columns instead of the default 20px gap every other pair
+  // of top-level nodes gets.
+  //
+  // The right-hand floor_area|uom_id group: columnWidths: [2, 1] gives
+  // floor_area (a decimal number input) more room than uom_id (a short
+  // symbol picker) — descriptor.ts's own doc comment on columnWidths.
+  // offsetTop: 8.75 nudges the WHOLE group down to line up with address's
   // OWN zip-code/city row (AddressWidget's 4th internal row, after its
-  // label + number/street + complement) — a calibrated approximation
-  // (descriptor.ts's own doc comment on offsetTop), not a structural
-  // binding to AddressWidget; nudge this single number if it drifts once
-  // AddressWidget's own spacing changes.
+  // label + number/street + complement) — a calibrated approximation, not
+  // a structural binding to AddressWidget; nudge this single number if it
+  // drifts once AddressWidget's own spacing changes.
   {
     op: 'addNode',
     node: {
       kind: 'group',
       columns: 2,
+      offsetTop: -1.25,
       children: [
         { kind: 'field', name: 'address' },
         {
           kind: 'group',
           columns: 2,
+          columnWidths: [2, 1],
           offsetTop: 8.75,
           children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
         },

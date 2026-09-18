@@ -110,6 +110,72 @@ describe('LayoutForm', () => {
     expect(getComputedStyle(outer!).marginTop).toBe('8.75rem')
   })
 
+  it('a NEGATIVE offsetTop overrides the outer form Stack\'s own sibling-spacing margin (needs !important to win the specificity fight)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b'), textField('c')],
+      layout: [
+        { kind: 'group', children: [{ kind: 'field', name: 'a' }] },
+        { kind: 'group', offsetTop: -1.25, children: [{ kind: 'field', name: 'b' }, { kind: 'field', name: 'c' }] },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    // The second top-level group is the one carrying offsetTop — its own
+    // rendered Stack, found by locating field 'b' and walking up to the
+    // nearest Stack-rendered ancestor that ISN'T the single-field 'a' group.
+    const bInput = screen.getByLabelText('B')
+    const group = bInput.closest('.MuiStack-root')
+    expect(group).not.toBeNull()
+    expect(getComputedStyle(group!).marginTop).toBe('-1.25rem')
+  })
+
+  // The uneven split only applies inside a `@container (min-width: ...)`
+  // query (layoutTokens.formTwoColumnMinWidth) — jsdom never MATCHES
+  // container queries, so getComputedStyle always reports the base
+  // single-column rule regardless of columnWidths/columns. Reading the
+  // emotion-injected stylesheet text directly is what actually proves the
+  // hint reached the generated CSS.
+  function injectedCss(): string {
+    return [...document.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n')
+  }
+
+  it('columnWidths gives an uneven split instead of the default even one', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          columnWidths: [2, 1],
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    expect(injectedCss()).toContain('grid-template-columns:2fr 1fr')
+  })
+
+  it('a columnWidths length mismatch with columns falls back to the even split', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          columnWidths: [2, 1, 1],
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    expect(injectedCss()).toContain('grid-template-columns:repeat(2, 1fr)')
+  })
+
   it('omitting offsetTop leaves the columns group with no extra top margin', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',

@@ -400,6 +400,20 @@ function NotebookNode({
   )
 }
 
+/**
+ * `offsetTop`'s own `mt`, forced with `!important`: a plain `sx.mt` on a
+ * `Stack` child loses to Stack's OWN generated sibling-margin rule (`&
+ * > :not(style) ~ :not(style)`, a higher-specificity selector than this
+ * node's single emotion class) — without `!important` a negative offsetTop
+ * meant to CLOSE the gap between two top-level nodes (both direct children
+ * of the form's own outer `Stack spacing={2.5}`) would silently do nothing.
+ * Harmless on a `columns` grid parent too: CSS Grid's `gap` is never
+ * margin-based, so there's no rule to fight there in the first place.
+ */
+function offsetTopSx(node: LayoutContainerNode): string | undefined {
+  return node.offsetTop !== undefined ? `${node.offsetTop}rem !important` : undefined
+}
+
 function LayoutNodeView({
   node,
   fieldsByName,
@@ -508,8 +522,20 @@ function LayoutNodeView({
   // the form page, or single-column inside the relation wizard's narrow
   // dialog — no cooperation needed from the caller.
   if (node.columns) {
+    // columnWidths (opt-in, e.g. propertymanagement's floor_area|uom_id
+    // split): relative `fr` ratios instead of the default `repeat(N, 1fr)`
+    // even split — "resizable" in the sense that a module DECLARES the
+    // ratio it wants (2:1, 3:2, ...) rather than a live end-user drag
+    // handle, matching every other rendering hint in this DSL being plain
+    // JSON, not stateful UI. Length must match `columns`; falls back to the
+    // even split otherwise (a mismatch is a descriptor bug, not something
+    // to guess at render time).
+    const gridTemplateColumns =
+      node.columnWidths && node.columnWidths.length === node.columns
+        ? node.columnWidths.map((w) => `${w}fr`).join(' ')
+        : `repeat(${node.columns}, 1fr)`
     return (
-      <Box sx={{ containerType: 'inline-size', mt: node.offsetTop ? `${node.offsetTop}rem` : undefined }}>
+      <Box sx={{ containerType: 'inline-size', mt: offsetTopSx(node) }}>
         {node.title ? (
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
             {t(node.title)}
@@ -522,7 +548,7 @@ function LayoutNodeView({
             gap: 2.5,
             alignItems: 'start',
             [`@container (min-width: ${layoutTokens.formTwoColumnMinWidth}px)`]: {
-              gridTemplateColumns: `repeat(${node.columns}, 1fr)`,
+              gridTemplateColumns,
             },
           }}
         >
@@ -547,7 +573,7 @@ function LayoutNodeView({
         spacing={2}
         sx={{
           alignItems: isHeader ? 'center' : { xs: 'stretch', sm: 'flex-start' },
-          mt: node.offsetTop ? `${node.offsetTop}rem` : undefined,
+          mt: offsetTopSx(node),
         }}
       >
         {node.title ? (
@@ -562,7 +588,7 @@ function LayoutNodeView({
 
   if (node.kind === 'section') {
     return (
-      <Box sx={{ mt: node.offsetTop ? `${node.offsetTop}rem` : undefined }}>
+      <Box sx={{ mt: offsetTopSx(node) }}>
         {node.title ? (
           <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
             {t(node.title)}
@@ -579,7 +605,7 @@ function LayoutNodeView({
   // the exact same vertical rhythm as the old single flat Stack did — nesting
   // doesn't compound MUI's Stack spacing, it only adds a transparent wrapper.
   return (
-    <Stack spacing={2.5} sx={{ mt: node.offsetTop ? `${node.offsetTop}rem` : undefined }}>
+    <Stack spacing={2.5} sx={{ mt: offsetTopSx(node) }}>
       {node.title ? <Typography variant="subtitle2">{t(node.title)}</Typography> : null}
       {children}
     </Stack>

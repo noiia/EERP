@@ -693,6 +693,19 @@ export interface LayoutContainerNode {
    */
   columns?: number
   /**
+   * Rendering hint, `columns` only: relative widths (CSS `fr` units) for
+   * an UNEVEN split instead of `columns`' own default even one — "resizable"
+   * in the sense a module DECLARES the ratio it wants (`[2, 1]` for a
+   * 2:1 split), the same "developer picks the shape, JSON-only" contract
+   * every hint in this DSL already follows, not a live end-user drag
+   * handle (this engine has exactly one of those, the chatter panel's own
+   * hand-rolled divider — a bespoke, single-purpose piece of chrome, not a
+   * general layout primitive; nothing here reaches for that pattern).
+   * Length MUST match `columns` — a mismatch falls back to the even split
+   * rather than guessing which ratio was meant.
+   */
+  columnWidths?: number[]
+  /**
    * Rendering hint: a top margin (rem), for the one case `columns`/`kind`
    * can't express — visually lining a container up against a ROW inside a
    * sibling composite widget the layout tree has no leaf for (e.g. `type:
