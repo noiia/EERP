@@ -795,7 +795,7 @@ export function RelationSearchWidget({
       <Stack
         direction="row"
         spacing={1}
-        sx={{ alignItems: 'center', minHeight: matchFieldHeight ? '56px' : undefined }}
+        sx={{ alignItems: matchFieldHeight ? 'flex-start' : 'center', minHeight: matchFieldHeight ? '56px' : undefined }}
       >
         {selectedId ? (
           <RelationTag
