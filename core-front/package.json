@@ -2,7 +2,7 @@
   "name": "eerp-front",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.8.0",
+  "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "pnpm --filter @eerp/shell dev",
     "build": "pnpm -r build",
