@@ -37,7 +37,14 @@ import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
 import { listCompanies } from '../src/lib/company'
 import { createChatterMessage, listChatterMessages } from '../src/lib/chatter-actions'
-import { getEntityGraphLayout, setEntityGraphLayout } from '../src/lib/graph-actions'
+import {
+  createEntityGraphField,
+  deleteEntityGraphField,
+  getEntityGraphLayout,
+  listEntityGraphFields,
+  setEntityGraphLayout,
+  updateEntityGraphField,
+} from '../src/lib/graph-actions'
 import {
   createNotebookPage,
   listNotebookPages,
@@ -129,7 +136,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   references over the tenant-scoped settings endpoint — every
                   read/save re-enters Go's permission gate with the caller's
                   session (docs/roadmaps/list-view-modes.md, Phase 4). */}
-              <GraphOpsProvider ops={{ get: getEntityGraphLayout, save: setEntityGraphLayout }}>
+              <GraphOpsProvider ops={{
+                get: getEntityGraphLayout,
+                save: setEntityGraphLayout,
+                listFields: listEntityGraphFields,
+                createField: createEntityGraphField,
+                updateField: updateEntityGraphField,
+                deleteField: deleteEntityGraphField,
+              }}>
                 {/* A record's own runtime notebook pages (docs/roadmaps/
                     responsive-displays.md, Phase 5) — per-record data, not
                     per-entity settings, so its own context rather than folded

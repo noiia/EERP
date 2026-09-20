@@ -32,6 +32,8 @@ async function pickWidgetType(name: string) {
 async function pickSelect(label: string, optionName: string) {
   fireEvent.mouseDown(screen.getByLabelText(label))
   fireEvent.click(await screen.findByRole('option', { name: optionName }))
+  // A multi-select menu stays open after a pick (and hides the dialog buttons).
+  if (label.startsWith('Y fields')) fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
 }
 
 function submitButtonName(initial: boolean) {
@@ -118,7 +120,7 @@ describe('WidgetConfigDialog: xy', () => {
     expect(screen.getByText('Pick a number field for Y.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
 
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     expect(screen.queryByText('Pick a number field for Y.')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
   })
@@ -130,7 +132,7 @@ describe('WidgetConfigDialog: xy', () => {
     )
     await pickWidgetType('xy')
     await pickSelect('X field (date)', 'Closed')
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     await pickSelect('Aggregate', 'avg')
     await pickSelect('Bucket', 'week')
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
@@ -148,7 +150,7 @@ describe('WidgetConfigDialog: xy', () => {
     )
     await pickWidgetType('xy')
     await pickSelect('X field (date)', 'Closed')
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     const config = onSubmit.mock.calls[0]![0].config
     expect(config).not.toHaveProperty('seriesField')
@@ -161,7 +163,7 @@ describe('WidgetConfigDialog: xy', () => {
     )
     await pickWidgetType('xy')
     await pickSelect('X field (date)', 'Closed')
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     await pickSelect('Series field (optional)', 'Status')
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     expect(onSubmit).toHaveBeenCalledWith({
@@ -202,7 +204,7 @@ describe('WidgetConfigDialog: bar', () => {
     expect(screen.getByText('Pick a number field for Y.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
 
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     expect(screen.queryByText('Pick a number field for Y.')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
   })
@@ -214,7 +216,7 @@ describe('WidgetConfigDialog: bar', () => {
     )
     await pickWidgetType('bar')
     await pickSelect('X field (date)', 'Closed')
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     expect(onSubmit).toHaveBeenCalledWith({
       type: 'bar',
@@ -230,7 +232,7 @@ describe('WidgetConfigDialog: bar', () => {
     )
     await pickWidgetType('bar')
     await pickSelect('X field (date)', 'Closed')
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     await pickSelect('Bar mode', 'stacked')
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     expect(onSubmit).toHaveBeenCalledWith({
@@ -247,7 +249,7 @@ describe('WidgetConfigDialog: bar', () => {
     )
     await pickWidgetType('bar')
     await pickSelect('X field (date)', 'Closed')
-    await pickSelect('Y field (number)', 'Amount')
+    await pickSelect('Y fields (number, several = several lines)', 'Amount')
     await pickSelect('Series field (optional)', 'Status')
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     expect(onSubmit).toHaveBeenCalledWith({

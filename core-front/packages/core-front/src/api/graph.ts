@@ -39,3 +39,17 @@ export interface GraphLayout {
 }
 
 export const EMPTY_GRAPH_LAYOUT: GraphLayout = { tiles: [] }
+
+/** A chart-only calculated field (see views/graph-aggregate.ts's evalFormula).
+ * `key` is what a tile's config references; `roles` empty = visible to all. */
+export interface GraphField {
+  id: string
+  key: string
+  label: string
+  formula: string
+  roles: string[]
+  /** Computed once per dated child row (e.g. each rent receipt) instead of once per record. */
+  dated?: boolean
+}
+
+export type GraphFieldDraft = Pick<GraphField, 'key' | 'label' | 'formula' | 'roles' | 'dated'>

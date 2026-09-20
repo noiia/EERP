@@ -534,15 +534,19 @@ export function BarWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
+  yLabels,
 }: {
   tile: Tile
   records: T[]
   recordTotal: number | undefined
+  /** field name → legend label, for the multi-line (`yFields`) case. */
+  yLabels?: Record<string, string>
 }) {
   const { format } = useNumberFormat()
   const config = tile.config as {
     xField?: string
     yField?: string
+    yFields?: string[]
     seriesField?: string
     mode?: BarMode
     aggregate?: NumericAggregate
@@ -552,6 +556,8 @@ export function BarWidgetBody<T extends HasId>({
   const series = xySeries(records, {
     xField: config.xField,
     yField: config.yField,
+    yFields: config.yFields,
+    yLabels,
     seriesField: config.seriesField,
     aggregate: config.aggregate,
     bucket: config.bucket,
@@ -570,15 +576,19 @@ export function XyWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
+  yLabels,
 }: {
   tile: Tile
   records: T[]
   recordTotal: number | undefined
+  /** field name → legend label, for the multi-line (`yFields`) case. */
+  yLabels?: Record<string, string>
 }) {
   const { format } = useNumberFormat()
   const config = tile.config as {
     xField?: string
     yField?: string
+    yFields?: string[]
     seriesField?: string
     aggregate?: NumericAggregate
     bucket?: BucketGranularity
@@ -587,6 +597,8 @@ export function XyWidgetBody<T extends HasId>({
   const series = xySeries(records, {
     xField: config.xField,
     yField: config.yField,
+    yFields: config.yFields,
+    yLabels,
     seriesField: config.seriesField,
     aggregate: config.aggregate,
     bucket: config.bucket,
@@ -790,13 +802,14 @@ export function GraphWidgetBody<T extends HasId>({
   records: T[]
   recordTotal: number | undefined
 }) {
+  const yLabels = Object.fromEntries(descriptor.fields.map((f) => [f.name, fieldLabel(f)]))
   switch (tile.type) {
     case 'stat':
       return <StatWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
     case 'xy':
-      return <XyWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
+      return <XyWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} />
     case 'bar':
-      return <BarWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
+      return <BarWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} />
     case 'pie':
       return <PieWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
     case 'list':

@@ -41,6 +41,8 @@ export interface PropertyManagement {
   /** "2026-08"-shaped, null until the first Generate — set by the Generate
    * Rent Receipt menu action. */
   last_receipt_month?: string | null
+  /** generated_at of the latest parent rent receipt (copied on Generate) — the Graph view's X date. */
+  generated_at?: string | null
   /** Server-computed, non-stored (GetProperty override, handler.go) — never
    * a real column, never sent back on write. */
   receipt_generated_this_month?: boolean
@@ -280,7 +282,7 @@ registerMenuAction({
     // bump once so any mounted widget over this entity re-fetches.
     useEntityRefreshStore.getState().bump('property_management_rent_receipt')
 
-    await setFieldAndCommit({ last_receipt_month: period })
+    await setFieldAndCommit({ last_receipt_month: period, generated_at: generatedAt })
   },
 })
 
@@ -304,10 +306,16 @@ const propertyActions: MenuNode[] = [
 
 export const fields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
-  { name: 'address', label: 'Address', type: 'address', widget: 'form' },
+  // hideLabel: AddressWidget's own inline caption is dropped in favor of
+  // the "Address" group's native title (propertyExtendOperations, below) —
+  // same rendering path "Pricing" uses, so the two headings actually match
+  // instead of one being AddressWidget's ad-hoc variant="caption" line.
+  { name: 'address', label: 'Address', type: 'address', widget: 'form', hideLabel: true },
   { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float' },
   { name: 'loan_amount', label: 'Loan amount', type: 'number', widget: 'monetary' },
   { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary' },
+  // Read from the latest parent rent receipt; only ever set by Generate Rent Receipt.
+  { name: 'generated_at', label: 'Generated at', type: 'text', readOnly: true },
 ]
 
 // Form-only: current_tenant (many2many, tags widget) stays in the default
@@ -393,7 +401,18 @@ const formFields: ViewDescriptor['fields'] = [
     readOnly: true,
     // widgetOptions.reverse: the most recently generated receipt (the last
     // one created) shows first, instead of the oldest.
-    widgetOptions: { reverse: true },
+    // Explicit columns: the generic derivation also surfaced the row's
+    // parent_id, is_parent and floor_area, which mean nothing in this notebook.
+    widgetOptions: {
+      reverse: true,
+      columns: [
+        { key: 'generated_at', label: 'Generated at' },
+        { key: 'property_name', label: 'Property' },
+        { key: 'property_address', label: 'Address' },
+        { key: 'uom', label: 'Unit' },
+        { key: 'tenant_names', label: 'Tenants' },
+      ],
+    },
     relation: {
       entity: 'property_management_rent_receipt',
       kind: 'one2many',
@@ -477,6 +496,9 @@ const listView: ViewDescriptor = {
   entity: 'property_management',
   viewType: 'tree',
   fields,
+  // Graph view: a dated variable is computed once per PARENT rent receipt
+  // (only parents carry property_management_id) of each property.
+  graphDatedRows: { entity: 'property_management_rent_receipt', link: 'property_management_id' },
   formPath: '/propertymanagement/:id',
   createPermission: 'property_management:property_management:write',
   permissions: ['property_management:property_management:read'],
@@ -494,15 +516,31 @@ const formView: ViewDescriptor = {
 // their own notebook pages — same self-extension shape
 // core/modules/sale/views/invoice_views.ts's orderLinesPageOperations uses.
 export const propertyExtendOperations: Operation[] = [
-  // Row 1 of __form_columns' 2-col grid: address (left) beside
-  // loan_amount+rent_price stacked into their own single-column group
-  // (right) — placed right after address, so the pair becomes ONE grid
-  // item occupying that row's second column. offsetTop: 1.25 reserves a
-  // blank line as tall as address's OWN field caption ("Address", a
-  // variant="caption" Typography line — AddressWidget's leading label,
-  // same shape RelationTagsWidget's own field caption has), so
-  // loan_amount's actual input — not just the grid cell — starts level
-  // with address's first real row ("Number and street").
+  // Row 1, left: wrap the bare address field into its own titled "Address"
+  // group — the SAME plain-group-with-title shape "Pricing" (right, below)
+  // uses, so both headings render through layout-renderer.tsx's one native
+  // title branch instead of address's own hand-rolled AddressWidget caption
+  // (now suppressed via the field's `hideLabel: true`, above). Targets
+  // floor_area (address's own next sibling in the base two-column layout)
+  // rather than 'address' itself, since addNode extracts every field it
+  // wraps BEFORE resolving `target` — 'address' wouldn't be found anymore.
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      // Needs an id: the Pricing group (below) targets it by id to land
+      // immediately after it as a SIBLING, not 'after' the nested 'address'
+      // field name, which would insert Pricing INSIDE this group instead.
+      id: 'property-address-group',
+      title: 'Address',
+      children: [{ kind: 'field', name: 'address' }],
+    },
+    target: 'floor_area',
+    position: 'before',
+  },
+  // Row 1, right: a titled "Pricing" group holding loan_amount+rent_price,
+  // right after the Address group — the pair becomes ONE grid item
+  // occupying that row's second column.
   {
     op: 'addNode',
     node: {
@@ -511,10 +549,10 @@ export const propertyExtendOperations: Operation[] = [
       // after it, since 'after a field' would insert INSIDE this group
       // instead of as its own next sibling.
       id: 'property-loan-rent-group',
-      offsetTop: 1.25,
+      title: 'Pricing',
       children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }],
     },
-    target: 'address',
+    target: 'property-address-group',
     position: 'after',
   },
   // Row 2, left: current_tenant moves down to sit right after row 1 (a

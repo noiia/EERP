@@ -1,5 +1,5 @@
 'use client'
-import type { GraphLayout, Tile } from '../api/graph'
+import type { GraphField, GraphFieldDraft, GraphLayout, Tile } from '../api/graph'
 import { createOpsContext } from './ops-context'
 
 // How GraphRenderer reaches the Graph mode tile layout (docs/roadmaps/
@@ -13,6 +13,13 @@ export type GraphSaveResult = { ok: true } | { ok: false; message: string }
 export interface GraphOps {
   get: (entity: string) => Promise<GraphLayout>
   save: (entity: string, tiles: Tile[]) => Promise<GraphSaveResult>
+  /** Calculated fields (optional: a host without them just shows none). */
+  listFields?: (entity: string) => Promise<GraphField[]>
+  createField?: (entity: string, draft: GraphFieldDraft) => Promise<GraphSaveResult>
+  /** Edit label/formula/roles/dated (the key is immutable). */
+  updateField?: (id: string, draft: Omit<GraphFieldDraft, 'key'>) => Promise<GraphSaveResult>
+  /** Hard delete — tiles that used it then read 0. */
+  deleteField?: (id: string) => Promise<GraphSaveResult>
 }
 
 const graphOpsContext = createOpsContext<GraphOps>()

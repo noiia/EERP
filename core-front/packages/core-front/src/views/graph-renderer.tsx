@@ -9,12 +9,15 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import ReactGridLayout, { useContainerWidth, verticalCompactor, type Layout } from 'react-grid-layout'
-import { GRID_UNIT, type Tile, type TileType } from '../api/graph'
+import { GRID_UNIT, type GraphField, type GraphFieldDraft, type Tile, type TileType } from '../api/graph'
 import type { SerializedError } from '../api/errors'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
+import { calcKeysIn, expandByChildren, withCalculatedFields } from './graph-aggregate'
+import { useRelationOps, type RelationRecord } from './relation-ops'
+import { CalcFieldDialog, CalcFieldsPanel } from './graph-calc-fields'
 import { useGraphOps } from './graph-ops'
 import { GraphWidgetBody } from './graph-widgets'
 import { WidgetConfigDialog, type WidgetDraft } from './graph-widget-config'
@@ -171,6 +174,7 @@ export interface GraphRendererProps<T extends HasId> {
 export function GraphRenderer<T extends HasId>({ descriptor, records, recordTotal }: GraphRendererProps<T>) {
   const t = useT()
   const graphOps = useGraphOps()
+  const relationOps = useRelationOps()
   const canEdit = usePermission('settings:views:write')
   const { width: containerWidth, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
 
@@ -182,6 +186,34 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
   const [saving, setSaving] = useState(false)
   // Which tile the config dialog is editing, or 'new' to add one, or null (closed).
   const [dialogTarget, setDialogTarget] = useState<Tile | 'new' | null>(null)
+  // Calculated fields visible to this user (Go filters by role); [] when the host has none.
+  const [calcFields, setCalcFields] = useState<GraphField[]>([])
+  const [fieldDialogOpen, setFieldDialogOpen] = useState(false)
+  // The variable being edited (null = the dialog creates a new one).
+  const [editingField, setEditingField] = useState<GraphField | null>(null)
+  // Dated variables are computed once per row of this child entity (descriptor.graphDatedRows).
+  const datedEntity = descriptor.graphDatedRows?.entity
+  const datedLink = descriptor.graphDatedRows?.link
+  const [datedRows, setDatedRows] = useState<RelationRecord[]>([])
+  const recordIds = records.map((r) => r.id).join(',')
+  const wantsDatedRows = calcFields.some((f) => f.dated)
+  useEffect(() => {
+    if (!wantsDatedRows || !relationOps || !datedEntity || !datedLink || recordIds === '') {
+      setDatedRows([])
+      return
+    }
+    let cancelled = false
+    relationOps
+      .list(datedEntity, { in: { [datedLink]: recordIds.split(',') }, pageSize: 1000 })
+      .then((rows) => !cancelled && setDatedRows(rows), () => !cancelled && setDatedRows([]))
+    return () => {
+      cancelled = true
+    }
+  }, [wantsDatedRows, relationOps, datedEntity, datedLink, recordIds])
+
+  useEffect(() => {
+    graphOps?.listFields?.(descriptor.entity).then(setCalcFields, () => setCalcFields([]))
+  }, [graphOps, descriptor.entity])
 
   useEffect(() => {
     let cancelled = false
@@ -205,6 +237,29 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
   const editing = draft != null
   const tiles = editing ? draft : (saved ?? [])
   const visibleTiles = tiles.filter((tl) => !tl.hidden)
+  // Calculated fields ride the descriptor + records as plain number columns, so
+  // every tile type (and the config dialog's pickers) treats them like real
+  // ones. A key a tile still references but no longer exists reads 0.
+  const calcDescriptor: ViewDescriptor<T> = {
+    ...descriptor,
+    fields: [
+      ...descriptor.fields,
+      ...calcFields.map((f) => ({ name: f.key, label: f.label, type: 'number' as const })),
+    ],
+  }
+  const calcRecords = withCalculatedFields(records, calcFields, calcKeysIn(tiles.map((tl) => tl.config)))
+  const datedKeys = new Set(calcFields.filter((f) => f.dated).map((f) => f.key))
+  /** A tile using a dated variable computes over one row per dated child (each
+   * line, or only the last per day — tile config `datedMode`), not per record. */
+  const recordsFor = (tile: Tile): T[] => {
+    const cfg = tile.config as Record<string, unknown>
+    if (!datedLink || !calcKeysIn([cfg]).some((k) => datedKeys.has(k))) return calcRecords
+    const expanded = expandByChildren(records, datedRows, datedLink, {
+      dateField: typeof cfg.xField === 'string' ? cfg.xField : 'generated_at',
+      lastPerDay: cfg.datedMode === 'lastPerDay',
+    })
+    return withCalculatedFields(expanded, calcFields, calcKeysIn([cfg]))
+  }
   const hiddenTiles = editing ? (draft ?? []).filter((tl) => tl.hidden) : []
 
   function startEdit() {
@@ -250,6 +305,28 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
       setDraft(draft.map((tl) => (tl.id === target.id ? { ...tl, ...wd, title: wd.title || undefined } : tl)))
     }
     setDialogTarget(null)
+  }
+
+  /** Create, or update when a variable is being edited. Returns an error message, or null. */
+  async function saveField(draft: GraphFieldDraft) {
+    const res = editingField
+      ? await graphOps?.updateField?.(editingField.id, {
+          label: draft.label,
+          formula: draft.formula,
+          roles: draft.roles,
+          dated: draft.dated,
+        })
+      : await graphOps?.createField?.(descriptor.entity, draft)
+    if (!res || !res.ok) return res?.message ?? 'Calculated fields are not available.'
+    setCalcFields((await graphOps?.listFields?.(descriptor.entity)) ?? [])
+    setFieldDialogOpen(false)
+    return null
+  }
+
+  async function deleteField(field: GraphField) {
+    const res = await graphOps?.deleteField?.(field.id)
+    if (res?.ok) setCalcFields((prev) => prev.filter((f) => f.id !== field.id))
+    else setError({ code: 'VALIDATION_ERROR', message: res?.message ?? 'Could not delete the field.' })
   }
 
   function hideTile(id: string) {
@@ -334,7 +411,27 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
           ) : null}
         </>
       ) : null}
-      <Box ref={containerRef} sx={{ position: 'relative', width: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+      {ready && editing && !phone ? (
+        <CalcFieldsPanel
+          fields={calcFields}
+          onAddWidget={() => setDialogTarget('new')}
+          onAdd={
+            graphOps?.createField
+              ? () => {
+                  setEditingField(null)
+                  setFieldDialogOpen(true)
+                }
+              : undefined
+          }
+          onEdit={(f) => {
+            setEditingField(f)
+            setFieldDialogOpen(true)
+          }}
+          onDelete={(f) => void deleteField(f)}
+        />
+      ) : null}
+      <Box ref={containerRef} sx={{ position: 'relative', flex: 1, minWidth: 0 }}>
         {ready && editing && !phone ? (
           <Box
             sx={{
@@ -370,8 +467,8 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
                 <GraphTileCard
                   tile={tile}
                   editing={false}
-                  descriptor={descriptor}
-                  records={records}
+                  descriptor={calcDescriptor}
+                  records={recordsFor(tile)}
                   recordTotal={recordTotal}
                 />
               </Box>
@@ -405,8 +502,8 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
                 <GraphTileCard
                   tile={tile}
                   editing={editing}
-                  descriptor={descriptor}
-                  records={records}
+                  descriptor={calcDescriptor}
+                  records={recordsFor(tile)}
                   recordTotal={recordTotal}
                   onConfigure={() => setDialogTarget(tile)}
                   onHide={() => hideTile(tile.id)}
@@ -416,12 +513,7 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
           </ReactGridLayout>
         ) : null}
       </Box>
-
-      {ready && editing && !phone ? (
-        <Button variant="outlined" sx={{ mt: 1 }} onClick={() => setDialogTarget('new')}>
-          {t('+ Add widget')}
-        </Button>
-      ) : null}
+      </Box>
 
       {ready && editing && !phone && hiddenTiles.length > 0 ? (
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mt: 1, alignItems: 'center' }}>
@@ -440,10 +532,18 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
         </Stack>
       ) : null}
 
+      <CalcFieldDialog
+        open={fieldDialogOpen}
+        initial={editingField}
+        numberFieldNames={calcDescriptor.fields.filter((f) => f.type === 'number').map((f) => f.name)}
+        onClose={() => setFieldDialogOpen(false)}
+        onSubmit={saveField}
+      />
+
       {ready ? (
         <WidgetConfigDialog
           open={dialogTarget != null}
-          descriptor={descriptor}
+          descriptor={calcDescriptor}
           initial={
             dialogTarget && dialogTarget !== 'new'
               ? { type: dialogTarget.type, title: dialogTarget.title ?? '', config: dialogTarget.config }

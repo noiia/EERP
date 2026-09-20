@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calcKeysIn,
+  expandByChildren,
+  evalFormula,
+  withCalculatedFields,
   aggregate,
   bucketKey,
   MAX_PIE_SLICES,
@@ -280,5 +284,48 @@ describe('statValue', () => {
     expect(statValue(records, { field: 'amount', aggregate: 'sum' })).toBe(60)
     expect(statValue(records, { field: 'amount', aggregate: 'mean' })).toBe(20)
     expect(statValue(records, { field: 'amount', aggregate: 'median' })).toBe(20)
+  })
+})
+
+describe('calculated fields', () => {
+  it('evaluates precedence, parentheses, unary minus and literals', () => {
+    expect(evalFormula('rent - loan * 2', { rent: 10, loan: 3 })).toBe(4)
+    expect(evalFormula('(rent - loan) * 2 + 0.5', { rent: 10, loan: 3 })).toBe(14.5)
+    expect(evalFormula('-rent', { rent: 4 })).toBe(-4)
+  })
+  it('reads unknown identifiers, division by zero and junk as 0', () => {
+    expect(evalFormula('gone + 1', {})).toBe(1)
+    expect(evalFormula('5 / zero', { zero: 0 })).toBe(0)
+    expect(evalFormula('', {})).toBe(0)
+  })
+  it('adds live fields and zero-fills referenced-but-deleted ones', () => {
+    const fields = [{ id: '1', key: 'calc_profit', label: 'Profit', formula: 'rent - loan', roles: [] }]
+    const out = withCalculatedFields([{ rent: 10, loan: 4 }], fields, ['calc_profit', 'calc_gone'])
+    expect(out).toEqual([{ rent: 10, loan: 4, calc_profit: 6, calc_gone: 0 }])
+    expect(calcKeysIn([{ yField: 'calc_gone', yFields: ['calc_a1'] }]).sort()).toEqual(['calc_a1', 'calc_gone'])
+  })
+  it('draws one line per yField', () => {
+    const recs = [{ d: '2026-01-05', a: 1, b: 2 }]
+    const s = xySeries(recs, { xField: 'd', yField: 'a', yFields: ['a', 'b'], aggregate: 'sum', bucket: 'month' })
+    expect(s.map((x) => x.points[0]!.value)).toEqual([1, 2])
+  })
+})
+
+describe('expandByChildren', () => {
+  const props = [{ id: 'p1', loan: 100 }, { id: 'p2', loan: 5 }]
+  const rows = [
+    { id: 'r1', pid: 'p1', at: '2026-01-05T08:00:00Z', rent: 10 },
+    { id: 'r2', pid: 'p1', at: '2026-01-05T17:00:00Z', rent: 12 },
+    { id: 'r3', pid: 'p1', at: '2026-02-05T08:00:00Z', rent: 11 },
+  ]
+  it('emits one row per child, child values win, parent id kept, childless parents drop', () => {
+    const out = expandByChildren(props, rows, 'pid', { dateField: 'at', lastPerDay: false })
+    expect(out.map((r) => [r.id, (r as Record<string, unknown>).rent, r.loan])).toEqual([
+      ['p1', 10, 100], ['p1', 12, 100], ['p1', 11, 100],
+    ])
+  })
+  it('keeps only the latest child per day when lastPerDay', () => {
+    const out = expandByChildren(props, rows, 'pid', { dateField: 'at', lastPerDay: true })
+    expect(out.map((r) => (r as Record<string, unknown>).rent)).toEqual([12, 11])
   })
 })

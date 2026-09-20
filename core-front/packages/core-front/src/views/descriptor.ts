@@ -1145,6 +1145,14 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    */
   formPath?: string
   /**
+   * Graph view only: the child entity whose rows a "dated" calculated field is
+   * computed over (e.g. a property's parent rent receipts) — `link` is the FK
+   * column on that entity pointing at this one. Declared on the descriptor the
+   * Graph view renders (the list one), NOT on a form relation field: the list
+   * descriptor doesn't carry the form's relation fields.
+   */
+  graphDatedRows?: { entity: string; link: string }
+  /**
    * Permission required to CREATE records (e.g. 'crm:contacts:write'). When both
    * this and formPath are set, tree/dashboard views show a Create button opening
    * an empty form — only for sessions whose role-derived permissions grant it.

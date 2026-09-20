@@ -69,6 +69,12 @@ type PropertyManagement struct {
 	// demand it in every POST body, even though nothing before the first
 	// Generate click ever has a month to report.
 	LastReceiptMonth *string `db:"last_receipt_month" json:"last_receipt_month"`
+	// GeneratedAt is the generated_at of this property's latest PARENT rent
+	// receipt, copied here by the Generate Rent Receipt action so the
+	// property's Graph view (which aggregates property rows, and can't join)
+	// can bucket loan_amount/rent_price by receipt date. Pointer: nil until
+	// the first receipt (backfilled from existing receipts in Migrate).
+	GeneratedAt *time.Time `db:"generated_at" json:"generated_at"`
 }
 
 // PropertyManagementTenant is the many2many junction behind Property's
@@ -374,6 +380,18 @@ func (m *propertyManagementModule) Migrate(ctx context.Context, db *orm.DB) erro
 		ALTER TABLE property_management_rent_receipt ALTER COLUMN property_management_id DROP NOT NULL
 	`); err != nil {
 		return fmt.Errorf("propertymanagement: drop rent receipt property_management_id NOT NULL: %w", err)
+	}
+	// Backfill generated_at from each property's latest parent receipt (see
+	// PropertyManagement.GeneratedAt). Idempotent: only fills NULLs.
+	if _, err := db.Exec(ctx, `
+		UPDATE property_management p SET generated_at = r.generated_at
+		FROM (SELECT DISTINCT ON (property_management_id) property_management_id, generated_at
+		      FROM property_management_rent_receipt
+		      WHERE is_parent = true AND property_management_id IS NOT NULL AND generated_at IS NOT NULL
+		      ORDER BY property_management_id, generated_at DESC) r
+		WHERE r.property_management_id = p.id AND p.generated_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("propertymanagement: backfill generated_at: %w", err)
 	}
 	return nil
 }

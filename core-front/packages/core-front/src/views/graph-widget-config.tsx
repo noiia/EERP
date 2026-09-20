@@ -9,8 +9,10 @@ import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { TILE_TYPES, type TileType } from '../api/graph'
@@ -72,11 +74,14 @@ export function WidgetConfigDialog<T extends HasId>({
   const [title, setTitle] = useState('')
 
   const [xField, setXField] = useState('')
-  const [yField, setYField] = useState('')
+  // One entry = a single line; several = several lines on the same chart.
+  const [yFields, setYFields] = useState<string[]>([])
   const [seriesField, setSeriesField] = useState('')
   const [xyAggregate, setXyAggregate] = useState<NumericAggregate>('sum')
   const [bucket, setBucket] = useState<'day' | 'week' | 'month'>('month')
   const [barMode, setBarMode] = useState<BarMode>('grouped')
+  // Dated variables: every dated line (default) or only the last one per day.
+  const [lastPerDay, setLastPerDay] = useState(false)
 
   const [groupByField, setGroupByField] = useState('')
   const [valueField, setValueField] = useState('')
@@ -99,7 +104,10 @@ export function WidgetConfigDialog<T extends HasId>({
     setType(seedType)
     setTitle(initial?.title ?? '')
     setXField(readString(config, 'xField'))
-    setYField(readString(config, 'yField'))
+    const seededYs = Array.isArray(config.yFields)
+      ? config.yFields.filter((x): x is string => typeof x === 'string')
+      : []
+    setYFields(seededYs.length > 0 ? seededYs : readString(config, 'yField') ? [readString(config, 'yField')] : [])
     setSeriesField(readString(config, 'seriesField'))
     const rawXyAgg = config.aggregate
     setXyAggregate(rawXyAgg === 'avg' || rawXyAgg === 'count' ? rawXyAgg : 'sum')
@@ -107,6 +115,7 @@ export function WidgetConfigDialog<T extends HasId>({
     setBucket(rawBucket === 'day' || rawBucket === 'week' ? rawBucket : 'month')
     const rawBarMode = config.mode
     setBarMode(rawBarMode === 'stacked' ? 'stacked' : 'grouped')
+    setLastPerDay(config.datedMode === 'lastPerDay')
     setGroupByField(readString(config, 'groupByField'))
     setValueField(readString(config, 'valueField'))
     setStatField(readString(config, 'field'))
@@ -124,7 +133,9 @@ export function WidgetConfigDialog<T extends HasId>({
     )
   }, [open, initial, descriptor])
 
-  const dateFields = descriptor.fields.filter((f) => f.type === 'date')
+  // `*_at` text fields (e.g. rent receipts' generated_at, an ISO timestamp) bucket
+  // exactly like dates — bucketKey only reads the leading YYYY-MM-DD.
+  const dateFields = descriptor.fields.filter((f) => f.type === 'date' || f.name.endsWith('_at'))
   const numberFields = descriptor.fields.filter((f) => f.type === 'number')
   const groupableFields = descriptor.fields.filter(
     (f) => f.type === 'selection' || f.type === 'text' || f.type === 'boolean',
@@ -139,19 +150,32 @@ export function WidgetConfigDialog<T extends HasId>({
     switch (type) {
       case 'xy':
         if (!xField) return { error: t('Pick a date field for X.') }
-        if (!yField) return { error: t('Pick a number field for Y.') }
+        if (yFields.length === 0) return { error: t('Pick a number field for Y.') }
         return {
-          config: seriesField
-            ? { xField, yField, seriesField, aggregate: xyAggregate, bucket }
-            : { xField, yField, aggregate: xyAggregate, bucket },
+          config: {
+            xField,
+            yField: yFields[0]!,
+            ...(yFields.length > 1 ? { yFields } : {}),
+            ...(seriesField ? { seriesField } : {}),
+            ...(lastPerDay ? { datedMode: 'lastPerDay' } : {}),
+            aggregate: xyAggregate,
+            bucket,
+          },
         }
       case 'bar':
         if (!xField) return { error: t('Pick a date field for X.') }
-        if (!yField) return { error: t('Pick a number field for Y.') }
+        if (yFields.length === 0) return { error: t('Pick a number field for Y.') }
         return {
-          config: seriesField
-            ? { xField, yField, seriesField, mode: barMode, aggregate: xyAggregate, bucket }
-            : { xField, yField, mode: barMode, aggregate: xyAggregate, bucket },
+          config: {
+            xField,
+            yField: yFields[0]!,
+            ...(yFields.length > 1 ? { yFields } : {}),
+            ...(seriesField ? { seriesField } : {}),
+            ...(lastPerDay ? { datedMode: 'lastPerDay' } : {}),
+            mode: barMode,
+            aggregate: xyAggregate,
+            bucket,
+          },
         }
       case 'pie':
         // No aggregate here on purpose: slices are always sized by record
@@ -229,12 +253,15 @@ export function WidgetConfigDialog<T extends HasId>({
                 </Select>
               </FormControl>
               <FormControl fullWidth>
-                <InputLabel id="graph-xy-y">{t('Y field (number)')}</InputLabel>
+                <InputLabel id="graph-xy-y">{t('Y fields (number, several = several lines)')}</InputLabel>
                 <Select
                   labelId="graph-xy-y"
-                  label={t('Y field (number)')}
-                  value={yField}
-                  onChange={(e) => setYField(e.target.value)}
+                  label={t('Y fields (number, several = several lines)')}
+                  multiple
+                  value={yFields}
+                  onChange={(e) =>
+                    setYFields(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)
+                  }
                 >
                   {numberFields.map((f) => (
                     <MenuItem key={f.name} value={f.name}>
@@ -289,6 +316,10 @@ export function WidgetConfigDialog<T extends HasId>({
                   ))}
                 </Select>
               </FormControl>
+              <FormControlLabel
+                control={<Switch checked={lastPerDay} onChange={(e) => setLastPerDay(e.target.checked)} />}
+                label={t('Dated variables: last line per day only (off = every line)')}
+              />
               {type === 'bar' ? (
                 <FormControl fullWidth>
                   <InputLabel id="graph-bar-mode">{t('Bar mode')}</InputLabel>

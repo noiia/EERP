@@ -17,6 +17,7 @@ import (
 	"core/internal/common"
 	"core/internal/company"
 	"core/internal/cron"
+	"core/internal/graphfield"
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
@@ -364,6 +365,17 @@ func main() {
 	savedFilterGroup.POST("", savedFilterHandler.Create)
 	savedFilterGroup.PUT("/:id", savedFilterHandler.Update)
 	savedFilterGroup.DELETE("/:id", savedFilterHandler.Delete)
+
+	// ── Graph calculated fields ───────────────────────────────────────────────
+	// Chart-only formula fields created from the Graph view, role-gated per row.
+	// Dedicated tenant-pinned endpoints; permissions graph_fields:graph_fields:*
+	// derive from the route. DELETE is a real hard delete.
+	graphFieldHandler := graphfield.NewHandler(graphfield.NewRepository(app.DB))
+	graphFieldGroup := srv.Echo().Group("/api/v1/graph_fields", jwtMw, permMw)
+	graphFieldGroup.GET("", graphFieldHandler.List)
+	graphFieldGroup.POST("", graphFieldHandler.Create)
+	graphFieldGroup.PUT("/:id", graphFieldHandler.Update)
+	graphFieldGroup.DELETE("/:id", graphFieldHandler.Delete)
 
 	// ── Chatter ───────────────────────────────────────────────────────────────
 	// A record's activity feed: user-authored messages plus the frontend's own

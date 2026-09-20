@@ -123,8 +123,18 @@ export function xySeries<T>(
     aggregate: NumericAggregate
     bucket: BucketGranularity
     seriesField?: string
+    /** Several Y fields = several lines on the same chart (ignored when
+     * `seriesField` is set — one split dimension at a time). */
+    yFields?: string[]
+    yLabels?: Record<string, string>
   },
 ): XySeries[] {
+  if (!config.seriesField && config.yFields && config.yFields.length > 1) {
+    return config.yFields.map((y) => ({
+      label: config.yLabels?.[y] ?? y,
+      points: xyPoints(records, { ...config, yField: y }),
+    }))
+  }
   if (!config.seriesField) {
     return [{ label: '', points: xyPoints(records, config) }]
   }
@@ -229,4 +239,129 @@ export function niceTicks(max: number, targetCount = 4): number[] {
   const ticks: number[] = []
   for (let v = 0; v <= max + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6)
   return ticks
+}
+
+// ── Calculated (chart-only) fields ───────────────────────────────────────
+
+/** A calculated field as the GraphOps API returns it. */
+export interface CalcField {
+  id: string
+  key: string
+  label: string
+  formula: string
+  roles: string[]
+  dated?: boolean
+}
+
+/** Keys a calculated field's key must match (mirrors the Go keyPattern). */
+export const CALC_KEY_PREFIX = 'calc_'
+
+/**
+ * Evaluate an infix formula (+ - * / parentheses, unary minus, number
+ * literals, identifiers looked up in `values`). Hand-rolled recursive descent
+ * — never eval/Function, the formula is user-authored text. An unknown
+ * identifier reads as 0 (that is how a deleted calculated field "becomes 0"
+ * everywhere it was used); division by zero and a malformed formula read as 0.
+ */
+export function evalFormula(formula: string, values: Record<string, number>): number {
+  const tokens = formula.match(/\d+\.?\d*|\.\d+|[A-Za-z_]\w*|[-+*/()]/g) ?? []
+  let i = 0
+  const primary = (): number => {
+    const tok = tokens[i++]
+    if (tok === undefined) return 0
+    if (tok === '(') {
+      const v = expr()
+      if (tokens[i] === ')') i++
+      return v
+    }
+    if (tok === '-') return -primary()
+    if (tok === '+') return primary()
+    if (/^[\d.]/.test(tok)) return Number(tok)
+    return values[tok] ?? 0
+  }
+  const term = (): number => {
+    let v = primary()
+    while (tokens[i] === '*' || tokens[i] === '/') {
+      const op = tokens[i++]
+      const r = primary()
+      v = op === '*' ? v * r : r === 0 ? 0 : v / r
+    }
+    return v
+  }
+  const expr = (): number => {
+    let v = term()
+    while (tokens[i] === '+' || tokens[i] === '-') v = tokens[i++] === '+' ? v + term() : v - term()
+    return v
+  }
+  const result = expr()
+  return Number.isFinite(result) ? result : 0
+}
+
+/**
+ * Return `records` with every calculated field added as a plain numeric
+ * column, so every widget type reads it like a real one. `referenced` are the
+ * calc keys tiles mention (see calcKeysIn): any not in `fields` (deleted, or
+ * hidden from this user by role) is filled with 0. Calc-of-calc references
+ * resolve in `fields` order; a later/missing one reads 0 (no cycles possible).
+ */
+export function withCalculatedFields<T>(records: T[], fields: CalcField[], referenced: string[]): T[] {
+  const missing = referenced.filter((k) => !fields.some((f) => f.key === k))
+  if (fields.length === 0 && missing.length === 0) return records
+  return records.map((record) => {
+    const values: Record<string, number> = {}
+    for (const [k, v] of Object.entries(record as Record<string, unknown>)) {
+      const n = toNumber(v)
+      if (n != null) values[k] = n
+    }
+    const out: Record<string, unknown> = { ...(record as Record<string, unknown>) }
+    for (const f of fields) {
+      const v = evalFormula(f.formula, values)
+      values[f.key] = v
+      out[f.key] = v
+    }
+    for (const k of missing) out[k] = 0
+    return out as T
+  })
+}
+
+/** Every calculated-field key a set of tile configs mentions. */
+export function calcKeysIn(configs: unknown[]): string[] {
+  return Array.from(new Set(JSON.stringify(configs).match(/calc_[a-z0-9_]+/g) ?? []))
+}
+
+/**
+ * Dated variables: replace each record by one row per dated child row
+ * (e.g. each rent receipt of a property). The child's own columns win over the
+ * parent's (a receipt's snapshotted rent_price is the historical figure), the
+ * parent's id is kept, and a record with no child rows drops out (no date to
+ * plot it at). `lastPerDay` keeps only the latest child per record per
+ * calendar day of `dateField`.
+ */
+export function expandByChildren<T extends { id: string }>(
+  records: T[],
+  children: Record<string, unknown>[],
+  link: string,
+  opts: { dateField: string; lastPerDay: boolean },
+): T[] {
+  const byParent = new Map<string, Record<string, unknown>[]>()
+  for (const child of children) {
+    const parent = String(child[link] ?? '')
+    byParent.set(parent, [...(byParent.get(parent) ?? []), child])
+  }
+  const out: T[] = []
+  for (const record of records) {
+    let rows = byParent.get(record.id) ?? []
+    if (opts.lastPerDay) {
+      const latest = new Map<string, Record<string, unknown>>()
+      for (const row of rows) {
+        const stamp = String(row[opts.dateField] ?? '')
+        const day = stamp.slice(0, 10)
+        const cur = latest.get(day)
+        if (!cur || stamp > String(cur[opts.dateField] ?? '')) latest.set(day, row)
+      }
+      rows = [...latest.values()]
+    }
+    for (const row of rows) out.push({ ...record, ...row, id: record.id } as T)
+  }
+  return out
 }

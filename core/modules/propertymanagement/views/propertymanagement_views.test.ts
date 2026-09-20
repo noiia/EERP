@@ -332,22 +332,30 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
     // 'name' lands in the synthesized header instead (the first plain text
     // field), not here — see normalizeLayout's own default anatomy. Four
     // top-level items, two per row (the outer grid's own columns: 2): row 1
-    // is [address, loan/rent-group], row 2 is [current_tenant, floor/uom-group].
+    // is [address-group, loan/rent-group], row 2 is [current_tenant, floor/uom-group].
     expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind))).toEqual([
-      'address',
+      'group',
       'group',
       'current_tenant',
       'group',
     ])
 
+    const addressGroup = columns.children[0]
+    expect(addressGroup.kind).not.toBe('field')
+    if (addressGroup.kind === 'field') return
+    // Titled "Address" — the same plain-group-with-title shape as Pricing,
+    // so AddressWidget's own hand-rolled caption (hideLabel: true on the
+    // field) is no longer what's rendered here.
+    expect(addressGroup.title).toBe('Address')
+    expect(addressGroup.children).toEqual([{ kind: 'field', name: 'address' }])
+
     const amountsGroup = columns.children[1]
     expect(amountsGroup.kind).not.toBe('field')
     if (amountsGroup.kind === 'field') return
     expect(amountsGroup.columns).toBeUndefined() // a plain vertical stack, not another 2-col split
-    // Reserves a blank line as tall as address's own field caption, so
-    // loan_amount's actual input — not just the grid cell — starts level
-    // with address's first real row ("Number and street").
-    expect(amountsGroup.offsetTop).toBe(1.25)
+    // Titled "Pricing" — same native group-title rendering as Address.
+    expect(amountsGroup.title).toBe('Pricing')
+    expect(amountsGroup.offsetTop).toBeUndefined()
     expect(amountsGroup.children).toEqual([
       { kind: 'field', name: 'loan_amount' },
       { kind: 'field', name: 'rent_price' },
