@@ -11,7 +11,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Development seed credentials. DEV ONLY — gated behind the seed_dev_admin config flag.
+// Default admin credentials. Seeded unconditionally on every boot (main.go), in every
+// mode — this is a bootstrap credential, not a dev-only convenience, so there's no config
+// flag gating it and nothing to misconfigure. It's public (it's right here in source), so
+// change the password through the app immediately after first login on any deployment
+// reachable outside a trusted network.
 const (
 	DevAdminEmail    = "admin@eerp.local"
 	DevAdminPassword = "admin"
@@ -28,10 +32,11 @@ var (
 	devPermID   = uuid.MustParse("000000c0-0000-0000-0000-000000000001")
 )
 
-// SeedDevAdmin creates a development administrator (admin@eerp.local / "admin") with an
+// SeedDevAdmin creates the default administrator (admin@eerp.local / "admin") with an
 // "admin" role granting the "*:*:*" wildcard permission, so it can log in AND pass the
-// permission middleware on every data route. Idempotent and DEV ONLY — never enable
-// seed_dev_admin in production.
+// permission middleware on every data route. Idempotent (Upsert on a fixed id, ON
+// CONFLICT DO NOTHING) — called on every boot regardless of mode, so a password changed
+// through the app is never reset back on a later restart.
 //
 // Every insert below goes through Repository.Upsert with an explicit, fixed id and an
 // empty setFragment ("" = ON CONFLICT ... DO NOTHING) — the same idempotent,

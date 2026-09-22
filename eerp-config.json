@@ -20,7 +20,7 @@
     "backend_port": 8080,
     "backend_host": "127.0.0.1",
     "backend_version": "v1",
-    "seed_dev_admin": true,
+    "seed_demo_data": true,
     "api_config_path": "api.yaml",
     "s3_endpoint": "http://127.0.0.1:3910",
     "s3_region": "garage",

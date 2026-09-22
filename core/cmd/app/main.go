@@ -143,16 +143,23 @@ func main() {
 		common.Logger.Error("❌ Error loading module", zap.Error(err))
 	}
 
-	// DEV ONLY: seed an admin user so login works out of the box (gated by config).
-	if configContent.SeedDevAdmin {
-		if err := auth.SeedDevAdmin(context.Background(), app.DB); err != nil {
-			common.Logger.Error("❌ seed dev admin failed", zap.Error(err))
-		} else {
-			common.Logger.Warn("⚠️  seeded DEV admin user", zap.String("email", auth.DevAdminEmail))
-		}
+	// Always seed the default admin so login works on a brand-new database, in every
+	// mode — no config flag to miss. Idempotent (ON CONFLICT (id) DO NOTHING on a fixed
+	// id): once the credential is changed through the app, re-running this on later
+	// boots never overwrites it. CHANGE THE PASSWORD IMMEDIATELY on any deployment
+	// reachable outside a trusted network — the credential is public (it's in this
+	// repo's source).
+	if err := auth.SeedDevAdmin(context.Background(), app.DB); err != nil {
+		common.Logger.Error("❌ seed default admin failed", zap.Error(err))
+	} else {
+		common.Logger.Warn("⚠️  default admin available — change its password immediately", zap.String("email", auth.DevAdminEmail))
+	}
 
-		// DEV ONLY: demo Property Management data (a property, its equipment/history,
-		// a tenant, a generated rent receipt) so the module isn't empty out of the box.
+	// DEV ONLY: demo Property Management data (a property, its equipment/history,
+	// a tenant, a generated rent receipt) so the module isn't empty out of the box.
+	// Stays behind the flag — unlike the admin login above, an empty dataset is never a
+	// login blocker, so there's no "must always run" case for it.
+	if configContent.SeedDemoData {
 		if err := propertymanagement.SeedDemoData(context.Background(), app.DB); err != nil {
 			common.Logger.Error("❌ seed property management demo data failed", zap.Error(err))
 		} else {

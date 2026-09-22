@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// Development seed data — DEV ONLY, gated behind the same seed_dev_admin config flag as
-// auth.SeedDevAdmin (main.go calls both together). It populates the module's full entity
+// Development seed data — DEV ONLY, gated behind the seed_demo_data config flag
+// (main.go). It populates the module's full entity
 // graph — a property with equipment (and a damage-state history), a tenant, and one
 // generated rent receipt (parent + per-tenant child, the same shape the real Generate
 // Rent Receipt header button produces) — so the module has something to look at right

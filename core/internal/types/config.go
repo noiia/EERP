@@ -68,9 +68,12 @@ type Config struct {
 	// AuthRateLimitPerMinute throttles the public auth endpoints per client IP to
 	// blunt credential brute-forcing. Defaults to 20/min when unset.
 	AuthRateLimitPerMinute int `json:"auth_rate_limit_per_minute" needed:"false"`
-	// SeedDevAdmin, when true, seeds a development admin user on startup so login works
-	// out of the box. DEV ONLY — never enable in production.
-	SeedDevAdmin bool `json:"seed_dev_admin" needed:"false"`
+	// SeedDemoData, when true, seeds DEV-ONLY demo data on startup (currently just
+	// Property Management's sample property/equipment/tenant/rent-receipt) so a module
+	// isn't empty out of the box. Never enable in production. Unrelated to the default
+	// admin credential — auth.SeedDevAdmin runs unconditionally in every mode, since a
+	// login must always work regardless of this flag; see its own doc comment.
+	SeedDemoData bool `json:"seed_demo_data" needed:"false"`
 	// S3* configure the object store backing the picture service (Garage in dev —
 	// infra/garage/README.md). All empty = no object storage: the picture endpoints
 	// are simply not mounted. The endpoint carries an explicit scheme
