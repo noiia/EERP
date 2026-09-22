@@ -1,5 +1,6 @@
 import { evaluateCondition } from './descriptor'
 import { DEFAULT_NUMBER_FORMAT, formatNumber } from './format-store'
+import { translate } from '../i18n/translate'
 import type { ReportDescriptor, ReportFieldNode, ReportNode, ReportTableNode } from './report-descriptor'
 
 // Renders a ReportDescriptor's layout tree into plain DOM for a print target.
@@ -14,26 +15,48 @@ import type { ReportDescriptor, ReportFieldNode, ReportNode, ReportTableNode } f
 export interface ReportRendererProps {
   descriptor: ReportDescriptor
   record: Record<string, unknown>
+  /**
+   * The locale to render report-authored literal strings in (a `text` node's
+   * own text, a table column's `label`) — null/omitted renders the source
+   * (English) strings, same as `translate()`'s own fallback. A `field` node
+   * never needs this: it prints a record VALUE, not a label, and any label
+   * a form/list shows for that same field lives in the entity's own
+   * ViewDescriptor + i18n catalog, resolved long before a report ever runs.
+   * The print route (apps/shell/app/print/report) is the one caller that
+   * resolves a real locale, from the SAME preferred/default preference
+   * precedence every other server render uses (resolveEffectiveLocale) —
+   * this component stays a plain prop take, no i18n store/hook, since it's a
+   * Server Component with no client state to subscribe from.
+   */
+  locale?: string | null
 }
 
-export function ReportRenderer({ descriptor, record }: ReportRendererProps) {
+export function ReportRenderer({ descriptor, record, locale = null }: ReportRendererProps) {
   return (
     <>
       {descriptor.layout.map((node, i) => (
-        <ReportNodeView key={i} node={node} record={record} />
+        <ReportNodeView key={i} node={node} record={record} locale={locale} />
       ))}
     </>
   )
 }
 
-function ReportNodeView({ node, record }: { node: ReportNode; record: Record<string, unknown> }) {
+function ReportNodeView({
+  node,
+  record,
+  locale,
+}: {
+  node: ReportNode
+  record: Record<string, unknown>
+  locale: string | null
+}) {
   switch (node.kind) {
     case 'section':
       if (node.display && !evaluateCondition(node.display, record)) return null
       return (
         <div className={node.className}>
           {node.children.map((child, i) => (
-            <ReportNodeView key={i} node={child} record={record} />
+            <ReportNodeView key={i} node={child} record={record} locale={locale} />
           ))}
         </div>
       )
@@ -41,15 +64,15 @@ function ReportNodeView({ node, record }: { node: ReportNode; record: Record<str
       if (node.display && !evaluateCondition(node.display, record)) return null
       return <div className={node.className}>{formatFieldValue(record[node.name], node.format, record.currency)}</div>
     case 'table':
-      return <ReportTableView node={node} record={record} />
+      return <ReportTableView node={node} record={record} locale={locale} />
     case 'text':
-      return <div className={node.className}>{node.text}</div>
+      return <div className={node.className}>{translate(locale, node.text)}</div>
     case 'image': {
       const value = record[node.source]
       if (typeof value !== 'string' || value === '') return null
       // Plain <img>, not next/image: this is a headless-Chromium print
       // target, not an interactive page — no lazy-loading/CDN story applies.
-      return <img className={node.className} src={value} alt={node.alt ?? ''} />
+      return <img className={node.className} src={value} alt={node.alt ? translate(locale, node.alt) : ''} />
     }
     case 'pageBreak':
       // The print route's stylesheet owns page-break-before: always for this
@@ -58,7 +81,15 @@ function ReportNodeView({ node, record }: { node: ReportNode; record: Record<str
   }
 }
 
-function ReportTableView({ node, record }: { node: ReportTableNode; record: Record<string, unknown> }) {
+function ReportTableView({
+  node,
+  record,
+  locale,
+}: {
+  node: ReportTableNode
+  record: Record<string, unknown>
+  locale: string | null
+}) {
   const value = record[node.source]
   const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : []
   return (
@@ -66,7 +97,7 @@ function ReportTableView({ node, record }: { node: ReportTableNode; record: Reco
       <thead>
         <tr>
           {node.columns.map((col) => (
-            <th key={col.name}>{col.label}</th>
+            <th key={col.name}>{translate(locale, col.label)}</th>
           ))}
         </tr>
       </thead>
@@ -83,11 +114,15 @@ function ReportTableView({ node, record }: { node: ReportTableNode; record: Reco
   )
 }
 
-// ponytail: runtime-default locale only (Node's default, typically en-US) —
-// no i18n integration. Wire resolveEffectiveLocale() through here if a report
-// ever needs translated date formatting; every other value formatter in this
-// engine is already locale-aware (useNumberFormat), this one deliberately
-// isn't yet, since no report has asked for it.
+// ponytail: runtime-default locale only (Node's default, typically en-US) for
+// DATE FORMATTING specifically — the `locale` prop above only translates
+// report-authored strings (text/column labels) via the gettext catalogs,
+// unrelated to Date#toLocaleDateString's own locale argument. Thread `locale`
+// through here too (`date.toLocaleDateString(locale ?? undefined)`) if a
+// report ever needs the date's own digit grouping/month-name locale to
+// follow the same preference; every other value formatter in this engine is
+// already locale-aware (useNumberFormat), this one deliberately isn't yet,
+// since no report has asked for it.
 function formatFieldValue(value: unknown, format?: ReportFieldNode['format'], currency?: unknown): string {
   if (value == null) return ''
   if (format === 'number' && typeof value === 'number') {

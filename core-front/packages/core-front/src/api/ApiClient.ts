@@ -294,6 +294,18 @@ export interface ServerApiClient {
    */
   getMyActiveCompany(): Promise<{ id: string; name: string } | null>
   /**
+   * The caller's language preferences — same `/me/preferences` response as
+   * getMyActiveCompany, just the preferred_locale/default_locale pair
+   * instead. The print route (apps/shell/app/print/report) is the one
+   * caller: it has no session cookie to resolve a locale from (see
+   * createServerApiClient's own doc comment on tokenOverride), so it reads
+   * this off the SAME short-lived report token every other print-route read
+   * already uses, then resolves the effective locale itself (same
+   * resolveEffectiveLocale precedence every other server render uses) before
+   * handing it to ReportRenderer.
+   */
+  getMyLocalePreferences(): Promise<{ preferred_locale: string | null; default_locale: string | null }>
+  /**
    * Like list(), but also returns Go's `total` row count — the tree view's
    * loader uses this (not list()) so Graph mode's aggregate widgets (Phase 5,
    * docs/roadmaps/list-view-modes.md) can tell a full fetch from a
@@ -459,6 +471,17 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     return raw.active_company ?? null
+  }
+
+  async getMyLocalePreferences(): Promise<{ preferred_locale: string | null; default_locale: string | null }> {
+    const raw = await request<{ preferred_locale: string | null; default_locale: string | null }>(
+      'GET',
+      '/me/preferences',
+      null,
+      undefined,
+      this.tokenOverride,
+    )
+    return { preferred_locale: raw.preferred_locale ?? null, default_locale: raw.default_locale ?? null }
   }
 }
 

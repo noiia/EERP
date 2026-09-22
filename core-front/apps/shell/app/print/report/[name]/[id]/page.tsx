@@ -6,14 +6,21 @@ import {
   reportCompanyFallbackFields,
   reportImageSources,
   reportTableRelations,
+  translationRegistry,
   type ReportDescriptor,
   type ReportPageFormatRow,
 } from '@eerp/core-front'
 import { createServerApiClient, moduleRegistry, resolvePictureDataURL } from '@eerp/core-front/server'
+import { resolveEffectiveLocale } from '@/lib/locale'
 // Side-effect import: registers every discovered module's reports into the
 // shared registry — the same manifest the catch-all route and the App Store
 // page import.
 import '@/generated/generated-modules'
+// Side-effect import: registers every discovered module's translation
+// catalogs (same manifest LocaleSync's client-side sync uses) — needed here
+// so translationRegistry.locales() below reflects the real pool this build
+// ships, not an empty registry.
+import '@/generated/generated-translations'
 
 // The pdf-service's ONE entry point (docs/adr/ADR-010, docs/roadmaps/
 // pdf-reports.md Phase 2): a generic print target for ANY registered
@@ -157,6 +164,22 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
     : null
   const chrome = resolveReportChrome(global, format)
 
+  // Report text/table-column labels (ReportRenderer's `locale` prop) follow
+  // the SAME preferred/default precedence every other server render uses
+  // (resolveEffectiveLocale) — read off the report token's own identity
+  // (getMyLocalePreferences, since there's no session cookie here) rather
+  // than any query param, so a report always prints in the REQUESTING
+  // user's own language. Additive, same posture as chrome/company above: a
+  // failed read (or preferring the source language) prints the untranslated
+  // source strings, never a 404.
+  const preferences = await client.getMyLocalePreferences().catch(() => null)
+  const locale = preferences
+    ? resolveEffectiveLocale(
+        preferences,
+        translationRegistry.locales().map((info) => info.locale),
+      )
+    : null
+
   return (
     <div
       data-report-ready=""
@@ -178,7 +201,7 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
         </div>
       )}
       <div className="eerp-report-content" style={{ padding: chrome.paddingPx }}>
-        <ReportRenderer descriptor={descriptor} record={record} />
+        <ReportRenderer descriptor={descriptor} record={record} locale={locale} />
       </div>
       {chrome.footer && <div className="eerp-report-chrome-footer">{chrome.footer}</div>}
     </div>

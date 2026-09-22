@@ -221,3 +221,17 @@ msgstr "Pourcentage"
 
 msgid "fixed"
 msgstr "Fixe"
+
+# reports/invoice_report.ts / reports/quote_report.ts — literal `text` nodes
+# and table column labels the report renders as-is (ReportRenderer's
+# `locale` prop), distinct from the field labels above (a report `field`
+# node prints a VALUE, never its label).
+
+msgid "Product"
+msgstr "Produit"
+
+msgid "Reference:"
+msgstr "Référence :"
+
+msgid "Valid until:"
+msgstr "Valable jusqu'au :"

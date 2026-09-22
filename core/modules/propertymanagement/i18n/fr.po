@@ -177,3 +177,18 @@ msgstr "Régénérer le PDF"
 
 msgid "Regenerate report"
 msgstr "Régénérer le rapport"
+
+# reports/rent_receipt_report.ts — literal `text` nodes and table column
+# labels the report renders as-is (ReportRenderer's `locale` prop), distinct
+# from the field labels above (a report `field` node prints a VALUE, never
+# its label). "Rent receipt" (the report's own title text) already exists
+# above as the "Rent receipt" notebook page's title — same string, reused.
+
+msgid "Tenant(s):"
+msgstr "Locataire(s) :"
+
+msgid "Property:"
+msgstr "Bien :"
+
+msgid "Description"
+msgstr "Description"

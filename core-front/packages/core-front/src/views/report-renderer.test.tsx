@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { translationRegistry } from '../i18n/registry'
 import { ReportRenderer } from './report-renderer'
 import type { ReportDescriptor } from './report-descriptor'
 
@@ -231,5 +232,62 @@ describe('ReportRenderer', () => {
     }
     const { container } = render(<ReportRenderer descriptor={descriptor} record={{ show_block: false }} />)
     expect(container.querySelector('.optional-block')).toBeNull()
+  })
+
+  describe('locale', () => {
+    beforeEach(() => {
+      translationRegistry.register({
+        locale: 'fr',
+        module: 'sale',
+        entries: { 'Due date:': "Date d'échéance:", Product: 'Produit' },
+      })
+    })
+
+    afterEach(() => translationRegistry.clear())
+
+    it('translates a text node\'s content when a known locale is passed', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'text', text: 'Due date:' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{}} locale="fr" />)
+      expect(screen.getByText("Date d'échéance:")).toBeInTheDocument()
+    })
+
+    it('translates a table column label when a known locale is passed', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'table', source: 'lines', columns: [{ name: 'variant_name', label: 'Product' }] }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{ lines: [] }} locale="fr" />)
+      expect(screen.getByText('Produit')).toBeInTheDocument()
+    })
+
+    it('leaves field VALUES untranslated regardless of locale — only report-authored text/labels translate', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'field', name: 'name' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{ name: 'Due date:' }} locale="fr" />)
+      expect(screen.getByText('Due date:')).toBeInTheDocument()
+    })
+
+    it('falls back to the source string with no locale (the existing default behavior)', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'text', text: 'Due date:' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{}} />)
+      expect(screen.getByText('Due date:')).toBeInTheDocument()
+    })
+
+    it('falls back to the source string for an unmapped locale', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'text', text: 'Due date:' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{}} locale="de" />)
+      expect(screen.getByText('Due date:')).toBeInTheDocument()
+    })
   })
 })

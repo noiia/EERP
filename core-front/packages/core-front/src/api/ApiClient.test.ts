@@ -438,6 +438,34 @@ describe('ServerApiClient', () => {
     await expect(createServerApiClient().getMyActiveCompany()).resolves.toBeNull()
   })
 
+  it('reads locale preferences off /me/preferences, never caching, including via a tokenOverride', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { preferred_locale: 'fr', default_locale: null }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient('scoped-token').getMyLocalePreferences()).resolves.toEqual({
+      preferred_locale: 'fr',
+      default_locale: null,
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit & { next?: unknown; headers: Record<string, string> },
+    ]
+    expect(url).toBe('http://api.test/api/v1/me/preferences')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+    expect(init.headers.Authorization).toBe('Bearer scoped-token')
+  })
+
+  it('reads null/null when locale preferences are absent from the response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, {})))
+    await expect(createServerApiClient().getMyLocalePreferences()).resolves.toEqual({
+      preferred_locale: null,
+      default_locale: null,
+    })
+  })
+
   it('apiRequest GETs stay out of the Data Cache (session-scoped, never shared)', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { preferred_locale: 'fr', default_locale: null }))
     vi.stubGlobal('fetch', fetchMock)
