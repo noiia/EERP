@@ -20,27 +20,38 @@ const repoRoot = findRepoRoot(__dirname)
 const config = repoRoot ? readConfig(repoRoot) : null
 const projectRoot = repoRoot ?? workspaceRoot
 
-// API_BASE / API_VERSION come from the shared eerp-config.json (backend_host[:port] +
-// backend_version), baked at build time. An explicit env var still wins (e.g. the
-// Docker build arg) so deployments can point at the backend service without editing
-// the config. `||` (not `??`) so an empty value also falls back to the config.
-const apiBase = process.env.API_BASE || (config ? backendApiBase(config) : undefined)
-// Falls back to '1' (matching bff.ts's own default) so the value baked into the client
-// bundle — and the rewrite below — is never undefined.
+// API_VERSION comes from the shared eerp-config.json (backend_version), baked at build
+// time. An explicit env var still wins. `||` (not `??`) so an empty value also falls
+// back to the config. Falls back to '1' (matching bff.ts's own default) so the value
+// baked into the client bundle -- and the rewrite below -- is never undefined.
 const apiVersion = process.env.API_VERSION || (config ? backendApiVersion(config) : undefined) || '1'
 const serverEnv = {
-  ...(apiBase ? { API_BASE: apiBase } : {}),
   API_VERSION: apiVersion,
+}
+
+// API_BASE is deliberately NOT put through the inlined `env` below: that key bakes a
+// literal string into every bundle at BUILD time -- server included -- so a container's
+// real API_BASE env var could never override it at start (this was the actual bug: the
+// image always dialed whatever hostname CI happened to build with, no matter what
+// compose/podman set at runtime). bff.ts/ApiClient.ts read `process.env.API_BASE`
+// directly, which the standalone `node server.js` resolves LIVE against its real
+// environment on every request. This line only seeds a dev-convenience default (from
+// eerp-config.json) into THIS process's env for `next dev` -- `next build`'s standalone
+// output never re-executes this file at container start, so it has zero effect on the
+// shipped image; production must set a real API_BASE env var.
+if (!process.env.API_BASE && config) {
+  const devDefault = backendApiBase(config)
+  if (devDefault) process.env.API_BASE = devDefault
 }
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Standalone output so the service ships as a self-contained `node server.js`.
   output: 'standalone',
-  // Backend connection (BFF) resolved from the shared config; baked into the build.
-  // Values here are inlined into BOTH the server and client bundles (Next's `env` config
-  // behavior), which is how client components can build a versioned BFF URL from
-  // `process.env.API_VERSION` without a NEXT_PUBLIC_ prefix.
+  // API_VERSION is inlined into BOTH the server and client bundles (Next's `env` config
+  // behavior) -- needed so client components can build a versioned BFF URL from
+  // `process.env.API_VERSION` without a NEXT_PUBLIC_ prefix (src/lib/auth-url.ts).
+  // API_BASE deliberately stays OUT of this object -- see the comment above.
   env: serverEnv,
   // The browser-facing auth BFF paths stay versioned (matching the Go API's own
   // /api/v{N}/ shape, for a consistent surface through the api-gateway) but the actual
