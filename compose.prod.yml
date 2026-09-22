@@ -1,0 +1,51 @@
+# Prod override — two things dev doesn't need:
+#
+# 1. db/garage go from ports: to expose: — nothing outside the compose network needs to
+#    reach them directly (unlike dev, where host-native tooling — make run-back-tests, a
+#    bare `go run`/`go test` outside Docker — talks to them via eerp-config.json's
+#    localhost DSN/s3_endpoint). Same posture core-back/core-front/pdf-service already
+#    have in compose.yml: expose only, api-gateway is the sole ingress.
+#
+# 2. core-back/core-front/pdf-service switch from compose.yml's `build:` (local
+#    Dockerfile, this checkout's source) to `image:` — pulling the tagged images CI
+#    already built and pushed to ghcr.io, rather than rebuilding from source on the prod
+#    host. `build: !reset null` is required alongside `image:`: Compose merges the base
+#    file's `build:` key in too (maps merge), and a service with BOTH builds locally and
+#    just tags the result with `image:` — the opposite of "pull, don't build".
+#
+# `EERP_IMAGE_TAG` (env var or .env file next to this compose file) picks the version;
+# defaults to `latest`.
+#
+# core-front's API_BASE is baked into the image at BUILD time (core-front/Dockerfile's
+# `ARG API_BASE` -> `ENV API_BASE=$API_BASE`) — whichever hostname CI used when it built
+# the ghcr image. Since prod pulls that image rather than building it here, this overrides
+# API_BASE at container START instead, pointed at this compose file's own service name
+# (`core-back`) rather than trusting the image's baked-in default to still resolve on
+# THIS deployment's network — a `container_name: backend` alias would work too, but only
+# by coincidence, if it happens to match whatever the image was built with.
+#
+# Usage: docker compose -f compose.yml -f compose.prod.yml up -d
+services:
+  db:
+    ports: !reset []
+    expose:
+      - "5432"
+
+  garage:
+    ports: !reset []
+    expose:
+      - "3900"
+
+  core-back:
+    build: !reset null
+    image: ghcr.io/noiia/eerp-core:${EERP_IMAGE_TAG:-latest}
+
+  core-front:
+    build: !reset null
+    image: ghcr.io/noiia/eerp-core-front:${EERP_IMAGE_TAG:-latest}
+    environment:
+      API_BASE: "http://core-back:8080"
+
+  pdf-service:
+    build: !reset null
+    image: ghcr.io/noiia/eerp-pdf-service:${EERP_IMAGE_TAG:-latest}
