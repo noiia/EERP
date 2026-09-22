@@ -6,5 +6,70 @@ msgstr ""
 "Language: fr\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 
+# module.json's display_name — the landing-menu tile (Menu.tsx).
+msgid "Warehouse"
+msgstr "Entrepôt"
+
+# Header-menu default labels (humanizeEntity(entity), no navLabel declared
+# on any of this module's tree routes) — Product/Product Variant/Product
+# Uoms.
+msgid "Product"
+msgstr "Produit"
+
+msgid "Product Variant"
+msgstr "Variante de produit"
+
+msgid "Product Uoms"
+msgstr "Unités de mesure"
+
 msgid "Name"
 msgstr "Nom"
+
+msgid "Reference"
+msgstr "Référence"
+
+msgid "Unit"
+msgstr "Unité"
+
+msgid "Unit price (excl. tax)"
+msgstr "Prix unitaire HT"
+
+msgid "Tax rate"
+msgstr "Taux de taxe"
+
+msgid "Variants"
+msgstr "Variantes"
+
+msgid "Price override (excl. tax)"
+msgstr "Prix de remplacement HT"
+
+msgid "Tax rate override"
+msgstr "Taux de taxe de remplacement"
+
+msgid "Symbol"
+msgstr "Symbole"
+
+msgid "Type"
+msgstr "Type"
+
+# product_uoms' type field.selection.options — each option's DISPLAY goes
+# through t() (widgets.tsx's SelectionWidget); the stored value stays the
+# raw English option string.
+
+msgid "piece"
+msgstr "Pièce"
+
+msgid "length"
+msgstr "Longueur"
+
+msgid "weight"
+msgstr "Poids"
+
+msgid "volume"
+msgstr "Volume"
+
+msgid "surface"
+msgstr "Surface"
+
+msgid "custom"
+msgstr "Personnalisé"

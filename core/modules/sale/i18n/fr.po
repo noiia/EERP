@@ -10,13 +10,13 @@ msgid "Company logo"
 msgstr "Logo de l'entreprise"
 
 msgid "Number"
-msgstr "Nombre"
+msgstr "Numéro"
 
 msgid "Customer"
 msgstr "Client"
 
 msgid "Status"
-msgstr ""
+msgstr "Statut"
 
 msgid "Issue date"
 msgstr "Date d'émission"
@@ -28,7 +28,7 @@ msgid "Due date:"
 msgstr "Date d'échéance:"
 
 msgid "Total"
-msgstr ""
+msgstr "Total"
 
 msgid "Subject"
 msgstr "Sujet"
@@ -43,7 +43,7 @@ msgid "Customer email"
 msgstr "Email client"
 
 msgid "Billing address"
-msgstr "Adresse de Facturation"
+msgstr "Adresse de facturation"
 
 msgid "Your company name"
 msgstr "Nom de votre entreprise"
@@ -61,10 +61,10 @@ msgid "Reference"
 msgstr "Référence"
 
 msgid "Line items"
-msgstr ""
+msgstr "Lignes de commande"
 
 msgid "Description"
-msgstr ""
+msgstr "Description"
 
 msgid "Unit"
 msgstr "Unité"
@@ -116,3 +116,108 @@ msgstr "Imprimer"
 
 msgid "Invoice"
 msgstr "Facture"
+
+# module.json's display_name — the landing-menu tile (Menu.tsx).
+msgid "Sale"
+msgstr "Vente"
+
+# Header-menu default label for /sale/quote/list (humanizeEntity('quote'),
+# no navLabel declared) — "Invoice" above already covers /sale/list.
+msgid "Quote"
+msgstr "Devis"
+
+# invoice_views.ts / quote_views.ts field labels not already covered above.
+
+msgid "Customer name"
+msgstr "Nom du client"
+
+msgid "Totals"
+msgstr "Totaux"
+
+msgid "Order lines"
+msgstr "Lignes de commande"
+
+msgid "Quote lines"
+msgstr "Lignes du devis"
+
+msgid "Valid until"
+msgstr "Valable jusqu'au"
+
+# Quote workflow header buttons (quote_views.ts's quoteHeaderButtons).
+
+msgid "Confirm"
+msgstr "Confirmer"
+
+msgid "Send"
+msgstr "Envoyer"
+
+msgid "Accept"
+msgstr "Accepter"
+
+msgid "Decline"
+msgstr "Refuser"
+
+# Invoice/Quote status field.selection.options — each option's DISPLAY goes
+# through t() (widgets.tsx's SelectionWidget); the stored value stays the
+# raw English option string.
+
+msgid "draft"
+msgstr "Brouillon"
+
+msgid "sent"
+msgstr "Envoyé"
+
+msgid "paid"
+msgstr "Payé"
+
+msgid "overdue"
+msgstr "En retard"
+
+msgid "cancelled"
+msgstr "Annulé"
+
+msgid "confirmed"
+msgstr "Confirmé"
+
+msgid "accepted"
+msgstr "Accepté"
+
+msgid "declined"
+msgstr "Refusé"
+
+msgid "expired"
+msgstr "Expiré"
+
+# sale_line_views.ts / quote_line_views.ts field labels.
+
+msgid "Product variant"
+msgstr "Variante de produit"
+
+msgid "Unit price (excl. tax)"
+msgstr "Prix unitaire HT"
+
+# sale_tax_views.ts field labels + the "Taxes" line it adds to sale's
+# Configuration header menu.
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Type"
+msgstr "Type"
+
+msgid "Rate"
+msgstr "Taux"
+
+msgid "Amount"
+msgstr "Montant"
+
+msgid "Taxes"
+msgstr "Taxes"
+
+# sale_tax's kind field.selection.options.
+
+msgid "percentage"
+msgstr "Pourcentage"
+
+msgid "fixed"
+msgstr "Fixe"

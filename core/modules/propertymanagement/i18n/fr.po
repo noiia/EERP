@@ -1,0 +1,179 @@
+# propertymanagement — fr. Exported from Settings → Translations.
+# Save as i18n/fr.po inside the 'propertymanagement' module folder and rebuild.
+msgid ""
+msgstr ""
+"Project-Id-Version: propertymanagement\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+# module.json's display_name (the landing-menu tile) — same string also
+# covers the header-menu default label for /propertymanagement/list
+# (humanizeEntity('property_management'), no navLabel declared).
+msgid "Property Management"
+msgstr "Gestion immobilière"
+
+# Header-menu default label for /propertymanagement/receipts
+# (humanizeEntity('property_management_rent_receipt')).
+msgid "Property Management Rent Receipt"
+msgstr "Quittances de loyer"
+
+# ── property_management_views.ts ────────────────────────────────────────────
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Address"
+msgstr "Adresse"
+
+msgid "Floor area"
+msgstr "Surface"
+
+msgid "Loan amount"
+msgstr "Montant du prêt"
+
+msgid "Rent price"
+msgstr "Loyer"
+
+msgid "Generated at"
+msgstr "Généré le"
+
+msgid "Current tenant(s)"
+msgstr "Locataire(s) actuel(s)"
+
+msgid "Unit"
+msgstr "Unité"
+
+msgid "Photos"
+msgstr "Photos"
+
+msgid "Equipment"
+msgstr "Équipement"
+
+msgid "Rent receipts"
+msgstr "Quittances de loyer"
+
+msgid "Property"
+msgstr "Bien"
+
+msgid "Tenants"
+msgstr "Locataires"
+
+msgid "Billing lines"
+msgstr "Lignes de facturation"
+
+msgid "Quantity"
+msgstr "Quantité"
+
+msgid "Price"
+msgstr "Prix"
+
+msgid "Subtotal"
+msgstr "Sous-total"
+
+msgid "Taxes"
+msgstr "Taxes"
+
+msgid "Total"
+msgstr "Total"
+
+msgid "Totals"
+msgstr "Totaux"
+
+# The form's options-menu action (propertyActions).
+msgid "Generate Rent Receipt"
+msgstr "Générer la quittance de loyer"
+
+# propertyExtendOperations' own group/page titles not already covered above.
+
+msgid "Pricing"
+msgstr "Tarification"
+
+msgid "Rent receipt"
+msgstr "Quittance de loyer"
+
+# ── property_management_equipment_views.ts ──────────────────────────────────
+
+msgid "Picture"
+msgstr "Photo"
+
+msgid "Current state"
+msgstr "État actuel"
+
+msgid "Billing of buy"
+msgstr "Facture d'achat"
+
+msgid "Buying price"
+msgstr "Prix d'achat"
+
+msgid "Buying date"
+msgstr "Date d'achat"
+
+msgid "Age"
+msgstr "Âge"
+
+msgid "Equipped in"
+msgstr "Installé dans"
+
+msgid "Tenant"
+msgstr "Locataire"
+
+msgid "Damage state history"
+msgstr "Historique de l'état"
+
+# ── property_management_equipment_status_views.ts ───────────────────────────
+
+msgid "Date"
+msgstr "Date"
+
+msgid "State"
+msgstr "État"
+
+# state field.selection.options — each option's DISPLAY goes through t()
+# (widgets.tsx's SelectionWidget); the stored value stays the raw English
+# option string.
+
+msgid "good"
+msgstr "Bon état"
+
+msgid "damaged"
+msgstr "Endommagé"
+
+msgid "under_repair"
+msgstr "En réparation"
+
+msgid "out_of_service"
+msgstr "Hors service"
+
+# ── property_management_billing_line_views.ts ───────────────────────────────
+
+msgid "Price (excl. tax)"
+msgstr "Prix HT"
+
+# ── property_management_rent_receipt_views.ts ───────────────────────────────
+
+msgid "Period"
+msgstr "Période"
+
+msgid "Subtotal (excl. tax)"
+msgstr "Sous-total HT"
+
+msgid "Tax"
+msgstr "Taxe"
+
+msgid "Total (incl. tax)"
+msgstr "Total TTC"
+
+msgid "Tenant(s)"
+msgstr "Locataire(s)"
+
+msgid "Receipt PDF"
+msgstr "PDF de la quittance"
+
+msgid "Tenant receipts"
+msgstr "Quittances des locataires"
+
+msgid "Regenerate PDF"
+msgstr "Régénérer le PDF"
+
+msgid "Regenerate report"
+msgstr "Régénérer le rapport"
