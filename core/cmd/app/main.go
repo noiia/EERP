@@ -17,6 +17,7 @@ import (
 	"core/internal/common"
 	"core/internal/company"
 	"core/internal/cron"
+	"core/internal/dbmanage"
 	"core/internal/graphfield"
 	authmw "core/internal/middleware"
 	"core/internal/module"
@@ -453,6 +454,38 @@ func main() {
 	presenceGroup := srv.Echo().Group("/api/v1/presence", presenceAuthMw)
 	presenceGroup.GET("", presenceHandler.Get)
 	presenceGroup.PUT("", presenceHandler.SetStatus)
+
+	// ── Database management (unauthenticated, master_key-gated) ─────────────
+	// Backs /database/management (core-front): an Odoo-style database manager
+	// reachable with NO session at all — every handler gates itself on the
+	// SAME master_key secret that signs every JWT (RequireMasterKey), since
+	// this group carries no jwtMw/permMw. Mounted unconditionally (create/
+	// list/switch/delete never need S3); S3-inclusive extract/restore simply
+	// aren't offered when s3_* isn't configured (dbmanage.Manager's own doc
+	// comment) — same degrade-gracefully posture pictures/attachments take
+	// above, just one level deeper (the FEATURE mounts either way; only the S3
+	// option within it is conditional). See internal/dbmanage's own package
+	// doc for the live hot-swap this leans on.
+	var dbManageObjects pictures.ObjectStore
+	if pictures.S3Configured(configContent) {
+		dbManageObjects, err = pictures.NewS3Store(configContent)
+		if err != nil {
+			common.Logger.Fatal("❌ Error building S3 object store for database management", zap.Error(err))
+		}
+	}
+	dbManageManager := dbmanage.NewManager(
+		app, moduleRuntime, presenceHub, dbManageObjects,
+		engine, linker, configContent, *configFilePtr,
+	)
+	dbManageHandler := dbmanage.NewHandler(dbManageManager)
+	dbManageGroup := srv.Echo().Group("/api/v1/database-management",
+		ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
+	dbManageGroup.GET("/databases", dbManageHandler.List)
+	dbManageGroup.POST("/databases", dbManageHandler.Create)
+	dbManageGroup.POST("/databases/:name/switch", dbManageHandler.Switch)
+	dbManageGroup.DELETE("/databases/:name", dbManageHandler.Delete)
+	dbManageGroup.GET("/databases/:name/extract", dbManageHandler.Extract)
+	dbManageGroup.POST("/databases/restore", dbManageHandler.Restore)
 
 	// ── Cron ──────────────────────────────────────────────────────────────────
 	// Background scheduled actions (docs/adr/ADR-016-cron-scheduler.md). Unlike

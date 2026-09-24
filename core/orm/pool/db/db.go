@@ -6,6 +6,7 @@ import (
 	"core/orm/pool/config"
 	"core/orm/pool/tx"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,8 +19,15 @@ import (
 //   - a Transaction helper that owns the commit/rollback lifecycle
 //
 // DB is safe for concurrent use. Never copy after first use.
+//
+// pool is an atomic.Pointer, not a plain field, so SwapPool (below) can
+// repoint an already-live *DB at a different database with no downtime —
+// every Repository[T]/long-lived component in the app holds a reference back
+// to this SAME *DB, never a copy of the pool, so a swap here propagates
+// everywhere with nothing else to rebuild (core/internal/dbmanage's live
+// database switch).
 type DB struct {
-	pool   *pgxpool.Pool
+	pool   atomic.Pointer[pgxpool.Pool]
 	logger log.Logger
 	config config.Config
 }
@@ -55,7 +63,9 @@ func Open(ctx context.Context, cfg config.Config) (*DB, error) {
 		return nil, fmt.Errorf("orm: ping: %w", err)
 	}
 
-	return &DB{pool: pool, logger: log.NoopLogger{}, config: cfg}, nil
+	db := &DB{logger: log.NoopLogger{}, config: cfg}
+	db.pool.Store(pool)
+	return db, nil
 }
 
 // SetLogger replaces the logger. Call before any queries.
@@ -66,12 +76,22 @@ func (db *DB) SetLogger(l log.Logger) {
 
 // Close shuts down the connection pool. Call on application shutdown.
 func (db *DB) Close() {
-	db.pool.Close()
+	db.pool.Load().Close()
 }
 
 // Pool exposes the underlying pgxpool for advanced use cases (COPY, LISTEN…).
 func (db *DB) Pool() *pgxpool.Pool {
-	return db.pool
+	return db.pool.Load()
+}
+
+// SwapPool atomically repoints db at newPool and returns the pool that was
+// live until this call — every in-flight query already holds its own
+// reference to the OLD pool (pgxpool methods don't re-read db.pool mid-call),
+// so nothing breaks mid-request; the caller is responsible for closing the
+// returned pool once satisfied in-flight work against it has drained (e.g.
+// after a short grace delay), never immediately.
+func (db *DB) SwapPool(newPool *pgxpool.Pool) (old *pgxpool.Pool) {
+	return db.pool.Swap(newPool)
 }
 
 // ── Executor implementation ───────────────────────────────────────────────────
@@ -81,7 +101,7 @@ func (db *DB) Pool() *pgxpool.Pool {
 func (db *DB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	caller := log.Caller()
 	start := time.Now()
-	rows, err := db.pool.Query(ctx, sql, args...)
+	rows, err := db.pool.Load().Query(ctx, sql, args...)
 	db.log(ctx, sql, args, time.Since(start), err, caller)
 	return rows, err
 }
@@ -92,7 +112,7 @@ func (db *DB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, err
 func (db *DB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	caller := log.Caller()
 	start := time.Now()
-	row := db.pool.QueryRow(ctx, sql, args...)
+	row := db.pool.Load().QueryRow(ctx, sql, args...)
 	return &loggedRow{row: row, db: db, ctx: ctx, sql: sql, args: args, start: start, caller: caller}
 }
 
@@ -100,7 +120,7 @@ func (db *DB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 func (db *DB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	caller := log.Caller()
 	start := time.Now()
-	tag, err := db.pool.Exec(ctx, sql, args...)
+	tag, err := db.pool.Load().Exec(ctx, sql, args...)
 	db.log(ctx, sql, args, time.Since(start), err, caller)
 	return tag, err
 }
@@ -116,7 +136,7 @@ func (db *DB) Exec(ctx context.Context, sql string, args ...any) (pgconn.Command
 // All queries inside fn should use the *Tx argument, not the outer *DB,
 // to ensure they participate in the same transaction.
 func (db *DB) Transaction(ctx context.Context, fn func(*tx.Tx) error) error {
-	pgxTx, err := db.pool.Begin(ctx)
+	pgxTx, err := db.pool.Load().Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("orm: begin transaction: %w", err)
 	}

@@ -29,7 +29,6 @@ var (
 	DevTenantID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	devUserID   = uuid.MustParse("000000a0-0000-0000-0000-000000000001")
 	devRoleID   = uuid.MustParse("000000b0-0000-0000-0000-000000000001")
-	devPermID   = uuid.MustParse("000000c0-0000-0000-0000-000000000001")
 )
 
 // SeedDevAdmin creates the default administrator (admin@eerp.local / "admin") with an
@@ -75,8 +74,18 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 		[]string{"id"}, ""); err != nil {
 		return fmt.Errorf("seed dev admin: roles: %w", err)
 	}
+	// The wildcard permission is the SAME logical row SeedDefaultRoles (below)
+	// seeds for its own Admin role — same deterministic id (seedUUID), not a
+	// separate hardcoded one. Two rows both carrying Code: "*:*:*" would
+	// collide on the unique idx_permissions_code index the instant BOTH ran
+	// in the same call (which they always do — this function calls
+	// SeedDefaultRoles unconditionally below): the first Upsert's own
+	// ON CONFLICT (id) DO NOTHING only suppresses a conflict on THAT row's id,
+	// not on a differently-id'd row sharing the same code. Reusing the same
+	// id makes the second Upsert a clean no-op instead.
+	adminPermID := seedUUID(DevTenantID, "permission:*:*:*")
 	if _, err := perms.Upsert(ctx,
-		Permissions{ID: devPermID, Code: "*:*:*", Description: "Full access (dev admin)", Module: "*"},
+		Permissions{ID: adminPermID, Code: "*:*:*", Description: "Full access (dev admin)", Module: "*"},
 		[]string{"id"}, ""); err != nil {
 		return fmt.Errorf("seed dev admin: permissions: %w", err)
 	}
@@ -95,7 +104,7 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 	}
 	if _, err := db.Exec(ctx,
 		`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-		devRoleID, devPermID,
+		devRoleID, adminPermID,
 	); err != nil {
 		return fmt.Errorf("seed dev admin: role_permissions: %w", err)
 	}

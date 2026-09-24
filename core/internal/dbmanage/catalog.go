@@ -1,0 +1,162 @@
+package dbmanage
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// connInfo is the fixed part of every DSN this package builds — switching (or
+// creating/dropping/dumping) a database only ever varies the database NAME,
+// never the host/port/credentials (core/cmd/app/main.go builds its one boot
+// DSN from exactly these same five fields).
+type connInfo struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+}
+
+func (c connInfo) dsn(dbName string) string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s", c.User, c.Password, c.Host, c.Port, dbName)
+}
+
+// nameRe whitelists a database name to a safe Postgres identifier shape.
+// CREATE/DROP DATABASE can't parameterize an identifier — this whitelist is
+// what makes quoting it with pgx.Identifier{name}.Sanitize() safe below.
+var nameRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+
+func validateName(name string) error {
+	if !nameRe.MatchString(name) {
+		return fmt.Errorf("database name must match %s", nameRe.String())
+	}
+	return nil
+}
+
+// DatabaseInfo is one row of the /database/management list.
+type DatabaseInfo struct {
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"size_bytes"`
+	Active    bool   `json:"active"`
+}
+
+// ListDatabases enumerates every EERP-shaped database on the server: every
+// non-template, connectable database that carries the core "users" and
+// "app_settings" tables (present in every deployment regardless of which
+// business modules are compiled in) — this is what keeps `postgres`,
+// `template0`/`template1`, and any unrelated database sharing this Postgres
+// server out of the list entirely, with no separate exclusion list to
+// maintain.
+func ListDatabases(ctx context.Context, conn connInfo, activeName string) ([]DatabaseInfo, error) {
+	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+	if err != nil {
+		return nil, fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
+	}
+	defer func() { _ = maint.Close(ctx) }()
+
+	rows, err := maint.Query(ctx, `
+		SELECT datname, pg_database_size(datname)
+		FROM pg_database
+		WHERE NOT datistemplate AND datallowconn
+		ORDER BY datname`)
+	if err != nil {
+		return nil, fmt.Errorf("dbmanage: list pg_database: %w", err)
+	}
+	type candidate struct {
+		name string
+		size int64
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var cand candidate
+		if err := rows.Scan(&cand.name, &cand.size); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("dbmanage: scan pg_database: %w", err)
+		}
+		candidates = append(candidates, cand)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("dbmanage: iterate pg_database: %w", err)
+	}
+
+	var out []DatabaseInfo
+	for _, cand := range candidates {
+		if !isEERPShaped(ctx, conn, cand.name) {
+			continue
+		}
+		out = append(out, DatabaseInfo{
+			Name:      cand.name,
+			SizeBytes: cand.size,
+			Active:    cand.name == activeName,
+		})
+	}
+	return out, nil
+}
+
+// isEERPShaped reports whether database name carries the two tables every
+// EERP deployment has regardless of which business modules are compiled in.
+// A connection failure (a database this role can't access, one mid-drop,
+// etc.) is treated as "not EERP-shaped" rather than surfaced as a list-wide
+// error — one unreachable database must not hide every other row.
+func isEERPShaped(ctx context.Context, conn connInfo, dbName string) bool {
+	c, err := pgx.Connect(ctx, conn.dsn(dbName))
+	if err != nil {
+		return false
+	}
+	defer func() { _ = c.Close(ctx) }()
+
+	var ok bool
+	err = c.QueryRow(ctx, `SELECT to_regclass('public.users') IS NOT NULL AND to_regclass('public.app_settings') IS NOT NULL`).Scan(&ok)
+	return err == nil && ok
+}
+
+// CreateDatabase issues CREATE DATABASE over a maintenance connection. Schema
+// provisioning (making it an actually-usable EERP database) is a separate
+// step — see provision.go.
+func CreateDatabase(ctx context.Context, conn connInfo, name string) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+	if err != nil {
+		return fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
+	}
+	defer func() { _ = maint.Close(ctx) }()
+
+	// #nosec G201 — name is whitelisted by validateName above; identifiers
+	// can't be parameterized, so this is the standard safe pattern.
+	sql := fmt.Sprintf("CREATE DATABASE %s", pgx.Identifier{name}.Sanitize())
+	if _, err := maint.Exec(ctx, sql); err != nil {
+		return fmt.Errorf("dbmanage: create database %s: %w", name, err)
+	}
+	return nil
+}
+
+// DropDatabase issues DROP DATABASE over a maintenance connection. Refuses
+// up front (before even asking Postgres) when name is the currently active
+// database — Postgres would likely refuse anyway (open connections), but a
+// clear, purpose-built error here is better UX than a raw Postgres one on a
+// page with no other context around it.
+func DropDatabase(ctx context.Context, conn connInfo, name, activeName string) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+	if name == activeName {
+		return fmt.Errorf("cannot delete the currently active database")
+	}
+	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+	if err != nil {
+		return fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
+	}
+	defer func() { _ = maint.Close(ctx) }()
+
+	// #nosec G201 — name is whitelisted by validateName above.
+	sql := fmt.Sprintf("DROP DATABASE %s", pgx.Identifier{name}.Sanitize())
+	if _, err := maint.Exec(ctx, sql); err != nil {
+		return fmt.Errorf("dbmanage: drop database %s: %w", name, err)
+	}
+	return nil
+}

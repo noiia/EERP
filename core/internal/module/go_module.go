@@ -56,30 +56,30 @@ func loadGoModule(ctx context.Context, db *orm.DB, m GoModule) ([]string, error)
 	for tableName, afterCols := range columnSnapshot() {
 		prevCols := before[tableName]
 
-		// Collect only the columns that are new since before Register().
-		var newFields []orm.MigrationField
-		allFields, _ := orm.MigrationFieldsForTable(tableName)
-		for _, f := range allFields {
-			if !prevCols[f.Column] {
-				newFields = append(newFields, f)
-			}
-		}
-		if len(newFields) == 0 {
-			continue
-		}
-
-		// New table: create it with BaseModel columns first, and record this
-		// module as its owner.
+		// isNewTable is Go-side bookkeeping ONLY (table-ownership attribution,
+		// below) — it must NOT gate whether the DDL below runs. columnSnapshot
+		// diffs a process-global, in-memory registry, not real database state:
+		// on a second Boot() in the same process (module.Registry re-Boot after
+		// core/internal/dbmanage swaps the live pgxpool to a different — possibly
+		// completely empty — database), every table this process has ever seen
+		// already shows up in "before", so a diff-gated ensureTable/ensureColumns
+		// would silently skip creating anything on the new database. ensureTable/
+		// ensureColumns are already fully idempotent (IF NOT EXISTS throughout —
+		// migration.go), so running them unconditionally for every table's FULL
+		// current field set, every call, is a no-op against an already-provisioned
+		// database and a complete schema build against an empty one — the same
+		// "trust real DB state, not in-memory bookkeeping" posture the WASM path
+		// (applyMigration) already has.
 		isNewTable := afterCols != nil && prevCols == nil
 		if isNewTable {
-			if err := ensureTable(ctx, db, tableName); err != nil {
-				return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
-			}
 			newTables = append(newTables, tableName)
 		}
 
-		// Add the new columns (idempotent, IF NOT EXISTS).
-		if err := ensureColumns(ctx, db, tableName, newFields); err != nil {
+		if err := ensureTable(ctx, db, tableName); err != nil {
+			return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
+		}
+		allFields, _ := orm.MigrationFieldsForTable(tableName)
+		if err := ensureColumns(ctx, db, tableName, allFields); err != nil {
 			return newTables, fmt.Errorf("module %s: ensure columns %s: %w", m.Name(), tableName, err)
 		}
 	}

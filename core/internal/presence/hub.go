@@ -100,6 +100,30 @@ func (h *Hub) Broadcast(tenantID uuid.UUID, payload []byte) {
 	}
 }
 
+// CloseAll force-closes every currently-connected websocket — used by
+// core/internal/dbmanage's live database switch, since a connection open from
+// before the switch represents a session authenticated against the OLD
+// database and must not keep broadcasting/receiving as if nothing changed.
+// Each client's own read-pump error path already does the normal per-client
+// unregister/cleanup on a closed connection, so nothing else is needed here;
+// the frontend's connectPresenceSocket() already reconnects on close (a fixed
+// 3s delay, core-front/CLAUDE.md's Presence row) and will naturally re-auth
+// against whichever database is live by the time it retries.
+func (h *Hub) CloseAll() {
+	h.mu.Lock()
+	targets := make([]*client, 0, len(h.byUser))
+	for _, clients := range h.byUser {
+		for c := range clients {
+			targets = append(targets, c)
+		}
+	}
+	h.mu.Unlock()
+
+	for _, c := range targets {
+		_ = c.conn.Close()
+	}
+}
+
 // updatePayload builds the one WS wire message shape every status push uses
 // (Handler.broadcastUpdate and SweepAbsentToOffline) — {"type":"update", ...}.
 func updatePayload(userID uuid.UUID, status string) []byte {
