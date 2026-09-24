@@ -1,14 +1,26 @@
 # EERP
 
-This Project aims to create a new OpenSource light, modular and efficient ERP. The main part of the work is on the core section. The `modules` folder aims to mock modules for the first part and then to host the reel modules. While the core is in building, the modules will stay mocks, once the first version of the core is released, the team will start modules development.  
+An open-source, modular, self-hostable ERP. Two independently deployable services share
+one repo: a Go backend (**`core/`**, plus business modules under `core/modules/` — each
+either compiled in or, eventually, loaded at runtime as WASM) and a Next.js frontend
+(**`core-front/`**) that talks to it purely over HTTP as a BFF. An nginx **api-gateway**
+fronts both over TLS/HTTP2 in every deployment (dev and prod alike) — see
+`core/CLAUDE.md`'s deployment-topology diagram for the full picture.
+
+For the actual architecture — the ORM, the module system, permissions, the frontend's
+view engine — read **`core/CLAUDE.md`** and **`core-front/CLAUDE.md`**. This README is a
+quickstart and contributor guide only; those two files are the framework reference and
+stay current as the design evolves.
+
 ---
 
 ## 🧰 Requirements
 
-- Go **1.25+**
+- Go **1.26+**
+- Node **22+** and pnpm (via `corepack enable`, pinned to `pnpm@12.4.2` in
+  `core-front/package.json`) — only needed for frontend work outside Docker
+- Docker + Docker Compose
 - Git
-- Docker
-- Internet (To rebuild)
 
 ---
 
@@ -17,51 +29,100 @@ This Project aims to create a new OpenSource light, modular and efficient ERP. T
 Clone the repository:
 
 ```bash
-git clone https://github.com/noiia/wasm_micro_orm_poc.git
+git clone git@github.com:noiia/EERP.git
+cd EERP
 ```
-Install dependencies:
+
+### Configure secrets (first time only)
+
+`eerp-config.json` / `eerp-config.docker.json` / `eerp-config.prod.json` carry real
+credentials (JWT signing key, DB password, S3 keys) and are **gitignored** — a past
+incident committed working defaults for these and they had to be rotated and scrubbed
+from tracking (`docs/security/pentest-2026-09-24.md`). Copy the matching `*.example.json`
+template for whichever path you're using and fill in real values; the backend refuses to
+boot on an empty, default, or previously-known-leaked value (`core/cmd/app/main.go`).
+
 ```bash
-go mod tidy
+cp eerp-config.example.json eerp-config.json                # host-native go run/tests
+cp eerp-config.docker.example.json eerp-config.docker.json  # docker compose (dev)
+cp eerp-config.prod.example.json eerp-config.prod.json      # docker compose -f compose.prod.yml
 ```
-Run the project:
-```
-make run 
-```
-Rebuild and run the project:
-```
-make rebuild-and-run 
-```
-Run tests:
+
+Generate a strong secret per `master_key`/`db_password` field, e.g.:
+
 ```bash
-make test
+openssl rand -base64 48 | tr -d '\n=+/' | head -c 48
 ```
+
+`db_password` must be the **same** value in all three files you use, plus one more
+place: a gitignored `.env` at the repo root sets `POSTGRES_PASSWORD` for the `db`
+container (the only value `docker compose` needs as a plain container env var rather
+than reading it from a config file):
+
+```bash
+echo "POSTGRES_PASSWORD=<same value as db_password above>" > .env
+```
+
+Set `"environment"` to `"development"` in the configs you're running locally —
+`"production"` disables demo-data seeding and forces the seeded default admin
+(`admin@eerp.local`) to change its password before it can do anything else.
+
+### Run it
+
+```bash
+make run              # docker (db, garage, nats, pdf-service, api-gateway) + backend + frontend, dev mode
+make rebuild-and-run   # clean WASM module builds, rebuild, then run
+make run-back-tests    # brings the docker stack up, then `go test` against it
+make run-docker-prod    # full stack from ghcr.io images, compose.prod.yml layered on top
+```
+
+The gateway serves the app at `https://localhost` (self-signed dev cert, provisioned
+automatically). `make run` also starts the frontend's own dev server directly (not
+through Docker) for fast iteration — see the Makefile for exactly what each target does;
+it's short enough to read end to end.
+
+Format and lint the backend before sending a change:
+
+```bash
+gofmt -w .
+cd core && golangci-lint run ./...
+```
+
 ---
+
 ## 📁 Project Structure
-This project follows standard Go project layout conventions:
-```bash
-.
-├── core/  
-│   ├── cmd/            # Application entry points
-│   │   └── app/
-│   │       └── main.go
-│   ├── configs/        # Configuration files
-│   ├── internal/       # Private application code
-│   ├── pkg/            # Public reusable packages
-│   ├── scripts/        # Helper scripts
-│   ├── go.mod
-│   ├── go.sum
-│   └── schema.sql
-│   
-├── modules/
-├── .gitignore
-├── compose.yml
-├── eerp-config.json
-├── golangci.yml
-├── Makefile
-├── README.md
-└── TODO.md
+
 ```
-### Rules:
+.
+├── core/                    # Go backend service
+│   ├── cmd/app/main.go      # entry point
+│   ├── internal/            # auth, middleware, settings, pictures, reports, cron, ...
+│   ├── orm/                 # the generic CRUD/permission/migration engine modules build on
+│   ├── modules/              # business modules (crm, contact, sale, warehouse, propertymanagement, ...)
+│   ├── configs/, schema/, scripts/, pkg/
+│   └── Dockerfile
+├── core-front/               # Next.js frontend service (its own process/Dockerfile)
+│   ├── apps/shell/           # the App Router host app
+│   └── packages/core-front/  # @eerp/core-front — the reusable view engine
+├── tools/
+│   ├── eerp-init-module/     # scaffolds a new module: go run ./tools/eerp-init-module -p core/modules/<name> -t go|wasm
+│   └── pdf-service/          # standalone Chromium-backed PDF renderer
+├── infra/
+│   ├── nginx/                 # api-gateway config + dev TLS cert generation
+│   └── garage/                # S3-compatible object storage config (pictures/attachments/reports)
+├── docs/
+│   ├── adr/                   # architecture decision records
+│   ├── roadmaps/              # in-progress feature design docs
+│   └── security/              # audits and their remediation follow-ups
+├── compose.yml                # dev stack: db, garage, nats, pdf-service, api-gateway, core-back, core-front
+├── compose.prod.yml           # overlay: pulls ghcr.io images, tighter network exposure — see its own header comment
+├── eerp-config*.example.json  # committed templates — copy, don't edit in place
+├── eerp-config*.json          # your real, gitignored configs
+├── .env                       # gitignored — POSTGRES_PASSWORD only
+└── Makefile
+```
+
+### Rules
 
 `cmd/` contains only main packages.
 
@@ -70,7 +131,14 @@ This project follows standard Go project layout conventions:
 Avoid circular dependencies.
 
 Keep packages small and focused.
+
+A module lives under `core/modules/<name>/` (Go source either way — `module.json`'s
+`type` decides whether it compiles into the binary or loads as WASM) and, if it has a
+frontend, `core-front/apps/shell`-visible views under its own `views/` folder, declared
+in the same `module.json`. Scaffold one with `go run ./tools/eerp-init-module`.
+
 ---
+
 ## 🧠 Go Code Style Guidelines
 
 This project follows idiomatic Go conventions:
@@ -92,7 +160,7 @@ echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-Always run:
+Always run (from `core/`):
 ```bash
 cd core
 golangci-lint run ./...
@@ -141,6 +209,7 @@ Table-driven tests are preferred.
 Use `t.Helper()` for helpers.
 
 Avoid testing implementation details.
+
 ---
 ## 🧪 Testing Conventions
 
@@ -152,6 +221,11 @@ Use subtests:
 ```bash
 t.Run("invalid email", func(t *testing.T) {})
 ```
+
+Run the backend suite with `make run-back-tests` (brings the docker stack up first, then
+runs `go test` against it — pass `BACKTESTPATH=./orm/...` or `ARGS="-v -run TestFoo"` to
+narrow it down). Frontend tests run via `pnpm test` inside `core-front/`.
+
 ---
 ## 🐛 Issues Guidelines
 
