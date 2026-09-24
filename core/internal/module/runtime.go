@@ -161,8 +161,9 @@ func (r *Registry) Boot(ctx context.Context) []error {
 	goMods := make([]GoModule, len(goModules))
 	copy(goMods, goModules)
 	goMu.Unlock()
+	ensuredThisBoot := map[string]bool{}
 	for _, m := range goMods {
-		newTables, err := loadGoModule(ctx, r.db, m)
+		newTables, err := loadGoModule(ctx, r.db, m, ensuredThisBoot)
 		if err != nil {
 			addErr(err)
 			continue
@@ -310,7 +311,7 @@ func (r *Registry) Reload(ctx context.Context, name string) (map[string]any, err
 		}
 		opLog.Log("backend", "info", "go-type module: re-validating schema registration "+
 			"(a code change needs a backend rebuild + restart, not a reload)")
-		newTables, err := loadGoModule(ctx, r.db, target)
+		newTables, err := loadGoModule(ctx, r.db, target, map[string]bool{})
 		if err != nil {
 			opLog.Log("backend", "error", err.Error())
 			return nil, err

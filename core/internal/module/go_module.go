@@ -43,7 +43,7 @@ func RegisterGoModule(m GoModule) {
 // for the runtime active-gate (runtime.go) — a table's owner is whichever
 // module's Register() call is what created it, not every module that ever
 // added a column to it.
-func loadGoModule(ctx context.Context, db *orm.DB, m GoModule) ([]string, error) {
+func loadGoModule(ctx context.Context, db *orm.DB, m GoModule, ensuredThisBoot map[string]bool) ([]string, error) {
 	// Column-level snapshot before Register() so we detect both new tables
 	// AND new columns added to existing tables by ExtendSchema.
 	before := columnSnapshot()
@@ -63,17 +63,32 @@ func loadGoModule(ctx context.Context, db *orm.DB, m GoModule) ([]string, error)
 		// core/internal/dbmanage swaps the live pgxpool to a different — possibly
 		// completely empty — database), every table this process has ever seen
 		// already shows up in "before", so a diff-gated ensureTable/ensureColumns
-		// would silently skip creating anything on the new database. ensureTable/
-		// ensureColumns are already fully idempotent (IF NOT EXISTS throughout —
-		// migration.go), so running them unconditionally for every table's FULL
-		// current field set, every call, is a no-op against an already-provisioned
-		// database and a complete schema build against an empty one — the same
-		// "trust real DB state, not in-memory bookkeeping" posture the WASM path
-		// (applyMigration) already has.
+		// would silently skip creating anything on the new database.
 		isNewTable := afterCols != nil && prevCols == nil
 		if isNewTable {
 			newTables = append(newTables, tableName)
 		}
+
+		// ensuredThisBoot is scoped to ONE Boot() call (Registry.Boot creates it
+		// fresh and threads it through every module) — it is what keeps this
+		// unconditional-by-design pass from being O(n²). Without it, this loop
+		// walks the ENTIRE global table registry on every one of n modules'
+		// turns (columnSnapshot() returns every table registered so far, not
+		// just this module's own), so module k redundantly re-issues
+		// ensureTable/ensureColumns for all k-1 tables earlier modules in this
+		// same Boot() already ensured — a real, measured cost: on an otherwise
+		// empty target database (core/internal/dbmanage's SwitchTo), that's
+		// purely redundant round trips, not a no-op skipped by IF NOT EXISTS
+		// (the statement still has to be sent and answered). Ensuring a table
+		// once per Boot() call is sufficient — a table is either handled in
+		// its own module's turn (this branch) or was already handled by an
+		// earlier module's turn in the SAME call, and IF NOT EXISTS still
+		// makes each individual ensure idempotent within that one guaranteed
+		// pass, same as before.
+		if ensuredThisBoot[tableName] {
+			continue
+		}
+		ensuredThisBoot[tableName] = true
 
 		if err := ensureTable(ctx, db, tableName); err != nil {
 			return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
