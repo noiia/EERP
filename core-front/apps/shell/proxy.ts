@@ -24,17 +24,42 @@ export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
 }
 
+// Per-request CSP nonce (https://nextjs.org/docs/app/guides/content-security-policy):
+// App Router streams hydration/RSC payloads via inline `<script>` tags it injects
+// itself, which a strict `script-src 'self'` blocks outright — the resulting broken
+// hydration is what makes a controlled MUI field's label (acting as the placeholder)
+// never shrink on input, among other silent failures. Next only nonces its own
+// inline scripts when it sees the nonce on the REQUEST headers flowing into the
+// render, so this must happen in middleware, not in nginx after the fact — nginx
+// can't know a nonce it never generated. This header is now the sole source of CSP
+// for the frontend; infra/nginx/nginx.conf's own Content-Security-Policy add_header
+// was removed so the two don't combine into a stricter, nonce-less intersection.
+function cspHeaderValue(nonce: string): string {
+  return `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`
+}
+
+function withCsp(response: NextResponse, nonce: string): NextResponse {
+  response.headers.set('Content-Security-Policy', cspHeaderValue(nonce))
+  return response
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const nonce = btoa(crypto.randomUUID())
+  const forwardedRequest = new Headers(request.headers)
+  forwardedRequest.set('x-nonce', nonce)
+  forwardedRequest.set('Content-Security-Policy', cspHeaderValue(nonce))
+
   const hasAccess = request.cookies.has(ACCESS_COOKIE)
   const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value
-  if (hasAccess || !refreshToken) return NextResponse.next()
+  if (hasAccess || !refreshToken) {
+    return withCsp(NextResponse.next({ request: { headers: forwardedRequest } }), nonce)
+  }
 
   try {
     const tokens = await goAuthExchange('refresh', { refresh_token: refreshToken })
 
     // Forward the refreshed access cookie into THIS request's headers too, so the
     // RSC render that follows sees it immediately instead of waiting a round trip.
-    const forwardedRequest = new Headers(request.headers)
     const response = NextResponse.next({ request: { headers: forwardedRequest } })
 
     response.cookies.set(ACCESS_COOKIE, tokens.accessToken, sessionCookieOptions(ACCESS_TTL_SECONDS))
@@ -42,13 +67,13 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       response.cookies.set(REFRESH_COOKIE, tokens.refreshToken, sessionCookieOptions(REFRESH_TTL_SECONDS))
     }
     request.cookies.set(ACCESS_COOKIE, tokens.accessToken)
-    return response
+    return withCsp(response, nonce)
   } catch {
     // Spent/invalid refresh token (theft detection) or Go unreachable — clear the
     // session so the request renders anonymous instead of retrying every request.
-    const response = NextResponse.next()
+    const response = NextResponse.next({ request: { headers: forwardedRequest } })
     response.cookies.delete(ACCESS_COOKIE)
     response.cookies.delete(REFRESH_COOKIE)
-    return response
+    return withCsp(response, nonce)
   }
 }

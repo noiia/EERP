@@ -45,6 +45,16 @@ describe('proxy (session refresh ahead of RSC render)', () => {
     expect(res.cookies.get('eerp_access')).toBeUndefined()
   })
 
+  it('sets a fresh, matching CSP nonce on every response (App Router needs it to nonce its own inline hydration scripts)', async () => {
+    const res1 = await proxy(request(''))
+    const res2 = await proxy(request(''))
+
+    const csp1 = res1.headers.get('Content-Security-Policy')
+    const csp2 = res2.headers.get('Content-Security-Policy')
+    expect(csp1).toMatch(/script-src 'self' 'nonce-[^']+' 'strict-dynamic'/)
+    expect(csp1).not.toBe(csp2) // a fresh nonce per request, never reused
+  })
+
   it('rotates the session when the access cookie is gone but a refresh token remains', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => refreshResponse('new-access', 'new-refresh')))
 
