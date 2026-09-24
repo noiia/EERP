@@ -52,6 +52,13 @@ type Users struct {
 	// company.Repository.ResolveActive lazily bootstraps it on first touch of
 	// any company-scoped setting, same posture as PreferredLocale.
 	ActiveCompanyID *uuid.UUID `db:"active_company_id"`
+	// MustChangePassword forces a self-service credential change before the
+	// caller can touch anything else (core/internal/middleware.PermissionMiddleware
+	// enforces it; the JWT carries it as a claim, resolved once at token issue —
+	// same posture as Roles/Groups/Permissions). Set true by SeedDevAdmin for a
+	// freshly-created default admin in production mode; cleared the moment any
+	// password change goes through UpdateProfile, regardless of who performed it.
+	MustChangePassword bool `db:"must_change_password"`
 }
 
 // Role is a named set of permissions scoped to a tenant.

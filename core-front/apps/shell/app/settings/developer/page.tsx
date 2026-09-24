@@ -8,5 +8,5 @@ import { seedingAllowed } from '@/lib/dev-seed-allowed'
 // button alone to keep bulk fake writes out of a real tenant).
 export default async function DeveloperPage() {
   await requireAuth('/settings/developer')
-  return <DeveloperSettings isDev={seedingAllowed()} />
+  return <DeveloperSettings isDev={await seedingAllowed()} />
 }

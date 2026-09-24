@@ -232,7 +232,7 @@ func TestGetMyPreferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(tt.users, tt.store, &stubCompanies{})
+			h := newHandlerWith(tt.users, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
 
 			if rec.Code != tt.wantStatus {
@@ -284,7 +284,7 @@ func TestPutMyPreferences(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubUsers{setErr: tt.setErr}
-			h := newHandlerWith(users, &stubStore{}, &stubCompanies{})
+			h := newHandlerWith(users, &stubStore{}, &stubCompanies{}, "development")
 			rec := serve(t, h.PutMyPreferences, http.MethodPut, "/me/preferences", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -315,7 +315,7 @@ func TestGetMyPreferences_ActiveCompany(t *testing.T) {
 	active := company.Company{Name: "Acme", Currency: "USD"}
 	active.ID = companyID
 
-	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{active: active})
+	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{active: active}, "development")
 	rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
 
 	if rec.Code != http.StatusOK {
@@ -344,7 +344,7 @@ func TestGetMyPreferences_Email(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	users := &stubUsers{user: auth.Users{Email: "ada@example.test"}}
 
-	h := newHandlerWith(users, &stubStore{}, &stubCompanies{})
+	h := newHandlerWith(users, &stubStore{}, &stubCompanies{}, "development")
 	rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
 
 	if rec.Code != http.StatusOK {
@@ -396,7 +396,7 @@ func TestPutMyPreferences_ActiveCompany(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubUsers{}
-			h := newHandlerWith(users, &stubStore{}, tt.companies)
+			h := newHandlerWith(users, &stubStore{}, tt.companies, "development")
 			rec := serve(t, h.PutMyPreferences, http.MethodPut, "/me/preferences", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -464,7 +464,7 @@ func TestCloneCompanySettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, tt.companies)
+			h := newHandlerWith(&stubUsers{}, tt.store, tt.companies, "development")
 			rec := serveWithParam(t, h.CloneCompanySettings, http.MethodPost,
 				"/company/"+tt.id+"/clone-settings", tt.body, identity, "id", tt.id)
 
@@ -511,7 +511,7 @@ func TestPutI18nSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutI18nSettings, http.MethodPut, "/settings/i18n", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -578,7 +578,7 @@ func TestPutFormatSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutFormatSettings, http.MethodPut, "/settings/format", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -656,7 +656,7 @@ func TestGetViewFieldsSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetViewFieldsSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/fields", "", identity, "entity", tt.entity)
 
@@ -748,7 +748,7 @@ func TestPutViewFieldsSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutViewFieldsSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/fields", tt.body, identity, "entity", tt.entity)
 
@@ -817,7 +817,7 @@ func TestGetChatterSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetChatterSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/chatter", "", identity, "entity", tt.entity)
 
@@ -882,7 +882,7 @@ func TestPutChatterSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutChatterSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/chatter", tt.body, identity, "entity", tt.entity)
 
@@ -966,7 +966,7 @@ func TestGetGraphLayoutSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetGraphLayoutSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/graph", "", identity, "entity", tt.entity)
 
@@ -1074,7 +1074,7 @@ func TestPutGraphLayoutSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutGraphLayoutSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/graph", tt.body, identity, "entity", tt.entity)
 
@@ -1162,7 +1162,7 @@ func TestGetPictureSizeSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetPictureSizeSettings, http.MethodGet,
 				"/settings/apps/"+tt.module+"/picture-size", "", identity, "module", tt.module)
 
@@ -1250,7 +1250,7 @@ func TestPutPictureSizeSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutPictureSizeSettings, http.MethodPut,
 				"/settings/apps/"+tt.module+"/picture-size", tt.body, identity, "module", tt.module)
 
@@ -1311,7 +1311,7 @@ func TestGetReportsLayoutSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetReportsLayoutSettings, http.MethodGet, "/settings/reports/layout", "", identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1375,7 +1375,7 @@ func TestPutReportsLayoutSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutReportsLayoutSettings, http.MethodPut, "/settings/reports/layout", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1431,7 +1431,7 @@ func TestGetOSMSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetOSMSettings, http.MethodGet, "/settings/integrations/osm", "", identity)
 
 			if rec.Code != http.StatusOK {
@@ -1499,7 +1499,7 @@ func TestPutOSMSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutOSMSettings, http.MethodPut, "/settings/integrations/osm", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1546,7 +1546,7 @@ func TestGetTaxSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetTaxSettings, http.MethodGet, "/settings/tax", "", identity)
 
 			if rec.Code != http.StatusOK {
@@ -1602,7 +1602,7 @@ func TestPutTaxSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutTaxSettings, http.MethodPut, "/settings/tax", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1649,7 +1649,7 @@ func TestGetUnitSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetUnitSettings, http.MethodGet, "/settings/units", "", identity)
 
 			if rec.Code != http.StatusOK {
@@ -1705,7 +1705,7 @@ func TestPutUnitSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutUnitSettings, http.MethodPut, "/settings/units", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1740,7 +1740,7 @@ func TestGetViewCatalog(t *testing.T) {
 		t.Fatalf("register fixture: %v", err)
 	}
 
-	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{})
+	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{}, "development")
 	rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views", "", auth.Identity{UserID: uuid.New(), TenantID: uuid.New()})
 
 	if rec.Code != http.StatusOK {
@@ -1785,7 +1785,7 @@ func TestGetViewCatalog_SearchAndPageSize(t *testing.T) {
 		t.Fatalf("register fixture: %v", err)
 	}
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
-	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{})
+	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{}, "development")
 
 	unmarshal := func(rec *httptest.ResponseRecorder) []viewCatalogEntry {
 		t.Helper()

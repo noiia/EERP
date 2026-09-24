@@ -39,6 +39,15 @@ services:
   core-back:
     build: !reset null
     image: ghcr.io/noiia/eerp-core:${EERP_IMAGE_TAG:-latest}
+    # environment: "production" (docs/security/pentest-2026-09-24.md's follow-up) —
+    # its own config file, not compose.yml's dev eerp-config.docker.json: demo
+    # seeding never runs here regardless of seed_demo_data, and a freshly-seeded
+    # default admin is forced to change its password on first login. Copy
+    # eerp-config.prod.example.json to eerp-config.prod.json and fill in real
+    # secrets before running this overlay for real — it's gitignored, same as
+    # the dev config.
+    volumes: !override
+      - ./eerp-config.prod.json:/app/eerp-config.json:ro
 
   core-front:
     build: !reset null

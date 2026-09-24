@@ -124,6 +124,11 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, tenantID, id uuid.UU
 			return Users{}, fmt.Errorf("user: update profile: hash password: %w", err)
 		}
 		u.PasswordHash = string(hash)
+		// A real password change clears any pending forced-change requirement —
+		// whether it's the caller changing their own (the force-password-change
+		// flow) or an admin resetting someone else's, the credential just got
+		// rotated either way.
+		u.MustChangePassword = false
 	}
 	updated, err := r.users.Update(ctx, u, id)
 	if err != nil {

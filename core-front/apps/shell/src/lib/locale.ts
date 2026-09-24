@@ -48,6 +48,8 @@ export interface LocalePreferences {
   number_format?: NumberFormatPreference | null
   active_company?: ActiveCompanyRef | null
   username_at_format?: boolean
+  /** This deployment's backend types.Config.Environment ("development"/"production"). */
+  environment?: string
 }
 
 /**

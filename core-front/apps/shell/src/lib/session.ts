@@ -18,8 +18,17 @@ export async function getEffectivePermissions(): Promise<string[]> {
   return (await getIdentity())?.permissions ?? []
 }
 
+// The forced-change form's own route — the one page requireAuth must NOT
+// redirect away from when mustChangePassword is set, or every render of that
+// page would immediately bounce back to itself.
+export const FORCE_PASSWORD_CHANGE_PATH = '/force-password-change'
+
 /**
- * RequireAuth: redirect anonymous users to /login (carrying the intended path).
+ * RequireAuth: redirect anonymous users to /login (carrying the intended path),
+ * and a caller with a pending forced password change to FORCE_PASSWORD_CHANGE_PATH
+ * (docs/security/pentest-2026-09-24.md's follow-up) — a UX convenience mirroring
+ * what Go's PermissionMiddleware already enforces server-side on every data call;
+ * this just keeps the rest of the app from rendering at all in the meantime.
  * Returns the resolved identity for authenticated requests. Fine-grained authorization
  * is enforced by Go on every data call; the frontend gates on authentication here.
  */
@@ -28,6 +37,9 @@ export async function requireAuth(intendedPath?: string): Promise<Identity> {
   if (!identity) {
     const next = intendedPath ? `?next=${encodeURIComponent(intendedPath)}` : ''
     redirect(`/login${next}`)
+  }
+  if (identity.mustChangePassword && intendedPath !== FORCE_PASSWORD_CHANGE_PATH) {
+    redirect(FORCE_PASSWORD_CHANGE_PATH)
   }
   return identity
 }

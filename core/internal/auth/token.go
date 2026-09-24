@@ -26,6 +26,14 @@ type Claims struct {
 	// UI convenience only — Go still authorizes every call from the DB, so a
 	// stale claim (grants changed mid-token) can never widen real access.
 	Permissions []string `json:"permissions,omitempty"`
+	// MustChangePassword mirrors Users.MustChangePassword at issue time — read
+	// by core/internal/middleware.PermissionMiddleware to lock the caller down
+	// to the self-service credential-change route until they comply. Unlike
+	// Permissions this IS a real gate, not just a UI mirror (see that
+	// middleware's own doc comment on why a stale claim here is acceptable:
+	// the token's own short TTL bounds how long a just-cleared flag can still
+	// read as set).
+	MustChangePassword bool `json:"must_change_password,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -53,11 +61,12 @@ func (t *TokenService) IssueAccess(user Users, roles []string, groups []string, 
 // must not remain a valid credential for a full session.
 func (t *TokenService) IssueAccessWithTTL(user Users, roles []string, groups []string, permissions []string, ttl time.Duration) (string, error) {
 	claims := Claims{
-		Sub:         user.ID,
-		Tenant:      user.TenantID,
-		Roles:       roles,
-		Groups:      groups,
-		Permissions: permissions,
+		Sub:                user.ID,
+		Tenant:             user.TenantID,
+		Roles:              roles,
+		Groups:             groups,
+		Permissions:        permissions,
+		MustChangePassword: user.MustChangePassword,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

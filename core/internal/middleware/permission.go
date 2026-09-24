@@ -25,6 +25,17 @@ func PermissionMiddleware(perms permissionChecker) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			identity := auth.MustIdentity(c.Request().Context())
 
+			// A caller forced to change their password (docs/security/pentest-2026-09-24.md's
+			// follow-up: a freshly-seeded production admin) can reach nothing behind this
+			// middleware except editing their OWN user record — the one route the
+			// force-password-change UI actually calls. Every route this middleware doesn't
+			// guard (bare GET /modules, /presence, /me/preferences — see main.go's own
+			// comments on each) stays reachable regardless, same "app shell chrome" posture
+			// they already have; it's what lets the app render a shell around the forced form.
+			if identity.MustChangePassword && !isSelfCredentialRoute(c, identity) {
+				return passwordChangeRequired(c)
+			}
+
 			required := derivePermission(c)
 			if required == "" {
 				// Fail closed: if the required permission can't be determined for a
@@ -121,6 +132,38 @@ func forbidden(c echo.Context) error {
 		"error": map[string]any{
 			"code":       "FORBIDDEN",
 			"message":    "Insufficient permissions.",
+			"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
+		},
+	})
+}
+
+// isSelfCredentialRoute reports whether c is GET or PUT /api/v1/users/:id with
+// :id equal to the caller's own id — the one write path a caller with
+// MustChangePassword set is still allowed, since it's exactly how the
+// force-password-change flow (core-front) clears the flag (AdminHandler.UpdateUser
+// -> UserRepository.UpdateProfile, which resets MustChangePassword on any real
+// password change). GET is allowed too so the frontend can prefill the form
+// (email, current profile) before the user submits.
+func isSelfCredentialRoute(c echo.Context, identity auth.Identity) bool {
+	if c.Path() != "/api/v1/users/:id" {
+		return false
+	}
+	method := c.Request().Method
+	if method != http.MethodGet && method != http.MethodPut {
+		return false
+	}
+	return c.Param("id") == identity.UserID.String()
+}
+
+// passwordChangeRequired is FORBIDDEN's own variant with a distinct code, so
+// the frontend can tell "you must change your password first" apart from a
+// real permissions error and route to the forced-change form instead of a
+// generic access-denied message.
+func passwordChangeRequired(c echo.Context) error {
+	return c.JSON(http.StatusForbidden, map[string]any{
+		"error": map[string]any{
+			"code":       "PASSWORD_CHANGE_REQUIRED",
+			"message":    "You must change your password before continuing.",
 			"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
 		},
 	})

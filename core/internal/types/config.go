@@ -35,7 +35,15 @@ func DefaultConfig() *Config {
 
 // Config fields
 type Config struct {
-	ModuleRoot        []string      `json:"module_root" needed:"true"`
+	ModuleRoot []string `json:"module_root" needed:"true"`
+	// Environment is exactly "development" or "production" — main.go refuses to
+	// boot on anything else (docs/security/pentest-2026-09-24.md's follow-up).
+	// It's the single switch behind two behaviors that used to be separate,
+	// easy-to-forget toggles: SeedDemoData/the frontend's demo-seed tool only
+	// ever run when this is "development" (regardless of their own flags/env
+	// vars), and a freshly-seeded default admin (auth.SeedDevAdmin) is forced
+	// to change its password on first login only when this is "production".
+	Environment       string        `json:"environment" needed:"true"`
 	MasterPassword    string        `json:"master_key" needed:"false"`
 	AccessTTLSeconds  int           `json:"access_ttl_seconds" needed:"false"`
 	RefreshTTLSeconds int           `json:"refresh_ttl_seconds" needed:"false"`

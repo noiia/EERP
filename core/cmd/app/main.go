@@ -85,9 +85,37 @@ func main() {
 	}
 	configContent.CronLogDir = resolveConfigPath(configContent.CronLogDir)
 
-	// Refuse to start with an insecure signing key.
-	if configContent.MasterPassword == "" || configContent.MasterPassword == "change-me-in-production" {
-		common.Logger.Fatal("❌ master_key is empty or set to the insecure default — set a strong secret before starting")
+	// Refuse to start with an insecure signing key. Named literals below are
+	// values that have actually shipped as committed "defaults" in this repo's
+	// history (docs/security/pentest-2026-09-24.md finding 1) — rejecting them
+	// by name, not just by weak length, closes the exact hole a stale clone
+	// would otherwise reopen.
+	switch {
+	case configContent.MasterPassword == "" || configContent.MasterPassword == "change-me-in-production":
+		common.Logger.Fatal("❌ master_key is empty or set to the insecure default — set a strong secret in the config before starting")
+	case configContent.MasterPassword == "ueioiehsiuehfs":
+		common.Logger.Fatal("❌ master_key is set to a value previously committed to this repo's history — it must be treated as compromised; generate a new secret")
+	case len(configContent.MasterPassword) < 32:
+		common.Logger.Fatal("❌ master_key is too short to be a real signing secret (need 32+ bytes) — generate one with e.g. `openssl rand -base64 48`")
+	}
+
+	// Same posture for the DB credential — the ORM connects with whatever's
+	// here, so a weak/default value is a straight DB compromise for anyone who
+	// reaches the db port (see the pentest report's Finding 3).
+	switch {
+	case configContent.DbPassword == "" || configContent.DbPassword == "change-me-in-production":
+		common.Logger.Fatal("❌ db_password is empty or set to the insecure default — set a strong secret in the config before starting")
+	case configContent.DbPassword == "postgres":
+		common.Logger.Fatal("❌ db_password is set to a value previously committed to this repo's history — it must be treated as compromised; generate a new secret")
+	}
+
+	// "environment" drives two behaviors (types.Config's own doc comment): demo
+	// seeding only ever runs in development, and a freshly-seeded default admin
+	// is only forced to change its password in production. No silent default —
+	// an unset/misspelled value is exactly the kind of mistake that should fail
+	// loud at boot rather than quietly landing on whichever behavior "".
+	if configContent.Environment != "development" && configContent.Environment != "production" {
+		common.Logger.Fatal(`❌ environment must be "development" or "production"`, zap.String("got", configContent.Environment))
 	}
 
 	// api.yaml now carries only cosmetic API-surface overrides; security-critical
@@ -146,10 +174,13 @@ func main() {
 	// Always seed the default admin so login works on a brand-new database, in every
 	// mode — no config flag to miss. Idempotent (ON CONFLICT (id) DO NOTHING on a fixed
 	// id): once the credential is changed through the app, re-running this on later
-	// boots never overwrites it. CHANGE THE PASSWORD IMMEDIATELY on any deployment
-	// reachable outside a trusted network — the credential is public (it's in this
-	// repo's source).
-	if err := auth.SeedDevAdmin(context.Background(), app.DB); err != nil {
+	// boots never overwrites it. In production this ALSO seeds the account with
+	// must_change_password=true (SeedDevAdmin's own doc comment), which
+	// PermissionMiddleware then enforces — the account exists and can log in, but
+	// can't touch anything else until the password is changed, so "change it
+	// immediately" is enforced instead of just requested. Development mode skips
+	// that gate entirely (the same convenience seed_demo_data below assumes).
+	if err := auth.SeedDevAdmin(context.Background(), app.DB, configContent.Environment); err != nil {
 		common.Logger.Error("❌ seed default admin failed", zap.Error(err))
 	} else {
 		common.Logger.Warn("⚠️  default admin available — change its password immediately", zap.String("email", auth.DevAdminEmail))
@@ -157,9 +188,9 @@ func main() {
 
 	// DEV ONLY: demo Property Management data (a property, its equipment/history,
 	// a tenant, a generated rent receipt) so the module isn't empty out of the box.
-	// Stays behind the flag — unlike the admin login above, an empty dataset is never a
-	// login blocker, so there's no "must always run" case for it.
-	if configContent.SeedDemoData {
+	// Gated on environment now too (not just the flag) — a "production"-mode boot
+	// never seeds fake data no matter how seed_demo_data is set.
+	if configContent.Environment == "development" && configContent.SeedDemoData {
 		if err := propertymanagement.SeedDemoData(context.Background(), app.DB); err != nil {
 			common.Logger.Error("❌ seed property management demo data failed", zap.Error(err))
 		} else {
@@ -200,7 +231,7 @@ func main() {
 
 	// ── Settings / preferences ────────────────────────────────────────────────
 	companyRepo := company.NewRepository(app.DB)
-	settingsHandler := settings.NewHandler(userRepo, settings.NewRepository(app.DB), companyRepo)
+	settingsHandler := settings.NewHandler(userRepo, settings.NewRepository(app.DB), companyRepo, configContent.Environment)
 
 	// Self-service routes: JWT only, no permission middleware. The identity in the
 	// token scopes every query to the caller's own record, so granting a dedicated

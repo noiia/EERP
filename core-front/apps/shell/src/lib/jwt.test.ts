@@ -18,7 +18,13 @@ describe('identityFromAccessToken', () => {
       roles: ['admin'],
       groups: [],
       permissions: [],
+      mustChangePassword: false,
     })
+  })
+
+  it('reads a must_change_password claim when present', () => {
+    const token = makeJwt({ sub: 'u1', tenant: 't1', roles: [], must_change_password: true, exp: future })
+    expect(identityFromAccessToken(token)?.mustChangePassword).toBe(true)
   })
 
   it('reads a permissions claim when present (forward-compatible)', () => {

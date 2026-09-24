@@ -38,13 +38,18 @@ var (
 // CONFLICT DO NOTHING) — called on every boot regardless of mode, so a password changed
 // through the app is never reset back on a later restart.
 //
+// environment ("development"/"production", types.Config.Environment) decides whether
+// the freshly-created row starts with MustChangePassword set — ON CONFLICT DO NOTHING
+// means this only ever applies on the very first insert; a later boot (any environment)
+// never resets it back on an account whose password has already been changed.
+//
 // Every insert below goes through Repository.Upsert with an explicit, fixed id and an
 // empty setFragment ("" = ON CONFLICT ... DO NOTHING) — the same idempotent,
 // deterministic-id shape SeedDefaultRoles uses per-tenant, just with hardcoded ids
 // since this always seeds the SAME dev tenant. role_permissions is the one exception:
 // its PK is the composite (role_id, permission_id), which orm.Repository[T] — built
 // around a single surrogate uuid PK — has no representation for, so it stays raw SQL.
-func SeedDevAdmin(ctx context.Context, db *orm.DB) error {
+func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(DevAdminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("seed dev admin: hash password: %w", err)
@@ -56,7 +61,12 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB) error {
 	userRoles := orm.MustRepo[UserRoles](db)
 
 	if _, err := users.Upsert(ctx,
-		Users{BaseModel: model.BaseModel{ID: devUserID, TenantID: DevTenantID}, Email: DevAdminEmail, PasswordHash: string(hash)},
+		Users{
+			BaseModel:          model.BaseModel{ID: devUserID, TenantID: DevTenantID},
+			Email:              DevAdminEmail,
+			PasswordHash:       string(hash),
+			MustChangePassword: environment == "production",
+		},
 		[]string{"id"}, ""); err != nil {
 		return fmt.Errorf("seed dev admin: users: %w", err)
 	}

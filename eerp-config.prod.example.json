@@ -2,14 +2,15 @@
     "module_root": [
         "/app/modules"
     ],
-    "master_key": "ueioiehsiuehfs",
+    "environment": "production",
+    "master_key": "change-me-in-production",
     "access_ttl_seconds": 3600,
     "refresh_ttl_seconds": 604800,
     "db_name": "poc",
     "db_port": 5432,
     "db_host": "db",
     "db_user": "postgres",
-    "db_password": "postgres",
+    "db_password": "change-me-in-production",
     "max_connection": 10,
     "min_connection": 4,
     "max_conn_idle_time": 1800,
@@ -20,12 +21,12 @@
     "backend_port": 8080,
     "backend_host": "backend",
     "backend_version": "v1",
-    "seed_demo_data": true,
+    "seed_demo_data": false,
     "s3_endpoint": "http://garage:3900",
     "s3_region": "garage",
     "s3_bucket": "eerp",
-    "s3_access_key": "GKdeadbeefdeadbeefdeadbeef",
-    "s3_secret_key": "3b7932955ae6e6d18fa87084d6c4f35898471aee3bbce0da3d5779b65195080c",
+    "s3_access_key": "change-me-in-production",
+    "s3_secret_key": "change-me-in-production",
     "nats_url": "nats://nats:4222",
     "frontend_base_url": "http://core-front:3000"
 }

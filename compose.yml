@@ -4,10 +4,21 @@ services:
     container_name: db
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # From a gitignored .env next to this file (docker compose auto-loads it
+      # automatically — no manual sourcing needed) — never a literal here. The
+      # old committed "postgres"/"postgres" default is exactly
+      # docs/security/pentest-2026-09-24.md's finding 3. core-back's OWN copy
+      # of this same password lives in eerp-config.docker.json/eerp-config.prod.json
+      # (also gitignored) — keep them in sync, they're the same Postgres role.
+      # POSTGRES_PASSWORD only takes effect on a fresh volume; rotating it
+      # against an already-initialized one also needs
+      # `ALTER ROLE postgres WITH PASSWORD ...`.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in a local .env}
       POSTGRES_DB: poc
-    ports:
-      - "5432:5432"
+    # ports:
+    #   - "5432:5432"
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -25,13 +36,15 @@ services:
       - ./infra/garage/garage.toml:/etc/garage.toml:ro
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
-    ports:
-      # Host 3910 (3900 is commonly taken by other garage instances); in-network
-      # clients still use garage:3900. Kept host-reachable (unlike core-back/core-front,
-      # which the api-gateway now fronts exclusively) because host-native dev tooling —
-      # `make run-back-tests`, a native `go run`/`go test` — talks to it directly via
-      # eerp-config.json's s3_endpoint, same as db's fixed 5432 mapping above.
-      - "3910:3900"
+    # ports:
+    #   # Host 3910 (3900 is commonly taken by other garage instances); in-network
+    #   # clients still use garage:3900. Kept host-reachable (unlike core-back/core-front,
+    #   # which the api-gateway now fronts exclusively) because host-native dev tooling —
+    #   # `make run-back-tests`, a native `go run`/`go test` — talks to it directly via
+    #   # eerp-config.json's s3_endpoint, same as db's fixed 5432 mapping above.
+    #   - "3910:3900"
+    expose:
+      - "3900"
     healthcheck:
       test: ["CMD", "/garage", "status"]
       interval: 5s
@@ -43,6 +56,9 @@ services:
     build:
       context: .
       dockerfile: core/Dockerfile
+    # eerp-config.docker.json is gitignored (docs/security/pentest-2026-09-24.md) —
+    # copy eerp-config.docker.example.json and fill in real master_key/db_password/
+    # environment before first boot; main.go refuses to start otherwise.
     volumes:
       - ./eerp-config.docker.json:/app/eerp-config.json:ro
     expose:
@@ -58,20 +74,19 @@ services:
     build:
       context: .
       dockerfile: core-front/Dockerfile
-      args:
-        API_BASE: "http://core-back:8080"
-        API_VERSION: "1"
     environment:
+      API_BASE: "http://core-back:8080"
+      API_VERSION: "1"
       # The api-gateway now terminates TLS on :443 (infra/nginx/nginx.conf) — Secure
       # cookies work, so no COOKIE_SECURE override is needed; it falls back to its
       # NODE_ENV=production default (true). Set COOKIE_SECURE: "false" here again
       # if the gateway ever goes back to serving the app over plain HTTP only.
-      # The standalone image always runs with NODE_ENV=production (next start requires
-      # it), even for this local/dev compose stack — so the Settings > Developer seed
-      # tool's NODE_ENV-derived guard would stay permanently disabled here otherwise.
-      # This stack is dev-only, so opt back in explicitly. Never set this against a real
-      # tenant deployment.
-      ALLOW_DEMO_SEED: "true"
+      #
+      # No ALLOW_DEMO_SEED here anymore: the Settings -> Developer seed tool now
+      # gates on the SAME backend "environment" switch core-back boots from
+      # (types.Config.Environment, echoed by GET /me/preferences — see
+      # src/lib/dev-seed-allowed.ts) instead of a separate frontend env var, so
+      # dev vs. prod is one config decision, not two to keep in sync.
     expose:
       - "3000"
     depends_on:

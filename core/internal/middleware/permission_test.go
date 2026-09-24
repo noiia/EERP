@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,89 @@ func injectIdentity(roles []string) echo.MiddlewareFunc {
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}
+	}
+}
+
+// injectIdentityMustChange is injectIdentity plus MustChangePassword set, with
+// a caller-supplied fixed UserID so a test can address "self" by id.
+func injectIdentityMustChange(userID uuid.UUID) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			id := auth.Identity{
+				UserID:             userID,
+				TenantID:           uuid.New(),
+				Roles:              []string{"admin"},
+				MustChangePassword: true,
+			}
+			ctx := auth.SetIdentity(c.Request().Context(), id)
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	}
+}
+
+func TestPermissionMiddleware_MustChangePassword_BlocksOtherRoutes(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: true} // would otherwise be allowed
+	g := e.Group("/api/v1", injectIdentityMustChange(uuid.New()), authmw.PermissionMiddleware(stub))
+	reached := false
+	g.GET("/crm/:id", func(c echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/crm/"+uuid.NewString(), nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not run while must_change_password is set")
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("PASSWORD_CHANGE_REQUIRED")) {
+		t.Errorf("body = %s, want PASSWORD_CHANGE_REQUIRED code", rec.Body.String())
+	}
+}
+
+func TestPermissionMiddleware_MustChangePassword_AllowsSelfCredentialRoute(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: true}
+	selfID := uuid.New()
+	g := e.Group("/api/v1", injectIdentityMustChange(selfID), authmw.PermissionMiddleware(stub))
+	reached := false
+	g.PUT("/users/:id", func(c echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+	g.GET("/users/:id", func(c echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+
+	for _, method := range []string{http.MethodPut, http.MethodGet} {
+		reached = false
+		req := httptest.NewRequest(method, "/api/v1/users/"+selfID.String(), nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200 (self credential route stays reachable)", method, rec.Code)
+		}
+		if !reached {
+			t.Errorf("%s: handler must run for the caller's own /users/:id", method)
+		}
+	}
+}
+
+func TestPermissionMiddleware_MustChangePassword_BlocksOtherUsersRecord(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: true}
+	g := e.Group("/api/v1", injectIdentityMustChange(uuid.New()), authmw.PermissionMiddleware(stub))
+	reached := false
+	g.PUT("/users/:id", func(c echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+uuid.NewString(), nil) // NOT self
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (editing someone else's record must not be exempt)", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not run for another user's record")
 	}
 }
 

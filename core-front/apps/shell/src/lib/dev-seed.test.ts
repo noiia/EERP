@@ -34,55 +34,46 @@ beforeEach(() => {
     ...body,
   }))
   getMyLocalePreferencesMock.mockReset()
-  getMyLocalePreferencesMock.mockResolvedValue(null)
+  // Backend's types.Config.Environment, echoed back on GET /me/preferences —
+  // defaults to "development" so every seedDemoData test below (which isn't
+  // itself testing the environment gate) keeps working without repeating it.
+  getMyLocalePreferencesMock.mockResolvedValue({
+    preferred_locale: null,
+    default_locale: null,
+    environment: 'development',
+  })
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  vi.unstubAllEnvs()
 })
 
 describe('seedingAllowed', () => {
-  it('falls back to NODE_ENV when ALLOW_DEMO_SEED is unset', () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    expect(seedingAllowed()).toBe(false)
-
-    vi.stubEnv('NODE_ENV', 'development')
-    expect(seedingAllowed()).toBe(true)
+  it('returns true when the backend reports environment: development', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue({ preferred_locale: null, default_locale: null, environment: 'development' })
+    expect(await seedingAllowed()).toBe(true)
   })
 
-  it('lets ALLOW_DEMO_SEED override a production NODE_ENV, e.g. the standalone Docker image', () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('ALLOW_DEMO_SEED', 'true')
-    expect(seedingAllowed()).toBe(true)
+  it('returns false when the backend reports environment: production', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue({ preferred_locale: null, default_locale: null, environment: 'production' })
+    expect(await seedingAllowed()).toBe(false)
   })
 
-  it('lets ALLOW_DEMO_SEED=false override a non-production NODE_ENV', () => {
-    vi.stubEnv('NODE_ENV', 'development')
-    vi.stubEnv('ALLOW_DEMO_SEED', 'false')
-    expect(seedingAllowed()).toBe(false)
+  it('returns false when preferences cannot be read (expired session, backend down)', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue(null)
+    expect(await seedingAllowed()).toBe(false)
   })
 })
 
 describe('seedDemoData', () => {
   it('refuses to run in production, without touching the API', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
+    getMyLocalePreferencesMock.mockResolvedValue({ preferred_locale: null, default_locale: null, environment: 'production' })
 
     await expect(seedDemoData()).resolves.toEqual({
       ok: false,
       message: 'Demo data seeding is disabled outside development.',
     })
     expect(createMock).not.toHaveBeenCalled()
-  })
-
-  it('runs in production when ALLOW_DEMO_SEED=true (the dev-compose Docker override)', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('ALLOW_DEMO_SEED', 'true')
-    vi.spyOn(Math, 'random').mockReturnValue(0.5)
-
-    const outcome = await seedDemoData()
-    expect(outcome.ok).toBe(true)
-    expect(createMock).toHaveBeenCalled()
   })
 
   it('seeds contacts, tags, and CRM records, then links tags via crm_tag junction rows', async () => {
@@ -200,6 +191,7 @@ describe('seedDemoData', () => {
       preferred_locale: null,
       default_locale: null,
       active_company: { id: 'company-1', name: 'Acme' },
+      environment: 'development',
     })
 
     const outcome = await seedDemoData()
@@ -218,7 +210,15 @@ describe('seedDemoData', () => {
   })
 
   it('leaves report_page_format rows untagged when the active company cannot be resolved', async () => {
-    getMyLocalePreferencesMock.mockResolvedValue(null)
+    // No active_company on the resolved preferences (as opposed to the preferences
+    // read failing outright, which seedingAllowed's own tests cover separately) —
+    // environment stays 'development' so this test still isolates the "no active
+    // company" behavior rather than tripping the unrelated environment gate.
+    getMyLocalePreferencesMock.mockResolvedValue({
+      preferred_locale: null,
+      default_locale: null,
+      environment: 'development',
+    })
 
     const outcome = await seedDemoData()
     if (!outcome.ok) throw new Error('expected seeding to succeed')

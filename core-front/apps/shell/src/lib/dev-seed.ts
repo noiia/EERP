@@ -302,7 +302,7 @@ async function createMany<R extends { id: string }>(
  * (parents before the rows that reference their ids).
  */
 export async function seedDemoData(): Promise<SeedResult> {
-  if (!seedingAllowed()) {
+  if (!(await seedingAllowed())) {
     return { ok: false, message: 'Demo data seeding is disabled outside development.' }
   }
 

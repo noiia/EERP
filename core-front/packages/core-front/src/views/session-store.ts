@@ -23,6 +23,17 @@ export interface Identity {
    * isFieldVisible treats an absent set as fail-open (don't hide).
    */
   groups?: string[]
+  /**
+   * Mirrors Go's Claims.MustChangePassword (core/internal/auth/token.go) — set
+   * on a freshly-seeded default admin in production (docs/security/pentest-2026-09-24.md's
+   * follow-up). Unlike Permissions/Groups above this IS a real gate, not just a UI
+   * mirror: Go's PermissionMiddleware enforces it server-side on every route except
+   * the self-service credential-change one, so a stale/spoofed client value can
+   * never widen access — this field only decides whether the UI routes the caller
+   * to the forced-change form. Optional so every existing Identity literal (tests,
+   * older sessions) keeps compiling — treated as false when absent.
+   */
+  mustChangePassword?: boolean
 }
 
 export interface SessionState {

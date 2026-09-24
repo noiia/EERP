@@ -38,3 +38,10 @@ __debug*
 *.jks
 *.keystore
 *.db
+
+# Real per-deployment config — carries master_key/db_password, so it can never be
+# committed (docs/security/pentest-2026-09-24.md). Copy the matching
+# eerp-config*.example.json, fill in real values, and keep it local.
+/eerp-config.json
+/eerp-config.docker.json
+/eerp-config.prod.json

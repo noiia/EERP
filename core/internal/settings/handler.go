@@ -84,19 +84,25 @@ type companyResolver interface {
 // identity scopes every query to the caller), /settings/* mounts behind the
 // permission middleware as well (deriving settings:i18n:write for PUT /settings/i18n).
 type Handler struct {
-	users     userPreferenceStore
-	store     settingStore
-	companies companyResolver
+	users       userPreferenceStore
+	store       settingStore
+	companies   companyResolver
+	environment string
 }
 
 // NewHandler constructs a settings Handler from concrete implementations.
-func NewHandler(users *auth.UserRepository, store *Repository, companies *company.Repository) *Handler {
-	return &Handler{users: users, store: store, companies: companies}
+// environment is types.Config.Environment ("development"/"production"), echoed
+// back on GetMyPreferences so the frontend (which never reads the backend
+// config file at runtime — core-front/CLAUDE.md's BFF boundary) can gate
+// dev-only affordances like the demo-seed tool off the SAME source of truth
+// the backend itself boots from, instead of its own separate env var.
+func NewHandler(users *auth.UserRepository, store *Repository, companies *company.Repository, environment string) *Handler {
+	return &Handler{users: users, store: store, companies: companies, environment: environment}
 }
 
 // newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(users userPreferenceStore, store settingStore, companies companyResolver) *Handler {
-	return &Handler{users: users, store: store, companies: companies}
+func newHandlerWith(users userPreferenceStore, store settingStore, companies companyResolver, environment string) *Handler {
+	return &Handler{users: users, store: store, companies: companies, environment: environment}
 }
 
 // ── Response / request types ──────────────────────────────────────────────────
@@ -123,6 +129,9 @@ type preferencesResponse struct {
 	// AccountsUsernameAtFormatKey). Rides along here, same reasoning as
 	// NumberFormat, so any `text/username` widget needs no separate fetch.
 	UsernameAtFormat bool `json:"username_at_format"`
+	// Environment: this deployment's types.Config.Environment
+	// ("development"/"production") — see NewHandler's own doc comment.
+	Environment string `json:"environment"`
 }
 
 // activeCompanyRef is the minimal company shape callers need to render a
@@ -182,6 +191,7 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 		Email:           user.Email,
 		PreferredLocale: user.PreferredLocale,
 		ActiveCompany:   &activeCompanyRef{ID: active.ID, Name: active.Name, Currency: active.Currency},
+		Environment:     h.environment,
 	}
 	if ok && defaultLocale != "" {
 		resp.DefaultLocale = &defaultLocale
