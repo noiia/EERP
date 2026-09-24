@@ -3,21 +3,22 @@ import path from 'node:path'
 import {
   backendApiBase,
   backendApiVersion,
-  findRepoRoot,
-  readConfig,
+  resolveRepoConfig,
 } from './scripts/module-discovery.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Root the bundler + standalone trace at the monorepo so the generated manifest's
 // RELATIVE imports of external module views (under module_root, outside the workspace)
-// resolve and transpile. Falls back to the workspace when the config isn't reachable
-// (e.g. a build with no repo-root eerp-config). NOTE: because this is the monorepo
-// root, the standalone entry is `core-front/apps/shell/server.js` (the Dockerfile runs
-// it from there).
+// resolve and transpile. Falls back to the workspace when neither eerp-config.json nor
+// the MODULE_ROOTS/REPO_ROOT build ARGs (core-front/Dockerfile's production path,
+// resolveRepoConfig's own doc comment) resolve a repo root. NOTE: because this is the
+// monorepo root, the standalone entry is `core-front/apps/shell/server.js` (the
+// Dockerfile runs it from there).
 const workspaceRoot = path.join(__dirname, '../../')
-const repoRoot = findRepoRoot(__dirname)
-const config = repoRoot ? readConfig(repoRoot) : null
+const resolved = resolveRepoConfig(__dirname)
+const repoRoot = resolved?.repoRoot ?? null
+const config = resolved?.config ?? null
 const projectRoot = repoRoot ?? workspaceRoot
 
 // API_VERSION comes from the shared eerp-config.json (backend_version), baked at build

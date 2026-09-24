@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -14,6 +14,7 @@ import {
   renderClientManifest,
   renderManifest,
   renderTranslationsManifest,
+  resolveRepoConfig,
   toImportSpecifier,
   topoSortModules,
   translationsForDir,
@@ -69,6 +70,43 @@ describe('findRepoRoot', () => {
 describe('discoverFrom', () => {
   it('degrades to an empty list when no config is reachable', () => {
     expect(discoverFrom('/')).toEqual([])
+  })
+})
+
+describe('resolveRepoConfig', () => {
+  afterEach(() => {
+    delete process.env.MODULE_ROOTS
+    delete process.env.REPO_ROOT
+  })
+
+  it('prefers the file-based eerp-config.json even when MODULE_ROOTS/REPO_ROOT are also set', () => {
+    process.env.MODULE_ROOTS = 'wrong'
+    process.env.REPO_ROOT = '/wrong'
+    expect(resolveRepoConfig(join(repo, 'mods', 'demo', 'views'))).toEqual({
+      repoRoot: repo,
+      config: { module_root: ['mods'] },
+    })
+  })
+
+  it('falls back to MODULE_ROOTS + REPO_ROOT when no eerp-config.json is reachable — core-front/Dockerfile\'s production build path', () => {
+    process.env.MODULE_ROOTS = 'core/modules, extra/root'
+    process.env.REPO_ROOT = '/app'
+    expect(resolveRepoConfig('/')).toEqual({
+      repoRoot: '/app',
+      config: { module_root: ['core/modules', 'extra/root'] },
+    })
+  })
+
+  it('returns null when neither source is available', () => {
+    expect(resolveRepoConfig('/')).toBeNull()
+  })
+
+  it('discovers real modules end to end via the env fallback — the actual Docker scenario', () => {
+    unlinkSync(join(repo, 'eerp-config.json'))
+    process.env.MODULE_ROOTS = 'mods'
+    process.env.REPO_ROOT = repo
+    const discovered = discoverFrom(join(repo, 'core-front', 'apps', 'shell', 'scripts'))
+    expect(discovered.map((m) => m.name)).toEqual(['demo'])
   })
 })
 

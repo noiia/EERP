@@ -25,12 +25,49 @@ export function findRepoRoot(startDir) {
 }
 
 /**
+ * Resolve {repoRoot, config} for discovery, from whichever of two sources is
+ * available:
+ *  1. The shared repo-root eerp-config.json (local/CI dev) — read straight off
+ *     disk, same as always.
+ *  2. MODULE_ROOTS + REPO_ROOT env vars — how core-front/Dockerfile's
+ *     production build supplies this instead. eerp-config.json carries real
+ *     secrets (db/S3 credentials, the JWT master key) and is deliberately
+ *     never added to that build's context — a production image must not
+ *     embed them in a layer even transiently. The ONE thing that file was
+ *     used for at build time, which folders to compile module views from, is
+ *     not secret, so it travels as plain build ARGs instead: MODULE_ROOTS
+ *     (comma-separated, repo-root-relative — the same values eerp-config.json's
+ *     own module_root would hold) plus REPO_ROOT (the absolute anchor to
+ *     resolve them against, since there's no config file left to walk up to
+ *     find that anchor from).
+ * Returns null when neither source is available (e.g. a typecheck-only run
+ * with no config and no env vars set) — callers degrade to "no modules".
+ */
+export function resolveRepoConfig(startDir) {
+  const repoRoot = findRepoRoot(startDir)
+  if (repoRoot) return { repoRoot, config: readConfig(repoRoot) }
+
+  const envRoots = process.env.MODULE_ROOTS
+  const envRepoRoot = process.env.REPO_ROOT
+  if (envRoots && envRepoRoot) {
+    const module_root = envRoots
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean)
+    return { repoRoot: envRepoRoot, config: { module_root } }
+  }
+
+  return null
+}
+
+/**
  * Discover module views starting from a directory inside the repo. Resolves the
- * shared config by walking up; returns [] (no modules) when no config is reachable.
+ * config via resolveRepoConfig; returns [] (no modules) when neither source is
+ * reachable.
  */
 export function discoverFrom(startDir) {
-  const repoRoot = findRepoRoot(startDir)
-  return repoRoot ? discoverModuleViews(repoRoot, readConfig(repoRoot)) : []
+  const resolved = resolveRepoConfig(startDir)
+  return resolved ? discoverModuleViews(resolved.repoRoot, resolved.config) : []
 }
 
 export function readConfig(repoRoot) {
@@ -234,8 +271,8 @@ export function discoverModuleTranslations(repoRoot, config) {
 
 /** i18n twin of discoverFrom(): resolve the shared config by walking up, or []. */
 export function discoverTranslationsFrom(startDir) {
-  const repoRoot = findRepoRoot(startDir)
-  return repoRoot ? discoverModuleTranslations(repoRoot, readConfig(repoRoot)) : []
+  const resolved = resolveRepoConfig(startDir)
+  return resolved ? discoverModuleTranslations(resolved.repoRoot, resolved.config) : []
 }
 
 /**
