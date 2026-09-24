@@ -17,7 +17,14 @@ jobs:
               # go.mod lives in core/, not the repo root — point the build cache at it.
               cache-dependency-path: core/go.sum
           - name: test code and generate coverage report
+            # compose.yml requires POSTGRES_PASSWORD from a local .env (gitignored,
+            # dev-machine only — see compose.yml's own comment). CI has no .env and
+            # needs none: this "db" container is ephemeral, not exposed to the host
+            # (compose.yml only `expose`s 5432, no port mapping) and destroyed at the
+            # end of the job, so a fixed throwaway value here is not a real secret.
             run: docker compose up -d db && cd ./core/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+            env:
+              POSTGRES_PASSWORD: ci_test_password
 
           - name: analyse coverage
             uses: vladopajic/go-test-coverage@v2

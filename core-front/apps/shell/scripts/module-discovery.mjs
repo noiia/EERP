@@ -394,5 +394,12 @@ export function renderClientManifest(discovered, fromDir) {
   lines.push('')
   for (const r of registrations) lines.push(renderRegisterCall(r))
   lines.push('')
+  // Same reason the server twin re-exports moduleRegistry: with zero modules
+  // discovered (e.g. eerp-config.json not reachable, the CI posture — it's
+  // gitignored), `registrations` is empty and the import above would
+  // otherwise go unreferenced, failing typecheck (TS6133) on the very
+  // "no modules" path this function exists to degrade into gracefully.
+  lines.push('export { moduleRegistry }')
+  lines.push('')
   return lines.join('\n')
 }

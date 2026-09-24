@@ -265,6 +265,10 @@ describe('renderClientManifest', () => {
     const manifest = renderClientManifest([], join(repo, 'apps', 'shell', 'src', 'generated'))
     expect(manifest).toContain("import { moduleRegistry } from '@eerp/core-front'")
     expect(manifest).not.toContain('register(')
+    // With zero registrations, moduleRegistry must still be referenced (the
+    // export below) or the import goes unused — TS6133 on the exact "no
+    // modules discovered" path CI hits (eerp-config.json is gitignored there).
+    expect(manifest).toContain('export { moduleRegistry }')
   })
 
   it('carries depends into the register() call — the registry checks it for the extension-coverage warning', () => {
