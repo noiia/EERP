@@ -76,17 +76,30 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 	}
 	// The wildcard permission is the SAME logical row SeedDefaultRoles (below)
 	// seeds for its own Admin role — same deterministic id (seedUUID), not a
-	// separate hardcoded one. Two rows both carrying Code: "*:*:*" would
-	// collide on the unique idx_permissions_code index the instant BOTH ran
-	// in the same call (which they always do — this function calls
-	// SeedDefaultRoles unconditionally below): the first Upsert's own
-	// ON CONFLICT (id) DO NOTHING only suppresses a conflict on THAT row's id,
-	// not on a differently-id'd row sharing the same code. Reusing the same
-	// id makes the second Upsert a clean no-op instead.
-	adminPermID := seedUUID(DevTenantID, "permission:*:*:*")
-	if _, err := perms.Upsert(ctx,
-		Permissions{ID: adminPermID, Code: "*:*:*", Description: "Full access (dev admin)", Module: "*"},
-		[]string{"id"}, ""); err != nil {
+	// separate hardcoded one, which used to be why this upserted by "id": two
+	// rows both carrying Code: "*:*:*" would collide on the unique
+	// idx_permissions_code index the instant BOTH ran in the same call (which
+	// they always do — this function calls SeedDefaultRoles unconditionally
+	// below), and reusing the same id made that second Upsert a no-op.
+	//
+	// But "id" was never the real natural key here — permissions has no
+	// tenant_id (a global DSL catalog, not tenant-scoped — auth.module.go's
+	// Migrate doc comment) and idx_permissions_code enforces uniqueness on
+	// CODE alone. Preparing a database that already has its OWN "*:*:*" row
+	// under some other id (a restored production dump, a second real tenant)
+	// hit exactly that: this Upsert's deterministic id never matched the
+	// existing row's, so it tried to INSERT a second row sharing the same
+	// code and got a 23502 unique-violation instead of a clean no-op.
+	// UpsertPartial on "code" (the real key, same pattern
+	// modules/auth/handler.go's reconcile already uses) fixes that — on a
+	// conflict it re-reads the EXISTING row instead, and adminPerm.ID below
+	// is that real row's id, not the locally-precomputed one, so the
+	// role_permissions grant below links to a permission row that actually
+	// exists either way.
+	adminPerm, err := perms.UpsertPartial(ctx,
+		Permissions{ID: seedUUID(DevTenantID, "permission:*:*:*"), Code: "*:*:*", Description: "Full access (dev admin)", Module: "*"},
+		[]string{"code"}, "deleted_at IS NULL", "")
+	if err != nil {
 		return fmt.Errorf("seed dev admin: permissions: %w", err)
 	}
 	// (user_id, role_id) is the auth module's own hand-written unique index
@@ -104,7 +117,7 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 	}
 	if _, err := db.Exec(ctx,
 		`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-		devRoleID, adminPermID,
+		devRoleID, adminPerm.ID,
 	); err != nil {
 		return fmt.Errorf("seed dev admin: role_permissions: %w", err)
 	}
@@ -182,8 +195,11 @@ func EnsureAccountRoleTypes(ctx context.Context, db *orm.DB, tenantID uuid.UUID)
 //
 // Every insert goes through Repository.Upsert(id, "") — deterministic
 // per-(tenant, entity[, right]) ids (seedUUID) keep it idempotent, same
-// shape SeedDevAdmin uses. role_permissions is the one exception — see
-// SeedDevAdmin's own doc comment on why its composite PK stays raw SQL.
+// shape SeedDevAdmin uses — except the two Permissions rows, which upsert on
+// "code" instead (permissions' real, global uniqueness constraint — see the
+// UpsertPartial calls' own doc comment below). role_permissions is the other
+// exception — see SeedDevAdmin's own doc comment on why its composite PK
+// stays raw SQL.
 //
 // Not currently called from any production tenant-provisioning flow — none
 // exists yet in this codebase (tenants aren't self-serve today). SeedDevAdmin
@@ -211,18 +227,32 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 		}
 	}
 
-	for _, p := range []Permissions{
-		{ID: adminPermID, Code: "*:*:*", Description: "Full access (default Admin role)", Module: "*"},
-		{ID: viewerPermID, Code: "*:*:read", Description: "Read-only access (default Viewer role)", Module: "*"},
-	} {
-		if _, err := perms.Upsert(ctx, p, []string{"id"}, ""); err != nil {
-			return fmt.Errorf("seed default roles: permissions: %w", err)
-		}
+	// UpsertPartial on "code", not Upsert on "id" — permissions has no
+	// tenant_id (a global DSL catalog, not tenant-scoped) and its real
+	// uniqueness constraint (idx_permissions_code) is on code alone, so a
+	// second tenant's own seedUUID-derived id for the SAME code (every
+	// tenant seeds "*:*:*"/"*:*:read") never matches whichever tenant's row
+	// got there first — a plain id-conflict Upsert tries to insert a second
+	// row sharing that code and hits a real unique-violation. On a conflict
+	// this re-reads the EXISTING row instead (same pattern SeedDevAdmin and
+	// modules/auth/handler.go's reconcile already use), so adminPerm.ID/
+	// viewerPerm.ID below are always a real, existing permission row's id.
+	adminPerm, err := perms.UpsertPartial(ctx,
+		Permissions{ID: adminPermID, Code: "*:*:*", Description: "Full access (default Admin role)", Module: "*"},
+		[]string{"code"}, "deleted_at IS NULL", "")
+	if err != nil {
+		return fmt.Errorf("seed default roles: permissions: %w", err)
+	}
+	viewerPerm, err := perms.UpsertPartial(ctx,
+		Permissions{ID: viewerPermID, Code: "*:*:read", Description: "Read-only access (default Viewer role)", Module: "*"},
+		[]string{"code"}, "deleted_at IS NULL", "")
+	if err != nil {
+		return fmt.Errorf("seed default roles: permissions: %w", err)
 	}
 
 	for _, rp := range []struct{ roleID, permID uuid.UUID }{
-		{adminRoleID, adminPermID},
-		{viewerRoleID, viewerPermID},
+		{adminRoleID, adminPerm.ID},
+		{viewerRoleID, viewerPerm.ID},
 	} {
 		if _, err := db.Exec(ctx,
 			`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

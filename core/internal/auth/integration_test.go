@@ -673,6 +673,70 @@ func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithGrantedRights(t *tes
 	}
 }
 
+// TestIntegration_SeedDefaultRoles_SecondTenantSharesTheSamePermissionRow
+// reproduces the production incident this test guards against: preparing a
+// restored database that already has its OWN tenant (and its own "*:*:*"
+// permission row, seeded under some other id) used to fail outright —
+// SeedDevAdmin/SeedDefaultRoles derived a per-TENANT id for a value
+// (permissions.code) that's actually globally unique across the whole table
+// (permissions has no tenant_id at all), so a second tenant's seed always
+// tried to INSERT a second row sharing that code and hit
+// idx_permissions_code's real unique-violation. Seeding two DIFFERENT
+// tenants in the same test reproduces that collision directly.
+func TestIntegration_SeedDefaultRoles_SecondTenantSharesTheSamePermissionRow(t *testing.T) {
+	app, _ := integrationSetup(t)
+	ctx := context.Background()
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+
+	if err := auth.SeedDefaultRoles(ctx, app.DB, tenantA); err != nil {
+		t.Fatalf("seed default roles (tenant A): %v", err)
+	}
+	// Must NOT fail with a duplicate-key error on idx_permissions_code — this
+	// is the exact call that 500'd in production against a restored database.
+	if err := auth.SeedDefaultRoles(ctx, app.DB, tenantB); err != nil {
+		t.Fatalf("seed default roles (tenant B): %v", err)
+	}
+
+	var permCount int
+	if err := app.DB.QueryRow(ctx,
+		`SELECT count(*) FROM permissions WHERE code = '*:*:*'`,
+	).Scan(&permCount); err != nil {
+		t.Fatalf("count '*:*:*' permission rows: %v", err)
+	}
+	if permCount != 1 {
+		t.Fatalf("permissions rows with code '*:*:*' = %d, want exactly 1 (global catalog, shared across tenants)", permCount)
+	}
+
+	var permID uuid.UUID
+	if err := app.DB.QueryRow(ctx,
+		`SELECT id FROM permissions WHERE code = '*:*:*'`,
+	).Scan(&permID); err != nil {
+		t.Fatalf("find the shared '*:*:*' permission row: %v", err)
+	}
+
+	// Both tenants' Admin roles must be granted THIS SAME row, not each
+	// pointing at their own (nonexistent) locally-derived id.
+	for _, tenantID := range []uuid.UUID{tenantA, tenantB} {
+		var adminRoleID uuid.UUID
+		if err := app.DB.QueryRow(ctx,
+			`SELECT id FROM roles WHERE tenant_id = $1 AND technical_name = 'admin'`, tenantID,
+		).Scan(&adminRoleID); err != nil {
+			t.Fatalf("find admin role for tenant %s: %v", tenantID, err)
+		}
+		var granted bool
+		if err := app.DB.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM role_permissions WHERE role_id = $1 AND permission_id = $2)`,
+			adminRoleID, permID,
+		).Scan(&granted); err != nil {
+			t.Fatalf("check grant for tenant %s: %v", tenantID, err)
+		}
+		if !granted {
+			t.Errorf("tenant %s's admin role is not granted the shared '*:*:*' permission row", tenantID)
+		}
+	}
+}
+
 // adminGrantedRightNamesForTest mirrors auth.adminGrantedRightNames
 // (unexported) so this external test package doesn't need to reach into
 // internals for one constant.
