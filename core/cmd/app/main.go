@@ -474,7 +474,7 @@ func main() {
 		}
 	}
 	dbManageManager := dbmanage.NewManager(
-		app, moduleRuntime, presenceHub, dbManageObjects,
+		app, presenceHub, dbManageObjects,
 		engine, linker, configContent, *configFilePtr,
 	)
 	dbManageHandler := dbmanage.NewHandler(dbManageManager)
@@ -483,6 +483,12 @@ func main() {
 	dbManageGroup.GET("/databases", dbManageHandler.List)
 	dbManageGroup.POST("/databases", dbManageHandler.Create)
 	dbManageGroup.POST("/databases/:name/switch", dbManageHandler.Switch)
+	// Prepare (async, off the request path) + Activate (fast, near-instant
+	// pool swap against an already-warm standby) split what /switch used to
+	// do in one blocking call — see internal/dbmanage/prepare.go.
+	dbManageGroup.POST("/databases/:name/prepare", dbManageHandler.Prepare)
+	dbManageGroup.POST("/databases/:name/activate", dbManageHandler.Activate)
+	dbManageGroup.DELETE("/databases/:name/prepare", dbManageHandler.DiscardPrepared)
 	dbManageGroup.DELETE("/databases/:name", dbManageHandler.Delete)
 	dbManageGroup.GET("/databases/:name/extract", dbManageHandler.Extract)
 	dbManageGroup.POST("/databases/restore", dbManageHandler.Restore)

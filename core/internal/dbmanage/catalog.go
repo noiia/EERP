@@ -35,11 +35,17 @@ func validateName(name string) error {
 	return nil
 }
 
-// DatabaseInfo is one row of the /database/management list.
+// DatabaseInfo is one row of the /database/management list. Status/
+// PrepareError are filled in by Handler.List from Manager's in-memory
+// prepared map (prepare.go) — ListDatabases itself only ever queries
+// Postgres, so a caller that wants the merged view must go through the
+// handler, not this function directly.
 type DatabaseInfo struct {
-	Name      string `json:"name"`
-	SizeBytes int64  `json:"size_bytes"`
-	Active    bool   `json:"active"`
+	Name         string        `json:"name"`
+	SizeBytes    int64         `json:"size_bytes"`
+	Active       bool          `json:"active"`
+	Status       PrepareStatus `json:"status"`
+	PrepareError string        `json:"prepare_error,omitempty"`
 }
 
 // ListDatabases enumerates every EERP-shaped database on the server: every
@@ -139,7 +145,12 @@ func CreateDatabase(ctx context.Context, conn connInfo, name string) error {
 // up front (before even asking Postgres) when name is the currently active
 // database — Postgres would likely refuse anyway (open connections), but a
 // clear, purpose-built error here is better UX than a raw Postgres one on a
-// page with no other context around it.
+// page with no other context around it. Does NOT itself check for a
+// prepared-but-not-active standby holding its own open connections on name —
+// that's Manager.Delete's job (prepare.go), the only caller that should
+// invoke this directly; a bare DropDatabase call against a prepared standby
+// still fails the same way Postgres always would ("database is being
+// accessed by other users").
 func DropDatabase(ctx context.Context, conn connInfo, name, activeName string) error {
 	if err := validateName(name); err != nil {
 		return err

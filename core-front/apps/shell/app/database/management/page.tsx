@@ -1,9 +1,10 @@
 'use client'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
 import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
@@ -28,13 +29,22 @@ import Typography from '@mui/material/Typography'
 // reason here being the same class: large binary transfer (dump/restore)
 // with no session/cookie involved at all.
 
+type PrepareStatus = 'unprepared' | 'preparing' | 'ready' | 'failed'
+
 interface DatabaseInfo {
   name: string
   size_bytes: number
   active: boolean
+  status: PrepareStatus
+  prepare_error?: string
 }
 
 const API_BASE = '/api/v1/database-management'
+// How often to re-poll the list while any row is still "preparing" — there's
+// no push/webhook path here, and Prepare itself runs off-request in a
+// goroutine (docs/adr/ADR-021-database-management.md's Prepare/Activate
+// split), so polling is the only way this page learns it finished.
+const PREPARING_POLL_MS = 3000
 
 function formatSize(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -65,19 +75,33 @@ export default function DatabaseManagementPage() {
 
   const headers = useCallback(() => ({ 'X-Master-Key': masterKey }), [masterKey])
 
-  const loadDatabases = useCallback(async () => {
-    setError(null)
-    setBusy(true)
-    try {
-      const res = await fetch(`${API_BASE}/databases`, { headers: headers() })
-      if (!res.ok) throw new Error(await readErrorMessage(res))
-      setDatabases((await res.json()) as DatabaseInfo[])
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load databases.')
-    } finally {
-      setBusy(false)
-    }
-  }, [headers])
+  const loadDatabases = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!silent) {
+        setError(null)
+        setBusy(true)
+      }
+      try {
+        const res = await fetch(`${API_BASE}/databases`, { headers: headers() })
+        if (!res.ok) throw new Error(await readErrorMessage(res))
+        setDatabases((await res.json()) as DatabaseInfo[])
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not load databases.')
+      } finally {
+        if (!silent) setBusy(false)
+      }
+    },
+    [headers],
+  )
+
+  // While anything is "preparing", keep polling quietly in the background —
+  // a silent refresh (no busy flag, no error-clearing) so it never fights
+  // with an in-flight foreground action's own withBusy.
+  useEffect(() => {
+    if (!databases?.some((db) => db.status === 'preparing')) return
+    const id = setInterval(() => void loadDatabases({ silent: true }), PREPARING_POLL_MS)
+    return () => clearInterval(id)
+  }, [databases, loadDatabases])
 
   async function withBusy(action: () => Promise<void>) {
     setError(null)
@@ -101,21 +125,45 @@ export default function DatabaseManagementPage() {
       })
       if (!res.ok) throw new Error(await readErrorMessage(res))
       setCreateName('')
-      setNotice(`Database "${createName}" created and initialized.`)
+      setNotice(`Database "${createName}" created and initialized — ready to activate.`)
       await loadDatabases()
     })
   }
 
-  function handleSwitch(name: string) {
+  function handlePrepare(name: string) {
     void withBusy(async () => {
-      const res = await fetch(`${API_BASE}/databases/${encodeURIComponent(name)}/switch`, {
+      const res = await fetch(`${API_BASE}/databases/${encodeURIComponent(name)}/prepare`, {
+        method: 'POST',
+        headers: headers(),
+      })
+      if (!res.ok) throw new Error(await readErrorMessage(res))
+      setNotice(`Preparing "${name}" in the background — this page will update once it's ready to activate.`)
+      await loadDatabases()
+    })
+  }
+
+  function handleActivate(name: string) {
+    void withBusy(async () => {
+      const res = await fetch(`${API_BASE}/databases/${encodeURIComponent(name)}/activate`, {
         method: 'POST',
         headers: headers(),
       })
       if (!res.ok) throw new Error(await readErrorMessage(res))
       setNotice(
-        `Switched to "${name}". Every session logged into the main app (including this browser's, if any) has just been invalidated — that's expected, not a bug.`,
+        `Activated "${name}". Every session logged into the main app (including this browser's, if any) has just been invalidated — that's expected, not a bug.`,
       )
+      await loadDatabases()
+    })
+  }
+
+  function handleDiscard(name: string) {
+    void withBusy(async () => {
+      const res = await fetch(`${API_BASE}/databases/${encodeURIComponent(name)}/prepare`, {
+        method: 'DELETE',
+        headers: headers(),
+      })
+      if (!res.ok && res.status !== 204) throw new Error(await readErrorMessage(res))
+      setNotice(`Discarded the prepared standby for "${name}".`)
       await loadDatabases()
     })
   }
@@ -167,7 +215,7 @@ export default function DatabaseManagementPage() {
       if (!res.ok) throw new Error(await readErrorMessage(res))
       setRestoreName('')
       setRestoreFile(null)
-      setNotice(`Restored into "${restoreName}". Switch into it separately when ready.`)
+      setNotice(`Restored into "${restoreName}". Prepare it, then activate separately when ready.`)
       await loadDatabases()
     })
   }
@@ -211,14 +259,48 @@ export default function DatabaseManagementPage() {
                 {databases.map((db) => (
                   <TableRow key={db.name}>
                     <TableCell>
-                      {db.name} {db.active ? <Chip size="small" color="primary" label="active" sx={{ ml: 1 }} /> : null}
+                      {db.name}
+                      {db.active ? <Chip size="small" color="primary" label="active" sx={{ ml: 1 }} /> : null}
+                      {!db.active && db.status === 'ready' ? (
+                        <Chip size="small" color="success" variant="outlined" label="ready to activate" sx={{ ml: 1 }} />
+                      ) : null}
+                      {db.status === 'preparing' ? (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<CircularProgress size={12} />}
+                          label="preparing…"
+                          sx={{ ml: 1 }}
+                        />
+                      ) : null}
+                      {db.status === 'failed' ? (
+                        <Chip
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          label={db.prepare_error ? `prepare failed: ${db.prepare_error}` : 'prepare failed'}
+                          sx={{ ml: 1, maxWidth: 320 }}
+                        />
+                      ) : null}
                     </TableCell>
                     <TableCell>{formatSize(db.size_bytes)}</TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
-                        <Button size="small" disabled={busy || db.active} onClick={() => handleSwitch(db.name)}>
-                          Switch
-                        </Button>
+                        {!db.active && (db.status === 'unprepared' || db.status === 'failed') ? (
+                          <Button size="small" disabled={busy} onClick={() => handlePrepare(db.name)}>
+                            Prepare
+                          </Button>
+                        ) : null}
+                        {!db.active && db.status === 'ready' ? (
+                          <>
+                            <Button size="small" variant="contained" disabled={busy} onClick={() => handleActivate(db.name)}>
+                              Activate
+                            </Button>
+                            <Button size="small" disabled={busy} onClick={() => handleDiscard(db.name)}>
+                              Discard
+                            </Button>
+                          </>
+                        ) : null}
                         <Button size="small" disabled={busy} onClick={() => handleExtract(db.name, false)}>
                           Extract (SQL)
                         </Button>

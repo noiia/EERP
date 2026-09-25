@@ -22,13 +22,38 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   captured that same `*orm.DB` pointer, never a copy of the pool. `db.DB.SwapPool` (`core/orm/
   pool/db/db.go`) turned `pool` into an `atomic.Pointer[pgxpool.Pool]` so a switch repoints the
   SAME `*orm.DB` at a different database in place — every existing repo/handler picks up the new
-  pool with nothing to rebuild. `SwitchTo` (`internal/dbmanage/switch.go`) then re-runs the live
-  `module.Registry.Boot` (not a throwaway one — its in-memory active/table-ownership state must
-  stay correct for `ActiveGateMiddleware`), reseeds the default admin, force-disconnects every
-  presence websocket (`presence.Hub.CloseAll`, new), and best-effort persists `db_name` back into
-  the on-disk config (temp-file-then-rename, same pattern `module.json`'s own PUT uses) so the
-  switch survives a restart — failure to persist (e.g. a read-only-mounted config in Docker) logs
-  loudly but does not fail the request, since the live switch already happened.
+  pool with nothing to rebuild.
+- **Prepare/Activate split (blue/green toggling) supersedes the original one-call `SwitchTo`.**
+  The original design did `SwapPool` (instant, live cutover) *then* `module.Registry.Boot` (schema
+  provisioning) — meaning real traffic was already hitting the new database while it was still
+  being provisioned, for as long as `Boot()` took (measured: up to ~2 minutes on production
+  spinning disk — see the pitfall bullet below). `internal/dbmanage/prepare.go` decouples the two:
+  - **`Prepare(ctx, name)`** provisions a database *without* touching the live pool at all —
+    `Provisioner.Provision` (`provision.go`) builds its own throwaway `module.Registry` per call,
+    completely independent of the process's one live registry singleton (safe because that
+    registry's active/table-ownership bookkeeping is derived purely from `module_root`'s
+    filesystem scan, never from which database happens to be live — it never needed recomputing on
+    a switch to begin with). On success the resulting pool is kept **warm**, not closed, and
+    recorded in `Manager.prepared[name]` as a ready standby. `Handler.Prepare`
+    (`POST .../:name/prepare`) runs this in a background goroutine and returns `202` immediately;
+    `Handler.List` surfaces `unprepared`/`preparing`/`ready`/`failed` per database so the UI can
+    poll.
+  - **`Activate(ctx, name)`** is the actual cutover — near-instant, since all it does is `Ping` the
+    already-warm standby pool once (cheap insurance against a connection that died while idle;
+    `SwapPool` itself does zero validation), `SwapPool` it in, force-disconnect every presence
+    websocket, best-effort persist `db_name` (temp-file-then-rename, same pattern `module.json`'s
+    own PUT uses — failure to persist logs loudly but doesn't fail the request, since the live
+    switch already happened), and `setActiveName`. Crucially, **the just-deactivated pool becomes
+    the new standby for its own name** instead of being closed — this is what makes toggling back
+    to it later free (no re-provisioning, no new connections, just another `Ping` + `SwapPool`),
+    directly answering "toggle between a first and a second database, don't re-deploy on every
+    switch."
+  - **`SwitchTo`** (`switch.go`) is now a thin backward-compatible wrapper — `Prepare` (blocking,
+    if not already `ready`) then `Activate` — kept for scripts/callers that still want the old
+    one-call blocking behavior; the UI itself moved to the two-step flow.
+  - **`Discard(name)`** releases a prepared standby without activating it (closes its pool, drops
+    the map entry) — both an explicit "never mind" UI action and something `Delete` now calls
+    first, since Postgres refuses `DROP DATABASE` while a standby's connections are still open.
 - **A real prerequisite bug this exposed:** `module.Registry.Boot`'s Go-module schema
   provisioning (`internal/module/go_module.go`'s `loadGoModule`) decided whether to run
   `ensureTable`/`ensureColumns` by diffing a **process-global, in-memory** table registry, not
@@ -90,31 +115,36 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   route must render for a fully anonymous visitor. No BFF/Server Actions: the browser calls
   `/api/v1/database-management/*` directly with the typed master key as a header, the same
   "browser calls Go directly for a good reason" precedent Presence established (ADR-019), here
-  because of large binary transfer with no session involved at all.
+  because of large binary transfer with no session involved at all. Per row, the action shown
+  follows `status`: `unprepared`/`failed` → **Prepare**, `preparing` → a disabled spinner chip,
+  `ready` → **Activate** + **Discard**, `active` → none. A `useEffect` polls `GET .../databases`
+  on a 3s interval (silently — no busy flag, so it never fights an in-flight foreground action)
+  whenever any row is `preparing`, since `Prepare` runs off-request with no push/webhook path back
+  to the browser.
 - **Infra:** `infra/nginx/nginx.conf` gets its own `location /api/v1/database-management/` block
   (`client_max_body_size 2g`, `proxy_read_timeout 3600s`) — the default `/api/v1/` block's 50m/120s
   is far too small for a full dump+S3 bundle.
 
-## Sequence: hot database switch
+## Sequence: prepare (background) then activate (instant)
 
-Every operation `SwitchTo` (`internal/dbmanage/switch.go`) runs, end to end, for
-`POST /api/v1/database-management/databases/:name/switch` — the schema-provisioning box is
-`module.Registry.Boot`, unchanged in shape whether this is the process's first boot or its
-Nth switch, per the bullets above.
+Two separate request paths now, deliberately never sharing a request: `Prepare` does every bit of
+slow, DB-touching work off the live pool entirely; `Activate` does none of it.
 
 ```mermaid
 flowchart TD
-    Req["POST .../databases/:name/switch"] --> Auth{"RequireMasterKey"}
-    Auth -- "missing/invalid" --> R401["401"]
-    Auth -- ok --> Valid{"validateName(name)"}
-    Valid -- invalid --> R400["400"]
-    Valid -- ok --> Open["Open new pgxpool + Ping target db"]
-    Open -- ping fails --> OpenErr["close new pool, return error"]
-    Open -- ok --> Swap["db.DB.SwapPool: atomically repoint the live *orm.DB"]
-    Swap --> Grace["schedule OLD pool Close() after a 5s grace period"]
-    Swap --> Boot
+    PReq["POST .../:name/prepare"] --> PAuth{"RequireMasterKey"}
+    PAuth -- "missing/invalid" --> P401["401"]
+    PAuth -- ok --> PValid{"validateName(name)"}
+    PValid -- invalid --> P400["400"]
+    PValid -- ok --> Kick["go func(){ Manager.Prepare(context.Background(), name) }()"]
+    Kick --> P202["202 Accepted — caller polls GET .../databases for status"]
 
-    subgraph Boot["module.Registry.Boot(ctx)"]
+    Kick -. "background goroutine, never on the request" .-> Guard{"already preparing\nor already ready?"}
+    Guard -- yes --> NoOp["no-op — repeat Prepare of an\nunchanged target costs nothing"]
+    Guard -- no --> Open["orm.New: open a pool to name\nWITH the deployment's real MaxConns/MinConns\n(not pgx bare defaults)"]
+    Open --> Boot
+
+    subgraph Boot["Provisioner.Provision(ctx, tmp.DB) — its OWN throwaway module.Registry,\nnever the live moduleRuntime singleton"]
         direction TB
         Bootstrap["bootstrap module_migrations + module_operation_log tables"]
         Detect["detector: scan module_root for module.json (WASM + Go, active or not)"]
@@ -141,35 +171,68 @@ flowchart TD
 
         Wasm --> Idx
         GoLoop --> Idx["AFTER every module: ensureIndexes\nfor every db-tagged 'col,index' field, every registered table"]
+        Idx --> SeedAdmin["auth.SeedDevAdmin"]
     end
 
-    Boot -- "len(errs) > 0" --> BootErr["SwitchTo returns 500:\nprovision schema on &lt;name&gt;: &lt;first error&gt;"]
-    Boot -- clean --> Seed["auth.SeedDevAdmin: seed default admin + roles if missing"]
-    Seed --> Presence["presence.Hub.CloseAll: force-disconnect every open websocket"]
-    Presence --> Persist["persistDBName: atomic temp-file+rename write into the on-disk config"]
-    Persist -- write fails --> PersistWarn["log loudly — live switch already succeeded, don't fail the request"]
-    Persist -- ok --> Active["setActiveName(name)"]
-    PersistWarn --> Active
-    Active --> R200["200 — new pool already serving live traffic"]
+    Boot -- error --> Fail["tmp.Close() — don't leak the failed attempt's\nconnections; prepared[name] = {err} -> status 'failed'"]
+    Boot -- ok --> Warm["keep tmp.DB.Pool() OPEN — do NOT close it;\nprepared[name] = {pool, ready: true} -> status 'ready'"]
 ```
 
-Every `ALTER`/`CREATE` in the Go-module loop and the trailing index pass is its own DB round
+```mermaid
+flowchart TD
+    AReq["POST .../:name/activate"] --> AAuth{"RequireMasterKey"}
+    AAuth -- "missing/invalid" --> A401["401"]
+    AAuth -- ok --> Ready{"prepared[name] ready?"}
+    Ready -- no --> A409["409 NOT_READY — prepare it first"]
+    Ready -- yes --> Ping{"Ping the warm standby pool"}
+    Ping -- "fails (died while idle)" --> Evict["evict + close the stale entry,\nreturn an error asking for re-prepare"]
+    Ping -- ok --> Swap["db.DB.SwapPool(standby pool):\natomically repoint the live *orm.DB\n— the actual cutover, one pointer swap"]
+    Swap --> Presence["presence.Hub.CloseAll: force-disconnect every open websocket"]
+    Presence --> Persist["persistDBName: atomic temp-file+rename write into the on-disk config"]
+    Persist -- write fails --> PersistWarn["log loudly — live switch already succeeded, don't fail the request"]
+    Persist -- ok --> SetActive["setActiveName(name)"]
+    PersistWarn --> SetActive
+    SetActive --> Repurpose["prepared[oldName] = {pool: OLD live pool, ready: true}\n— NOT closed: it's the new standby, free to toggle back to"]
+    Repurpose --> Forget["delete(prepared, name) — live now, not a standby"]
+    Forget --> A200["200 — new pool already serving live traffic"]
+```
+
+Every `ALTER`/`CREATE` in `Prepare`'s Go-module loop and trailing index pass is its own DB round
 trip, `Boot()`-unconditional by design (see the bullets above) — so on an otherwise-empty target
-this diagram's cost is almost entirely **schema size × round-trip latency**, not row count. A
-real production database being switched INTO for the first time additionally pays for whatever a
-module's own `Migrate()` hook has to backfill (`UPDATE ... FROM ...` scans, index builds) — that
-part *does* scale with the target's existing row counts, unlike the schema-provisioning loop above
-it.
+this cost is almost entirely **schema size × round-trip latency**, not row count, and it never
+touches the request path at all now. A real production database being prepared for the first time
+additionally pays for whatever a module's own `Migrate()` hook has to backfill (`UPDATE ... FROM
+...` scans, index builds) — that part *does* scale with the target's existing row counts, unlike
+the schema-provisioning loop above it, but it's still happening off to the side, not blocking live
+traffic. `Activate` itself does none of this — it's bounded by one `Ping` round trip plus a handful
+of fast, non-DDL bookkeeping steps, regardless of schema size or row count on either side.
 
 ## Consequences / pitfalls
 - A switch invalidates every current session implicitly, not by design revocation — an old JWT's
   claims simply stop resolving against whatever database is now live. The existing
   401-then-redirect-to-`/login` handling (`ApiClient.ts`) covers this with no new frontend code;
   presence sockets are force-closed explicitly since nothing else would notice they're stale.
-- `SwapPool`'s old pool MUST be scheduled for cleanup via `defer` immediately after the swap, not
-  at the bottom of the function — an early return from a later provisioning failure otherwise
-  leaks the just-replaced pool's connections forever (caught live via `pg_stat_activity` during
-  this feature's own end-to-end testing).
+- **The old grace-period-then-`Close()` dance is gone, on purpose.** The original design always
+  destroyed the outgoing pool (`defer time.AfterFunc(5*time.Second, oldPool.Close)`) because it had
+  nowhere else to put it. Since `Activate` now repurposes the just-deactivated pool as the new
+  standby for its own name instead, there's nothing to leak-guard against on the happy path — the
+  pool that used to need a deferred `Close` now just keeps living in `Manager.prepared`. A pool
+  only actually gets closed on an explicit `Discard`, a failed `Prepare` attempt (leaked otherwise),
+  or a stale standby caught by `Activate`'s pre-swap `Ping`.
+- **`Manager.prepared` is in-memory only, never persisted — deliberately.** A `core-back` restart
+  wipes it; anything not currently active needs a fresh `Prepare` after one. This isn't a gap: a
+  restart is also exactly when new module code/migrations could exist, so forcing re-preparation is
+  correct, not just convenient — there's no staleness/fingerprinting problem to solve because
+  nothing survives long enough to go stale across a code change.
+- **`Prepare`'s pool now carries the deployment's real `MaxConns`/`MinConns`** (`cfg.MaxConns`/
+  `cfg.MinConns`, threaded through `Manager`) — the original `CreateAndProvision` and `SwitchTo`
+  both silently built their pool with `pgxpool.New`'s bare defaults instead, harmless when the pool
+  was immediately closed again (`CreateAndProvision`) or short-lived, but a real gap once a pool
+  built this way can end up serving all production traffic indefinitely via `Activate`'s `SwapPool`.
+- `Manager.Delete` calls `Discard` before `DropDatabase` — a database sitting as a prepared-but-
+  never-activated standby holds open idle connections, and Postgres refuses `DROP DATABASE` while
+  any exist ("database is being accessed by other users"). Without this, deleting an abandoned
+  prepare candidate would fail with that raw error instead of just working.
 - `DROP DATABASE`/`CREATE DATABASE` identifiers can't be parameterized — safety is a strict
   `^[a-z][a-z0-9_]{0,62}$` allowlist (`dbmanage.validateName`) plus `pgx.Identifier{}.Sanitize()`,
   not string interpolation of arbitrary request input.
@@ -177,16 +240,17 @@ it.
   `('public.app_settings')` both non-null) — `postgres`/`template0`/`template1`/an unrelated
   database sharing the same Postgres server never appear, so there is no path to switching into
   or dropping something that isn't an EERP database via this UI.
-- **Switch time is dominated by fsync-per-statement, not row count.** Every `ensureTable`/
-  `ensureColumns`/`ensureIndexes` call outside an explicit transaction is Postgres's own
-  autocommit — one WAL fsync per statement, not per `Boot()` call. On fast local storage
-  (SSD/NVMe, sub-millisecond fsync) this is unnoticeable even for a few hundred statements; on
-  spinning disk (a real fsync can cost 5-20ms+) the SAME schema-size-bound statement count that
-  takes under a second in dev can stretch to a minute or more in production — this is what's
-  actually behind "switch takes 2 minutes on a hard drive for a brand-new (empty) database," not
-  data volume (the diagram above has no row-scanning step for an empty target). The lever this
-  doesn't yet use: batching a `Boot()` call's DDL into one (or a few) transactions would collapse
-  many fsyncs into one commit — not implemented, since it needs `Migrator.Migrate(ctx, db
-  *orm.DB)`'s signature to accept `orm.Executor` instead (13 modules implement it today); add it
-  if switch time on slow storage becomes a real operational problem rather than a one-time
-  cold-provisioning cost.
+- **`Prepare` time is dominated by fsync-per-statement, not row count** — this used to be *switch*
+  time before the Prepare/Activate split, and the underlying cost hasn't changed, just where it
+  lands. Every `ensureTable`/`ensureColumns`/`ensureIndexes` call outside an explicit transaction is
+  Postgres's own autocommit — one WAL fsync per statement, not per `Boot()` call. On fast local
+  storage (SSD/NVMe, sub-millisecond fsync) this is unnoticeable even for a few hundred statements;
+  on spinning disk (a real fsync can cost 5-20ms+) the SAME schema-size-bound statement count that
+  takes under a second in dev can stretch to a minute or more in production — the original "switch
+  takes 2 minutes on a hard drive for a brand-new (empty) database" report, not data volume (an
+  empty target has no row-scanning step at all). It no longer blocks live traffic — `Prepare` runs
+  off the request path — but an operator waiting on the "preparing → ready" status still feels it.
+  The lever this doesn't yet use: batching a `Boot()` call's DDL into one (or a few) transactions
+  would collapse many fsyncs into one commit — not implemented, since it needs
+  `Migrator.Migrate(ctx, db *orm.DB)`'s signature to accept `orm.Executor` instead (13 modules
+  implement it today); add it if `Prepare` time on slow storage becomes a real operational problem.
