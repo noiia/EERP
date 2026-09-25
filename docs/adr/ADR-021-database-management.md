@@ -37,6 +37,31 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   idempotent (`IF NOT EXISTS`) `ensureTable`/`ensureColumns` unconditionally every call, keeping
   the in-memory diff only for table-ownership bookkeeping. This is what makes "switch into an
   empty database" and "create + immediately provision a new one" both actually work.
+- **That "unconditionally every call" fix was itself O(n²)** until a second pass: `loadGoModule`'s
+  per-table loop walks the ENTIRE global table registry (every table any module has EVER
+  registered, not just the current module's own), so module *k* of *n* redundantly re-issued
+  `ensureTable`/`ensureColumns` for all *k-1* tables earlier modules in the SAME `Boot()` call had
+  already handled — on an otherwise-empty target (this feature's whole point), that's pure
+  redundant round trips, not a no-op skipped by `IF NOT EXISTS` (the statement still has to be
+  sent and answered). Fixed by scoping a per-`Boot()`-call `ensuredThisBoot` set through every
+  module's `loadGoModule` invocation: a table is ensured exactly once per `Boot()` call — still
+  unconditional across *separate* `Boot()` calls (the actual invariant a switch depends on), just
+  no longer redundant *within* one.
+- **A NOT-NULL column with no natural default could wedge `Boot()` outright on a populated
+  table.** `ensureColumns` derives `zeroSQLDefault` for backfilling a new required column
+  (`''`/`false`/`0`/`'{}'::jsonb`) but has no sane default for `UUID` — `model.BaseModel`'s own
+  `TenantID` is exactly this type. `ADD COLUMN ... NOT NULL` with no `DEFAULT` fails outright
+  (Postgres 23502) the moment the table already has rows, which is precisely the case a switch
+  into a real, pre-existing database hits. A module can hand-write the correct two-step fix in its
+  own `Migrate()` hook (add nullable, backfill per-row, `ALTER COLUMN ... SET NOT NULL` —
+  `auth.module.go`'s `user_roles.tenant_id` and `propertymanagement`'s own analogous case) but
+  `Migrate()` runs *after* `ensureColumns` in the same module's load, so the column's OWN required
+  nullable-first step never happened before that hand-written fix could even reach it — the
+  generic pass errored out first and aborted the whole `Boot()` before `Migrate()` ran. Fixed by
+  having `ensureColumns` retry a 23502 on a no-default NOT NULL column as a plain nullable
+  `ADD COLUMN`, leaving the owning module's `Migrate()` to backfill and tighten it — exactly the
+  gap `zeroSQLDefault`'s own doc comment already named ("would otherwise permanently wedge
+  auto-migration") but that wasn't actually wired up until now.
 - **Also surfaced: `auth.SeedDevAdmin` had a standing, silent bug** — it seeded a `Permissions`
   row under a hardcoded id AND unconditionally called `SeedDefaultRoles`, which seeded a
   *different* id for the same `code = "*:*:*"`, violating `idx_permissions_code` on every single
@@ -70,6 +95,72 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   (`client_max_body_size 2g`, `proxy_read_timeout 3600s`) — the default `/api/v1/` block's 50m/120s
   is far too small for a full dump+S3 bundle.
 
+## Sequence: hot database switch
+
+Every operation `SwitchTo` (`internal/dbmanage/switch.go`) runs, end to end, for
+`POST /api/v1/database-management/databases/:name/switch` — the schema-provisioning box is
+`module.Registry.Boot`, unchanged in shape whether this is the process's first boot or its
+Nth switch, per the bullets above.
+
+```mermaid
+flowchart TD
+    Req["POST .../databases/:name/switch"] --> Auth{"RequireMasterKey"}
+    Auth -- "missing/invalid" --> R401["401"]
+    Auth -- ok --> Valid{"validateName(name)"}
+    Valid -- invalid --> R400["400"]
+    Valid -- ok --> Open["Open new pgxpool + Ping target db"]
+    Open -- ping fails --> OpenErr["close new pool, return error"]
+    Open -- ok --> Swap["db.DB.SwapPool: atomically repoint the live *orm.DB"]
+    Swap --> Grace["schedule OLD pool Close() after a 5s grace period"]
+    Swap --> Boot
+
+    subgraph Boot["module.Registry.Boot(ctx)"]
+        direction TB
+        Bootstrap["bootstrap module_migrations + module_operation_log tables"]
+        Detect["detector: scan module_root for module.json (WASM + Go, active or not)"]
+        Bootstrap --> Detect
+        Detect --> Wasm["WASM modules: priority-tiered groups, loaded in PARALLEL"]
+        Detect --> GoLoop
+
+        subgraph GoLoop["Go modules — SEQUENTIAL, registration order"]
+            direction TB
+            Fresh["ensuredThisBoot := {} — fresh set for THIS Boot() call only"]
+            Reg["module.Register(): declare its own tables in-memory"]
+            Fresh --> Reg
+            Reg --> Seen{"table already in\nensuredThisBoot this call?"}
+            Seen -- yes --> SkipCols["skip ensureTable/ensureColumns\n(handled by an earlier module this call)"]
+            Seen -- no --> EnsureTable["ensureTable: CREATE TABLE IF NOT EXISTS"]
+            EnsureTable --> AddCol["ensureColumns: ALTER TABLE ADD COLUMN IF NOT EXISTS"]
+            AddCol -- ok --> MarkSeen["ensuredThisBoot[table] = true"]
+            AddCol -- "23502 + NOT NULL + no default" --> Retry["retry: ADD COLUMN nullable instead"]
+            AddCol -- "other error" --> ModErr["abort THIS module: addErr(err), Boot continues with the rest"]
+            Retry --> MarkSeen
+            MarkSeen --> SkipCols
+            SkipCols --> Migrate["module's own Migrate() hook:\nhand-written DDL, per-row backfills,\nunique indexes, ALTER COLUMN SET NOT NULL"]
+        end
+
+        Wasm --> Idx
+        GoLoop --> Idx["AFTER every module: ensureIndexes\nfor every db-tagged 'col,index' field, every registered table"]
+    end
+
+    Boot -- "len(errs) > 0" --> BootErr["SwitchTo returns 500:\nprovision schema on &lt;name&gt;: &lt;first error&gt;"]
+    Boot -- clean --> Seed["auth.SeedDevAdmin: seed default admin + roles if missing"]
+    Seed --> Presence["presence.Hub.CloseAll: force-disconnect every open websocket"]
+    Presence --> Persist["persistDBName: atomic temp-file+rename write into the on-disk config"]
+    Persist -- write fails --> PersistWarn["log loudly — live switch already succeeded, don't fail the request"]
+    Persist -- ok --> Active["setActiveName(name)"]
+    PersistWarn --> Active
+    Active --> R200["200 — new pool already serving live traffic"]
+```
+
+Every `ALTER`/`CREATE` in the Go-module loop and the trailing index pass is its own DB round
+trip, `Boot()`-unconditional by design (see the bullets above) — so on an otherwise-empty target
+this diagram's cost is almost entirely **schema size × round-trip latency**, not row count. A
+real production database being switched INTO for the first time additionally pays for whatever a
+module's own `Migrate()` hook has to backfill (`UPDATE ... FROM ...` scans, index builds) — that
+part *does* scale with the target's existing row counts, unlike the schema-provisioning loop above
+it.
+
 ## Consequences / pitfalls
 - A switch invalidates every current session implicitly, not by design revocation — an old JWT's
   claims simply stop resolving against whatever database is now live. The existing
@@ -86,3 +177,16 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   `('public.app_settings')` both non-null) — `postgres`/`template0`/`template1`/an unrelated
   database sharing the same Postgres server never appear, so there is no path to switching into
   or dropping something that isn't an EERP database via this UI.
+- **Switch time is dominated by fsync-per-statement, not row count.** Every `ensureTable`/
+  `ensureColumns`/`ensureIndexes` call outside an explicit transaction is Postgres's own
+  autocommit — one WAL fsync per statement, not per `Boot()` call. On fast local storage
+  (SSD/NVMe, sub-millisecond fsync) this is unnoticeable even for a few hundred statements; on
+  spinning disk (a real fsync can cost 5-20ms+) the SAME schema-size-bound statement count that
+  takes under a second in dev can stretch to a minute or more in production — this is what's
+  actually behind "switch takes 2 minutes on a hard drive for a brand-new (empty) database," not
+  data volume (the diagram above has no row-scanning step for an empty target). The lever this
+  doesn't yet use: batching a `Boot()` call's DDL into one (or a few) transactions would collapse
+  many fsyncs into one commit — not implemented, since it needs `Migrator.Migrate(ctx, db
+  *orm.DB)`'s signature to accept `orm.Executor` instead (13 modules implement it today); add it
+  if switch time on slow storage becomes a real operational problem rather than a one-time
+  cold-provisioning cost.
