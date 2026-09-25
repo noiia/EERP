@@ -2,14 +2,26 @@ package module
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
 
 	"core/internal/common"
 	"core/internal/types"
 	"core/orm"
 )
+
+// pgNotNullViolation is Postgres's SQLSTATE for "column contains null
+// values" — what ADD COLUMN ... NOT NULL raises against a table that
+// already has rows and no DEFAULT to backfill them with.
+const pgNotNullViolation = "23502"
+
+func isNotNullViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgNotNullViolation
+}
 
 func bootstrapMigrationsTable(ctx context.Context, db *orm.DB) error {
 	_, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS module_migrations (
@@ -156,18 +168,39 @@ func ensureColumns(ctx context.Context, db orm.Executor, table string, fields []
 		if baseModelColumns[f.Column] {
 			continue
 		}
+		required := !f.Nullable && !f.IsPK
 		notNull := ""
-		if !f.Nullable && !f.IsPK {
+		hasDefault := false
+		if required {
 			notNull = " NOT NULL"
 			if def := zeroSQLDefault(f.SQLType); def != "" {
 				notNull += " DEFAULT " + def
+				hasDefault = true
 			}
 		}
 		// #nosec G201 — table/column names come from module manifests, not user input.
 		sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s%s",
 			table, f.Column, f.SQLType, notNull)
 		if _, err := db.Exec(ctx, sql); err != nil {
-			return fmt.Errorf("add column %s: %w", f.Column, err)
+			// A NOT NULL column with no natural zero default (e.g. UUID — a
+			// relation/tenant field, zeroSQLDefault has no sane value for it)
+			// fails outright (23502) against a table that already has rows:
+			// there is nothing to put in the new column for them. Fall back to
+			// adding it nullable — the owning module's own Migrate() hook is
+			// what backfills a real per-row value and tightens the column to
+			// NOT NULL afterward (see auth.module.go's user_roles.tenant_id for
+			// the pattern this fallback exists to unblock); this generic pass
+			// has no way to invent that value itself. Only retried when NO
+			// default was available in the first place — a field that DID have
+			// one hitting 23502 anyway is a genuinely unexpected error, not this
+			// known gap, and still surfaces as-is.
+			if !required || hasDefault || !isNotNullViolation(err) {
+				return fmt.Errorf("add column %s: %w", f.Column, err)
+			}
+			nullableSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", table, f.Column, f.SQLType)
+			if _, err2 := db.Exec(ctx, nullableSQL); err2 != nil {
+				return fmt.Errorf("add column %s (nullable fallback after 23502): %w", f.Column, err2)
+			}
 		}
 	}
 	return nil
