@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // newTestManager builds a Manager with no live DB/pool at all — enough to
 // exercise the pure in-memory state machine (Prepare's guards, Activate's
-// not-ready rejection, Discard, PrepareStatusFor). Anything that would
+// not-ready rejection, Discard, PrepareInfoFor). Anything that would
 // actually dial Postgres (a successful Prepare's provisionAndKeepWarm, a
 // successful Activate's SwapPool) needs a real database and is out of scope
 // here — see docs/adr/ADR-021-database-management.md's manual verification
@@ -17,31 +18,73 @@ func newTestManager() *Manager {
 	return &Manager{prepared: map[string]*preparedTarget{}}
 }
 
-func TestPrepareStatusFor(t *testing.T) {
+func TestPrepareInfoFor(t *testing.T) {
+	now := time.Now()
 	tests := []struct {
-		name      string
-		target    *preparedTarget
-		wantState PrepareStatus
-		wantErr   string
+		name       string
+		target     *preparedTarget
+		lastPrep   time.Duration
+		wantState  PrepareStatus
+		wantErr    string
+		wantDone   int
+		wantTotal  int
+		wantElapse bool // elapsed should be > 0
+		wantEst    time.Duration
 	}{
 		{name: "never prepared", target: nil, wantState: StatusUnprepared},
-		{name: "in flight", target: &preparedTarget{preparing: true}, wantState: StatusPreparing},
-		{name: "ready", target: &preparedTarget{ready: true}, wantState: StatusReady},
-		{name: "failed", target: &preparedTarget{err: errors.New("boom")}, wantState: StatusFailed, wantErr: "boom"},
+		{
+			name:       "in flight",
+			target:     &preparedTarget{preparing: true, startedAt: now.Add(-2 * time.Second), progressDone: 3, progressTotal: 10},
+			lastPrep:   45 * time.Second,
+			wantState:  StatusPreparing,
+			wantDone:   3,
+			wantTotal:  10,
+			wantElapse: true,
+			wantEst:    45 * time.Second,
+		},
+		{
+			name:      "ready",
+			target:    &preparedTarget{ready: true, startedAt: now.Add(-5 * time.Second), finishedAt: now, progressDone: 10, progressTotal: 10},
+			wantState: StatusReady,
+			wantDone:  10,
+			wantTotal: 10,
+			// EstimatedSeconds is NOT populated once finished — the real
+			// ElapsedSeconds (the attempt's actual duration) is the more
+			// useful number by then.
+			wantEst: 0,
+		},
+		{
+			name:      "failed",
+			target:    &preparedTarget{err: errors.New("boom"), startedAt: now.Add(-1 * time.Second), finishedAt: now, progressDone: 2, progressTotal: 10},
+			wantState: StatusFailed,
+			wantErr:   "boom",
+			wantDone:  2,
+			wantTotal: 10,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := newTestManager()
+			m.lastPrepareDuration = tt.lastPrep
 			if tt.target != nil {
 				m.prepared["staging"] = tt.target
 			}
-			gotState, gotErr := m.PrepareStatusFor("staging")
-			if gotState != tt.wantState {
-				t.Fatalf("status = %q, want %q", gotState, tt.wantState)
+			info := m.PrepareInfoFor("staging")
+			if info.Status != tt.wantState {
+				t.Fatalf("status = %q, want %q", info.Status, tt.wantState)
 			}
-			if gotErr != tt.wantErr {
-				t.Fatalf("errMsg = %q, want %q", gotErr, tt.wantErr)
+			if info.Error != tt.wantErr {
+				t.Fatalf("errMsg = %q, want %q", info.Error, tt.wantErr)
+			}
+			if info.ProgressDone != tt.wantDone || info.ProgressTotal != tt.wantTotal {
+				t.Fatalf("progress = %d/%d, want %d/%d", info.ProgressDone, info.ProgressTotal, tt.wantDone, tt.wantTotal)
+			}
+			if tt.wantElapse && info.ElapsedSeconds <= 0 {
+				t.Fatalf("ElapsedSeconds = %v, want > 0", info.ElapsedSeconds)
+			}
+			if time.Duration(info.EstimatedSeconds*float64(time.Second)) != tt.wantEst {
+				t.Fatalf("EstimatedSeconds = %v, want %v", info.EstimatedSeconds, tt.wantEst.Seconds())
 			}
 		})
 	}

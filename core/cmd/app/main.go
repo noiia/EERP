@@ -130,6 +130,18 @@ func main() {
 		}
 	}
 
+	// The database named in the config must exist before orm.New below can
+	// connect to it at all — Postgres refuses a connection to a database
+	// that isn't there. Creating it here (empty; module.Registry.Boot +
+	// auth.SeedDevAdmin just below still do all real schema provisioning,
+	// unconditionally, exactly as for any other empty database) is what
+	// lets a fresh deployment, or an existing one simply pointed at a
+	// different db_name, boot straight into a usable state instead of
+	// refusing to start. An already-existing database is left untouched.
+	if err := dbmanage.EnsureDatabaseExists(context.Background(), configContent); err != nil {
+		common.Logger.Fatal("❌ Error ensuring configured database exists", zap.Error(err))
+	}
+
 	dbLink := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
 		configContent.DbUser, configContent.DbPassword,
 		configContent.DbHost, configContent.DbPort, configContent.DbName)

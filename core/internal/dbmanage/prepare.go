@@ -41,7 +41,14 @@ type preparedTarget struct {
 	preparing  bool
 	ready      bool
 	err        error
-	preparedAt time.Time
+	startedAt  time.Time // when this Prepare attempt began
+	finishedAt time.Time // zero while still preparing
+	// progressDone/progressTotal mirror module.Registry.BootWithProgress's
+	// own done/total (Go modules processed so far / in this deployment) —
+	// see that method's doc comment for why Go-module count is effectively
+	// the whole workload today. Both zero before the first callback fires.
+	progressDone  int
+	progressTotal int
 }
 
 // provisionAndKeepWarm opens a pool to name with the deployment's real pool
@@ -54,26 +61,54 @@ type preparedTarget struct {
 // recording it as a ready preparedTarget. Shared by Prepare and
 // CreateAndProvision, which differ only in whether they CREATE DATABASE
 // first.
-func (m *Manager) provisionAndKeepWarm(ctx context.Context, name string) error {
+//
+// Every outcome (connect failure, provisioning failure, success) MUTATES the
+// SAME *preparedTarget in place rather than replacing the map entry — that's
+// what keeps whatever progressDone/progressTotal onProgress last recorded
+// visible even after a failure, instead of a fresh struct silently
+// discarding it. Ensures the entry exists first, so this works identically
+// whether Prepare already inserted a "preparing" placeholder or
+// CreateAndProvision calls straight in with none.
+func (m *Manager) provisionAndKeepWarm(ctx context.Context, name string, startedAt time.Time) error {
+	m.mu.Lock()
+	target := m.prepared[name]
+	if target == nil {
+		target = &preparedTarget{startedAt: startedAt}
+		m.prepared[name] = target
+	}
+	target.preparing = true
+	m.mu.Unlock()
+
+	onProgress := func(done, total int) {
+		m.mu.Lock()
+		target.progressDone, target.progressTotal = done, total
+		m.mu.Unlock()
+	}
+
+	fail := func(err error) error {
+		m.mu.Lock()
+		target.preparing, target.ready, target.err = false, false, err
+		target.finishedAt = time.Now()
+		m.mu.Unlock()
+		return err
+	}
+
 	tmp, err := orm.New(orm.Config{DSN: m.conn.dsn(name), MaxConns: m.maxConns, MinConns: m.minConns}, common.Logger)
 	if err != nil {
-		err = fmt.Errorf("dbmanage: connect to %s: %w", name, err)
-		m.mu.Lock()
-		m.prepared[name] = &preparedTarget{err: err}
-		m.mu.Unlock()
-		return err
+		return fail(fmt.Errorf("dbmanage: connect to %s: %w", name, err))
 	}
 
-	if err := m.provisioner.Provision(ctx, tmp.DB); err != nil {
+	if err := m.provisioner.ProvisionWithProgress(ctx, tmp.DB, onProgress); err != nil {
 		tmp.Close() // don't leak a failed attempt's connections
-		m.mu.Lock()
-		m.prepared[name] = &preparedTarget{err: err}
-		m.mu.Unlock()
-		return err
+		return fail(err)
 	}
 
+	finishedAt := time.Now()
 	m.mu.Lock()
-	m.prepared[name] = &preparedTarget{pool: tmp.DB.Pool(), ready: true, preparedAt: time.Now()}
+	target.preparing, target.ready, target.err = false, true, nil
+	target.pool = tmp.DB.Pool()
+	target.finishedAt = finishedAt
+	m.lastPrepareDuration = finishedAt.Sub(target.startedAt)
 	m.mu.Unlock()
 	return nil
 }
@@ -103,10 +138,11 @@ func (m *Manager) Prepare(ctx context.Context, name string) error {
 		m.mu.Unlock()
 		return nil
 	}
-	m.prepared[name] = &preparedTarget{preparing: true}
+	startedAt := time.Now()
+	m.prepared[name] = &preparedTarget{preparing: true, startedAt: startedAt}
 	m.mu.Unlock()
 
-	return m.provisionAndKeepWarm(ctx, name)
+	return m.provisionAndKeepWarm(ctx, name, startedAt)
 }
 
 // Activate is the fast path: swap the live pool onto name's already-warm,
@@ -161,7 +197,8 @@ func (m *Manager) Activate(ctx context.Context, name string) error {
 	// (oldName == name only when re-activating the database that's already
 	// live, a harmless no-op; nothing to keep in that case.)
 	if oldName != "" && oldName != name {
-		m.prepared[oldName] = &preparedTarget{pool: oldPool, ready: true, preparedAt: time.Now()}
+		now := time.Now()
+		m.prepared[oldName] = &preparedTarget{pool: oldPool, ready: true, startedAt: now, finishedAt: now}
 	}
 	delete(m.prepared, name) // live now, not a standby
 	m.mu.Unlock()
@@ -195,22 +232,63 @@ func (m *Manager) Delete(ctx context.Context, name string) error {
 	return DropDatabase(ctx, m.conn, name, m.ActiveName())
 }
 
-// PrepareStatusFor reports name's current lifecycle state for List to
-// surface — purely an in-memory map read, never touches the database.
-func (m *Manager) PrepareStatusFor(name string) (status PrepareStatus, errMsg string) {
+// PrepareInfo is name's current lifecycle state for List to surface —
+// everything a progress UI needs, in one read.
+type PrepareInfo struct {
+	Status PrepareStatus
+	Error  string
+	// ProgressDone/ProgressTotal are 0/0 until the first BootWithProgress
+	// callback fires (or always, once finished — see PrepareInfoFor's own
+	// doc comment for why they're left in place rather than reset).
+	ProgressDone  int
+	ProgressTotal int
+	// ElapsedSeconds is time.Since(startedAt) while still preparing, or the
+	// attempt's actual total duration once ready/failed — either way, "how
+	// long has/did this take."
+	ElapsedSeconds float64
+	// EstimatedSeconds is Manager.lastPrepareDuration — the most recent
+	// successful Prepare's own duration in THIS process, used as a rough
+	// forecast for one still running. Zero (omit) when nothing has ever
+	// completed in this process yet, or once this attempt is no longer
+	// "preparing" (the real ElapsedSeconds is the more useful number then).
+	EstimatedSeconds float64
+}
+
+// PrepareInfoFor reports name's current lifecycle state for List to
+// surface — purely an in-memory read (the map, plus Manager's own
+// lastPrepareDuration for the estimate), never touches the database.
+func (m *Manager) PrepareInfoFor(name string) PrepareInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	t := m.prepared[name]
+	if t == nil {
+		return PrepareInfo{Status: StatusUnprepared}
+	}
 	switch {
-	case t == nil:
-		return StatusUnprepared, ""
 	case t.preparing:
-		return StatusPreparing, ""
+		return PrepareInfo{
+			Status:           StatusPreparing,
+			ProgressDone:     t.progressDone,
+			ProgressTotal:    t.progressTotal,
+			ElapsedSeconds:   time.Since(t.startedAt).Seconds(),
+			EstimatedSeconds: m.lastPrepareDuration.Seconds(),
+		}
 	case t.ready:
-		return StatusReady, ""
+		return PrepareInfo{
+			Status:         StatusReady,
+			ProgressDone:   t.progressDone,
+			ProgressTotal:  t.progressTotal,
+			ElapsedSeconds: t.finishedAt.Sub(t.startedAt).Seconds(),
+		}
 	case t.err != nil:
-		return StatusFailed, t.err.Error()
+		return PrepareInfo{
+			Status:         StatusFailed,
+			Error:          t.err.Error(),
+			ProgressDone:   t.progressDone,
+			ProgressTotal:  t.progressTotal,
+			ElapsedSeconds: t.finishedAt.Sub(t.startedAt).Seconds(),
+		}
 	default:
-		return StatusUnprepared, ""
+		return PrepareInfo{Status: StatusUnprepared}
 	}
 }

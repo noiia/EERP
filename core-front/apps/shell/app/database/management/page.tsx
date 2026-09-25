@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -7,6 +7,7 @@ import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
 import Divider from '@mui/material/Divider'
+import LinearProgress from '@mui/material/LinearProgress'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Table from '@mui/material/Table'
@@ -37,14 +38,20 @@ interface DatabaseInfo {
   active: boolean
   status: PrepareStatus
   prepare_error?: string
+  progress_done?: number
+  progress_total?: number
+  elapsed_seconds?: number
+  estimated_seconds?: number
 }
 
 const API_BASE = '/api/v1/database-management'
 // How often to re-poll the list while any row is still "preparing" — there's
 // no push/webhook path here, and Prepare itself runs off-request in a
 // goroutine (docs/adr/ADR-021-database-management.md's Prepare/Activate
-// split), so polling is the only way this page learns it finished.
-const PREPARING_POLL_MS = 3000
+// split), so polling is the only way this page learns it finished. Short
+// enough that the progress bar visibly fills step by step instead of
+// jumping in a few big increments.
+const PREPARING_POLL_MS = 500
 
 function formatSize(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -55,6 +62,57 @@ function formatSize(bytes: number): string {
     i += 1
   }
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds))
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+// Renders as a full-width row under a "preparing" database's own row: a
+// determinate LinearProgress bar with its own numeric percentage (so it
+// visibly fills as progress_done/progress_total advances, rather than
+// reading as a generic indeterminate spinner) — indeterminate only for the
+// brief window before the backend's first done/total callback has arrived —
+// plus a bare "elapsed / estimated" time readout underneath, no sentence.
+function PrepareProgressRow({ db }: { db: DatabaseInfo }) {
+  const [tick, setTick] = useState(0)
+  // Resets every time a fresh poll updates db.elapsed_seconds, then ticks up
+  // once a second until the next one — fills the gap between polls with
+  // local wall-clock time so the elapsed number moves every second instead
+  // of jumping every PREPARING_POLL_MS. Must reset on each poll rather than
+  // free-running, or it double-counts on top of the server's own
+  // already-advanced elapsed_seconds.
+  useEffect(() => {
+    setTick(0)
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [db.elapsed_seconds])
+
+  const elapsed = (db.elapsed_seconds ?? 0) + tick
+  const hasTotal = (db.progress_total ?? 0) > 0
+  const pct = hasTotal ? Math.min(100, ((db.progress_done ?? 0) / (db.progress_total ?? 1)) * 100) : 0
+
+  return (
+    <TableRow>
+      <TableCell colSpan={3} sx={{ pt: 0 }}>
+        <Stack spacing={0.5}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <Box sx={{ flexGrow: 1 }}>
+              <LinearProgress variant={hasTotal ? 'determinate' : 'indeterminate'} value={pct} />
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32, textAlign: 'right' }}>
+              {hasTotal ? `${Math.round(pct)}%` : ''}
+            </Typography>
+          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            {formatDuration(elapsed)} / {db.estimated_seconds ? formatDuration(db.estimated_seconds) : '—'}
+          </Typography>
+        </Stack>
+      </TableCell>
+    </TableRow>
+  )
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -257,67 +315,70 @@ export default function DatabaseManagementPage() {
               </TableHead>
               <TableBody>
                 {databases.map((db) => (
-                  <TableRow key={db.name}>
-                    <TableCell>
-                      {db.name}
-                      {db.active ? <Chip size="small" color="primary" label="active" sx={{ ml: 1 }} /> : null}
-                      {!db.active && db.status === 'ready' ? (
-                        <Chip size="small" color="success" variant="outlined" label="ready to activate" sx={{ ml: 1 }} />
-                      ) : null}
-                      {db.status === 'preparing' ? (
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          icon={<CircularProgress size={12} />}
-                          label="preparing…"
-                          sx={{ ml: 1 }}
-                        />
-                      ) : null}
-                      {db.status === 'failed' ? (
-                        <Chip
-                          size="small"
-                          color="error"
-                          variant="outlined"
-                          label={db.prepare_error ? `prepare failed: ${db.prepare_error}` : 'prepare failed'}
-                          sx={{ ml: 1, maxWidth: 320 }}
-                        />
-                      ) : null}
-                    </TableCell>
-                    <TableCell>{formatSize(db.size_bytes)}</TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
-                        {!db.active && (db.status === 'unprepared' || db.status === 'failed') ? (
-                          <Button size="small" disabled={busy} onClick={() => handlePrepare(db.name)}>
-                            Prepare
-                          </Button>
-                        ) : null}
+                  <Fragment key={db.name}>
+                    <TableRow>
+                      <TableCell>
+                        {db.name}
+                        {db.active ? <Chip size="small" color="primary" label="active" sx={{ ml: 1 }} /> : null}
                         {!db.active && db.status === 'ready' ? (
-                          <>
-                            <Button size="small" variant="contained" disabled={busy} onClick={() => handleActivate(db.name)}>
-                              Activate
-                            </Button>
-                            <Button size="small" disabled={busy} onClick={() => handleDiscard(db.name)}>
-                              Discard
-                            </Button>
-                          </>
+                          <Chip size="small" color="success" variant="outlined" label="ready to activate" sx={{ ml: 1 }} />
                         ) : null}
-                        <Button size="small" disabled={busy} onClick={() => handleExtract(db.name, false)}>
-                          Extract (SQL)
-                        </Button>
-                        <Button size="small" disabled={busy} onClick={() => handleExtract(db.name, true)}>
-                          Extract (SQL+S3)
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          disabled={busy || db.active}
-                          onClick={() => handleDelete(db.name)}
-                        >
-                          Delete
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
+                        {db.status === 'preparing' ? (
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            icon={<CircularProgress size={12} />}
+                            label="preparing…"
+                            sx={{ ml: 1 }}
+                          />
+                        ) : null}
+                        {db.status === 'failed' ? (
+                          <Chip
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            label={db.prepare_error ? `prepare failed: ${db.prepare_error}` : 'prepare failed'}
+                            sx={{ ml: 1, maxWidth: 320 }}
+                          />
+                        ) : null}
+                      </TableCell>
+                      <TableCell>{formatSize(db.size_bytes)}</TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
+                          {!db.active && (db.status === 'unprepared' || db.status === 'failed') ? (
+                            <Button size="small" disabled={busy} onClick={() => handlePrepare(db.name)}>
+                              Prepare
+                            </Button>
+                          ) : null}
+                          {!db.active && db.status === 'ready' ? (
+                            <>
+                              <Button size="small" variant="contained" disabled={busy} onClick={() => handleActivate(db.name)}>
+                                Activate
+                              </Button>
+                              <Button size="small" disabled={busy} onClick={() => handleDiscard(db.name)}>
+                                Discard
+                              </Button>
+                            </>
+                          ) : null}
+                          <Button size="small" disabled={busy} onClick={() => handleExtract(db.name, false)}>
+                            Extract (SQL)
+                          </Button>
+                          <Button size="small" disabled={busy} onClick={() => handleExtract(db.name, true)}>
+                            Extract (SQL+S3)
+                          </Button>
+                          <Button
+                            size="small"
+                            color="error"
+                            disabled={busy || db.active}
+                            onClick={() => handleDelete(db.name)}
+                          >
+                            Delete
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                    {db.status === 'preparing' ? <PrepareProgressRow db={db} /> : null}
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>

@@ -32,8 +32,16 @@ type Provisioner struct {
 // or the app's live, already-swapped *orm.DB (switch.go) — either way this
 // function itself holds no state and is safe to call repeatedly.
 func (p Provisioner) Provision(ctx context.Context, db *orm.DB) error {
+	return p.ProvisionWithProgress(ctx, db, nil)
+}
+
+// ProvisionWithProgress is Provision plus a done/total callback forwarded
+// straight to module.Registry.BootWithProgress — see that method's own doc
+// comment for what done/total mean. onProgress may be nil (same as calling
+// Provision).
+func (p Provisioner) ProvisionWithProgress(ctx context.Context, db *orm.DB, onProgress func(done, total int)) error {
 	registry := module.NewRegistry(p.Engine, p.Linker, db, p.ModuleRoots)
-	if errs := registry.Boot(ctx); len(errs) > 0 {
+	if errs := registry.BootWithProgress(ctx, onProgress); len(errs) > 0 {
 		return fmt.Errorf("dbmanage: provision schema: %w", errs[0])
 	}
 	if err := auth.SeedDevAdmin(ctx, db, p.Environment); err != nil {

@@ -2,6 +2,7 @@ package dbmanage
 
 import (
 	"sync"
+	"time"
 
 	"core/internal/pictures"
 	"core/internal/presence"
@@ -35,6 +36,11 @@ type Manager struct {
 	mu       sync.RWMutex
 	active   string                     // currently active database name — see ActiveName's doc comment
 	prepared map[string]*preparedTarget // standbys — see prepare.go
+	// lastPrepareDuration is the most recent successful Prepare's own wall-clock
+	// time in THIS process — the rough estimate PrepareInfoFor hands a caller
+	// polling a still-running Prepare's status. Zero until the first one
+	// completes; a process restart resets it, same as prepared itself.
+	lastPrepareDuration time.Duration
 }
 
 // NewManager wires a Manager from main.go's already-constructed dependencies.

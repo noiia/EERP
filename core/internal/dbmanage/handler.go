@@ -33,7 +33,13 @@ func (h *Handler) List(c echo.Context) error {
 		return err
 	}
 	for i := range dbs {
-		dbs[i].Status, dbs[i].PrepareError = h.mgr.PrepareStatusFor(dbs[i].Name)
+		info := h.mgr.PrepareInfoFor(dbs[i].Name)
+		dbs[i].Status = info.Status
+		dbs[i].PrepareError = info.Error
+		dbs[i].ProgressDone = info.ProgressDone
+		dbs[i].ProgressTotal = info.ProgressTotal
+		dbs[i].ElapsedSeconds = info.ElapsedSeconds
+		dbs[i].EstimatedSeconds = info.EstimatedSeconds
 	}
 	return c.JSON(http.StatusOK, dbs)
 }

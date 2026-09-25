@@ -86,6 +86,23 @@ func NewRegistry(engine *wasmtime.Engine, linker *wasmtime.Linker, db *orm.DB, m
 // records each one's active flag and table ownership. Replaces the old
 // main.go pair of module.LoadModules + module.LoadGoModules calls.
 func (r *Registry) Boot(ctx context.Context) []error {
+	return r.boot(ctx, nil)
+}
+
+// BootWithProgress is Boot plus a callback fired after each Go module
+// finishes its own ensureTable/ensureColumns/Migrate pass — done and total
+// are 1-indexed and total-modules respectively, so a caller can render
+// "N of M" or done/total as a percentage. Go modules are effectively the
+// entire workload in this codebase today (every currently-shipped module is
+// type "go" — core/CLAUDE.md's own module-type bullet), so this covers the
+// real cost without needing separate progress plumbing through the WASM
+// loader or the trailing index pass too. onProgress may be nil (same as
+// calling Boot).
+func (r *Registry) BootWithProgress(ctx context.Context, onProgress func(done, total int)) []error {
+	return r.boot(ctx, onProgress)
+}
+
+func (r *Registry) boot(ctx context.Context, onProgress func(done, total int)) []error {
 	if err := bootstrapMigrationsTable(ctx, r.db); err != nil {
 		return []error{fmt.Errorf("bootstrap module_migrations: %w", err)}
 	}
@@ -162,10 +179,13 @@ func (r *Registry) Boot(ctx context.Context) []error {
 	copy(goMods, goModules)
 	goMu.Unlock()
 	ensuredThisBoot := map[string]bool{}
-	for _, m := range goMods {
+	for i, m := range goMods {
 		newTables, err := loadGoModule(ctx, r.db, m, ensuredThisBoot)
 		if err != nil {
 			addErr(err)
+			if onProgress != nil {
+				onProgress(i+1, len(goMods))
+			}
 			continue
 		}
 		if len(newTables) > 0 {
@@ -174,6 +194,9 @@ func (r *Registry) Boot(ctx context.Context) []error {
 				r.tableOwner[t] = m.Name()
 			}
 			r.mu.Unlock()
+		}
+		if onProgress != nil {
+			onProgress(i+1, len(goMods))
 		}
 	}
 

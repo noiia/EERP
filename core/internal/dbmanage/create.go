@@ -2,6 +2,7 @@ package dbmanage
 
 import (
 	"context"
+	"time"
 )
 
 // CreateAndProvision creates an empty database and immediately makes it a
@@ -15,5 +16,5 @@ func (m *Manager) CreateAndProvision(ctx context.Context, name string) error {
 	if err := CreateDatabase(ctx, m.conn, name); err != nil {
 		return err
 	}
-	return m.provisionAndKeepWarm(ctx, name)
+	return m.provisionAndKeepWarm(ctx, name, time.Now())
 }

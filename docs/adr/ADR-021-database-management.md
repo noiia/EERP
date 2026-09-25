@@ -54,6 +54,33 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   - **`Discard(name)`** releases a prepared standby without activating it (closes its pool, drops
     the map entry) — both an explicit "never mind" UI action and something `Delete` now calls
     first, since Postgres refuses `DROP DATABASE` while a standby's connections are still open.
+- **`Prepare` reports real progress, not a spinner.** `module.Registry.BootWithProgress` (new,
+  alongside the unchanged `Boot`) fires a `(done, total int)` callback after each Go module's own
+  `ensureTable`/`ensureColumns`/`Migrate` pass — Go modules are effectively the entire workload
+  (every module shipped in this repo today is type `"go"`), so this covers the real cost without
+  separate plumbing through the WASM loader or the trailing index pass.
+  `Provisioner.ProvisionWithProgress` forwards it; `Manager.provisionAndKeepWarm` threads it into
+  the target's own `preparedTarget`, mutating that SAME struct in place across every outcome
+  (progress, failure, success) rather than replacing it, so a failed attempt still shows how far it
+  got instead of resetting to 0/0. `Manager.lastPrepareDuration` — the most recent successful
+  `Prepare`'s own wall-clock time in this process — is what a still-running `Prepare`'s
+  `estimated_seconds` is forecast from (zero/absent the first time anything is prepared in a fresh
+  process, since there's nothing yet to estimate from). `Handler.List`'s response carries
+  `progress_done`/`progress_total`/`elapsed_seconds`/`estimated_seconds` alongside `status`; the
+  frontend renders a `LinearProgress` bar (determinate once a real done/total pair has arrived,
+  indeterminate before that) under a `preparing` row, ticking `elapsed_seconds` up locally between
+  the 3s polls so the number moves every second instead of jumping.
+- **Boot-time `EnsureDatabaseExists`: a config pointed at a not-yet-provisioned `db_name` now
+  creates it instead of refusing to start.** `core-back` previously connected to whatever
+  `db_name` was configured with no fallback — Postgres refuses a connection to a database that
+  doesn't exist at all, so a fresh deployment, or an existing one simply repointed at a different
+  `db_name`, failed to boot outright. `core/cmd/app/main.go` now calls
+  `dbmanage.EnsureDatabaseExists(ctx, configContent)` (a thin `SELECT EXISTS ... FROM pg_database`
+  check, `CreateDatabase` only on a miss) immediately before opening its real connection pool. An
+  already-existing database is left completely untouched; schema provisioning is still main.go's
+  own unconditional `module.Registry.Boot` + `auth.SeedDevAdmin` call right after, exactly as for
+  any other empty database — this function's only job is making sure that step has something to
+  connect to.
 - **A real prerequisite bug this exposed:** `module.Registry.Boot`'s Go-module schema
   provisioning (`internal/module/go_module.go`'s `loadGoModule`) decided whether to run
   `ensureTable`/`ensureColumns` by diffing a **process-global, in-memory** table registry, not
@@ -116,11 +143,15 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   `/api/v1/database-management/*` directly with the typed master key as a header, the same
   "browser calls Go directly for a good reason" precedent Presence established (ADR-019), here
   because of large binary transfer with no session involved at all. Per row, the action shown
-  follows `status`: `unprepared`/`failed` → **Prepare**, `preparing` → a disabled spinner chip,
-  `ready` → **Activate** + **Discard**, `active` → none. A `useEffect` polls `GET .../databases`
-  on a 3s interval (silently — no busy flag, so it never fights an in-flight foreground action)
-  whenever any row is `preparing`, since `Prepare` runs off-request with no push/webhook path back
-  to the browser.
+  follows `status`: `unprepared`/`failed` → **Prepare**, `preparing` → a disabled spinner chip plus
+  a full-width `PrepareProgressRow` underneath — a `LinearProgress` bar with its own numeric `%`
+  label (determinate once `progress_total` has arrived, indeterminate only for the brief window
+  before that first callback), and a bare `elapsed / estimated` caption underneath (e.g. `12s /
+  45s` — no sentence, just the two numbers), `ready` → **Activate** + **Discard**, `active` → none.
+  A `useEffect` polls `GET .../databases` on a 500ms interval while `preparing` (silently — no busy
+  flag, so it never fights an in-flight foreground action; short enough that the bar visibly fills
+  step by step instead of jumping in a few big increments) — the only way this page learns anything,
+  since `Prepare` runs off-request with no push/webhook path back to the browser.
 - **Infra:** `infra/nginx/nginx.conf` gets its own `location /api/v1/database-management/` block
   (`client_max_body_size 2g`, `proxy_read_timeout 3600s`) — the default `/api/v1/` block's 50m/120s
   is far too small for a full dump+S3 bundle.
@@ -167,6 +198,7 @@ flowchart TD
             Retry --> MarkSeen
             MarkSeen --> SkipCols
             SkipCols --> Migrate["module's own Migrate() hook:\nhand-written DDL, per-row backfills,\nunique indexes, ALTER COLUMN SET NOT NULL"]
+            Migrate --> Progress["onProgress(i+1, len(goMods))\n-> preparedTarget.progressDone/progressTotal"]
         end
 
         Wasm --> Idx

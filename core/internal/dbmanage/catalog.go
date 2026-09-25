@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 
+	"core/internal/types"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -35,17 +37,22 @@ func validateName(name string) error {
 	return nil
 }
 
-// DatabaseInfo is one row of the /database/management list. Status/
-// PrepareError are filled in by Handler.List from Manager's in-memory
-// prepared map (prepare.go) — ListDatabases itself only ever queries
-// Postgres, so a caller that wants the merged view must go through the
-// handler, not this function directly.
+// DatabaseInfo is one row of the /database/management list. Status and
+// everything after it are filled in by Handler.List from Manager's
+// in-memory PrepareInfoFor (prepare.go) — ListDatabases itself only ever
+// queries Postgres, so a caller that wants the merged view must go through
+// the handler, not this function directly.
 type DatabaseInfo struct {
-	Name         string        `json:"name"`
-	SizeBytes    int64         `json:"size_bytes"`
-	Active       bool          `json:"active"`
-	Status       PrepareStatus `json:"status"`
-	PrepareError string        `json:"prepare_error,omitempty"`
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"size_bytes"`
+	Active    bool   `json:"active"`
+
+	Status           PrepareStatus `json:"status"`
+	PrepareError     string        `json:"prepare_error,omitempty"`
+	ProgressDone     int           `json:"progress_done,omitempty"`
+	ProgressTotal    int           `json:"progress_total,omitempty"`
+	ElapsedSeconds   float64       `json:"elapsed_seconds,omitempty"`
+	EstimatedSeconds float64       `json:"estimated_seconds,omitempty"`
 }
 
 // ListDatabases enumerates every EERP-shaped database on the server: every
@@ -139,6 +146,37 @@ func CreateDatabase(ctx context.Context, conn connInfo, name string) error {
 		return fmt.Errorf("dbmanage: create database %s: %w", name, err)
 	}
 	return nil
+}
+
+// EnsureDatabaseExists creates cfg.DbName if it doesn't already exist on the
+// configured server — core/cmd/app/main.go's own boot-time bootstrap step,
+// called before it ever opens its real connection pool. Without this, a
+// fresh deployment (or an existing one whose config gets pointed at a
+// different, not-yet-provisioned db_name) fails to boot outright: Postgres
+// refuses to connect to a database that doesn't exist at all. Schema
+// provisioning is main.go's own subsequent module.Registry.Boot +
+// auth.SeedDevAdmin call, exactly as for any other empty database — this
+// function's only job is making sure that step has something to connect to.
+// A database that already exists is left completely untouched, config and
+// data alike.
+func EnsureDatabaseExists(ctx context.Context, cfg *types.Config) error {
+	conn := connInfo{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}
+	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+	if err != nil {
+		return fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
+	}
+	defer func() { _ = maint.Close(ctx) }()
+
+	var exists bool
+	if err := maint.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, cfg.DbName,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("dbmanage: check database %s exists: %w", cfg.DbName, err)
+	}
+	if exists {
+		return nil
+	}
+	return CreateDatabase(ctx, conn, cfg.DbName)
 }
 
 // DropDatabase issues DROP DATABASE over a maintenance connection. Refuses
