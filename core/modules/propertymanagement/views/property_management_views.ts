@@ -314,8 +314,15 @@ export const fields: ViewDescriptor['fields'] = [
   { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float' },
   { name: 'loan_amount', label: 'Loan amount', type: 'number', widget: 'monetary' },
   { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary' },
-  // Read from the latest parent rent receipt; only ever set by Generate Rent Receipt.
-  { name: 'generated_at', label: 'Generated at', type: 'text', readOnly: true },
+  // Read from the latest parent rent receipt; only ever set by Generate Rent
+  // Receipt. type: 'date', not 'text': the Go column is a nullable
+  // *time.Time (module.go's GeneratedAt) — a 'text' field's zero default is
+  // '""'` (descriptor.ts's fieldZeroDefault), which a brand-new property's
+  // Create payload was sending verbatim; Go's json unmarshal rejects an
+  // empty string into *time.Time ("Malformed request body."), so every
+  // property Create 400'd once every other required field was filled in.
+  // 'date' zero-defaults to null instead, which *time.Time accepts fine.
+  { name: 'generated_at', label: 'Generated at', type: 'date', readOnly: true },
 ]
 
 // Form-only: current_tenant (many2many, tags widget) stays in the default
@@ -360,19 +367,12 @@ const formFields: ViewDescriptor['fields'] = [
     // synchronous field-function default system can do — handler.go's
     // CreateProperty resolves it server-side instead (defaultFloorAreaUom),
     // filling it in only when the create request left uom_id unset.
-    // widgetOptions.matchFieldHeight (relation-widgets.tsx's own doc
-    // comment): this field sits beside floor_area, a plain number/float
-    // field whose MUI box is ~56px tall — matchFieldHeight gives this
-    // relation field's own (visually shorter) chip/autocomplete row the
-    // same minimum height, no border, so the two don't look mismatched in
-    // height sitting side by side.
     relation: {
       entity: 'product_uoms',
       kind: 'many2one',
       labelField: 'name',
       filter: { type: 'surface' },
     },
-    widgetOptions: { matchFieldHeight: true },
   },
   {
     name: 'photos',
@@ -573,9 +573,9 @@ export const propertyExtendOperations: Operation[] = [
     node: {
       kind: 'group',
       columns: 2,
-      columnWidths: [2, 1],
+      columnWidths: [1, 1],
       minWidth: 280,
-      offsetTop: 1.25,
+      offsetTop: 1,
       children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
     },
     target: 'current_tenant',

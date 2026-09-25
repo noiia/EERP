@@ -766,37 +766,46 @@ export function RelationSearchWidget({
     }
   }
 
-  // widgetOptions.matchFieldHeight (opt-in, e.g. propertymanagement's
-  // uom_id, beside a plain number field): no border, no repositioned label
-  // — the plain caption-above-the-row look every RelationSearchWidget
-  // already has, unchanged. A minHeight on the content row itself, so its
-  // chip/autocomplete (visually short) occupies roughly the same vertical
-  // space as a sibling TextField's own input box instead of looking cramped
-  // next to it, plus a tight 5px gap under the caption instead of the
-  // default Typography line-height's own visual space (which read as a much
-  // bigger gap than a TextField's own label-to-border distance). (An
-  // earlier attempt drew a bordered box with the label overlapping it,
-  // mimicking MUI's own outlined-input notch — reverted: not what was
-  // asked for here.)
-  const matchFieldHeight = field.widgetOptions?.matchFieldHeight === true
-
   return (
-    <Box>
+    // Styled to match MUI's own outlined TextField border: a fixed height
+    // (tuned to this theme's actual rendered metrics, not MUI's textbook
+    // default — a sibling number/text field renders shorter than that here)
+    // with the label absolutely positioned over the top border line — never
+    // a legend in normal flow, which would add its own height on top of the
+    // box instead of sitting IN it.
+    // The border itself stays even with hideLabel, same as an unlabelled
+    // TextField still draws its outline with no floating label inside it.
+    <Box
+      sx={{
+        position: 'relative',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+        minHeight: '36px',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        px: 1.75,
+      }}
+    >
       {!field.hideLabel && (
         <Typography
           variant="caption"
           color="text.secondary"
-          component="legend"
-          sx={matchFieldHeight ? { mb: '5px' } : undefined}
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 10,
+            transform: 'translateY(-50%)',
+            bgcolor: 'background.paper',
+            px: 0.5,
+            lineHeight: 1,
+          }}
         >
           {t(fieldLabel(field))}
         </Typography>
       )}
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{ alignItems: matchFieldHeight ? 'flex-start' : 'center', minHeight: matchFieldHeight ? '56px' : undefined }}
-      >
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
         {selectedId ? (
           <RelationTag
             label={selectedLabel ?? selectedId}
@@ -853,7 +862,16 @@ export function RelationSearchWidget({
             disabled={disabled}
             fullWidth
             size="small"
-            renderInput={(params) => <TextField {...params} placeholder={t('Search…')} />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder={t('Search…')}
+                // No own border — the outer fieldset (this field's label
+                // box) is the only box drawn; a nested outlined input here
+                // would double up two borders around one field.
+                sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+              />
+            )}
           />
         )}
         {/* The wizard affordance sits at the field's RIGHT (spec). */}
@@ -1055,7 +1073,11 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   }, [field.required, field.name, links, pending.toUnlinkJunctionIds, pending.toLink])
 
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
-  if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
+  // A deferred field (widgetOptions.deferred, above) stages its diff in the
+  // draft instead of writing junction rows, precisely so it's usable before
+  // the record has an id — so unlike a normal (eager) m2m field, it does NOT
+  // fall back to the "Available once the record has been saved." hint here.
+  if (!recordId && !deferred) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
   // Deferred: the persisted set minus anything staged for removal, plus
   // anything staged for addition (marked `staged` so unlink knows which side

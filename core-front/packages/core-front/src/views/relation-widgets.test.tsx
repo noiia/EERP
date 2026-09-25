@@ -324,34 +324,23 @@ describe('relation/search (many2one)', () => {
     })
   })
 
-  describe('widgetOptions.matchFieldHeight — no border, just a content-row min-height and a tight label gap matching a sibling TextField (e.g. propertymanagement\'s uom_id, beside floor_area)', () => {
-    it('without the flag, the content row has no extra min-height and the label keeps its default spacing', async () => {
-      const ops = stubOps()
-      render(<Harness field={searchField} ops={ops} onChange={vi.fn()} onChangeField={vi.fn()} initialValue={null} recordId="r1" />)
-      const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
-      expect(getComputedStyle(row).minHeight).not.toBe('56px')
-      expect(getComputedStyle(screen.getByText('Company')).marginBottom).not.toBe('5px')
-    })
+  it('renders a fixed-height bordered box matching a sibling TextField, label positioned over the top border line', async () => {
+    const ops = stubOps()
+    renderWidget(searchField, ops)
+    const label = screen.getByText('Company')
+    expect(getComputedStyle(label).position).toBe('absolute')
+    const box = label.parentElement!
+    expect(getComputedStyle(box).minHeight).not.toBe('')
+    expect(getComputedStyle(box).borderStyle).toBe('solid')
+    expect(await screen.findByRole('combobox')).toBeInTheDocument()
+  })
 
-    it('with the flag, the content row gets minHeight: 56px (MUI\'s own default outlined-input height) and the label gets a tight 5px bottom margin — no border, no repositioned label', async () => {
-      const ops = stubOps()
-      render(
-        <Harness
-          field={{ ...searchField, widgetOptions: { matchFieldHeight: true } }}
-          ops={ops}
-          onChange={vi.fn()}
-          onChangeField={vi.fn()}
-          initialValue={null}
-          recordId="r1"
-        />,
-      )
-      const label = screen.getByText('Company')
-      // Still a plain, non-repositioned caption — just its own bottom margin.
-      expect(getComputedStyle(label).position).not.toBe('absolute')
-      expect(getComputedStyle(label).marginBottom).toBe('5px')
-      const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
-      expect(getComputedStyle(row).minHeight).toBe('56px')
-    })
+  it('hideLabel: true keeps the border (same as an unlabelled TextField still draws its outline) but omits the label text', async () => {
+    const ops = stubOps()
+    renderWidget({ ...searchField, hideLabel: true }, ops)
+    expect(screen.queryByText('Company')).not.toBeInTheDocument()
+    const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
+    expect(getComputedStyle(row.parentElement!).borderStyle).toBe('solid')
   })
 })
 
@@ -564,6 +553,26 @@ describe('relation/tags (many2many)', () => {
       await waitFor(() => expect(screen.queryByText('Acme')).not.toBeInTheDocument())
       expect(ops.remove).not.toHaveBeenCalled()
       expect(onChange).toHaveBeenCalledWith({ toLink: [], toUnlinkJunctionIds: ['j1'] })
+    })
+
+    it('stays usable on a brand-new, unsaved record (recordId: null) instead of showing the "saved first" hint', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops, { recordId: null })
+
+      expect(screen.queryByText('Available once the record has been saved.')).not.toBeInTheDocument()
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'glo' } })
+      fireEvent.click(await screen.findByText('Globex'))
+
+      expect(await screen.findByText('Globex')).toBeInTheDocument()
+      expect(ops.create).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenCalledWith({
+        toLink: [{ id: 'c2', name: 'Globex', status: 'lead' }],
+        toUnlinkJunctionIds: [],
+      })
     })
 
     it('removing a just-staged (not yet persisted) tag drops it back out of the pending diff entirely', async () => {

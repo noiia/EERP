@@ -380,12 +380,6 @@ describe('propertymanagement — self-extended notebook pages (registry-level)',
       { kind: 'field', name: 'uom_id' },
     ])
   })
-
-  it('uom_id opts into matchFieldHeight, so its content row is at least as tall as floor_area\'s own box beside it', () => {
-    const form = propertymanagement.routes.find((r) => r.path === '/propertymanagement/:id')!
-    const field = form.descriptor.fields.find((f) => f.name === 'uom_id')
-    expect(field?.widgetOptions).toEqual({ matchFieldHeight: true })
-  })
 })
 
 describe('propertymanagement — equipment form', () => {
