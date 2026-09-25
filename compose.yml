@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:18
+    restart: always
     container_name: db
     environment:
       POSTGRES_USER: postgres
@@ -29,6 +30,7 @@ services:
   # Starts empty: run `make garage-init` once to create the layout, dev key and bucket.
   garage:
     image: dxflrs/garage:v2.3.0
+    restart: always
     container_name: garage
     environment:
       RUST_LOG: garage=warn,garage_api_admin=warn
@@ -53,6 +55,7 @@ services:
 
   core-back:
     container_name: backend
+    restart: always
     build:
       context: .
       dockerfile: core/Dockerfile
@@ -71,6 +74,7 @@ services:
 
   core-front:
     container_name: frontend
+    restart: always
     build:
       context: .
       dockerfile: core-front/Dockerfile
@@ -106,6 +110,7 @@ services:
   # N replicas subscribed to the same NATS queue group are competing consumers with
   # zero code change. No container_name: a static name would collide across replicas.
   pdf-service:
+    restart: always
     build:
       context: .
       dockerfile: tools/pdf-service/Dockerfile
@@ -132,6 +137,7 @@ services:
   # later means mounting one, not just editing this command.
   nats:
     image: nats:2.10-alpine
+    restart: always
     container_name: nats
     expose:
       - "4222"

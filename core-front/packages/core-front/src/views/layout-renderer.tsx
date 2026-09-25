@@ -550,7 +550,7 @@ function LayoutNodeView({
           sx={{
             display: 'grid',
             gridTemplateColumns: '1fr',
-            gap: 2.5,
+            gap: 1,
             alignItems: 'start',
             [`@container (min-width: ${containerMinWidth}px)`]: {
               gridTemplateColumns,
