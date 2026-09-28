@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"core/internal/testdb"
+	"core/orm"
 	"core/orm/internal/crud"
 	"core/orm/internal/handler"
 	"core/orm/internal/registry"
@@ -261,5 +263,31 @@ func TestAuthRateLimiter_BlocksAfterBurst(t *testing.T) {
 	}
 	if codes[3] != http.StatusTooManyRequests {
 		t.Errorf("expected 429 once the burst is exhausted, got %v", codes)
+	}
+}
+
+func TestHealth(t *testing.T) {
+	up := testdb.Open(t)
+	down := testdb.Open(t)
+	down.DB.Close() // a closed pool fails its ping like an unreachable database
+
+	tests := []struct {
+		name string
+		app  *orm.App
+		want int
+	}{
+		{"no database wired", nil, http.StatusOK},
+		{"database reachable", up, http.StatusOK},
+		{"database unreachable", down, http.StatusServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := ormserver.New(tt.app, ormserver.Config{}).Echo()
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.want, rec.Body)
+			}
+		})
 	}
 }

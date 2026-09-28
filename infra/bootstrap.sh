@@ -71,6 +71,11 @@ echo "==> building and starting the app"
 # core-back reads its bind-mounted config at boot only: always recreate it, alone
 # (--no-deps: never recreate db/garage just for that).
 docker compose up -d --build --wait --force-recreate --no-deps core-back
+# The gateway is stateless but bind-mounts nginx.conf, whose content compose never
+# watches — and on Docker Desktop a container even keeps the file it was created
+# with, so after a branch switch it can fail with "no such file". Remove it so it
+# is always created fresh (with its gateway-certs dependency still honored).
+docker compose rm -sf api-gateway >/dev/null
 # Named services only: --wait fails on the one-shot gateway-certs exiting, but still
 # waits on it as a dependency of api-gateway.
 docker compose up -d --build --wait api-gateway pdf-service

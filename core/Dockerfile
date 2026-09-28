@@ -3,13 +3,16 @@ FROM golang:1.27.1 AS builder
 WORKDIR /app
 
 COPY core/go.mod core/go.sum ./core/
-RUN cd core && go mod download
+# BuildKit cache mounts keep the module and build caches across builds, so a
+# one-line change recompiles one package instead of the whole dependency tree.
+RUN --mount=type=cache,target=/go/pkg/mod cd core && go mod download
 
 COPY core/ ./core/
 
 # Build WASM modules — skip Go modules (type:"go" in module.json) and
 # directories without a module.json (e.g. the 'all' aggregator package).
-RUN for dir in /app/core/modules/*/; do \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    for dir in /app/core/modules/*/; do \
     name=$(basename "$dir"); \
     [ -f "$dir/module.json" ] || continue; \
     grep -q '"type"[[:space:]]*:[[:space:]]*"go"' "$dir/module.json" 2>/dev/null && continue; \
@@ -18,13 +21,18 @@ RUN for dir in /app/core/modules/*/; do \
     done
 
 # Build the backend binary (CGO on for wasmtime-go)
-RUN go build -C /app/core -o /app/eerp ./cmd/app
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go build -C /app/core -o /app/eerp ./cmd/app
 
 # ── Runtime ────────────────────────────────────────────────────────────────
-FROM golang:1.27.1
+# Same Debian release as the golang builder (trixie) so the cgo binary's glibc
+# matches — not alpine (musl) or distroless/static (no libc). The full golang
+# image this used to run on carried the whole toolchain (~1.4 GB image).
+FROM debian:trixie-slim
 
 # ca-certificates: outbound HTTPS (NATS/pdf-service over TLS, any future
-# webhook). postgresql-client-18: pg_dump/pg_restore/psql for
+# webhook). curl: kept after fetching the PGDG key — the compose healthcheck
+# calls GET /health with it. postgresql-client-18: pg_dump/pg_restore/psql for
 # internal/dbmanage's database extract/restore (shells out rather than
 # reimplementing the dump/restore format) — pulled from the PGDG apt repo,
 # not Debian's own (older) default, to match compose.yml's postgres:18
@@ -37,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
-    && apt-get purge -y curl gnupg && apt-get autoremove -y \
+    && apt-get purge -y gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -23,6 +23,10 @@ services:
       - "127.0.0.1:5432:5432"
     expose:
       - "5432"
+    volumes:
+      # Named, so data survives `docker compose down` + `up` (the image's anonymous
+      # volume was orphaned by every fresh container).
+      - pgdata:/var/lib/postgresql
     healthcheck:
       # -h forces TCP: on first boot the entrypoint runs a temporary socket-only
       # server during initdb, which a socket pg_isready reports as ready — core-back
@@ -74,9 +78,9 @@ services:
     expose:
       - "8080"
     healthcheck:
-      # The port only accepts connections once boot (config, DB, migrations,
-      # modules) is done. A bash /dev/tcp probe: the runtime image ships no curl.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      # 200 once boot is done and the DB pool answers a ping (orm/server's
+      # /health, which the api-gateway also proxies).
+      test: ["CMD", "curl", "-fso", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -212,6 +216,7 @@ services:
       start_period: 10s
 
 volumes:
+  pgdata:
   garage-meta:
   garage-data:
   gateway-certs:

@@ -98,6 +98,10 @@ func newEcho(app *orm.App, cfg Config) *echo.Echo {
 		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
 	}))
 
+	// Liveness + DB readiness for the compose healthcheck and the gateway's
+	// /health: 200 once the server answers AND the pool reaches Postgres.
+	e.GET("/health", healthHandler(app))
+
 	if app != nil && app.Logger != nil {
 		e.HTTPErrorHandler = newErrorHandler(app.Logger)
 	} else {
@@ -271,5 +275,20 @@ func httpCode(status int) string {
 		return "FORBIDDEN"
 	default:
 		return "ERROR"
+	}
+}
+
+// healthHandler reports 503 when the database doesn't answer a ping within 2s.
+// A nil app (no database wired) is healthy as soon as the server answers.
+func healthHandler(app *orm.App) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if app != nil && app.DB != nil {
+			ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
+			defer cancel()
+			if err := app.DB.Pool().Ping(ctx); err != nil {
+				return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			}
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 }

@@ -123,6 +123,7 @@ func TestApp_Routes(t *testing.T) {
 		body   any
 		want   int
 	}{
+		{http.MethodGet, "/health", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/me/preferences", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/settings/views/crm/fields", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/settings/views/crm/graph", nil, http.StatusOK},

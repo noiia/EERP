@@ -28,6 +28,13 @@
 services:
   db:
     ports: !reset []
+    # compose.yml's named `pgdata` volume is NOT applied here yet: a production
+    # database already lives in the postgres image's anonymous volume, and
+    # switching the mount would boot on an EMPTY named volume. Migrate once,
+    # deliberately (stop db, copy the old volume into <project>_pgdata, e.g.
+    # `docker run --rm -v <old-volume>:/from:ro -v <project>_pgdata:/to alpine cp -a /from/. /to/`),
+    # then delete these two lines.
+    volumes: !reset []
     expose:
       - "5432"
 

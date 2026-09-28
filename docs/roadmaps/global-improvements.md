@@ -1,128 +1,99 @@
 # Global improvements — dead code, complexity, coverage, Docker startup
 
-Baseline measured 2026-09-28 on `dev` (`4cea66a`). P0 (one-run startup) ships with this
-page; P1–P4 are the plan, each an independent PR, ordered by payoff per line changed.
+Baseline measured 2026-09-28 on `dev` (`4cea66a`); all phases landed the same day. This
+page records what changed, why, and the gates that keep it from regressing.
 
 ```mermaid
 flowchart LR
-    P0["P0 One-run startup ✅"] --> P4["P4 Docker build/run"]
+    P0["P0 One-run startup"] --> P4["P4 Docker build/run"]
     P1["P1 Dead code"] --> P3["P3 Coverage ≥ 80%"]
-    P2["P2 Query complexity"] --> P3
+    P3 --> P2["P2 Query complexity"]
 ```
 
-| Metric | Today (`dev`) | Target |
-| --- | --- | --- |
-| Go coverage, as CI measures it (`-coverpkg=./...`) | **35.2 %** (3 089 / 8 766) | ≥ 80 %, gated in CI |
-| Shell (`apps/shell`) coverage, lines | **66.1 %** (908 / 1 374) | ≥ 80 % (+192 lines) |
-| Engine (`packages/core-front`) coverage | 90.0 % stmts, 79.9 % branches | keep ≥ 80 %, gated |
-| Unreachable Go functions (`deadcode`) | 35 | only deliberate public API |
-| Backend image | 1.39 GB | ~250 MB |
+P2 landed after P3: its DB tests use P3's `core/internal/testdb`.
 
-## P0 — One-run startup (done)
+| | Before (`dev`) | After | Gate |
+| --- | --- | --- | --- |
+| Go coverage, as CI measures it (`-coverpkg=./...`, fresh DB) | 35.2 % | **81.3 %** | `.github/.testcoverage.yml` `total: 80` |
+| Shell (`apps/shell`) coverage, lines | 66.1 % | **85.0 %** | vitest thresholds 80 (branches 70) |
+| Engine (`packages/core-front`) coverage, lines | 92.3 % | 92.3 % | vitest thresholds 80 (branches 75 — baseline 79.9) |
+| Unreachable Go functions (`deadcode`) | 35 | public ORM API + test support only | CI diff vs `.github/deadcode-allowlist.txt` |
+| Backend image | 1.39 GB | **289 MB** | — |
+| Incremental backend image rebuild | full recompile | **~7 s** | — |
+| Fresh `docker compose up` | several runs + manual Garage init | **`make bootstrap`, one run** | real healthchecks |
 
-**Root causes on `dev`:**
-- `db`'s healthcheck (`pg_isready -U postgres`) used the unix socket, which answers during
-  initdb's *temporary* server — `core-back` raced the real server and failed its first ping
-  (`restart: always` now retries it, but only after a crash).
-- A missing `eerp-config.docker.json` makes Docker create a **directory** at the bind-mount
-  source, and the backend can never start until someone notices.
-- Garage stayed unprovisioned until `make garage-init`, and `init.sh` imported a hardcoded key
-  no config template uses, so S3 never worked out of the box. `garage.toml` still committed an
-  `rpc_secret` — the same class of leak `docs/security/pentest-2026-09-24.md` scrubbed elsewhere.
+## P0 — One-run startup
 
-**Fix:** `make bootstrap` (`infra/bootstrap.sh`) — generates any missing secret into the
-gitignored `.env` (`POSTGRES_PASSWORD`, `EERP_MASTER_KEY`, the S3 pair, `GARAGE_RPC_SECRET`),
-creates `eerp-config.json` / `eerp-config.docker.json` from their templates and fills
-`master_key` / `db_password` / `s3_*`, starts infra with `--wait`, re-applies the DB password
-over the local socket (rotation keeps data), provisions Garage, then starts the app with
-`--wait`. `db` is checked over TCP, `core-back` gets a healthcheck (bash `/dev/tcp` — the image
-has no curl) and `core-front` waits for it. `eerp-config.prod.json` is never touched.
+Root causes: `db`'s socket `pg_isready` passed during initdb's temporary server; a missing
+`eerp-config.docker.json` made Docker create a **directory** at the bind-mount source; Garage
+stayed unprovisioned and `init.sh` imported a hardcoded key no template uses; `garage.toml`
+committed an `rpc_secret`. `make bootstrap` (`infra/bootstrap.sh`) generates missing secrets
+into `.env`, creates and fills the gitignored configs from their templates, re-applies the DB
+password, provisions Garage and starts everything with `--wait`. `eerp-config.prod.json` is
+never touched.
 
-Pitfalls: `docker compose up --wait` fails when a one-shot container (`gateway-certs`) exits,
-so the script waits on named long-running services; and compose does **not** recreate a
-container when only a bind-mounted file's *content* changes (e.g. `nginx.conf` after a branch
-switch) — restart it (`docker compose restart api-gateway`).
+Pitfalls: `--wait` fails when a one-shot container (`gateway-certs`) exits, so the script waits
+on named long-running services; compose never recreates a container when a bind-mounted file's
+*content* changes, and on Docker Desktop the old container even keeps the file it was created
+with ("no such file" after a branch switch) — the script recreates the stateless gateway.
 
 ## P1 — Dead code
 
-`go run golang.org/x/tools/cmd/deadcode ./...` (35 hits) and `knip` (frontend):
+- Each package's test-only `newHandlerWith` folded into `NewHandler`, which takes interfaces.
+- Deleted `orm.AutoScan` (no-op), `cache.ReflectTypeOf`, `scan.Row`, `server.NewEcho`/
+  `MountHandler`; `dbmanage.Provisioner` has one `Provision(ctx, db, onProgress)`.
+- Frontend: 7 identical BFF `errorResponse` copies → `src/lib/route-errors.ts`; unused
+  `react-resizable` dependency and needless exports removed.
+- Kept on purpose (allowlisted): the public ORM API modules build on, and test support.
 
-| Bucket | Symbols | Action |
+## P2 — Time complexity
+
+| Hot path | Before | After |
 | --- | --- | --- |
-| Test seams in production files | `newHandlerWith` ×10 (attachments, auth ×2, chatter, cron, module, notebook, pictures, savedfilter, settings), `cron.clearForTest` | Fold into `NewHandler` taking the interfaces (the concrete repos satisfy them); move `clearForTest` to a `_test.go` |
-| Truly dead | `orm.AutoScan` (documented no-op), `cache.ReflectTypeOf`, `scan.Row`, `server.NewEcho`/`MountHandler` (tests can use `server.New(...).RegisterRoutes`), `dbmanage.Provisioner.Provision` (check first — new in `dev`) | Delete |
-| Public ORM API (framework surface) | `orm.Repo`, `Select`, `In`, `NewNoopLogger`, `ExposedTableNames`, `ExtendSchema`, `WithReadOnlyFields`, `WithFieldGroups`, builders' `Returning`/`OnConflict*`/`Exec`/`All` | **Keep**; cover with tests |
-| Frontend | unused `react-resizable` engine dependency; needless exports `decodeAccessClaims`, `FORCE_PASSWORD_CHANGE_PATH`, 5 graph widget bodies, `PHONE_COUNTRIES`; 7 identical copies of `errorResponse` across `app/api/**/route.ts` | Drop / unexport; one shared `src/lib/route-errors.ts` |
+| `cron.SweepHistory` (every minute) | loaded every cron and every history row | cutoff evaluated in SQL; only expired rows read |
+| `sale.linkedTaxes`, `propertymanagement.linkedBillingLineTaxes` | one `FindByID` per linked tax | `sale.ResolveTaxes`: one `id = ANY($1)` query |
+| `sale.ExpireOverdueQuotes` (hourly) | loaded every quote of every tenant | one `UPDATE` |
+| `company.BackfillCompanyID` (boot) | 2 statements per tenant | 2 statements total |
 
-Gate: a CI step diffing `deadcode` output against a committed allowlist of the public API, so
-the list only shrinks.
+Review rule — candidates: `rg -U 'for .*range.*\{\n(.*\n){0,6}.*\.(FindByID|Find|Query|Exec|Update)\(ctx'`.
 
-## P2 — Time complexity (DB round trips)
+## P3 — Test coverage
 
-| Hot path | Today | Target |
-| --- | --- | --- |
-| `cron.SweepHistory` — runs **every minute** | loads every cron and every `cron_history` row into memory to find the few expired ones | evaluate the cutoff in SQL (`created_at <= $now - make_interval(years => …)`); read only expired rows |
-| `sale.linkedTaxes`, `propertymanagement.linkedBillingLineTaxes` | 1 query + one `FindByID` per linked tax, on every line write | one `id = ANY($1)` query (shared helper), keeping link order/duplicates |
-| `sale.ExpireOverdueQuotes` — hourly | loads every quote of every tenant, updates overdue ones one by one | one `UPDATE … WHERE status IN (…) AND due_date < now()` |
-| `company.BackfillCompanyID` — boot | 2 statements per tenant | 2 statements total (`INSERT … SELECT DISTINCT`, `UPDATE … FROM`) |
+- **`main.go` → `internal/app`**: `Build` returns errors instead of `Fatal` (keeping `dev`'s
+  leaked-literal, key-length and `environment` rules), `Run` starts the jobs. The app tests
+  boot it against the test DB and drive every route group, each module override, the database
+  manager (a real scratch database created and deleted), graph fields, role rights and the
+  live presence WebSocket.
+- **DB tests actually run**: `core/internal/testdb` is the one path (`TEST_DSN`, else
+  `CONFIG`, else skip) with `MigrateModules` for a module's real schema. CI uses a
+  `services: postgres` container (compose's `db` isn't reachable from the runner); dev
+  publishes `db`/`garage` on `127.0.0.1` only for host-native tests.
+- **Pitfall — tests may share the dev DB**: seed under a fresh `uuid.New()` tenant and delete
+  only those rows (the auth suite used to `DELETE FROM users`). `dev`'s generic CRUD refuses
+  requests without a tenant in context — tests must set one (`access.WithTenant`).
+- **Pitfall — vitest**: `beforeEach(() => mock.mockReset())` *returns* the mock, which vitest
+  runs as a teardown; heavy MUI renders need a longer `testTimeout` under coverage.
 
-Replace each pure-function unit test (`quoteOverdue`, `historyExpired`) with a DB test of the
-same cases. Review rule — candidates:
-`rg -U 'for .*range.*\{\n(.*\n){0,6}.*\.(FindByID|Find|Query|Exec|Update)\(ctx'`.
+### Bugs and flakes fixed on the way
 
-## P3 — Test coverage ≥ 80 %
-
-**Why CI measures 35 %:** DB tests never run there. They are split between `CONFIG` and
-`TEST_DSN` (+ an `integration` build tag), CI sets neither, and `db` isn't even published to
-the runner (`expose` only). Several tagged tests have rotted (`registry.Reset` no longer
-exists; hand-written schemas lag the real ones).
-
-1. **One DB-test path:** `core/internal/testdb` — `Open(t)` from `TEST_DSN`, else `CONFIG`, else
-   skip; `MigrateModules(t, app, "auth", …)` building a module's *real* schema on a fresh DB.
-   Drop the build tag. In CI, publish `db` on the runner (a CI-only compose override or a
-   `services: postgres` block) and set `TEST_DSN`.
-2. **Tests share the dev DB — make them safe first.** `internal/auth/integration_test.go`
-   cleans up with `DELETE FROM users` / `roles` / `permissions` — run against a dev DB it wipes
-   every account. Seed under a fresh `uuid.New()` tenant and delete only those rows.
-3. **`main.go` → `internal/app`** — the wiring is `cmd/app`'s 2 034 statements at 0 %, the
-   single biggest lever. `app.Build(ctx, cfg)` returning errors instead of `Fatal`, `Run(ctx)`
-   for jobs + server; one test boots it against the test DB and drives every route group plus
-   create/update/delete flows through each module override as the seeded dev admin.
-4. Then the remaining gaps: `internal/module` (471 uncovered), `internal/dbmanage` (452),
-   `internal/auth` (394), `modules/sale` (311), `modules/propertymanagement` (286),
-   `modules/auth` (252), `internal/presence` (173), `internal/cron` (120).
-5. **Frontend shell (+192 lines):** `app/database/management/page.tsx` (67), the BFF routes
-   (`api/attachments`, `api/auth/refresh`, `api/cron-history`) and server actions
-   (`saved-filter-actions`, `chatter-visibility`, `graph-actions`, …) and
-   `PasswordChangeForm`. Pitfall: `beforeEach(() => mock.mockReset())` *returns* the mock,
-   which vitest then runs as a teardown — use a block body.
-6. **Gates:** `.github/.testcoverage.yml` `threshold.total: 80`; vitest `coverage.thresholds`.
-
-**Flaky test to fix on the way:** `internal/reports/nats_renderer_test.go` subscribes (l.38)
-then requests (l.58) without `Flush()` on the subscriber's connection — under parallel test
-binaries the request can beat the subscription ("no responders available").
-
-**Known bugs these tests will surface** (all confirmed present on `dev`, all found by the same
-tests on a `main`-based run):
-
-| Bug | Impact |
+| Issue | Impact |
 | --- | --- |
-| `cron.Cron` has no JSON tags | `POST/PUT /api/v1/cron` silently drops `action_id`, `execution_date`, `run_as_user_id`, `history_retention_years` — a cron created from the form never gets its action |
-| `crm.CRM.Contacts` has no JSON tag | `POST /api/v1/crm` drops `contact_id` |
-| `orm.WithTableName` doesn't set `StructMeta.Table` | generic CRUD on an overridden name queries the derived table |
-| `orm.New(cfg, nil)` | nil logger panics on the first logged query error |
-| Concurrent `CREATE TABLE IF NOT EXISTS` | two processes migrating one DB (replicas, parallel tests) collide on `pg_type` — serialize schema DDL with a Postgres advisory lock |
+| `cron.Cron`, `crm.CRM.Contacts` lacked JSON tags | cron create/update dropped `action_id`, `execution_date`, `run_as_user_id`, `history_retention_years`; crm create dropped `contact_id` — `internal/app/bind_test.go` guards it |
+| `orm.WithTableName` didn't set `StructMeta.Table` | generic CRUD on an overridden name queried the derived table |
+| `orm.New(cfg, nil)` | nil logger panicked on the first logged query error |
+| Concurrent `CREATE TABLE IF NOT EXISTS` | parallel boots could fail; schema DDL now under a Postgres advisory lock |
+| NATS renderer test | raced its own subscription — now flushes it |
+| ORM pool tests | used `TEMP` tables across pooled connections |
+| propertymanagement view tests | asserted a layout `dev` had deliberately changed (`generated_at`, equal floor/UOM columns) |
 
 ## P4 — Docker build and run
 
-| Item | Why |
-| --- | --- |
-| BuildKit cache mounts (Go module + build cache, pnpm store, `.next/cache`) — none today | Incremental rebuilds in seconds instead of recompiling everything |
-| Backend runtime on `debian:trixie-slim` + `ca-certificates` + PGDG `postgresql-client-18` instead of the full `golang` image | 1.39 GB → ~250 MB; same Debian release as the builder (cgo/glibc) |
-| `GET /health` on `core/orm/server` (DB ping) | nginx already proxies `/health` to a route Go doesn't have; the compose healthcheck could then check readiness, not just a listening port |
-| Named `pgdata` volume for `db` | the image's anonymous volume is orphaned by every `docker compose down` + `up` |
-| Host-native `make run-back-tests` / `go run` can't reach `db` or `garage` (ports are `expose`-only since the hardening) | publish them on `127.0.0.1` only in a dev override, or run the tests in a container on the compose network |
-| `deploy.yml` needs `GARAGE_RPC_SECRET` in the server's `.env` from P0 on | one line next to `POSTGRES_PASSWORD` |
+- BuildKit cache mounts: Go modules + build cache (backend, pdf-service), pnpm store, `.next/cache`.
+- Backend runtime on `debian:trixie-slim` + PGDG `postgresql-client-18` (dbmanage) + `curl`.
+- `GET /health` on `core/orm/server` (DB ping) — compose healthcheck and the gateway use it.
+- Named `pgdata` volume in dev. **Production keeps the anonymous volume** until migrated once
+  by hand (`compose.prod.yml`'s `db` comment): switching the mount in place would boot on an
+  empty database.
 
 ## Related
 

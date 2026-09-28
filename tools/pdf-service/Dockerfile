@@ -3,11 +3,12 @@ FROM golang:1.27.1 AS builder
 WORKDIR /app
 
 COPY tools/pdf-service/go.mod tools/pdf-service/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY tools/pdf-service/ ./
 
-RUN go build -o /app/pdf-service .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /app/pdf-service .
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

@@ -60,7 +60,10 @@ COPY core-front/apps/shell/package.json ./apps/shell/
 # External module package.json files (from every module_root) so the workspace globs
 # link them; the layer stays cached until a module manifest actually changes.
 COPY --from=modules /out/manifests/ /app/
-RUN pnpm install --frozen-lockfile
+# The pnpm store lives in a BuildKit cache mount: a lockfile change re-downloads
+# only what changed instead of every package.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --store-dir /pnpm/store
 
 # --- build engine + shell (discovers external modules) ---
 FROM base AS build
@@ -79,7 +82,9 @@ WORKDIR /app/core-front
 COPY --from=deps /app /app
 COPY core-front/ ./
 COPY --from=modules /out/modules/ /app/
-RUN pnpm -r build
+# Next's incremental build cache survives across image builds.
+RUN --mount=type=cache,id=next-cache,target=/app/core-front/apps/shell/.next/cache \
+    pnpm -r build
 
 # --- runtime: standalone server only ---
 # The standalone trace is rooted at the monorepo, so the entry lives at
