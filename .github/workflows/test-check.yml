@@ -28,6 +28,17 @@ jobs:
               go-version: '1.26'
               # go.mod lives in core/, not the repo root — point the build cache at it.
               cache-dependency-path: core/go.sum
+          - name: create the test config
+            # eerp-config.json is gitignored (docs/security/pentest-2026-09-24.md), so
+            # a checkout has none: build it from the committed template, as
+            # infra/bootstrap.sh does locally. The backend refuses the template's
+            # placeholders, so the secret fields get a throwaway random value
+            # (TEST_DSN below supplies the real database coordinates).
+            run: |
+              cp eerp-config.example.json eerp-config.json
+              secret=$(openssl rand -hex 32)
+              sed -i -E "s/(\"(master_key|db_password|s3_access_key|s3_secret_key)\"[[:space:]]*:[[:space:]]*\")[^\"]*\"/\1$secret\"/" eerp-config.json
+
           - name: test code and generate coverage report
             # TEST_DSN is what makes the DB-backed tests run (core/internal/testdb) —
             # without it they skip. The database is the job's `postgres` service
