@@ -151,7 +151,7 @@ function NoData() {
 
 // ── stat ─────────────────────────────────────────────────────────────────
 
-export function StatWidgetBody<T extends HasId>({
+function StatWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
@@ -530,7 +530,7 @@ function BarChart({
   )
 }
 
-export function BarWidgetBody<T extends HasId>({
+function BarWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
@@ -572,7 +572,7 @@ export function BarWidgetBody<T extends HasId>({
   )
 }
 
-export function XyWidgetBody<T extends HasId>({
+function XyWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
@@ -702,7 +702,7 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
   )
 }
 
-export function PieWidgetBody<T extends HasId>({
+function PieWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
@@ -729,7 +729,7 @@ export function PieWidgetBody<T extends HasId>({
 
 const LIST_WIDGET_PAGE_SIZE = 20
 
-export function ListWidgetBody<T extends HasId>({
+function ListWidgetBody<T extends HasId>({
   tile,
   descriptor,
 }: {

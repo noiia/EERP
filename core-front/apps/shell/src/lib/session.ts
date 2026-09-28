@@ -21,7 +21,7 @@ export async function getEffectivePermissions(): Promise<string[]> {
 // The forced-change form's own route — the one page requireAuth must NOT
 // redirect away from when mustChangePassword is set, or every render of that
 // page would immediately bounce back to itself.
-export const FORCE_PASSWORD_CHANGE_PATH = '/force-password-change'
+const FORCE_PASSWORD_CHANGE_PATH = '/force-password-change'
 
 /**
  * RequireAuth: redirect anonymous users to /login (carrying the intended path),

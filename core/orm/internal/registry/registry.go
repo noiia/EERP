@@ -156,10 +156,6 @@ func Register[T any](opts ...Option) error {
 	return nil
 }
 
-// AutoScan is a no-op placeholder. Go does not support runtime package
-// discovery in compiled binaries — use Register[T] for explicit registration.
-func AutoScan(_ string) error { return nil }
-
 // ExtendSchema appends extra columns to an already-registered table.
 // Use this from an inheriting module to add fields to another module's entity
 // without touching the base module's code.

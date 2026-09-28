@@ -1,0 +1,22 @@
+# Functions unreachable from core/cmd/app that are kept on purpose: the public ORM
+# API offered to modules (framework surface).
+# CI fails when deadcode reports anything NOT listed here — delete the new dead
+# code, or add it here if it is deliberate public API. Regenerate with:
+#   cd core && deadcode -f '{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}' ./... | sort
+core/orm.ExposedTableNames
+core/orm.ExtendSchema
+core/orm.In
+core/orm/internal/registry.ExtendSchema
+core/orm/internal/registry.WithFieldGroups
+core/orm/internal/registry.WithReadOnlyFields
+core/orm.NewNoopLogger
+core/orm/query.DeleteBuilder.All
+core/orm/query.DeleteBuilder.Exec
+core/orm/query.DeleteBuilder.One
+core/orm/query.DeleteBuilder.Returning
+core/orm/query.InsertBuilder.Exec
+core/orm/query.InsertBuilder.OnConflictDoNothing
+core/orm.Repo
+core/orm.Select
+core/orm.WithFieldGroups
+core/orm.WithReadOnlyFields

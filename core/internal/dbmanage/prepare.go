@@ -98,7 +98,7 @@ func (m *Manager) provisionAndKeepWarm(ctx context.Context, name string, started
 		return fail(fmt.Errorf("dbmanage: connect to %s: %w", name, err))
 	}
 
-	if err := m.provisioner.ProvisionWithProgress(ctx, tmp.DB, onProgress); err != nil {
+	if err := m.provisioner.Provision(ctx, tmp.DB, onProgress); err != nil {
 		tmp.Close() // don't leak a failed attempt's connections
 		return fail(err)
 	}

@@ -190,9 +190,6 @@ func tableName(t reflect.Type) string {
 	return toSnake(t.Name())
 }
 
-// ReflectTypeOf is the exported form of typeOf, used in tests.
-func ReflectTypeOf[T any]() reflect.Type { return typeOf[T]() }
-
 // ToSnake is exported so tests can verify the conversion directly.
 var ToSnake = toSnake
 

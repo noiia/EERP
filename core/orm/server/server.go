@@ -68,12 +68,6 @@ func New(app *orm.App, cfg Config) *Server {
 	return &Server{echo: e, cfg: cfg, app: app}
 }
 
-// NewEcho creates a configured Echo instance with default settings, without binding
-// it to a port. Exposed so integration tests can get an httptest-friendly Echo.
-func NewEcho(app *orm.App) *echo.Echo {
-	return newEcho(app, Config{})
-}
-
 func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
@@ -145,13 +139,6 @@ func (s *Server) RegisterRoutes(
 	for _, h := range handlers {
 		mountHandler(g, h)
 	}
-}
-
-// MountHandler mounts an individual handler on a group.
-// Exported for use in integration tests.
-func MountHandler(e *echo.Echo, h *handler.GenericHandler, middlewares ...echo.MiddlewareFunc) {
-	g := e.Group("/api/v1", middlewares...)
-	mountHandler(g, h)
 }
 
 func mountHandler(g *echo.Group, h *handler.GenericHandler) {

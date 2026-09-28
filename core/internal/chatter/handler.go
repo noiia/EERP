@@ -48,13 +48,8 @@ type Handler struct {
 	users userStore
 }
 
-// NewHandler constructs the chatter Handler from concrete implementations.
-func NewHandler(store *Repository, users *auth.UserRepository) *Handler {
-	return &Handler{store: store, users: users}
-}
-
-// newHandlerWith constructs a Handler from interface values (tests).
-func newHandlerWith(store chatterStore, users userStore) *Handler {
+// NewHandler constructs the chatter Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store chatterStore, users userStore) *Handler {
 	return &Handler{store: store, users: users}
 }
 

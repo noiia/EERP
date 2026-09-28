@@ -28,3 +28,11 @@ func TestRegistry(t *testing.T) {
 		t.Fatalf("Register did not overwrite: got Label=%q", got.Label)
 	}
 }
+
+// clearForTest empties the registry — test-only (mirrors the frontend
+// registries' own clear()).
+func clearForTest() {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	registry = map[string]Action{}
+}

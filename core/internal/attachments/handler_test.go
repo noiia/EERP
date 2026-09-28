@@ -187,7 +187,7 @@ func TestUpload(t *testing.T) {
 		objects := &stubObjects{}
 		body, contentType := multipartUpload(t, anchor, "invoice.pdf", "application/pdf", []byte("pdf-bytes"))
 
-		rec := serve(t, newHandlerWith(store, objects).Upload,
+		rec := serve(t, NewHandler(store, objects).Upload,
 			http.MethodPost, "/api/v1/attachments", contentType, body, identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -216,7 +216,7 @@ func TestUpload(t *testing.T) {
 		objects := &stubObjects{}
 		body, contentType := multipartUpload(t, anchor, "notes.txt", "text/plain", []byte("hello"))
 
-		rec := serve(t, newHandlerWith(store, objects).Upload,
+		rec := serve(t, NewHandler(store, objects).Upload,
 			http.MethodPost, "/api/v1/attachments", contentType, body, identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -234,7 +234,7 @@ func TestUpload(t *testing.T) {
 		objects := &stubObjects{}
 		body, contentType := multipartUpload(t, anchor, "new.pdf", "application/pdf", []byte("new-bytes"))
 
-		rec := serve(t, newHandlerWith(store, objects).Upload,
+		rec := serve(t, NewHandler(store, objects).Upload,
 			http.MethodPost, "/api/v1/attachments", contentType, body, identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -257,7 +257,7 @@ func TestUpload(t *testing.T) {
 	t.Run("rejects a missing table_name/field", func(t *testing.T) {
 		store := &stubAttachments{}
 		body, contentType := multipartUpload(t, map[string]string{"record_id": recordID.String()}, "x.pdf", "application/pdf", []byte("x"))
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Upload,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Upload,
 			http.MethodPost, "/api/v1/attachments", contentType, body, identity, nil)
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "VALIDATION_ERROR" {
 			t.Errorf("status/code = %d/%s, want 400/VALIDATION_ERROR", rec.Code, errorCode(t, rec))
@@ -267,7 +267,7 @@ func TestUpload(t *testing.T) {
 	t.Run("rejects an upload with no file part", func(t *testing.T) {
 		store := &stubAttachments{}
 		body, contentType := multipartUpload(t, anchor, "", "", nil)
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Upload,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Upload,
 			http.MethodPost, "/api/v1/attachments", contentType, body, identity, nil)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", rec.Code)
@@ -286,7 +286,7 @@ func TestGet(t *testing.T) {
 		store := &stubAttachments{found: found}
 		objects := &stubObjects{getBody: "pdf-bytes", getMime: "application/octet-stream"}
 
-		rec := serve(t, newHandlerWith(store, objects).Get,
+		rec := serve(t, NewHandler(store, objects).Get,
 			http.MethodGet, "/api/v1/attachments/"+found.ID.String(), "", nil, identity,
 			map[string]string{"id": found.ID.String()})
 
@@ -307,7 +307,7 @@ func TestGet(t *testing.T) {
 
 	t.Run("404s on an unknown id", func(t *testing.T) {
 		store := &stubAttachments{foundErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Get,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Get,
 			http.MethodGet, "/api/v1/attachments/"+uuid.NewString(), "", nil, identity,
 			map[string]string{"id": uuid.NewString()})
 		if rec.Code != http.StatusNotFound {
@@ -323,7 +323,7 @@ func TestFind(t *testing.T) {
 
 	t.Run("404s when the anchor has no attachment", func(t *testing.T) {
 		store := &stubAttachments{anchorErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Find,
 			http.MethodGet, "/api/v1/attachments?table=x&record="+uuid.NewString()+"&field=y", "", nil, identity, nil)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404", rec.Code)
@@ -334,7 +334,7 @@ func TestFind(t *testing.T) {
 		found := Attachment{TableName: "x", Field: "y", Filename: "doc.pdf", Mime: "application/pdf"}
 		found.ID = uuid.New()
 		store := &stubAttachments{anchor: found}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Find,
 			http.MethodGet, "/api/v1/attachments?table=x&record="+uuid.NewString()+"&field=y", "", nil, identity, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
@@ -360,7 +360,7 @@ func TestDelete(t *testing.T) {
 		store := &stubAttachments{found: found}
 		objects := &stubObjects{}
 
-		rec := serve(t, newHandlerWith(store, objects).Delete,
+		rec := serve(t, NewHandler(store, objects).Delete,
 			http.MethodDelete, "/api/v1/attachments/"+found.ID.String(), "", nil, identity,
 			map[string]string{"id": found.ID.String()})
 
@@ -378,7 +378,7 @@ func TestDelete(t *testing.T) {
 	t.Run("404s on an unknown id — nothing deleted", func(t *testing.T) {
 		store := &stubAttachments{foundErr: orm.ErrNotFound}
 		objects := &stubObjects{}
-		rec := serve(t, newHandlerWith(store, objects).Delete,
+		rec := serve(t, NewHandler(store, objects).Delete,
 			http.MethodDelete, "/api/v1/attachments/"+uuid.NewString(), "", nil, identity,
 			map[string]string{"id": uuid.NewString()})
 		if rec.Code != http.StatusNotFound {

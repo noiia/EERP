@@ -49,13 +49,8 @@ type AdminHandler struct {
 	roles adminRoleStore
 }
 
-// NewAdminHandler constructs an AdminHandler from the concrete repositories.
-func NewAdminHandler(users *UserRepository, roles *RoleRepository) *AdminHandler {
-	return &AdminHandler{users: users, roles: roles}
-}
-
-// newAdminHandlerWith constructs an AdminHandler from interface values (tests).
-func newAdminHandlerWith(users adminUserStore, roles adminRoleStore) *AdminHandler {
+// NewAdminHandler constructs an AdminHandler from its dependencies (interfaces, so tests can pass fakes).
+func NewAdminHandler(users adminUserStore, roles adminRoleStore) *AdminHandler {
 	return &AdminHandler{users: users, roles: roles}
 }
 

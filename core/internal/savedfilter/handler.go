@@ -42,13 +42,8 @@ type Handler struct {
 	store savedFilterStore
 }
 
-// NewHandler constructs the saved-filter Handler from the concrete repository.
-func NewHandler(store *Repository) *Handler {
-	return &Handler{store: store}
-}
-
-// newHandlerWith constructs a Handler from an interface value (tests).
-func newHandlerWith(store savedFilterStore) *Handler {
+// NewHandler constructs the saved-filter Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store savedFilterStore) *Handler {
 	return &Handler{store: store}
 }
 

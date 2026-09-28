@@ -603,7 +603,7 @@ function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
  * defaults, not a libphonenumber replacement. Ordered longest-dial-first when
  * matching so '+1 ...' never shadows '+1242'-style codes we may add later.
  */
-export const PHONE_COUNTRIES: readonly { code: string; dial: string; flag: string }[] = [
+const PHONE_COUNTRIES: readonly { code: string; dial: string; flag: string }[] = [
   { code: 'FR', dial: '33', flag: '🇫🇷' },
   { code: 'BE', dial: '32', flag: '🇧🇪' },
   { code: 'CH', dial: '41', flag: '🇨🇭' },

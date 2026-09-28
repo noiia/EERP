@@ -11,13 +11,6 @@ func Register[T any](opts ...registry.Option) error {
 	return registry.Register[T](opts...)
 }
 
-// AutoScan is a no-op placeholder.
-// Go compiled binaries cannot discover struct types in a package at runtime.
-// Use Register[T] for explicit registration.
-func AutoScan(pkgPath string) error {
-	return registry.AutoScan(pkgPath)
-}
-
 // SchemaField is re-exported so callers only import core/orm.
 type SchemaField = registry.SchemaField
 

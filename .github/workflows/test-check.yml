@@ -29,6 +29,16 @@ jobs:
               POSTGRES_PASSWORD: ci_test_password
               GARAGE_RPC_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
 
+          - name: dead code gate
+            # Fails on any function unreachable from main that isn't deliberate public
+            # API listed in .github/deadcode-allowlist.txt.
+            run: |
+              go install golang.org/x/tools/cmd/deadcode@v0.50.0
+              cd ./core/
+              deadcode -f '{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}' ./... | sort > /tmp/dead.txt
+              sed '/^#/d' ../.github/deadcode-allowlist.txt | sort | comm -23 /tmp/dead.txt - | tee /tmp/new-dead.txt
+              test ! -s /tmp/new-dead.txt
+
           - name: analyse coverage
             uses: vladopajic/go-test-coverage@v2
             with:

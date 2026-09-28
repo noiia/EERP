@@ -1,21 +1,12 @@
 import { NextResponse } from 'next/server'
-import { ApiError, findAttachment, uploadAttachment } from '@eerp/core-front/server'
+import { findAttachment, uploadAttachment } from '@eerp/core-front/server'
+import { errorResponse } from '@/lib/route-errors'
 
 // BFF proxy for the attachment service collection routes — mirrors
 // app/api/pictures/route.ts exactly, scoped to internal/attachments. The
 // browser never talks to Go: widgets POST their multipart here (and query
 // anchors here), Next forwards with the session Bearer, Go owns validation,
 // tenant pinning, and storage.
-
-function errorResponse(e: unknown): NextResponse {
-  if (e instanceof ApiError) {
-    return NextResponse.json(
-      { error: { code: e.code, message: e.message, request_id: e.requestId } },
-      { status: e.status },
-    )
-  }
-  throw e
-}
 
 // POST /api/attachments — multipart {table_name, record_id, field, file} passthrough.
 export async function POST(request: Request) {

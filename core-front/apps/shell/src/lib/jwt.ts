@@ -27,7 +27,7 @@ function decodeBase64Url(segment: string): unknown {
   return JSON.parse(Buffer.from(base64, 'base64').toString('utf8'))
 }
 
-export function decodeAccessClaims(token: string): AccessClaims | null {
+function decodeAccessClaims(token: string): AccessClaims | null {
   const parts = token.split('.')
   if (parts.length !== 3) return null
   try {

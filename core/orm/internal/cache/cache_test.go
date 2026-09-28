@@ -348,7 +348,7 @@ func TestFieldMeta_FieldValue_Embedded(t *testing.T) {
 func TestGet_NonStruct_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := cache.Global.Get(cache.ReflectTypeOf[int]())
+	_, err := cache.Global.Get(reflect.TypeOf(0))
 	if err == nil {
 		t.Error("expected error for non-struct type, got nil")
 	}

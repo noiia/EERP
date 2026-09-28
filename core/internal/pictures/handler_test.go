@@ -187,7 +187,7 @@ func TestUpload(t *testing.T) {
 		objects := &stubObjects{}
 		body, contentType := multipartUpload(t, anchor, "image/png", []byte("png-bytes"))
 
-		rec := serve(t, newHandlerWith(store, objects).Upload,
+		rec := serve(t, NewHandler(store, objects).Upload,
 			http.MethodPost, "/api/v1/pictures", contentType, body, identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -224,7 +224,7 @@ func TestUpload(t *testing.T) {
 		objects := &stubObjects{}
 		body, contentType := multipartUpload(t, anchor, "image/webp", []byte("new-bytes"))
 
-		rec := serve(t, newHandlerWith(store, objects).Upload,
+		rec := serve(t, NewHandler(store, objects).Upload,
 			http.MethodPost, "/api/v1/pictures", contentType, body, identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -272,7 +272,7 @@ func TestUpload(t *testing.T) {
 				objects := &stubObjects{}
 				body, contentType := multipartUpload(t, tt.fields, tt.mime, tt.file)
 
-				rec := serve(t, newHandlerWith(store, objects).Upload,
+				rec := serve(t, NewHandler(store, objects).Upload,
 					http.MethodPost, "/api/v1/pictures", contentType, body, identity, nil)
 
 				if rec.Code != http.StatusBadRequest {
@@ -300,7 +300,7 @@ func TestGet(t *testing.T) {
 		store := &stubPictures{found: row}
 		objects := &stubObjects{getBody: "the-bytes", getMime: "application/octet-stream"}
 
-		rec := serve(t, newHandlerWith(store, objects).Get,
+		rec := serve(t, NewHandler(store, objects).Get,
 			http.MethodGet, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
 			map[string]string{"id": row.ID.String()})
 
@@ -321,7 +321,7 @@ func TestGet(t *testing.T) {
 
 	t.Run("unknown id is 404", func(t *testing.T) {
 		store := &stubPictures{foundErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Get,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Get,
 			http.MethodGet, "/api/v1/pictures/"+uuid.NewString(), "", nil, identity,
 			map[string]string{"id": uuid.NewString()})
 		if rec.Code != http.StatusNotFound {
@@ -330,7 +330,7 @@ func TestGet(t *testing.T) {
 	})
 
 	t.Run("malformed id is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubPictures{}, &stubObjects{}).Get,
+		rec := serve(t, NewHandler(&stubPictures{}, &stubObjects{}).Get,
 			http.MethodGet, "/api/v1/pictures/nope", "", nil, identity,
 			map[string]string{"id": "nope"})
 		if rec.Code != http.StatusBadRequest {
@@ -354,7 +354,7 @@ func TestFind(t *testing.T) {
 		row.ID = uuid.New()
 		store := &stubPictures{anchor: row}
 
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Find,
 			http.MethodGet, target, "", nil, identity, nil)
 
 		if rec.Code != http.StatusOK {
@@ -375,7 +375,7 @@ func TestFind(t *testing.T) {
 
 	t.Run("anchor without a picture is 404", func(t *testing.T) {
 		store := &stubPictures{anchorErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Find,
 			http.MethodGet, target, "", nil, identity, nil)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
@@ -383,7 +383,7 @@ func TestFind(t *testing.T) {
 	})
 
 	t.Run("malformed anchor is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubPictures{}, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(&stubPictures{}, &stubObjects{}).Find,
 			http.MethodGet, "/api/v1/pictures?table=Bad!&record="+recordID.String()+"&field=photo",
 			"", nil, identity, nil)
 		if rec.Code != http.StatusBadRequest {
@@ -403,7 +403,7 @@ func TestDelete(t *testing.T) {
 		store := &stubPictures{found: row}
 		objects := &stubObjects{}
 
-		rec := serve(t, newHandlerWith(store, objects).Delete,
+		rec := serve(t, NewHandler(store, objects).Delete,
 			http.MethodDelete, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
 			map[string]string{"id": row.ID.String()})
 
@@ -420,7 +420,7 @@ func TestDelete(t *testing.T) {
 
 	t.Run("unknown id is 404", func(t *testing.T) {
 		store := &stubPictures{foundErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Delete,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Delete,
 			http.MethodDelete, "/api/v1/pictures/"+uuid.NewString(), "", nil, identity,
 			map[string]string{"id": uuid.NewString()})
 		if rec.Code != http.StatusNotFound {
@@ -434,7 +434,7 @@ func TestDelete(t *testing.T) {
 		store := &stubPictures{found: row, deleteErr: context.DeadlineExceeded}
 		objects := &stubObjects{}
 
-		rec := serve(t, newHandlerWith(store, objects).Delete,
+		rec := serve(t, NewHandler(store, objects).Delete,
 			http.MethodDelete, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
 			map[string]string{"id": row.ID.String()})
 

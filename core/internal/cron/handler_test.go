@@ -51,7 +51,7 @@ func TestDownloadLog_StreamsExistingFile(t *testing.T) {
 	store := &stubHistoryStore{byID: map[uuid.UUID]CronHistory{
 		histID: {BaseModel: model.BaseModel{TenantID: tenant}, LogsFilepath: path},
 	}}
-	h := newHandlerWith(store)
+	h := NewHandler(store)
 
 	c, rec := newTestContext(http.MethodGet, "/api/v1/cron_history/"+histID.String()+"/log")
 	c = withIdentity(c, tenant)
@@ -77,7 +77,7 @@ func TestDownloadLog_NotFoundForOtherTenant(t *testing.T) {
 	store := &stubHistoryStore{byID: map[uuid.UUID]CronHistory{
 		histID: {BaseModel: model.BaseModel{TenantID: otherTenant}, LogsFilepath: "/does/not/matter"},
 	}}
-	h := newHandlerWith(store)
+	h := NewHandler(store)
 
 	c, rec := newTestContext(http.MethodGet, "/api/v1/cron_history/"+histID.String()+"/log")
 	c = withIdentity(c, tenant)

@@ -53,13 +53,8 @@ type Handler struct {
 	perms   permissionSource
 }
 
-// NewHandler constructs an auth Handler from concrete implementations.
-func NewHandler(users *UserRepository, tokens *TokenService, refresh *RefreshStore, perms *PermissionRepository) *Handler {
-	return &Handler{users: users, tokens: tokens, refresh: refresh, perms: perms}
-}
-
-// newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(users userQuerier, tokens tokenIssuer, refresh refreshStorer, perms permissionSource) *Handler {
+// NewHandler constructs an auth Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(users userQuerier, tokens tokenIssuer, refresh refreshStorer, perms permissionSource) *Handler {
 	return &Handler{users: users, tokens: tokens, refresh: refresh, perms: perms}
 }
 

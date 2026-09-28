@@ -90,18 +90,13 @@ type Handler struct {
 	environment string
 }
 
-// NewHandler constructs a settings Handler from concrete implementations.
+// NewHandler constructs a settings Handler from its dependencies (interfaces, so tests can pass fakes).
 // environment is types.Config.Environment ("development"/"production"), echoed
 // back on GetMyPreferences so the frontend (which never reads the backend
 // config file at runtime — core-front/CLAUDE.md's BFF boundary) can gate
 // dev-only affordances like the demo-seed tool off the SAME source of truth
 // the backend itself boots from, instead of its own separate env var.
-func NewHandler(users *auth.UserRepository, store *Repository, companies *company.Repository, environment string) *Handler {
-	return &Handler{users: users, store: store, companies: companies, environment: environment}
-}
-
-// newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(users userPreferenceStore, store settingStore, companies companyResolver, environment string) *Handler {
+func NewHandler(users userPreferenceStore, store settingStore, companies companyResolver, environment string) *Handler {
 	return &Handler{users: users, store: store, companies: companies, environment: environment}
 }
 

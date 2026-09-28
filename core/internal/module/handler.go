@@ -39,17 +39,12 @@ type Handler struct {
 	runtime moduleRuntime
 }
 
-// NewHandler constructs the modules Handler from the concrete Manager and
+// NewHandler constructs the modules Handler from a Manager and
 // Registry. Manager still owns raw module.json read access; Registry owns
 // runtime state (active gate, WASM lifecycle, operation logs) — kept
 // separate on purpose, mirroring the existing "typed detector vs raw
 // manager" split documented in manager.go.
-func NewHandler(store *Manager, runtime *Registry) *Handler {
-	return &Handler{store: store, runtime: runtime}
-}
-
-// newHandlerWith constructs a Handler from interface values (tests).
-func newHandlerWith(store moduleStore, runtime moduleRuntime) *Handler {
+func NewHandler(store moduleStore, runtime moduleRuntime) *Handler {
 	return &Handler{store: store, runtime: runtime}
 }
 

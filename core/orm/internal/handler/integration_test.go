@@ -58,7 +58,7 @@ func setupIntegration(t *testing.T) (*orm.App, *echo.Echo) {
 	// Clean state before each test.
 	t.Cleanup(func() {
 		app.DB.Exec(ctx, "DELETE FROM test_items") //nolint:errcheck
-		app.Close()                                 //nolint:errcheck
+		app.Close()                                //nolint:errcheck
 	})
 
 	registry.Reset()
@@ -69,8 +69,9 @@ func setupIntegration(t *testing.T) (*orm.App, *echo.Echo) {
 	svc := crud.NewService(repo, meta)
 	h := handler.NewGenericHandlerFromSvc(svc, meta)
 
-	e := ormserver.NewEcho(app)
-	ormserver.MountHandler(e, h)
+	srv := ormserver.New(app, ormserver.Config{})
+	srv.RegisterRoutes(map[string]*handler.GenericHandler{"h": h}, nil)
+	e := srv.Echo()
 
 	return app, e
 }

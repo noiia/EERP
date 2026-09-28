@@ -11,7 +11,7 @@ import (
 // The stub permission source grants every role one code so issued tokens carry a
 // permissions claim without a database.
 func NewHandlerForTest(user Users, roles []string, findErr error, tokens *TokenService, validateErr error) *Handler {
-	return newHandlerWith(
+	return NewHandler(
 		&stubUserRepo{user: user, roles: roles, findErr: findErr},
 		tokens,
 		&stubRefreshStore{validateErr: validateErr},

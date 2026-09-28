@@ -1,21 +1,11 @@
-import { NextResponse } from 'next/server'
-import { ApiError, deleteAttachment, streamAttachment } from '@eerp/core-front/server'
+import { deleteAttachment, streamAttachment } from '@eerp/core-front/server'
+import { errorResponse } from '@/lib/route-errors'
 
 // BFF proxy for one attachment: stream its bytes (triggering the browser's
 // native download, via Go's Content-Disposition) and delete it — mirrors
 // app/api/pictures/[id]/route.ts, with the one real difference being that
 // Content-Disposition is forwarded (pictures never sets one; a picture is
 // rendered inline as <img>, an attachment is meant to be saved by name).
-
-function errorResponse(e: unknown): NextResponse {
-  if (e instanceof ApiError) {
-    return NextResponse.json(
-      { error: { code: e.code, message: e.message, request_id: e.requestId } },
-      { status: e.status },
-    )
-  }
-  throw e
-}
 
 interface RouteContext {
   params: Promise<{ id: string }>

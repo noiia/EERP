@@ -96,7 +96,7 @@ func TestList(t *testing.T) {
 		m2.ID = uuid.New()
 		store := &stubStore{listed: []ChatterMessage{m1, m2}}
 
-		rec := serve(t, newHandlerWith(store, &stubUsers{}).List, http.MethodGet, target, nil, identity, nil)
+		rec := serve(t, NewHandler(store, &stubUsers{}).List, http.MethodGet, target, nil, identity, nil)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
@@ -117,7 +117,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("malformed anchor is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubStore{}, &stubUsers{}).List,
+		rec := serve(t, NewHandler(&stubStore{}, &stubUsers{}).List,
 			http.MethodGet, "/api/v1/chatter_messages?table=Bad!&record="+recordID.String(), nil, identity, nil)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -128,7 +128,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("malformed record id is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubStore{}, &stubUsers{}).List,
+		rec := serve(t, NewHandler(&stubStore{}, &stubUsers{}).List,
 			http.MethodGet, "/api/v1/chatter_messages?table=crm&record=nope", nil, identity, nil)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -147,7 +147,7 @@ func TestCreate(t *testing.T) {
 		store := &stubStore{}
 		body := `{"table_name":"crm","record_id":"` + recordID.String() + `","kind":"message","body":"Hello there"}`
 
-		rec := serve(t, newHandlerWith(store, users).Create,
+		rec := serve(t, NewHandler(store, users).Create,
 			http.MethodPost, "/api/v1/chatter_messages", strings.NewReader(body), identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -174,7 +174,7 @@ func TestCreate(t *testing.T) {
 		store := &stubStore{}
 		body := `{"table_name":"crm","record_id":"` + recordID.String() + `","kind":"log","body":"Changed status: open -> won"}`
 
-		rec := serve(t, newHandlerWith(store, users).Create,
+		rec := serve(t, NewHandler(store, users).Create,
 			http.MethodPost, "/api/v1/chatter_messages", strings.NewReader(body), identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -201,7 +201,7 @@ func TestCreate(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				store := &stubStore{}
-				rec := serve(t, newHandlerWith(store, users).Create,
+				rec := serve(t, NewHandler(store, users).Create,
 					http.MethodPost, "/api/v1/chatter_messages", strings.NewReader(tt.body), identity, nil)
 				if rec.Code != http.StatusBadRequest {
 					t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())

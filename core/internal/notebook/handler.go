@@ -44,13 +44,8 @@ type Handler struct {
 	store notebookStore
 }
 
-// NewHandler constructs the notebook Handler from the concrete repository.
-func NewHandler(store *Repository) *Handler {
-	return &Handler{store: store}
-}
-
-// newHandlerWith constructs a Handler from an interface value (tests).
-func newHandlerWith(store notebookStore) *Handler {
+// NewHandler constructs the notebook Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store notebookStore) *Handler {
 	return &Handler{store: store}
 }
 

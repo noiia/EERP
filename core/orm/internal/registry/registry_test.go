@@ -341,16 +341,6 @@ tables:
 	}
 }
 
-func TestAutoScan_IsNoOp(t *testing.T) {
-	resetRegistry()
-	if err := registry.AutoScan("some/package/path"); err != nil {
-		t.Errorf("AutoScan should return nil, got %v", err)
-	}
-	if len(registry.All()) != 0 {
-		t.Error("AutoScan should not register anything")
-	}
-}
-
 func TestRegister_NullableFields(t *testing.T) {
 	resetRegistry()
 	if err := registry.Register[product](); err != nil {

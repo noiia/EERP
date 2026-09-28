@@ -38,10 +38,17 @@ func routeSet(e *echo.Echo) map[string]bool {
 	return set
 }
 
+// mount registers h the way production does (RegisterRoutes) and returns the Echo.
+func mount(h *handler.GenericHandler) *echo.Echo {
+	s := ormserver.New(nil, ormserver.Config{})
+	s.RegisterRoutes(map[string]*handler.GenericHandler{"h": h}, nil)
+	return s.Echo()
+}
+
 // doErrorRequest registers a one-shot route returning err, then GETs it.
 func doErrorRequest(t *testing.T, returnErr error) *httptest.ResponseRecorder {
 	t.Helper()
-	e := ormserver.NewEcho(nil)
+	e := ormserver.New(nil, ormserver.Config{}).Echo()
 	e.GET("/probe", func(c echo.Context) error { return returnErr })
 	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
 	rec := httptest.NewRecorder()
@@ -49,12 +56,9 @@ func doErrorRequest(t *testing.T, returnErr error) *httptest.ResponseRecorder {
 	return rec
 }
 
-// ── NewEcho ───────────────────────────────────────────────────────────────────
-
-func TestNewEcho_NilApp_ReturnsEcho(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	if e == nil {
-		t.Fatal("NewEcho(nil) returned nil")
+func TestNew_NilApp_ReturnsEcho(t *testing.T) {
+	if ormserver.New(nil, ormserver.Config{}).Echo() == nil {
+		t.Fatal("New(nil).Echo() returned nil")
 	}
 }
 
@@ -72,8 +76,7 @@ func TestNew_EmptyConfig_NoPanic(t *testing.T) {
 // ── Route registration ────────────────────────────────────────────────────────
 
 func TestMountHandler_BaseRoutes_Registered(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("items", false))
+	e := mount(buildHandler("items", false))
 
 	routes := routeSet(e)
 	want := []string{
@@ -91,8 +94,7 @@ func TestMountHandler_BaseRoutes_Registered(t *testing.T) {
 }
 
 func TestMountHandler_SoftDelete_RestoreRoutePresent(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("things", true))
+	e := mount(buildHandler("things", true))
 
 	routes := routeSet(e)
 	if !routes["POST /api/v1/things/:id/restore"] {
@@ -101,8 +103,7 @@ func TestMountHandler_SoftDelete_RestoreRoutePresent(t *testing.T) {
 }
 
 func TestMountHandler_NoSoftDelete_NoRestoreRoute(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("hards", false))
+	e := mount(buildHandler("hards", false))
 
 	routes := routeSet(e)
 	if routes["POST /api/v1/hards/:id/restore"] {
@@ -111,8 +112,7 @@ func TestMountHandler_NoSoftDelete_NoRestoreRoute(t *testing.T) {
 }
 
 func TestMountHandler_SoftDelete_AllSixRoutes(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("widgets", true))
+	e := mount(buildHandler("widgets", true))
 
 	routes := routeSet(e)
 	want := []string{
@@ -213,7 +213,7 @@ func TestErrorHandler_UnknownHTTPStatus_ReturnsErrorCode(t *testing.T) {
 }
 
 func TestErrorHandler_PlainError_Returns500WithInternalCode(t *testing.T) {
-	e := ormserver.NewEcho(nil)
+	e := ormserver.New(nil, ormserver.Config{}).Echo()
 	e.GET("/boom", func(c echo.Context) error {
 		return &plainError{"something exploded"}
 	})

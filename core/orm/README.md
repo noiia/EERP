@@ -598,7 +598,7 @@ TEST_DSN="postgres://postgres:postgres@localhost:5432/erp" \
 orm/
 ├── orm.go                    — public facade (type aliases + top-level functions)
 ├── app.go                    — App{DB, Logger, Config}, New(), Close()
-├── register.go               — Register[T], AutoScan, LoadAPIConfig, option constructors
+├── register.go               — Register[T], LoadAPIConfig, option constructors
 │
 ├── server/                   — HTTP API server (public — importable by cmd/server)
 │   ├── server.go             — Server, New(), RegisterRoutes(), Start()

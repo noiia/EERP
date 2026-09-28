@@ -53,11 +53,3 @@ func Get(id string) (Action, bool) {
 	a, ok := registry[id]
 	return a, ok
 }
-
-// clearForTest empties the registry — test-only (mirrors the frontend
-// registries' own clear()).
-func clearForTest() {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	registry = map[string]Action{}
-}

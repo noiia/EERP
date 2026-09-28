@@ -118,7 +118,7 @@ func TestAdminListUsers(t *testing.T) {
 	users := &stubAdminUsers{users: []Users{
 		{BaseModel: model.BaseModel{TenantID: identity.TenantID}, Email: "a@x.io", PasswordHash: "secret-hash"},
 	}}
-	h := newAdminHandlerWith(users, &stubAdminRoles{})
+	h := NewAdminHandler(users, &stubAdminRoles{})
 
 	rec := serveAdmin(t, h.ListUsers, http.MethodGet, "/users", "", "", identity)
 
@@ -167,7 +167,7 @@ func TestAdminGetUser(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newAdminHandlerWith(tt.stub, &stubAdminRoles{})
+			h := NewAdminHandler(tt.stub, &stubAdminRoles{})
 			rec := serveAdmin(t, h.GetUser, http.MethodGet, "/users/"+tt.paramID, tt.paramID, "", identity)
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
@@ -198,7 +198,7 @@ func TestAdminUpdateUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubAdminUsers{user: Users{Email: "old@x.io"}, err: tt.stubErr}
-			h := newAdminHandlerWith(users, &stubAdminRoles{})
+			h := NewAdminHandler(users, &stubAdminRoles{})
 			rec := serveAdmin(t, h.UpdateUser, http.MethodPut, "/users/"+id.String(), id.String(), tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -236,7 +236,7 @@ func TestAdminCreateUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubAdminUsers{}
-			h := newAdminHandlerWith(users, &stubAdminRoles{})
+			h := NewAdminHandler(users, &stubAdminRoles{})
 			rec := serveAdmin(t, h.CreateUser, http.MethodPost, "/users", "", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -259,7 +259,7 @@ func TestAdminCreateUser(t *testing.T) {
 
 func TestAdminListRoles(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
-	h := newAdminHandlerWith(&stubAdminUsers{}, &stubAdminRoles{roles: []Roles{{Name: "admin", Description: "all"}}})
+	h := NewAdminHandler(&stubAdminUsers{}, &stubAdminRoles{roles: []Roles{{Name: "admin", Description: "all"}}})
 
 	rec := serveAdmin(t, h.ListRoles, http.MethodGet, "/roles", "", "", identity)
 
@@ -302,7 +302,7 @@ func TestAdminUpdateRole(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			roles := &stubAdminRoles{role: Roles{Name: "old"}, err: tt.stubErr}
-			h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+			h := NewAdminHandler(&stubAdminUsers{}, roles)
 			rec := serveAdmin(t, h.UpdateRole, http.MethodPut, "/roles/"+id.String(), id.String(), tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -335,7 +335,7 @@ func TestAdminCreateRole(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			roles := &stubAdminRoles{}
-			h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+			h := NewAdminHandler(&stubAdminUsers{}, roles)
 			rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -351,7 +351,7 @@ func TestAdminCreateRole(t *testing.T) {
 func TestAdminCreateRole_TechnicalNameRoundTrips(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	roles := &stubAdminRoles{}
-	h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+	h := NewAdminHandler(&stubAdminUsers{}, roles)
 
 	rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", `{"name":"support","technical_name":"support_agent"}`, identity)
 
@@ -373,7 +373,7 @@ func TestAdminCreateRole_TechnicalNameRoundTrips(t *testing.T) {
 func TestAdminCreateRole_DuplicateTechnicalName_Returns409(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	roles := &stubAdminRoles{err: ErrDuplicateTechnicalName}
-	h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+	h := NewAdminHandler(&stubAdminUsers{}, roles)
 
 	rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", `{"name":"support","technical_name":"support_agent"}`, identity)
 
@@ -384,7 +384,7 @@ func TestAdminCreateRole_DuplicateTechnicalName_Returns409(t *testing.T) {
 
 func TestAdminGetRole_NotFound(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
-	h := newAdminHandlerWith(&stubAdminUsers{}, &stubAdminRoles{err: orm.ErrNotFound})
+	h := NewAdminHandler(&stubAdminUsers{}, &stubAdminRoles{err: orm.ErrNotFound})
 	rec := serveAdmin(t, h.GetRole, http.MethodGet, "/roles/"+uuid.NewString(), uuid.NewString(), "", identity)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body.String())

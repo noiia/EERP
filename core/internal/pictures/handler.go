@@ -51,13 +51,8 @@ type Handler struct {
 	objects ObjectStore
 }
 
-// NewHandler constructs the pictures Handler from concrete implementations.
-func NewHandler(store *Repository, objects ObjectStore) *Handler {
-	return &Handler{store: store, objects: objects}
-}
-
-// newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(store pictureStore, objects ObjectStore) *Handler {
+// NewHandler constructs the pictures Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store pictureStore, objects ObjectStore) *Handler {
 	return &Handler{store: store, objects: objects}
 }
 

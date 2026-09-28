@@ -71,4 +71,3 @@ func whereClause(conditions []Condition, startIdx int) (string, []any) {
 
 	return "WHERE " + strings.Join(parts, " AND "), args
 }
-

@@ -33,13 +33,8 @@ type Handler struct {
 	store historyStore
 }
 
-// NewHandler constructs the cron Handler from the concrete repository.
-func NewHandler(store *Repository) *Handler {
-	return &Handler{store: store}
-}
-
-// newHandlerWith constructs a Handler from an interface value (tests).
-func newHandlerWith(store historyStore) *Handler {
+// NewHandler constructs the cron Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store historyStore) *Handler {
 	return &Handler{store: store}
 }
 

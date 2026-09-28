@@ -1,20 +1,11 @@
 import { NextResponse } from 'next/server'
-import { ApiError, findPicture, uploadPicture } from '@eerp/core-front/server'
+import { findPicture, uploadPicture } from '@eerp/core-front/server'
+import { errorResponse } from '@/lib/route-errors'
 
 // BFF proxy for the picture service collection routes. The browser never talks
 // to Go: widgets POST their multipart here (and query anchors here), Next
 // forwards with the session Bearer (refresh-once semantics in the engine
 // helpers), Go owns validation, tenant pinning, and storage.
-
-function errorResponse(e: unknown): NextResponse {
-  if (e instanceof ApiError) {
-    return NextResponse.json(
-      { error: { code: e.code, message: e.message, request_id: e.requestId } },
-      { status: e.status },
-    )
-  }
-  throw e
-}
 
 // POST /api/pictures — multipart {table_name, record_id, field, file} passthrough.
 export async function POST(request: Request) {
