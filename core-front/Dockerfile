@@ -1,5 +1,5 @@
 FROM node:26-alpine AS base
-RUN apk add --no-cache libc6-compat && npm install -g pnpm@11.8.0
+RUN apk add --no-cache libc6-compat && npm install -g pnpm@12.4.2
 
 # Build context is the REPO ROOT, mirrored under /app so the in-container layout matches
 # the repo: /app/core-front (the pnpm workspace), /app/<module_root> (business modules).
