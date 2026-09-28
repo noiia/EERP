@@ -13,7 +13,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Mounted behind jwtMw + permMw (graph_fields:graph_fields:read|write|delete
@@ -84,7 +84,7 @@ func visible(f GraphField, id auth.Identity) bool {
 }
 
 // List handles GET /api/v1/graph_fields?entity= — {data,total}, role-filtered.
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	id := auth.MustIdentity(c.Request().Context())
 	entity := c.QueryParam("entity")
 	if !entityPattern.MatchString(entity) {
@@ -104,7 +104,7 @@ func (h *Handler) List(c echo.Context) error {
 }
 
 // Create handles POST /api/v1/graph_fields.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	id := auth.MustIdentity(c.Request().Context())
 	var req struct {
 		Entity, Key, Label, Formula string
@@ -139,9 +139,9 @@ func (h *Handler) Create(c echo.Context) error {
 
 // Update handles PUT /api/v1/graph_fields/:id — label, formula, roles, dated
 // (the key is immutable). A field the caller's roles can't see behaves like a missing one.
-func (h *Handler) Update(c echo.Context) error {
+func (h *Handler) Update(c *echo.Context) error {
 	id := auth.MustIdentity(c.Request().Context())
-	fid, err := uuid.Parse(c.Param("id"))
+	fid, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "id must be a UUID.")
 	}
@@ -192,9 +192,9 @@ func validateBody(label, formula string, roles []string) string {
 
 // Delete handles DELETE /api/v1/graph_fields/:id. A field the caller's roles
 // can't see behaves like a missing one.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	id := auth.MustIdentity(c.Request().Context())
-	fid, err := uuid.Parse(c.Param("id"))
+	fid, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "id must be a UUID.")
 	}
@@ -214,7 +214,7 @@ func (h *Handler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func errorJSON(c echo.Context, status int, msg string) error {
+func errorJSON(c *echo.Context, status int, msg string) error {
 	return c.JSON(status, map[string]any{"error": map[string]any{
 		"code": http.StatusText(status), "message": msg, "request_id": c.Response().Header().Get(echo.HeaderXRequestID),
 	}})

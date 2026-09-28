@@ -6,14 +6,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"core/orm/internal/crud"
 	"core/orm/internal/registry"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // svcLayer is the service interface the handler depends on.
@@ -64,9 +63,9 @@ func bracketColumn(key, prefix string) (string, bool) {
 //
 // Filter columns are validated against the table meta here (friendly 400) and
 // again in the repository (the actual security boundary, including group gating).
-func (h *GenericHandler) listFilter(c echo.Context) (crud.ListFilter, error) {
-	page, _ := strconv.Atoi(c.QueryParam("page"))
-	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
+func (h *GenericHandler) listFilter(c *echo.Context) (crud.ListFilter, error) {
+	page, _ := echo.QueryParamOr(c, "page", 0)
+	pageSize, _ := echo.QueryParamOr(c, "page_size", 0)
 	if page < 1 {
 		page = 1
 	}
@@ -132,7 +131,7 @@ func (h *GenericHandler) listFilter(c echo.Context) (crud.ListFilter, error) {
 // (table:distinct:read, since derivePermissionFromRoute only collects
 // static segments before the first :param) that no existing role has,
 // unlike this query param, which stays on the existing table:table:read.
-func (h *GenericHandler) List(c echo.Context) error {
+func (h *GenericHandler) List(c *echo.Context) error {
 	f, err := h.listFilter(c)
 	if err != nil {
 		return err
@@ -173,8 +172,8 @@ func (h *GenericHandler) List(c echo.Context) error {
 }
 
 // GetByID handles GET /api/v1/{table}/:id
-func (h *GenericHandler) GetByID(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
+func (h *GenericHandler) GetByID(c *echo.Context) error {
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
 	}
@@ -192,7 +191,7 @@ func (h *GenericHandler) GetByID(c echo.Context) error {
 }
 
 // Create handles POST /api/v1/{table}
-func (h *GenericHandler) Create(c echo.Context) error {
+func (h *GenericHandler) Create(c *echo.Context) error {
 	var body map[string]any
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
@@ -224,8 +223,8 @@ func (h *GenericHandler) Create(c echo.Context) error {
 }
 
 // Update handles PUT /api/v1/{table}/:id
-func (h *GenericHandler) Update(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
+func (h *GenericHandler) Update(c *echo.Context) error {
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
 	}
@@ -265,8 +264,8 @@ func (h *GenericHandler) Update(c echo.Context) error {
 
 // Delete handles DELETE /api/v1/{table}/:id
 // Only mounted for tables with SoftDelete=true or hard-delete tables.
-func (h *GenericHandler) Delete(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
+func (h *GenericHandler) Delete(c *echo.Context) error {
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
 	}
@@ -283,8 +282,8 @@ func (h *GenericHandler) Delete(c echo.Context) error {
 
 // Restore handles POST /api/v1/{table}/:id/restore
 // Only mounted for soft-delete tables.
-func (h *GenericHandler) Restore(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
+func (h *GenericHandler) Restore(c *echo.Context) error {
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
 	}

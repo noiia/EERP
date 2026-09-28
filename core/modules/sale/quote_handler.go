@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // QuoteHandler mirrors Handler exactly (sale_line's Create/Update/Delete
@@ -38,7 +38,7 @@ func NewQuoteHandler(
 }
 
 // Create handles POST /api/v1/quote_line.
-func (h *QuoteHandler) Create(c echo.Context) error {
+func (h *QuoteHandler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -64,11 +64,11 @@ func (h *QuoteHandler) Create(c echo.Context) error {
 }
 
 // Update handles PUT /api/v1/quote_line/:id.
-func (h *QuoteHandler) Update(c echo.Context) error {
+func (h *QuoteHandler) Update(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -110,10 +110,10 @@ func (h *QuoteHandler) Update(c echo.Context) error {
 }
 
 // Delete handles DELETE /api/v1/quote_line/:id.
-func (h *QuoteHandler) Delete(c echo.Context) error {
+func (h *QuoteHandler) Delete(c *echo.Context) error {
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}

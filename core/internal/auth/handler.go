@@ -10,7 +10,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -95,7 +95,7 @@ func mustDummyHash() []byte {
 }
 
 // Login handles POST /api/v{version}/auth/login.
-func (h *Handler) Login(c echo.Context) error {
+func (h *Handler) Login(c *echo.Context) error {
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -168,7 +168,7 @@ func (h *Handler) Login(c echo.Context) error {
 }
 
 // Refresh handles POST /api/v{version}/auth/refresh.
-func (h *Handler) Refresh(c echo.Context) error {
+func (h *Handler) Refresh(c *echo.Context) error {
 	rawRefresh := h.readRefreshToken(c)
 	if rawRefresh == "" {
 		return h.unauthMsg(c, "Authentication required.")
@@ -231,7 +231,7 @@ func (h *Handler) Refresh(c echo.Context) error {
 }
 
 // Logout handles POST /api/v{version}/auth/logout.
-func (h *Handler) Logout(c echo.Context) error {
+func (h *Handler) Logout(c *echo.Context) error {
 	rawRefresh := h.readRefreshToken(c)
 	if rawRefresh != "" {
 		if userID, err := h.tokens.ParseRefresh(rawRefresh); err == nil {
@@ -254,7 +254,7 @@ func (h *Handler) Logout(c echo.Context) error {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func (h *Handler) readRefreshToken(c echo.Context) string {
+func (h *Handler) readRefreshToken(c *echo.Context) string {
 	if cookie, err := c.Cookie(refreshCookieName); err == nil && cookie.Value != "" {
 		return cookie.Value
 	}
@@ -265,7 +265,7 @@ func (h *Handler) readRefreshToken(c echo.Context) string {
 	return body.RefreshToken
 }
 
-func (h *Handler) setRefreshCookie(c echo.Context, token string, expiresAt time.Time) {
+func (h *Handler) setRefreshCookie(c *echo.Context, token string, expiresAt time.Time) {
 	cookie := &http.Cookie{
 		Name:     refreshCookieName,
 		Value:    token,
@@ -278,7 +278,7 @@ func (h *Handler) setRefreshCookie(c echo.Context, token string, expiresAt time.
 	c.SetCookie(cookie)
 }
 
-func (h *Handler) unauthMsg(c echo.Context, msg string) error {
+func (h *Handler) unauthMsg(c *echo.Context, msg string) error {
 	return c.JSON(http.StatusUnauthorized, errEnvelope{
 		Error: errorBody{
 			Code:      "UNAUTHENTICATED",

@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // grantableRights is the subset of AccountRoleTypes names that translate into
@@ -70,7 +70,7 @@ func NewRightsHandler(db *orm.DB, permRepo *auth.PermissionRepository) *RightsHa
 // tagged on (see this type's own doc comment) and grants those immediately
 // via reconcile, rather than leaving a blank row that does nothing until an
 // admin manually tags it three times.
-func (h *RightsHandler) CreateViewPermission(c echo.Context) error {
+func (h *RightsHandler) CreateViewPermission(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 
@@ -140,11 +140,11 @@ func (h *RightsHandler) CreateViewPermission(c echo.Context) error {
 // Reconciles role_permissions for the OLD (role,entity) pair — in case
 // either changed — and the NEW one, so a role's real access never drifts
 // from what its Rights table shows.
-func (h *RightsHandler) UpdateViewPermission(c echo.Context) error {
+func (h *RightsHandler) UpdateViewPermission(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -189,11 +189,11 @@ func (h *RightsHandler) UpdateViewPermission(c echo.Context) error {
 // access it granted, not just stop showing it in the UI — after the
 // soft-delete, reconcile finds no active row left for (role,entity), so
 // every grantable right on it gets revoked.
-func (h *RightsHandler) DeleteViewPermission(c echo.Context) error {
+func (h *RightsHandler) DeleteViewPermission(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -215,7 +215,7 @@ func (h *RightsHandler) DeleteViewPermission(c echo.Context) error {
 // CreateRight handles POST /api/v1/role_view_permission_right — the many2many
 // tags widget tagging one deny/read/write/delete right onto a role's view
 // row. This is the actual moment a real grant should appear.
-func (h *RightsHandler) CreateRight(c echo.Context) error {
+func (h *RightsHandler) CreateRight(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 
@@ -245,11 +245,11 @@ func (h *RightsHandler) CreateRight(c echo.Context) error {
 // untagging a right revokes the matching role_permissions grant, unless
 // another still-active right on the same row grants it too (there is no
 // uniqueness constraint stopping a duplicate tag).
-func (h *RightsHandler) DeleteRight(c echo.Context) error {
+func (h *RightsHandler) DeleteRight(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -404,7 +404,7 @@ func toColumnMap[T model.Entity](repo *orm.Repository[T], entity T) map[string]a
 	return out
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

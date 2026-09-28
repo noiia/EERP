@@ -12,7 +12,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the dedicated chatter-messages endpoints. Mounted behind
@@ -82,7 +82,7 @@ type listEnvelope struct {
 
 // List handles GET /api/v1/chatter_messages?table=&record= — every entry on
 // the anchor, newest first.
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -110,7 +110,7 @@ func (h *Handler) List(c echo.Context) error {
 // form's own post-save summary — both posted the same way, see module doc),
 // and body text. Author is always the authenticated caller, never trusted
 // from the request.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -156,7 +156,7 @@ func (h *Handler) Create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toResponse(created))
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

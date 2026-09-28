@@ -14,7 +14,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 )
 
@@ -85,7 +85,7 @@ func toResponse(a Attachment) attachmentResponse {
 // row flips to it, then the old object is deleted best-effort (an orphaned
 // object is a leak; a row pointing at a missing object would be a lie) —
 // identical sequencing to pictures.Handler.Upload.
-func (h *Handler) Upload(c echo.Context) error {
+func (h *Handler) Upload(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.FormValue("table_name")
@@ -154,10 +154,10 @@ func (h *Handler) Upload(c echo.Context) error {
 // download-triggering Content-Disposition carrying the ORIGINAL filename
 // (pictures.Handler.Get never sets this: a picture renders inline as <img>,
 // an attachment is meant to be saved to disk by name).
-func (h *Handler) Get(c echo.Context) error {
+func (h *Handler) Get(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -185,7 +185,7 @@ func (h *Handler) Get(c echo.Context) error {
 // Find handles GET /api/v1/attachments?table=&record=&field= — resolves the
 // anchor to its attachment metadata (the widget asks "does this field have a
 // file, and under which id/name?"). 404 when the anchor has none.
-func (h *Handler) Find(c echo.Context) error {
+func (h *Handler) Find(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -212,10 +212,10 @@ func (h *Handler) Find(c echo.Context) error {
 // Delete handles DELETE /api/v1/attachments/:id. The row goes first (the
 // boolean contract must never see a row without an object), then the object
 // — best-effort: an orphaned object is a storage leak, not an integrity bug.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -236,7 +236,7 @@ func (h *Handler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

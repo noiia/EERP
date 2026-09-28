@@ -15,7 +15,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ func serve(t *testing.T, h echo.HandlerFunc, method, target, body string, identi
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }
@@ -153,10 +153,9 @@ func serveWithParam(t *testing.T, h echo.HandlerFunc, method, target, body strin
 	req = req.WithContext(auth.SetIdentity(req.Context(), identity))
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	c.SetParamNames(paramName)
-	c.SetParamValues(paramValue)
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: paramName, Value: paramValue}))
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }

@@ -13,7 +13,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ────────────────────────────────────────────────────────────────────
@@ -60,11 +60,10 @@ func serve(t *testing.T, h echo.HandlerFunc, method, target string, body io.Read
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	for k, v := range params {
-		c.SetParamNames(k)
-		c.SetParamValues(v)
+		c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: k, Value: v}))
 	}
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }

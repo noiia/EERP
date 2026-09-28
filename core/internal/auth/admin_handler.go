@@ -11,7 +11,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // AdminHandler serves the dedicated users/roles management endpoints. The auth
@@ -136,7 +136,7 @@ type listEnvelope struct {
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 // ListUsers handles GET /api/v1/users.
-func (h *AdminHandler) ListUsers(c echo.Context) error {
+func (h *AdminHandler) ListUsers(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
 	users, err := h.users.ListByTenant(c.Request().Context(), identity.TenantID)
@@ -207,7 +207,7 @@ func validateUserWrite(profile UserProfile) string {
 // CreateUser handles POST /api/v1/users. A blank password keeps the account
 // LOCKED (see UserRepository.CreateUser) — set one to make it usable
 // immediately instead of waiting on a separate credential flow.
-func (h *AdminHandler) CreateUser(c echo.Context) error {
+func (h *AdminHandler) CreateUser(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
 	var req userWriteRequest
@@ -227,10 +227,10 @@ func (h *AdminHandler) CreateUser(c echo.Context) error {
 }
 
 // GetUser handles GET /api/v1/users/:id.
-func (h *AdminHandler) GetUser(c echo.Context) error {
+func (h *AdminHandler) GetUser(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid user id.")
 	}
@@ -247,10 +247,10 @@ func (h *AdminHandler) GetUser(c echo.Context) error {
 // UpdateUser handles PUT /api/v1/users/:id. Every UserProfile field is
 // writable; a blank password leaves the existing credential untouched
 // (UserRepository.UpdateProfile) rather than locking the account back out.
-func (h *AdminHandler) UpdateUser(c echo.Context) error {
+func (h *AdminHandler) UpdateUser(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid user id.")
 	}
@@ -276,7 +276,7 @@ func (h *AdminHandler) UpdateUser(c echo.Context) error {
 // ── Roles ─────────────────────────────────────────────────────────────────────
 
 // ListRoles handles GET /api/v1/roles.
-func (h *AdminHandler) ListRoles(c echo.Context) error {
+func (h *AdminHandler) ListRoles(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
 	roles, err := h.roles.ListByTenant(c.Request().Context(), identity.TenantID)
@@ -291,7 +291,7 @@ func (h *AdminHandler) ListRoles(c echo.Context) error {
 }
 
 // CreateRole handles POST /api/v1/roles. The new role starts with no grants.
-func (h *AdminHandler) CreateRole(c echo.Context) error {
+func (h *AdminHandler) CreateRole(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -319,10 +319,10 @@ func (h *AdminHandler) CreateRole(c echo.Context) error {
 }
 
 // GetRole handles GET /api/v1/roles/:id.
-func (h *AdminHandler) GetRole(c echo.Context) error {
+func (h *AdminHandler) GetRole(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid role id.")
 	}
@@ -339,10 +339,10 @@ func (h *AdminHandler) GetRole(c echo.Context) error {
 // UpdateRole handles PUT /api/v1/roles/:id. Name, description, and
 // technical_name are the only writable fields — permission grants stay with
 // their own audited flows.
-func (h *AdminHandler) UpdateRole(c echo.Context) error {
+func (h *AdminHandler) UpdateRole(c *echo.Context) error {
 	identity := MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid role id.")
 	}
@@ -407,7 +407,7 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
-func adminErrorJSON(c echo.Context, status int, code, msg string) error {
+func adminErrorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

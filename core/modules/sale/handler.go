@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the three routes this module overrides for sale_line:
@@ -67,7 +67,7 @@ func (h *Handler) taxIncluded(ctx context.Context, identity auth.Identity) (bool
 }
 
 // Create handles POST /api/v1/sale_line.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -104,11 +104,11 @@ func (h *Handler) Create(c echo.Context) error {
 // Update handles PUT /api/v1/sale_line/:id. VariantID and/or Quantity may
 // change; Unit/TaxRate/UnitPrice are always re-snapshotted from the
 // (possibly new) variant's product — never left stale from a prior edit.
-func (h *Handler) Update(c echo.Context) error {
+func (h *Handler) Update(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -166,10 +166,10 @@ func (h *Handler) Update(c echo.Context) error {
 // Delete handles DELETE /api/v1/sale_line/:id — same soft-delete the
 // generic handler would perform, plus the invoice rollup the generic
 // handler has no way to trigger.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -193,7 +193,7 @@ func (h *Handler) Delete(c echo.Context) error {
 // Hand-mounted (not generic) purely so linking recomputes the line's own
 // Total, then rolls that up onto the invoice, same cascade shape as
 // sale_line's own Create/Update/Delete above.
-func (h *Handler) CreateLineTax(c echo.Context) error {
+func (h *Handler) CreateLineTax(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -216,11 +216,11 @@ func (h *Handler) CreateLineTax(c echo.Context) error {
 
 // DeleteLineTax handles DELETE /api/v1/sale_line_tax/:id — untags a tax,
 // same recompute cascade as CreateLineTax above.
-func (h *Handler) DeleteLineTax(c echo.Context) error {
+func (h *Handler) DeleteLineTax(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -450,7 +450,7 @@ func toColumnMap[T any](repo *orm.Repository[T], entity T) map[string]any {
 	return out
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

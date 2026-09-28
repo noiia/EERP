@@ -12,7 +12,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -102,11 +102,10 @@ func serveAdmin(t *testing.T, h echo.HandlerFunc, method, target, paramID, body 
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	if paramID != "" {
-		c.SetParamNames("id")
-		c.SetParamValues(paramID)
+		c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: paramID}))
 	}
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }

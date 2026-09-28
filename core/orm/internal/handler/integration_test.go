@@ -19,7 +19,7 @@ import (
 	ormserver "core/orm/server"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // TestItem is the integration test fixture table.

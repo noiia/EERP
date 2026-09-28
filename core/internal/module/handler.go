@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the dedicated module-management endpoints backing the App
@@ -56,7 +56,7 @@ type listEnvelope struct {
 }
 
 // List handles GET /api/v1/modules.
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	records, err := h.store.List(c.Request().Context())
 	if err != nil {
 		return fmt.Errorf("modules: list: %w", err)
@@ -65,7 +65,7 @@ func (h *Handler) List(c echo.Context) error {
 }
 
 // Get handles GET /api/v1/modules/:id.
-func (h *Handler) Get(c echo.Context) error {
+func (h *Handler) Get(c *echo.Context) error {
 	record, err := h.store.Get(c.Request().Context(), c.Param("id"))
 	if err != nil {
 		if errors.Is(err, ErrModuleNotFound) {
@@ -82,7 +82,7 @@ func (h *Handler) Get(c echo.Context) error {
 // change is live before the handler even returns, no
 // requires_restart/rebuild needed, and module.json is written last, once the
 // runtime change has already succeeded.
-func (h *Handler) Update(c echo.Context) error {
+func (h *Handler) Update(c *echo.Context) error {
 	var changes map[string]any
 	if err := json.NewDecoder(c.Request().Body).Decode(&changes); err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
@@ -113,7 +113,7 @@ func (h *Handler) Update(c echo.Context) error {
 // binary and re-runs its migration with no restart, or re-validates a
 // Go-type module's schema registration (its code needs a backend
 // rebuild+restart to actually change — see Registry.Reload).
-func (h *Handler) Reload(c echo.Context) error {
+func (h *Handler) Reload(c *echo.Context) error {
 	updated, err := h.runtime.Reload(c.Request().Context(), c.Param("id"))
 	if err != nil {
 		if errors.Is(err, ErrModuleNotFound) {
@@ -141,7 +141,7 @@ type logsEnvelope struct {
 // Logs handles GET /api/v1/modules/:id/logs — every recorded
 // activate/deactivate/reload log line for the module, most recent operation
 // first. Backs the App Store's Logs wizard.
-func (h *Handler) Logs(c echo.Context) error {
+func (h *Handler) Logs(c *echo.Context) error {
 	entries, err := h.runtime.Logs(c.Request().Context(), c.Param("id"))
 	if err != nil {
 		return fmt.Errorf("modules: logs: %w", err)
@@ -160,7 +160,7 @@ func (h *Handler) Logs(c echo.Context) error {
 	return c.JSON(http.StatusOK, logsEnvelope{Data: data, Total: len(data)})
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

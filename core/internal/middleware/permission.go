@@ -7,7 +7,7 @@ import (
 
 	"core/internal/auth"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // permissionChecker is the call-site interface the middleware needs from the
@@ -22,7 +22,7 @@ type permissionChecker interface {
 // callers whose roles don't grant it. Panics on missing Identity (wiring bug).
 func PermissionMiddleware(perms permissionChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			identity := auth.MustIdentity(c.Request().Context())
 
 			// A caller forced to change their password (docs/security/pentest-2026-09-24.md's
@@ -61,7 +61,7 @@ func PermissionMiddleware(perms permissionChecker) echo.MiddlewareFunc {
 // It uses Echo's route pattern (c.Path(), e.g. "/api/v1/contacts/:id") rather than
 // the raw URL, so path parameters never leak into the permission: the item route and
 // the collection route for a table resolve to the SAME permission.
-func derivePermission(c echo.Context) string {
+func derivePermission(c *echo.Context) string {
 	return derivePermissionFromRoute(c.Request().Method, c.Path())
 }
 
@@ -127,7 +127,7 @@ func methodToAction(method string) string {
 	}
 }
 
-func forbidden(c echo.Context) error {
+func forbidden(c *echo.Context) error {
 	return c.JSON(http.StatusForbidden, map[string]any{
 		"error": map[string]any{
 			"code":       "FORBIDDEN",
@@ -144,7 +144,7 @@ func forbidden(c echo.Context) error {
 // -> UserRepository.UpdateProfile, which resets MustChangePassword on any real
 // password change). GET is allowed too so the frontend can prefill the form
 // (email, current profile) before the user submits.
-func isSelfCredentialRoute(c echo.Context, identity auth.Identity) bool {
+func isSelfCredentialRoute(c *echo.Context, identity auth.Identity) bool {
 	if c.Path() != "/api/v1/users/:id" {
 		return false
 	}
@@ -159,7 +159,7 @@ func isSelfCredentialRoute(c echo.Context, identity auth.Identity) bool {
 // the frontend can tell "you must change your password first" apart from a
 // real permissions error and route to the forced-change form instead of a
 // generic access-denied message.
-func passwordChangeRequired(c echo.Context) error {
+func passwordChangeRequired(c *echo.Context) error {
 	return c.JSON(http.StatusForbidden, map[string]any{
 		"error": map[string]any{
 			"code":       "PASSWORD_CHANGE_REQUIRED",

@@ -13,7 +13,7 @@ import (
 	"crypto/subtle"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // RequireMasterKey reads the X-Master-Key header and compares it against the
@@ -21,7 +21,7 @@ import (
 // prefix length/content through response-time side channels — the same
 // concern every credential compare in this codebase takes seriously).
 // Returns a JSON 401 (already written to c) and false on mismatch.
-func RequireMasterKey(c echo.Context, expected string) bool {
+func RequireMasterKey(c *echo.Context, expected string) bool {
 	provided := c.Request().Header.Get("X-Master-Key")
 	if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
 		_ = errorJSON(c, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or missing master key.")
@@ -34,7 +34,7 @@ func RequireMasterKey(c echo.Context, expected string) bool {
 // other hand-mounted handler in this codebase uses (internal/pictures,
 // internal/attachments, internal/reports each carry their own identical copy
 // rather than sharing one — following that existing convention here too).
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

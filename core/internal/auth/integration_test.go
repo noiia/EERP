@@ -22,7 +22,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -184,7 +184,6 @@ func buildTestStack(app *orm.App, cfg *types.Config) (*echo.Echo, *auth.Handler)
 	handler := auth.NewHandler(userRepo, tokenSvc, refreshStore, permRepo)
 
 	e := echo.New()
-	e.HideBanner = true
 	e.Use(echo.WrapMiddleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set(echo.HeaderXRequestID, "test-req-id")
@@ -200,7 +199,7 @@ func buildTestStack(app *orm.App, cfg *types.Config) (*echo.Echo, *auth.Handler)
 	jwtMw := authmw.JWTMiddleware(tokenSvc)
 	permMw := authmw.PermissionMiddleware(permRepo)
 	api := e.Group("/api/v1", jwtMw, permMw)
-	api.GET("/products", func(c echo.Context) error {
+	api.GET("/products", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"ok": "true"})
 	})
 

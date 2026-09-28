@@ -11,7 +11,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func newSvc() *auth.TokenService {
@@ -23,13 +23,12 @@ func newSvc() *auth.TokenService {
 
 func testEcho() *echo.Echo {
 	e := echo.New()
-	e.HideBanner = true
 	return e
 }
 
 // recordingHandler is the sentinel handler that, if reached, records the identity.
 func recordingHandler(reachedPtr *bool) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		*reachedPtr = true
 		return c.String(http.StatusOK, "ok")
 	}
@@ -91,7 +90,7 @@ func TestJWTMiddleware_ValidToken_InjectsIdentityAndCalls200(t *testing.T) {
 	}
 
 	var capturedIdentity auth.Identity
-	e.GET("/test", func(c echo.Context) error {
+	e.GET("/test", func(c *echo.Context) error {
 		id, ok := auth.IdentityFromContext(c.Request().Context())
 		if !ok {
 			return c.String(http.StatusInternalServerError, "no identity")
@@ -175,7 +174,7 @@ func TestJWTOrCookieMiddleware_HeaderPresent_UsesHeaderNotCookie(t *testing.T) {
 	raw, user := issueToken(t, svc)
 
 	var captured auth.Identity
-	e.GET("/test", func(c echo.Context) error {
+	e.GET("/test", func(c *echo.Context) error {
 		captured, _ = auth.IdentityFromContext(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
 	}, authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
@@ -200,7 +199,7 @@ func TestJWTOrCookieMiddleware_NoHeader_FallsBackToCookie(t *testing.T) {
 	raw, user := issueToken(t, svc)
 
 	var captured auth.Identity
-	e.GET("/test", func(c echo.Context) error {
+	e.GET("/test", func(c *echo.Context) error {
 		captured, _ = auth.IdentityFromContext(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
 	}, authmw.JWTOrCookieMiddleware(svc, "eerp_access"))

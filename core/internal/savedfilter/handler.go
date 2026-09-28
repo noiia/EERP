@@ -12,7 +12,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the dedicated saved-filter endpoints. Mounted behind
@@ -78,7 +78,7 @@ type listEnvelope struct {
 // List handles GET /api/v1/saved_filters?entity= — every filter the caller
 // may use on that entity's search bar: their own (private or shared) plus
 // every other user's shared filter.
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.QueryParam("entity")
@@ -100,7 +100,7 @@ func (h *Handler) List(c echo.Context) error {
 // Create handles POST /api/v1/saved_filters — body carries entity, name,
 // shared, and the opaque config blob. The row's owner is always the caller,
 // even when Shared is true.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -134,10 +134,10 @@ func (h *Handler) Create(c echo.Context) error {
 
 // Update handles PUT /api/v1/saved_filters/:id — rename/reconfigure/reshare.
 // Owner-only, even for a shared filter: no admin-override affordance in v1.
-func (h *Handler) Update(c echo.Context) error {
+func (h *Handler) Update(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -179,10 +179,10 @@ func (h *Handler) Update(c echo.Context) error {
 
 // Delete handles DELETE /api/v1/saved_filters/:id. Owner-only, even for a
 // shared filter.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -217,7 +217,7 @@ func validateName(name string) string {
 	return ""
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

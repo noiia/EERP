@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler wires Manager's operations into Echo. Every method calls
@@ -24,7 +24,7 @@ func NewHandler(mgr *Manager) *Handler {
 // in-memory prepared-standby state onto ListDatabases' Postgres-sourced rows
 // — see DatabaseInfo's own doc comment for why that merge lives here rather
 // than inside ListDatabases itself.
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -50,7 +50,7 @@ type createRequest struct {
 }
 
 // Create handles POST /api/v1/database-management/databases.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -70,7 +70,7 @@ func (h *Handler) Create(c echo.Context) error {
 // Switch handles POST /api/v1/database-management/databases/:name/switch —
 // the backward-compatible, one-call blocking path (SwitchTo's own doc
 // comment). The new low-downtime flow is Prepare then Activate below.
-func (h *Handler) Switch(c echo.Context) error {
+func (h *Handler) Switch(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -87,7 +87,7 @@ func (h *Handler) Switch(c echo.Context) error {
 // "failed"). Uses context.Background() rather than the request's own
 // context: the request ends the instant this handler returns, but the
 // provisioning work it just started must keep running regardless.
-func (h *Handler) Prepare(c echo.Context) error {
+func (h *Handler) Prepare(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -102,7 +102,7 @@ func (h *Handler) Prepare(c echo.Context) error {
 // Activate handles POST /api/v1/database-management/databases/:name/activate
 // — the fast path, synchronous because it's now genuinely quick (Activate's
 // own doc comment). 409s when name has no ready standby behind it yet.
-func (h *Handler) Activate(c echo.Context) error {
+func (h *Handler) Activate(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -118,7 +118,7 @@ func (h *Handler) Activate(c echo.Context) error {
 
 // DiscardPrepared handles DELETE .../databases/:name/prepare — releases a
 // prepared standby without activating it.
-func (h *Handler) DiscardPrepared(c echo.Context) error {
+func (h *Handler) DiscardPrepared(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -127,7 +127,7 @@ func (h *Handler) DiscardPrepared(c echo.Context) error {
 }
 
 // Delete handles DELETE /api/v1/database-management/databases/:name.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -139,7 +139,7 @@ func (h *Handler) Delete(c echo.Context) error {
 }
 
 // Extract handles GET /api/v1/database-management/databases/:name/extract?include_s3=true|false.
-func (h *Handler) Extract(c echo.Context) error {
+func (h *Handler) Extract(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}
@@ -152,7 +152,7 @@ func (h *Handler) Extract(c echo.Context) error {
 // :name path segment — unlike every other action here, restore creates a NEW
 // database, named by the "name" multipart form field alongside the "file"
 // upload, rather than acting on an existing one a path could name.
-func (h *Handler) Restore(c echo.Context) error {
+func (h *Handler) Restore(c *echo.Context) error {
 	if !RequireMasterKey(c, h.mgr.masterKey) {
 		return nil
 	}

@@ -15,7 +15,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // monthLayout is the "2026-08"-shaped format LastReceiptMonth/Period use
@@ -99,10 +99,10 @@ func (h *Handler) taxIncluded(ctx context.Context, identity auth.Identity) (bool
 }
 
 // GetProperty handles GET /api/v1/property_management/:id.
-func (h *Handler) GetProperty(c echo.Context) error {
+func (h *Handler) GetProperty(c *echo.Context) error {
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -126,7 +126,7 @@ func (h *Handler) GetProperty(c echo.Context) error {
 // convenience only: uom_id stays freely re-pickable afterward, scoped to
 // surface UOMs only by property_management_views.ts's own `uom_id.relation.
 // filter`.
-func (h *Handler) CreateProperty(c echo.Context) error {
+func (h *Handler) CreateProperty(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 
@@ -194,7 +194,7 @@ func receiptGeneratedThisMonth(lastReceiptMonth *string, now time.Time) bool {
 }
 
 // CreateEquipmentStatus handles POST /api/v1/property_management_equipment_status.
-func (h *Handler) CreateEquipmentStatus(c echo.Context) error {
+func (h *Handler) CreateEquipmentStatus(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -259,7 +259,7 @@ func latestStatus(entries []PropertyManagementEquipmentStatus) PropertyManagemen
 // mutating an existing one) — so DELETE always rejects. PUT no longer does:
 // it rides the generic CRUD surface again, since every field on a generated
 // receipt is meant to stay editable after the fact.
-func (h *Handler) RejectReceiptDelete(c echo.Context) error {
+func (h *Handler) RejectReceiptDelete(c *echo.Context) error {
 	return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "Rent receipts are append-only; they cannot be deleted.")
 }
 
@@ -268,7 +268,7 @@ func (h *Handler) RejectReceiptDelete(c echo.Context) error {
 // reference this line's own id, which doesn't exist until Create below) —
 // Total is just UnitPrice plus TaxRate, same "nothing to look up yet" shape
 // as sale/handler.go's Handler.Create.
-func (h *Handler) CreateBillingLine(c echo.Context) error {
+func (h *Handler) CreateBillingLine(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -294,11 +294,11 @@ func (h *Handler) CreateBillingLine(c echo.Context) error {
 // Partial-update semantics, same "zero in the body means unchanged"
 // contract sale/handler.go's Handler.Update documents — Name/UnitPrice/
 // TaxRate are the only client-editable fields.
-func (h *Handler) UpdateBillingLine(c echo.Context) error {
+func (h *Handler) UpdateBillingLine(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -344,7 +344,7 @@ func (h *Handler) UpdateBillingLine(c echo.Context) error {
 
 // CreateBillingLineTax handles POST /api/v1/property_management_billing_line_tax
 // — tags a tax onto a billing line, then recomputes that line's own Total.
-func (h *Handler) CreateBillingLineTax(c echo.Context) error {
+func (h *Handler) CreateBillingLineTax(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -366,11 +366,11 @@ func (h *Handler) CreateBillingLineTax(c echo.Context) error {
 
 // DeleteBillingLineTax handles DELETE /api/v1/property_management_billing_line_tax/:id
 // — untags a tax, same recompute as CreateBillingLineTax above.
-func (h *Handler) DeleteBillingLineTax(c echo.Context) error {
+func (h *Handler) DeleteBillingLineTax(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -459,7 +459,7 @@ func computeBillingLineTotal(base, legacyRate float64, taxes []sale.SaleTax, inc
 // the time fetchReportPDF runs (after the loop), these columns are the
 // real, backend-verified numbers — not whatever the frontend's own upfront
 // estimate guessed when it created the receipt row.
-func (h *Handler) CreateRentReceiptLine(c echo.Context) error {
+func (h *Handler) CreateRentReceiptLine(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -524,7 +524,7 @@ func toColumnMap[T any](repo *orm.Repository[T], entity T) map[string]any {
 	return out
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

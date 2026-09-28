@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the presence endpoints, all mounted behind a cookie-or-Bearer
@@ -46,7 +46,7 @@ type presenceEntry struct {
 
 // Get handles GET /api/v1/presence — a WebSocket upgrade request opens the
 // live socket (serveWS); anything else returns the plain tenant snapshot.
-func (h *Handler) Get(c echo.Context) error {
+func (h *Handler) Get(c *echo.Context) error {
 	if websocket.IsWebSocketUpgrade(c.Request()) {
 		return h.serveWS(c)
 	}
@@ -56,7 +56,7 @@ func (h *Handler) Get(c echo.Context) error {
 // snapshot returns every presence row for the caller's tenant, resolved
 // through Effective. A user who has never connected/set a status simply
 // isn't in the list — the frontend defaults an unknown user to offline.
-func (h *Handler) snapshot(c echo.Context) error {
+func (h *Handler) snapshot(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	rows, err := h.repo.ListByTenant(c.Request().Context(), identity.TenantID)
@@ -76,7 +76,7 @@ func (h *Handler) snapshot(c echo.Context) error {
 // SetStatus handles PUT /api/v1/presence — body {"status": "busy"|"do_not_disturb"|""}.
 // "" (or omitted) clears the override, returning the user to automatic
 // online/absent/offline tracking.
-func (h *Handler) SetStatus(c echo.Context) error {
+func (h *Handler) SetStatus(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -102,7 +102,7 @@ func (h *Handler) SetStatus(c echo.Context) error {
 // full tenant snapshot, broadcasts their own new status, then pumps until the
 // socket closes — at which point it marks them disconnected (only if this was
 // their last open tab/session — see Hub.unregister) and broadcasts that too.
-func (h *Handler) serveWS(c echo.Context) error {
+func (h *Handler) serveWS(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -197,7 +197,7 @@ func writePump(cl *client, done <-chan struct{}) {
 	}
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // These tests exercise Registry's pure in-memory logic (the active gate,
@@ -68,7 +68,7 @@ func TestActiveGateMiddleware(t *testing.T) {
 
 	t.Run("403s a deactivated module's route", func(t *testing.T) {
 		handlerCalled := false
-		next := func(c echo.Context) error {
+		next := func(c *echo.Context) error {
 			handlerCalled = true
 			return c.NoContent(http.StatusOK)
 		}
@@ -94,7 +94,7 @@ func TestActiveGateMiddleware(t *testing.T) {
 		r.mu.Unlock()
 
 		handlerCalled := false
-		next := func(c echo.Context) error {
+		next := func(c *echo.Context) error {
 			handlerCalled = true
 			return c.NoContent(http.StatusOK)
 		}
@@ -113,7 +113,7 @@ func TestActiveGateMiddleware(t *testing.T) {
 
 	t.Run("passes through routes no module owns", func(t *testing.T) {
 		handlerCalled := false
-		next := func(c echo.Context) error {
+		next := func(c *echo.Context) error {
 			handlerCalled = true
 			return c.NoContent(http.StatusOK)
 		}

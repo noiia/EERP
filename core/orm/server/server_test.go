@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"core/internal/testdb"
@@ -13,7 +14,7 @@ import (
 	"core/orm/internal/registry"
 	ormserver "core/orm/server"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ func buildHandler(routePrefix string, softDelete bool) *handler.GenericHandler {
 // routeSet returns a set of "METHOD /path" strings for all registered routes.
 func routeSet(e *echo.Echo) map[string]bool {
 	set := make(map[string]bool)
-	for _, r := range e.Routes() {
+	for _, r := range e.Router().Routes() {
 		set[r.Method+" "+r.Path] = true
 	}
 	return set
@@ -51,7 +52,7 @@ func mount(h *handler.GenericHandler) *echo.Echo {
 func doErrorRequest(t *testing.T, returnErr error) *httptest.ResponseRecorder {
 	t.Helper()
 	e := ormserver.New(nil, ormserver.Config{}).Echo()
-	e.GET("/probe", func(c echo.Context) error { return returnErr })
+	e.GET("/probe", func(c *echo.Context) error { return returnErr })
 	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -216,7 +217,7 @@ func TestErrorHandler_UnknownHTTPStatus_ReturnsErrorCode(t *testing.T) {
 
 func TestErrorHandler_PlainError_Returns500WithInternalCode(t *testing.T) {
 	e := ormserver.New(nil, ormserver.Config{}).Echo()
-	e.GET("/boom", func(c echo.Context) error {
+	e.GET("/boom", func(c *echo.Context) error {
 		return &plainError{"something exploded"}
 	})
 	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
@@ -246,7 +247,7 @@ func (e *plainError) Error() string { return e.msg }
 
 func TestAuthRateLimiter_BlocksAfterBurst(t *testing.T) {
 	e := echo.New()
-	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) },
+	e.GET("/x", func(c *echo.Context) error { return c.NoContent(http.StatusOK) },
 		ormserver.AuthRateLimiter(2)) // burst = 2
 
 	codes := make([]int, 0, 4)
@@ -287,6 +288,43 @@ func TestHealth(t *testing.T) {
 			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
 			if rec.Code != tt.want {
 				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.want, rec.Body)
+			}
+		})
+	}
+}
+
+// v5's router sentinels (echo.ErrNotFound, ErrMethodNotAllowed) are no longer
+// *echo.HTTPError: an unmatched route must still answer 404 NOT_FOUND, not 500.
+func TestErrorHandler_UnmatchedRoute_Returns404(t *testing.T) {
+	e := ormserver.New(nil, ormserver.Config{}).Echo()
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
+
+	var body ormserver.ErrorResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusNotFound || body.Error.Code != "NOT_FOUND" {
+		t.Fatalf("status=%d code=%q, want 404 NOT_FOUND", rec.Code, body.Error.Code)
+	}
+}
+
+func TestBodyLimit_ParsesConfigSize(t *testing.T) {
+	for _, tc := range []struct {
+		limit string
+		size  int
+		want  int
+	}{
+		{"1K", 1024, http.StatusOK},
+		{"1K", 1025, http.StatusRequestEntityTooLarge},
+		{"", 1 << 20, http.StatusOK},
+		{"bogus", 1<<20 + 1, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.limit, func(t *testing.T) {
+			e := ormserver.New(nil, ormserver.Config{BodyLimit: tc.limit}).Echo()
+			e.POST("/p", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/p", strings.NewReader(strings.Repeat("x", tc.size))))
+			if rec.Code != tc.want {
+				t.Fatalf("limit %q, %d bytes: status %d, want %d", tc.limit, tc.size, rec.Code, tc.want)
 			}
 		})
 	}

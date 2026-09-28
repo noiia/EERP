@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Extract streams dbName as a zip directly into the HTTP response: a
@@ -18,7 +18,7 @@ import (
 // writer (no temp file, no full in-memory buffering — zip's central
 // directory is written at Close(), after every entry has already streamed
 // out).
-func (m *Manager) Extract(c echo.Context, dbName string, includeS3 bool) error {
+func (m *Manager) Extract(c *echo.Context, dbName string, includeS3 bool) error {
 	if includeS3 && m.objects == nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
 			"S3 content was requested but this instance has no s3_* object store configured.")

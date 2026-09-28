@@ -11,7 +11,7 @@ import (
 	"core/orm"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Registry is the runtime module-lifecycle authority behind live
@@ -245,7 +245,7 @@ func (r *Registry) IsTableActive(table string) bool {
 // variadic) and no import of it either (only echo.MiddlewareFunc).
 func (r *Registry) ActiveGateMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			table := routeTable(c.Path())
 			if table != "" && !r.IsTableActive(table) {
 				return errorJSON(c, http.StatusForbidden, "MODULE_INACTIVE", "This module is currently deactivated.")

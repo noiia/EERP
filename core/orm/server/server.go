@@ -8,15 +8,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"core/orm"
 	"core/orm/internal/handler"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 	"go.uber.org/zap"
-	"golang.org/x/time/rate"
 )
 
 // Config holds HTTP server settings.
@@ -70,8 +71,6 @@ func New(app *orm.App, cfg Config) *Server {
 
 func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
 
 	e.Use(middleware.RequestID())
 
@@ -82,11 +81,7 @@ func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	e.Use(middleware.Recover())
 
 	// Cap request bodies to bound memory use / basic DoS. Default 1M.
-	bodyLimit := cfg.BodyLimit
-	if bodyLimit == "" {
-		bodyLimit = "1M"
-	}
-	e.Use(middleware.BodyLimit(bodyLimit))
+	e.Use(middleware.BodyLimit(parseByteSize(cfg.BodyLimit)))
 
 	// CORS: restrict to configured origins; fall back to "*" only when unset (dev).
 	allowOrigins := cfg.AllowOrigins
@@ -119,7 +114,7 @@ func AuthRateLimiter(perMinute int) echo.MiddlewareFunc {
 		perMinute = 20
 	}
 	store := middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
-		Rate:      rate.Limit(float64(perMinute) / 60.0), // tokens per second
+		Rate:      float64(perMinute) / 60.0, // tokens per second
 		Burst:     perMinute,
 		ExpiresIn: 3 * time.Minute,
 	})
@@ -162,8 +157,8 @@ func mountHandler(g *echo.Group, h *handler.GenericHandler) {
 
 // Routes returns every route registered on the Echo instance.
 // Useful for logging mounted endpoints at startup.
-func (s *Server) Routes() []*echo.Route {
-	return s.echo.Routes()
+func (s *Server) Routes() echo.Routes {
+	return s.echo.Router().Routes()
 }
 
 // Echo returns the underlying Echo instance.
@@ -172,52 +167,41 @@ func (s *Server) Echo() *echo.Echo {
 	return s.echo
 }
 
-// Start binds the server and blocks until ctx is cancelled.
-// Initiates graceful shutdown with a 10-second drain window.
+// Start binds the server and blocks until ctx is cancelled, then drains
+// in-flight requests for up to 10 seconds (echo's StartConfig graceful shutdown).
 func (s *Server) Start(ctx context.Context) error {
-	errCh := make(chan error, 1)
-
-	go func() {
-		if err := s.echo.Start(s.cfg.Addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("server: listen: %w", err)
-		}
-		close(errCh)
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := s.echo.Shutdown(shutCtx); err != nil {
-			return fmt.Errorf("server: shutdown: %w", err)
-		}
-		return nil
+	sc := echo.StartConfig{
+		Address:         s.cfg.Addr,
+		HideBanner:      true,
+		HidePort:        true,
+		GracefulTimeout: 10 * time.Second,
+		// StartConfig defaults ReadTimeout to 30s, which would cut long-lived
+		// presence websockets and large /database-management restores. Keep the
+		// v4 behaviour (no whole-request deadline) and bound only the headers.
+		BeforeServeFunc: func(srv *http.Server) error {
+			srv.ReadTimeout = 0
+			srv.ReadHeaderTimeout = 10 * time.Second
+			return nil
+		},
 	}
+	if err := sc.Start(ctx, s.echo); err != nil {
+		return fmt.Errorf("server: listen: %w", err)
+	}
+	return nil
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
 func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			req := c.Request()
 			start := time.Now()
 			err := next(c)
 
-			// Derive the actual status: if the handler returned an error without
-			// committing a response, the error handler will write it after we return —
-			// so we predict the status here rather than reading the still-default 200.
-			status := c.Response().Status
-			if err != nil && !c.Response().Committed {
-				var he *echo.HTTPError
-				if errors.As(err, &he) {
-					status = he.Code
-				} else {
-					status = http.StatusInternalServerError
-				}
-			}
+			// The error handler writes an uncommitted error after we return, so
+			// resolve the status it will send rather than the still-default 200.
+			_, status := echo.ResolveResponseStatus(c.Response(), err)
 
 			logger.Info("request",
 				zap.String("method", req.Method),
@@ -234,17 +218,21 @@ func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 // ── Error handler ─────────────────────────────────────────────────────────────
 
 func newErrorHandler(logger *zap.Logger) echo.HTTPErrorHandler {
-	return func(err error, c echo.Context) {
-		if c.Response().Committed {
+	return func(c *echo.Context, err error) {
+		if resp, _ := echo.UnwrapResponse(c.Response()); resp != nil && resp.Committed {
 			return
 		}
 
 		requestID := c.Response().Header().Get(echo.HeaderXRequestID)
 
-		var he *echo.HTTPError
-		if errors.As(err, &he) {
-			code := he.Code
-			msg := fmt.Sprintf("%v", he.Message)
+		// echo.StatusCode also matches v5's predefined sentinels (ErrNotFound,
+		// ErrMethodNotAllowed, ...), which are no longer *echo.HTTPError.
+		if code := echo.StatusCode(err); code != 0 {
+			msg := http.StatusText(code)
+			var he *echo.HTTPError
+			if errors.As(err, &he) && he.Message != "" {
+				msg = he.Message
+			}
 			_ = c.JSON(code, ErrorResponse{Error: ErrorBody{Code: httpCode(code), Message: msg, RequestID: requestID}})
 			return
 		}
@@ -281,7 +269,7 @@ func httpCode(status int) string {
 // healthHandler reports 503 when the database doesn't answer a ping within 2s.
 // A nil app (no database wired) is healthy as soon as the server answers.
 func healthHandler(app *orm.App) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		if app != nil && app.DB != nil {
 			ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
 			defer cancel()
@@ -291,4 +279,31 @@ func healthHandler(app *orm.App) echo.HandlerFunc {
 		}
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
+}
+
+// parseByteSize turns a config size like "1M", "512K" or "2G" (case-insensitive,
+// optional trailing "B") into bytes. Empty or malformed input falls back to 1M.
+func parseByteSize(v string) int64 {
+	const def = 1 << 20
+	v = strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(v)), "B")
+	if v == "" {
+		return def
+	}
+	mult := int64(1)
+	switch v[len(v)-1] {
+	case 'K':
+		mult = 1 << 10
+	case 'M':
+		mult = 1 << 20
+	case 'G':
+		mult = 1 << 30
+	}
+	if mult > 1 {
+		v = v[:len(v)-1]
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n * mult
 }

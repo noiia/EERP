@@ -14,7 +14,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the dedicated notebook-pages endpoints. Mounted behind
@@ -78,7 +78,7 @@ type listEnvelope struct {
 
 // List handles GET /api/v1/notebook_pages?table=&record= — every page on the
 // anchor, ordered by Position (creation order in v1).
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -105,7 +105,7 @@ func (h *Handler) List(c echo.Context) error {
 // (table_name, record_id) plus title (content optional, starts empty).
 // Position is server-assigned: the current page count for the anchor, so
 // pages always append in creation order.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -146,10 +146,10 @@ func (h *Handler) Create(c echo.Context) error {
 
 // Update handles PUT /api/v1/notebook_pages/:id — title and content are the
 // only writable fields; the anchor and position never change after creation.
-func (h *Handler) Update(c echo.Context) error {
+func (h *Handler) Update(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -183,10 +183,10 @@ func (h *Handler) Update(c echo.Context) error {
 }
 
 // Delete handles DELETE /api/v1/notebook_pages/:id.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -209,7 +209,7 @@ func validateTitle(title string) string {
 	return ""
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

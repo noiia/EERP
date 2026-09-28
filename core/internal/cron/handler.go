@@ -12,7 +12,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // historyStore is the call-site interface the handler needs — defined here,
@@ -44,10 +44,10 @@ func NewHandler(store historyStore) *Handler {
 // after :id folds into the method, not a new resource), so no extra
 // permission wiring is needed beyond what reading a cron_history row
 // already requires.
-func (h *Handler) DownloadLog(c echo.Context) error {
+func (h *Handler) DownloadLog(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -77,7 +77,7 @@ func (h *Handler) DownloadLog(c echo.Context) error {
 	return c.Stream(http.StatusOK, "text/plain; charset=utf-8", file)
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

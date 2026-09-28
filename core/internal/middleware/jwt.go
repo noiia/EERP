@@ -7,14 +7,14 @@ import (
 	"core/internal/auth"
 	"core/orm/access"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // JWTMiddleware validates Bearer tokens and injects Identity into the request context.
 // Returns 401 for any failure — never leaks which check failed.
 func JWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			header := c.Request().Header.Get("Authorization")
 			if !strings.HasPrefix(header, "Bearer ") {
 				return unauthenticated(c)
@@ -34,7 +34,7 @@ func JWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
 // requiring a real Bearer header; this does not change their behavior.
 func JWTOrCookieMiddleware(tokens *auth.TokenService, cookieName string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			header := c.Request().Header.Get("Authorization")
 			if strings.HasPrefix(header, "Bearer ") {
 				return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "))
@@ -51,7 +51,7 @@ func JWTOrCookieMiddleware(tokens *auth.TokenService, cookieName string) echo.Mi
 // authenticate parses raw as an access token and, on success, stamps the
 // request context (Identity + tenant + group closure) before calling next —
 // the shared body of JWTMiddleware and JWTOrCookieMiddleware.
-func authenticate(c echo.Context, next echo.HandlerFunc, tokens *auth.TokenService, raw string) error {
+func authenticate(c *echo.Context, next echo.HandlerFunc, tokens *auth.TokenService, raw string) error {
 	claims, err := tokens.ParseAccess(raw)
 	if err != nil {
 		return unauthenticated(c)
@@ -70,7 +70,7 @@ func authenticate(c echo.Context, next echo.HandlerFunc, tokens *auth.TokenServi
 	return next(c)
 }
 
-func unauthenticated(c echo.Context) error {
+func unauthenticated(c *echo.Context) error {
 	return c.JSON(http.StatusUnauthorized, map[string]any{
 		"error": map[string]any{
 			"code":       "UNAUTHENTICATED",

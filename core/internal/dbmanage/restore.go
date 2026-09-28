@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Restore rebuilds a database from a zip produced by Extract: creates a new
@@ -23,7 +23,7 @@ import (
 // correctly against the newly-populated bucket with no extra mapping step.
 // Does NOT auto-switch into the restored database — that stays an explicit,
 // separate SwitchTo call, keeping every action here atomic and composable.
-func (m *Manager) Restore(c echo.Context) error {
+func (m *Manager) Restore(c *echo.Context) error {
 	ctx := c.Request().Context()
 
 	name := c.FormValue("name")

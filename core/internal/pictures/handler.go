@@ -12,7 +12,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 )
 
@@ -77,7 +77,7 @@ func toResponse(p Picture) pictureResponse {
 // picture on the anchor: the new object lands first, then the row flips to it,
 // then the old object is deleted best-effort (an orphaned object is a leak; a
 // row pointing at a missing object would be a lie).
-func (h *Handler) Upload(c echo.Context) error {
+func (h *Handler) Upload(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.FormValue("table_name")
@@ -140,10 +140,10 @@ func (h *Handler) Upload(c echo.Context) error {
 }
 
 // Get handles GET /api/v1/pictures/:id — streams the image bytes.
-func (h *Handler) Get(c echo.Context) error {
+func (h *Handler) Get(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -169,7 +169,7 @@ func (h *Handler) Get(c echo.Context) error {
 // Find handles GET /api/v1/pictures?table=&record=&field= — resolves the
 // anchor to its picture metadata (the widget asks "does this field have a
 // picture, and under which id?"). 404 when the anchor has none.
-func (h *Handler) Find(c echo.Context) error {
+func (h *Handler) Find(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -196,10 +196,10 @@ func (h *Handler) Find(c echo.Context) error {
 // Delete handles DELETE /api/v1/pictures/:id. The row goes first (the boolean
 // contract must never see a row without an object), then the object —
 // best-effort: an orphaned object is a storage leak, not an integrity bug.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -220,7 +220,7 @@ func (h *Handler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

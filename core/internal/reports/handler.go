@@ -13,7 +13,7 @@ import (
 	"core/internal/pictures"
 	"core/orm/model"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // printTokenTTL is how long the signed token embedded in a print URL stays
@@ -66,7 +66,7 @@ func NewHandler(renderer PDFRenderer, objects pictures.ObjectStore, tokens token
 // way to see :name's RUNTIME value, only the compiled Echo pattern. The
 // fine-grained report:<name>:read check happens here instead, against the
 // actual requested report.
-func (h *Handler) GeneratePDF(c echo.Context) error {
+func (h *Handler) GeneratePDF(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 	name := c.Param("name")
@@ -123,7 +123,7 @@ func (h *Handler) GeneratePDF(c echo.Context) error {
 // you hold the key to needs only tenant membership plus this coarser read
 // grant, the same posture internal/pictures' Get takes (it doesn't re-check
 // the anchor's own write permission either).
-func (h *Handler) DownloadPDF(c echo.Context) error {
+func (h *Handler) DownloadPDF(c *echo.Context) error {
 	ctx := c.Request().Context()
 	identity := auth.MustIdentity(ctx)
 
@@ -144,7 +144,7 @@ func (h *Handler) DownloadPDF(c echo.Context) error {
 	return c.Stream(http.StatusOK, contentType, body)
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

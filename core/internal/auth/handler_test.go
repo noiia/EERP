@@ -11,7 +11,7 @@ import (
 	"core/internal/types"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,7 +26,6 @@ func buildHandler(user auth.Users, roles []string, findErr, validateErr error) *
 
 func buildEchoForAuth() *echo.Echo {
 	e := echo.New()
-	e.HideBanner = true
 	return e
 }
 

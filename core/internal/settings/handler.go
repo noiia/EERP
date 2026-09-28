@@ -16,7 +16,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // SourceLocale is the reserved preferred_locale value that forces the source
@@ -160,7 +160,7 @@ var (
 // GetMyPreferences handles GET /api/v1/me/preferences. It returns the caller's
 // display-language preference alongside the tenant default so one round-trip
 // resolves the effective interface language.
-func (h *Handler) GetMyPreferences(c echo.Context) error {
+func (h *Handler) GetMyPreferences(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	user, err := h.users.FindByID(c.Request().Context(), identity.UserID)
@@ -222,7 +222,7 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 
 // PutMyPreferences handles PUT /api/v1/me/preferences. The caller updates only
 // their own record — the user id comes from the token, never the body.
-func (h *Handler) PutMyPreferences(c echo.Context) error {
+func (h *Handler) PutMyPreferences(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -270,7 +270,7 @@ func (h *Handler) PutMyPreferences(c echo.Context) error {
 // PutI18nSettings handles PUT /api/v1/settings/i18n — the tenant-wide default
 // interface language. Mounted behind the permission middleware, which derives
 // settings:i18n:write from the route.
-func (h *Handler) PutI18nSettings(c echo.Context) error {
+func (h *Handler) PutI18nSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -304,7 +304,7 @@ func (h *Handler) PutI18nSettings(c echo.Context) error {
 // PutFormatSettings handles PUT /api/v1/settings/format — the tenant-wide
 // number display format. Mounted behind the permission middleware, which
 // derives settings:format:write from the route.
-func (h *Handler) PutFormatSettings(c echo.Context) error {
+func (h *Handler) PutFormatSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req numberFormat
@@ -362,7 +362,7 @@ type viewFieldsConfig struct {
 // nulls with the entity's own ViewDescriptor.viewModeDefaults (if any), Go
 // never seeing that descriptor itself. Mounted behind the permission
 // middleware, which derives settings:views:read.
-func (h *Handler) GetViewFieldsSettings(c echo.Context) error {
+func (h *Handler) GetViewFieldsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -392,7 +392,7 @@ func (h *Handler) GetViewFieldsSettings(c echo.Context) error {
 // PutViewFieldsSettings handles PUT /api/v1/settings/views/:entity/fields.
 // Mounted behind the permission middleware, which derives settings:views:write
 // from the route.
-func (h *Handler) PutViewFieldsSettings(c echo.Context) error {
+func (h *Handler) PutViewFieldsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -444,7 +444,7 @@ type chatterVisibility struct {
 // frontend merges this with the entity's own ViewDescriptor.showChatter, Go
 // never seeing that descriptor itself. Mounted behind the permission
 // middleware, which derives settings:views:read.
-func (h *Handler) GetChatterSettings(c echo.Context) error {
+func (h *Handler) GetChatterSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -474,7 +474,7 @@ func (h *Handler) GetChatterSettings(c echo.Context) error {
 // PutChatterSettings handles PUT /api/v1/settings/views/:entity/chatter.
 // Mounted behind the permission middleware, which derives
 // settings:views:write from the route.
-func (h *Handler) PutChatterSettings(c echo.Context) error {
+func (h *Handler) PutChatterSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -562,7 +562,7 @@ func validateGraphLayout(layout graphLayout) error {
 // An unconfigured entity returns an empty tile list, not a 404: a blank
 // canvas is a normal state. Mounted behind the permission middleware, which
 // derives settings:views:read.
-func (h *Handler) GetGraphLayoutSettings(c echo.Context) error {
+func (h *Handler) GetGraphLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -598,7 +598,7 @@ func (h *Handler) GetGraphLayoutSettings(c echo.Context) error {
 // PutGraphLayoutSettings handles PUT /api/v1/settings/views/:entity/graph.
 // Mounted behind the permission middleware, which derives
 // settings:views:write from the route.
-func (h *Handler) PutGraphLayoutSettings(c echo.Context) error {
+func (h *Handler) PutGraphLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -675,7 +675,7 @@ func pictureSizeKeyFor(module string) string {
 // returns {"size": null}, not a 404: "inheriting Base" (or, for Base itself,
 // "using the frontend's hardcoded default") is a normal state. Mounted behind
 // the permission middleware, which derives settings:apps:read from the route.
-func (h *Handler) GetPictureSizeSettings(c echo.Context) error {
+func (h *Handler) GetPictureSizeSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	module := c.Param("module")
@@ -714,7 +714,7 @@ func (h *Handler) GetPictureSizeSettings(c echo.Context) error {
 // itself can revert to the frontend's hardcoded default) with no separate
 // delete endpoint. Mounted behind the permission middleware, which derives
 // settings:apps:write from the route.
-func (h *Handler) PutPictureSizeSettings(c echo.Context) error {
+func (h *Handler) PutPictureSizeSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	module := c.Param("module")
@@ -768,7 +768,7 @@ type reportsLayout struct {
 // Absent returns empty strings, not a 404: no letterhead configured yet is a
 // normal state. Mounted behind the permission middleware, which derives
 // settings:reports:read from the route.
-func (h *Handler) GetReportsLayoutSettings(c echo.Context) error {
+func (h *Handler) GetReportsLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
@@ -793,7 +793,7 @@ func (h *Handler) GetReportsLayoutSettings(c echo.Context) error {
 // PutReportsLayoutSettings handles PUT /api/v1/settings/reports/layout.
 // Mounted behind the permission middleware, which derives
 // settings:reports:write from the route.
-func (h *Handler) PutReportsLayoutSettings(c echo.Context) error {
+func (h *Handler) PutReportsLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req reportsLayout
@@ -835,7 +835,7 @@ type accountsSettings struct {
 // doc comment). Absent returns false, not a 404: an unconfigured workspace
 // keeps rendering usernames the original way. Mounted behind the permission
 // middleware, which derives settings:accounts:read from the route.
-func (h *Handler) GetAccountsSettings(c echo.Context) error {
+func (h *Handler) GetAccountsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
@@ -859,7 +859,7 @@ func (h *Handler) GetAccountsSettings(c echo.Context) error {
 // PutAccountsSettings handles PUT /api/v1/settings/accounts. Mounted behind
 // the permission middleware, which derives settings:accounts:write from the
 // route.
-func (h *Handler) PutAccountsSettings(c echo.Context) error {
+func (h *Handler) PutAccountsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req accountsSettings
@@ -911,7 +911,7 @@ type viewCatalogEntry struct {
 // typing into this one field's autocomplete did nothing: every other
 // query param was silently ignored and the full, unfiltered catalog came
 // back every time.
-func (h *Handler) GetViewCatalog(c echo.Context) error {
+func (h *Handler) GetViewCatalog(c *echo.Context) error {
 	prefixes := orm.ExposedRoutePrefixes()
 	sort.Strings(prefixes)
 
@@ -946,7 +946,7 @@ type taxSettings struct {
 // TaxPriceModeExcluded, not a 404: an unconfigured workspace keeps computing
 // totals the original way. Mounted behind the permission middleware, which
 // derives settings:tax:read from the route.
-func (h *Handler) GetTaxSettings(c echo.Context) error {
+func (h *Handler) GetTaxSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	included, err := resolveTaxIncluded(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
@@ -962,7 +962,7 @@ func (h *Handler) GetTaxSettings(c echo.Context) error {
 
 // PutTaxSettings handles PUT /api/v1/settings/tax. Mounted behind the
 // permission middleware, which derives settings:tax:write from the route.
-func (h *Handler) PutTaxSettings(c echo.Context) error {
+func (h *Handler) PutTaxSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req taxSettings
@@ -990,7 +990,7 @@ func (h *Handler) PutTaxSettings(c echo.Context) error {
 // (not *Handler) so ResolveTaxIncluded below can reuse it for callers
 // outside this package (sale/propertymanagement's own tax computation,
 // which needs the exact same effective value this package's own GET handler
-// resolves) without either module depending on auth's echo.Context plumbing.
+// resolves) without either module depending on auth's *echo.Context plumbing.
 func resolveTaxIncluded(ctx context.Context, store settingStore, companies companyResolver, tenantID, userID uuid.UUID) (bool, error) {
 	active, err := companies.ResolveActive(ctx, tenantID, userID)
 	if err != nil {
@@ -1021,7 +1021,7 @@ type unitSettings struct {
 // UnitSystemMetric, not a 404: an unconfigured workspace defaults to metric.
 // Mounted behind the permission middleware, which derives settings:units:read
 // from the route.
-func (h *Handler) GetUnitSettings(c echo.Context) error {
+func (h *Handler) GetUnitSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	system, err := resolveUnitSystem(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
@@ -1033,7 +1033,7 @@ func (h *Handler) GetUnitSettings(c echo.Context) error {
 
 // PutUnitSettings handles PUT /api/v1/settings/units. Mounted behind the
 // permission middleware, which derives settings:units:write from the route.
-func (h *Handler) PutUnitSettings(c echo.Context) error {
+func (h *Handler) PutUnitSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req unitSettings
@@ -1101,7 +1101,7 @@ const osmConnectorMaxLen = 500
 // zero value (enabled: false), not a 404: no connector configured yet is a
 // normal state. Mounted behind the permission middleware, which derives
 // settings:integrations:read from the route.
-func (h *Handler) GetOSMSettings(c echo.Context) error {
+func (h *Handler) GetOSMSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
@@ -1126,7 +1126,7 @@ func (h *Handler) GetOSMSettings(c echo.Context) error {
 // PutOSMSettings handles PUT /api/v1/settings/integrations/osm. Mounted
 // behind the permission middleware, which derives settings:integrations:write
 // from the route.
-func (h *Handler) PutOSMSettings(c echo.Context) error {
+func (h *Handler) PutOSMSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req osmConnector
@@ -1168,10 +1168,10 @@ func (h *Handler) PutOSMSettings(c echo.Context) error {
 // creating a company already requires. Both companies must belong to the
 // caller's own tenant (the same cross-tenant-probe defense PutMyPreferences
 // applies to active_company_id).
-func (h *Handler) CloneCompanySettings(c echo.Context) error {
+func (h *Handler) CloneCompanySettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	sourceID, err := uuid.Parse(c.Param("id"))
+	sourceID, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -1203,7 +1203,7 @@ func (h *Handler) CloneCompanySettings(c echo.Context) error {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

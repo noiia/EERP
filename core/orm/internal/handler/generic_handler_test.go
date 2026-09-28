@@ -14,7 +14,7 @@ import (
 	"core/orm/internal/registry"
 	"core/orm/model"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ func (m *mockSvc) DistinctValues(ctx context.Context, column string, f crud.List
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func newEchoRequest(method, target, body string) (*echo.Echo, echo.Context, *httptest.ResponseRecorder) {
+func newEchoRequest(method, target, body string) (*echo.Echo, *echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	var bodyReader *strings.Reader
 	if body != "" {
@@ -261,8 +261,7 @@ func TestGetByID_NotFound_Returns404(t *testing.T) {
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
 	_, c, rec := newEchoRequest(http.MethodGet, "/", "")
-	c.SetParamNames("id")
-	c.SetParamValues("00000000-0000-0000-0000-000000000001")
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: "00000000-0000-0000-0000-000000000001"}))
 
 	err := h.GetByID(c)
 	var he *echo.HTTPError
@@ -275,8 +274,7 @@ func TestGetByID_InvalidUUID_Returns400(t *testing.T) {
 	svc := &mockSvc{}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
 	_, c, _ := newEchoRequest(http.MethodGet, "/", "")
-	c.SetParamNames("id")
-	c.SetParamValues("not-a-uuid")
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: "not-a-uuid"}))
 
 	err := h.GetByID(c)
 	var he *echo.HTTPError

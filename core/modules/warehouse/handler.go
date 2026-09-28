@@ -9,7 +9,7 @@ import (
 	"core/orm"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the ONE route this module overrides: POST /api/v1/product_variant.
@@ -36,7 +36,7 @@ func NewHandler(variants *orm.Repository[ProductVariant], products *orm.Reposito
 //     actually loading it, not just trusting the caller's uuid.
 //   - A blank Name defaults to that Product's own name, so "reference a
 //     variant" from a product is a one-field action.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var body ProductVariant
@@ -83,7 +83,7 @@ func toColumnMap[T any](repo *orm.Repository[T], entity T) map[string]any {
 	return out
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,
