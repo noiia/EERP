@@ -89,6 +89,11 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      # Optional read cache (ADR-022): waited on when present, but the stack
+      # (and the backend) runs fine with this service removed — `required: false`.
+      redis:
+        condition: service_healthy
+        required: false
 
   core-front:
     container_name: frontend
@@ -161,6 +166,25 @@ services:
       - "4222"
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # OPTIONAL read cache between the generic CRUD API and Postgres
+  # (docs/adr/ADR-022-optional-redis-query-cache.md), enabled by
+  # eerp-config.docker.json's redis_url. Delete this service (or clear
+  # redis_url) and everything still works, just uncached. A pure cache: no
+  # persistence, bounded memory with LRU eviction — losing it loses nothing.
+  # Published on 127.0.0.1 only, for host-native tests (REDIS_URL).
+  redis:
+    image: redis:8-alpine
+    restart: always
+    container_name: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10

@@ -1,6 +1,6 @@
 # Prod override — two things dev doesn't need:
 #
-# 1. db/garage go from ports: to expose: — nothing outside the compose network needs to
+# 1. db/garage/redis go from ports: to expose: — nothing outside the compose network needs to
 #    reach them directly (unlike dev, where host-native tooling — make run-back-tests, a
 #    bare `go run`/`go test` outside Docker — talks to them via eerp-config.json's
 #    localhost DSN/s3_endpoint). Same posture core-back/core-front/pdf-service already
@@ -42,6 +42,11 @@ services:
     ports: !reset []
     expose:
       - "3900"
+
+  redis:
+    ports: !reset []
+    expose:
+      - "6379"
 
   core-back:
     build: !reset null

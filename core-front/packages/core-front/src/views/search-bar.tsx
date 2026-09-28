@@ -149,6 +149,20 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
   }
 }
 
+/** What the UI shows for each operator: math symbols for the comparisons,
+ * translatable words for the two non-comparisons. The stored/serialized
+ * operator stays the short code (it's what saved filters and the list
+ * endpoint's gt[]/lte[]… params speak). */
+const OPERATOR_LABEL: Record<FilterOperator, string> = {
+  eq: '=',
+  gt: '>',
+  gte: '≥',
+  lt: '<',
+  lte: '≤',
+  contains: 'contains',
+  in: 'in',
+}
+
 function toListOptions(filters: FilterCondition[], pageSize: number): EntityListOptions {
   const options: EntityListOptions = { pageSize }
   for (const f of filters) {
@@ -468,7 +482,7 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
               <Chip
                 key={`${f.field}-${f.op}-${i}`}
                 size="small"
-                label={`${fieldLabelOf(descriptor, f.field)} ${f.op} ${f.op === 'in' ? (f.values ?? []).join(', ') : f.value}`}
+                label={`${fieldLabelOf(descriptor, f.field)} ${t(OPERATOR_LABEL[f.op])} ${f.op === 'in' ? (f.values ?? []).join(', ') : f.value}`}
                 onDelete={() => removeFilter(i)}
               />
             ))
@@ -528,7 +542,7 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
               </MenuItem>
               {(draftField ? operatorsFor(filterFields.find((f) => f.name === draftField)!) : []).map((op) => (
                 <MenuItem key={op} value={op}>
-                  {op}
+                  {t(OPERATOR_LABEL[op])}
                 </MenuItem>
               ))}
             </Select>

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"core/internal/attachments"
@@ -55,6 +56,7 @@ type App struct {
 	userRepo    *auth.UserRepository
 	permRepo    *auth.PermissionRepository
 	presenceHub *presence.Hub
+	cache       *orm.QueryCache // nil when redis_url is unset/unreachable
 }
 
 // Build validates cfg (relative paths already resolved — types.Config.ResolvePaths),
@@ -183,7 +185,12 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 		}
 	}
 
-	a := &App{cfg: configContent, configPath: configPath, db: app, engine: engine, linker: linker}
+	// Optional Redis read cache (ADR-022). Enabled after boot + seeding so
+	// SetQueryCache's own invalidation also covers this boot's migrations.
+	qc := openQueryCache(ctx, configContent)
+	app.DB.SetQueryCache(qc)
+
+	a := &App{cfg: configContent, configPath: configPath, db: app, engine: engine, linker: linker, cache: qc}
 	if err := a.mountRoutes(moduleRuntime); err != nil {
 		_ = app.Close()
 		return nil, err
@@ -196,7 +203,34 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 func (a *App) Handler() http.Handler { return a.server.Echo() }
 
 // Close releases the DB pool.
-func (a *App) Close() { _ = a.db.Close() }
+func (a *App) Close() {
+	_ = a.cache.Close()
+	_ = a.db.Close()
+}
+
+// openQueryCache connects the optional Redis read cache. Redis is never
+// required: unset → nil, unreachable → logged and nil, so the app always boots.
+func openQueryCache(ctx context.Context, cfg *types.Config) *orm.QueryCache {
+	if cfg.RedisURL == "" {
+		return nil
+	}
+	qc, err := orm.NewQueryCache(ctx, cfg.RedisURL, time.Duration(cfg.RedisTTLSeconds)*time.Second)
+	if err != nil {
+		common.Logger.Warn("⚠️  redis_url set but Redis is unreachable — running without the read cache", zap.Error(err))
+		return nil
+	}
+	// Runtime Redis failures fall through to Postgres; log at most once a
+	// minute so an outage doesn't flood the log.
+	var lastLog atomic.Int64
+	qc.OnError = func(err error) {
+		now := time.Now().Unix()
+		if last := lastLog.Load(); now-last >= 60 && lastLog.CompareAndSwap(last, now) {
+			common.Logger.Warn("redis read cache error — serving from Postgres", zap.Error(err))
+		}
+	}
+	common.Logger.Info("read cache: redis enabled")
+	return qc
+}
 
 // mountRoutes builds the server and mounts every route group.
 func (a *App) mountRoutes(moduleRuntime *module.Registry) error {

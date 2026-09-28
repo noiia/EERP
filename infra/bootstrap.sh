@@ -61,8 +61,8 @@ for f in eerp-config.json eerp-config.docker.json; do
   chmod 600 "$f"
 done
 
-echo "==> starting infra (db, nats, garage)"
-docker compose up -d --wait db nats garage
+echo "==> starting infra (db, nats, garage, redis)"
+docker compose up -d --wait db nats garage redis
 docker compose exec -T db psql -qU postgres -v ON_ERROR_STOP=1 \
   -c "ALTER USER postgres PASSWORD '$POSTGRES_PASSWORD'"
 bash infra/garage/init.sh

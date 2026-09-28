@@ -21,6 +21,15 @@ jobs:
                 options: >-
                     --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d poc"
                     --health-interval 5s --health-timeout 5s --health-retries 10
+            # The optional read cache (ADR-022) — REDIS_URL below turns its
+            # Redis-backed tests on; without it they skip, like TEST_DSN's.
+            redis:
+                image: redis:8-alpine
+                ports:
+                    - 6379:6379
+                options: >-
+                    --health-cmd "redis-cli ping"
+                    --health-interval 5s --health-timeout 5s --health-retries 10
         steps:
           - uses: actions/checkout@v6
           - uses: actions/setup-go@v6
@@ -46,6 +55,7 @@ jobs:
             # reachable from the runner.
             env:
               TEST_DSN: postgres://postgres:ci_test_password@localhost:5432/poc
+              REDIS_URL: redis://localhost:6379/0
             run: cd ./core/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
           - name: dead code gate

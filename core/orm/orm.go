@@ -45,6 +45,7 @@ package orm
 
 import (
 	"context"
+	"core/orm/qcache"
 
 	"core/orm/internal/cache"
 	"core/orm/log"
@@ -96,6 +97,16 @@ type Executor = executor.Executor
 //
 //	db, err := orm.Open(ctx, orm.Config{DSN: os.Getenv("DATABASE_URL")})
 var Open = db.Open
+
+// ── Read cache ────────────────────────────────────────────────────────────────
+
+// QueryCache is the optional Redis read cache for generic CRUD reads
+// (docs/adr/ADR-022-optional-redis-query-cache.md). Enable it with
+// db.SetQueryCache(c); a nil cache (the default) means no Redis at all.
+type QueryCache = qcache.Cache
+
+// NewQueryCache connects to redisURL and pings it; see qcache.New.
+var NewQueryCache = qcache.New
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 

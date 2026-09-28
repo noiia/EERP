@@ -189,7 +189,7 @@ describe('SearchBar', () => {
 
     // applyGroupValue closes the dropdown (setAnchorEl(null)) — the chip
     // must still be visible with it shut, proving it lives in the bar.
-    await waitFor(() => expect(screen.getByText('Status eq open')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Status = open')).toBeInTheDocument())
   })
 
   // The dropdown's own MenuItem (portaled by MUI to the end of document.body)
@@ -214,9 +214,9 @@ describe('SearchBar', () => {
     fireEvent.click(await screen.findByText(/Open deals/))
 
     // The consolidated chip (in the bar) shows the saved filter's NAME —
-    // the underlying "Status eq open" condition text never renders.
+    // the underlying "Status = open" condition text never renders.
     await waitFor(() => expect(barChip(/^Open deals$/)).toBeTruthy())
-    expect(screen.queryByText('Status eq open')).not.toBeInTheDocument()
+    expect(screen.queryByText('Status = open')).not.toBeInTheDocument()
   })
 
   it('an applied filter NOT owned by the caller gets a plain unapply close, no pencil', async () => {

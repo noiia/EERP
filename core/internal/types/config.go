@@ -150,6 +150,15 @@ type Config struct {
 	// Relative paths resolve the same way ModuleRoot does (anchored to the
 	// config file's directory). Defaults to "cron_logs".
 	CronLogDir string `json:"cron_log_dir" needed:"false"`
+	// RedisURL enables the OPTIONAL read cache between the generic CRUD API
+	// and Postgres (docs/adr/ADR-022-optional-redis-query-cache.md), e.g.
+	// "redis://redis:6379/0". Empty = no cache, no Redis needed. Set but
+	// unreachable at boot = logged and the app runs uncached.
+	RedisURL string `json:"redis_url" needed:"false"`
+	// RedisTTLSeconds caps how long a cached read lives even without an
+	// invalidating write (writes from outside the app — psql, another tool —
+	// are only caught by this). Defaults to 60.
+	RedisTTLSeconds int `json:"redis_ttl_seconds" needed:"false"`
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:

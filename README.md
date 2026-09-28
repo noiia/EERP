@@ -2,7 +2,7 @@
 
 <!-- Static badges: refresh by hand when versions or coverage move. Coverage/test
      counts come from the same commands CI runs (.github/workflows/test-check.yml). -->
-[![coverage/back](https://img.shields.io/badge/coverage%2Fback-74.8%25-yellow)](.github/.testcoverage.yml)
+[![coverage/back](https://img.shields.io/badge/coverage%2Fback-75.2%25-yellow)](.github/.testcoverage.yml)
 [![coverage/front](https://img.shields.io/badge/coverage%2Ffront-88.4%25-brightgreen)](core-front/apps/shell/vitest.config.ts)
 [![tests](https://img.shields.io/badge/tests-2315%20(go%20916%20%2B%20vitest%201399)-blue)](.github/workflows/test-check.yml)
 [![go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](core/go.mod)
@@ -77,7 +77,7 @@ before it can do anything else.
 ### Run it
 
 ```bash
-make run              # docker (db, garage, nats, pdf-service, api-gateway) + backend + frontend, dev mode
+make run              # docker (db, garage, nats, redis, pdf-service, api-gateway) + backend + frontend, dev mode
 make rebuild-and-run   # clean WASM module builds, rebuild, then run
 make run-back-tests    # brings the docker stack up, then `go test` against it
 make run-docker-prod    # full stack from ghcr.io images, compose.prod.yml layered on top
@@ -121,7 +121,7 @@ cd core && golangci-lint run ./...
 │   ├── adr/                   # architecture decision records
 │   ├── roadmaps/              # in-progress feature design docs
 │   └── security/              # audits and their remediation follow-ups
-├── compose.yml                # dev stack: db, garage, nats, pdf-service, api-gateway, core-back, core-front
+├── compose.yml                # dev stack: db, garage, nats, redis (optional cache), pdf-service, api-gateway, core-back, core-front
 ├── compose.prod.yml           # overlay: pulls ghcr.io images, tighter network exposure — see its own header comment
 ├── eerp-config*.example.json  # committed templates — copy, don't edit in place
 ├── eerp-config*.json          # your real, gitignored configs

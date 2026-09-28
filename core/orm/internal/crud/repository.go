@@ -11,6 +11,7 @@ import (
 	"core/orm/access"
 	"core/orm/internal/registry"
 	"core/orm/pool/executor"
+	"core/orm/qcache"
 	"core/orm/query"
 
 	"github.com/google/uuid"
@@ -205,11 +206,6 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 		b = b.Where(cond)
 	}
 
-	total, err := b.Count(ctx, r.db)
-	if err != nil {
-		return nil, 0, fmt.Errorf("crud: count %s: %w", r.meta.TableName, err)
-	}
-
 	page, pageSize := f.Page, f.PageSize
 	if page < 1 {
 		page = 1
@@ -218,8 +214,20 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-
 	sql, args := b.Offset(offset).Limit(pageSize).ToSQL()
+
+	// The page SQL's WHERE fully determines the total too, so one entry holds both.
+	var cached pageEntry
+	key, hit := r.lookup(ctx, sql, args, &cached)
+	if hit {
+		return cached.Rows, cached.Total, nil
+	}
+
+	total, err := b.Count(ctx, r.db)
+	if err != nil {
+		return nil, 0, fmt.Errorf("crud: count %s: %w", r.meta.TableName, err)
+	}
+
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("crud: find all %s: %w", r.meta.TableName, err)
@@ -229,7 +237,40 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 	if err != nil {
 		return nil, 0, err
 	}
+	r.store(ctx, key, pageEntry{Rows: results, Total: int(total)})
 	return results, int(total), nil
+}
+
+// pageEntry is FindAll's cached value.
+type pageEntry struct {
+	Rows  []map[string]any `json:"rows"`
+	Total int              `json:"total"`
+}
+
+// cachingDB is what the executor offers when the optional read cache is wired
+// (core/orm/qcache, ADR-022): only *db.DB does. Inside a transaction the
+// executor is a *tx.Tx, which never caches — a tx must see its own writes.
+type cachingDB interface {
+	QueryCache() *qcache.Cache
+	Name() string
+}
+
+// lookup/store are no-ops unless r.db is a caching *db.DB with a cache set.
+// Rows come back from a hit with JSON types (json.Number, strings for
+// uuid/time): they only ever feed BuildResponse → the JSON response, which
+// encodes them byte-identically.
+func (r *Repository) lookup(ctx context.Context, sql string, args []any, dst any) (string, bool) {
+	cdb, ok := r.db.(cachingDB)
+	if !ok {
+		return "", false
+	}
+	return cdb.QueryCache().Lookup(ctx, cdb.Name(), r.meta.TableName, sql, args, dst)
+}
+
+func (r *Repository) store(ctx context.Context, key string, v any) {
+	if cdb, ok := r.db.(cachingDB); ok {
+		cdb.QueryCache().Store(ctx, key, v)
+	}
 }
 
 // distinctCap ceilings how many distinct buckets a single DistinctValues call
@@ -268,11 +309,20 @@ func (r *Repository) DistinctValues(ctx context.Context, column string, f ListFi
 	}
 
 	sql, args := b.GroupBy(column).OrderBy(column).Limit(distinctCap).ToSQL()
+	var cached []DistinctValue
+	key, hit := r.lookup(ctx, sql, args, &cached)
+	if hit {
+		return cached, nil
+	}
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("crud: distinct values %s.%s: %w", r.meta.TableName, column, err)
 	}
-	return scanDistinct(rows)
+	out, err := scanDistinct(rows)
+	if err == nil {
+		r.store(ctx, key, out)
+	}
+	return out, err
 }
 
 // scanDistinct reads the (value, total) shape DistinctValues' custom column
@@ -313,14 +363,17 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 	}
 
 	sql, args := b.Limit(1).ToSQL()
-	rows, err := r.db.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, fmt.Errorf("crud: find by id: %w", err)
-	}
-
-	results, err := scanToMaps(rows)
-	if err != nil {
-		return nil, err
+	var results []map[string]any
+	key, hit := r.lookup(ctx, sql, args, &results)
+	if !hit {
+		rows, err := r.db.Query(ctx, sql, args...)
+		if err != nil {
+			return nil, fmt.Errorf("crud: find by id: %w", err)
+		}
+		if results, err = scanToMaps(rows); err != nil {
+			return nil, err
+		}
+		r.store(ctx, key, results)
 	}
 	if len(results) == 0 {
 		return nil, fmt.Errorf("crud: find by id %v: %w", id, ErrNotFound)
