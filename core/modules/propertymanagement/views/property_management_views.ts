@@ -560,13 +560,13 @@ export const propertyExtendOperations: Operation[] = [
   // index starts a fresh row" mechanic row 1 relies on).
   { op: 'move', name: 'current_tenant', target: 'property-loan-rent-group', position: 'after' },
   // Row 2, right: a REAL side-by-side floor_area|uom_id split.
-  // columnWidths: [2, 1] gives floor_area (a decimal number) more room
-  // than uom_id (a short symbol picker). minWidth: 280 overrides the 640px
+  // columnWidths: [1, 1] — equal halves since uom_id's relation field now
+  // renders at the same height and weight as floor_area. minWidth: 280 overrides the 640px
   // default container-query breakpoint (calibrated for a TOP-LEVEL form
   // body): this pair is nested inside __form_columns' OWN right column,
   // already halved, so 640px would need a 1300px+ wide form before this
   // nested split ever activated — which is why it rendered stacked instead
-  // of side by side. offsetTop: 1.25 matches current_tenant's own field
+  // of side by side. offsetTop: 1 matches current_tenant's own field
   // caption, same reasoning as row 1's loan_amount/rent_price group.
   {
     op: 'addNode',

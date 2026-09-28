@@ -432,6 +432,9 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 	tableName := sm.Table
 	if o.tableName != "" {
 		tableName = o.tableName
+		// sm is a copy: the query builders read StructMeta.Table, so the override
+		// must land there too or generic CRUD queries the derived name.
+		sm.Table = tableName
 	}
 
 	return TableMeta{

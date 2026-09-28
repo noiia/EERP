@@ -3,12 +3,9 @@ package db_test
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"testing"
 
-	"core/internal/common"
-	"core/internal/types"
+	"core/internal/testdb"
 	"core/orm/pool/config"
 	"core/orm/pool/db"
 	"core/orm/pool/tx"
@@ -16,20 +13,7 @@ import (
 
 func testDSN(t *testing.T) string {
 	t.Helper()
-
-	configFile := os.Getenv("CONFIG")
-	if configFile == "" {
-		t.Skip("CONFIG not set — skipping integration test")
-	}
-
-	configContent, err := common.DecodeJSON[*types.Config](configFile)
-	if err != nil {
-		t.Fatal("❌ Error reading config file:", err)
-	}
-
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", configContent.DbUser, configContent.DbPassword, configContent.DbHost, configContent.DbPort, configContent.DbName)
-	t.Log(dsn)
-	return dsn
+	return testdb.DSN(t)
 }
 
 func openTestDB(t *testing.T) *db.DB {
@@ -110,7 +94,7 @@ func TestIntegration_Exec_CreateDropTable(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 
-	_, err := db.Exec(ctx, `CREATE TEMP TABLE _orm_test_exec (id INT)`)
+	_, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS _orm_test_exec (id INT)`)
 	if err != nil {
 		t.Fatalf("CREATE TABLE: %v", err)
 	}
@@ -135,7 +119,7 @@ func TestIntegration_Transaction_Commit(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 
-	db.Exec(ctx, `CREATE TEMP TABLE _orm_test_tx (id INT)`)
+	db.Exec(ctx, `CREATE TABLE IF NOT EXISTS _orm_test_tx (id INT)`)
 	t.Cleanup(func() { db.Exec(ctx, `DROP TABLE IF EXISTS _orm_test_tx`) })
 
 	err := db.Transaction(ctx, func(tx *tx.Tx) error {
@@ -161,7 +145,7 @@ func TestIntegration_Transaction_Rollback(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 
-	db.Exec(ctx, `CREATE TEMP TABLE _orm_test_rb (id INT)`)
+	db.Exec(ctx, `CREATE TABLE IF NOT EXISTS _orm_test_rb (id INT)`)
 	t.Cleanup(func() { db.Exec(ctx, `DROP TABLE IF EXISTS _orm_test_rb`) })
 
 	boom := errors.New("intentional rollback")
@@ -188,7 +172,9 @@ func TestIntegration_Transaction_Savepoint(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 
-	db.Exec(ctx, `CREATE TEMP TABLE _orm_test_sp (id INT)`)
+	// A regular table, not TEMP: a temp table lives on one pooled connection, and
+	// the transaction below may run on another ("relation does not exist").
+	db.Exec(ctx, `CREATE TABLE IF NOT EXISTS _orm_test_sp (id INT)`)
 	t.Cleanup(func() { db.Exec(ctx, `DROP TABLE IF EXISTS _orm_test_sp`) })
 
 	err := db.Transaction(ctx, func(tx *tx.Tx) error {

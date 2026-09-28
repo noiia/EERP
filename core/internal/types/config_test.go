@@ -1,6 +1,9 @@
 package types
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestConfig_BackendBaseURL(t *testing.T) {
 	tests := []struct {
@@ -34,6 +37,49 @@ func TestConfig_BackendBaseURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.cfg.BackendBaseURL(); got != tt.want {
 				t.Errorf("BackendBaseURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_DSN(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"plain", Config{DbUser: "postgres", DbPassword: "pw", DbHost: "db", DbPort: 5432, DbName: "poc"},
+			"postgres://postgres:pw@db:5432/poc"},
+		{"special characters are escaped", Config{DbUser: "u", DbPassword: "p@ss/w:rd", DbHost: "localhost", DbPort: 5433, DbName: "x"},
+			"postgres://u:p%40ss%2Fw%3Ard@localhost:5433/x"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.DSN(); got != tt.want {
+				t.Errorf("DSN() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_ResolvePaths(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want Config
+	}{
+		{"relative paths anchor to the config dir; empty cron dir defaults",
+			Config{ApiConfigPath: "api.yaml", ModuleRoot: []string{"core/modules"}},
+			Config{ApiConfigPath: "/repo/api.yaml", ModuleRoot: []string{"/repo/core/modules"}, CronLogDir: "/repo/cron_logs"}},
+		{"absolute and empty paths are left alone",
+			Config{ApiConfigPath: "", ModuleRoot: []string{"/abs/modules"}, CronLogDir: "/var/log/cron"},
+			Config{ApiConfigPath: "", ModuleRoot: []string{"/abs/modules"}, CronLogDir: "/var/log/cron"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.cfg.ResolvePaths("/repo")
+			if !reflect.DeepEqual(tt.cfg, tt.want) {
+				t.Errorf("got %+v, want %+v", tt.cfg, tt.want)
 			}
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"core/internal/testdb"
 	"core/orm"
 	"core/orm/model"
 	"core/orm/query"
@@ -300,5 +301,14 @@ func TestRepo_FindByID_SQL(t *testing.T) {
 	}
 	if len(ex.lastArgs) < 1 || ex.lastArgs[0] != id {
 		t.Errorf("expected id arg, got %v", ex.lastArgs)
+	}
+}
+
+func TestNew_NilLogger_DoesNotPanicOnQueryError(t *testing.T) {
+	app := testdb.Open(t) // passes a nil logger to orm.New
+	var n int
+	// Invalid SQL forces the error-logging path that used to deref a nil logger.
+	if err := app.DB.QueryRow(context.Background(), "SELECT nope FROM nowhere").Scan(&n); err == nil {
+		t.Fatal("expected an error from invalid SQL")
 	}
 }

@@ -102,7 +102,19 @@ func (r *Registry) BootWithProgress(ctx context.Context, onProgress func(done, t
 	return r.boot(ctx, onProgress)
 }
 
-func (r *Registry) boot(ctx context.Context, onProgress func(done, total int)) []error {
+// boot holds the schema lock for the whole boot: its DDL must not interleave
+// with another process migrating the same database (see schemaLockKey).
+func (r *Registry) boot(ctx context.Context, onProgress func(done, total int)) (errs []error) {
+	if err := withSchemaLock(ctx, r.db, func() error {
+		errs = r.bootLocked(ctx, onProgress)
+		return nil
+	}); err != nil {
+		return []error{err}
+	}
+	return errs
+}
+
+func (r *Registry) bootLocked(ctx context.Context, onProgress func(done, total int)) []error {
 	if err := bootstrapMigrationsTable(ctx, r.db); err != nil {
 		return []error{fmt.Errorf("bootstrap module_migrations: %w", err)}
 	}

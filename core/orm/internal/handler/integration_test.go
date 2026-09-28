@@ -1,5 +1,3 @@
-//go:build integration
-
 package handler_test
 
 import (
@@ -9,21 +7,23 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
+	"core/internal/testdb"
 	"core/orm"
+	"core/orm/access"
 	"core/orm/internal/crud"
 	"core/orm/internal/handler"
 	"core/orm/internal/registry"
 	"core/orm/model"
 	ormserver "core/orm/server"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
 // TestItem is the integration test fixture table.
-// The table must exist in the TEST_DSN database.
+// The table is created from the registered model (testdb.Migrate).
 type TestItem struct {
 	model.BaseModel
 	Name string `db:"name"`
@@ -31,39 +31,17 @@ type TestItem struct {
 
 func setupIntegration(t *testing.T) (*orm.App, *echo.Echo) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DSN")
-	if dsn == "" {
-		t.Skip("TEST_DSN not set")
-	}
+	app := testdb.Open(t)
 
-	app, err := orm.New(orm.Config{DSN: dsn}, nil)
-	if err != nil {
-		t.Fatalf("orm.New: %v", err)
-	}
-
-	// Ensure table exists.
 	ctx := context.Background()
-	_, err = app.DB.Exec(ctx,
-		`CREATE TABLE IF NOT EXISTS test_items (
-			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			name       TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ
-		)`)
-	if err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
 	// Clean state before each test.
 	t.Cleanup(func() {
 		app.DB.Exec(ctx, "DELETE FROM test_items") //nolint:errcheck
-		app.Close()                                //nolint:errcheck
 	})
 
-	registry.Reset()
-	_ = registry.Register[TestItem]()
-	meta, _ := registry.Get("test_item")
+	_ = registry.Register[TestItem](registry.WithTableName("test_items"))
+	testdb.Migrate(t, app, "test_items") // the real columns, BaseModel's tenant_id included
+	meta, _ := registry.Get("test_items")
 
 	repo := crud.NewRepository(app.DB, meta)
 	svc := crud.NewService(repo, meta)
@@ -76,6 +54,9 @@ func setupIntegration(t *testing.T) (*orm.App, *echo.Echo) {
 	return app, e
 }
 
+// testTenant is the tenant every test request acts as.
+var testTenant = uuid.MustParse("00000000-0000-0000-0000-00000000cafe")
+
 func do(e *echo.Echo, method, path, body string) *httptest.ResponseRecorder {
 	var bodyBytes []byte
 	if body != "" {
@@ -83,6 +64,9 @@ func do(e *echo.Echo, method, path, body string) *httptest.ResponseRecorder {
 	}
 	req := httptest.NewRequest(method, path, bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
+	// Generic CRUD refuses a request with no tenant scope (JWTMiddleware sets it
+	// in production); every test request acts as one fixed tenant.
+	req = req.WithContext(access.WithTenant(req.Context(), testTenant))
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	return rec
@@ -104,7 +88,7 @@ func TestIntegration_CRUD_SoftDelete(t *testing.T) {
 	// GET list → record present
 	rec = do(e, http.MethodGet, "/api/v1/test_items", "")
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET list expected 200, got %d", rec.Code)
+		t.Fatalf("GET list expected 200, got %d: %s", rec.Code, rec.Body)
 	}
 	var list struct {
 		Total int              `json:"total"`

@@ -27,7 +27,7 @@ import (
 // back into the cron repository), the same way any other side effect works.
 type Cron struct {
 	model.BaseModel
-	Name string `db:"name"`
+	Name string `db:"name" json:"name"`
 	// ActionID names a registered Action (see registry.go) — which Go code
 	// runs. Plain text, not validated against the registry at write time:
 	// the generic CRUD surface has no per-field validation hook, and an
@@ -35,34 +35,34 @@ type Cron struct {
 	// scheduler records a failed CronHistory run naming the problem), so a
 	// second, earlier validation layer would just duplicate that path for a
 	// mistake the very next run already surfaces clearly.
-	ActionID string `db:"action_id"`
+	ActionID string `db:"action_id" json:"action_id"`
 	// ActionCode is a read-only mirror of the resolved Action's Source (the
 	// registering module's own cron.go file, embedded at compile time) —
 	// the form's notebook "Code" page renders this as a display-only field.
 	// Populated by core/modules/cron's Create/Update route override
 	// (mirrors crminheritdemo's Create override — the generic CRUD surface
 	// has no before-insert hook), not written by the scheduler.
-	ActionCode string `db:"action_code"`
+	ActionCode string `db:"action_code" json:"action_code"`
 	// ExecutionDate is nil once no run is scheduled (a brand-new cron, or
 	// one that already ran). The scheduler only ever picks up rows where
 	// this is set, in the past, and Status is "active".
-	ExecutionDate *time.Time `db:"execution_date"`
+	ExecutionDate *time.Time `db:"execution_date" json:"execution_date"`
 	// Status drives the form/Kanban lifecycle: "deactivated" (default —
 	// never picked up by the scheduler), "active" (eligible once
 	// ExecutionDate is due), "archived" (kept for history, never picked up
 	// — same intent as deactivated, a separate value only so Kanban can
 	// keep it visually distinct from a deliberately-off cron).
-	Status string `db:"status"`
+	Status string `db:"status" json:"status"`
 	// RunAsUserID is who the scheduler impersonates for the permission
 	// check before Run fires (see scheduler.go) — never the operator who
 	// happens to be logged in when the row was created.
-	RunAsUserID *uuid.UUID `db:"run_as_user_id"`
+	RunAsUserID *uuid.UUID `db:"run_as_user_id" json:"run_as_user_id"`
 	// HistoryRetentionYears overrides the sliding-window default (1 year,
 	// retentionDefaultYears in retention.go) for how long THIS cron's own
 	// history rows + log files survive. 0 (a fresh row before the
 	// Create override defaults it) reads as "use the default," never
 	// "delete immediately."
-	HistoryRetentionYears int `db:"history_retention_years"`
+	HistoryRetentionYears int `db:"history_retention_years" json:"history_retention_years"`
 }
 
 // CronHistory is one execution attempt of a Cron. CreatedAt (from

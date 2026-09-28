@@ -1,8 +1,19 @@
 # Functions unreachable from core/cmd/app that are kept on purpose: the public ORM
-# API offered to modules (framework surface).
+# API offered to modules (framework surface) and test support (internal/testdb, the
+# schema helpers it calls, App.Handler for in-process HTTP tests).
 # CI fails when deadcode reports anything NOT listed here — delete the new dead
 # code, or add it here if it is deliberate public API. Regenerate with:
 #   cd core && deadcode -f '{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}' ./... | sort
+core/internal/app.App.Handler
+core/internal/module.ensureSchema
+core/internal/module.EnsureSchema
+core/internal/module.MigrateModules
+core/internal/testdb.Config
+core/internal/testdb.DSN
+core/internal/testdb.findConfig
+core/internal/testdb.Migrate
+core/internal/testdb.MigrateModules
+core/internal/testdb.Open
 core/orm.ExposedTableNames
 core/orm.ExtendSchema
 core/orm.In

@@ -18,7 +18,7 @@ type CRM struct {
 	// widget. Pointer = nullable ON PURPOSE: "no contact" is a legal state and
 	// the widget's unlink affordance writes null — a NOT NULL column would 500
 	// every create/unlink that leaves the contact unset.
-	Contacts *uuid.UUID `db:"contact_id"`
+	Contacts *uuid.UUID `db:"contact_id" json:"contact_id"`
 	// Phone/Notes/Satisfaction/Deals back the Phase-1 widget samples on the CRM
 	// form (views/crm_views.ts): text/phone (E.164 — a TEXT column on purpose,
 	// numeric columns lose the leading + and zeros), text/long, number/percent

@@ -20,7 +20,11 @@ type App struct {
 
 // New opens the connection pool and returns a ready App.
 // Uses context.Background internally so callers don't need to thread a context.
+// A nil logger means "discard" (it used to panic on the first logged query error).
 func New(cfg config.Config, logger *zap.Logger) (*App, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	d, err := db.Open(context.Background(), cfg)
 	if err != nil {
 		return nil, err

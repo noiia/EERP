@@ -38,7 +38,7 @@ run-back:
 
 BACKTESTPATH ?= ./...
 run-back-tests:
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --wait db garage
 	cd $(root)/core && CONFIG="$(CONFIG)" go test $(BACKTESTPATH) $(ARGS)
 
 run-front-dev:

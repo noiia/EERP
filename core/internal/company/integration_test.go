@@ -1,71 +1,31 @@
-//go:build integration
-
 package company_test
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 
 	"core/internal/company"
+	"core/internal/testdb"
+	_ "core/modules/auth"    // registers the auth module (users) for testdb.MigrateModules
+	_ "core/modules/company" // registers the company module
 	"core/orm"
 
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
-// integrationSetup connects to TEST_DSN and ensures the tables this package
+// integrationSetup connects to the test DB (internal/testdb) and ensures the tables this package
 // needs exist. It NEVER deletes existing rows — this runs against a shared,
 // possibly non-empty database (e.g. a live dev stack), not a disposable one.
 // Every test seeds its OWN throwaway tenant/user and cleans up ONLY the rows
 // it created, scoped by id/tenant_id — never a blanket DELETE FROM <table>.
 func integrationSetup(t *testing.T) *orm.App {
 	t.Helper()
-	dsn := os.Getenv("TEST_DSN")
-	if dsn == "" {
-		t.Skip("TEST_DSN not set")
-	}
-	app, err := orm.New(orm.Config{DSN: dsn}, zap.NewNop())
-	if err != nil {
-		t.Fatalf("orm.New: %v", err)
-	}
+	app := testdb.Open(t)
 
-	ctx := context.Background()
-	tables := []string{
-		`CREATE TABLE IF NOT EXISTS users (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			email TEXT NOT NULL,
-			password_hash TEXT NOT NULL,
-			preferred_locale TEXT,
-			active_company_id UUID
-		)`,
-		`CREATE TABLE IF NOT EXISTS company (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			name TEXT NOT NULL DEFAULT '',
-			address TEXT NOT NULL DEFAULT '',
-			phone TEXT NOT NULL DEFAULT '',
-			email TEXT NOT NULL DEFAULT '',
-			is_default BOOLEAN NOT NULL DEFAULT FALSE
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_company_tenant_default
-		 ON company (tenant_id) WHERE is_default`,
-	}
-	for _, sql := range tables {
-		if _, err := app.DB.Exec(ctx, sql); err != nil {
-			t.Fatalf("setup table: %v", err)
-		}
-	}
+	// The real company + users schema, as boot creates it.
+	testdb.MigrateModules(t, app, "auth", "company")
 
-	t.Cleanup(func() { app.Close() }) //nolint:errcheck
 	return app
 }
 

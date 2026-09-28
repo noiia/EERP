@@ -16,8 +16,11 @@ services:
       # `ALTER ROLE postgres WITH PASSWORD ...`.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in a local .env}
       POSTGRES_DB: poc
-    # ports:
-    #   - "5432:5432"
+    # Loopback only: host-native `make run-back-tests` / `go run` reach it through
+    # eerp-config.json's localhost:5432, but nothing off this machine can.
+    # compose.prod.yml resets these ports to none.
+    ports:
+      - "127.0.0.1:5432:5432"
     expose:
       - "5432"
     healthcheck:
@@ -43,13 +46,11 @@ services:
       - ./infra/garage/garage.toml:/etc/garage.toml:ro
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
-    # ports:
-    #   # Host 3910 (3900 is commonly taken by other garage instances); in-network
-    #   # clients still use garage:3900. Kept host-reachable (unlike core-back/core-front,
-    #   # which the api-gateway now fronts exclusively) because host-native dev tooling —
-    #   # `make run-back-tests`, a native `go run`/`go test` — talks to it directly via
-    #   # eerp-config.json's s3_endpoint, same as db's fixed 5432 mapping above.
-    #   - "3910:3900"
+    # Loopback only (host 3910 — 3900 is commonly taken by other garage instances;
+    # in-network clients still use garage:3900): host-native dev tooling reaches it via
+    # eerp-config.json's s3_endpoint. compose.prod.yml resets these ports to none.
+    ports:
+      - "127.0.0.1:3910:3900"
     expose:
       - "3900"
     healthcheck:

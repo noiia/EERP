@@ -81,6 +81,10 @@ func TestRegister_WithTableName_OverridesDefault(t *testing.T) {
 	if meta.TableName != "products" {
 		t.Errorf("TableName = %q, want %q", meta.TableName, "products")
 	}
+	// The query builders read StructMeta.Table: it must follow the override.
+	if meta.StructMeta.Table != "products" {
+		t.Errorf("StructMeta.Table = %q, want %q", meta.StructMeta.Table, "products")
+	}
 }
 
 func TestRegister_WithReadOnlyFields(t *testing.T) {

@@ -583,11 +583,13 @@ Single test:
 make run-back-tests BACKTESTPATH=./orm/... ARGS="-run TestService_Create"
 ```
 
-Integration tests (require a running Postgres, set `TEST_DSN`):
+Integration tests get their database from `core/internal/testdb`: `TEST_DSN` if set
+(CI), otherwise the DSN derived from the config named by `CONFIG` (what
+`make run-back-tests` sets). With neither, they skip — no build tag needed:
 
 ```bash
-TEST_DSN="postgres://postgres:postgres@localhost:5432/erp" \
-    go test -tags integration ./orm/...
+make run-back-tests BACKTESTPATH=./orm/...                                  # dev DB
+TEST_DSN="postgres://postgres:<pw>@localhost:5432/poc" go test ./orm/...   # any DB
 ```
 
 ---

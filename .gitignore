@@ -2,6 +2,9 @@ node_modules/
 target
 Cargo.lock
 core/cmd/app/cache
+# The module detector writes its filesystem snapshot under ./cache/modules relative
+# to the process CWD — the app dir, or a package dir when tests boot the app.
+**/cache/modules/
 build
 graphify-out/
 /tools/bin/

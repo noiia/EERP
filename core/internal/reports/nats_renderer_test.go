@@ -47,6 +47,12 @@ func fakeWorker(t *testing.T, nc *nats.Conn, pdf []byte, workerErr string) {
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
+	// Subscribe only queues the SUB; without a round trip the renderer's
+	// request (on another connection) can reach the server first and get
+	// "no responders" — which happened under parallel test binaries.
+	if err := nc.Flush(); err != nil {
+		t.Fatalf("flush subscription: %v", err)
+	}
 	t.Cleanup(func() { _ = sub.Unsubscribe() })
 }
 

@@ -1,18 +1,11 @@
 profile: core/cover.out
 
-# # Holds coverage thresholds percentages, values should be in range [0-100].
-# threshold:
-#   # (optional; default 0) 
-#   # Minimum coverage percentage required for individual files.
-#   file: 70
-
-#   # (optional; default 0) 
-#   # Minimum coverage percentage required for each package.
-#   package: 80
-
-#   # (optional; default 0) 
-#   # Minimum overall project coverage percentage required.
-#   total: 95
+# Overall gate: the Go suite must keep >= 80% of statements covered, measured with
+# -coverpkg=./... against a fresh database (TEST_DSN), exactly as test-check.yml runs
+# it. Per-file/per-package floors stay off: the entry point and test helpers are
+# legitimately thin.
+threshold:
+  total: 80
 
 # override:
 #   # Increase coverage threshold to 100% for `foo` package 

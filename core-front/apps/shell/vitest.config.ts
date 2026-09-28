@@ -23,6 +23,9 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Heavy MUI renders (e.g. AppearanceSettings) exceed the 5s default under
+    // coverage instrumentation on a loaded machine or CI runner.
+    testTimeout: 15_000,
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     server: {
@@ -32,11 +35,13 @@ export default defineConfig({
       deps: { inline: [/@mui\//, 'react-transition-group'] },
     },
     // Coverage mirrors the backend's go-test-coverage step (see the engine vitest
-    // config). Generated artefacts and the BFF test stubs are excluded. Thresholds
-    // stay off so the gate reports without blocking until the team sets targets.
+    // config). Generated artefacts and the BFF test stubs are excluded. The
+    // thresholds fail `pnpm test:coverage` (CI) on a regression below 80%; branches
+    // sit lower until the untested page components grow tests.
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'json-summary'],
+      thresholds: { statements: 80, lines: 80, functions: 80, branches: 70 },
       include: ['app/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
       exclude: [
         '**/*.{test,spec}.{ts,tsx}',

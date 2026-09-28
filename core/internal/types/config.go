@@ -1,10 +1,46 @@
 package types
 
 import (
+	"net"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// ResolvePaths anchors the relative path fields (module_root, api_config_path,
+// cron_log_dir — "cron_logs" when unset) to dir, the config file's directory,
+// not the process CWD: one committed config then works from every working
+// directory the app, the tests and the frontend build run from. Absolute
+// paths are left untouched.
+func (c *Config) ResolvePaths(dir string) {
+	resolve := func(p string) string {
+		if p == "" || filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(dir, p)
+	}
+	c.ApiConfigPath = resolve(c.ApiConfigPath)
+	for i, root := range c.ModuleRoot {
+		c.ModuleRoot[i] = resolve(root)
+	}
+	if c.CronLogDir == "" {
+		c.CronLogDir = "cron_logs"
+	}
+	c.CronLogDir = resolve(c.CronLogDir)
+}
+
+// DSN is the PostgreSQL connection URL, credentials URL-escaped.
+func (c *Config) DSN() string {
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.DbUser, c.DbPassword),
+		Host:   net.JoinHostPort(c.DbHost, strconv.Itoa(c.DbPort)),
+		Path:   "/" + c.DbName,
+	}
+	return u.String()
+}
 
 // DefaultConfig returns a *Config with every optional field pre-filled with a
 // sensible development default.  Required fields (db credentials, module_root,
@@ -114,7 +150,6 @@ type Config struct {
 	// Relative paths resolve the same way ModuleRoot does (anchored to the
 	// config file's directory). Defaults to "cron_logs".
 	CronLogDir string `json:"cron_log_dir" needed:"false"`
-	DSN        string
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:
