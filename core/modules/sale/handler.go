@@ -265,26 +265,44 @@ func (h *Handler) recomputeLineAndInvoice(ctx context.Context, identity auth.Ide
 }
 
 // linkedTaxes resolves a line's own sale_line_tax rows into the SaleTax
-// records they point at. A dangling link (the tax was deleted) is silently
-// skipped rather than failing the whole computation — same "best effort over
-// a stale reference" posture module.go's other snapshot fields take.
+// records they point at (see ResolveTaxes).
 func (h *Handler) linkedTaxes(ctx context.Context, lineID uuid.UUID) ([]SaleTax, error) {
 	links, err := h.lineTaxes.FindAll(ctx, orm.Cond("sale_line_id = $1", lineID))
 	if err != nil {
 		return nil, err
 	}
-	taxes := make([]SaleTax, 0, len(links))
-	for _, link := range links {
-		tax, err := h.taxes.FindByID(ctx, link.SaleTaxID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		taxes = append(taxes, tax)
+	ids := make([]uuid.UUID, len(links))
+	for i, link := range links {
+		ids[i] = link.SaleTaxID
 	}
-	return taxes, nil
+	return ResolveTaxes(ctx, h.taxes, ids)
+}
+
+// ResolveTaxes loads the SaleTax each id points at in ONE query (instead of
+// one FindByID per link), returned in ids order with duplicates kept. A
+// dangling id (the tax was deleted) is silently skipped rather than failing
+// the whole computation — "best effort over a stale reference", same posture
+// module.go's other snapshot fields take. Shared with propertymanagement's
+// billing lines.
+func ResolveTaxes(ctx context.Context, taxes *orm.Repository[SaleTax], ids []uuid.UUID) ([]SaleTax, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	found, err := taxes.FindAll(ctx, orm.Cond("id = ANY($1)", ids))
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uuid.UUID]SaleTax, len(found))
+	for _, t := range found {
+		byID[t.ID] = t
+	}
+	out := make([]SaleTax, 0, len(ids))
+	for _, id := range ids {
+		if t, ok := byID[id]; ok {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 // computeLineTotal is the pure money math behind a line's own Subtotal/Total

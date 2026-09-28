@@ -2,6 +2,8 @@ package company_test
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -95,5 +97,68 @@ func TestResolveActive_Bootstrap_ConcurrentFirstTouch(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("default company count = %d, want exactly 1", count)
+	}
+}
+
+func TestBackfillCompanyID(t *testing.T) {
+	app := integrationSetup(t)
+	repo := company.NewRepository(app.DB)
+	ctx := context.Background()
+
+	// A throwaway table shaped like app_settings/report_page_format.
+	table := "backfill_probe_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	if _, err := app.DB.Exec(ctx, `CREATE TABLE `+table+` (tenant_id UUID NOT NULL, company_id UUID)`); err != nil {
+		t.Fatalf("create probe table: %v", err)
+	}
+	withDefault, withoutDefault := uuid.New(), uuid.New()
+	t.Cleanup(func() {
+		app.DB.Exec(ctx, `DROP TABLE `+table)                                                                       //nolint:errcheck
+		app.DB.Exec(ctx, `DELETE FROM company WHERE tenant_id = ANY($1)`, []uuid.UUID{withDefault, withoutDefault}) //nolint:errcheck
+	})
+	existing, err := repo.EnsureDefaultCompany(ctx, withDefault)
+	if err != nil {
+		t.Fatalf("ensure default: %v", err)
+	}
+	preset := uuid.New()
+	if _, err := app.DB.Exec(ctx, `INSERT INTO `+table+` VALUES ($1, NULL), ($1, NULL), ($2, NULL), ($2, $3)`,
+		withDefault, withoutDefault, preset); err != nil {
+		t.Fatalf("seed probe rows: %v", err)
+	}
+
+	if err := repo.BackfillCompanyID(ctx, table); err != nil {
+		t.Fatalf("BackfillCompanyID: %v", err)
+	}
+	created, err := repo.EnsureDefaultCompany(ctx, withoutDefault)
+	if err != nil {
+		t.Fatalf("read created default: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		tenant uuid.UUID
+		want   []uuid.UUID
+	}{
+		{"tenant with a default reuses it", withDefault, []uuid.UUID{existing.ID, existing.ID}},
+		{"tenant without one gets a new default; preset row untouched", withoutDefault, []uuid.UUID{created.ID, preset}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows, err := app.DB.Query(ctx, `SELECT company_id FROM `+table+` WHERE tenant_id = $1 ORDER BY company_id = $2 DESC`, tt.tenant, tt.want[0])
+			if err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			defer rows.Close()
+			var got []uuid.UUID
+			for rows.Next() {
+				var id uuid.UUID
+				if err := rows.Scan(&id); err != nil {
+					t.Fatalf("scan: %v", err)
+				}
+				got = append(got, id)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("company_ids = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

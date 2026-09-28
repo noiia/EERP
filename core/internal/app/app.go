@@ -727,9 +727,8 @@ func (a *App) Run(ctx context.Context) error {
 	// simpler ticker from the cron scheduler above, hourly since expiry
 	// doesn't need minute-level precision. Runs once immediately so a quote
 	// already overdue at boot doesn't wait a full hour for its first check.
-	quoteRepo := orm.MustRepo[sale.Quote](app.DB)
 	go func() {
-		if err := sale.ExpireOverdueQuotes(ctx, quoteRepo); err != nil {
+		if err := sale.ExpireOverdueQuotes(ctx, app.DB); err != nil {
 			common.Logger.Warn("sale: expire overdue quotes", zap.Error(err))
 		}
 		ticker := time.NewTicker(time.Hour)
@@ -739,7 +738,7 @@ func (a *App) Run(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := sale.ExpireOverdueQuotes(ctx, quoteRepo); err != nil {
+				if err := sale.ExpireOverdueQuotes(ctx, app.DB); err != nil {
 					common.Logger.Warn("sale: expire overdue quotes", zap.Error(err))
 				}
 			}

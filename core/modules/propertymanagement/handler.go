@@ -2,7 +2,6 @@ package propertymanagement
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -16,7 +15,6 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 )
 
@@ -416,26 +414,17 @@ func (h *Handler) recomputeBillingLineTotal(ctx context.Context, identity auth.I
 
 // linkedBillingLineTaxes resolves a billing line's own
 // property_management_billing_line_tax rows into the sale.SaleTax records
-// they point at. A dangling link (the tax was deleted) is silently skipped
-// rather than failing the whole computation — mirrors sale/handler.go's own
-// linkedTaxes.
+// they point at (see sale.ResolveTaxes).
 func (h *Handler) linkedBillingLineTaxes(ctx context.Context, lineID uuid.UUID) ([]sale.SaleTax, error) {
 	links, err := h.billingLineTaxes.FindAll(ctx, orm.Cond("property_management_billing_line_id = $1", lineID))
 	if err != nil {
 		return nil, err
 	}
-	taxes := make([]sale.SaleTax, 0, len(links))
-	for _, link := range links {
-		tax, err := h.taxes.FindByID(ctx, link.SaleTaxID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		taxes = append(taxes, tax)
+	ids := make([]uuid.UUID, len(links))
+	for i, link := range links {
+		ids[i] = link.SaleTaxID
 	}
-	return taxes, nil
+	return sale.ResolveTaxes(ctx, h.taxes, ids)
 }
 
 // computeBillingLineTotal is the pure money math behind a billing line's own

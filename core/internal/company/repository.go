@@ -102,44 +102,31 @@ func (r *Repository) ResolveActive(ctx context.Context, tenantID, userID uuid.UU
 
 // BackfillCompanyID sets company_id on every row of table (which must carry
 // tenant_id and company_id columns) still left NULL from before this
-// feature shipped, resolving each distinct tenant's lazily-bootstrapped
-// default company via EnsureDefaultCompany. Meant to run once, eagerly, from
-// a Go module's own Migrate() hook (see core/modules/settings and
-// core/modules/reportlayout) — not per-request, unlike ResolveActive. table
-// is a dynamic, caller-supplied identifier no struct/entity backs, so this
-// stays raw SQL.
+// feature shipped, pointing it at its tenant's default company — created
+// first if missing, exactly as EnsureDefaultCompany would. Meant to run once,
+// eagerly, from a Go module's own Migrate() hook (see core/modules/settings
+// and core/modules/reportlayout) — not per-request, unlike ResolveActive.
+// table is a dynamic, caller-supplied identifier no struct/entity backs, so
+// this stays raw SQL.
+//
+// Two set-based statements whatever the tenant count (it used to be two
+// round trips per tenant). A tenant whose default company is soft-deleted
+// keeps NULL rather than failing the boot.
 func (r *Repository) BackfillCompanyID(ctx context.Context, table string) error {
 	// #nosec G201 -- table is a fixed caller-supplied constant, never user input.
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`SELECT DISTINCT tenant_id FROM %s WHERE company_id IS NULL`, table))
-	if err != nil {
-		return fmt.Errorf("company: find tenants needing backfill on %s: %w", table, err)
+	if _, err := r.db.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO company (tenant_id, name, is_default)
+		SELECT DISTINCT tenant_id, 'Default Company', true FROM %s WHERE company_id IS NULL
+		ON CONFLICT (tenant_id) WHERE is_default DO NOTHING`, table)); err != nil {
+		return fmt.Errorf("company: ensure defaults for backfill on %s: %w", table, err)
 	}
-	var tenantIDs []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return fmt.Errorf("company: scan tenant id: %w", err)
-		}
-		tenantIDs = append(tenantIDs, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("company: iterate tenants: %w", err)
-	}
-
-	for _, tenantID := range tenantIDs {
-		def, err := r.EnsureDefaultCompany(ctx, tenantID)
-		if err != nil {
-			return fmt.Errorf("company: ensure default for backfill: %w", err)
-		}
-		// #nosec G201 -- table is a fixed caller-supplied constant, never user input.
-		if _, err := r.db.Exec(ctx,
-			fmt.Sprintf(`UPDATE %s SET company_id = $1 WHERE tenant_id = $2 AND company_id IS NULL`, table),
-			def.ID, tenantID,
-		); err != nil {
-			return fmt.Errorf("company: backfill company_id on %s: %w", table, err)
-		}
+	// #nosec G201 -- table is a fixed caller-supplied constant, never user input.
+	if _, err := r.db.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s t SET company_id = c.id
+		FROM company c
+		WHERE c.tenant_id = t.tenant_id AND c.is_default AND c.deleted_at IS NULL
+		  AND t.company_id IS NULL`, table)); err != nil {
+		return fmt.Errorf("company: backfill company_id on %s: %w", table, err)
 	}
 	return nil
 }
