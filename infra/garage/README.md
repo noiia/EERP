@@ -10,14 +10,14 @@ choice for its single-binary footprint.
 
 | File | Role |
 | --- | --- |
-| `garage.toml` | Node config, mounted read-only into the `garage` compose service. Dev secrets only. |
-| `init.sh` | Idempotent bootstrap: layout, dev key, `eerp` bucket, grants. |
+| `garage.toml` | Node config, mounted read-only into the `garage` compose service. Holds no secret (`rpc_secret` comes from `GARAGE_RPC_SECRET`). |
+| `init.sh` | Idempotent bootstrap: layout, S3 key from `.env`, `eerp` bucket, grants. |
 
 ## Usage
 
 ```bash
-docker compose up -d garage   # start the node (also started by `make run`)
-make garage-init              # one-time bootstrap (safe to re-run)
+make bootstrap                # whole dev stack, this bootstrap included (infra/bootstrap.sh)
+make garage-init              # just this bootstrap (safe to re-run; needs .env)
 ```
 
 The S3 endpoint is `http://127.0.0.1:3910` from the host (`http://garage:3900` inside the
@@ -44,6 +44,7 @@ docker compose up -d garage && make garage-init
 
 ## Not for production
 
-`rpc_secret` and the S3 key pair are committed dev values (same stance as the
-`postgres/postgres` DB credentials). A real deployment generates its own secrets, runs
+`rpc_secret` and the S3 key pair are generated per machine by `infra/bootstrap.sh` into the
+gitignored `.env` (compose hands `GARAGE_RPC_SECRET` to the node, `init.sh` imports the key
+pair, the configs' `s3_*` fields get the same pair). A real deployment also runs
 `replication_factor >= 3`, and puts a TLS terminator in front of the S3 API.

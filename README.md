@@ -33,39 +33,34 @@ git clone git@github.com:noiia/EERP.git
 cd EERP
 ```
 
-### Configure secrets (first time only)
+### Configure secrets and start (one command)
 
 `eerp-config.json` / `eerp-config.docker.json` / `eerp-config.prod.json` carry real
 credentials (JWT signing key, DB password, S3 keys) and are **gitignored** — a past
 incident committed working defaults for these and they had to be rotated and scrubbed
-from tracking (`docs/security/pentest-2026-09-24.md`). Copy the matching `*.example.json`
-template for whichever path you're using and fill in real values; the backend refuses to
-boot on an empty, default, or previously-known-leaked value (`core/cmd/app/main.go`).
+from tracking (`docs/security/pentest-2026-09-24.md`). The backend refuses to boot on an
+empty, default, or previously-known-leaked value (`core/cmd/app/main.go`).
+
+For development, one command does everything:
 
 ```bash
-cp eerp-config.example.json eerp-config.json                # host-native go run/tests
-cp eerp-config.docker.example.json eerp-config.docker.json  # docker compose (dev)
-cp eerp-config.prod.example.json eerp-config.prod.json      # docker compose -f compose.prod.yml
+make bootstrap   # = infra/bootstrap.sh — safe to re-run; ROTATE=1 regenerates secrets
 ```
 
-Generate a strong secret per `master_key`/`db_password` field, e.g.:
+It generates any missing secret into the gitignored `.env` (`POSTGRES_PASSWORD`,
+`EERP_MASTER_KEY`, the S3 key pair, `GARAGE_RPC_SECRET`), creates `eerp-config.json` and
+`eerp-config.docker.json` from their `*.example.json` templates and fills their
+`master_key` / `db_password` / `s3_*` fields, starts the stack waiting on each service's
+healthcheck, and provisions Garage (layout, key, bucket) — no second `docker compose up`.
 
-```bash
-openssl rand -base64 48 | tr -d '\n=+/' | head -c 48
-```
+**Production** never shares dev secrets, so the script leaves `eerp-config.prod.json`
+alone: copy `eerp-config.prod.example.json`, fill every `change-me-in-production` field
+with a fresh secret (e.g. `openssl rand -hex 32`), and give the server a `.env` with
+`POSTGRES_PASSWORD` (same value as `db_password`) and `GARAGE_RPC_SECRET`.
 
-`db_password` must be the **same** value in all three files you use, plus one more
-place: a gitignored `.env` at the repo root sets `POSTGRES_PASSWORD` for the `db`
-container (the only value `docker compose` needs as a plain container env var rather
-than reading it from a config file):
-
-```bash
-echo "POSTGRES_PASSWORD=<same value as db_password above>" > .env
-```
-
-Set `"environment"` to `"development"` in the configs you're running locally —
-`"production"` disables demo-data seeding and forces the seeded default admin
-(`admin@eerp.local`) to change its password before it can do anything else.
+Configs start with `"environment": "development"` — `"production"` disables demo-data
+seeding and forces the seeded default admin (`admin@eerp.local`) to change its password
+before it can do anything else.
 
 ### Run it
 

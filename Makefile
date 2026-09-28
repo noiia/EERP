@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-back-tests run-front-dev garage-init logs run-docker-prod
+.PHONY: rebuild-and-run clean build run run-back run-back-tests run-front-dev garage-init logs run-docker-prod bootstrap
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -54,6 +54,13 @@ run:
 
 logs:
 	$(COMPOSE) logs -f -n 50
+
+# Whole dev stack in one run: generates missing secrets into .env, fills every
+# gitignored config that needs them (created from the *.example.json templates),
+# starts + waits on every service, bootstraps Garage. Safe to re-run; ROTATE=1
+# regenerates the secrets. See infra/bootstrap.sh.
+bootstrap:
+	bash $(root)/infra/bootstrap.sh
 
 # One-time (idempotent) bootstrap of the dev Garage node: layout, dev S3 key, eerp bucket.
 garage-init:

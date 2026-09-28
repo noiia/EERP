@@ -23,8 +23,11 @@ jobs:
             # (compose.yml only `expose`s 5432, no port mapping) and destroyed at the
             # end of the job, so a fixed throwaway value here is not a real secret.
             run: docker compose up -d db && cd ./core/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+            # compose interpolates the whole file even to start one service, so garage's
+            # required secret needs a throwaway value too.
             env:
               POSTGRES_PASSWORD: ci_test_password
+              GARAGE_RPC_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
 
           - name: analyse coverage
             uses: vladopajic/go-test-coverage@v2
