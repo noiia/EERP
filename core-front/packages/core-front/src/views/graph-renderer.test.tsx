@@ -81,6 +81,29 @@ describe('GraphRenderer', () => {
     measured.containerWidth = 900
   })
 
+  it('aggregates a tile server-side over every row when the host supports it (no partial badge)', async () => {
+    const statTile: Tile = { ...savedTile, config: { field: 'amount', aggregate: 'sum' } }
+    const aggregate = vi.fn(async () => [{ value: 123456, count: 100000 }])
+    const ops = fakeOps({ get: vi.fn(async () => ({ tiles: [statTile] })), aggregate })
+    render(
+      <GraphOpsProvider ops={ops}>
+        <GraphRenderer
+          descriptor={{ ...descriptor, listFilter: { filter: { kind: 'deal' } } }}
+          records={[{ id: '1', name: 'a' }]}
+          recordTotal={100000}
+          listOptions={{ filter: { status: 'won' } }}
+        />
+      </GraphOpsProvider>,
+    )
+    expect(await screen.findByText('123,456.00')).toBeInTheDocument()
+    expect(screen.queryByText(/Partial data/)).not.toBeInTheDocument()
+    expect(aggregate).toHaveBeenCalledWith(
+      'crm',
+      { aggregate: 'sum', value: 'amount' },
+      { filter: { kind: 'deal', status: 'won' } },
+    )
+  })
+
   it('renders an inert message with no crash when no GraphOpsProvider is mounted', () => {
     render(<GraphRenderer descriptor={descriptor} records={[]} />)
     expect(screen.getByText(/Graph layouts are not available/)).toBeInTheDocument()

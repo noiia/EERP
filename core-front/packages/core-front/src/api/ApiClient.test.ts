@@ -193,6 +193,29 @@ describe('ServerApiClient', () => {
     expect(query.get('search[name]')).toBe('ada')
   })
 
+  it('aggregate() sends the aggregate params plus filters, never paging, and returns the groups', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { groups: [{ x: '2026-01', value: 5, count: 2 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const rows = await createServerApiClient().aggregate(
+      'invoice',
+      { aggregate: 'sum', value: '(total - subtotal) / 2', x: 'issue_date', bucket: 'month', group: 'status' },
+      { filter: { status: 'paid' }, page: 3, pageSize: 20 },
+    )
+
+    expect(rows).toEqual([{ x: '2026-01', value: 5, count: 2 }])
+    const [url] = fetchMock.mock.calls[0] as unknown as [string]
+    const query = new URL(url).searchParams
+    expect(query.get('aggregate')).toBe('sum')
+    expect(query.get('value')).toBe('(total - subtotal) / 2')
+    expect(query.get('x')).toBe('issue_date')
+    expect(query.get('bucket')).toBe('month')
+    expect(query.get('group')).toBe('status')
+    expect(query.get('filter[status]')).toBe('paid')
+    expect(query.has('page')).toBe(false)
+    expect(query.has('page_size')).toBe(false)
+  })
+
   it('distinctValues() returns an empty array when the envelope carries no values', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, {})))
     await expect(createServerApiClient().distinctValues('crm', 'status')).resolves.toEqual([])

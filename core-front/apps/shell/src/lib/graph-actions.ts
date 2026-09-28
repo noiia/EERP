@@ -1,6 +1,15 @@
 'use server'
-import { ApiError, apiRequest } from '@eerp/core-front/server'
-import { EMPTY_GRAPH_LAYOUT, type GraphField, type GraphFieldDraft, type GraphLayout, type Tile } from '@eerp/core-front'
+import { ApiError, apiRequest, createServerApiClient } from '@eerp/core-front/server'
+import {
+  EMPTY_GRAPH_LAYOUT,
+  type EntityListOptions,
+  type GraphAggregateRequest,
+  type GraphAggregateRow,
+  type GraphField,
+  type GraphFieldDraft,
+  type GraphLayout,
+  type Tile,
+} from '@eerp/core-front'
 import type { GraphSaveResult } from '@eerp/core-front'
 
 // Entity-generic Server Actions backing the engine's GraphOps: how
@@ -70,5 +79,24 @@ export async function updateEntityGraphField(id: string, draft: Omit<GraphFieldD
     return { ok: true }
   } catch (e) {
     return { ok: false, message: e instanceof ApiError ? e.message : 'Could not update the field.' }
+  }
+}
+
+/**
+ * Server-side Graph aggregation (docs/adr/ADR-023-graph-server-aggregation.md):
+ * Go aggregates every row matching `options` instead of the fetched page.
+ * null on any failure (a 400 for a field Go can't aggregate, a permission
+ * gap, a network hiccup) — the tile then falls back to aggregating the
+ * fetched page client-side, the pre-ADR-023 behavior.
+ */
+export async function aggregateEntity(
+  entity: string,
+  req: GraphAggregateRequest,
+  options?: EntityListOptions,
+): Promise<GraphAggregateRow[] | null> {
+  try {
+    return await createServerApiClient().aggregate(entity, req, options)
+  } catch {
+    return null
   }
 }

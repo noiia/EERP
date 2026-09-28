@@ -13,7 +13,9 @@ import { GRID_UNIT, type GraphField, type GraphFieldDraft, type Tile, type TileT
 import type { SerializedError } from '../api/errors'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
-import type { ViewDescriptor } from './descriptor'
+import { fieldLabel, type ViewDescriptor } from './descriptor'
+import type { EntityListOptions } from '../api/list-options'
+import { planTile, useServerTileData } from './graph-server'
 import { ErrorAlert } from './error-alert'
 import { calcKeysIn, expandByChildren, withCalculatedFields } from './graph-aggregate'
 import { useRelationOps, type RelationRecord } from './relation-ops'
@@ -86,6 +88,8 @@ function GraphTileCard<T extends HasId>({
   descriptor,
   records,
   recordTotal,
+  calcFields,
+  listOptions,
   onConfigure,
   onHide,
 }: {
@@ -94,10 +98,25 @@ function GraphTileCard<T extends HasId>({
   descriptor: ViewDescriptor<T>
   records: T[]
   recordTotal: number | undefined
+  calcFields: GraphField[]
+  /** Active list filters, forwarded to server-side aggregation (ADR-023). */
+  listOptions: EntityListOptions | undefined
   onConfigure?: () => void
   onHide?: () => void
 }) {
   const t = useT()
+  const graphOps = useGraphOps()
+  const fieldOf = (name: string) => descriptor.fields.find((f) => f.name === name)
+  const plan = planTile(
+    tile,
+    calcFields,
+    (name) => fieldOf(name)?.type === 'number',
+    (name) => {
+      const f = fieldOf(name)
+      return f ? fieldLabel(f) : name
+    },
+  )
+  const server = useServerTileData(descriptor.entity, plan, graphOps, listOptions)
   return (
     <Card
       variant="outlined"
@@ -154,7 +173,13 @@ function GraphTileCard<T extends HasId>({
           '&:last-child': { pb: 1 },
         }}
       >
-        <GraphWidgetBody tile={tile} descriptor={descriptor} records={records} recordTotal={recordTotal} />
+        <GraphWidgetBody
+          tile={tile}
+          descriptor={descriptor}
+          records={records}
+          recordTotal={recordTotal}
+          server={server}
+        />
       </CardContent>
     </Card>
   )
@@ -169,9 +194,13 @@ export interface GraphRendererProps<T extends HasId> {
   /** Go's total row count, when known — undefined is treated as "unknown",
    * not "complete", so the partial-data badge stays conservative. */
   recordTotal?: number
+  /** The search bar's active structured filters. With a host GraphOps.aggregate,
+   * xy/bar/pie/stat tiles aggregate server-side over every row matching them
+   * (plus descriptor.listFilter) — ADR-023. */
+  listOptions?: EntityListOptions
 }
 
-export function GraphRenderer<T extends HasId>({ descriptor, records, recordTotal }: GraphRendererProps<T>) {
+export function GraphRenderer<T extends HasId>({ descriptor, records, recordTotal, listOptions }: GraphRendererProps<T>) {
   const t = useT()
   const graphOps = useGraphOps()
   const relationOps = useRelationOps()
@@ -261,6 +290,11 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
     return withCalculatedFields(expanded, calcFields, calcKeysIn([cfg]))
   }
   const hiddenTiles = editing ? (draft ?? []).filter((tl) => tl.hidden) : []
+  // The route's fixed refinement always applies, like loadView's merge.
+  const aggregateOptions: EntityListOptions | undefined =
+    descriptor.listFilter || listOptions
+      ? { ...descriptor.listFilter, ...listOptions, filter: { ...descriptor.listFilter?.filter, ...listOptions?.filter } }
+      : undefined
 
   function startEdit() {
     setError(null)
@@ -470,6 +504,8 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
                   descriptor={calcDescriptor}
                   records={recordsFor(tile)}
                   recordTotal={recordTotal}
+                  calcFields={calcFields}
+                  listOptions={aggregateOptions}
                 />
               </Box>
             ))}
@@ -505,6 +541,8 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
                   descriptor={calcDescriptor}
                   records={recordsFor(tile)}
                   recordTotal={recordTotal}
+                  calcFields={calcFields}
+                  listOptions={aggregateOptions}
                   onConfigure={() => setDialogTarget(tile)}
                   onHide={() => hideTile(tile.id)}
                 />

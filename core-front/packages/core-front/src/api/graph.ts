@@ -53,3 +53,28 @@ export interface GraphField {
 }
 
 export type GraphFieldDraft = Pick<GraphField, 'key' | 'label' | 'formula' | 'roles' | 'dated'>
+
+/**
+ * Server-side Graph aggregation (docs/adr/ADR-023-graph-server-aggregation.md):
+ * `GET /{entity}?aggregate=…` plus the list filters, computed by Go over EVERY
+ * matching row instead of the fetched page. `value` is a column or a formula
+ * with calc_ references already expanded (expandCalcFormula); omitted means
+ * "count rows".
+ */
+export interface GraphAggregateRequest {
+  aggregate: 'sum' | 'avg' | 'mean' | 'median' | 'count'
+  value?: string
+  /** Date column to bucket by (with `bucket`). */
+  x?: string
+  bucket?: 'day' | 'week' | 'month'
+  /** Column to split by (a series, a pie slice). */
+  group?: string
+}
+
+/** One (bucket, group) cell: `value` aggregated, `count` = rows in the cell. */
+export interface GraphAggregateRow {
+  x?: string
+  group?: string
+  value: number
+  count: number
+}

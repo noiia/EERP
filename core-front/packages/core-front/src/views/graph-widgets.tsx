@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef } from '@mui/x-data-grid'
@@ -26,6 +27,7 @@ import { useI18nStore } from '../i18n/i18n-store'
 import { useT } from '../i18n/translate'
 import { useUiStore } from './ui-store'
 import type { HasId } from './stores'
+import type { ServerTileData, ServerTileState } from './graph-server'
 
 // Graph tile widget BODIES (docs/roadmaps/list-view-modes.md, Phase 5) — what
 // Phase 4's scaffold left as a type-labeled placeholder. xy/pie/stat aggregate
@@ -155,19 +157,21 @@ function StatWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
+  server,
 }: {
   tile: Tile
   records: T[]
   recordTotal: number | undefined
+  server?: ServerTileData
 }) {
   const t = useT()
   const { format } = useNumberFormat()
   const config = tile.config as { field?: string; aggregate?: FullAggregate }
   if (!config.field || !config.aggregate) return <NoData />
-  const value = statValue(records, { field: config.field, aggregate: config.aggregate })
+  const value = server?.stat ?? statValue(records, { field: config.field, aggregate: config.aggregate })
   return (
     <Stack spacing={0.25} sx={{ height: '100%', width: '100%' }}>
-      <PartialDataBadge shown={records.length} total={recordTotal} />
+      {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
       {/* Centered, not pinned to the top-left — a big resized tile shouldn't
           leave the number stranded in one corner. */}
       <Box
@@ -535,12 +539,14 @@ function BarWidgetBody<T extends HasId>({
   records,
   recordTotal,
   yLabels,
+  server,
 }: {
   tile: Tile
   records: T[]
   recordTotal: number | undefined
   /** field name → legend label, for the multi-line (`yFields`) case. */
   yLabels?: Record<string, string>
+  server?: ServerTileData
 }) {
   const { format } = useNumberFormat()
   const config = tile.config as {
@@ -553,18 +559,20 @@ function BarWidgetBody<T extends HasId>({
     bucket?: BucketGranularity
   }
   if (!config.xField || !config.yField || !config.aggregate || !config.bucket) return <NoData />
-  const series = xySeries(records, {
-    xField: config.xField,
-    yField: config.yField,
-    yFields: config.yFields,
-    yLabels,
-    seriesField: config.seriesField,
-    aggregate: config.aggregate,
-    bucket: config.bucket,
-  })
+  const series =
+    server?.series ??
+    xySeries(records, {
+      xField: config.xField,
+      yField: config.yField,
+      yFields: config.yFields,
+      yLabels,
+      seriesField: config.seriesField,
+      aggregate: config.aggregate,
+      bucket: config.bucket,
+    })
   return (
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
-      <PartialDataBadge shown={records.length} total={recordTotal} />
+      {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
         <BarChart series={series} bucket={config.bucket} mode={config.mode ?? 'grouped'} format={(v) => format(v, { decimals: 1 })} />
       </Box>
@@ -577,12 +585,14 @@ function XyWidgetBody<T extends HasId>({
   records,
   recordTotal,
   yLabels,
+  server,
 }: {
   tile: Tile
   records: T[]
   recordTotal: number | undefined
   /** field name → legend label, for the multi-line (`yFields`) case. */
   yLabels?: Record<string, string>
+  server?: ServerTileData
 }) {
   const { format } = useNumberFormat()
   const config = tile.config as {
@@ -594,18 +604,20 @@ function XyWidgetBody<T extends HasId>({
     bucket?: BucketGranularity
   }
   if (!config.xField || !config.yField || !config.aggregate || !config.bucket) return <NoData />
-  const series = xySeries(records, {
-    xField: config.xField,
-    yField: config.yField,
-    yFields: config.yFields,
-    yLabels,
-    seriesField: config.seriesField,
-    aggregate: config.aggregate,
-    bucket: config.bucket,
-  })
+  const series =
+    server?.series ??
+    xySeries(records, {
+      xField: config.xField,
+      yField: config.yField,
+      yFields: config.yFields,
+      yLabels,
+      seriesField: config.seriesField,
+      aggregate: config.aggregate,
+      bucket: config.bucket,
+    })
   return (
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
-      <PartialDataBadge shown={records.length} total={recordTotal} />
+      {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
         <XyChart series={series} bucket={config.bucket} format={(v) => format(v, { decimals: 1 })} />
       </Box>
@@ -706,18 +718,21 @@ function PieWidgetBody<T extends HasId>({
   tile,
   records,
   recordTotal,
+  server,
 }: {
   tile: Tile
   records: T[]
   recordTotal: number | undefined
+  server?: ServerTileData
 }) {
   const { format } = useNumberFormat()
   const config = tile.config as { groupByField?: string; valueField?: string }
   if (!config.groupByField) return <NoData />
-  const slices = pieSlices(records, { groupByField: config.groupByField, valueField: config.valueField })
+  const slices =
+    server?.slices ?? pieSlices(records, { groupByField: config.groupByField, valueField: config.valueField })
   return (
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
-      <PartialDataBadge shown={records.length} total={recordTotal} />
+      {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
         <PieChart slices={slices} format={(v) => format(v, { decimals: config.valueField ? 1 : 0 })} />
       </Box>
@@ -796,22 +811,35 @@ export function GraphWidgetBody<T extends HasId>({
   descriptor,
   records,
   recordTotal,
+  server,
 }: {
   tile: Tile
   descriptor: ViewDescriptor<T>
   records: T[]
   recordTotal: number | undefined
+  /** Server-aggregated data over every matching row (ADR-023): ready data
+   * replaces the client-side aggregation (and its partial-data badge);
+   * 'loading' shows a spinner; undefined keeps the client path. */
+  server?: ServerTileState
 }) {
   const yLabels = Object.fromEntries(descriptor.fields.map((f) => [f.name, fieldLabel(f)]))
+  if (server === 'loading' && tile.type !== 'list') {
+    return (
+      <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <CircularProgress size={20} />
+      </Box>
+    )
+  }
+  const data = server === 'loading' ? undefined : server
   switch (tile.type) {
     case 'stat':
-      return <StatWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
+      return <StatWidgetBody tile={tile} records={records} recordTotal={recordTotal} server={data} />
     case 'xy':
-      return <XyWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} />
+      return <XyWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} server={data} />
     case 'bar':
-      return <BarWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} />
+      return <BarWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} server={data} />
     case 'pie':
-      return <PieWidgetBody tile={tile} records={records} recordTotal={recordTotal} />
+      return <PieWidgetBody tile={tile} records={records} recordTotal={recordTotal} server={data} />
     case 'list':
       return <ListWidgetBody tile={tile} descriptor={descriptor} />
   }

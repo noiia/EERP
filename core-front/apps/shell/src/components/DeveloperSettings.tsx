@@ -9,13 +9,16 @@ import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
 import Divider from '@mui/material/Divider'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { byPrefixAndName, FontAwesomeIcon, useT } from '@eerp/core-front'
-import { seedDemoData, type SeedEntityResult } from '@/lib/dev-seed'
+import { seedDemoData, type SeedEntityResult, type SeedVolume } from '@/lib/dev-seed'
 
 // Settings → Developer: dev-only tools for testing the software. Two
 // collapsible sections (the same Accordion component Settings -> Global
@@ -27,6 +30,7 @@ import { seedDemoData, type SeedEntityResult } from '@/lib/dev-seed'
 // sends).
 export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
   const t = useT()
+  const [volume, setVolume] = useState<SeedVolume>('light')
   const [seeding, setSeeding] = useState(false)
   const [results, setResults] = useState<SeedEntityResult[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -35,7 +39,7 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
     setSeeding(true)
     setError(null)
     setResults(null)
-    const outcome = await seedDemoData()
+    const outcome = await seedDemoData(volume)
     setSeeding(false)
     if (!outcome.ok) {
       setError(outcome.message)
@@ -91,11 +95,40 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
           <AccordionDetails>
             <Stack spacing={3}>
               <Stack spacing={1}>
-                <Typography variant="body2" color="text.secondary">
-                  {t(
-                    'Creates a batch of fake contacts, CRM opportunities, and tags through the normal entity API, for exercising the UI with realistic-looking data.',
-                  )}
-                </Typography>
+                <RadioGroup
+                  aria-label={t('Volume')}
+                  value={volume}
+                  onChange={(e) => setVolume(e.target.value as SeedVolume)}
+                >
+                  <FormControlLabel
+                    value="light"
+                    control={<Radio />}
+                    label={
+                      <Stack>
+                        <Typography variant="body2">{t('Light')}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t(
+                            'Creates a batch of fake contacts, CRM opportunities, and tags through the normal entity API, for exercising the UI with realistic-looking data.',
+                          )}
+                        </Typography>
+                      </Stack>
+                    }
+                  />
+                  <FormControlLabel
+                    value="full"
+                    control={<Radio />}
+                    label={
+                      <Stack>
+                        <Typography variant="body2">{t('Full')}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t(
+                            'About 100,000 rows each of contacts, CRM leads, products, variants, quotes, invoices and rent receipts, with lines, several taxes and companies, plus graph views with calculated fields on every list over 10,000 rows. Runs once per workspace and takes about half a minute.',
+                          )}
+                        </Typography>
+                      </Stack>
+                    }
+                  />
+                </RadioGroup>
                 <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
                   <Button variant="contained" onClick={() => void onSeed()} disabled={!isDev || seeding}>
                     {seeding ? t('Seeding…') : t('Seed demo data')}

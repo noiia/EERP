@@ -41,13 +41,14 @@ func hardMeta() registry.TableMeta {
 // ── mock repository ───────────────────────────────────────────────────────────
 
 type mockRepo struct {
-	findAll  func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
-	findByID func(ctx context.Context, id any) (map[string]any, error)
-	create   func(ctx context.Context, data map[string]any) (map[string]any, error)
-	update   func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
-	del      func(ctx context.Context, id any) error
-	restore  func(ctx context.Context, id any) (map[string]any, error)
-	distinct func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
+	findAll   func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
+	findByID  func(ctx context.Context, id any) (map[string]any, error)
+	create    func(ctx context.Context, data map[string]any) (map[string]any, error)
+	update    func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
+	del       func(ctx context.Context, id any) error
+	restore   func(ctx context.Context, id any) (map[string]any, error)
+	distinct  func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
+	aggregate func(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error)
 }
 
 func (m *mockRepo) FindAll(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
@@ -279,4 +280,11 @@ func TestService_GetByID_PropagatesErrNotFound(t *testing.T) {
 	if !errors.Is(err, crud.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
+}
+
+func (m *mockRepo) Aggregate(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error) {
+	if m.aggregate != nil {
+		return m.aggregate(ctx, req, f)
+	}
+	return nil, nil
 }

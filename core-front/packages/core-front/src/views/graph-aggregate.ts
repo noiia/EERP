@@ -201,9 +201,20 @@ export function pieSlices<T>(records: T[], config: { groupByField: string; value
     }
     groups.set(label, entry)
   }
-  const slices = Array.from(groups.entries())
-    .map(([label, { count, sum }]) => ({ label, count, displayValue: config.valueField ? sum : count }))
-    .sort((a, b) => b.count - a.count)
+  return foldPieSlices(
+    Array.from(groups.entries()).map(([label, { count, sum }]) => ({
+      label,
+      count,
+      displayValue: config.valueField ? sum : count,
+    })),
+  )
+}
+
+/** Sort slices by count (largest first) and fold everything past
+ * MAX_PIE_SLICES-1 into one OTHER_LABEL slice — shared by the client-side
+ * pieSlices and the server-aggregated path. */
+export function foldPieSlices(input: PieSlice[]): PieSlice[] {
+  const slices = [...input].sort((a, b) => b.count - a.count)
   if (slices.length <= MAX_PIE_SLICES) return slices
   const kept = slices.slice(0, MAX_PIE_SLICES - 1)
   const folded = slices.slice(MAX_PIE_SLICES - 1)
@@ -364,4 +375,68 @@ export function expandByChildren<T extends { id: string }>(
     for (const row of rows) out.push({ ...record, ...row, id: record.id } as T)
   }
   return out
+}
+
+// ── Server-side aggregation (docs/adr/ADR-023-graph-server-aggregation.md) ──
+
+const FORMULA_TOKEN = /\d+\.?\d*|\.\d+|[A-Za-z_]\w*|[-+*/()]/g
+
+/**
+ * The formula Go should aggregate for a tile's field: a plain column stays
+ * its name; a calculated field becomes its formula with every calc_
+ * reference inlined (parenthesized), recursively — Go knows columns, not
+ * calculated fields. Mirrors withCalculatedFields exactly: a reference to a
+ * calc field declared LATER (or missing, or hidden by role) reads 0, which
+ * also makes cycles impossible.
+ */
+export function expandCalcFormula(key: string, fields: CalcField[]): string {
+  if (!key.startsWith(CALC_KEY_PREFIX)) return key
+  const index = fields.findIndex((f) => f.key === key)
+  if (index < 0) return '0'
+  const expand = (formula: string, upTo: number): string =>
+    (formula.match(FORMULA_TOKEN) ?? [])
+      .map((tok) => {
+        if (!tok.startsWith(CALC_KEY_PREFIX)) return tok
+        const ref = fields.findIndex((f) => f.key === tok)
+        return ref >= 0 && ref < upTo ? `(${expand(fields[ref]!.formula, ref)})` : '0'
+      })
+      .join(' ')
+  return expand(fields[index]!.formula, index)
+}
+
+/** A server-aggregated cell (GraphAggregateRow, redeclared structurally to
+ * keep this module free of API imports). */
+export interface AggregateCell {
+  x?: string
+  group?: string
+  value: number
+  count: number
+}
+
+/** Chart points per series from server cells: one series per distinct
+ * `group` (sorted, like xySeries), or a single unnamed series when the
+ * request had no group. Points sort chronologically by bucket. */
+export function seriesFromCells(cells: AggregateCell[], label = ''): XySeries[] {
+  const bySeries = new Map<string, XyPoint[]>()
+  for (const cell of cells) {
+    if (cell.x == null || cell.x === '') continue
+    const name = cell.group ?? label
+    bySeries.set(name, [...(bySeries.get(name) ?? []), { bucket: cell.x, value: cell.value }])
+  }
+  return Array.from(bySeries.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, points]) => ({
+      label: name,
+      points: points.sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0)),
+    }))
+}
+
+/** Pie slices from server cells: size = row count, display = the summed
+ * value when a valueField was requested (pieSlices' contract). */
+export function slicesFromCells(cells: AggregateCell[], hasValue: boolean): PieSlice[] {
+  return foldPieSlices(
+    cells
+      .filter((c) => c.group != null && c.group !== '')
+      .map((c) => ({ label: c.group!, count: c.count, displayValue: hasValue ? c.value : c.count })),
+  )
 }

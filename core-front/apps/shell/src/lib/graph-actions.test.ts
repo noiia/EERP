@@ -2,15 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@eerp/core-front/server'
 
 const apiRequestMock = vi.fn()
+const aggregateMock = vi.fn()
 vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return {
     ...actual,
     apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+    createServerApiClient: () => ({ aggregate: (...args: unknown[]) => aggregateMock(...args) }),
   }
 })
 
 import {
+  aggregateEntity,
   createEntityGraphField,
   deleteEntityGraphField,
   getEntityGraphLayout,
@@ -21,6 +24,22 @@ import {
 
 beforeEach(() => {
   apiRequestMock.mockReset()
+  aggregateMock.mockReset()
+})
+
+describe('aggregateEntity', () => {
+  it('forwards to the server ApiClient and returns its rows', async () => {
+    const rows = [{ x: '2026-01', value: 3, count: 1 }]
+    aggregateMock.mockResolvedValue(rows)
+    const req = { aggregate: 'sum' as const, value: 'total', x: 'issue_date', bucket: 'month' as const }
+    await expect(aggregateEntity('invoice', req, { filter: { status: 'paid' } })).resolves.toEqual(rows)
+    expect(aggregateMock).toHaveBeenCalledWith('invoice', req, { filter: { status: 'paid' } })
+  })
+
+  it('returns null on failure so the tile falls back to the client path', async () => {
+    aggregateMock.mockRejectedValue(new ApiError({ code: 'BAD_REQUEST', message: 'x', status: 400 }))
+    await expect(aggregateEntity('invoice', { aggregate: 'count' })).resolves.toBeNull()
+  })
 })
 
 describe('getEntityGraphLayout', () => {

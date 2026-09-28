@@ -236,9 +236,14 @@ export interface SearchBarProps<T extends HasId> {
   /** The records to fall back to when the query/filters are cleared —
    * TreeRenderer's own `initialData`. */
   fallback: T[]
+  /** Told the structured filters (as list options, no paging) every time they
+   * change — Graph mode aggregates server-side over the same rows (ADR-023).
+   * The free-text live search isn't included: it's autocomplete over a few
+   * fields, not a row filter. */
+  onFiltersChange?: (options: EntityListOptions | undefined) => void
 }
 
-export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: SearchBarProps<T>) {
+export function SearchBar<T extends HasId>({ descriptor, onResults, fallback, onFiltersChange }: SearchBarProps<T>) {
   const t = useT()
   const relationOps = useRelationOps()
   const savedFilterOps = useSavedFilterOps()
@@ -317,6 +322,11 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
   async function applyFilters(next: FilterCondition[]) {
     setFilters(next)
     setAppliedSavedFilter(null)
+    if (onFiltersChange) {
+      const options = toListOptions(next, FETCH_LIMIT)
+      delete options.pageSize
+      onFiltersChange(next.length > 0 ? options : undefined)
+    }
     if (!relationOps) {
       if (next.length === 0) onResults(fallback)
       return

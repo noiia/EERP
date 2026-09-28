@@ -54,6 +54,7 @@ type repoLayer interface {
 	Delete(ctx context.Context, id any) error
 	Restore(ctx context.Context, id any) (map[string]any, error)
 	DistinctValues(ctx context.Context, column string, f ListFilter) ([]DistinctValue, error)
+	Aggregate(ctx context.Context, req AggregateRequest, f ListFilter) ([]AggregateRow, error)
 }
 
 // Service adds business-logic guardrails on top of the raw repository:
@@ -79,6 +80,12 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, int
 // rows matching f's filters — the search bar's group-by section.
 func (s *Service) DistinctValues(ctx context.Context, column string, f ListFilter) ([]DistinctValue, error) {
 	return s.repo.DistinctValues(ctx, column, f)
+}
+
+// Aggregate groups the rows matching f's filters and aggregates a value over
+// each group — the Graph view's server-side aggregation.
+func (s *Service) Aggregate(ctx context.Context, req AggregateRequest, f ListFilter) ([]AggregateRow, error) {
+	return s.repo.Aggregate(ctx, req, f)
 }
 
 // GetByID returns the row with the given id, excluding soft-deleted rows.

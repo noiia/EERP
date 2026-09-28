@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ViewDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps } from './relation-ops'
 import { SavedFilterOpsProvider, type SavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
@@ -41,6 +41,7 @@ function renderBar(
   savedOpsOverrides: Partial<SavedFilterOps> | null = {},
 ) {
   const onResults = vi.fn()
+  const onFiltersChange = vi.fn()
   const ops: RelationOps = {
     list: vi.fn(async () => []),
     get: vi.fn(),
@@ -63,7 +64,7 @@ function renderBar(
   const tree = savedOps ? (
     <RelationOpsProvider ops={ops}>
       <SavedFilterOpsProvider ops={savedOps}>
-        <SearchBar descriptor={descriptor} onResults={onResults} fallback={fallback} />
+        <SearchBar descriptor={descriptor} onResults={onResults} fallback={fallback} onFiltersChange={onFiltersChange} />
       </SavedFilterOpsProvider>
     </RelationOpsProvider>
   ) : (
@@ -72,7 +73,7 @@ function renderBar(
     </RelationOpsProvider>
   )
   render(tree)
-  return { onResults, ops, savedOps }
+  return { onResults, onFiltersChange, ops, savedOps }
 }
 
 describe('SearchBar', () => {
@@ -190,6 +191,17 @@ describe('SearchBar', () => {
     // applyGroupValue closes the dropdown (setAnchorEl(null)) — the chip
     // must still be visible with it shut, proving it lives in the bar.
     await waitFor(() => expect(screen.getByText('Status = open')).toBeInTheDocument())
+  })
+
+  it('reports the structured filters (no paging) for Graph mode, then undefined once cleared', async () => {
+    const { onFiltersChange } = renderBar({ distinctValues: vi.fn(async () => [{ value: 'open', total: 3 }]) })
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    fireEvent.click(screen.getByText('Status'))
+    fireEvent.click(await screen.findByText('open (3)'))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { status: 'open' } }))
+
+    fireEvent.click(within(barChip(/Status = open/)).getByTestId('CancelIcon'))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith(undefined))
   })
 
   // The dropdown's own MenuItem (portaled by MUI to the end of document.body)

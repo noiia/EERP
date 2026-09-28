@@ -38,6 +38,7 @@ import { getMyLocalePreferences } from '../src/lib/preferences'
 import { listCompanies } from '../src/lib/company'
 import { createChatterMessage, listChatterMessages } from '../src/lib/chatter-actions'
 import {
+  aggregateEntity,
   createEntityGraphField,
   deleteEntityGraphField,
   getEntityGraphLayout,
@@ -143,6 +144,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 createField: createEntityGraphField,
                 updateField: updateEntityGraphField,
                 deleteField: deleteEntityGraphField,
+                aggregate: aggregateEntity,
               }}>
                 {/* A record's own runtime notebook pages (docs/roadmaps/
                     responsive-displays.md, Phase 5) — per-record data, not

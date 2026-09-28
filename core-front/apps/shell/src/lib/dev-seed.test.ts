@@ -2,13 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@eerp/core-front/server'
 
 const createMock = vi.fn()
+const apiRequestMock = vi.fn()
 vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return {
     ...actual,
     createServerApiClient: () => ({ create: createMock }),
+    apiRequest: (...args: unknown[]) => apiRequestMock(...args),
   }
 })
+
+const revalidateTagMock = vi.fn()
+vi.mock('next/cache', () => ({ revalidateTag: (...args: unknown[]) => revalidateTagMock(...args) }))
 
 // getMyLocalePreferences hits GET /me/preferences over apiRequest — stubbed
 // so buildPageFormats' company_id tagging is deterministic in tests instead
@@ -62,6 +67,40 @@ describe('seedingAllowed', () => {
   it('returns false when preferences cannot be read (expired session, backend down)', async () => {
     getMyLocalePreferencesMock.mockResolvedValue(null)
     expect(await seedingAllowed()).toBe(false)
+  })
+})
+
+describe('seedDemoData full volume', () => {
+  it('asks Go for the full volume, revalidates the seeded entities, and reports per table', async () => {
+    apiRequestMock.mockReset().mockResolvedValue({
+      results: [
+        { entity: 'invoice', created: 100000 },
+        { entity: 'graph view: invoice', created: 8 },
+      ],
+    })
+    revalidateTagMock.mockReset()
+
+    await expect(seedDemoData('full')).resolves.toEqual({
+      ok: true,
+      results: [
+        { entity: 'invoice', created: 100000, failed: 0, errors: [] },
+        { entity: 'graph view: invoice', created: 8, failed: 0, errors: [] },
+      ],
+    })
+    expect(apiRequestMock).toHaveBeenCalledWith('POST', '/dev_seed')
+    expect(revalidateTagMock).toHaveBeenCalledTimes(1)
+    expect(revalidateTagMock).toHaveBeenCalledWith('invoice', 'max')
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it("surfaces Go's refusal (already seeded) as the error message", async () => {
+    apiRequestMock.mockReset().mockRejectedValue(
+      new ApiError({ code: 'CONFLICT', message: 'the full demo volume was already seeded for this workspace', status: 409 }),
+    )
+    await expect(seedDemoData('full')).resolves.toEqual({
+      ok: false,
+      message: 'the full demo volume was already seeded for this workspace',
+    })
   })
 })
 

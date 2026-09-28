@@ -76,6 +76,7 @@ import {
   type Widget,
 } from './stores'
 import { useStore } from 'zustand'
+import type { EntityListOptions } from '../api/list-options'
 
 // Client renderers. Each builds its Zustand store ONCE from the descriptor +
 // server-seeded initialData (no fetch on mount), then dispatches by viewType. New
@@ -808,6 +809,9 @@ function TreeRenderer<T extends HasId>({
   // Re-synced from `initialData` on every prop change (a fresh navigation, or
   // a revalidated Server Action reflecting through this page).
   const [liveRecords, setLiveRecords] = useState(initialData)
+  // The search bar's structured filters — Graph mode aggregates server-side
+  // over every row matching them (ADR-023).
+  const [activeFilters, setActiveFilters] = useState<EntityListOptions | undefined>(undefined)
   useEffect(() => {
     setLiveRecords(initialData)
   }, [initialData])
@@ -929,6 +933,7 @@ function TreeRenderer<T extends HasId>({
         descriptor={descriptor}
         records={liveRecords}
         recordTotal={recordTotal ?? liveRecords.length}
+        listOptions={activeFilters}
       />
     )
   } else {
@@ -1006,7 +1011,12 @@ function TreeRenderer<T extends HasId>({
   // everything but the top bar — see the `pageInsetX`/`pageInsetY` tokens), not this
   // renderer's — a view-specific fix here would just be a second, competing mechanism.
   const searchBar = (
-    <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
+    <SearchBar
+      descriptor={descriptor}
+      onResults={setLiveRecords}
+      fallback={initialData}
+      onFiltersChange={setActiveFilters}
+    />
   )
   // The selection toolbar (right of the search bar) only applies where
   // checkboxes actually exist — the flat grid in List mode.

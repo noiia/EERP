@@ -4,7 +4,7 @@ import type { SeedResult } from '@/lib/dev-seed'
 
 const seedMock = vi.fn()
 vi.mock('@/lib/dev-seed', () => ({
-  seedDemoData: () => seedMock(),
+  seedDemoData: (volume: string) => seedMock(volume),
 }))
 
 import DeveloperSettings from './DeveloperSettings'
@@ -31,6 +31,18 @@ describe('DeveloperSettings', () => {
     expect(screen.getByText('crm: 14 created, 1 failed')).toBeInTheDocument()
     expect(screen.getByText('no crm:contacts:write')).toBeInTheDocument()
     expect(seedMock).toHaveBeenCalledOnce()
+    expect(seedMock).toHaveBeenCalledWith('light')
+  })
+
+  it('runs the full volume when chosen', async () => {
+    seedMock.mockResolvedValue({ ok: true, results: [{ entity: 'invoice', created: 100000, failed: 0, errors: [] }] })
+
+    render(<DeveloperSettings isDev />)
+    fireEvent.click(screen.getByRole('radio', { name: /^Full/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Seed demo data' }))
+
+    expect(await screen.findByText('invoice: 100000 created')).toBeInTheDocument()
+    expect(seedMock).toHaveBeenCalledWith('full')
   })
 
   it('surfaces the disabled-outside-development message as an error', async () => {

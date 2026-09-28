@@ -1,5 +1,6 @@
 'use server'
-import { ApiError, createServerApiClient } from '@eerp/core-front/server'
+import { ApiError, apiRequest, createServerApiClient } from '@eerp/core-front/server'
+import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
 import { getMyLocalePreferences } from './preferences'
 import { PAPER_SIZE_PRESETS } from '../../app/settings/appearance/page-formats/descriptors'
@@ -21,6 +22,12 @@ export interface SeedEntityResult {
 }
 
 export type SeedResult = { ok: true; results: SeedEntityResult[] } | { ok: false; message: string }
+
+/** "light" = the handful of records below, through the generic entity API;
+ * "full" = ~100 000 rows per business table, written by Go with set-based SQL
+ * (POST /dev_seed — core/internal/devseed), plus Graph views and calculated
+ * fields on every list view that ends up over 10 000 rows. */
+export type SeedVolume = 'light' | 'full'
 
 const FIRST_NAMES = [
   'Ava', 'Liam', 'Maya', 'Noah', 'Elena', 'Lucas', 'Sofia', 'Mateo',
@@ -301,10 +308,11 @@ async function createMany<R extends { id: string }>(
  * page formats — through the ordinary entity API, in dependency order
  * (parents before the rows that reference their ids).
  */
-export async function seedDemoData(): Promise<SeedResult> {
+export async function seedDemoData(volume: SeedVolume = 'light'): Promise<SeedResult> {
   if (!(await seedingAllowed())) {
     return { ok: false, message: 'Demo data seeding is disabled outside development.' }
   }
+  if (volume === 'full') return seedFullVolume()
 
   const results: SeedEntityResult[] = []
 
@@ -367,4 +375,22 @@ export async function seedDemoData(): Promise<SeedResult> {
   results.push(pageFormatsOutcome.result)
 
   return { ok: true, results }
+}
+
+/** The full volume: one Go call (it refuses outside development and when this
+ * workspace was already fully seeded — both surface as the error message). */
+async function seedFullVolume(): Promise<SeedResult> {
+  try {
+    const res = await apiRequest<{ results: { entity: string; created: number }[] }>('POST', '/dev_seed')
+    // Go wrote straight to the tables: drop every cached list page it touched.
+    for (const r of res.results) {
+      if (!r.entity.includes(' ')) revalidateTag(r.entity, 'max')
+    }
+    return {
+      ok: true,
+      results: res.results.map((r) => ({ entity: r.entity, created: r.created, failed: 0, errors: [] })),
+    }
+  } catch (e) {
+    return { ok: false, message: e instanceof ApiError ? e.message : 'The full demo seed failed.' }
+  }
 }

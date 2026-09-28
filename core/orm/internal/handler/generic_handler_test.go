@@ -44,13 +44,14 @@ func hardItemMeta() registry.TableMeta {
 // ── mock service ──────────────────────────────────────────────────────────────
 
 type mockSvc struct {
-	list     func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
-	byID     func(ctx context.Context, id any) (map[string]any, error)
-	create   func(ctx context.Context, data map[string]any) (map[string]any, error)
-	update   func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
-	del      func(ctx context.Context, id any) error
-	restore  func(ctx context.Context, id any) (map[string]any, error)
-	distinct func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
+	list      func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
+	byID      func(ctx context.Context, id any) (map[string]any, error)
+	create    func(ctx context.Context, data map[string]any) (map[string]any, error)
+	update    func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
+	del       func(ctx context.Context, id any) error
+	restore   func(ctx context.Context, id any) (map[string]any, error)
+	distinct  func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
+	aggregate func(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error)
 }
 
 func (m *mockSvc) List(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
@@ -459,4 +460,11 @@ func TestList_EmptyFilterValueIgnored(t *testing.T) {
 	if len(gotFilter.Matches) != 0 {
 		t.Errorf("empty search value must be ignored, got %v", gotFilter.Matches)
 	}
+}
+
+func (m *mockSvc) Aggregate(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error) {
+	if m.aggregate != nil {
+		return m.aggregate(ctx, req, f)
+	}
+	return nil, nil
 }

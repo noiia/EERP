@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { revalidateTag } from 'next/cache'
 import { parseError } from './errors'
 import type { EntityListOptions } from './list-options'
+import type { GraphAggregateRequest, GraphAggregateRow } from './graph'
 import type { AttachmentAnchor, AttachmentMeta } from './attachments-client'
 import type { PictureAnchor, PictureMeta } from './pictures-client'
 import type { ViewFieldsConfig } from './view-fields'
@@ -243,6 +244,18 @@ function listQuery(options?: EntityListOptions): string {
   return qs ? `?${qs}` : ''
 }
 
+function aggregateQuery(req: GraphAggregateRequest, options?: EntityListOptions): string {
+  const params = new URLSearchParams()
+  params.set('aggregate', req.aggregate)
+  if (req.value) params.set('value', req.value)
+  if (req.x) params.set('x', req.x)
+  if (req.bucket) params.set('bucket', req.bucket)
+  if (req.group) params.set('group', req.group)
+  // Paging is meaningless for an aggregate — every matching row counts.
+  appendListParams(params, options ? { ...options, page: undefined, pageSize: undefined } : undefined)
+  return `?${params.toString()}`
+}
+
 function distinctQuery(column: string, options?: EntityListOptions): string {
   const params = new URLSearchParams()
   params.set('distinct', column)
@@ -325,6 +338,9 @@ export interface ServerApiClient {
     column: string,
     options?: EntityListOptions,
   ): Promise<{ value: string; total: number }[]>
+  /** Graph server-side aggregation over every row matching options' filters
+   * (ADR-023) — same route/permission as the list, like distinctValues. */
+  aggregate(entity: string, req: GraphAggregateRequest, options?: EntityListOptions): Promise<GraphAggregateRow[]>
 }
 
 class ServerApiClientImpl implements ServerApiClient {
@@ -377,6 +393,21 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     return body.values ?? []
+  }
+
+  async aggregate(
+    entity: string,
+    req: GraphAggregateRequest,
+    options?: EntityListOptions,
+  ): Promise<GraphAggregateRow[]> {
+    const body = await request<{ groups?: GraphAggregateRow[] }>(
+      'GET',
+      `/${entity}${aggregateQuery(req, options)}`,
+      [entity],
+      undefined,
+      this.tokenOverride,
+    )
+    return body.groups ?? []
   }
 
   get<T>(entity: string, id: string): Promise<T> {

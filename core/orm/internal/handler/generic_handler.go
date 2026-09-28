@@ -25,6 +25,7 @@ type svcLayer interface {
 	Delete(ctx context.Context, id any) error
 	Restore(ctx context.Context, id any) (map[string]any, error)
 	DistinctValues(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
+	Aggregate(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error)
 }
 
 // GenericHandler drives all CRUD operations for one registered table.
@@ -123,6 +124,7 @@ func (h *GenericHandler) listFilter(c *echo.Context) (crud.ListFilter, error) {
 }
 
 // List handles GET /api/v1/{table}?page=&page_size=&filter[col]=&search[col]=&in[col]=&gt[col]=...
+// (and ?aggregate=, below)
 // and, when ?distinct=<column> is given, returns that column's distinct
 // values (+ counts) among the filtered rows instead of a paginated page —
 // the search bar's group-by section. This rides the SAME route as the
@@ -148,6 +150,26 @@ func (h *GenericHandler) List(c *echo.Context) error {
 			return err
 		}
 		return c.JSON(http.StatusOK, crud.DistinctResponse{Values: values})
+	}
+
+	// ?aggregate=<kind>&value=<col|formula>[&x=<date col>&bucket=day|week|month][&group=<col>]
+	// — the Graph view's server-side aggregation over every matching row,
+	// same route/permission as the list for the same reason as ?distinct.
+	if kind := c.QueryParam("aggregate"); kind != "" {
+		groups, err := h.svc.Aggregate(ctx, crud.AggregateRequest{
+			Kind:   kind,
+			Value:  c.QueryParam("value"),
+			X:      c.QueryParam("x"),
+			Bucket: c.QueryParam("bucket"),
+			Group:  c.QueryParam("group"),
+		}, f)
+		if err != nil {
+			if errors.Is(err, crud.ErrUnknownColumn) || errors.Is(err, crud.ErrBadAggregate) {
+				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+			}
+			return err
+		}
+		return c.JSON(http.StatusOK, crud.AggregateResponse{Groups: groups})
 	}
 
 	rows, total, err := h.svc.List(ctx, f)
