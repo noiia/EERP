@@ -1,5 +1,17 @@
 # EERP
 
+<!-- Static badges: refresh by hand when versions or coverage move. Coverage/test
+     counts come from the same commands CI runs (.github/workflows/test-check.yml). -->
+[![coverage/back](https://img.shields.io/badge/coverage%2Fback-74.8%25-yellow)](.github/.testcoverage.yml)
+[![coverage/front](https://img.shields.io/badge/coverage%2Ffront-88.4%25-brightgreen)](core-front/apps/shell/vitest.config.ts)
+[![tests](https://img.shields.io/badge/tests-2315%20(go%20916%20%2B%20vitest%201399)-blue)](.github/workflows/test-check.yml)
+[![go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](core/go.mod)
+[![echo](https://img.shields.io/badge/echo-v5.4.0-00ADD8)](https://echo.labstack.com)
+[![pnpm](https://img.shields.io/badge/pnpm-12.4.2-F69220?logo=pnpm&logoColor=white)](core-front/package.json)
+[![react](https://img.shields.io/badge/react-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![mui](https://img.shields.io/badge/mui-9-007FFF?logo=mui&logoColor=white)](https://mui.com)
+[![next](https://img.shields.io/badge/next-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
+
 An open-source, modular, self-hostable ERP. Two independently deployable services share
 one repo: a Go backend (**`core/`**, plus business modules under `core/modules/` — each
 either compiled in or, eventually, loaded at runtime as WASM) and a Next.js frontend
