@@ -1,7 +1,7 @@
 'use client'
 import Button from '@mui/material/Button'
 import Link from 'next/link'
-import { byPrefixAndName, FontAwesomeIcon, T } from '@eerp/core-front'
+import { byPrefixAndName, erpPath, FontAwesomeIcon, T } from '@eerp/core-front'
 
 // Links to Global settings' Accounts accordion — e.g. the username "@"
 // display toggle — rather than duplicating a settings surface here. A
@@ -14,7 +14,7 @@ export default function UsersSettingsButton() {
   return (
     <Button
       component={Link}
-      href="/settings/appearance"
+      href={erpPath('/settings/appearance')}
       variant="outlined"
       startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['gear']} size="sm" />}
     >

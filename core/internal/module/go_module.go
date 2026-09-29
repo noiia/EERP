@@ -36,6 +36,18 @@ func RegisterGoModule(m GoModule) {
 	goMu.Unlock()
 }
 
+// IsGoModule reports whether a Go module of that name is compiled in.
+func IsGoModule(name string) bool {
+	goMu.Lock()
+	defer goMu.Unlock()
+	for _, m := range goModules {
+		if m.Name() == name {
+			return true
+		}
+	}
+	return false
+}
+
 // loadGoModule runs one Go module's Register() plus column-level
 // auto-migration, returning the names of tables it NEWLY CREATED (as opposed
 // to tables it merely extended with ExtendSchema, e.g. crminheritdemo adding

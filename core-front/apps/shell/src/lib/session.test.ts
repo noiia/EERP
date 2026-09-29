@@ -41,9 +41,9 @@ describe('getIdentity', () => {
 })
 
 describe('requireAuth', () => {
-  it('redirects anonymous requests to /login carrying the intended path', async () => {
-    await expect(requireAuth('/crm/contacts')).rejects.toThrow('NEXT_REDIRECT:/login?next=%2Fcrm%2Fcontacts')
-    expect(redirectMock).toHaveBeenCalledWith('/login?next=%2Fcrm%2Fcontacts')
+  it('redirects anonymous requests to the ERP login carrying the intended /app path', async () => {
+    await expect(requireAuth('/crm/contacts')).rejects.toThrow('NEXT_REDIRECT:/app/login?next=%2Fapp%2Fcrm%2Fcontacts')
+    expect(redirectMock).toHaveBeenCalledWith('/app/login?next=%2Fapp%2Fcrm%2Fcontacts')
   })
 
   it('returns the identity when authenticated', async () => {

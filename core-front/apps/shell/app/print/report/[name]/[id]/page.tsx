@@ -31,9 +31,10 @@ import '@/generated/generated-translations'
 // 4, this route is reachable only over an internal, trusted network path the
 // core-signed URL controls. Authorization happens in Go (Phase 3's
 // POST /api/v1/reports/:name/:id/pdf) BEFORE pdf-service ever requests this
-// URL, not here — the root layout's own getIdentity() already degrades to an
-// anonymous render with no cookie present, so this needs no special-casing
-// there either.
+// URL, not here. It sits outside /app, so none of the ERP chrome
+// (app/app/layout.tsx) renders around it, and the root layout's own
+// getIdentity() already degrades to an anonymous render with no cookie
+// present, so this needs no special-casing there either.
 //
 // This route's OWN outbound call to Go still needs a Bearer token, though —
 // Go authorizes every request unconditionally, network trust or not — and
@@ -55,7 +56,7 @@ import '@/generated/generated-translations'
 // nothing below is returned to the caller until every await has resolved, so
 // the marker's presence on the returned tree is never premature. That's also
 // why this file has no test of its own — same reasoning
-// apps/shell/app/page.test.tsx documents for not testing an async Server
+// apps/shell/app/app/page.test.tsx documents for not testing an async Server
 // Component's own gating logic directly; the pure, testable surface is
 // ReportRenderer itself (packages/core-front/src/views/report-renderer.test.tsx).
 

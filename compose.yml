@@ -222,6 +222,9 @@ services:
     volumes:
       - ./infra/nginx/gen-certs.sh:/gen-certs.sh:ro
       - gateway-certs:/certs
+    environment:
+      SITE_HOST: ${SITE_HOST:-}
+      ERP_HOST: ${ERP_HOST:-}
     entrypoint: ["sh", "/gen-certs.sh"]
     restart: "no"
 

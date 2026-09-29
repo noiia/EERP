@@ -23,3 +23,6 @@ export * from './src/auth/guards'
 // the catch-all route can resolve routes server-side without pulling the client
 // stores (and their localStorage access) in through the client barrel.
 export * from './src/registry'
+
+// ERP base path (/app) — isomorphic; also on the client barrel.
+export * from './src/navigation'

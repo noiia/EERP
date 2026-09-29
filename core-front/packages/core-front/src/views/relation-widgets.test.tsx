@@ -311,7 +311,7 @@ describe('relation/search (many2one)', () => {
       const ops = stubOps()
       renderWidget(searchField, ops, { value: 'c2' })
       fireEvent.click(await screen.findByText('Globex'))
-      expect(pushMock).toHaveBeenCalledWith('/contact/c2')
+      expect(pushMock).toHaveBeenCalledWith('/app/contact/c2')
     })
 
     it('clicking the unlink cross unlinks instead of navigating', async () => {
@@ -500,7 +500,7 @@ describe('relation/tags (many2many)', () => {
       })
       renderWidget(tagsField, ops)
       fireEvent.click(await screen.findByText('Acme'))
-      expect(pushMock).toHaveBeenCalledWith('/tag/c1')
+      expect(pushMock).toHaveBeenCalledWith('/app/tag/c1')
     })
 
     it('clicking the unlink cross unlinks instead of navigating', async () => {
@@ -674,7 +674,7 @@ describe('relation/list (one2many)', () => {
     }
     renderWidget(navigableField, ops)
     fireEvent.click(await screen.findByText('Acme'))
-    expect(pushMock).toHaveBeenCalledWith('/crm/lines/c1')
+    expect(pushMock).toHaveBeenCalledWith('/app/crm/lines/c1')
   })
 
   it('create line: creates with the inverse FK preset and hidden, row joins the grid', async () => {
@@ -905,7 +905,7 @@ describe('widgetOptions.previewRow — synthetic leading row from sibling draft 
     expect(pushMock).not.toHaveBeenCalled()
 
     fireEvent.click(await screen.findByText('Acme'))
-    expect(pushMock).toHaveBeenCalledWith('/crm/c1')
+    expect(pushMock).toHaveBeenCalledWith('/app/crm/c1')
   })
 })
 

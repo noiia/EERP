@@ -50,3 +50,14 @@ describe('client IP forwarding', () => {
     expect(sentHeaders()).not.toHaveProperty('X-Forwarded-For')
   })
 })
+
+// A hung Go must not stall the proxy's refresh (or a logout) forever.
+describe('timeout', () => {
+  it.each([
+    ['goAuthExchange', () => goAuthExchange('refresh', {})],
+    ['goLogout', () => goLogout('R')],
+  ])('%s aborts the fetch after a bounded wait', async (_n, call) => {
+    await call()
+    expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
+  })
+})

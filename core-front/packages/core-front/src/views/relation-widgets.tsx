@@ -24,6 +24,7 @@ import {
   type GridRowSelectionModel,
 } from '@mui/x-data-grid'
 import { useRouter } from 'next/navigation'
+import { erpPath } from '../navigation'
 import { useT } from '../i18n/translate'
 import { moduleRegistry } from '../registry'
 import {
@@ -812,7 +813,7 @@ export function RelationSearchWidget({
               setSelectedLabel(null)
               onChange(null)
             }}
-            onNavigate={formPath ? () => router.push(formPath.replace(':id', selectedId)) : undefined}
+            onNavigate={formPath ? () => router.push(erpPath(formPath.replace(':id', selectedId))) : undefined}
           />
         ) : (
           <Autocomplete<RelationRecord>
@@ -1134,7 +1135,7 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
             label={labelOf(link.related, labelField)}
             disabled={disabled}
             onUnlink={() => unlink(link)}
-            onNavigate={formPath ? () => router.push(formPath.replace(':id', link.related.id)) : undefined}
+            onNavigate={formPath ? () => router.push(erpPath(formPath.replace(':id', link.related.id))) : undefined}
           />
         ))}
         <Autocomplete<RelationRecord>
@@ -1426,7 +1427,7 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
             rel.formPath
               ? (params: GridRowParams) => {
                   if (params.id === PREVIEW_ROW_ID) return
-                  router.push(rel.formPath!.replace(':id', String(params.id)))
+                  router.push(erpPath(rel.formPath!.replace(':id', String(params.id))))
                 }
               : undefined
           }

@@ -32,7 +32,9 @@ function authUrl(path: string, base: AuthBase = 'auth'): string {
  * BFF's own address (one global bucket). Go trusts only private-network hops,
  * so a client-supplied prefix cannot spoof it.
  */
-async function forwardedFor(): Promise<Record<string, string>> {
+export async function forwardedFor(explicit?: string): Promise<Record<string, string>> {
+  // proxy.ts runs outside a request scope (no headers()): it passes the IP itself.
+  if (explicit) return { 'X-Forwarded-For': explicit }
   try {
     const h = await headers()
     const ip = h.get('x-forwarded-for') ?? h.get('x-real-ip')
@@ -51,14 +53,21 @@ export interface TokenExchange {
 /**
  * POST to a Go auth endpoint. Throws ApiError (from the {error:{...}} envelope) on a
  * non-OK response. Returns the access token, the rotated refresh token (from Go's
- * Set-Cookie), and the access lifetime.
+ * Set-Cookie), and the access lifetime. `opts.forwardedFor` overrides the client IP
+ * lookup (for callers outside a request scope, i.e. proxy.ts).
  */
-export async function goAuthExchange(path: string, body: unknown, base: AuthBase = 'auth'): Promise<TokenExchange> {
+export async function goAuthExchange(
+  path: string,
+  body: unknown,
+  base: AuthBase = 'auth',
+  opts: { forwardedFor?: string } = {},
+): Promise<TokenExchange> {
   const res = await fetch(authUrl(path, base), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await forwardedFor()) },
+    headers: { 'Content-Type': 'application/json', ...(await forwardedFor(opts.forwardedFor)) },
     body: JSON.stringify(body),
     cache: 'no-store',
+    signal: AbortSignal.timeout(5000),
   })
   if (!res.ok) throw await parseError(res)
 
@@ -85,6 +94,7 @@ export async function goLogout(refreshToken: string, base: AuthBase = 'auth'): P
       headers: { 'Content-Type': 'application/json', ...(await forwardedFor()) },
       body: JSON.stringify({ refresh_token: refreshToken }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
     })
   } catch {
     // Logout is best-effort; clearing the local cookies is what matters to the client.

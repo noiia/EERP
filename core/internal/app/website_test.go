@@ -289,3 +289,84 @@ func TestMountWebsiteAuth(t *testing.T) {
 		})
 	}
 }
+
+func TestWebsitePages(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	slug := "t-" + uuid.NewString()[:8]
+	t.Cleanup(func() { _, _ = c.a.db.DB.Exec(ctx, `DELETE FROM website_page WHERE slug = $1`, slug) })
+
+	layout := []map[string]any{{"id": "b1", "type": "text", "x": 0, "y": 0, "w": 12, "h": 2, "config": map[string]any{"body": "Hi"}}}
+	code, body := c.do(http.MethodPost, "/api/v1/website_page",
+		map[string]any{"slug": slug, "title": "T", "published": false, "layout": layout})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	id, _ := decode(t, body)["id"].(string)
+
+	if code, _ := c.do(http.MethodPost, "/api/v1/website_page", map[string]any{"slug": slug, "title": "dup"}); code != http.StatusConflict {
+		t.Errorf("duplicate slug = %d, want 409", code)
+	}
+	if code, _ := c.do(http.MethodPost, "/api/v1/website_page", map[string]any{"slug": "api", "title": "x"}); code != http.StatusBadRequest {
+		t.Errorf("reserved slug = %d, want 400", code)
+	}
+	if code, _ := c.do(http.MethodPut, "/api/v1/website_page/"+id, map[string]any{"layout": []map[string]any{{"id": "x", "type": "iframe", "x": 0, "y": 0, "w": 1, "h": 1}}}); code != http.StatusBadRequest {
+		t.Errorf("bad block type on update = %d, want 400", code)
+	}
+
+	// Unpublished page is invisible publicly; published one is visible.
+	if code, _ := anon.do(http.MethodGet, "/api/v1/public/website_page?filter[slug]="+slug, nil); code != http.StatusOK {
+		t.Fatalf("public list = %d", code)
+	}
+	_, body = anon.do(http.MethodGet, "/api/v1/public/website_page?filter[slug]="+slug, nil)
+	if decode(t, body)["total"].(float64) != 0 {
+		t.Error("unpublished page visible publicly")
+	}
+	c.do(http.MethodPut, "/api/v1/website_page/"+id, map[string]any{"published": true})
+	_, body = anon.do(http.MethodGet, "/api/v1/public/website_page?filter[slug]="+slug, nil)
+	if decode(t, body)["total"].(float64) != 1 {
+		t.Errorf("published page not visible: %s", body)
+	}
+}
+
+func TestWebsiteRouting(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	store := settings.NewRepository(c.a.db.DB)
+	old, _, _ := store.Get(ctx, auth.DevTenantID, uuid.Nil, website.RoutingKey)
+	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.RoutingKey, old) })
+	_ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.RoutingKey, "")
+
+	mode := func() string {
+		code, body := anon.do(http.MethodGet, "/api/v1/public/site", nil)
+		if code != http.StatusOK {
+			t.Fatalf("public/site: %d %s", code, body)
+		}
+		return decode(t, body)["routing"].(map[string]any)["mode"].(string)
+	}
+	put := func(host string) int {
+		b, _ := json.Marshal(website.Routing{Mode: "host", SiteHost: "www.acme.fr", ERPHost: "erp.acme.fr"})
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/website/routing", strings.NewReader(string(b)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set("X-EERP-Request-Host", host)
+		rec := httptest.NewRecorder()
+		c.h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := mode(); got != "path" {
+		t.Errorf("default mode = %q, want path", got)
+	}
+	if code := put("localhost"); code != http.StatusBadRequest {
+		t.Errorf("host mode from another host = %d, want 400", code)
+	}
+	if code := put("erp.acme.fr"); code != http.StatusNoContent {
+		t.Fatalf("host mode from erp_host = %d, want 204", code)
+	}
+	if got := mode(); got != "host" {
+		t.Errorf("mode after save = %q, want host", got)
+	}
+}

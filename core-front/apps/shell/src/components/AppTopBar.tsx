@@ -19,6 +19,8 @@ import {
   AppHeaderMenuBar,
   AvatarWithPresence,
   byPrefixAndName,
+  ERP_BASE,
+  erpPath,
   FontAwesomeIcon,
   layout,
   moduleRegistry,
@@ -188,7 +190,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
           <FontAwesomeIcon icon={byPrefixAndName.fas['angles-right']} size="sm" />
         </IconButton>
         <Menu anchorEl={anchorEl} open={open} onClose={close}>
-          <MenuItem component={Link} href="/" onClick={close}>
+          <MenuItem component={Link} href={erpPath('/')} onClick={close}>
             <ListItemIcon>
               <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
             </ListItemIcon>
@@ -200,7 +202,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
                 <ListItemText>{recordLabel ?? t(crumb.label)}</ListItemText>
               </MenuItem>
             ) : (
-              <MenuItem key={crumb.href} component={Link} href={crumb.href} onClick={close}>
+              <MenuItem key={crumb.href} component={Link} href={erpPath(crumb.href)} onClick={close}>
                 <ListItemText>{t(crumb.label)}</ListItemText>
               </MenuItem>
             ),
@@ -236,7 +238,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
       ) : (
         <MuiLink
           component={Link}
-          href="/"
+          href={erpPath('/')}
           color="inherit"
           underline="hover"
           sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
@@ -259,7 +261,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
           <MuiLink
             key={crumb.href}
             component={Link}
-            href={crumb.href}
+            href={erpPath(crumb.href)}
             color="inherit"
             underline="hover"
           >
@@ -338,7 +340,7 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
     close()
     await fetch(authBffUrl('logout'), { method: 'POST' }).catch(() => {})
     useSessionStore.getState().clear()
-    router.push('/login')
+    router.push(erpPath('/login'))
     router.refresh()
   }
 
@@ -382,7 +384,7 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
           </MenuItem>
         ))}
         <Divider />
-        <MenuItem component={Link} href="/settings" onClick={close}>
+        <MenuItem component={Link} href={erpPath('/settings')} onClick={close}>
           <ListItemIcon>
             <FontAwesomeIcon icon={byPrefixAndName.fas['gear']} size="sm" />
           </ListItemIcon>
@@ -492,7 +494,7 @@ function CompanySwitcher({
           </MenuItem>
         ))}
         <Divider />
-        <MenuItem component={Link} href="/settings/company" onClick={close}>
+        <MenuItem component={Link} href={erpPath('/settings/company')} onClick={close}>
           <ListItemText>{t('Manage companies')}</ListItemText>
         </MenuItem>
       </Menu>
@@ -522,7 +524,10 @@ export function AppTopBar({
    * active company with nothing to switch to. */
   companies?: CompanyRecord[]
 }) {
-  const pathname = usePathname()
+  // Module-relative ('/crm/42', '/' for the menu): crumbs and the current
+  // module's header menus are keyed on module route paths, which never carry
+  // the /app base — links built from them go back through erpPath().
+  const pathname = usePathname().replace(new RegExp(`^${ERP_BASE}(?=/|$)`), '') || '/'
   // No bar before authentication (login page) or without a session.
   if (!identity || pathname === '/login') return null
 

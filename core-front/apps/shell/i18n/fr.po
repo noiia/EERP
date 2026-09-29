@@ -629,3 +629,259 @@ msgstr "affichés ce mois-ci"
 
 msgid "shown"
 msgstr "affichés"
+
+msgid "Booking will be available soon."
+msgstr "Réservation bientôt disponible."
+
+msgid "ERP"
+msgstr "ERP"
+
+msgid "Log in"
+msgstr "Se connecter"
+
+msgid "My account"
+msgstr "Mon compte"
+
+msgid "Page not found"
+msgstr "Page introuvable"
+
+msgid "Back to home"
+msgstr "Retour à l'accueil"
+
+msgid "All rights reserved."
+msgstr "Tous droits réservés."
+
+msgid "Website"
+msgstr "Site web"
+
+msgid "Published data"
+msgstr "Données publiées"
+
+msgid "Routing"
+msgstr "Routage"
+
+msgid "Website users"
+msgstr "Utilisateurs du site"
+
+msgid "Published data, routing and website accounts."
+msgstr "Données publiées, routage et comptes du site web."
+
+msgid "Which tables and columns the public website may read."
+msgstr "Les tables et colonnes que le site public peut lire."
+
+msgid "Serve the website from a path or its own domain."
+msgstr "Servir le site depuis un chemin ou son propre domaine."
+
+msgid "Visitor accounts registered on the website."
+msgstr "Comptes visiteurs inscrits sur le site."
+
+msgid "Saved."
+msgstr "Enregistré."
+
+msgid "Only rows where"
+msgstr "Uniquement les lignes où"
+
+msgid "Column"
+msgstr "Colonne"
+
+msgid "Value"
+msgstr "Valeur"
+
+msgid "Remove filter"
+msgstr "Retirer le filtre"
+
+msgid "Add filter"
+msgstr "Ajouter un filtre"
+
+msgid "No table is declared for publication."
+msgstr "Aucune table n'est déclarée pour la publication."
+
+msgid "Path — the website lives under the ERP address"
+msgstr "Chemin — le site vit sous l'adresse de l'ERP"
+
+msgid "Host — the website has its own domain"
+msgstr "Domaine — le site a son propre domaine"
+
+msgid "Website host"
+msgstr "Domaine du site"
+
+msgid "ERP host"
+msgstr "Domaine de l'ERP"
+
+msgid "To avoid locking yourself out, save this from the ERP address you are entering, e.g. https://erp.example.com/app/settings/website/routing. To recover, set the environment variable EERP_SITE_ROUTING=path."
+msgstr "Pour éviter de vous verrouiller, enregistrez depuis l'adresse de l'ERP que vous saisissez, par ex. https://erp.example.com/app/settings/website/routing. Pour récupérer l'accès, définissez la variable d'environnement EERP_SITE_ROUTING=path."
+
+msgid "Phone"
+msgstr "Téléphone"
+
+msgid "Verified"
+msgstr "Vérifié"
+
+msgid "Disabled"
+msgstr "Désactivé"
+
+msgid "Yes"
+msgstr "Oui"
+
+msgid "No"
+msgstr "Non"
+
+# Website page editor (app/app/website/pages/[id]/design)
+msgid "Add block"
+msgstr "Ajouter un bloc"
+
+msgid "Text"
+msgstr "Texte"
+
+msgid "Image"
+msgstr "Image"
+
+msgid "Hero"
+msgstr "Bannière"
+
+msgid "Record list"
+msgstr "Liste d’enregistrements"
+
+msgid "Record detail"
+msgstr "Détail d’un enregistrement"
+
+msgid "Event booking"
+msgstr "Réservation d’événement"
+
+msgid "Appointment booking"
+msgstr "Prise de rendez-vous"
+
+msgid "Table"
+msgstr "Table"
+
+msgid "Fields"
+msgstr "Champs"
+
+msgid "Heading"
+msgstr "Titre de section"
+
+msgid "Body"
+msgstr "Contenu"
+
+msgid "Alignment"
+msgstr "Alignement"
+
+msgid "Left"
+msgstr "Gauche"
+
+msgid "Center"
+msgstr "Centré"
+
+msgid "Right"
+msgstr "Droite"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "Subtitle"
+msgstr "Sous-titre"
+
+msgid "Button label"
+msgstr "Libellé du bouton"
+
+msgid "Button link"
+msgstr "Lien du bouton"
+
+msgid "Record id"
+msgstr "Identifiant de l’enregistrement"
+
+msgid "Picture field"
+msgstr "Champ image"
+
+msgid "Alternative text"
+msgstr "Texte alternatif"
+
+msgid "Link"
+msgstr "Lien"
+
+msgid "Title field"
+msgstr "Champ titre"
+
+msgid "Display"
+msgstr "Affichage"
+
+msgid "Grid"
+msgstr "Grille"
+
+msgid "Records shown"
+msgstr "Enregistrements affichés"
+
+msgid "Detail page slug"
+msgstr "Slug de la page de détail"
+
+msgid "Delete block"
+msgstr "Supprimer le bloc"
+
+msgid "View on site"
+msgstr "Voir sur le site"
+
+msgid "Back"
+msgstr "Retour"
+
+msgid "Nothing to show yet: configure this block."
+msgstr "Rien à afficher pour l’instant : configurez ce bloc."
+
+msgid "Select a block to configure it."
+msgstr "Sélectionnez un bloc pour le configurer."
+
+msgid "Could not save."
+msgstr "Impossible d’enregistrer."
+
+msgid "Password must be at least 8 characters."
+msgstr "Le mot de passe doit comporter au moins 8 caractères."
+
+msgid "Invalid email or password."
+msgstr "E-mail ou mot de passe invalide."
+
+msgid "This email cannot be used."
+msgstr "Cette adresse e-mail ne peut pas être utilisée."
+
+msgid "Too many attempts. Please try again later."
+msgstr "Trop de tentatives. Veuillez réessayer plus tard."
+
+msgid "Please check the form."
+msgstr "Veuillez vérifier le formulaire."
+
+msgid "Something went wrong. Please try again."
+msgstr "Une erreur est survenue. Veuillez réessayer."
+
+msgid "Sign up"
+msgstr "S’inscrire"
+
+msgid "Password"
+msgstr "Mot de passe"
+
+msgid "At least 8 characters."
+msgstr "Au moins 8 caractères."
+
+msgid "No account yet? Sign up"
+msgstr "Pas encore de compte ? Inscrivez-vous"
+
+msgid "Already have an account? Log in"
+msgstr "Déjà un compte ? Connectez-vous"
+
+msgid "Your session has expired. Please log in again."
+msgstr "Votre session a expiré. Veuillez vous reconnecter."
+
+msgid "Name is required; name and surname max 200, phone max 50 characters."
+msgstr "Le nom est obligatoire ; nom et prénom 200 caractères max., téléphone 50 max."
+
+msgid "Surname"
+msgstr "Prénom"
+
+msgid "Log out"
+msgstr "Se déconnecter"
+
+msgid "My bookings"
+msgstr "Mes réservations"
+
+msgid "Your bookings will appear here."
+msgstr "Vos réservations apparaîtront ici."
+
+msgid "Staff sign-in"
+msgstr "Connexion du personnel"

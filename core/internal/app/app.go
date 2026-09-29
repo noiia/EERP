@@ -7,6 +7,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -40,7 +41,9 @@ import (
 	"core/modules/propertymanagement"
 	"core/modules/sale"
 	"core/modules/warehouse"
+	websitemodule "core/modules/website"
 	"core/orm"
+	"core/orm/access"
 	ormserver "core/orm/server"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
@@ -323,7 +326,11 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	if err != nil {
 		common.Logger.Warn("public website routes disabled", zap.Error(err))
 	}
-	publisher := website.NewPublisher(settings.NewRepository(app.DB), siteTenant)
+	siteStore := settings.NewRepository(app.DB)
+	publisher := website.NewPublisher(siteStore, siteTenant)
+	routing := website.NewRoutingHandler(siteStore, siteTenant)
+	settingsGroup.GET("/website/routing", routing.Get)
+	settingsGroup.PUT("/website/routing", routing.Put)
 	settingsGroup.GET("/website/public", publisher.GetPublished)
 	settingsGroup.PUT("/website/public/:table", publisher.PutPublished)
 
@@ -341,12 +348,35 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// CRUD surface). Mounted only when the config carries an object store —
 	// without s3_* the feature is absent, not broken. The permission middleware
 	// derives pictures:pictures:read|write|delete from the routes.
+	var publicPictures ormserver.PictureServer
 	if pictures.S3Configured(configContent) {
 		objects, err := pictures.NewS3Store(configContent)
 		if err != nil {
 			return fmt.Errorf("Error building S3 object store: %w", err)
 		}
-		picturesHandler := pictures.NewHandler(pictures.NewRepository(app.DB), objects)
+		picRepo := pictures.NewRepository(app.DB)
+		publicPictures = func(c *echo.Context, table string, recordID uuid.UUID, field string) error {
+			ctx := c.Request().Context()
+			tenant, _ := access.TenantFromContext(ctx)
+			p, err := picRepo.FindByAnchor(ctx, tenant, table, recordID, field)
+			if errors.Is(err, orm.ErrNotFound) {
+				return echo.NewHTTPError(http.StatusNotFound, "not found")
+			}
+			if err != nil {
+				return err
+			}
+			body, ctype, err := objects.Get(ctx, p.ObjectKey)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = body.Close() }()
+			if p.Mime != "" {
+				ctype = p.Mime
+			}
+			c.Response().Header().Set("Cache-Control", "public, max-age=300")
+			return c.Stream(http.StatusOK, ctype, body)
+		}
+		picturesHandler := pictures.NewHandler(picRepo, objects)
 		picturesGroup := srv.Echo().Group("/api/v1/pictures", jwtMw, permMw)
 		picturesGroup.POST("", picturesHandler.Upload)
 		picturesGroup.GET("", picturesHandler.Find)
@@ -633,6 +663,12 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	handlers := ormserver.BuildHandlers(app)
 	srv.RegisterRoutes(handlers, nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
+	// website_page: validation in front of the generic Create/Update (mounted
+	// AFTER the generic block so Echo's router keeps these registrations).
+	pageH := handlers["website_page"]
+	srv.Echo().POST("/api/v1/website_page", pageH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
+	srv.Echo().PUT("/api/v1/website_page/:id", pageH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
+
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver
 	// because ActiveGateMiddleware keys on the first path segment ("public").
@@ -640,7 +676,23 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		publicGroup := srv.Echo().Group("/api/v1/public",
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
-		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve))
+		publicGroup.GET("/site", routing.PublicSite)
+		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
+
+		// Seed the published-pages selection once (never overwrite an admin's choice).
+		siteSettings := settings.NewRepository(app.DB)
+		pagesKey := website.PublicKey("website_page")
+		if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, pagesKey); err != nil {
+			common.Logger.Warn("website: reading the published-pages selection failed; not seeding it", zap.Error(err))
+		} else if !found {
+			sel, _ := json.Marshal(website.Selection{
+				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout"},
+				Filter: map[string]string{"published": "true"},
+			})
+			if err := siteSettings.Set(ctx, siteTenant, uuid.Nil, pagesKey, string(sel)); err != nil {
+				common.Logger.Warn("website: seeding the published-pages selection failed", zap.Error(err))
+			}
+		}
 
 		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
 		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
@@ -652,6 +704,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
 		websiteGroup.GET("/me", siteMe.Get)
 		websiteGroup.PUT("/me", siteMe.Put)
+	} else {
+		// No site tenant: the Next proxy still needs an answer.
+		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)
 	}
 
 	// Website users administration (ADR-024): website_admin:users:read|write.

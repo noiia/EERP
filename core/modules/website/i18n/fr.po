@@ -1,0 +1,30 @@
+# Website module — French. Locale = this file's basename ('fr').
+msgid ""
+msgstr ""
+"Project-Id-Version: website 0.0.1\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Website"
+msgstr "Site web"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "Slug (empty = home page; lowercase letters, digits, dashes)"
+msgstr "Slug (vide = page d'accueil ; minuscules, chiffres, tirets)"
+
+msgid "Published"
+msgstr "Publié"
+
+msgid "In menu"
+msgstr "Dans le menu"
+
+msgid "Menu order"
+msgstr "Ordre dans le menu"
+
+msgid "SEO description"
+msgstr "Description SEO"
+
+msgid "Design"
+msgstr "Concevoir"

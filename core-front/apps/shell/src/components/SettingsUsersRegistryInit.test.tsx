@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { moduleRegistry } from '@eerp/core-front'
-import { roleViewPermissionFormDescriptor } from '../../app/settings/users/descriptors'
+import { roleViewPermissionFormDescriptor } from '../../app/app/settings/users/descriptors'
 import { SettingsUsersRegistryInit } from './SettingsUsersRegistryInit'
 
 describe('SettingsUsersRegistryInit', () => {

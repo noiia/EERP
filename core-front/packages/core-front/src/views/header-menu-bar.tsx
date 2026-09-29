@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
@@ -131,7 +132,7 @@ export function HeaderMenuButton({ menu }: { menu: HeaderMenu }) {
   }
   function navigate(path: string) {
     close()
-    router.push(path)
+    router.push(erpPath(path))
   }
 
   function openOnHover() {
@@ -143,7 +144,7 @@ export function HeaderMenuButton({ menu }: { menu: HeaderMenu }) {
     return (
       <Button
         color="inherit"
-        onClick={() => router.push(onlyLine.path)}
+        onClick={() => router.push(erpPath(onlyLine.path))}
         sx={{ fontWeight: 700, textTransform: 'none', whiteSpace: 'nowrap' }}
       >
         {t(menu.label)}
@@ -251,7 +252,7 @@ export function AppHeaderMenuBar({ menus }: { menus: HeaderMenu[] }) {
   }
   function navigate(path: string) {
     closeDrilldown()
-    router.push(path)
+    router.push(erpPath(path))
   }
   function pick(m: HeaderMenu) {
     const onlyLine = onlyLineOf(permittedEntries(m.entries, permissions))

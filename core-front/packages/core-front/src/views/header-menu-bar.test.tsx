@@ -66,7 +66,7 @@ describe('HeaderMenuButton', () => {
     const button = screen.getByRole('button', { name: 'Products' })
     expect(button).not.toHaveAttribute('aria-haspopup')
     fireEvent.click(button)
-    expect(pushMock).toHaveBeenCalledWith('/sale/products')
+    expect(pushMock).toHaveBeenCalledWith('/app/sale/products')
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
   })
 
@@ -75,7 +75,7 @@ describe('HeaderMenuButton', () => {
     render(<HeaderMenuButton menu={configurationMenu} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configuration' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
-    expect(pushMock).toHaveBeenCalledWith('/settings/apps/sale')
+    expect(pushMock).toHaveBeenCalledWith('/app/settings/apps/sale')
   })
 
   it('renders a group as a labeled cluster of its own lines', () => {
@@ -201,7 +201,7 @@ describe('AppHeaderMenuBar', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'App menus' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Products' }))
 
-    expect(pushMock).toHaveBeenCalledWith('/sale/products')
+    expect(pushMock).toHaveBeenCalledWith('/app/sale/products')
     // The menu closed straight to navigation — no lingering "Back" line from
     // a drilldown that was never entered.
     expect(screen.queryByRole('menuitem', { name: 'Back' })).not.toBeInTheDocument()
@@ -231,7 +231,7 @@ describe('AppHeaderMenuBar', () => {
     expect(screen.queryByRole('menuitem', { name: 'Products' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
-    expect(pushMock).toHaveBeenCalledWith('/settings/apps/sale')
+    expect(pushMock).toHaveBeenCalledWith('/app/settings/apps/sale')
   })
 
   it('the Back line returns to the overview without navigating', async () => {

@@ -131,9 +131,10 @@ async function authedFetch(
   tags: string[] | null,
   body?: unknown,
   tokenOverride?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<Response> {
   const token = tokenOverride ?? (await cookies()).get(ACCESS_COOKIE)?.value
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...extraHeaders }
   if (token) headers.Authorization = `Bearer ${token}`
 
   const init: RequestInit & { next?: { tags: string[] } } = { method, headers }
@@ -165,8 +166,9 @@ async function fetchWithRefresh(
   tags: string[] | null,
   body?: unknown,
   tokenOverride?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<Response> {
-  let res = await authedFetch(method, path, tags, body, tokenOverride)
+  let res = await authedFetch(method, path, tags, body, tokenOverride, extraHeaders)
 
   if (res.status === 401) {
     if (tokenOverride) {
@@ -185,7 +187,7 @@ async function fetchWithRefresh(
       throw await parseError(res)
     }
     const refreshed = await refreshSession()
-    if (refreshed) res = await authedFetch(method, path, tags, body)
+    if (refreshed) res = await authedFetch(method, path, tags, body, undefined, extraHeaders)
     if (res.status === 401) {
       await clearSession()
       throw await parseError(res)
@@ -200,8 +202,9 @@ async function request<T>(
   tags: string[] | null,
   body?: unknown,
   tokenOverride?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
-  const res = await fetchWithRefresh(method, path, tags, body, tokenOverride)
+  const res = await fetchWithRefresh(method, path, tags, body, tokenOverride, extraHeaders)
 
   if (!res.ok) throw await parseError(res)
   if (res.status === 204) return undefined as T
@@ -541,8 +544,13 @@ export function createServerApiClient(tokenOverride?: string): ServerApiClient {
  * are per-user or per-tenant, so a shared cache entry would leak state across
  * sessions. `path` is relative to the versioned API base (e.g. "/me/preferences").
  */
-export function apiRequest<T>(method: Method, path: string, body?: unknown): Promise<T> {
-  return request<T>(method, path, null, body)
+export function apiRequest<T>(
+  method: Method,
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
+  return request<T>(method, path, null, body, undefined, extraHeaders)
 }
 
 // ── Picture service (Go side of the BFF proxy) ───────────────────────────────

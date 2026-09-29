@@ -1,0 +1,30 @@
+# Website module — translation template. Copy to <locale>.po per language.
+msgid ""
+msgstr ""
+"Project-Id-Version: website 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+
+msgid "Website"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Slug (empty = home page; lowercase letters, digits, dashes)"
+msgstr ""
+
+msgid "Published"
+msgstr ""
+
+msgid "In menu"
+msgstr ""
+
+msgid "Menu order"
+msgstr ""
+
+msgid "SEO description"
+msgstr ""
+
+msgid "Design"
+msgstr ""

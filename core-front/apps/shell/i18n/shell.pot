@@ -420,3 +420,259 @@ msgstr ""
 
 msgid "shown"
 msgstr ""
+
+msgid "Booking will be available soon."
+msgstr ""
+
+msgid "ERP"
+msgstr ""
+
+msgid "Log in"
+msgstr ""
+
+msgid "My account"
+msgstr ""
+
+msgid "Page not found"
+msgstr ""
+
+msgid "Back to home"
+msgstr ""
+
+msgid "All rights reserved."
+msgstr ""
+
+msgid "Website"
+msgstr ""
+
+msgid "Published data"
+msgstr ""
+
+msgid "Routing"
+msgstr ""
+
+msgid "Website users"
+msgstr ""
+
+msgid "Published data, routing and website accounts."
+msgstr ""
+
+msgid "Which tables and columns the public website may read."
+msgstr ""
+
+msgid "Serve the website from a path or its own domain."
+msgstr ""
+
+msgid "Visitor accounts registered on the website."
+msgstr ""
+
+msgid "Saved."
+msgstr ""
+
+msgid "Only rows where"
+msgstr ""
+
+msgid "Column"
+msgstr ""
+
+msgid "Value"
+msgstr ""
+
+msgid "Remove filter"
+msgstr ""
+
+msgid "Add filter"
+msgstr ""
+
+msgid "No table is declared for publication."
+msgstr ""
+
+msgid "Path — the website lives under the ERP address"
+msgstr ""
+
+msgid "Host — the website has its own domain"
+msgstr ""
+
+msgid "Website host"
+msgstr ""
+
+msgid "ERP host"
+msgstr ""
+
+msgid "To avoid locking yourself out, save this from the ERP address you are entering, e.g. https://erp.example.com/app/settings/website/routing. To recover, set the environment variable EERP_SITE_ROUTING=path."
+msgstr ""
+
+msgid "Phone"
+msgstr ""
+
+msgid "Verified"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Yes"
+msgstr ""
+
+msgid "No"
+msgstr ""
+
+# Website page editor (app/app/website/pages/[id]/design)
+msgid "Add block"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Hero"
+msgstr ""
+
+msgid "Record list"
+msgstr ""
+
+msgid "Record detail"
+msgstr ""
+
+msgid "Event booking"
+msgstr ""
+
+msgid "Appointment booking"
+msgstr ""
+
+msgid "Table"
+msgstr ""
+
+msgid "Fields"
+msgstr ""
+
+msgid "Heading"
+msgstr ""
+
+msgid "Body"
+msgstr ""
+
+msgid "Alignment"
+msgstr ""
+
+msgid "Left"
+msgstr ""
+
+msgid "Center"
+msgstr ""
+
+msgid "Right"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Subtitle"
+msgstr ""
+
+msgid "Button label"
+msgstr ""
+
+msgid "Button link"
+msgstr ""
+
+msgid "Record id"
+msgstr ""
+
+msgid "Picture field"
+msgstr ""
+
+msgid "Alternative text"
+msgstr ""
+
+msgid "Link"
+msgstr ""
+
+msgid "Title field"
+msgstr ""
+
+msgid "Display"
+msgstr ""
+
+msgid "Grid"
+msgstr ""
+
+msgid "Records shown"
+msgstr ""
+
+msgid "Detail page slug"
+msgstr ""
+
+msgid "Delete block"
+msgstr ""
+
+msgid "View on site"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Nothing to show yet: configure this block."
+msgstr ""
+
+msgid "Select a block to configure it."
+msgstr ""
+
+msgid "Could not save."
+msgstr ""
+
+msgid "Password must be at least 8 characters."
+msgstr ""
+
+msgid "Invalid email or password."
+msgstr ""
+
+msgid "This email cannot be used."
+msgstr ""
+
+msgid "Too many attempts. Please try again later."
+msgstr ""
+
+msgid "Please check the form."
+msgstr ""
+
+msgid "Something went wrong. Please try again."
+msgstr ""
+
+msgid "Sign up"
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "At least 8 characters."
+msgstr ""
+
+msgid "No account yet? Sign up"
+msgstr ""
+
+msgid "Already have an account? Log in"
+msgstr ""
+
+msgid "Your session has expired. Please log in again."
+msgstr ""
+
+msgid "Name is required; name and surname max 200, phone max 50 characters."
+msgstr ""
+
+msgid "Surname"
+msgstr ""
+
+msgid "Log out"
+msgstr ""
+
+msgid "My bookings"
+msgstr ""
+
+msgid "Your bookings will appear here."
+msgstr ""
+
+msgid "Staff sign-in"
+msgstr ""

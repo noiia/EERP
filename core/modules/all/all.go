@@ -25,4 +25,5 @@ import (
 	_ "core/modules/savedfilter"
 	_ "core/modules/settings"
 	_ "core/modules/warehouse"
+	_ "core/modules/website"
 )

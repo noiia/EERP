@@ -12,8 +12,8 @@ describe('AppsList', () => {
         ]}
       />,
     )
-    expect(screen.getByRole('link', { name: /base/i })).toHaveAttribute('href', '/settings/apps/base')
-    expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/settings/apps/crm')
+    expect(screen.getByRole('link', { name: /base/i })).toHaveAttribute('href', '/app/settings/apps/base')
+    expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/app/settings/apps/crm')
     expect(screen.getByText('Default settings')).toBeInTheDocument()
     expect(screen.getByText('Customer records')).toBeInTheDocument()
   })
