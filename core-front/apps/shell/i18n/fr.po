@@ -632,3 +632,21 @@ msgstr "affichés"
 
 msgid "Booking will be available soon."
 msgstr "Réservation bientôt disponible."
+
+msgid "ERP"
+msgstr "ERP"
+
+msgid "Log in"
+msgstr "Se connecter"
+
+msgid "My account"
+msgstr "Mon compte"
+
+msgid "Page not found"
+msgstr "Page introuvable"
+
+msgid "Back to home"
+msgstr "Retour à l'accueil"
+
+msgid "All rights reserved."
+msgstr "Tous droits réservés."

@@ -423,3 +423,21 @@ msgstr ""
 
 msgid "Booking will be available soon."
 msgstr ""
+
+msgid "ERP"
+msgstr ""
+
+msgid "Log in"
+msgstr ""
+
+msgid "My account"
+msgstr ""
+
+msgid "Page not found"
+msgstr ""
+
+msgid "Back to home"
+msgstr ""
+
+msgid "All rights reserved."
+msgstr ""
