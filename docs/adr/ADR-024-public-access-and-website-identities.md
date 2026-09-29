@@ -1,6 +1,6 @@
 # ADR-024 — Public data access and website identities
 
-**Status:** proposed — see the [public-access spec](../superpowers/specs/2026-09-29-website-1-public-access-design.md).
+**Status:** accepted — see the [public-access spec](../superpowers/specs/2026-09-29-website-1-public-access-design.md).
 
 ## Problem
 Every EERP route assumes an authenticated ERP user: a JWT, a tenant, and a
@@ -42,3 +42,14 @@ flowchart LR
 - Never add `/public` routes behind `permMw` "for safety": derived permissions would be required
   that anonymous callers can never hold, and the route silently breaks.
 - A relation field exposes its target's label only if the target table is itself published.
+
+## Implementation notes
+Where the build differs from the first draft:
+- Selections live at `company_id = uuid.Nil` (settings are company-keyed; Nil is the site-wide slot); filter values are strings (text comparison). `WithPublicFields` does not validate names (picture anchors aren't columns).
+- The resolver is wrapped by `website.ActiveOnly(IsTableActive, …)`: a deactivated module's tables read as unpublished (404). `ActiveGateMiddleware` can't do this — it keys on the first path segment.
+- Admin website-user API is `/api/v1/website_admin/users` (list + partial PUT, no GET `:id`), underscored so the derived permission matches. PUT order is enable → profile → disable; "lock" = soft delete + refresh-token revocation; an issued access token stays valid until its short TTL expires (`/website/me` already 404s).
+- Session = two cookies `eerp_site_access`/`eerp_site_refresh`, BFF routes `/api/site-auth/*`.
+- Rate limits: `/api/v1/public` and `/api/v1/website` use `public_rate_limit_per_minute` (default 300); signup/login the auth limit. `/website/me` sits behind `WebsiteJWTMiddleware`; `/website/auth/*` has no JWT. Limitation: the limiter keys on the client IP as Echo sees it — forward the real IP at the gateway.
+- Email uniqueness is enforced by `idx_users_email_live` (`lower(email)` where not deleted, global). Boot fails if live case-duplicates exist: `SELECT lower(email), count(*) FROM users WHERE deleted_at IS NULL GROUP BY 1 HAVING count(*) > 1`. Admin create/update and signup return 409.
+- The site tenant is resolved at boot (a dbmanage hot-swap keeps the old one until restart). Publish settings are written under the admin's tenant, the public site reads the site tenant — in a multi-tenant DB publish from the site tenant.
+- Not in this plan: the public picture route (moves to spec 2, first consumer) and sorting (the generic list has no sort param). A many2one is returned as its raw id only if its column is published; labels are the consumer's job.
