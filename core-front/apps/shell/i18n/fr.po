@@ -725,3 +725,106 @@ msgstr "Oui"
 
 msgid "No"
 msgstr "Non"
+
+# Website page editor (app/app/website/pages/[id]/design)
+msgid "Add block"
+msgstr "Ajouter un bloc"
+
+msgid "Text"
+msgstr "Texte"
+
+msgid "Image"
+msgstr "Image"
+
+msgid "Hero"
+msgstr "Bannière"
+
+msgid "Record list"
+msgstr "Liste d’enregistrements"
+
+msgid "Record detail"
+msgstr "Détail d’un enregistrement"
+
+msgid "Event booking"
+msgstr "Réservation d’événement"
+
+msgid "Appointment booking"
+msgstr "Prise de rendez-vous"
+
+msgid "Table"
+msgstr "Table"
+
+msgid "Fields"
+msgstr "Champs"
+
+msgid "Heading"
+msgstr "Titre de section"
+
+msgid "Body"
+msgstr "Contenu"
+
+msgid "Alignment"
+msgstr "Alignement"
+
+msgid "Left"
+msgstr "Gauche"
+
+msgid "Center"
+msgstr "Centré"
+
+msgid "Right"
+msgstr "Droite"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "Subtitle"
+msgstr "Sous-titre"
+
+msgid "Button label"
+msgstr "Libellé du bouton"
+
+msgid "Button link"
+msgstr "Lien du bouton"
+
+msgid "Record id"
+msgstr "Identifiant de l’enregistrement"
+
+msgid "Picture field"
+msgstr "Champ image"
+
+msgid "Alternative text"
+msgstr "Texte alternatif"
+
+msgid "Link"
+msgstr "Lien"
+
+msgid "Title field"
+msgstr "Champ titre"
+
+msgid "Display"
+msgstr "Affichage"
+
+msgid "Grid"
+msgstr "Grille"
+
+msgid "Records shown"
+msgstr "Enregistrements affichés"
+
+msgid "Detail page slug"
+msgstr "Slug de la page de détail"
+
+msgid "Delete block"
+msgstr "Supprimer le bloc"
+
+msgid "View on site"
+msgstr "Voir sur le site"
+
+msgid "Back"
+msgstr "Retour"
+
+msgid "Nothing to show yet: configure this block."
+msgstr "Rien à afficher pour l’instant : configurez ce bloc."
+
+msgid "Select a block to configure it."
+msgstr "Sélectionnez un bloc pour le configurer."

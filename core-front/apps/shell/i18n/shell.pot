@@ -516,3 +516,106 @@ msgstr ""
 
 msgid "No"
 msgstr ""
+
+# Website page editor (app/app/website/pages/[id]/design)
+msgid "Add block"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Hero"
+msgstr ""
+
+msgid "Record list"
+msgstr ""
+
+msgid "Record detail"
+msgstr ""
+
+msgid "Event booking"
+msgstr ""
+
+msgid "Appointment booking"
+msgstr ""
+
+msgid "Table"
+msgstr ""
+
+msgid "Fields"
+msgstr ""
+
+msgid "Heading"
+msgstr ""
+
+msgid "Body"
+msgstr ""
+
+msgid "Alignment"
+msgstr ""
+
+msgid "Left"
+msgstr ""
+
+msgid "Center"
+msgstr ""
+
+msgid "Right"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Subtitle"
+msgstr ""
+
+msgid "Button label"
+msgstr ""
+
+msgid "Button link"
+msgstr ""
+
+msgid "Record id"
+msgstr ""
+
+msgid "Picture field"
+msgstr ""
+
+msgid "Alternative text"
+msgstr ""
+
+msgid "Link"
+msgstr ""
+
+msgid "Title field"
+msgstr ""
+
+msgid "Display"
+msgstr ""
+
+msgid "Grid"
+msgstr ""
+
+msgid "Records shown"
+msgstr ""
+
+msgid "Detail page slug"
+msgstr ""
+
+msgid "Delete block"
+msgstr ""
+
+msgid "View on site"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Nothing to show yet: configure this block."
+msgstr ""
+
+msgid "Select a block to configure it."
+msgstr ""
