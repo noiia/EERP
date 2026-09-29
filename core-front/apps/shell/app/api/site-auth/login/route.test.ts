@@ -50,7 +50,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('POST /api/site-auth/login', () => {
   it('calls Go website auth and stores SITE cookies, never the ERP ones', async () => {
     const jwt = makeJwt({ sub: 'u1', tenant: 't1', aud: ['website'], exp: future })
-    const fetchMock = vi.fn(async (..._a: unknown[]) => goLoginOk(jwt, 'r1'))
+    const fetchMock = vi.fn<typeof fetch>(async () => goLoginOk(jwt, 'r1'))
     vi.stubGlobal('fetch', fetchMock)
 
     const res = await POST(loginRequest({ email: 'v@x.io', password: 'correct horse' }))
