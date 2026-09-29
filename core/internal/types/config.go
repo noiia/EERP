@@ -159,6 +159,15 @@ type Config struct {
 	// invalidating write (writes from outside the app — psql, another tool —
 	// are only caught by this). Defaults to 60.
 	RedisTTLSeconds int `json:"redis_ttl_seconds" needed:"false"`
+	// SMTP delivery for internal/mail. Empty SMTPHost disables the sender;
+	// enqueued mail waits as pending until it's configured. SMTPTLS is
+	// "starttls" (default), "implicit" (port 465) or "none" (dev Mailpit).
+	SMTPHost     string `json:"smtp_host" needed:"false"`
+	SMTPPort     int    `json:"smtp_port" needed:"false"`
+	SMTPUser     string `json:"smtp_user" needed:"false"`
+	SMTPPassword string `json:"smtp_password" needed:"false"`
+	SMTPFrom     string `json:"smtp_from" needed:"false"`
+	SMTPTLS      string `json:"smtp_tls" needed:"false"`
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:

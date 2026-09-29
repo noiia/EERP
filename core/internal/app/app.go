@@ -22,6 +22,7 @@ import (
 	"core/internal/dbmanage"
 	"core/internal/devseed"
 	"core/internal/graphfield"
+	"core/internal/mail"
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
@@ -89,6 +90,10 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 		return nil, errors.New("db_password is empty or set to the insecure default — set a strong secret in the config before starting")
 	case configContent.DbPassword == "postgres":
 		return nil, errors.New("db_password is set to a value previously committed to this repo's history — it must be treated as compromised; generate a new secret")
+	}
+
+	if err := mail.ValidateConfig(configContent); err != nil {
+		return nil, err
 	}
 
 	// "environment" drives two behaviors (types.Config's own doc comment): demo
@@ -443,6 +448,12 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	savedFilterGroup.POST("", savedFilterHandler.Create)
 	savedFilterGroup.PUT("/:id", savedFilterHandler.Update)
 	savedFilterGroup.DELETE("/:id", savedFilterHandler.Delete)
+
+	// Mail outbox admin (internal/mail): mail_outbox:mail_outbox:read|write, route-derived.
+	mailHandler := mail.NewHandler(app.DB)
+	mailGroup := srv.Echo().Group("/api/v1/mail_outbox", jwtMw, permMw)
+	mailGroup.GET("", mailHandler.List)
+	mailGroup.POST("/:id/retry", mailHandler.Retry)
 
 	// ── Graph calculated fields ───────────────────────────────────────────────
 	// Chart-only formula fields created from the Graph view, role-gated per row.
@@ -808,6 +819,14 @@ func (a *App) Run(ctx context.Context) error {
 			}
 		}
 	}()
+
+	// Mail outbox sender (internal/mail): delivers queued email every 30 s.
+	// Without smtp_host, mail stays pending until SMTP is configured.
+	if mail.Configured(a.cfg) {
+		go mail.NewSender(app.DB, mail.NewSMTPTransport(a.cfg)).Run(ctx)
+	} else {
+		common.Logger.Warn("smtp_host not configured — queued mail will not be sent")
+	}
 
 	common.Logger.Info("server starting")
 	return a.server.Start(ctx)

@@ -48,6 +48,10 @@ services:
     expose:
       - "6379"
 
+  mailpit:
+    profiles: ["dev-only"]   # never started in production — point smtp_* at a real relay
+    ports: !reset []
+
   core-back:
     build: !reset null
     image: ghcr.io/noiia/eerp-core:${EERP_IMAGE_TAG:-latest}
