@@ -441,3 +441,78 @@ msgstr ""
 
 msgid "All rights reserved."
 msgstr ""
+
+msgid "Website"
+msgstr ""
+
+msgid "Published data"
+msgstr ""
+
+msgid "Routing"
+msgstr ""
+
+msgid "Website users"
+msgstr ""
+
+msgid "Published data, routing and website accounts."
+msgstr ""
+
+msgid "Which tables and columns the public website may read."
+msgstr ""
+
+msgid "Serve the website from a path or its own domain."
+msgstr ""
+
+msgid "Visitor accounts registered on the website."
+msgstr ""
+
+msgid "Saved."
+msgstr ""
+
+msgid "Only rows where"
+msgstr ""
+
+msgid "Column"
+msgstr ""
+
+msgid "Value"
+msgstr ""
+
+msgid "Remove filter"
+msgstr ""
+
+msgid "Add filter"
+msgstr ""
+
+msgid "No table is declared for publication."
+msgstr ""
+
+msgid "Path — the website lives under the ERP address"
+msgstr ""
+
+msgid "Host — the website has its own domain"
+msgstr ""
+
+msgid "Website host"
+msgstr ""
+
+msgid "ERP host"
+msgstr ""
+
+msgid "To avoid locking yourself out, save this from the ERP address you are entering, e.g. https://erp.example.com/app/settings/website/routing. To recover, set the environment variable EERP_SITE_ROUTING=path."
+msgstr ""
+
+msgid "Phone"
+msgstr ""
+
+msgid "Verified"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Yes"
+msgstr ""
+
+msgid "No"
+msgstr ""

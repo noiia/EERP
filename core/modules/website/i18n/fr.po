@@ -1,30 +1,30 @@
-# Website module — translation template. Copy to <locale>.po per language.
+# Website module — French. Locale = this file's basename ('fr').
 msgid ""
 msgstr ""
 "Project-Id-Version: website 0.0.1\n"
+"Language: fr\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 
-
 msgid "Website"
-msgstr ""
+msgstr "Site web"
 
 msgid "Title"
-msgstr ""
+msgstr "Titre"
 
 msgid "Slug (empty = home page; lowercase letters, digits, dashes)"
-msgstr ""
+msgstr "Slug (vide = page d'accueil ; minuscules, chiffres, tirets)"
 
 msgid "Published"
-msgstr ""
+msgstr "Publié"
 
 msgid "In menu"
-msgstr ""
+msgstr "Dans le menu"
 
 msgid "Menu order"
-msgstr ""
+msgstr "Ordre dans le menu"
 
 msgid "SEO description"
-msgstr ""
+msgstr "Description SEO"
 
 msgid "Design"
-msgstr ""
+msgstr "Concevoir"

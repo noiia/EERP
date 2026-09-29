@@ -70,4 +70,10 @@ describe('SettingsHub', () => {
       '/app/settings/developer',
     )
   })
+
+  it('ships Website as a section, linked from the hub', () => {
+    expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/website')).toBe(true)
+    render(<SettingsHub />)
+    expect(screen.getByRole('link', { name: /^website/i })).toHaveAttribute('href', '/app/settings/website')
+  })
 })

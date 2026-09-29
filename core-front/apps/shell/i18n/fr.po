@@ -650,3 +650,78 @@ msgstr "Retour à l'accueil"
 
 msgid "All rights reserved."
 msgstr "Tous droits réservés."
+
+msgid "Website"
+msgstr "Site web"
+
+msgid "Published data"
+msgstr "Données publiées"
+
+msgid "Routing"
+msgstr "Routage"
+
+msgid "Website users"
+msgstr "Utilisateurs du site"
+
+msgid "Published data, routing and website accounts."
+msgstr "Données publiées, routage et comptes du site web."
+
+msgid "Which tables and columns the public website may read."
+msgstr "Les tables et colonnes que le site public peut lire."
+
+msgid "Serve the website from a path or its own domain."
+msgstr "Servir le site depuis un chemin ou son propre domaine."
+
+msgid "Visitor accounts registered on the website."
+msgstr "Comptes visiteurs inscrits sur le site."
+
+msgid "Saved."
+msgstr "Enregistré."
+
+msgid "Only rows where"
+msgstr "Uniquement les lignes où"
+
+msgid "Column"
+msgstr "Colonne"
+
+msgid "Value"
+msgstr "Valeur"
+
+msgid "Remove filter"
+msgstr "Retirer le filtre"
+
+msgid "Add filter"
+msgstr "Ajouter un filtre"
+
+msgid "No table is declared for publication."
+msgstr "Aucune table n'est déclarée pour la publication."
+
+msgid "Path — the website lives under the ERP address"
+msgstr "Chemin — le site vit sous l'adresse de l'ERP"
+
+msgid "Host — the website has its own domain"
+msgstr "Domaine — le site a son propre domaine"
+
+msgid "Website host"
+msgstr "Domaine du site"
+
+msgid "ERP host"
+msgstr "Domaine de l'ERP"
+
+msgid "To avoid locking yourself out, save this from the ERP address you are entering, e.g. https://erp.example.com/app/settings/website/routing. To recover, set the environment variable EERP_SITE_ROUTING=path."
+msgstr "Pour éviter de vous verrouiller, enregistrez depuis l'adresse de l'ERP que vous saisissez, par ex. https://erp.example.com/app/settings/website/routing. Pour récupérer l'accès, définissez la variable d'environnement EERP_SITE_ROUTING=path."
+
+msgid "Phone"
+msgstr "Téléphone"
+
+msgid "Verified"
+msgstr "Vérifié"
+
+msgid "Disabled"
+msgstr "Désactivé"
+
+msgid "Yes"
+msgstr "Oui"
+
+msgid "No"
+msgstr "Non"

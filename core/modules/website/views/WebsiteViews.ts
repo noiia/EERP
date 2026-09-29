@@ -1,53 +1,83 @@
-import type { FrontModule, ViewDescriptor } from '@eerp/core-front'
+import {
+  erpPath,
+  registerHeaderButtonAction,
+  type FrontModule,
+  type HeaderButtonDescriptor,
+  type ViewDescriptor,
+} from '@eerp/core-front'
 
-// website frontend — DESCRIPTORS ONLY. The engine derives the server loader, the
-// Zustand store, and the renderer from these; this module ships no controllers
-// or renderers.
-//
-// `entity` maps 1:1 to the Go route prefix registered by module.go's orm.Register —
-// snake_case "website" (GET /api/v1/website). Field names must match the DB column
-// names the handler returns, and permission strings mirror the route:
-// website:website:<action>.
+// website frontend — DESCRIPTORS ONLY. `entity` maps 1:1 to the Go route prefix
+// (GET /api/v1/website_page); permissions mirror the route:
+// website_page:website_page:<action>. `layout` (JSONB) is deliberately absent:
+// only the Design editor writes it.
 
-export interface Website {
+/** A website page as served by Go's /website_page endpoints. */
+export interface WebsitePage {
   id: string
-  tenant_id: string
-  name: string
+  slug: string
+  title: string
+  seo_description?: string | null
+  published?: boolean | null
+  in_menu?: boolean | null
+  menu_sequence?: number | null
 }
 
-const fields: ViewDescriptor['fields'] = [
-  { name: 'name', label: 'Name', type: 'text', required: true },
+const listFields: ViewDescriptor['fields'] = [
+  { name: 'title', label: 'Title', type: 'text', required: true },
+  { name: 'slug', label: 'Slug (empty = home page; lowercase letters, digits, dashes)', type: 'text' },
+  { name: 'published', label: 'Published', type: 'boolean', widget: 'switch' },
+  { name: 'in_menu', label: 'In menu', type: 'boolean', widget: 'switch' },
 ]
 
-const dashboardView: ViewDescriptor = {
-  entity: 'website',
-  viewType: 'dashboard',
-  fields,
-  permissions: ['website:website:read'],
-}
+const formFields: ViewDescriptor['fields'] = [
+  ...listFields,
+  { name: 'menu_sequence', label: 'Menu order', type: 'number', widget: 'int' },
+  { name: 'seo_description', label: 'SEO description', type: 'text', widget: 'long' },
+]
+
+registerHeaderButtonAction({
+  entity: 'website_page',
+  name: 'website.design',
+  handler: (ctx) => {
+    window.location.assign(erpPath(`/website/pages/${ctx.recordId}/design`))
+  },
+})
+
+const headerButtons: HeaderButtonDescriptor[] = [
+  {
+    name: 'website.design',
+    label: 'Design',
+    states: { visible: { field: 'id', op: 'set' } },
+  },
+]
+
+const permissions = ['website_page:website_page:read']
+
+const dashboardView: ViewDescriptor = { entity: 'website_page', viewType: 'dashboard', fields: listFields, permissions }
 
 const listView: ViewDescriptor = {
-  entity: 'website',
+  entity: 'website_page',
   viewType: 'tree',
-  fields,
-  formPath: '/website/:id',
-  createPermission: 'website:website:write',
-  permissions: ['website:website:read'],
+  fields: listFields,
+  formPath: '/website/pages/:id',
+  createPermission: 'website_page:website_page:write',
+  permissions,
 }
 
 const formView: ViewDescriptor = {
-  entity: 'website',
+  entity: 'website_page',
   viewType: 'form',
-  fields,
-  permissions: ['website:website:read'],
+  fields: formFields,
+  headerButtons,
+  permissions,
 }
 
 const website: FrontModule = {
   name: 'website',
   routes: [
     { path: '/website', descriptor: dashboardView },
-    { path: '/website/list', descriptor: listView },
-    { path: '/website/:id', descriptor: formView },
+    { path: '/website/pages', descriptor: listView },
+    { path: '/website/pages/:id', descriptor: formView },
   ],
 }
 
