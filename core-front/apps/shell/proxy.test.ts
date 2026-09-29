@@ -39,8 +39,8 @@ function go(opts: { routing?: object; slugs?: string[]; other?: (url: string) =>
     if (url.endsWith('/api/v1/public/site')) {
       return Response.json({ routing: opts.routing ?? { mode: 'path' } })
     }
-    if (url.includes('/api/v1/public/website_page')) {
-      return Response.json({ data: (opts.slugs ?? []).map((slug) => ({ slug })), total: 0 })
+    if (url.endsWith('/api/v1/public/website_page?distinct=slug')) {
+      return Response.json({ values: (opts.slugs ?? []).map((value) => ({ value, total: 1 })) })
     }
     if (opts.other) return opts.other(url)
     throw new Error(`unexpected fetch ${url}`)
@@ -63,9 +63,9 @@ afterEach(() => {
 })
 
 describe('proxy (legacy ERP paths)', () => {
-  it('308-redirects a bare ERP path under /app, keeping the query and the CSP', async () => {
+  it('307-redirects a bare ERP path under /app (never 308: the slug set changes), keeping the query and the CSP', async () => {
     const res = await proxy(request('', 'http://localhost/settings/users?tab=roles'))
-    expect(res.status).toBe(308)
+    expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe('http://localhost/app/settings/users?tab=roles')
     expect(res.headers.get('Content-Security-Policy')).toMatch(/nonce-/)
   })
@@ -139,10 +139,47 @@ describe('proxy (site routing from Go)', () => {
     expect(res.headers.get('location')).toBe('http://www.acme.fr/app/settings/users')
   })
 
-  it('a published slug equal to an ERP root is served by the site, not 308d', async () => {
+  it('a published slug equal to an ERP root is served by the site, not redirected', async () => {
     vi.stubGlobal('fetch', go({ slugs: ['settings'] }))
     const res = await proxy(request('', 'http://localhost/settings'))
     expect(res.headers.get('location')).toBeNull()
+  })
+
+  it('reads the slugs with ?distinct=slug (no layouts), ignoring the home page\'s empty slug', async () => {
+    const f = go({ slugs: ['', 'settings'] })
+    vi.stubGlobal('fetch', f)
+    const res = await proxy(request('', 'http://localhost/settings'))
+    expect(res.headers.get('location')).toBeNull()
+    expect(f.mock.calls.map((c) => String(c[0]))).toContain('http://api.test/api/v1/public/website_page?distinct=slug')
+  })
+
+  it('forwards the client IP on the public routing reads (per-IP rate limiting)', async () => {
+    const f = go({ routing: hostRouting })
+    vi.stubGlobal('fetch', f)
+    await proxy(new NextRequest('http://www.acme.fr/', { headers: { 'x-forwarded-for': '203.0.113.7' } }))
+    const publicCalls = f.mock.calls.filter((c) => String(c[0]).includes('/public/')) as unknown as [string, RequestInit][]
+    expect(publicCalls).toHaveLength(2)
+    for (const [, init] of publicCalls) {
+      expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBe('203.0.113.7')
+    }
+  })
+
+  it('keeps the last good routing and slugs when a refresh fails (429), retrying after the TTL', async () => {
+    vi.stubGlobal('fetch', go({ routing: hostRouting, slugs: ['settings'] }))
+    await proxy(request('', 'http://www.acme.fr/'))
+    const now = Date.now()
+    const limited = vi.fn(async () => goError(429))
+    vi.stubGlobal('fetch', limited)
+    vi.spyOn(Date, 'now').mockReturnValue(now + 61_000)
+    // Still host mode: an ERP path on the site host goes to the ERP host.
+    const res = await proxy(request('', 'http://www.acme.fr/app/crm'))
+    expect(res.headers.get('location')).toBe('https://erp.acme.fr/app/crm')
+    // Still knows the slugs: /settings stays a site page.
+    expect((await proxy(request('', 'http://www.acme.fr/settings'))).headers.get('location')).toBeNull()
+    expect(limited).toHaveBeenCalledTimes(2) // one refresh attempt within the TTL
+    vi.spyOn(Date, 'now').mockReturnValue(now + 122_000)
+    await proxy(request('', 'http://www.acme.fr/'))
+    expect(limited).toHaveBeenCalledTimes(4) // retried after the TTL
   })
 })
 
