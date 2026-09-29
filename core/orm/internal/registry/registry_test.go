@@ -2,8 +2,8 @@ package registry_test
 
 import (
 	"os"
-	"slices"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
