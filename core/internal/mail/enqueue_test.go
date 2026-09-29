@@ -14,7 +14,11 @@ import (
 func setup(t *testing.T) (*orm.App, uuid.UUID) {
 	t.Helper()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "mail")
+	// Registered directly (not via core/modules/mail, which imports this package).
+	if err := orm.Register[Outbox](orm.WithTableName("mail_outbox"), orm.WithExcluded()); err != nil {
+		t.Fatal(err)
+	}
+	testdb.Migrate(t, app, "mail_outbox")
 	tenant := uuid.New()
 	t.Cleanup(func() {
 		_, _ = app.DB.Exec(context.Background(), `DELETE FROM mail_outbox WHERE tenant_id = $1`, tenant)
