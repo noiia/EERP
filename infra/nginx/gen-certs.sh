@@ -19,11 +19,16 @@ if [ -f "$CRT" ] && [ -f "$KEY" ]; then
   exit 0
 fi
 
+# Website host mode (docs/adr/ADR-025): add the site/ERP hostnames when set.
+SAN="DNS:localhost,DNS:api-gateway,IP:127.0.0.1"
+[ -n "${SITE_HOST:-}" ] && SAN="$SAN,DNS:$SITE_HOST"
+[ -n "${ERP_HOST:-}" ] && SAN="$SAN,DNS:$ERP_HOST"
+
 echo "==> generating self-signed gateway cert (10y, dev/internal only)"
 apk add --no-cache openssl >/dev/null
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout "$KEY" -out "$CRT" \
   -subj "/CN=eerp-gateway" \
-  -addext "subjectAltName=DNS:localhost,DNS:api-gateway,IP:127.0.0.1"
+  -addext "subjectAltName=$SAN"
 
 echo "==> done: $CRT"
