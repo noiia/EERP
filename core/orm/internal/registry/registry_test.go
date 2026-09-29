@@ -2,6 +2,7 @@ package registry_test
 
 import (
 	"os"
+	"slices"
 	"reflect"
 	"sync"
 	"testing"
@@ -391,3 +392,15 @@ var (
 	_ = uuid.New
 	_ sync.Once
 )
+
+func TestWithPublicFields_PopulatesMeta(t *testing.T) {
+	resetRegistry()
+	if err := registry.Register[product](registry.WithPublicFields("name", "price", "picture")); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := registry.Get("product")
+	want := []string{"name", "price", "picture"} // picture: a pictures-service anchor, not a column — allowed on purpose
+	if !slices.Equal(m.PublicFields, want) {
+		t.Errorf("PublicFields = %v, want %v", m.PublicFields, want)
+	}
+}

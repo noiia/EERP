@@ -32,14 +32,20 @@ type FieldMeta struct {
 
 // TableMeta is the fully resolved descriptor for one registered struct.
 type TableMeta struct {
-	TableName   string           // snake_case table name
-	RoutePrefix string           // URL segment, e.g. "products" → /api/v1/products
-	Fields      []FieldMeta      // all API-visible fields
-	PKField     FieldMeta        // the primary key field
-	SoftDelete  bool             // true when any field carries the softdelete tag
-	Excluded    bool             // true when api.yaml marks this table exclude: true
-	TypeRef     reflect.Type     // for instantiating values at runtime
-	StructMeta  cache.StructMeta // passed to query builders by the crud layer
+	TableName   string      // snake_case table name
+	RoutePrefix string      // URL segment, e.g. "products" → /api/v1/products
+	Fields      []FieldMeta // all API-visible fields
+	PKField     FieldMeta   // the primary key field
+	SoftDelete  bool        // true when any field carries the softdelete tag
+	Excluded    bool        // true when api.yaml marks this table exclude: true
+	// PublicFields is the module-declared CEILING of what anonymous website
+	// visitors may ever read (ADR-024). Empty = never public. An admin
+	// publishes a subset at runtime; only the intersection is served.
+	// Names are not validated against columns: a picture/attachment anchor
+	// field (e.g. "picture") is not a column but is publishable.
+	PublicFields []string
+	TypeRef      reflect.Type     // for instantiating values at runtime
+	StructMeta   cache.StructMeta // passed to query builders by the crud layer
 }
 
 // HasField returns true when the table has a column named col.
@@ -68,11 +74,12 @@ func (m TableMeta) FieldByColumn(col string) (FieldMeta, bool) {
 type Option func(*regOptions)
 
 type regOptions struct {
-	tableName   string
-	readOnly    []string
-	excludeCols []string
-	excluded    bool
-	fieldGroups map[string][]string
+	tableName    string
+	readOnly     []string
+	excludeCols  []string
+	excluded     bool
+	publicFields []string
+	fieldGroups  map[string][]string
 }
 
 // WithTableName overrides the table name derived from the struct name.
@@ -100,6 +107,12 @@ func WithExcludeFields(fields ...string) Option {
 // twin. See core/orm/internal/crud.BuildResponse for the enforcement.
 func WithFieldGroups(groups map[string][]string) Option {
 	return func(o *regOptions) { o.fieldGroups = groups }
+}
+
+// WithPublicFields declares the columns (and picture anchor fields) a table
+// may expose on /api/v1/public. See ADR-024.
+func WithPublicFields(fields ...string) Option {
+	return func(o *regOptions) { o.publicFields = append(o.publicFields, fields...) }
 }
 
 // WithExcluded keeps the table off the HTTP surface entirely: it is still
@@ -438,14 +451,15 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 	}
 
 	return TableMeta{
-		TableName:   tableName,
-		RoutePrefix: tableName,
-		Fields:      fields,
-		PKField:     pkField,
-		SoftDelete:  hasSoftDel,
-		Excluded:    o.excluded,
-		TypeRef:     t,
-		StructMeta:  sm,
+		TableName:    tableName,
+		RoutePrefix:  tableName,
+		Fields:       fields,
+		PKField:      pkField,
+		SoftDelete:   hasSoftDel,
+		Excluded:     o.excluded,
+		PublicFields: o.publicFields,
+		TypeRef:      t,
+		StructMeta:   sm,
 	}
 }
 
