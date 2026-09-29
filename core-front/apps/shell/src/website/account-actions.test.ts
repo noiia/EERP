@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const jar = new Map<string, string>()
 vi.mock('next/headers', () => ({
   cookies: async () => ({ get: (n: string) => (jar.has(n) ? { name: n, value: jar.get(n) } : undefined) }),
+  headers: async () => new Headers({ 'x-forwarded-for': '203.0.113.9' }),
 }))
 
 import { saveProfile } from './account-actions'
@@ -27,7 +28,7 @@ describe('saveProfile', () => {
     expect(await saveProfile(null, form({ name: 'Ada', surname: 'L', phone: '1' }))).toEqual({ ok: true })
     expect(f).toHaveBeenCalledWith('http://api.test/api/v1/website/me', expect.objectContaining({
       method: 'PUT',
-      headers: expect.objectContaining({ Authorization: 'Bearer tok' }),
+      headers: expect.objectContaining({ Authorization: 'Bearer tok', 'X-Forwarded-For': '203.0.113.9' }),
       body: JSON.stringify({ name: 'Ada', surname: 'L', phone: '1' }),
     }))
   })

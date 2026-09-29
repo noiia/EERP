@@ -93,10 +93,33 @@ describe('proxy (site routing from Go)', () => {
     expect(res.headers.get('location')).toBeNull()
   })
 
-  it('reads the host from x-forwarded-host (behind the gateway)', async () => {
+  it('reads the host from the Host header (set by the gateway), ignoring x-forwarded-host', async () => {
     vi.stubGlobal('fetch', go({ routing: hostRouting }))
-    const res = await proxy(new NextRequest('http://core-front:3000/products', { headers: { 'x-forwarded-host': 'erp.acme.fr' } }))
+    const res = await proxy(new NextRequest('http://core-front:3000/products', { headers: { host: 'erp.acme.fr' } }))
     expect(res.headers.get('location')).toBe('https://www.acme.fr/products')
+
+    const spoofed = await proxy(new NextRequest('http://www.acme.fr/products', {
+      headers: { host: 'www.acme.fr', 'x-forwarded-host': 'erp.acme.fr' },
+    }))
+    expect(spoofed.headers.get('location')).toBeNull()
+  })
+
+  it('concurrent cold requests share one routing fetch', async () => {
+    const f = go({ routing: hostRouting })
+    vi.stubGlobal('fetch', f)
+    await Promise.all([proxy(request('', 'http://www.acme.fr/')), proxy(request('', 'http://www.acme.fr/'))])
+    expect(f).toHaveBeenCalledTimes(2) // routing + slugs, once for both requests
+  })
+
+  it('a hung Go times out (2 s) into path mode', async () => {
+    // Never answers; only the fetch's abort signal ends it.
+    vi.stubGlobal('fetch', vi.fn((_: unknown, init?: RequestInit) => new Promise<Response>((_, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+    })))
+    const started = Date.now()
+    const res = await proxy(request('', 'http://www.acme.fr/settings/users'))
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(res.headers.get('location')).toBe('http://www.acme.fr/app/settings/users')
   })
 
   it('caches the routing and slugs for 60 s', async () => {
@@ -158,6 +181,20 @@ describe('proxy (session refresh ahead of RSC render)', () => {
     const res = await proxy(request('eerp_refresh=r1'))
     expect(res.cookies.get('eerp_access')?.value).toBe('new-access')
     expect(res.cookies.get('eerp_refresh')?.value).toBe('new-refresh')
+  })
+
+  it('forwards the client IP to Go on a proxy-side refresh (per-IP rate limiting)', async () => {
+    const f = go({ other: () => refreshResponse('a', 'r') })
+    vi.stubGlobal('fetch', f)
+    await proxy(new NextRequest('http://localhost/app/crm', { headers: { cookie: 'eerp_refresh=r1', 'x-forwarded-for': '203.0.113.9' } }))
+    const call = f.mock.calls.find((c) => String(c[0]).includes('/auth/refresh')) as unknown as [string, RequestInit]
+    expect((call[1].headers as Record<string, string>)['X-Forwarded-For']).toBe('203.0.113.9')
+  })
+
+  it('keeps the ERP session on a 429 (not a dead session)', async () => {
+    vi.stubGlobal('fetch', go({ other: () => goError(429) }))
+    const res = await proxy(request('eerp_refresh=r1'))
+    expect(res.headers.getSetCookie()).toEqual([])
   })
 
   it('clears the session when the refresh token is spent/invalid (theft detection)', async () => {

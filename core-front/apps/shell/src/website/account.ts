@@ -1,5 +1,6 @@
 import 'server-only'
 import { cookies } from 'next/headers'
+import { forwardedFor } from '@/lib/bff'
 import { SITE_ACCESS_COOKIE } from '@/lib/site-session'
 
 // The visitor's own profile at Go (GET/PUT /api/v1/website/me), called server-side
@@ -13,7 +14,7 @@ export async function meFetch(init: RequestInit = {}): Promise<Response | null> 
   if (!token) return null
   return fetch(`${process.env.API_BASE}/api/v${process.env.API_VERSION ?? '1'}/website/me`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(await forwardedFor()) },
     cache: 'no-store',
   })
 }

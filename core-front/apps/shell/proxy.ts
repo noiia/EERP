@@ -68,8 +68,11 @@ function withCsp(response: NextResponse, nonce: string): NextResponse {
 // no slugs (cached too, so a Go outage costs one fetch per minute, not per request).
 // EERP_SITE_ROUTING=path forces path mode: the escape hatch for a wrong host setting.
 const ROUTING_TTL_MS = 60_000
+const ROUTING_TIMEOUT_MS = 2_000 // a hung Go must not hang every page load
 type SiteRouting = { routing: Routing; slugs: ReadonlySet<string> }
-let routingCache: { value: SiteRouting; at: number } | null = null
+// The in-flight promise is cached, so concurrent cold requests share one fetch. It
+// never rejects: every failure resolves to the fallback.
+let routingCache: { value: Promise<SiteRouting>; at: number } | null = null
 
 /** Test hook: forget the cached routing. */
 export function resetRoutingCache(): void {
@@ -77,26 +80,33 @@ export function resetRoutingCache(): void {
 }
 
 async function publicJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${process.env.API_BASE}/api/v${process.env.API_VERSION ?? '1'}/public/${path}`, { cache: 'no-store' })
+  const res = await fetch(`${process.env.API_BASE}/api/v${process.env.API_VERSION ?? '1'}/public/${path}`, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(ROUTING_TIMEOUT_MS),
+  })
   if (!res.ok) throw new Error(`public ${path}: ${res.status}`)
   return (await res.json()) as T
+}
+
+async function fetchRouting(): Promise<SiteRouting> {
+  const [routing, slugs] = await Promise.all([
+    publicJSON<{ routing?: Routing }>('site').then((b) => b.routing ?? { mode: 'path' as const }, () => ({ mode: 'path' as const })),
+    // page_size 100 is Go's max; ponytail: a site with >100 published pages loses
+    // the slug-vs-ERP-root collision fix beyond the first 100 — page if that happens.
+    publicJSON<{ data?: { slug?: unknown }[] }>('website_page?page_size=100').then(
+      (b) => new Set((b.data ?? []).map((p) => p.slug).filter((x): x is string => typeof x === 'string' && x !== '')),
+      () => new Set<string>(),
+    ),
+  ])
+  return { routing, slugs }
 }
 
 async function currentRouting(): Promise<SiteRouting> {
   const now = Date.now()
   if (!routingCache || now - routingCache.at >= ROUTING_TTL_MS) {
-    const [routing, slugs] = await Promise.all([
-      publicJSON<{ routing?: Routing }>('site').then((b) => b.routing ?? { mode: 'path' as const }, () => ({ mode: 'path' as const })),
-      // page_size 100 is Go's max; ponytail: a site with >100 published pages loses
-      // the slug-vs-ERP-root collision fix beyond the first 100 — page if that happens.
-      publicJSON<{ data?: { slug?: unknown }[] }>('website_page?page_size=100').then(
-        (b) => new Set((b.data ?? []).map((p) => p.slug).filter((x): x is string => typeof x === 'string' && x !== '')),
-        () => new Set<string>(),
-      ),
-    ])
-    routingCache = { value: { routing, slugs }, at: now }
+    routingCache = { value: fetchRouting(), at: now }
   }
-  const { value } = routingCache
+  const value = await routingCache.value
   return process.env.EERP_SITE_ROUTING === 'path' ? { ...value, routing: { mode: 'path' } } : value
 }
 
@@ -104,17 +114,20 @@ async function currentRouting(): Promise<SiteRouting> {
  * Rotates one session (ERP or website) when its access cookie is gone but its
  * refresh cookie remains. The fresh access cookie is also written into the request
  * cookies, so the render that follows sees it immediately. Returns what to apply
- * to the response. `clearOnlyOn401`: the website session survives a 429/5xx/outage
- * (same rule as /api/site-auth/refresh); the ERP one is cleared on any failure.
+ * to the response. Only Go's 401 means the session is dead: a 429/5xx/outage keeps
+ * the cookies (same rule as /api/site-auth/refresh) and the next request retries.
  */
 async function refreshSession(
   request: NextRequest,
-  s: { access: string; refresh: string; base: AuthBase; clearOnlyOn401: boolean },
+  s: { access: string; refresh: string; base: AuthBase },
 ): Promise<(response: NextResponse) => void> {
   const refreshToken = request.cookies.get(s.refresh)?.value
   if (request.cookies.has(s.access) || !refreshToken) return () => {}
   try {
-    const tokens = await goAuthExchange('refresh', { refresh_token: refreshToken }, s.base)
+    // Go rate-limits refreshes per client IP; without it every visitor would share
+    // this server's bucket.
+    const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? undefined
+    const tokens = await goAuthExchange('refresh', { refresh_token: refreshToken }, s.base, { forwardedFor: ip })
     request.cookies.set(s.access, tokens.accessToken)
     return (response) => {
       response.cookies.set(s.access, tokens.accessToken, sessionCookieOptions(tokens.expiresIn))
@@ -125,7 +138,7 @@ async function refreshSession(
   } catch (e) {
     // Spent/invalid refresh token (theft detection) — clear the session so the
     // request renders anonymous instead of retrying every request.
-    if (s.clearOnlyOn401 && !(e instanceof ApiError && e.status === 401)) return () => {}
+    if (!(e instanceof ApiError && e.status === 401)) return () => {}
     return (response) => {
       response.cookies.delete(s.access)
       response.cookies.delete(s.refresh)
@@ -137,7 +150,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const nonce = btoa(crypto.randomUUID())
 
   const { routing, slugs } = await currentRouting()
-  const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? request.nextUrl.host).split(',')[0].trim()
+  // The gateway sets Host ($host); x-forwarded-host is client-controllable, so it is ignored.
+  const host = request.headers.get('host') ?? request.nextUrl.host
   const decision = routeDecision({ pathname: request.nextUrl.pathname, host, erpRoots, siteSlugs: slugs, routing })
   if (decision.kind === 'redirect') {
     const target = new URL(decision.location, request.url)
@@ -149,8 +163,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   const apply = await Promise.all([
-    refreshSession(request, { access: ACCESS_COOKIE, refresh: REFRESH_COOKIE, base: 'auth', clearOnlyOn401: false }),
-    refreshSession(request, { access: SITE_ACCESS_COOKIE, refresh: SITE_REFRESH_COOKIE, base: 'website/auth', clearOnlyOn401: true }),
+    refreshSession(request, { access: ACCESS_COOKIE, refresh: REFRESH_COOKIE, base: 'auth' }),
+    refreshSession(request, { access: SITE_ACCESS_COOKIE, refresh: SITE_REFRESH_COOKIE, base: 'website/auth' }),
   ])
 
   // Built after the refreshes so the forwarded cookie header carries the fresh access tokens.

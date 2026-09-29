@@ -38,18 +38,22 @@ describe('SiteAuthForm', () => {
     }))
   })
 
-  it('login follows a same-site ?next, never an off-site one', async () => {
+  it.each([
+    ['/\t/evil.com', '/account'],
+    ['/\n/evil.com', '/account'],
+    ['//evil.com', '/account'],
+    ['/\\evil.com', '/account'],
+    ['https://evil.com', '/account'],
+    ['/app/crm', '/account'],
+    ['/app', '/account'],
+    ['/account', '/account'],
+    ['/products', '/products'],
+  ])('login ?next=%j goes to %s (same-site, never the ERP)', async (next, want) => {
     vi.stubGlobal('fetch', vi.fn(async () => json(200, {})))
-    const { unmount } = render(<SiteAuthForm mode="login" next="//evil.example" />)
+    render(<SiteAuthForm mode="login" next={next} />)
     fill({ email: 'v@x.fr', password: 'secret123' })
     fireEvent.click(screen.getByRole('button', { name: /log in/i }))
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/account'))
-    unmount()
-
-    render(<SiteAuthForm mode="login" next="/shop" />)
-    fill({ email: 'v@x.fr', password: 'secret123' })
-    fireEvent.click(screen.getByRole('button', { name: /log in/i }))
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/shop'))
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith(want))
   })
 
   it('a 401 shows the invalid-credentials message and stays put', async () => {
