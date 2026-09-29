@@ -155,6 +155,15 @@ type Config struct {
 	// "redis://redis:6379/0". Empty = no cache, no Redis needed. Set but
 	// unreachable at boot = logged and the app runs uncached.
 	RedisURL string `json:"redis_url" needed:"false"`
+	// SMTP delivery for internal/mail. Empty SMTPHost disables the sender;
+	// enqueued mail waits as pending until it's configured. SMTPTLS is
+	// "starttls" (default), "implicit" (port 465) or "none" (dev Mailpit).
+	SMTPHost     string `json:"smtp_host" needed:"false"`
+	SMTPPort     int    `json:"smtp_port" needed:"false"`
+	SMTPUser     string `json:"smtp_user" needed:"false"`
+	SMTPPassword string `json:"smtp_password" needed:"false"`
+	SMTPFrom     string `json:"smtp_from" needed:"false"`
+	SMTPTLS      string `json:"smtp_tls" needed:"false"`
 	// RedisTTLSeconds caps how long a cached read lives even without an
 	// invalidating write (writes from outside the app — psql, another tool —
 	// are only caught by this). Defaults to 60.

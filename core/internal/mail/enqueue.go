@@ -46,3 +46,10 @@ func validate(m Message) error {
 	}
 	return nil
 }
+func mailAddress(s string) (string, error) {
+	a, err := mail.ParseAddress(s)
+	if err != nil {
+		return "", err
+	}
+	return a.Address, nil
+}
