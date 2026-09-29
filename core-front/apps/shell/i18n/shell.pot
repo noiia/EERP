@@ -622,3 +622,54 @@ msgstr ""
 
 msgid "Could not save."
 msgstr ""
+
+msgid "Password must be at least 8 characters."
+msgstr ""
+
+msgid "Invalid email or password."
+msgstr ""
+
+msgid "This email cannot be used."
+msgstr ""
+
+msgid "Too many attempts. Please try again later."
+msgstr ""
+
+msgid "Please check the form."
+msgstr ""
+
+msgid "Something went wrong. Please try again."
+msgstr ""
+
+msgid "Sign up"
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "At least 8 characters."
+msgstr ""
+
+msgid "No account yet? Sign up"
+msgstr ""
+
+msgid "Already have an account? Log in"
+msgstr ""
+
+msgid "Your session has expired. Please log in again."
+msgstr ""
+
+msgid "Name is required; name and surname max 200, phone max 50 characters."
+msgstr ""
+
+msgid "Surname"
+msgstr ""
+
+msgid "Log out"
+msgstr ""
+
+msgid "My bookings"
+msgstr ""
+
+msgid "Your bookings will appear here."
+msgstr ""

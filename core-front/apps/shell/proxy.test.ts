@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { proxy } from './proxy'
+import { proxy, resetRoutingCache } from './proxy'
 
 // The generated module manifest is a codegen artefact: keep the registry empty so
 // erpRoots is just the shell's own sections (settings, appstore, …).
@@ -18,17 +18,49 @@ function refreshResponse(access: string, rotatedRefresh: string): Response {
   })
 }
 
+function goError(status: number): Response {
+  return new Response(JSON.stringify({ error: { code: 'X', message: 'x' } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 function request(cookieHeader: string, url = 'http://localhost/app/crm'): NextRequest {
   return new NextRequest(url, {
     headers: cookieHeader ? { cookie: cookieHeader } : {},
   })
 }
 
+// Go stand-in: the public routing + published slugs the proxy reads, and a fallback
+// for everything else (the auth refresh endpoints).
+function go(opts: { routing?: object; slugs?: string[]; other?: (url: string) => Response } = {}) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/api/v1/public/site')) {
+      return Response.json({ routing: opts.routing ?? { mode: 'path' } })
+    }
+    if (url.includes('/api/v1/public/website_page')) {
+      return Response.json({ data: (opts.slugs ?? []).map((slug) => ({ slug })), total: 0 })
+    }
+    if (opts.other) return opts.other(url)
+    throw new Error(`unexpected fetch ${url}`)
+  })
+}
+const authCalls = (f: ReturnType<typeof go>) => f.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/auth/'))
+
+const hostRouting = { mode: 'host', site_host: 'www.acme.fr', erp_host: 'erp.acme.fr' }
+
 beforeEach(() => {
   process.env.API_BASE = 'http://api.test'
   delete process.env.API_VERSION
+  delete process.env.EERP_SITE_ROUTING
+  resetRoutingCache()
+  vi.stubGlobal('fetch', go())
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('proxy (legacy ERP paths)', () => {
   it('308-redirects a bare ERP path under /app, keeping the query and the CSP', async () => {
@@ -46,22 +78,67 @@ describe('proxy (legacy ERP paths)', () => {
   })
 })
 
+describe('proxy (site routing from Go)', () => {
+  it('host mode: an ERP path on the site host 307s to the ERP host', async () => {
+    vi.stubGlobal('fetch', go({ routing: hostRouting }))
+    const res = await proxy(request('', 'http://www.acme.fr/app/crm?x=1'))
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe('https://erp.acme.fr/app/crm?x=1')
+  })
+
+  it('EERP_SITE_ROUTING=path overrides host mode (admin escape hatch)', async () => {
+    process.env.EERP_SITE_ROUTING = 'path'
+    vi.stubGlobal('fetch', go({ routing: hostRouting }))
+    const res = await proxy(request('', 'http://www.acme.fr/app/crm'))
+    expect(res.headers.get('location')).toBeNull()
+  })
+
+  it('reads the host from x-forwarded-host (behind the gateway)', async () => {
+    vi.stubGlobal('fetch', go({ routing: hostRouting }))
+    const res = await proxy(new NextRequest('http://core-front:3000/products', { headers: { 'x-forwarded-host': 'erp.acme.fr' } }))
+    expect(res.headers.get('location')).toBe('https://www.acme.fr/products')
+  })
+
+  it('caches the routing and slugs for 60 s', async () => {
+    const f = go({ routing: hostRouting })
+    vi.stubGlobal('fetch', f)
+    await proxy(request('', 'http://www.acme.fr/'))
+    await proxy(request('', 'http://www.acme.fr/'))
+    expect(f).toHaveBeenCalledTimes(2) // routing + slugs, once
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61_000)
+    await proxy(request('', 'http://www.acme.fr/'))
+    expect(f).toHaveBeenCalledTimes(4)
+  })
+
+  it('falls back to path mode when Go is unreachable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed') }))
+    const res = await proxy(request('', 'http://www.acme.fr/settings/users'))
+    expect(res.headers.get('location')).toBe('http://www.acme.fr/app/settings/users')
+  })
+
+  it('a published slug equal to an ERP root is served by the site, not 308d', async () => {
+    vi.stubGlobal('fetch', go({ slugs: ['settings'] }))
+    const res = await proxy(request('', 'http://localhost/settings'))
+    expect(res.headers.get('location')).toBeNull()
+  })
+})
+
 describe('proxy (session refresh ahead of RSC render)', () => {
   it('passes an anonymous request through untouched (no refresh token to rotate)', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = go()
     vi.stubGlobal('fetch', fetchMock)
 
     const res = await proxy(request(''))
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(authCalls(fetchMock)).toEqual([])
     expect(res.cookies.get('eerp_access')).toBeUndefined()
   })
 
   it('leaves an already-fresh access cookie alone — no refresh attempted', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = go()
     vi.stubGlobal('fetch', fetchMock)
 
     const res = await proxy(request('eerp_access=still-good; eerp_refresh=r1'))
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(authCalls(fetchMock)).toEqual([])
     expect(res.cookies.get('eerp_access')).toBeUndefined()
   })
 
@@ -76,7 +153,7 @@ describe('proxy (session refresh ahead of RSC render)', () => {
   })
 
   it('rotates the session when the access cookie is gone but a refresh token remains', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => refreshResponse('new-access', 'new-refresh')))
+    vi.stubGlobal('fetch', go({ other: () => refreshResponse('new-access', 'new-refresh') }))
 
     const res = await proxy(request('eerp_refresh=r1'))
     expect(res.cookies.get('eerp_access')?.value).toBe('new-access')
@@ -84,16 +161,7 @@ describe('proxy (session refresh ahead of RSC render)', () => {
   })
 
   it('clears the session when the refresh token is spent/invalid (theft detection)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ error: { code: 'REFRESH_REUSED', message: 'theft' } }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-      ),
-    )
+    vi.stubGlobal('fetch', go({ other: () => goError(401) }))
 
     const res = await proxy(request('eerp_refresh=spent'))
     // A deleted NextResponse cookie serializes as an already-expired Set-Cookie
@@ -101,5 +169,30 @@ describe('proxy (session refresh ahead of RSC render)', () => {
     const setCookies = res.headers.getSetCookie()
     expect(setCookies.some((c) => c.startsWith('eerp_access=') && c.includes('1970'))).toBe(true)
     expect(setCookies.some((c) => c.startsWith('eerp_refresh=') && c.includes('1970'))).toBe(true)
+  })
+})
+
+describe('proxy (website visitor session refresh)', () => {
+  it('rotates the site session at website/auth when only its refresh cookie remains', async () => {
+    const f = go({ other: () => refreshResponse('site-access', 'site-refresh') })
+    vi.stubGlobal('fetch', f)
+
+    const res = await proxy(request('eerp_site_refresh=s1', 'http://localhost/account'))
+    expect(authCalls(f)).toEqual(['http://api.test/api/v1/website/auth/refresh'])
+    expect(res.cookies.get('eerp_site_access')?.value).toBe('site-access')
+    expect(res.cookies.get('eerp_site_refresh')?.value).toBe('site-refresh')
+    expect(res.cookies.get('eerp_access')).toBeUndefined() // the ERP session is untouched
+  })
+
+  it('clears the site session on a Go 401', async () => {
+    vi.stubGlobal('fetch', go({ other: () => goError(401) }))
+    const res = await proxy(request('eerp_site_refresh=spent', 'http://localhost/account'))
+    expect(res.headers.getSetCookie().some((c) => c.startsWith('eerp_site_refresh=') && c.includes('1970'))).toBe(true)
+  })
+
+  it('keeps the site session on a 429/5xx (not a dead session)', async () => {
+    vi.stubGlobal('fetch', go({ other: () => goError(503) }))
+    const res = await proxy(request('eerp_site_refresh=s1', 'http://localhost/account'))
+    expect(res.headers.getSetCookie()).toEqual([])
   })
 })

@@ -831,3 +831,54 @@ msgstr "Sélectionnez un bloc pour le configurer."
 
 msgid "Could not save."
 msgstr "Impossible d’enregistrer."
+
+msgid "Password must be at least 8 characters."
+msgstr "Le mot de passe doit comporter au moins 8 caractères."
+
+msgid "Invalid email or password."
+msgstr "E-mail ou mot de passe invalide."
+
+msgid "This email cannot be used."
+msgstr "Cette adresse e-mail ne peut pas être utilisée."
+
+msgid "Too many attempts. Please try again later."
+msgstr "Trop de tentatives. Veuillez réessayer plus tard."
+
+msgid "Please check the form."
+msgstr "Veuillez vérifier le formulaire."
+
+msgid "Something went wrong. Please try again."
+msgstr "Une erreur est survenue. Veuillez réessayer."
+
+msgid "Sign up"
+msgstr "S’inscrire"
+
+msgid "Password"
+msgstr "Mot de passe"
+
+msgid "At least 8 characters."
+msgstr "Au moins 8 caractères."
+
+msgid "No account yet? Sign up"
+msgstr "Pas encore de compte ? Inscrivez-vous"
+
+msgid "Already have an account? Log in"
+msgstr "Déjà un compte ? Connectez-vous"
+
+msgid "Your session has expired. Please log in again."
+msgstr "Votre session a expiré. Veuillez vous reconnecter."
+
+msgid "Name is required; name and surname max 200, phone max 50 characters."
+msgstr "Le nom est obligatoire ; nom et prénom 200 caractères max., téléphone 50 max."
+
+msgid "Surname"
+msgstr "Prénom"
+
+msgid "Log out"
+msgstr "Se déconnecter"
+
+msgid "My bookings"
+msgstr "Mes réservations"
+
+msgid "Your bookings will appear here."
+msgstr "Vos réservations apparaîtront ici."
