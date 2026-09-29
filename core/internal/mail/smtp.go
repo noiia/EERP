@@ -47,16 +47,23 @@ func (s *SMTPTransport) Send(ctx context.Context, o Outbox) error {
 	}
 	addr := net.JoinHostPort(s.host, strconv.Itoa(s.port))
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
+	tlsCfg := &tls.Config{ServerName: s.host, MinVersion: tls.VersionTLS12}
 	var conn net.Conn
 	if s.tlsMode == "implicit" {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: s.host, MinVersion: tls.VersionTLS12})
+		conn, err = (&tls.Dialer{NetDialer: dialer, Config: tlsCfg}).DialContext(ctx, "tcp", addr)
 	} else {
 		conn, err = dialer.DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
-	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
+	deadline := time.Now().Add(60 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	_ = conn.SetDeadline(deadline)
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 	c, err := smtp.NewClient(conn, s.host)
 	if err != nil {
 		_ = conn.Close()
@@ -67,7 +74,7 @@ func (s *SMTPTransport) Send(ctx context.Context, o Outbox) error {
 		if ok, _ := c.Extension("STARTTLS"); !ok {
 			return fmt.Errorf("smtp: server does not offer STARTTLS (set smtp_tls to \"none\" only for a local catcher)")
 		}
-		if err := c.StartTLS(&tls.Config{ServerName: s.host, MinVersion: tls.VersionTLS12}); err != nil {
+		if err := c.StartTLS(tlsCfg); err != nil {
 			return fmt.Errorf("smtp starttls: %w", err)
 		}
 	}
@@ -92,7 +99,9 @@ func (s *SMTPTransport) Send(ctx context.Context, o Outbox) error {
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("smtp end of data: %w", err)
 	}
-	return c.Quit()
+	// The relay accepted the message; a failed QUIT must not trigger a retry (duplicate).
+	_ = c.Quit()
+	return nil
 }
 
 // envelopeAddress strips a display name: "EERP <a@b.io>" → "a@b.io".
