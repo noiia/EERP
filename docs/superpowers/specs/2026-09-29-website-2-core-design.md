@@ -1,6 +1,6 @@
 # Spec 2 — Website core
 
-**Date:** 2026-09-29 · **Status:** draft · **Depends on:** [spec 1](2026-09-29-website-1-public-access-design.md)
+**Date:** 2026-09-29 · **Status:** implemented (see the deltas below and [ADR-025](../../adr/ADR-025-website-routing-and-erp-base-path.md)) · **Depends on:** [spec 1](2026-09-29-website-1-public-access-design.md)
 · **Overview:** [website overview](2026-09-29-website-overview.md)
 
 ## Problem
@@ -96,6 +96,21 @@ Setting `website.routing` = `{mode: "path"|"host", site_host, erp_host}` (defaul
 - `infra/nginx/README.md`: production — DNS A/AAAA records for both hosts, then either mount
   your own cert/key into the volume or run certbot (webroot on `/.well-known/acme-challenge/`,
   served on :80 before the HTTPS redirect).
+
+## Implementation deltas
+- **Text block is plain text** (no markdown/HTML). **Image block** reads a record's picture anchor
+  (`table`/`record`/`field`) through the public route `GET /api/v1/public/<table>/<id>/picture/<field>`
+  (gated by the published scope). Record lists have **no sort** (the generic list has none).
+- `website_page` optional columns are nullable (generic create requires non-pointer columns), so
+  public JSON may carry `null` layout/published/in_menu; generic CRUD now maps unique violations to 409.
+- ERP under `/app` via `erpPath()` (module paths stay module-relative); `/print`, `/api`, `/database` stay at root.
+- Legacy bare ERP paths 308 to `/app` unless a **published** page owns that slug (proxy fetches published
+  slugs + routing, cached 60 s, 2 s timeout, single in-flight fetch; slug set capped at 100 pages).
+- Host mode is **redirects**, not rewrites: `erp_host` keeps `/app` and `/` goes to `/app`; unknown hosts
+  behave like path mode. Host detection uses `Host` (nginx sets it). Lockout guard + `EERP_SITE_ROUTING=path`.
+- Visitor pages `/login`, `/signup`, `/account`; the old ERP `/login` bookmark now 404s (ERP login is `/app/login`).
+  Both sessions are cleared only on a Go 401.
+- nginx overwrites `X-Forwarded-For` with `$remote_addr` and sets `X-Forwarded-Host` on every upstream.
 
 ## Testing
 - Go: layout validation table test; slug uniqueness per tenant; public read of an unpublished
