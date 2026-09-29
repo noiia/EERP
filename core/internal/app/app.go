@@ -673,7 +673,6 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// event / event_availability: validation (and event defaults) in front of the generic writes.
 	for table, mw := range map[string]echo.MiddlewareFunc{
 		"event": eventmodule.ValidateEventBody, "event_availability": eventmodule.ValidateAvailabilityBody,
-		"event_session": eventmodule.ValidateSessionBody,
 	} {
 		h := handlers[table]
 		srv.Echo().POST("/api/v1/"+table, h.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
@@ -682,14 +681,17 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	eventH := eventmodule.NewHandler(app.DB, eventmodule.NewService(app.DB, chatter.NewRepository(app.DB), configContent.SiteURL))
 	// event_booking writes go through the booking service (seat accounting);
 	// a booking is cancelled, never deleted; a session with confirmed
-	// bookings can't be deleted. seats_taken is read-only on the generic
-	// session update and capped by capacity in the DB.
+	// bookings can't be deleted nor move to another event. seats_taken is
+	// read-only on the generic session update and capped by capacity in the DB.
 	bookingH := handlers["event_booking"]
 	srv.Echo().POST("/api/v1/event_booking", eventH.StaffBook(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().PUT("/api/v1/event_booking/:id", eventH.StaffUpdate(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().DELETE("/api/v1/event_booking/:id", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().POST("/api/v1/event_booking/:id/restore", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
-	srv.Echo().DELETE("/api/v1/event_session/:id", handlers["event_session"].Delete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventH.GuardSessionDelete)
+	sessionH := handlers["event_session"]
+	srv.Echo().POST("/api/v1/event_session", sessionH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventmodule.ValidateSessionBody)
+	srv.Echo().PUT("/api/v1/event_session/:id", sessionH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventmodule.ValidateSessionBody, eventH.GuardSessionUpdate)
+	srv.Echo().DELETE("/api/v1/event_session/:id", eventH.DeleteSession, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver

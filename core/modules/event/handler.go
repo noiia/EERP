@@ -1,8 +1,10 @@
 package event
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
@@ -312,9 +314,46 @@ func (h *Handler) RefuseDelete(*echo.Context) error {
 	return echo.NewHTTPError(http.StatusConflict, "cancel the booking instead")
 }
 
-// GuardSessionDelete sits in front of the generic event_session delete: a
-// session holding confirmed bookings can't vanish under them.
-func (h *Handler) GuardSessionDelete(next echo.HandlerFunc) echo.HandlerFunc {
+// DeleteSession handles DELETE /api/v1/event_session/:id in place of the
+// generic delete: one conditional soft delete, so there's no check-then-act
+// window. seats_taken (kept in step with confirmed bookings by the booking
+// service) sits on the row itself, so a booking committed while this waits
+// on the row lock is seen when READ COMMITTED re-evaluates the WHERE; a
+// booking arriving after finds deleted_at set and fails.
+func (h *Handler) DeleteSession(c *echo.Context) error {
+	ctx := c.Request().Context()
+	tenant, _ := access.TenantFromContext(ctx)
+	id, err := echo.PathParam[uuid.UUID](c, "id")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
+	}
+	var deleted bool
+	err = h.db.QueryRow(ctx, `
+		WITH del AS (
+			UPDATE event_session SET deleted_at = now(), updated_at = now()
+			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND seats_taken = 0
+			RETURNING true AS deleted)
+		SELECT deleted FROM del
+		UNION ALL
+		SELECT false FROM event_session
+		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM del)`, id, tenant).Scan(&deleted)
+	if isNoRows(err) {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return echo.NewHTTPError(http.StatusConflict, "the session has confirmed bookings; cancel them first")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// GuardSessionUpdate sits in front of the generic event_session update: a
+// session never changes event (its bookings carry the event id, and the
+// generic layer doesn't check the new target's tenant). Sending the stored
+// event_id back — the ERP form PUTs its whole draft — is fine.
+func (h *Handler) GuardSessionUpdate(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		ctx := c.Request().Context()
 		tenant, _ := access.TenantFromContext(ctx)
@@ -322,14 +361,28 @@ func (h *Handler) GuardSessionDelete(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
 		}
-		var booked bool
-		if err := h.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM event_booking
-			WHERE session_id = $1 AND tenant_id = $2 AND status = $3 AND deleted_at IS NULL)`,
-			id, tenant, BookingConfirmed).Scan(&booked); err != nil {
+		raw, err := io.ReadAll(c.Request().Body)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "unreadable body")
+		}
+		c.Request().Body = io.NopCloser(bytes.NewReader(raw))
+		var body struct {
+			EventID *string `json:"event_id"`
+		}
+		if json.Unmarshal(raw, &body) != nil || body.EventID == nil {
+			return next(c) // malformed or no event_id: the generic handler decides
+		}
+		var stored uuid.UUID
+		err = h.db.QueryRow(ctx, `SELECT event_id FROM event_session WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+			id, tenant).Scan(&stored)
+		if isNoRows(err) {
+			return echo.NewHTTPError(http.StatusNotFound, "not found")
+		}
+		if err != nil {
 			return err
 		}
-		if booked {
-			return echo.NewHTTPError(http.StatusConflict, "the session has confirmed bookings; cancel them first")
+		if want, err := uuid.Parse(*body.EventID); err != nil || want != stored {
+			return echo.NewHTTPError(http.StatusBadRequest, "event_id cannot be changed; create a session on the other event instead")
 		}
 		return next(c)
 	}

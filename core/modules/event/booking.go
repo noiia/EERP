@@ -142,9 +142,9 @@ func captureSessionSeats(ctx context.Context, tx *orm.Tx, ev Event, sessionID uu
 	var start time.Time
 	err := tx.QueryRow(ctx, `
 		UPDATE event_session SET seats_taken = seats_taken + $3, updated_at = now()
-		WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL
+		WHERE id = $1 AND event_id = $2 AND tenant_id = $4 AND deleted_at IS NULL
 		  AND seats_taken + $3 <= capacity AND starts_at > now()
-		RETURNING starts_at`, sessionID, ev.ID, seats).Scan(&start)
+		RETURNING starts_at`, sessionID, ev.ID, seats, ev.TenantID).Scan(&start)
 	if err == nil {
 		return start, nil
 	}
@@ -152,8 +152,8 @@ func captureSessionSeats(ctx context.Context, tx *orm.Tx, ev Event, sessionID uu
 		return time.Time{}, err
 	}
 	var belongs bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM event_session WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL)`,
-		sessionID, ev.ID).Scan(&belongs); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM event_session WHERE id = $1 AND event_id = $2 AND tenant_id = $3 AND deleted_at IS NULL)`,
+		sessionID, ev.ID, ev.TenantID).Scan(&belongs); err != nil {
 		return time.Time{}, err
 	}
 	if !belongs {

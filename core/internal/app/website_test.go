@@ -619,6 +619,15 @@ func TestBookingFlow(t *testing.T) {
 		if code, _ := c.do(http.MethodPut, "/api/v1/event_session/"+s3, map[string]any{"capacity": 2}); code != http.StatusBadRequest {
 			t.Errorf("capacity below seats_taken = %d, want 400", code)
 		}
+		if code, _ := c.do(http.MethodPut, "/api/v1/event_session/"+s3, map[string]any{"event_id": eventID}); code != http.StatusBadRequest {
+			t.Errorf("moving a session to another event = %d, want 400", code)
+		}
+		if code, body := c.do(http.MethodPut, "/api/v1/event_session/"+s3, map[string]any{"event_id": draftID, "capacity": 6}); code != http.StatusOK {
+			t.Errorf("PUT with the unchanged event_id = %d %s, want 200", code, body)
+		}
+		if code, _ := c.do(http.MethodPut, "/api/v1/event_session/"+s3, map[string]any{"ends_at": start.Add(-time.Hour).Format(time.RFC3339)}); code != http.StatusBadRequest {
+			t.Errorf("partial PUT inverting the session = %d, want 400", code)
+		}
 		for name, b := range map[string]map[string]any{
 			"seats":   {"seats": 1},
 			"session": {"session_id": sessionID},
@@ -650,6 +659,9 @@ func TestBookingFlow(t *testing.T) {
 		}
 		if code, _ := c.do(http.MethodDelete, "/api/v1/event_session/"+s3, nil); code != http.StatusOK && code != http.StatusNoContent {
 			t.Errorf("delete session without confirmed bookings = %d", code)
+		}
+		if code, _ := c.do(http.MethodDelete, "/api/v1/event_session/"+s3, nil); code != http.StatusNotFound {
+			t.Errorf("delete an already deleted session = %d, want 404", code)
 		}
 	})
 }

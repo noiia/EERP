@@ -109,6 +109,17 @@ func TestBook_SessionRules(t *testing.T) {
 	unpublished := f.event(t, Event{Name: "Draft", Kind: KindSessions})
 	_, _ = f.db.Exec(context.Background(), `UPDATE event SET published = false WHERE id = $1`, unpublished.ID)
 	draftSession := f.session(t, unpublished, 10, time.Now().Add(48*time.Hour))
+	// A session row of another tenant pointing at this tenant's event (the
+	// generic layer doesn't check a relation target's tenant).
+	foreignTenant := uuid.New()
+	foreign, err := orm.MustRepo[EventSession](f.db).Create(context.Background(),
+		EventSession{TenantID: foreignTenant, EventID: ev.ID, StartsAt: time.Now().Add(48 * time.Hour), EndsAt: time.Now().Add(49 * time.Hour), Capacity: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = f.db.Exec(context.Background(), `DELETE FROM event_session WHERE tenant_id = $1`, foreignTenant)
+	})
 	appt := f.event(t, Event{Name: "Appt", Kind: KindAppointment, SlotMinutes: 30, SlotCapacity: 1})
 	apptSession := f.session(t, appt, 10, time.Now().Add(48*time.Hour))
 
@@ -124,6 +135,7 @@ func TestBook_SessionRules(t *testing.T) {
 		{"past session", BookRequest{EventID: ev.ID, SessionID: &past.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrFull},
 		{"session of another event", BookRequest{EventID: other.ID, SessionID: &future.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrNotBookable},
 		{"unpublished event", BookRequest{EventID: unpublished.ID, SessionID: &draftSession.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrNotBookable},
+		{"session row of another tenant", BookRequest{EventID: ev.ID, SessionID: &foreign.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrNotBookable},
 		{"session of an appointment event", BookRequest{EventID: appt.ID, SessionID: &apptSession.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrNotBookable},
 		{"staff books an unpublished event", BookRequest{EventID: unpublished.ID, SessionID: &draftSession.ID, Seats: 1, Email: "s@x.io", Name: "S", Staff: true}, nil},
 	}

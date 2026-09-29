@@ -52,6 +52,12 @@ func (m *eventModule) Migrate(ctx context.Context, db *orm.DB) error {
 			ALTER TABLE event_session ADD CONSTRAINT event_session_capacity
 			CHECK (seats_taken <= capacity);
 		EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+		// ValidateSessionBody only sees the keys a PUT carries; this also
+		// catches a partial update inverting the stored window.
+		`DO $$ BEGIN
+			ALTER TABLE event_session ADD CONSTRAINT event_session_window
+			CHECK (ends_at > starts_at);
+		EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
 	} {
 		if _, err := db.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("event: migrate: %w", err)
