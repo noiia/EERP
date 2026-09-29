@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -174,4 +175,71 @@ func TestWebsiteAccounts(t *testing.T) {
 			t.Error("website user listed in Settings → Users")
 		}
 	})
+}
+
+func TestWebsiteProfileAndAdmin(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	email := "visitor-" + uuid.NewString() + "@test.io"
+	t.Cleanup(func() {
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email = $1)`, email)
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM users WHERE email = $1`, email)
+	})
+	_, body := anon.do(http.MethodPost, "/api/v1/website/auth/signup",
+		map[string]string{"email": email, "password": "correct horse", "name": "Vi"})
+	site := &client{t: t, h: c.h, token: decode(t, body)["access_token"].(string)}
+
+	if code, body := site.do(http.MethodPut, "/api/v1/website/me", map[string]string{"name": "Vivi", "phone": "0102"}); code != http.StatusNoContent {
+		t.Fatalf("put me: %d %s", code, body)
+	}
+	_, body = site.do(http.MethodGet, "/api/v1/website/me", nil)
+	if me := decode(t, body); me["name"] != "Vivi" || me["email"] != email {
+		t.Fatalf("me = %v", me)
+	}
+	if code, _ := c.do(http.MethodGet, "/api/v1/website/me", nil); code != http.StatusForbidden {
+		t.Errorf("erp token on /website/me = %d, want 403", code)
+	}
+	if code, _ := site.do(http.MethodPut, "/api/v1/website/me", map[string]string{"name": " "}); code != http.StatusBadRequest {
+		t.Errorf("blank name = %d, want 400", code)
+	}
+
+	// ERP admin lists and disables the visitor.
+	_, body = c.do(http.MethodGet, "/api/v1/website_admin/users", nil)
+	var id string
+	var list []map[string]any
+	_ = json.Unmarshal(body, &list)
+	for _, u := range list {
+		if u["email"] == email {
+			id, _ = u["id"].(string)
+		}
+	}
+	if id == "" {
+		t.Fatalf("visitor not in website_admin list: %s", body)
+	}
+	if code, body := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"name": "Admin Set", "surname": "S"}); code != http.StatusNoContent {
+		t.Fatalf("admin profile edit: %d %s", code, body)
+	}
+	if code, body := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"disabled": true}); code != http.StatusNoContent {
+		t.Fatalf("disable: %d %s", code, body)
+	}
+	if code, _ := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"name": "X"}); code != http.StatusNotFound {
+		t.Errorf("profile edit on disabled = %d, want 404", code)
+	}
+	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/login",
+		map[string]string{"email": email, "password": "correct horse"}); code != http.StatusUnauthorized {
+		t.Errorf("disabled visitor login = %d, want 401", code)
+	}
+	if code, _ := site.do(http.MethodGet, "/api/v1/website_admin/users", nil); code != http.StatusForbidden {
+		t.Errorf("website token on website_admin = %d, want 403", code)
+	}
+
+	// Re-registering the freed address, then re-enabling the old account: 409.
+	if code, body := anon.do(http.MethodPost, "/api/v1/website/auth/signup",
+		map[string]string{"email": email, "password": "correct horse", "name": "New"}); code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("re-signup: %d %s", code, body)
+	}
+	if code, _ := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"disabled": false}); code != http.StatusConflict {
+		t.Errorf("re-enable with email taken = %d, want 409", code)
+	}
 }

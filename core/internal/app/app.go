@@ -639,7 +639,20 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteAuthGroup.POST("/login", siteAuth.Login)
 		websiteAuthGroup.POST("/refresh", siteAuth.Refresh)
 		websiteAuthGroup.POST("/logout", siteAuth.Logout)
+
+		websiteJWT := authmw.WebsiteJWTMiddleware(tokenSvc)
+		siteMe := website.NewMeHandler(userRepo)
+		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
+		websiteGroup.GET("/me", siteMe.Get)
+		websiteGroup.PUT("/me", siteMe.Put)
 	}
+
+	// Website users administration (ADR-024): website_admin:users:read|write.
+	// Outside the site-tenant block: ERP staff manage accounts either way.
+	websiteAdmin := website.NewAdminUsersHandler(userRepo, refreshStore)
+	websiteAdminGroup := srv.Echo().Group("/api/v1/website_admin", jwtMw, permMw)
+	websiteAdminGroup.GET("/users", websiteAdmin.List)
+	websiteAdminGroup.PUT("/users/:id", websiteAdmin.Update)
 
 	// ── crminheritdemo: Create() override reference example ─────────────────
 	// Mounted AFTER the generic block above so Echo's router keeps THIS
