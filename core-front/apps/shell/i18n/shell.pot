@@ -420,3 +420,6 @@ msgstr ""
 
 msgid "shown"
 msgstr ""
+
+msgid "Booking will be available soon."
+msgstr ""

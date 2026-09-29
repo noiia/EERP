@@ -629,3 +629,6 @@ msgstr "affichés ce mois-ci"
 
 msgid "shown"
 msgstr "affichés"
+
+msgid "Booking will be available soon."
+msgstr "Réservation bientôt disponible."
