@@ -21,6 +21,13 @@ func TestValidatePage(t *testing.T) {
 		{"nested path", map[string]any{"slug": "a/b"}, "slug"},
 		{"reserved app", map[string]any{"slug": "app"}, "reserved"},
 		{"reserved api", map[string]any{"slug": "api"}, "reserved"},
+		{"reserved settings", map[string]any{"slug": "settings"}, "reserved"},
+		{"reserved appstore", map[string]any{"slug": "appstore"}, "reserved"},
+		{"reserved force-password-change", map[string]any{"slug": "force-password-change"}, "reserved"},
+		{"go module name", map[string]any{"slug": "crm"}, "reserved"},
+		{"slug number", map[string]any{"slug": 5}, "string"},
+		{"slug null", map[string]any{"slug": nil}, "string"},
+		{"slug bool", map[string]any{"slug": true}, "string"},
 		{"unknown block type", map[string]any{"layout": []any{block("a", "iframe", 0, 0, 1, 1)}}, "type"},
 		{"duplicate block id", map[string]any{"layout": []any{block("a", "text", 0, 0, 1, 1), block("a", "text", 0, 1, 1, 1)}}, "duplicate"},
 		{"negative x", map[string]any{"layout": []any{block("a", "text", -1, 0, 1, 1)}}, "x/y"},
@@ -31,7 +38,7 @@ func TestValidatePage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePage(tt.body)
+			err := validatePage(tt.body, func(n string) bool { return n == "crm" })
 			if tt.wantErr == "" && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

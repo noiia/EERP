@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"regexp"
 
+	"core/internal/module"
+
 	"github.com/labstack/echo/v5"
 )
 
@@ -22,7 +24,7 @@ var BlockTypes = map[string]bool{
 // ReservedSlugs are first path segments the site can never own.
 var ReservedSlugs = map[string]bool{
 	"app": true, "api": true, "print": true, "database": true, "login": true, "signup": true,
-	"account": true, "booking": true, "_next": true, "favicon.ico": true,
+	"account": true, "settings": true, "appstore": true, "force-password-change": true, "booking": true, "_next": true, "favicon.ico": true,
 }
 
 const gridCols = 12
@@ -43,10 +45,15 @@ type block struct {
 }
 
 // validatePage checks the keys present in body (a PUT may send a subset).
-func validatePage(body map[string]any) error {
+// isModule reports registered Go module names: proxy.ts 308s those first
+// segments into /app, so a page owning one would be unreachable.
+func validatePage(body map[string]any, isModule func(string) bool) error {
 	if raw, ok := body["slug"]; ok {
-		slug, _ := raw.(string)
-		if ReservedSlugs[slug] {
+		slug, isStr := raw.(string)
+		if !isStr {
+			return fmt.Errorf("%w: slug must be a string", errPage)
+		}
+		if ReservedSlugs[slug] || isModule(slug) {
 			return fmt.Errorf("%w: slug %q is reserved", errPage, slug)
 		}
 		if slug != "" && !slugPattern.MatchString(slug) {
@@ -95,7 +102,7 @@ func ValidatePageBody(next echo.HandlerFunc) echo.HandlerFunc {
 		if err := json.Unmarshal(raw, &body); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
 		}
-		if err := validatePage(body); err != nil {
+		if err := validatePage(body, module.IsGoModule); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 		c.Request().Body = io.NopCloser(bytes.NewReader(raw))
