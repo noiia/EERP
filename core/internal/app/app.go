@@ -629,6 +629,16 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve))
+
+		if err := auth.SeedWebsiteRoles(ctx, app.DB, siteTenant); err != nil {
+			return fmt.Errorf("seed website roles: %w", err)
+		}
+		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
+		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
+		websiteAuthGroup.POST("/signup", siteAuth.Signup)
+		websiteAuthGroup.POST("/login", siteAuth.Login)
+		websiteAuthGroup.POST("/refresh", siteAuth.Refresh)
+		websiteAuthGroup.POST("/logout", siteAuth.Logout)
 	}
 
 	// ── crminheritdemo: Create() override reference example ─────────────────

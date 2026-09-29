@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"core/internal/auth"
@@ -95,6 +96,66 @@ func TestPublicRoutes(t *testing.T) {
 		}
 		if code, _ := anon.do(http.MethodGet, "/api/v1/public/product/"+id, nil); code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404 — row outside the forced filter", code)
+		}
+	})
+}
+
+func TestWebsiteAccounts(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	email := "Visitor-" + uuid.NewString() + "@Test.io"
+	t.Cleanup(func() {
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE lower(email) = lower($1))`, email)
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM users WHERE lower(email) = lower($1)`, email)
+	})
+
+	code, body := anon.do(http.MethodPost, "/api/v1/website/auth/signup",
+		map[string]string{"email": email, "password": "correct horse", "name": "Vi"})
+	if code != http.StatusOK {
+		t.Fatalf("signup: %d %s", code, body)
+	}
+	site := &client{t: t, h: c.h, token: decode(t, body)["access_token"].(string)}
+
+	tests := []struct {
+		name   string
+		c      *client
+		method string
+		path   string
+		body   any
+		want   int
+	}{
+		// Review Focus #1: same address, different case.
+		{"duplicate email (case-insensitive) is 409", anon, http.MethodPost, "/api/v1/website/auth/signup",
+			map[string]string{"email": strings.ToUpper(email), "password": "correct horse", "name": "X"}, http.StatusConflict},
+		{"short password is 400", anon, http.MethodPost, "/api/v1/website/auth/signup",
+			map[string]string{"email": "a" + email, "password": "short", "name": "X"}, http.StatusBadRequest},
+		{"bad email is 400", anon, http.MethodPost, "/api/v1/website/auth/signup",
+			map[string]string{"email": "nope", "password": "correct horse", "name": "X"}, http.StatusBadRequest},
+		{"website login works", anon, http.MethodPost, "/api/v1/website/auth/login",
+			map[string]string{"email": email, "password": "correct horse"}, http.StatusOK},
+		{"erp login refuses a website user", anon, http.MethodPost, "/api/v1/auth/login",
+			map[string]string{"email": email, "password": "correct horse"}, http.StatusUnauthorized},
+		{"website login refuses the erp admin", anon, http.MethodPost, "/api/v1/website/auth/login",
+			map[string]string{"email": auth.DevAdminEmail, "password": auth.DevAdminPassword}, http.StatusUnauthorized},
+		// Review Focus #4: every ERP group refuses the website token.
+		{"website token on generic CRUD", site, http.MethodGet, "/api/v1/crm", nil, http.StatusForbidden},
+		{"website token on /me/preferences", site, http.MethodGet, "/api/v1/me/preferences", nil, http.StatusForbidden},
+		{"website token on settings", site, http.MethodGet, "/api/v1/settings/tax", nil, http.StatusForbidden},
+		{"website token on presence", site, http.MethodGet, "/api/v1/presence", nil, http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if code, body := tt.c.do(tt.method, tt.path, tt.body); code != tt.want {
+				t.Errorf("status = %d, want %d: %s", code, tt.want, body)
+			}
+		})
+	}
+
+	t.Run("settings users list hides website users", func(t *testing.T) {
+		_, body := c.do(http.MethodGet, "/api/v1/users", nil)
+		if strings.Contains(strings.ToLower(string(body)), strings.ToLower(email)) {
+			t.Error("website user listed in Settings → Users")
 		}
 	})
 }

@@ -41,7 +41,7 @@ func mapRoleWriteErr(err error) error {
 
 // ListByTenant returns every active user of the tenant, ordered by email.
 func (r *UserRepository) ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Users, error) {
-	users, err := r.users.FindAll(ctx, orm.Cond("tenant_id = $1", tenantID))
+	users, err := r.users.FindAll(ctx, orm.Cond("tenant_id = $1 AND kind <> $2", tenantID, KindWebsite))
 	if err != nil {
 		return nil, fmt.Errorf("user: list by tenant: %w", err)
 	}
@@ -52,7 +52,7 @@ func (r *UserRepository) ListByTenant(ctx context.Context, tenantID uuid.UUID) (
 // FindInTenant returns the active user only when it belongs to the tenant —
 // a wrong tenant reads as orm.ErrNotFound, indistinguishable from a missing id.
 func (r *UserRepository) FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Users, error) {
-	u, err := r.users.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2", id, tenantID))
+	u, err := r.users.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2 AND kind <> $3", id, tenantID, KindWebsite))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Users{}, fmt.Errorf("user: find in tenant: %w", orm.ErrNotFound)
@@ -241,4 +241,34 @@ func (r *RoleRepository) UpdateRole(ctx context.Context, tenantID, id uuid.UUID,
 		return Roles{}, fmt.Errorf("role: update: %w", mapRoleWriteErr(err))
 	}
 	return updated, nil
+}
+
+// ErrEmailTaken: a live account already uses this address (any case, any kind).
+var ErrEmailTaken = errors.New("email already registered")
+
+// CreateWebsiteUser creates a kind=website user holding website_user, in one
+// transaction. email must already be normalised (trimmed, lower-cased).
+func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name string) (Users, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return Users{}, fmt.Errorf("user: create website: %w", err)
+	}
+	var created Users
+	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		u := Users{BaseModel: model.BaseModel{TenantID: tenantID}, Email: email, PasswordHash: string(hash), Name: name, Kind: KindWebsite}
+		if created, err = r.users.WithTx(tx).Create(ctx, u); err != nil {
+			return err
+		}
+		_, err = orm.MustRepo[UserRoles](r.db).WithTx(tx).Create(ctx,
+			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)})
+		return err
+	})
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		return Users{}, ErrEmailTaken
+	}
+	if err != nil {
+		return Users{}, fmt.Errorf("user: create website: %w", err)
+	}
+	return created, nil
 }

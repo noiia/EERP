@@ -213,6 +213,17 @@ func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
 		return fmt.Errorf("auth: create user_roles unique index: %w", err)
 	}
 
+	// One live account per address, case-insensitively, across both kinds
+	// (ADR-024: an email is either staff or a website visitor in v1). Website
+	// signup normalises to lower case; this index is the race-proof guard.
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_live
+		ON users (lower(email))
+		WHERE deleted_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("auth: create users email index: %w", err)
+	}
+
 	// UserRoles.TenantID used to be a *uuid.UUID (nullable) specifically so
 	// this table's pre-BaseModel rows could keep existing without a NOT NULL
 	// failure — see that field's old doc comment (removed now that it's

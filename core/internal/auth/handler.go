@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
+	"strings"
 	"time"
 
 	"core/orm"
@@ -126,6 +128,9 @@ func (h *Handler) Login(c *echo.Context) error {
 	}
 
 	const errMsg = "Invalid email or password."
+	if h.website {
+		req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	}
 
 	user, err := h.users.FindByEmail(c.Request().Context(), req.Email)
 	if err != nil {
@@ -318,3 +323,39 @@ func (h *Handler) unauthMsg(c *echo.Context, msg string) error {
 
 // ErrUserNotFound is the sentinel for "user not found" that stubs can return.
 var ErrUserNotFound = errors.New("user not found")
+
+// Signup handles POST /api/v1/website/auth/signup (website flavour only).
+// The "already registered" 409 does reveal that an address has an account —
+// accepted for signup (standard UX); login and booking never reveal it.
+func (h *Handler) Signup(c *echo.Context) error {
+	if !h.website || h.creator == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid email")
+	}
+	if len(req.Password) < 8 || len(req.Password) > 72 { // 72: bcrypt's input limit
+		return echo.NewHTTPError(http.StatusBadRequest, "password must be 8 to 72 characters")
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || len(name) > 200 {
+		return echo.NewHTTPError(http.StatusBadRequest, "name is required (max 200 characters)")
+	}
+	user, err := h.creator.CreateWebsiteUser(c.Request().Context(), h.siteTenant, email, req.Password, name)
+	if errors.Is(err, ErrEmailTaken) {
+		return echo.NewHTTPError(http.StatusConflict, "this email cannot be used")
+	}
+	if err != nil {
+		return fmt.Errorf("signup: %w", err)
+	}
+	return h.issueSession(c, user)
+}

@@ -294,3 +294,38 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 // ptr returns a pointer to a copy of v — Roles.TechnicalName is *string, and
 // a string literal has no address of its own to take inline.
 func ptr[T any](v T) *T { return &v }
+
+// SeedWebsiteRoles idempotently seeds the three website roles (ADR-024) in
+// tenantID. website_anonymous and website_user hold no ERP permission — their
+// access comes only from the /public and /website route groups;
+// website_admin is an ERP role for staff running the site.
+func SeedWebsiteRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error {
+	roles := orm.MustRepo[Roles](db)
+	perms := orm.MustRepo[Permissions](db)
+	for _, r := range []Roles{
+		{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role:website_anonymous"), TenantID: tenantID}, Name: "Website visitor", Description: "Anonymous website visitor. Holds no ERP permission.", TechnicalName: ptr("website_anonymous")},
+		{BaseModel: model.BaseModel{ID: WebsiteUserRoleID(tenantID), TenantID: tenantID}, Name: "Website user", Description: "Self-registered website account. Website-only access.", TechnicalName: ptr("website_user")},
+		{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role:website_admin"), TenantID: tenantID}, Name: "Website admin", Description: "Manages the website: published data, pages, events, website users.", TechnicalName: ptr("website_admin")},
+	} {
+		if _, err := roles.Upsert(ctx, r, []string{"id"}, ""); err != nil {
+			return fmt.Errorf("seed website roles: %w", err)
+		}
+	}
+	for _, code := range []string{"settings:website:read", "settings:website:write", "website_admin:*:*"} {
+		p, err := perms.UpsertPartial(ctx,
+			Permissions{ID: seedUUID(tenantID, "permission:"+code), Code: code, Description: "Website admin (default)", Module: "website"},
+			[]string{"code"}, "deleted_at IS NULL", "")
+		if err != nil {
+			return fmt.Errorf("seed website roles: permission %s: %w", code, err)
+		}
+		if _, err := db.Exec(ctx,
+			`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			seedUUID(tenantID, "role:website_admin"), p.ID); err != nil {
+			return fmt.Errorf("seed website roles: role_permissions: %w", err)
+		}
+	}
+	return nil
+}
+
+// WebsiteUserRoleID is the deterministic id of tenantID's website_user role.
+func WebsiteUserRoleID(tenantID uuid.UUID) uuid.UUID { return seedUUID(tenantID, "role:website_user") }
