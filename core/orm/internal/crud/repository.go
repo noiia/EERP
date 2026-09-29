@@ -138,6 +138,15 @@ func (r *Repository) filterConditions(ctx context.Context, f ListFilter) ([]quer
 		conds = append(conds, query.NewCondition(fmt.Sprintf("%s::text = ANY($1)", col), f.In[col]))
 	}
 
+	empty := append([]string(nil), f.Empty...)
+	sort.Strings(empty)
+	for _, col := range empty {
+		if err := r.checkColumn(ctx, col); err != nil {
+			return nil, err
+		}
+		conds = append(conds, query.NewCondition(fmt.Sprintf("(%s IS NULL OR %s::text = '')", col, col)))
+	}
+
 	appendRange := func(conds []query.Condition, m map[string]string, op string) ([]query.Condition, error) {
 		for _, col := range sortedKeys(m) {
 			if err := r.checkColumn(ctx, col); err != nil {

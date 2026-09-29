@@ -22,6 +22,30 @@ export interface EntityListOptions {
   gte?: Record<string, string>
   lt?: Record<string, string>
   lte?: Record<string, string>
+  /** Columns that must be NULL or '' (`empty[col]=1`) — an empty `filter`
+   * value means "no filter", so this is the only way to ask for "unset". */
+  empty?: string[]
   page?: number
   pageSize?: number
+}
+
+const MAP_KEYS = ['filter', 'search', 'in', 'gt', 'gte', 'lt', 'lte'] as const
+
+/**
+ * Layer `extra` over `base` (e.g. the search bar's filters over a route's
+ * fixed `descriptor.listFilter`): every condition map is merged key by key,
+ * `extra` winning on a shared column; page/pageSize come from `extra` when set.
+ */
+export function mergeListOptions(
+  base: EntityListOptions | undefined,
+  extra: EntityListOptions | undefined,
+): EntityListOptions | undefined {
+  if (!base) return extra
+  if (!extra) return base
+  const out: EntityListOptions = { ...base, ...extra }
+  for (const key of MAP_KEYS) {
+    if (base[key] || extra[key]) Object.assign(out, { [key]: { ...base[key], ...extra[key] } })
+  }
+  if (base.empty || extra.empty) out.empty = [...new Set([...(base.empty ?? []), ...(extra.empty ?? [])])]
+  return out
 }

@@ -3,7 +3,7 @@ import { ApiError, serializeError, type SerializedError } from '../api/errors'
 import { createServerApiClient, type ServerApiClient } from '../api/ApiClient'
 import { EMPTY_VIEW_FIELDS, type ViewFieldsConfig } from '../api/view-fields'
 import { effectiveChatterVisible, type ChatterVisibilityConfig } from '../api/chatter-visibility'
-import type { EntityListOptions } from '../api/list-options'
+import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import type { ViewDescriptor } from './descriptor'
 import { EntityView } from './renderers'
 import type { EntityActions, HasId, Widget } from './stores'
@@ -56,14 +56,7 @@ export async function loadView<T extends HasId>(
     // descriptor.listFilter (a route-fixed refinement) always applies, ahead
     // of whatever the caller passed — a host page's own listOptions can add
     // to it (e.g. more filter/search keys) but never has to know it exists.
-    const mergedOptions: EntityListOptions | undefined =
-      descriptor.listFilter || options.listOptions
-        ? {
-            ...descriptor.listFilter,
-            ...options.listOptions,
-            filter: { ...descriptor.listFilter?.filter, ...options.listOptions?.filter },
-          }
-        : undefined
+    const mergedOptions = mergeListOptions(descriptor.listFilter, options.listOptions)
     const { records, total } = await api.listWithTotal<T>(descriptor.entity, mergedOptions)
     return { initialData: records, error: null, total }
   } catch (e) {
@@ -155,8 +148,10 @@ export async function loadDashboardWidgets(
   return Promise.all(
     listViews.map(async (view) => {
       try {
-        const records = await api.list(view.entity)
-        return { id: view.href, title: view.title, href: view.href, count: records.length }
+        // One row is enough: the count is the envelope's total over every
+        // row, never the length of a (default 20-row) page.
+        const { total } = await api.listWithTotal(view.entity, { pageSize: 1 })
+        return { id: view.href, title: view.title, href: view.href, count: total }
       } catch (e) {
         if (e instanceof ApiError) return { id: view.href, title: view.title, href: view.href, count: null }
         throw e

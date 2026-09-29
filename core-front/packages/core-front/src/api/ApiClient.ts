@@ -233,6 +233,7 @@ function appendListParams(params: URLSearchParams, options?: EntityListOptions):
       params.set(`${prefix}[${col}]`, value)
     }
   }
+  for (const col of options.empty ?? []) params.set(`empty[${col}]`, '1')
   if (options.page) params.set('page', String(options.page))
   if (options.pageSize) params.set('page_size', String(options.pageSize))
 }

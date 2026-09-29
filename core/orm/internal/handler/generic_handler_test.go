@@ -358,6 +358,29 @@ func TestList_FilterAndSearchParams(t *testing.T) {
 	}
 }
 
+func TestList_EmptyFilterParam(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+			gotFilter = f
+			return nil, 0, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items?empty%5Bname%5D=1", "")
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if len(gotFilter.Empty) != 1 || gotFilter.Empty[0] != "name" {
+		t.Fatalf("Empty = %v, want [name]", gotFilter.Empty)
+	}
+
+	_, c, _ = newEchoRequest(http.MethodGet, "/api/v1/items?empty%5Bnope%5D=1", "")
+	if err := h.List(c); err == nil {
+		t.Error("expected an unknown empty[] column to be rejected")
+	}
+}
+
 func TestList_InFilterParam(t *testing.T) {
 	var gotFilter crud.ListFilter
 	svc := &mockSvc{

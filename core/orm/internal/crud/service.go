@@ -35,6 +35,10 @@ type ListFilter struct {
 	// is just a GTE condition and an LTE condition on the same column —
 	// they AND together like any other two filters, no separate operator.
 	GT, GTE, LT, LTE map[string]string
+	// Empty keeps rows whose column is NULL or '' — the one condition an
+	// Equals can't express (an empty filter value means "no filter"): a
+	// Kanban "No status" column, a Calendar's unscheduled records.
+	Empty []string
 }
 
 // DistinctValue is one bucket from DistinctValues: a distinct value of the

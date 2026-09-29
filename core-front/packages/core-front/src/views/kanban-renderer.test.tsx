@@ -203,3 +203,33 @@ describe('KanbanRenderer', () => {
     expect(screen.getByRole('group', { name: 'won' })).not.toHaveTextContent('Acme')
   })
 })
+
+describe('KanbanRenderer with serverOptions', () => {
+  it('loads each column from the server and shows its full count, not the cards shown', async () => {
+    const { RelationOpsProvider } = await import('./relation-ops')
+    const listPage = vi.fn(async (_entity: string, options?: import('../api/list-options').EntityListOptions) => {
+      const status = options?.filter?.status
+      if (status === 'open') return { records: [{ id: '1', name: 'Acme', status: 'open' }], total: 40_000 }
+      if (options?.empty?.includes('status')) return { records: [], total: 7 }
+      return { records: [], total: 0 }
+    })
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <KanbanRenderer
+          descriptor={descriptor}
+          initialData={[]}
+          actions={{ create: vi.fn(), update: vi.fn() }}
+          statusField="status"
+          serverOptions={{ search: { name: 'ac' } }}
+        />
+      </RelationOpsProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('open (40000)')).toBeInTheDocument())
+    expect(screen.getByText('+39999 more')).toBeInTheDocument()
+    expect(screen.getByText('No status (7)')).toBeInTheDocument()
+    // Every column request carries the search bar's filters.
+    expect(listPage).toHaveBeenCalledWith('deals', expect.objectContaining({ search: { name: 'ac' }, filter: { status: 'open' } }))
+    expect(listPage).toHaveBeenCalledWith('deals', expect.objectContaining({ empty: ['status'] }))
+  })
+})

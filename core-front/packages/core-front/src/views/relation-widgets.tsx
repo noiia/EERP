@@ -1319,13 +1319,21 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
       .finally(() => setDeletingId(null))
   }
 
+  // Rows past EMBED_PAGE_SIZE aren't loaded; the total (when listPage is
+  // bound) lets the grid say so instead of truncating silently.
+  const [rowTotal, setRowTotal] = useState<number | null>(null)
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
-    ops
-      .list(rel.entity, { filter: { [inverseField]: recordId }, pageSize: EMBED_PAGE_SIZE })
-      .then((found) => {
-        if (!cancelled) setRows(reverse ? [...found].reverse() : found)
+    const options = { filter: { [inverseField]: recordId }, pageSize: EMBED_PAGE_SIZE }
+    const load = ops.listPage
+      ? ops.listPage(rel.entity, options)
+      : ops.list(rel.entity, options).then((records) => ({ records, total: null }))
+    load
+      .then(({ records: found, total }) => {
+        if (cancelled) return
+        setRows(reverse ? [...found].reverse() : found)
+        setRowTotal(total)
       })
       .catch(() => {
         if (!cancelled) setRows([])
@@ -1430,6 +1438,11 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
           {deleteError}
         </Typography>
       )}
+      {rowTotal != null && rowTotal > EMBED_PAGE_SIZE ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          {EMBED_PAGE_SIZE} / {rowTotal} {t('shown')}
+        </Typography>
+      ) : null}
       {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
           rather than relying on the Button default staying primary. */}
       <Button

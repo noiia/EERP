@@ -261,6 +261,25 @@ describe('EntityView', () => {
     expect(screen.getByText('Ada')).toBeInTheDocument()
   })
 
+  it('server-pages a list: footer counts every row and a page change fetches that page', async () => {
+    const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+    const firstPage = Array.from({ length: 20 }, (_, i) => ({ id: String(i), name: `Row ${i}` }))
+    const listPage = vi.fn(async () => ({ records: [{ id: 'p2', name: 'Second page row' }], total: 100_001 }))
+    const ops: RelationOps = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <EntityView descriptor={treeDescriptor} initialData={firstPage} recordTotal={100_001} actions={noopActions} />
+      </RelationOpsProvider>,
+    )
+    // The seeded first page is reused — no request until the user pages.
+    expect(screen.getByText(/1–20 of 100,?001/)).toBeInTheDocument()
+    expect(listPage).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }))
+    await waitFor(() => expect(screen.getByText('Second page row')).toBeInTheDocument())
+    expect(listPage).toHaveBeenCalledWith('crm', expect.objectContaining({ page: 2, pageSize: 20 }))
+  })
+
   it('navigates to the record form on row click when the descriptor sets formPath', () => {
     const treeDescriptor: ViewDescriptor<Contact> = {
       ...formDescriptor,

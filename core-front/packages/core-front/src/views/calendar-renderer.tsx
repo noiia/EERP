@@ -8,10 +8,13 @@ import CardContent from '@mui/material/CardContent'
 import Collapse from '@mui/material/Collapse'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import { serializeError, toApiError, type SerializedError } from '../api/errors'
+import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { orderedFields } from './layout-fields'
+import { useRelationOps } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
 import { useUndoToastStore } from './undo-toast'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
@@ -19,13 +22,19 @@ import { useOptimisticFieldMove } from './use-optimistic-field-move'
 // Calendar display mode (docs/roadmaps/list-view-modes.md, Phase 3): a month
 // grid positioning records by their configured date field; records with no
 // value in that field list in an "Unscheduled" panel instead of being
-// dropped. Renders the SAME already-fetched records TreeRenderer's list mode
-// does — no new fetch, no new route; browsing months re-filters that same
-// set, it never refetches. Drag/PATCH/revert mechanics are the SAME
+// dropped. With `serverOptions` (TreeRenderer's server-paged mode) it loads
+// the visible month (a gte/lt range on the date field) and the unscheduled
+// records (`empty[]`) from the server, refetching on every month change;
+// otherwise it re-filters the records it was handed. Drag/PATCH/revert mechanics are the SAME
 // useOptimisticFieldMove hook KanbanRenderer uses (Phase 2) — reused, not
 // duplicated.
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Records loaded for one month; past it, a caption says how many aren't shown. */
+export const CALENDAR_MONTH_LIMIT = 1000
+/** Unscheduled records loaded; the panel header still shows the full count. */
+export const CALENDAR_UNSCHEDULED_LIMIT = 50
 
 /** Local-time grid math throughout — never `new Date('YYYY-MM-DD')`, which
  * jsdom/browsers parse as UTC midnight and can land on the wrong local day. */
@@ -65,6 +74,9 @@ export interface CalendarRendererProps<T extends HasId> {
    * stale snapshot from whenever the page last navigated.
    */
   onRecordsChange?: (records: T[]) => void
+  /** Set ⇒ fetch the visible month + unscheduled records from the server
+   * (RelationOps.listPage) under these filters, instead of `initialData`. */
+  serverOptions?: EntityListOptions
 }
 
 export function CalendarRenderer<T extends HasId>({
@@ -74,11 +86,68 @@ export function CalendarRenderer<T extends HasId>({
   dateField,
   colorField,
   onRecordsChange,
+  serverOptions,
 }: CalendarRendererProps<T>) {
   const t = useT()
   const router = useRouter()
   const { formPath } = descriptor
-  const { records, error, moveField } = useOptimisticFieldMove(initialData, actions, dateField)
+  const relationOps = useRelationOps()
+  const now = new Date()
+  const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() })
+
+  const [server, setServer] = useState<{
+    records: T[]
+    monthTotal: number
+    monthLoaded: number
+    unscheduledTotal: number
+    unscheduledLoaded: number
+  } | null>(null)
+  const [loadError, setLoadError] = useState<SerializedError | null>(null)
+  const serverKey = serverOptions && relationOps?.listPage ? JSON.stringify(serverOptions) : null
+  useEffect(() => {
+    const listPage = relationOps?.listPage
+    if (serverKey == null || !listPage) {
+      setServer(null)
+      return
+    }
+    const opts = JSON.parse(serverKey) as EntityListOptions
+    const from = isoDate(cursor.year, cursor.month, 1)
+    const next = new Date(cursor.year, cursor.month + 1, 1)
+    const until = isoDate(next.getFullYear(), next.getMonth(), 1)
+    // Keep a search-bar lower bound on this same field when it's the tighter one.
+    const userFrom = opts.gte?.[dateField]
+    const monthScope: EntityListOptions = {
+      gte: { [dateField]: userFrom && userFrom > from ? userFrom : from },
+      lt: { [dateField]: until },
+    }
+    let cancelled = false
+    void Promise.all([
+      listPage(descriptor.entity, { ...mergeListOptions(opts, monthScope), pageSize: CALENDAR_MONTH_LIMIT }),
+      listPage(descriptor.entity, {
+        ...mergeListOptions(opts, { empty: [dateField] }),
+        pageSize: CALENDAR_UNSCHEDULED_LIMIT,
+      }),
+    ])
+      .then(([month, unscheduled]) => {
+        if (cancelled) return
+        setLoadError(null)
+        setServer({
+          records: [...month.records, ...unscheduled.records] as unknown as T[],
+          monthTotal: month.total,
+          monthLoaded: month.records.length,
+          unscheduledTotal: unscheduled.total,
+          unscheduledLoaded: unscheduled.records.length,
+        })
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(serializeError(toApiError(e)))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [serverKey, cursor.year, cursor.month, dateField, descriptor.entity])
+
+  const { records, error, moveField } = useOptimisticFieldMove(server?.records ?? initialData, actions, dateField)
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
@@ -93,8 +162,6 @@ export function CalendarRenderer<T extends HasId>({
   // onDragEnd whether the drag landed on one of THIS component's own drop targets
   // or was released somewhere outside it entirely (desktop, another panel, ...).
   const droppedRef = useRef(false)
-  const now = new Date()
-  const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() })
 
   // Label field only — day cells are compact, unlike a Kanban card.
   const [labelField] = orderedFields(descriptor, { exclude: [dateField], limit: 1 })
@@ -124,6 +191,12 @@ export function CalendarRenderer<T extends HasId>({
     bucket.push(record)
     byDay.set(value, bucket)
   }
+
+  // Server totals, shifted by any cards dragged in/out of Unscheduled since.
+  const unscheduledCount = server
+    ? server.unscheduledTotal + unscheduled.length - server.unscheduledLoaded
+    : unscheduled.length
+  const monthHidden = server ? server.monthTotal - server.monthLoaded : 0
 
   function changeMonth(delta: number) {
     setCursor(({ year, month }) => {
@@ -198,13 +271,21 @@ export function CalendarRenderer<T extends HasId>({
   return (
     <Box>
       {error ? <ErrorAlert error={error} /> : null}
+      {loadError ? <ErrorAlert error={loadError} /> : null}
       <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
             <Button size="small" aria-label={t('Previous month')} onClick={() => changeMonth(-1)}>
               {t('Previous')}
             </Button>
-            <Typography variant="subtitle1">{monthLabel(cursor.year, cursor.month)}</Typography>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="subtitle1">{monthLabel(cursor.year, cursor.month)}</Typography>
+              {monthHidden > 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  {server!.monthLoaded} / {server!.monthTotal} {t('shown this month')}
+                </Typography>
+              ) : null}
+            </Box>
             <Button size="small" aria-label={t('Next month')} onClick={() => changeMonth(1)}>
               {t('Next')}
             </Button>
@@ -251,7 +332,7 @@ export function CalendarRenderer<T extends HasId>({
           </Box>
         </Box>
 
-        <Collapse in={unscheduled.length > 0} orientation="horizontal" unmountOnExit>
+        <Collapse in={unscheduledCount > 0} orientation="horizontal" unmountOnExit>
           <Box
             role="group"
             aria-label={t('Unscheduled')}
@@ -264,7 +345,7 @@ export function CalendarRenderer<T extends HasId>({
             sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
           >
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              {t('Unscheduled')} ({unscheduled.length})
+              {t('Unscheduled')} ({unscheduledCount})
             </Typography>
             <Stack spacing={0.5}>{unscheduled.map(dayCard)}</Stack>
           </Box>

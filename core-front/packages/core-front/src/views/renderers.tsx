@@ -76,7 +76,7 @@ import {
   type Widget,
 } from './stores'
 import { useStore } from 'zustand'
-import type { EntityListOptions } from '../api/list-options'
+import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 
 // Client renderers. Each builds its Zustand store ONCE from the descriptor +
 // server-seeded initialData (no fetch on mount), then dispatches by viewType. New
@@ -818,15 +818,76 @@ function TreeRenderer<T extends HasId>({
   useEffect(() => {
     setLiveRecords(initialData)
   }, [initialData])
-  // The DataGrid's own pagination state (page + rows shown per page) — purely
-  // a client-side view over whatever SearchBar already fetched (up to its own
-  // fixed FETCH_LIMIT), never fed back into a request. DataGrid's default
-  // paginationMode is 'client', so handing it back via onPaginationModelChange
-  // below is the entire mechanism — no other wiring needed.
+  // The DataGrid's pagination state (page + rows per page). Server-paged (see
+  // below) it drives the page request; otherwise it's a client-side view over
+  // the records already loaded.
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: DEFAULT_DISPLAY_PAGE_SIZE,
   })
+
+  // Server-side paging (List mode): with RelationOps.listPage bound, each
+  // page — and the total over EVERY matching row — comes from Go instead of
+  // client-paging whatever was fetched. The server-seeded first page
+  // (page 1, Go's default 20 rows, no search-bar filter) is reused as is.
+  // A live-typed quick-find (liveResults) is a capped autocomplete merge
+  // across several columns with no single total, so it stays client-paged.
+  const relationOps = useRelationOps()
+  const paged = relationOps?.listPage != null
+  const [liveResults, setLiveResults] = useState<T[] | null>(null)
+  const [total, setTotal] = useState(recordTotal ?? initialData.length)
+  const [pageLoading, setPageLoading] = useState(false)
+  const [pageError, setPageError] = useState<SerializedError | null>(null)
+  const baseOptions = useMemo(
+    () => mergeListOptions(descriptor.listFilter, activeFilters),
+    [descriptor.listFilter, activeFilters],
+  )
+  const onFiltersChange = (options: EntityListOptions | undefined) => {
+    setActiveFilters(options)
+    setLiveResults(null)
+    setPaginationModel((p) => ({ ...p, page: 0 }))
+  }
+  useEffect(() => {
+    if (!paged || mode !== 'list' || liveResults) return
+    const { page, pageSize } = paginationModel
+    if (!activeFilters && page === 0 && pageSize === DEFAULT_DISPLAY_PAGE_SIZE) {
+      setLiveRecords(initialData)
+      setTotal(recordTotal ?? initialData.length)
+      return
+    }
+    let cancelled = false
+    setPageLoading(true)
+    setPageError(null)
+    relationOps
+      .listPage!(descriptor.entity, { ...baseOptions, page: page + 1, pageSize })
+      .then((res) => {
+        if (cancelled) return
+        setLiveRecords(res.records as unknown as T[])
+        setTotal(res.total)
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setPageError(serializeError(toApiError(e)))
+      })
+      .finally(() => {
+        if (!cancelled) setPageLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [paged, mode, liveResults, paginationModel, baseOptions, activeFilters, initialData, recordTotal, descriptor.entity])
+  const serverPaged = paged && liveResults == null
+  // Quick-find results (or the cleared-query fallback, SearchBar's `fallback`
+  // — initialData by identity) feed every mode exactly as before.
+  const onSearchResults = (records: T[]) => {
+    if (!paged) return setLiveRecords(records)
+    if (records === initialData) {
+      setLiveResults(null)
+      return
+    }
+    setLiveResults(records)
+    setLiveRecords(records)
+    setPaginationModel((p) => ({ ...p, page: 0 }))
+  }
   // Mirrors the current filtered/searched/grouped order into the session-only
   // list-nav store — a form navigated to from here (List/Kanban/Calendar all
   // route through the same formPath click) can then step </> through this
@@ -917,6 +978,7 @@ function TreeRenderer<T extends HasId>({
         actions={actions}
         statusField={effective.kanbanStatusField}
         onRecordsChange={setLiveRecords}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
     )
   } else if (mode === 'calendar' && effective.calendarDateField) {
@@ -928,6 +990,7 @@ function TreeRenderer<T extends HasId>({
         dateField={effective.calendarDateField}
         colorField={effective.calendarColorField ?? undefined}
         onRecordsChange={setLiveRecords}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
     )
   } else if (mode === 'graph' && effective.enableGraphs) {
@@ -988,9 +1051,11 @@ function TreeRenderer<T extends HasId>({
                 : undefined
             }
             sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
-            // Controlled purely for RowsPerPageInput/page-navigation's sake —
-            // paginates client-side over whatever SearchBar already fetched
-            // (its own fixed FETCH_LIMIT), never triggers a new request.
+            // Server-paged: rowCount is Go's total over every matching row and
+            // each page change fetches that page (the effect above).
+            paginationMode={serverPaged ? 'server' : 'client'}
+            rowCount={serverPaged ? total : undefined}
+            loading={pageLoading}
             paginationModel={paginationModel}
             onPaginationModelChange={setPaginationModel}
             pageSizeOptions={ALL_PAGE_SIZES}
@@ -1016,9 +1081,10 @@ function TreeRenderer<T extends HasId>({
   const searchBar = (
     <SearchBar
       descriptor={descriptor}
-      onResults={setLiveRecords}
+      onResults={onSearchResults}
       fallback={initialData}
-      onFiltersChange={setActiveFilters}
+      onFiltersChange={onFiltersChange}
+      pagedByParent={paged}
     />
   )
   // The selection toolbar (right of the search bar) only applies where
@@ -1067,6 +1133,7 @@ function TreeRenderer<T extends HasId>({
           {bulkDeleteError}
         </Typography>
       ) : null}
+      {pageError ? <ErrorAlert error={pageError} /> : null}
       <DisplayModeSwitcher
         entity={descriptor.entity}
         mode={mode}

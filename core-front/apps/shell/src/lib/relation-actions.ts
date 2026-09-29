@@ -20,6 +20,13 @@ export async function listRecords(
   return settleAction(() => createServerApiClient().list<RelationRecord>(entity, options))
 }
 
+export async function listRecordsPage(
+  entity: string,
+  options?: EntityListOptions,
+): Promise<{ records: RelationRecord[]; total: number } | ActionError> {
+  return settleAction(() => createServerApiClient().listWithTotal<RelationRecord>(entity, options))
+}
+
 export async function getRecord(entity: string, id: string): Promise<RelationRecord | ActionError> {
   return settleAction(() => createServerApiClient().get<RelationRecord>(entity, id))
 }

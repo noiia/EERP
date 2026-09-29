@@ -32,6 +32,13 @@ export interface RelationOps {
     column: string,
     options?: EntityListOptions,
   ) => Promise<{ value: string; total: number }[]>
+  /**
+   * One page of records plus the total over EVERY row matching options'
+   * filters — what list/kanban/calendar counts and server-side paging read.
+   * Optional, same fail-open posture as distinctValues: without it, views
+   * fall back to the records the page was seeded with.
+   */
+  listPage?: (entity: string, options?: EntityListOptions) => Promise<{ records: RelationRecord[]; total: number }>
 }
 
 const relationOpsContext = createOpsContext<RelationOps>()

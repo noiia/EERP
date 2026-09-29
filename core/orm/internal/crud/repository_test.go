@@ -397,6 +397,25 @@ func TestRepository_FindAll_AppliesInFilter(t *testing.T) {
 	}
 }
 
+func TestRepository_FindAll_AppliesEmptyFilter(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{Empty: []string{"label"}})
+	if err != nil {
+		t.Fatalf("FindAll: %v", err)
+	}
+	for _, q := range ex.queries {
+		if !strings.Contains(q, "(label IS NULL OR label::text = '')") {
+			t.Errorf("query missing the Empty filter: %q", q)
+		}
+	}
+
+	if _, _, err := repo.FindAll(context.Background(), crud.ListFilter{Empty: []string{"nope"}}); err == nil {
+		t.Error("expected an unknown Empty column to be rejected")
+	}
+}
+
 func TestRepository_FindAll_RangeFiltersUseTypeAwareCasts(t *testing.T) {
 	ex := &captureExec{}
 	repo := crud.NewRepository(ex, rangeMeta(t))

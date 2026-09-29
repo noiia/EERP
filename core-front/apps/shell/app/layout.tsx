@@ -57,6 +57,7 @@ import {
   distinctValues,
   getRecord,
   listRecords,
+  listRecordsPage,
   removeRelationRecord,
 } from '../src/lib/relation-actions'
 import {
@@ -131,6 +132,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 create: createRelationRecord,
                 remove: removeRelationRecord,
                 distinctValues,
+                listPage: listRecordsPage,
               }}
             >
               {/* Graph mode's app-wide data path: entity-generic Server Action

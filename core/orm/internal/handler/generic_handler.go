@@ -61,6 +61,7 @@ func bracketColumn(key, prefix string) (string, bool) {
 //	?search[<column>]=<text>       case-insensitive containment — autocomplete
 //	?in[<column>]=<v1>,<v2>        one of several values — the search bar's multi-select
 //	?gt[<column>]=/gte[]=/lt[]=/lte[]=  range comparison — the search bar's number/date ranges
+//	?empty[<column>]=1             NULL or '' — Kanban's "No status", Calendar's unscheduled
 //
 // Filter columns are validated against the table meta here (friendly 400) and
 // again in the repository (the actual security boundary, including group gating).
@@ -91,6 +92,14 @@ func (h *GenericHandler) listFilter(c *echo.Context) (crud.ListFilter, error) {
 
 	for key, vals := range c.QueryParams() {
 		if len(vals) == 0 || vals[0] == "" {
+			continue
+		}
+
+		if col, ok := bracketColumn(key, "empty"); ok {
+			if !h.meta.HasField(col) {
+				return f, echo.NewHTTPError(http.StatusBadRequest, "unknown filter column: "+col)
+			}
+			f.Empty = append(f.Empty, col)
 			continue
 		}
 

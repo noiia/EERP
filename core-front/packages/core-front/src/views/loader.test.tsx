@@ -285,11 +285,12 @@ describe('EntityViewServer', () => {
 
 describe('loadDashboardWidgets', () => {
   it('builds one block per list view, each carrying its entry count and link', async () => {
-    const api = fakeApi({
-      list: vi.fn(async (entity: string) =>
-        entity === 'crm' ? [{ id: '1' }, { id: '2' }, { id: '3' }] : [{ id: 'a' }],
-      ) as never,
-    })
+    // The count is the envelope's total over every row, not the page length —
+    // a one-row page of a 100 000-row table must still read 100 000.
+    const listWithTotal = vi.fn(async (entity: string) =>
+      entity === 'crm' ? { records: [{ id: '1' }], total: 100_000 } : { records: [{ id: 'a' }], total: 1 },
+    )
+    const api = fakeApi({ listWithTotal: listWithTotal as never })
     const widgets = await loadDashboardWidgets(
       [
         { entity: 'crm', title: 'Crm', href: '/crm/list' },
@@ -298,14 +299,15 @@ describe('loadDashboardWidgets', () => {
       api,
     )
     expect(widgets).toEqual([
-      { id: '/crm/list', title: 'Crm', href: '/crm/list', count: 3 },
+      { id: '/crm/list', title: 'Crm', href: '/crm/list', count: 100_000 },
       { id: '/sales/list', title: 'Orders', href: '/sales/list', count: 1 },
     ])
+    expect(listWithTotal).toHaveBeenCalledWith('crm', { pageSize: 1 })
   })
 
   it('leaves a block count null when its list view fails to load', async () => {
     const api = fakeApi({
-      list: vi.fn(async () => {
+      listWithTotal: vi.fn(async () => {
         throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
       }) as never,
     })

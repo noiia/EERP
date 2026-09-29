@@ -241,9 +241,19 @@ export interface SearchBarProps<T extends HasId> {
    * The free-text live search isn't included: it's autocomplete over a few
    * fields, not a row filter. */
   onFiltersChange?: (options: EntityListOptions | undefined) => void
+  /** The parent pages the filtered rows server-side itself (TreeRenderer with
+   * `RelationOps.listPage`): structured filters then only go through
+   * onFiltersChange, with no FETCH_LIMIT-capped fetch of their own. */
+  pagedByParent?: boolean
 }
 
-export function SearchBar<T extends HasId>({ descriptor, onResults, fallback, onFiltersChange }: SearchBarProps<T>) {
+export function SearchBar<T extends HasId>({
+  descriptor,
+  onResults,
+  fallback,
+  onFiltersChange,
+  pagedByParent = false,
+}: SearchBarProps<T>) {
   const t = useT()
   const relationOps = useRelationOps()
   const savedFilterOps = useSavedFilterOps()
@@ -326,6 +336,12 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback, on
       const options = toListOptions(next, FETCH_LIMIT)
       delete options.pageSize
       onFiltersChange(next.length > 0 ? options : undefined)
+    }
+    if (pagedByParent) {
+      // Filters replace any live-typed quick-find result.
+      if (liveTimer.current) clearTimeout(liveTimer.current)
+      setQuery('')
+      return
     }
     if (!relationOps) {
       if (next.length === 0) onResults(fallback)

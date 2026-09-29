@@ -411,3 +411,12 @@ msgstr ""
 
 msgid "The server could not complete this request. If it keeps happening, contact your administrator."
 msgstr ""
+
+msgid "more"
+msgstr ""
+
+msgid "shown this month"
+msgstr ""
+
+msgid "shown"
+msgstr ""
