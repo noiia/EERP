@@ -38,6 +38,26 @@ func WebsiteJWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
 	}
 }
 
+// OptionalWebsiteJWTMiddleware lets anonymous callers through and, when an
+// Authorization header is present, authenticates it exactly like
+// WebsiteJWTMiddleware — the booking endpoint serves both visitors and
+// logged-in website users. A present-but-bad header is refused, never
+// silently downgraded to anonymous.
+func OptionalWebsiteJWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			header := c.Request().Header.Get("Authorization")
+			if header == "" {
+				return next(c)
+			}
+			if !strings.HasPrefix(header, "Bearer ") {
+				return unauthenticated(c)
+			}
+			return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "), true)
+		}
+	}
+}
+
 // JWTOrCookieMiddleware is JWTMiddleware plus ONE narrowly-scoped fallback:
 // when there's no Authorization header, it reads the raw access token from
 // cookieName instead. Used ONLY by the presence routes (core/cmd/app/main.go)
