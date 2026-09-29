@@ -16,7 +16,7 @@ describe('routeDecision — path mode', () => {
     ['/settings/users', { kind: 'redirect', location: '/app/settings/users' }],
     ['/api/v1/public/site', { kind: 'next' }],
     ['/print/report/x/1', { kind: 'next' }],
-    // Published slug equal to an ERP root: served by the site, not 308'd.
+    // Published slug equal to an ERP root: served by the site, not redirected.
     ['/contacts', { kind: 'next' }],
   ])('%s', (pathname, want) => {
     expect(routeDecision({ pathname, host: 'localhost', erpRoots, siteSlugs, routing: path })).toEqual(want)

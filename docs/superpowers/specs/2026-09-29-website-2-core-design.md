@@ -104,11 +104,22 @@ Setting `website.routing` = `{mode: "path"|"host", site_host, erp_host}` (defaul
 - `website_page` optional columns are nullable (generic create requires non-pointer columns), so
   public JSON may carry `null` layout/published/in_menu; generic CRUD now maps unique violations to 409.
 - ERP under `/app` via `erpPath()` (module paths stay module-relative); `/print`, `/api`, `/database` stay at root.
-- Legacy bare ERP paths 308 to `/app` unless a **published** page owns that slug (proxy fetches published
-  slugs + routing, cached 60 s, 2 s timeout, single in-flight fetch; slug set capped at 100 pages).
+- Legacy bare ERP paths **307** (not 308: the slug set changes) to `/app` unless a **published** page owns
+  that slug (proxy fetches published slugs via `?distinct=slug` + routing from `GET /api/v1/public/site`,
+  forwarding the client IP, cached 60 s, 2 s timeout, single in-flight fetch; a failure keeps the last
+  good value; slug set capped at 500 distinct values).
+- Server-side public reads forward the visitor IP (per-IP rate limit); a 429 renders an empty block
+  rather than failing the page. With no published home page, `/` redirects to `/app`.
+- The public routing endpoint is `GET /api/v1/public/site` (answers `{routing}` even without a site tenant).
+- The footer is **static** (not built from published `company` fields).
+- The page editor is a separate `/app/website/pages/<id>/design` route opened by a header button on the
+  `website_page` form, not a notebook page.
+- Publishing changes (`savePublished`) expire the site's cached reads immediately; public pictures keep
+  their 300 s HTTP max-age.
 - Host mode is **redirects**, not rewrites: `erp_host` keeps `/app` and `/` goes to `/app`; unknown hosts
   behave like path mode. Host detection uses `Host` (nginx sets it). Lockout guard + `EERP_SITE_ROUTING=path`.
-- Visitor pages `/login`, `/signup`, `/account`; the old ERP `/login` bookmark now 404s (ERP login is `/app/login`).
+- Visitor pages `/login`, `/signup`, `/account`; an old ERP `/login` bookmark opens the visitor login, which
+  links "Staff sign-in" to the ERP login at `/app/login`.
   Both sessions are cleared only on a Go 401.
 - nginx overwrites `X-Forwarded-For` with `$remote_addr` and sets `X-Forwarded-Host` on every upstream.
 
