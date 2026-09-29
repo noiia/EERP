@@ -670,22 +670,25 @@ func TestBookingFlow(t *testing.T) {
 }
 
 // Review Focus #5: earlier anonymous bookings attach to an account only once
-// its email is verified — signing up with someone's address claims nothing.
+// its email is verified, and only from that account's own session — signing
+// up with someone's address and getting them to click the link claims nothing.
 func TestVerifyAttachesHistoryOnlyAfterVerification(t *testing.T) {
 	c := buildSiteApp(t)
 	anon := &client{t: t, h: c.h}
 	ctx := context.Background()
-	email := "verify-" + uuid.NewString()[:8] + "@test.io"
+	prefix := "verify-" + uuid.NewString()[:8]
+	email := prefix + "@test.io"
+	other := prefix + "-other@test.io"
 	var eventID string
 	t.Cleanup(func() {
 		for _, q := range []string{
-			`DELETE FROM event_booking WHERE email = $1`,
-			`DELETE FROM mail_outbox WHERE to_address = $1`,
-			`DELETE FROM contact WHERE email = $1`,
-			`DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email = $1)`,
-			`DELETE FROM users WHERE email = $1`,
+			`DELETE FROM event_booking WHERE email LIKE $1`,
+			`DELETE FROM mail_outbox WHERE to_address LIKE $1`,
+			`DELETE FROM contact WHERE email LIKE $1`,
+			`DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)`,
+			`DELETE FROM users WHERE email LIKE $1`,
 		} {
-			_, _ = c.a.db.DB.Exec(ctx, q, email)
+			_, _ = c.a.db.DB.Exec(ctx, q, prefix+"%")
 		}
 		for _, q := range []string{
 			`DELETE FROM event_booking WHERE event_id = $1`,
@@ -714,52 +717,97 @@ func TestVerifyAttachesHistoryOnlyAfterVerification(t *testing.T) {
 		t.Fatalf("book: %d %s", code, body)
 	}
 
-	code, body = anon.do(http.MethodPost, "/api/v1/website/auth/signup", map[string]string{"email": email, "password": "correct horse", "name": "V"})
-	if code != http.StatusOK && code != http.StatusCreated {
-		t.Fatalf("signup: %d %s", code, body)
+	signup := func(addr string) *client {
+		t.Helper()
+		code, body := anon.do(http.MethodPost, "/api/v1/website/auth/signup", map[string]string{"email": addr, "password": "correct horse", "name": "V"})
+		if code != http.StatusOK && code != http.StatusCreated {
+			t.Fatalf("signup %s: %d %s", addr, code, body)
+		}
+		return &client{t: t, h: c.h, token: decode(t, body)["access_token"].(string)}
 	}
-	site := &client{t: t, h: c.h, token: decode(t, body)["access_token"].(string)}
-	count := func() int {
-		_, body := site.do(http.MethodGet, "/api/v1/website/me/bookings", nil)
+	site, intruder := signup(email), signup(other)
+	count := func(cl *client) int {
+		_, body := cl.do(http.MethodGet, "/api/v1/website/me/bookings", nil)
 		return len(decode(t, body)["data"].([]any))
 	}
-	if n := count(); n != 0 {
+	if n := count(site); n != 0 {
 		t.Fatalf("unverified account sees %d bookings, want 0", n)
 	}
-
-	// Only the hash is stored; the raw token lives in the queued email.
+	// Only the hash is stored; the raw token lives in the latest queued email.
+	latestToken := func() string {
+		t.Helper()
+		var text string
+		_ = c.a.db.DB.QueryRow(ctx, `SELECT body_text FROM mail_outbox WHERE to_address = $1 AND subject LIKE 'Confirm%'
+			ORDER BY created_at DESC LIMIT 1`, email).Scan(&text)
+		i := strings.Index(text, "/account/verify?token=")
+		if i < 0 {
+			t.Fatalf("no verification link in %q", text)
+		}
+		return text[i+len("/account/verify?token="):][:64]
+	}
+	mails := func() int {
+		var n int
+		_ = c.a.db.DB.QueryRow(ctx, `SELECT count(*) FROM mail_outbox WHERE to_address = $1 AND subject LIKE 'Confirm%'`, email).Scan(&n)
+		return n
+	}
+	verify := func(cl *client, token string) int {
+		code, _ := cl.do(http.MethodPost, "/api/v1/website/me/verify", map[string]string{"token": token})
+		return code
+	}
+	old := latestToken()
 	var stored string
 	_ = c.a.db.DB.QueryRow(ctx, `SELECT verify_token_hash FROM users WHERE email = $1`, email).Scan(&stored)
-	var text string
-	_ = c.a.db.DB.QueryRow(ctx, `SELECT body_text FROM mail_outbox WHERE to_address = $1 AND subject LIKE 'Confirm%'`, email).Scan(&text)
-	i := strings.Index(text, "/account/verify?token=")
-	if i < 0 || len(stored) != 64 {
-		t.Fatalf("verification mail/hash missing: hash=%q text=%q", stored, text)
+	if len(stored) != 64 || stored == old {
+		t.Fatalf("stored hash %q (raw token must never be stored)", stored)
 	}
-	raw := text[i+len("/account/verify?token="):][:64]
-	if raw == stored {
-		t.Fatal("raw token stored in clear")
+
+	// Resend: the old link stops working, the new one is sent.
+	if code, body := site.do(http.MethodPost, "/api/v1/website/me/verify/resend", nil); code != http.StatusNoContent {
+		t.Fatalf("resend = %d %s", code, body)
 	}
-	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": "0" + raw[1:]}); code != http.StatusBadRequest {
+	raw := latestToken()
+	if raw == old || mails() != 2 {
+		t.Fatalf("resend did not issue a new link (mails=%d)", mails())
+	}
+	if code := verify(site, old); code != http.StatusBadRequest {
+		t.Errorf("superseded token = %d, want 400", code)
+	}
+
+	if code := verify(anon, raw); code != http.StatusUnauthorized {
+		t.Errorf("anonymous verify = %d, want 401", code)
+	}
+	if code := verify(intruder, raw); code != http.StatusBadRequest {
+		t.Errorf("another user's session verifying = %d, want 400", code)
+	}
+	if n := count(intruder) + count(site); n != 0 {
+		t.Fatalf("bookings attached by a foreign verify: %d", n)
+	}
+	if code := verify(site, "0"+raw[1:]); code != http.StatusBadRequest {
 		t.Errorf("wrong token = %d, want 400", code)
 	}
 	// Expired: same 400 as unknown.
 	_, _ = c.a.db.DB.Exec(ctx, `UPDATE users SET verify_expires_at = now() - interval '1 minute' WHERE email = $1`, email)
-	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": raw}); code != http.StatusBadRequest {
+	if code := verify(site, raw); code != http.StatusBadRequest {
 		t.Errorf("expired token = %d, want 400", code)
 	}
-	if n := count(); n != 0 {
+	if n := count(site); n != 0 {
 		t.Fatalf("after expired verify, account sees %d bookings, want 0", n)
 	}
 	_, _ = c.a.db.DB.Exec(ctx, `UPDATE users SET verify_expires_at = now() + interval '1 hour' WHERE email = $1`, email)
-	if code, body := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": raw}); code != http.StatusNoContent {
-		t.Fatalf("verify = %d %s", code, body)
+	if code := verify(site, raw); code != http.StatusNoContent {
+		t.Fatalf("owner verify = %d", code)
 	}
-	if n := count(); n != 1 {
+	if n := count(site); n != 1 {
 		t.Errorf("verified account sees %d bookings, want 1", n)
 	}
-	// Single use.
-	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": raw}); code != http.StatusBadRequest {
+	if code := verify(site, raw); code != http.StatusBadRequest {
 		t.Errorf("reused token = %d, want 400", code)
+	}
+	// A verified account's resend sends nothing.
+	if code, _ := site.do(http.MethodPost, "/api/v1/website/me/verify/resend", nil); code != http.StatusNoContent {
+		t.Errorf("verified resend = %d, want 204", code)
+	}
+	if n := mails(); n != 2 {
+		t.Errorf("verified resend queued a mail (%d total)", n)
 	}
 }

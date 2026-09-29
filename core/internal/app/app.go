@@ -730,10 +730,11 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 
 		siteAuth := authHandler.ForWebsite(siteTenant, userRepo, configContent.SiteURL)
 		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
-		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout,
-			auth.SeedWebsiteRoles(ctx, app.DB, siteTenant))
-		// Email verification: attaches the visitor's earlier anonymous bookings.
-		websiteAuthGroup.POST("/verify", website.NewVerifyHandler(app.DB, eventmodule.AttachBookings).Verify)
+		seedErr := auth.SeedWebsiteRoles(ctx, app.DB, siteTenant)
+		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout, seedErr)
+		if seedErr == nil && configContent.SiteURL == "" {
+			common.Logger.Warn("⚠️  site_url not set — website verification emails will carry a relative link")
+		}
 
 		websiteJWT := authmw.WebsiteJWTMiddleware(tokenSvc)
 		siteMe := website.NewMeHandler(userRepo)
@@ -741,6 +742,10 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteGroup.GET("/me", siteMe.Get)
 		websiteGroup.PUT("/me", siteMe.Put)
 		websiteGroup.GET("/me/bookings", eventH.MyBookings)
+		// Email verification (owner session only) attaches earlier anonymous bookings.
+		siteVerify := website.NewVerifyHandler(app.DB, eventmodule.AttachBookings, userRepo, configContent.SiteURL)
+		websiteGroup.POST("/me/verify", siteVerify.Verify)
+		websiteGroup.POST("/me/verify/resend", siteVerify.Resend)
 		websiteGroup.POST("/me/bookings/:id/cancel", eventH.CancelMine)
 
 		// Bookings: anonymous visitors OR logged-in website users. The site
