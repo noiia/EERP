@@ -318,14 +318,16 @@ func TestCreate_MissingRequired_Returns422(t *testing.T) {
 }
 
 // A unique-index violation is the caller's conflict, not a server fault.
-func TestCreateUpdate_UniqueViolationIs409(t *testing.T) {
+func TestWrites_UniqueViolationIs409(t *testing.T) {
 	uniq := &pgconn.PgError{Code: "23505"}
 	svc := &mockSvc{
 		create: func(context.Context, map[string]any) (map[string]any, error) { return nil, uniq },
 		update: func(context.Context, any, map[string]any) (map[string]any, error) { return nil, uniq },
+		// Restoring a soft-deleted row whose unique value was reused meanwhile.
+		restore: func(context.Context, any) (map[string]any, error) { return nil, uniq },
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
-	for name, call := range map[string]func(*echo.Context) error{"create": h.Create, "update": h.Update} {
+	for name, call := range map[string]func(*echo.Context) error{"create": h.Create, "update": h.Update, "restore": h.Restore} {
 		t.Run(name, func(t *testing.T) {
 			_, c, _ := newEchoRequest(http.MethodPost, "/", `{"name":"x"}`)
 			c.SetPath("/:id")

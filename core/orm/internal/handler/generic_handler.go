@@ -336,7 +336,7 @@ func (h *GenericHandler) Restore(c *echo.Context) error {
 		if errors.Is(err, crud.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
-		return err
+		return mapWriteErr(err) // its unique value may have been reused meanwhile
 	}
 
 	return c.JSON(http.StatusOK, crud.BuildResponse(ctx, h.meta, result))

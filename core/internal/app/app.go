@@ -682,12 +682,16 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		// Seed the published-pages selection once (never overwrite an admin's choice).
 		siteSettings := settings.NewRepository(app.DB)
 		pagesKey := website.PublicKey("website_page")
-		if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, pagesKey); err == nil && !found {
+		if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, pagesKey); err != nil {
+			common.Logger.Warn("website: reading the published-pages selection failed; not seeding it", zap.Error(err))
+		} else if !found {
 			sel, _ := json.Marshal(website.Selection{
 				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout"},
 				Filter: map[string]string{"published": "true"},
 			})
-			_ = siteSettings.Set(ctx, siteTenant, uuid.Nil, pagesKey, string(sel))
+			if err := siteSettings.Set(ctx, siteTenant, uuid.Nil, pagesKey, string(sel)); err != nil {
+				common.Logger.Warn("website: seeding the published-pages selection failed", zap.Error(err))
+			}
 		}
 
 		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
