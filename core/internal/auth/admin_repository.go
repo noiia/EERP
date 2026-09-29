@@ -342,3 +342,16 @@ func (r *UserRepository) SetWebsiteUserDisabled(ctx context.Context, tenantID, i
 	}
 	return nil
 }
+
+// FindWebsiteUser returns the live (not disabled) website account of the
+// tenant; anything else reads as orm.ErrNotFound.
+func (r *UserRepository) FindWebsiteUser(ctx context.Context, tenantID, id uuid.UUID) (Users, error) {
+	u, err := r.users.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2 AND kind = $3", id, tenantID, KindWebsite))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Users{}, fmt.Errorf("user: find website: %w", orm.ErrNotFound)
+		}
+		return Users{}, fmt.Errorf("user: find website: %w", err)
+	}
+	return u, nil
+}

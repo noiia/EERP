@@ -14,6 +14,7 @@ import (
 )
 
 type adminStore interface {
+	FindWebsiteUser(ctx context.Context, tenantID, id uuid.UUID) (auth.Users, error)
 	ListWebsiteUsers(ctx context.Context, tenantID uuid.UUID) ([]auth.Users, error)
 	SetWebsiteUserDisabled(ctx context.Context, tenantID, id uuid.UUID, disabled bool) error
 	UpdateWebsiteProfile(ctx context.Context, tenantID, id uuid.UUID, p auth.WebsiteProfile) error
@@ -61,8 +62,7 @@ func (h *AdminUsersHandler) List(c *echo.Context) error {
 }
 
 // Update handles PUT /api/v1/website_admin/users/:id — {disabled?, name?, surname?, phone?}.
-// A profile edit needs a live account (re-enable first); name/surname/phone
-// are only applied when at least one is present.
+// Partial: only the profile fields sent are changed. Editing needs a live account.
 func (h *AdminUsersHandler) Update(c *echo.Context) error {
 	ctx := c.Request().Context()
 	tenant := auth.MustIdentity(ctx).TenantID
@@ -79,8 +79,8 @@ func (h *AdminUsersHandler) Update(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
 	}
-	if req.Disabled != nil {
-		err := h.users.SetWebsiteUserDisabled(ctx, tenant, id, *req.Disabled)
+	setDisabled := func(disabled bool) error {
+		err := h.users.SetWebsiteUserDisabled(ctx, tenant, id, disabled)
 		switch {
 		case errors.Is(err, orm.ErrNotFound):
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -89,31 +89,48 @@ func (h *AdminUsersHandler) Update(c *echo.Context) error {
 		case err != nil:
 			return err
 		}
-		if *req.Disabled {
-			if err := h.refresh.RevokeAll(ctx, id); err != nil {
-				return err
-			}
+		if disabled {
+			return h.refresh.RevokeAll(ctx, id)
+		}
+		return nil
+	}
+	// Order: enable -> profile -> disable (a profile edit needs a live row).
+	if req.Disabled != nil && !*req.Disabled {
+		if err := setDisabled(false); err != nil {
+			return err
 		}
 	}
 	if req.Name != nil || req.Surname != nil || req.Phone != nil {
-		p := auth.WebsiteProfile{Name: deref(req.Name), Surname: deref(req.Surname), Phone: deref(req.Phone)}
-		if err := validProfile(&p); err != nil {
-			return err
-		}
-		err := h.users.UpdateWebsiteProfile(ctx, tenant, id, p)
+		u, err := h.users.FindWebsiteUser(ctx, tenant, id)
 		if errors.Is(err, orm.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
 		if err != nil {
 			return err
 		}
+		p := auth.WebsiteProfile{Name: u.Name, Surname: u.Surname, Phone: u.Phone}
+		if req.Name != nil {
+			p.Name = *req.Name
+		}
+		if req.Surname != nil {
+			p.Surname = *req.Surname
+		}
+		if req.Phone != nil {
+			p.Phone = *req.Phone
+		}
+		if err := validProfile(&p); err != nil {
+			return err
+		}
+		if err := h.users.UpdateWebsiteProfile(ctx, tenant, id, p); errors.Is(err, orm.ErrNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, "not found")
+		} else if err != nil {
+			return err
+		}
+	}
+	if req.Disabled != nil && *req.Disabled {
+		if err := setDisabled(true); err != nil {
+			return err
+		}
 	}
 	return c.NoContent(http.StatusNoContent)
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

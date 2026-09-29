@@ -220,7 +220,18 @@ func TestWebsiteProfileAndAdmin(t *testing.T) {
 	if code, body := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"name": "Admin Set", "surname": "S"}); code != http.StatusNoContent {
 		t.Fatalf("admin profile edit: %d %s", code, body)
 	}
-	if code, body := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"disabled": true}); code != http.StatusNoContent {
+	// Partial updates leave the fields not sent untouched.
+	c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"phone": "0102"})
+	c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"name": "Only Name"})
+	_, body = c.do(http.MethodGet, "/api/v1/website_admin/users", nil)
+	list = nil
+	_ = json.Unmarshal(body, &list)
+	for _, u := range list {
+		if u["id"] == id && (u["name"] != "Only Name" || u["surname"] != "S" || u["phone"] != "0102") {
+			t.Errorf("partial update result = %v", u)
+		}
+	}
+	if code, body := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"disabled": true, "phone": "0999"}); code != http.StatusNoContent {
 		t.Fatalf("disable: %d %s", code, body)
 	}
 	if code, _ := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"name": "X"}); code != http.StatusNotFound {
