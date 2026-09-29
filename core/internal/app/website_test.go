@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"core/internal/auth"
 	"core/internal/common"
@@ -368,5 +369,55 @@ func TestWebsiteRouting(t *testing.T) {
 	}
 	if got := mode(); got != "host" {
 		t.Errorf("mode after save = %q, want host", got)
+	}
+}
+
+func TestPublicEventSessions(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+
+	code, body := c.do(http.MethodPost, "/api/v1/event", map[string]any{"name": "ev-" + uuid.NewString()})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create event: %d %s", code, body)
+	}
+	ev := decode(t, body)
+	id, _ := ev["id"].(string)
+	t.Cleanup(func() {
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event_session WHERE event_id = $1`, id)
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event WHERE id = $1`, id)
+	})
+	if ev["kind"] != "sessions" || ev["timezone"] != "Europe/Paris" {
+		t.Fatalf("defaults not applied: %v", ev)
+	}
+	if code, _ := c.do(http.MethodPost, "/api/v1/event", map[string]any{"name": "x", "kind": "party"}); code != http.StatusBadRequest {
+		t.Fatalf("bad kind = %d, want 400", code)
+	}
+	start := time.Now().Add(48 * time.Hour)
+	if code, body := c.do(http.MethodPost, "/api/v1/event_session", map[string]any{
+		"event_id": id, "starts_at": start, "ends_at": start.Add(time.Hour), "capacity": 8}); code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create session: %d %s", code, body)
+	}
+
+	sessions := func() []any {
+		code, body := anon.do(http.MethodGet, "/api/v1/public/event/"+id+"/sessions", nil)
+		if code != http.StatusOK {
+			t.Fatalf("sessions: %d %s", code, body)
+		}
+		data, _ := decode(t, body)["data"].([]any)
+		return data
+	}
+	if got := sessions(); len(got) != 0 {
+		t.Fatalf("unpublished event exposes %d sessions", len(got))
+	}
+	if code, body := c.do(http.MethodPut, "/api/v1/event/"+id, map[string]any{"published": true}); code != http.StatusOK {
+		t.Fatalf("publish: %d %s", code, body)
+	}
+	got := sessions()
+	if len(got) != 1 {
+		t.Fatalf("published event: %d sessions, want 1", len(got))
+	}
+	if left, _ := got[0].(map[string]any)["seats_left"].(float64); left != 8 {
+		t.Fatalf("seats_left = %v, want 8", left)
 	}
 }

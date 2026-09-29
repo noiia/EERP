@@ -38,6 +38,7 @@ import (
 	authmodule "core/modules/auth"
 	"core/modules/crminheritdemo"
 	cronmodule "core/modules/cron"
+	eventmodule "core/modules/event"
 	"core/modules/propertymanagement"
 	"core/modules/sale"
 	"core/modules/warehouse"
@@ -669,6 +670,16 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	srv.Echo().POST("/api/v1/website_page", pageH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
 	srv.Echo().PUT("/api/v1/website_page/:id", pageH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
 
+	// event / event_availability: validation (and event defaults) in front of the generic writes.
+	for table, mw := range map[string]echo.MiddlewareFunc{
+		"event": eventmodule.ValidateEventBody, "event_availability": eventmodule.ValidateAvailabilityBody,
+	} {
+		h := handlers[table]
+		srv.Echo().POST("/api/v1/"+table, h.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
+		srv.Echo().PUT("/api/v1/"+table+"/:id", h.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
+	}
+	eventH := eventmodule.NewHandler(app.DB)
+
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver
 	// because ActiveGateMiddleware keys on the first path segment ("public").
@@ -677,20 +688,29 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
 		publicGroup.GET("/site", routing.PublicSite)
+		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
 
-		// Seed the published-pages selection once (never overwrite an admin's choice).
+		// Seed the published selections once (never overwrite an admin's choice).
 		siteSettings := settings.NewRepository(app.DB)
-		pagesKey := website.PublicKey("website_page")
-		if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, pagesKey); err != nil {
-			common.Logger.Warn("website: reading the published-pages selection failed; not seeding it", zap.Error(err))
-		} else if !found {
-			sel, _ := json.Marshal(website.Selection{
+		for table, sel := range map[string]website.Selection{
+			"website_page": {
 				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout"},
 				Filter: map[string]string{"published": "true"},
-			})
-			if err := siteSettings.Set(ctx, siteTenant, uuid.Nil, pagesKey, string(sel)); err != nil {
-				common.Logger.Warn("website: seeding the published-pages selection failed", zap.Error(err))
+			},
+			"event": {
+				Fields: []string{"name", "description", "location", "kind", "slot_minutes", "timezone"},
+				Filter: map[string]string{"published": "true"},
+			},
+		} {
+			key := website.PublicKey(table)
+			if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, key); err != nil {
+				common.Logger.Warn("website: reading the published selection failed; not seeding it", zap.String("table", table), zap.Error(err))
+			} else if !found {
+				enc, _ := json.Marshal(sel)
+				if err := siteSettings.Set(ctx, siteTenant, uuid.Nil, key, string(enc)); err != nil {
+					common.Logger.Warn("website: seeding the published selection failed", zap.String("table", table), zap.Error(err))
+				}
 			}
 		}
 
