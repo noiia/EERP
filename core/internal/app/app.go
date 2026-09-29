@@ -326,7 +326,11 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	if err != nil {
 		common.Logger.Warn("public website routes disabled", zap.Error(err))
 	}
-	publisher := website.NewPublisher(settings.NewRepository(app.DB), siteTenant)
+	siteStore := settings.NewRepository(app.DB)
+	publisher := website.NewPublisher(siteStore, siteTenant)
+	routing := website.NewRoutingHandler(siteStore, siteTenant)
+	settingsGroup.GET("/website/routing", routing.Get)
+	settingsGroup.PUT("/website/routing", routing.Put)
 	settingsGroup.GET("/website/public", publisher.GetPublished)
 	settingsGroup.PUT("/website/public/:table", publisher.PutPublished)
 
@@ -672,6 +676,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		publicGroup := srv.Echo().Group("/api/v1/public",
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
+		publicGroup.GET("/site", routing.PublicSite)
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
 
 		// Seed the published-pages selection once (never overwrite an admin's choice).
@@ -695,6 +700,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
 		websiteGroup.GET("/me", siteMe.Get)
 		websiteGroup.PUT("/me", siteMe.Put)
+	} else {
+		// No site tenant: the Next proxy still needs an answer.
+		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)
 	}
 
 	// Website users administration (ADR-024): website_admin:users:read|write.

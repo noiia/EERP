@@ -329,3 +329,44 @@ func TestWebsitePages(t *testing.T) {
 		t.Errorf("published page not visible: %s", body)
 	}
 }
+
+func TestWebsiteRouting(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	store := settings.NewRepository(c.a.db.DB)
+	old, _, _ := store.Get(ctx, auth.DevTenantID, uuid.Nil, website.RoutingKey)
+	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.RoutingKey, old) })
+	_ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.RoutingKey, "")
+
+	mode := func() string {
+		code, body := anon.do(http.MethodGet, "/api/v1/public/site", nil)
+		if code != http.StatusOK {
+			t.Fatalf("public/site: %d %s", code, body)
+		}
+		return decode(t, body)["routing"].(map[string]any)["mode"].(string)
+	}
+	put := func(host string) int {
+		b, _ := json.Marshal(website.Routing{Mode: "host", SiteHost: "www.acme.fr", ERPHost: "erp.acme.fr"})
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/website/routing", strings.NewReader(string(b)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set("X-EERP-Request-Host", host)
+		rec := httptest.NewRecorder()
+		c.h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := mode(); got != "path" {
+		t.Errorf("default mode = %q, want path", got)
+	}
+	if code := put("localhost"); code != http.StatusBadRequest {
+		t.Errorf("host mode from another host = %d, want 400", code)
+	}
+	if code := put("erp.acme.fr"); code != http.StatusNoContent {
+		t.Fatalf("host mode from erp_host = %d, want 204", code)
+	}
+	if got := mode(); got != "host" {
+		t.Errorf("mode after save = %q, want host", got)
+	}
+}
