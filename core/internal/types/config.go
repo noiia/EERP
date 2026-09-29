@@ -112,6 +112,13 @@ type Config struct {
 	// AuthRateLimitPerMinute throttles the public auth endpoints per client IP to
 	// blunt credential brute-forcing. Defaults to 20/min when unset.
 	AuthRateLimitPerMinute int `json:"auth_rate_limit_per_minute" needed:"false"`
+	// WebsiteTenantID pins the tenant the public website serves (ADR-024).
+	// Empty = the database's single tenant; with several tenants and no
+	// value the public routes are not mounted.
+	WebsiteTenantID string `json:"website_tenant_id" needed:"false"`
+	// PublicRateLimitPerMinute throttles /api/v1/public and /api/v1/website
+	// per client IP; <= 0 means 300.
+	PublicRateLimitPerMinute int `json:"public_rate_limit_per_minute" needed:"false"`
 	// SeedDemoData, when true, seeds DEV-ONLY demo data on startup (currently just
 	// Property Management's sample property/equipment/tenant/rent-receipt) so a module
 	// isn't empty out of the box. Never enable in production. Unrelated to the default

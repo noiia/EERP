@@ -170,3 +170,39 @@ func TestLogout_Returns204_AndClearsCookie(t *testing.T) {
 		}
 	}
 }
+
+func TestLogin_RefusesTheOtherKind(t *testing.T) {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.MinCost)
+	tests := []struct {
+		name    string
+		website bool   // handler flavour
+		kind    string // stored user kind
+		want    int
+	}{
+		{"erp login, internal user", false, "", http.StatusOK},
+		{"erp login, website user", false, auth.KindWebsite, http.StatusUnauthorized},
+		{"website login, website user", true, auth.KindWebsite, http.StatusOK},
+		{"website login, internal user", true, "", http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := auth.Users{Email: "alice@example.com", PasswordHash: string(hash), Kind: tt.kind}
+			user.BaseModel.ID = uuid.New()
+			user.TenantID = uuid.New()
+			h := buildHandler(user, nil, nil, nil)
+			if tt.website {
+				h = h.ForWebsite(user.TenantID, nil)
+			}
+			e := buildEchoForAuth()
+			e.POST("/login", h.Login)
+			req := httptest.NewRequest(http.MethodPost, "/login",
+				strings.NewReader(`{"email":"alice@example.com","password":"secret"}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d; body = %s", rec.Code, tt.want, rec.Body.String())
+			}
+		})
+	}
+}

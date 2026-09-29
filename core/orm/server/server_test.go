@@ -267,6 +267,32 @@ func TestAuthRateLimiter_BlocksAfterBurst(t *testing.T) {
 	}
 }
 
+// Behind nginx/Next every request comes from a private address; the rate
+// limiters must key on the X-Forwarded-For client, not the proxy.
+func TestRealIP_TrustsPrivateProxyXFF(t *testing.T) {
+	tests := []struct{ name, remote, xff, want string }{
+		{"proxied client", "172.18.0.5:1234", "203.0.113.7, 172.18.0.9", "203.0.113.7"},
+		{"public peer cannot spoof", "198.51.100.1:1234", "203.0.113.7", "198.51.100.1"},
+		{"no header", "172.18.0.5:1234", "", "172.18.0.5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := ormserver.New(nil, ormserver.Config{}).Echo()
+			var got string
+			e.GET("/ip", func(c *echo.Context) error { got = c.RealIP(); return c.NoContent(http.StatusOK) })
+			req := httptest.NewRequest(http.MethodGet, "/ip", nil)
+			req.RemoteAddr = tt.remote
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			e.ServeHTTP(httptest.NewRecorder(), req)
+			if got != tt.want {
+				t.Errorf("RealIP = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHealth(t *testing.T) {
 	up := testdb.Open(t)
 	down := testdb.Open(t)

@@ -18,7 +18,9 @@ type companyModule struct{}
 func (m *companyModule) Name() string { return "company" }
 
 func (m *companyModule) Register() error {
-	return orm.Register[company.Company]()
+	return orm.Register[company.Company](orm.WithPublicFields(
+		"name", "email", "phone", "address_number", "address_complement", "address_street",
+		"address_zip_code", "address_city", "address_state", "address_country"))
 }
 
 // Migrate creates the partial unique index company.Repository's bootstrap

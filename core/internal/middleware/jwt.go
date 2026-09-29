@@ -19,7 +19,21 @@ func JWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
 			if !strings.HasPrefix(header, "Bearer ") {
 				return unauthenticated(c)
 			}
-			return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "))
+			return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "), false)
+		}
+	}
+}
+
+// WebsiteJWTMiddleware authenticates website-visitor tokens only (ADR-024).
+// ERP tokens are refused: the two sessions are deliberately independent.
+func WebsiteJWTMiddleware(tokens *auth.TokenService) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			header := c.Request().Header.Get("Authorization")
+			if !strings.HasPrefix(header, "Bearer ") {
+				return unauthenticated(c)
+			}
+			return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "), true)
 		}
 	}
 }
@@ -37,13 +51,13 @@ func JWTOrCookieMiddleware(tokens *auth.TokenService, cookieName string) echo.Mi
 		return func(c *echo.Context) error {
 			header := c.Request().Header.Get("Authorization")
 			if strings.HasPrefix(header, "Bearer ") {
-				return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "))
+				return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "), false)
 			}
 			cookie, err := c.Cookie(cookieName)
 			if err != nil || cookie.Value == "" {
 				return unauthenticated(c)
 			}
-			return authenticate(c, next, tokens, cookie.Value)
+			return authenticate(c, next, tokens, cookie.Value, false)
 		}
 	}
 }
@@ -51,10 +65,18 @@ func JWTOrCookieMiddleware(tokens *auth.TokenService, cookieName string) echo.Mi
 // authenticate parses raw as an access token and, on success, stamps the
 // request context (Identity + tenant + group closure) before calling next —
 // the shared body of JWTMiddleware and JWTOrCookieMiddleware.
-func authenticate(c *echo.Context, next echo.HandlerFunc, tokens *auth.TokenService, raw string) error {
+func authenticate(c *echo.Context, next echo.HandlerFunc, tokens *auth.TokenService, raw string, website bool) error {
 	claims, err := tokens.ParseAccess(raw)
 	if err != nil {
 		return unauthenticated(c)
+	}
+	// Audience gate (ADR-024): lives here, not in roles, so no role grant can
+	// ever let a website token into the ERP — or an ERP token into the site.
+	if claims.IsWebsite() != website {
+		return c.JSON(http.StatusForbidden, map[string]any{"error": map[string]any{
+			"code": "FORBIDDEN", "message": "This session cannot access this resource.",
+			"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
+		}})
 	}
 
 	identity := auth.NewIdentityFromClaims(claims)

@@ -671,3 +671,18 @@ func TestIntegration_SeedDefaultRoles_SecondTenantSharesTheSamePermissionRow(t *
 // (unexported) so this external test package doesn't need to reach into
 // internals for one constant.
 var adminGrantedRightNamesForTest = []string{"read", "write", "delete"}
+
+// A live account whose email differs only by case blocks website signup.
+func TestIntegration_CreateWebsiteUser_EmailTakenCaseInsensitive(t *testing.T) {
+	app, _ := integrationSetup(t)
+	tenantID := newTenant(t, app)
+	if err := auth.SeedWebsiteRoles(context.Background(), app.DB, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	email := "Dup-" + uuid.NewString() + "@Example.test"
+	seedUser(t, app.DB, email, "pw-123456789", tenantID)
+	_, err := auth.NewUserRepository(app.DB).CreateWebsiteUser(context.Background(), tenantID, strings.ToLower(email), "pw-123456789", "Dup")
+	if !errors.Is(err, auth.ErrEmailTaken) {
+		t.Fatalf("err = %v, want ErrEmailTaken", err)
+	}
+}

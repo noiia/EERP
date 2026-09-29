@@ -59,7 +59,20 @@ type Users struct {
 	// freshly-created default admin in production mode; cleared the moment any
 	// password change goes through UpdateProfile, regardless of who performed it.
 	MustChangePassword bool `db:"must_change_password"`
+	// Kind separates ERP staff ("" — internal, the column default) from
+	// self-registered website visitors ("website", ADR-024). A website user's
+	// token carries aud=website and is refused by every ERP route.
+	Kind string `db:"kind"`
+	// EmailVerifiedAt is set once a website user confirms their address
+	// (spec 4); nil = unverified. Unused for internal users.
+	EmailVerifiedAt *time.Time `db:"email_verified_at"`
 }
+
+// KindWebsite is Users.Kind for a website (visitor) account.
+const KindWebsite = "website"
+
+// IsWebsite reports whether u is a website (visitor) account.
+func (u Users) IsWebsite() bool { return u.Kind == KindWebsite }
 
 // Role is a named set of permissions scoped to a tenant.
 type Roles struct {

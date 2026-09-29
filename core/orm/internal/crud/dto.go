@@ -85,8 +85,12 @@ func ValidateRequest(meta registry.TableMeta, body map[string]any, isCreate bool
 // no-op for every table that doesn't use WithFieldGroups.
 func BuildResponse(ctx context.Context, meta registry.TableMeta, row map[string]any) map[string]any {
 	callerGroups, _ := access.GroupsFromContext(ctx)
+	scope, scoped := access.PublicScopeFromContext(ctx)
 	out := make(map[string]any, len(meta.Fields))
 	for _, f := range meta.Fields {
+		if scoped && !scope.Allows(f.Column) {
+			continue
+		}
 		if len(f.Groups) > 0 && !intersects(f.Groups, callerGroups) {
 			continue
 		}

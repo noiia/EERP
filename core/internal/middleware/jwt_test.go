@@ -236,3 +236,35 @@ func TestJWTOrCookieMiddleware_InvalidCookie_Returns401(t *testing.T) {
 		t.Error("handler must not be reached with an invalid cookie token")
 	}
 }
+
+func TestAudienceIsEnforced(t *testing.T) {
+	svc := newSvc()
+	erpTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}}, nil, nil, nil)
+	siteTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}, Kind: auth.KindWebsite}, nil, nil, nil)
+	tests := []struct {
+		name  string
+		mw    echo.MiddlewareFunc
+		token string
+		want  int
+	}{
+		{"erp token on erp route", authmw.JWTMiddleware(svc), erpTok, http.StatusOK},
+		{"website token on erp route", authmw.JWTMiddleware(svc), siteTok, http.StatusForbidden},
+		{"website token on cookie route", authmw.JWTOrCookieMiddleware(svc, "eerp_access"), siteTok, http.StatusForbidden},
+		{"website token on website route", authmw.WebsiteJWTMiddleware(svc), siteTok, http.StatusOK},
+		{"erp token on website route", authmw.WebsiteJWTMiddleware(svc), erpTok, http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := testEcho()
+			reached := false
+			e.GET("/t", recordingHandler(&reached), tt.mw)
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			req.Header.Set("Authorization", "Bearer "+tt.token)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
+	}
+}

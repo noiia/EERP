@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"core/orm"
 	"core/orm/model"
@@ -41,7 +42,7 @@ func mapRoleWriteErr(err error) error {
 
 // ListByTenant returns every active user of the tenant, ordered by email.
 func (r *UserRepository) ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]Users, error) {
-	users, err := r.users.FindAll(ctx, orm.Cond("tenant_id = $1", tenantID))
+	users, err := r.users.FindAll(ctx, orm.Cond("tenant_id = $1 AND kind <> $2", tenantID, KindWebsite))
 	if err != nil {
 		return nil, fmt.Errorf("user: list by tenant: %w", err)
 	}
@@ -52,7 +53,7 @@ func (r *UserRepository) ListByTenant(ctx context.Context, tenantID uuid.UUID) (
 // FindInTenant returns the active user only when it belongs to the tenant —
 // a wrong tenant reads as orm.ErrNotFound, indistinguishable from a missing id.
 func (r *UserRepository) FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Users, error) {
-	u, err := r.users.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2", id, tenantID))
+	u, err := r.users.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2 AND kind <> $3", id, tenantID, KindWebsite))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Users{}, fmt.Errorf("user: find in tenant: %w", orm.ErrNotFound)
@@ -132,7 +133,7 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, tenantID, id uuid.UU
 	}
 	updated, err := r.users.Update(ctx, u, id)
 	if err != nil {
-		return Users{}, fmt.Errorf("user: update profile: %w", err)
+		return Users{}, fmt.Errorf("user: update profile: %w", mapUserWriteErr(err))
 	}
 	return updated, nil
 }
@@ -155,7 +156,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, tenantID uuid.UUID, pro
 
 	created, err := r.users.Create(ctx, u)
 	if err != nil {
-		return Users{}, fmt.Errorf("user: create: %w", err)
+		return Users{}, fmt.Errorf("user: create: %w", mapUserWriteErr(err))
 	}
 	return created, nil
 }
@@ -241,4 +242,126 @@ func (r *RoleRepository) UpdateRole(ctx context.Context, tenantID, id uuid.UUID,
 		return Roles{}, fmt.Errorf("role: update: %w", mapRoleWriteErr(err))
 	}
 	return updated, nil
+}
+
+// ErrEmailTaken: a live account already uses this address (any case, any kind).
+var ErrEmailTaken = errors.New("email already registered")
+
+// CreateWebsiteUser creates a kind=website user holding website_user, in one
+// transaction. email must already be normalised (trimmed, lower-cased).
+func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name string) (Users, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return Users{}, fmt.Errorf("user: create website: %w", err)
+	}
+	var created Users
+	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		// Explicit pre-check: idx_users_email_live is the race-proof guard, but
+		// its creation is non-fatal (modules/auth Migrate), so it may be missing.
+		var taken bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($1) AND deleted_at IS NULL)`, email).Scan(&taken); err != nil {
+			return err
+		}
+		if taken {
+			return ErrEmailTaken
+		}
+		u := Users{BaseModel: model.BaseModel{TenantID: tenantID}, Email: email, PasswordHash: string(hash), Name: name, Kind: KindWebsite}
+		if created, err = r.users.WithTx(tx).Create(ctx, u); err != nil {
+			return err
+		}
+		_, err = orm.MustRepo[UserRoles](r.db).WithTx(tx).Create(ctx,
+			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)})
+		return err
+	})
+	if err != nil {
+		return Users{}, fmt.Errorf("user: create website: %w", mapUserWriteErr(err))
+	}
+	return created, nil
+}
+
+// mapUserWriteErr maps a violation of idx_users_email_live to ErrEmailTaken;
+// any other error (including other unique indexes) passes through.
+func mapUserWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == "idx_users_email_live" {
+		return ErrEmailTaken
+	}
+	return err
+}
+
+// WebsiteProfile is the part of a website account its owner or a website
+// admin may edit. Email is not editable in v1 (it keys booking history, spec 4).
+type WebsiteProfile struct {
+	Name    string `json:"name"`
+	Surname string `json:"surname"`
+	Phone   string `json:"phone"`
+}
+
+// UpdateWebsiteProfile edits a live website account's profile. UpdateQuery
+// does not filter soft-deleted rows, so deleted_at IS NULL is explicit: a
+// disabled account reads as not found (re-enable it first).
+func (r *UserRepository) UpdateWebsiteProfile(ctx context.Context, tenantID, id uuid.UUID, p WebsiteProfile) error {
+	n, err := r.users.UpdateQuery().
+		Set("name", p.Name).Set("surname", p.Surname).Set("phone", p.Phone).Set("updated_at", time.Now()).
+		Where(orm.Cond("id = $1 AND tenant_id = $2 AND kind = $3 AND deleted_at IS NULL", id, tenantID, KindWebsite)).
+		Exec(ctx, r.db)
+	if err != nil {
+		return fmt.Errorf("user: update website profile: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("user: update website profile: %w", orm.ErrNotFound)
+	}
+	return nil
+}
+
+// ListWebsiteUsers returns tenantID's website accounts, disabled ones
+// (soft-deleted) included — raw SQL because the typed repo hides them.
+func (r *UserRepository) ListWebsiteUsers(ctx context.Context, tenantID uuid.UUID) ([]Users, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, email, name, surname, phone, created_at, deleted_at, email_verified_at
+		FROM users WHERE tenant_id = $1 AND kind = $2 ORDER BY email`, tenantID, KindWebsite)
+	if err != nil {
+		return nil, fmt.Errorf("user: list website: %w", err)
+	}
+	defer rows.Close()
+	var out []Users
+	for rows.Next() {
+		var u Users
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.Phone, &u.CreatedAt, &u.DeletedAt, &u.EmailVerifiedAt); err != nil {
+			return nil, fmt.Errorf("user: list website: %w", err)
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// SetWebsiteUserDisabled soft-deletes (disabled) or restores a website account.
+// Login and refresh already refuse a soft-deleted user; the caller also
+// revokes its refresh tokens. Restoring an address a new account has taken
+// meanwhile returns ErrEmailTaken.
+func (r *UserRepository) SetWebsiteUserDisabled(ctx context.Context, tenantID, id uuid.UUID, disabled bool) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE users SET deleted_at = CASE WHEN $4 THEN now() ELSE NULL END, updated_at = now()
+		WHERE id = $1 AND tenant_id = $2 AND kind = $3`, id, tenantID, KindWebsite, disabled)
+	if err != nil {
+		return fmt.Errorf("user: disable website: %w", mapUserWriteErr(err))
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user: disable website: %w", orm.ErrNotFound)
+	}
+	return nil
+}
+
+// FindWebsiteUser returns the live (not disabled) website account of the
+// tenant; anything else reads as orm.ErrNotFound.
+func (r *UserRepository) FindWebsiteUser(ctx context.Context, tenantID, id uuid.UUID) (Users, error) {
+	u, err := r.users.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2 AND kind = $3", id, tenantID, KindWebsite))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Users{}, fmt.Errorf("user: find website: %w", orm.ErrNotFound)
+		}
+		return Users{}, fmt.Errorf("user: find website: %w", err)
+	}
+	return u, nil
 }

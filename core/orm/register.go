@@ -60,3 +60,33 @@ func WithExcluded() Option {
 func LoadAPIConfig(path string) error {
 	return registry.LoadAPIConfig(path)
 }
+
+// WithPublicFields declares the table's public-capable fields (ADR-024).
+func WithPublicFields(fields ...string) Option { return registry.WithPublicFields(fields...) }
+
+// PublicFields returns table's declared public-capable fields; ok is false
+// when the table is unknown, excluded, or declares none.
+func PublicFields(table string) ([]string, bool) {
+	m, ok := registry.Get(table)
+	if !ok || m.Excluded || len(m.PublicFields) == 0 {
+		return nil, false
+	}
+	return m.PublicFields, true
+}
+
+// PublicTables maps every table declaring public fields to those fields.
+func PublicTables() map[string][]string {
+	out := map[string][]string{}
+	for _, m := range registry.All() {
+		if !m.Excluded && len(m.PublicFields) > 0 {
+			out[m.TableName] = m.PublicFields
+		}
+	}
+	return out
+}
+
+// TableHasColumn reports whether table is registered and has column col.
+func TableHasColumn(table, col string) bool {
+	m, ok := registry.Get(table)
+	return ok && m.HasField(col)
+}

@@ -33,5 +33,7 @@
     "smtp_host": "127.0.0.1",
     "smtp_port": 1025,
     "smtp_tls": "none",
-    "smtp_from": "EERP <no-reply@eerp.localhost>"
+    "smtp_from": "EERP <no-reply@eerp.localhost>",
+    "website_tenant_id": "",
+    "public_rate_limit_per_minute": 300
 }

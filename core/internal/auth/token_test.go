@@ -190,3 +190,20 @@ func TestTokenService_ZeroTTL_UsesDefaults(t *testing.T) {
 		t.Errorf("sub mismatch")
 	}
 }
+
+func TestIssueAccess_AudienceFollowsUserKind(t *testing.T) {
+	svc := auth.NewTokenService(testConfig())
+	for _, tt := range []struct {
+		kind string
+		want bool
+	}{{"", false}, {auth.KindWebsite, true}} {
+		raw, err := svc.IssueAccess(auth.Users{Kind: tt.kind}, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claims, err := svc.ParseAccess(raw)
+		if err != nil || claims.IsWebsite() != tt.want {
+			t.Errorf("kind %q: IsWebsite = %v (err %v), want %v", tt.kind, claims.IsWebsite(), err, tt.want)
+		}
+	}
+}

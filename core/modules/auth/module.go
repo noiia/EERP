@@ -7,10 +7,12 @@ import (
 	"fmt"
 
 	"core/internal/auth"
+	"core/internal/common"
 	"core/internal/module"
 	"core/orm"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -276,6 +278,22 @@ func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
 	rightsHandler := NewRightsHandler(db, auth.NewPermissionRepository(db))
 	if err := rightsHandler.BackfillAll(ctx); err != nil {
 		return fmt.Errorf("auth: backfill role view permissions: %w", err)
+	}
+
+	// One live account per address, case-insensitively, across both kinds
+	// (ADR-024: an email is either staff or a website visitor in v1). Website
+	// signup normalises to lower case; this index is the race-proof guard.
+	// Last and non-fatal on purpose: existing live case-duplicates make it
+	// fail, which must neither skip the steps above nor block boot —
+	// CreateWebsiteUser's own pre-check still refuses duplicates meanwhile.
+	// Offenders: SELECT lower(email), count(*) FROM users
+	//   WHERE deleted_at IS NULL GROUP BY 1 HAVING count(*) > 1
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_live
+		ON users (lower(email))
+		WHERE deleted_at IS NULL
+	`); err != nil {
+		common.Logger.Warn("⚠️  idx_users_email_live not created — live users share an email case-insensitively; dedupe them", zap.Error(err))
 	}
 
 	return nil

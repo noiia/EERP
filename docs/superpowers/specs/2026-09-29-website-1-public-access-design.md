@@ -1,6 +1,6 @@
 # Spec 1 — Public access and website identities
 
-**Date:** 2026-09-29 · **Status:** draft · **ADR:** [ADR-024](../../adr/ADR-024-public-access-and-website-identities.md)
+**Date:** 2026-09-29 · **Status:** implemented (aligned with the build; see ADR-024 Implementation notes) · **ADR:** [ADR-024](../../adr/ADR-024-public-access-and-website-identities.md)
 · **Overview:** [website overview](2026-09-29-website-overview.md)
 
 ## Problem
@@ -15,11 +15,10 @@ public website needs (a) anonymous reads of a narrow, admin-controlled slice of 
 orm.Register[ProductVariant](orm.WithPublicFields("product_id", "name", "unit_price"))
 ```
 
-It fills `TableMeta.PublicFields []string`. Unknown names panic at registration — except picture/attachment anchor field names, which are not columns (§2) — (same
-posture as `WithFieldGroups`). A table without the option can never be public. `id` is always
+It fills `TableMeta.PublicFields []string`. Names are not validated (picture anchors aren't columns). A table without the option can never be public. `id` is always
 implicitly public for a published table (needed for detail links).
 
-**Admin side — the selection.** `app_settings` key `website.public.<table>`, `company_id` NULL:
+**Admin side — the selection.** `app_settings` key `website.public.<table>`, at `company_id = uuid.Nil` (site-wide slot):
 
 ```json
 { "fields": ["name", "unit_price"], "filter": { "published": true } }   // e.g. for `event`: filter hides drafts
@@ -39,10 +38,10 @@ settings store (cached with the settings read path).
 - `PUT /api/v1/settings/website/public/:table` — replace one table's selection.
 
 ## 2. Public read API
-Route group `/api/v1/public`, mounted without `jwtMw`/`permMw`, rate-limited like `/api/v1/auth`.
+Route group `/api/v1/public`, mounted without `jwtMw`/`permMw`, rate-limited at `public_rate_limit_per_minute` (default 300); resolver wrapped by `ActiveOnly` so deactivated modules' tables 404.
 
 - `GET /api/v1/public/:table` — the generic list handler (page/page_size, filter, search, in,
-  range, sort, distinct) with the effective set as its column whitelist.
+  range, distinct; no sort param exists) with the effective set as its column whitelist.
 - `GET /api/v1/public/:table/:id` — one record, subject to the same forced `filter`.
 
 **Tenant.** New config field `website_tenant_id`. Empty → the database's single tenant; if more
@@ -59,12 +58,8 @@ it is only ever set by the public group.
 - Table not published (empty selection or no `PublicFields`) → **404**, never an empty list,
   so tables cannot be enumerated.
 - Any param naming a non-effective column → 400 (same message as an unknown column).
-- Relations: a many2one value is returned only if the target table is itself published; the
-  label comes from the target's effective set. No transitive exposure.
-- **Pictures:** `GET /api/v1/public/pictures/:table/:record/:field` streams a picture only if
-  `:table` is published, `:field` is in its effective set, and `:record` passes the forced
-  `filter`. Declaring a picture field in `WithPublicFields` is allowed even though it is not a
-  real column (the pictures anchor names it).
+- Relations: a many2one value is its raw id, returned only if the column itself is published; labels are the consumer's job (no transitive exposure).
+- **Pictures:** the public picture route is not in this plan; it moves to spec 2 (first consumer).
 - `aggregate` is not offered on the public group in v1.
 - Responses go through the Redis read cache as usual; public reads are the hottest path.
 
@@ -79,15 +74,15 @@ in roles, so a mis-granted role cannot open the ERP to a website token.
 - ERP login (`/api/v1/auth/login`) refuses `kind=website`; website login refuses
   `kind=internal` — same generic "invalid credentials" error, no account enumeration.
 - Settings → Users lists `kind=internal` only; the Website app lists `kind=website` through a
-  dedicated handler (`GET|PUT /api/v1/website/admin/users[/:id]`, permission derived) — edit
-  profile, lock/unlock, no role assignment (website users always hold exactly `website_user`).
+  dedicated handler (`GET /api/v1/website_admin/users` + partial `PUT …/:id`, underscored so the permission derives; no GET `:id`) — edit
+  profile, lock/unlock (soft delete + refresh revocation), no role assignment (website users always hold exactly `website_user`).
 
 **Routes** (group `/api/v1/website`, rate-limited):
 | Route | Auth | Purpose |
 |---|---|---|
 | `POST /website/auth/signup` | none | email, password, name → creates a `kind=website` user with role `website_user`, returns tokens with `aud=website` |
 | `POST /website/auth/login` / `refresh` / `logout` | none / refresh cookie | mirrors ERP auth, `aud=website` |
-| `GET\|PUT /website/me` | website token | own profile |
+| `GET\|PUT /website/me` | website token (`WebsiteJWTMiddleware`) | own profile |
 
 **Roles** seeded per tenant (deterministic ids, `internal/auth/seed.go`):
 | Technical name | Held by | Permissions |
@@ -96,8 +91,7 @@ in roles, so a mis-granted role cannot open the ERP to a website token.
 | `website_user` | every `kind=website` user | none on the ERP; website routes check the `aud` + the user id |
 | `website_admin` | internal users, assigned in Settings → Users | `website_page:*`, `event*:*`, `settings:website:*`, `website_admin_users:*`, outbox read |
 
-**Frontend.** Website session in its own httpOnly cookie `eerp_site_session`, set by Next server
-actions (`apps/shell/src/lib/site-session.ts`), independent of the ERP session cookie.
+**Frontend.** Website session in two httpOnly cookies `eerp_site_access`/`eerp_site_refresh`, managed by BFF routes `/api/site-auth/*`, independent of the ERP session.
 
 ## 4. Initial declarations
 - `warehouse`: `product` (name, reference, unit, unit_price, + a new `description` text column),
@@ -120,3 +114,6 @@ actions (`apps/shell/src/lib/site-session.ts`), independent of the ERP session c
 
 ## Out of scope
 Email verification (spec 4), social login, password reset by email (follow-up once spec 3 lands).
+
+## Implementation deltas
+See ADR-024 "Implementation notes": case-insensitive unique live email (boot precondition, 409 on collision), site-tenant resolved at boot, publish-from-site-tenant pitfall, IP-keyed rate limiter behind the gateway.

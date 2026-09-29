@@ -32,6 +32,7 @@ import (
 	"core/internal/savedfilter"
 	"core/internal/settings"
 	"core/internal/types"
+	"core/internal/website"
 	_ "core/modules/all"
 	authmodule "core/modules/auth"
 	"core/modules/crminheritdemo"
@@ -43,6 +44,8 @@ import (
 	ormserver "core/orm/server"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
@@ -242,6 +245,7 @@ func openQueryCache(ctx context.Context, cfg *types.Config) *orm.QueryCache {
 func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	configContent, app, engine, linker := a.cfg, a.db, a.engine, a.linker
 	var err error
+	ctx := context.Background()
 
 	// ── Auth layer ────────────────────────────────────────────────────────────
 	tokenSvc := auth.NewTokenService(configContent)
@@ -313,6 +317,15 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	settingsGroup.PUT("/units", settingsHandler.PutUnitSettings)
 	settingsGroup.GET("/accounts", settingsHandler.GetAccountsSettings)
 	settingsGroup.PUT("/accounts", settingsHandler.PutAccountsSettings)
+
+	// Website published data (ADR-024): settings:website:read|write, route-derived.
+	siteTenant, err := website.ResolveTenant(ctx, app.DB, configContent.WebsiteTenantID)
+	if err != nil {
+		common.Logger.Warn("public website routes disabled", zap.Error(err))
+	}
+	publisher := website.NewPublisher(settings.NewRepository(app.DB), siteTenant)
+	settingsGroup.GET("/website/public", publisher.GetPublished)
+	settingsGroup.PUT("/website/public/:table", publisher.PutPublished)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new
@@ -617,7 +630,36 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// group serves comes from registry.All() (module-contributed schema —
 	// auth/pictures/notebook/settings are off this surface entirely), so one
 	// gate at the group level covers exactly the routes that need it.
-	srv.RegisterRoutes(ormserver.BuildHandlers(app), nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	handlers := ormserver.BuildHandlers(app)
+	srv.RegisterRoutes(handlers, nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// Public website reads (ADR-024) — no JWT, no permission middleware: the
+	// published scope is the only gate. The active gate lives in the resolver
+	// because ActiveGateMiddleware keys on the first path segment ("public").
+	if siteTenant != uuid.Nil {
+		publicGroup := srv.Echo().Group("/api/v1/public",
+			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
+			website.TenantMiddleware(siteTenant))
+		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve))
+
+		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
+		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
+		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout,
+			auth.SeedWebsiteRoles(ctx, app.DB, siteTenant))
+
+		websiteJWT := authmw.WebsiteJWTMiddleware(tokenSvc)
+		siteMe := website.NewMeHandler(userRepo)
+		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
+		websiteGroup.GET("/me", siteMe.Get)
+		websiteGroup.PUT("/me", siteMe.Put)
+	}
+
+	// Website users administration (ADR-024): website_admin:users:read|write.
+	// Outside the site-tenant block: ERP staff manage accounts either way.
+	websiteAdmin := website.NewAdminUsersHandler(userRepo, refreshStore)
+	websiteAdminGroup := srv.Echo().Group("/api/v1/website_admin", jwtMw, permMw)
+	websiteAdminGroup.GET("/users", websiteAdmin.List)
+	websiteAdminGroup.PUT("/users/:id", websiteAdmin.Update)
 
 	// ── crminheritdemo: Create() override reference example ─────────────────
 	// Mounted AFTER the generic block above so Echo's router keeps THIS
@@ -830,4 +872,27 @@ func (a *App) Run(ctx context.Context) error {
 
 	common.Logger.Info("server starting")
 	return a.server.Start(ctx)
+}
+
+func publicRateLimit(cfg *types.Config) int {
+	if cfg.PublicRateLimitPerMinute > 0 {
+		return cfg.PublicRateLimitPerMinute
+	}
+	return 300
+}
+
+// mountWebsiteAuth mounts the visitor auth routes. A website-role seeding
+// failure (e.g. a live role already holding website_user's technical name
+// under another id) must not stop the backend booting: it is logged, and
+// only signup — which assigns website_user — stays unmounted; existing
+// accounts keep login/refresh/logout.
+func mountWebsiteAuth(g *echo.Group, signup, login, refresh, logout echo.HandlerFunc, seedErr error) {
+	if seedErr != nil {
+		common.Logger.Warn("⚠️  seed website roles failed — website signup disabled", zap.Error(seedErr))
+	} else {
+		g.POST("/signup", signup)
+	}
+	g.POST("/login", login)
+	g.POST("/refresh", refresh)
+	g.POST("/logout", logout)
 }
