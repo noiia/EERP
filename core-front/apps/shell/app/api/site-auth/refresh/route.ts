@@ -15,10 +15,15 @@ export async function POST() {
     await setSiteSessionCookies(tokens)
     return NextResponse.json({ identity: identityFromAccessToken(tokens.accessToken) })
   } catch (e) {
-    await clearSiteSessionCookies()
+    // Only Go's 401 means the session is dead. A 429/5xx/network blip must not
+    // log the visitor out — keep the cookies and let the client retry.
     if (e instanceof ApiError) {
+      if (e.status === 401) await clearSiteSessionCookies()
       return NextResponse.json({ error: { code: e.code, message: e.message } }, { status: e.status })
     }
-    throw e
+    return NextResponse.json(
+      { error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Backend unreachable' } },
+      { status: 502 },
+    )
   }
 }

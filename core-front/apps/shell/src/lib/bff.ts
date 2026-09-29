@@ -1,5 +1,5 @@
 import 'server-only'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import {
   ACCESS_COOKIE,
   ACCESS_TTL_SECONDS,
@@ -26,6 +26,22 @@ function authUrl(path: string, base: AuthBase = 'auth'): string {
   return `${apiBase}/api/v${version}/${base}/${path}`
 }
 
+/**
+ * The browser's IP as the gateway reported it, to forward to Go: its rate
+ * limiters key on the client IP, and without this every visitor would share the
+ * BFF's own address (one global bucket). Go trusts only private-network hops,
+ * so a client-supplied prefix cannot spoof it.
+ */
+async function forwardedFor(): Promise<Record<string, string>> {
+  try {
+    const h = await headers()
+    const ip = h.get('x-forwarded-for') ?? h.get('x-real-ip')
+    return ip ? { 'X-Forwarded-For': ip } : {}
+  } catch {
+    return {} // outside a request scope: nothing to forward
+  }
+}
+
 export interface TokenExchange {
   accessToken: string
   refreshToken?: string
@@ -40,7 +56,7 @@ export interface TokenExchange {
 export async function goAuthExchange(path: string, body: unknown, base: AuthBase = 'auth'): Promise<TokenExchange> {
   const res = await fetch(authUrl(path, base), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await forwardedFor()) },
     body: JSON.stringify(body),
     cache: 'no-store',
   })
@@ -66,7 +82,7 @@ export async function goLogout(refreshToken: string, base: AuthBase = 'auth'): P
   try {
     await fetch(authUrl('logout', base), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await forwardedFor()) },
       body: JSON.stringify({ refresh_token: refreshToken }),
       cache: 'no-store',
     })
