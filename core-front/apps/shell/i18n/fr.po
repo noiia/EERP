@@ -828,3 +828,6 @@ msgstr "Rien à afficher pour l’instant : configurez ce bloc."
 
 msgid "Select a block to configure it."
 msgstr "Sélectionnez un bloc pour le configurer."
+
+msgid "Could not save."
+msgstr "Impossible d’enregistrer."

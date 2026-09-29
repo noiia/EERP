@@ -26,12 +26,13 @@ export async function previewBlock(block: Block, params: { id?: string }): Promi
   }
 }
 
-/** Saves the page layout; returns Go's validation message on failure, null on success. */
+/** Saves the page layout; returns null on success, Go's validation message on failure,
+ * or '' for a failure without one (the editor shows its translated fallback). */
 export async function saveLayout(id: string, layout: Block[]): Promise<string | null> {
   try {
     unwrapActionResult(await updateRecord('website_page', id, { layout }))
     return null
   } catch (e) {
-    return e instanceof ApiError ? e.message : 'Could not save.'
+    return e instanceof ApiError ? e.message : ''
   }
 }

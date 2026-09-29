@@ -22,10 +22,11 @@ import { BlockSettings } from './BlockSettings'
 const PANEL_WIDTH = 340
 
 /** Live preview: the public site's own BlockView, rendered server-side by a
- * Server Action (300 ms debounce, keyed by the block's JSON). */
+ * Server Action (300 ms debounce, keyed by the block's type + config: moving or
+ * resizing a block must not refetch its preview). */
 function BlockPreview({ block }: { block: Block }) {
   const t = useT()
-  const key = JSON.stringify(block)
+  const key = JSON.stringify({ type: block.type, config: block.config })
   const [shown, setShown] = useState<{ key: string; node: ReactNode } | null>(null)
   useEffect(() => {
     let live = true
@@ -33,7 +34,7 @@ function BlockPreview({ block }: { block: Block }) {
       previewBlock(block, {}).then((node) => live && setShown({ key, node }), () => live && setShown({ key, node: null }))
     }, 300)
     return () => { live = false; clearTimeout(timer) }
-  }, [key]) // `key` is the block's identity (its JSON)
+  }, [key]) // `key` is what the preview depends on (type + config)
   if (shown?.key !== key) return <Skeleton variant="rectangular" height="100%" />
   // Inert: a preview link must not navigate away from the editor, and clicks select the block.
   return (
@@ -72,7 +73,8 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
     setSaving(true)
     const err = await save(layout)
     setSaving(false)
-    if (err) return setStatus({ ok: false, text: err })
+    // '' = a failure with no server message: the fallback is translated here, client-side.
+    if (err !== null) return setStatus({ ok: false, text: err || t('Could not save.') })
     setSavedJSON(JSON.stringify(layout))
     setStatus({ ok: true, text: t('Saved.') })
   }

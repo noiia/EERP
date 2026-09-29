@@ -17,8 +17,8 @@ const layout: Block[] = [
   { id: 'b-1', type: 'record_list', x: 0, y: 0, w: 12, h: 4, config: { table: '', fields: [], title_field: '' } },
 ]
 
-function setup() {
-  const save = vi.fn(async () => null)
+function setup(result: string | null = null) {
+  const save = vi.fn(async () => result)
   render(<PageEditor pageId="p1" slug="home" title="Home" layout={layout} published={published} save={save} />)
   return save
 }
@@ -47,6 +47,12 @@ describe('PageEditor', () => {
     const save = setup()
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await vi.waitFor(() => expect(save).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'b-1' })])))
+  })
+
+  it('translates the generic save failure (the action returns an empty message)', async () => {
+    setup('')
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(await screen.findByText('Could not save.')).toBeTruthy()
   })
 
   it('stacks blocks in (y, x) order on phones (Review Focus #5)', () => {

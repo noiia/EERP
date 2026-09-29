@@ -9,6 +9,7 @@ export function pictureUrl(table: string, record: string, field: string): string
  * Whitespace/control chars and backslashes are refused outright — browsers strip or
  * normalize them ("/\\evil.com", "/<TAB>/evil.com" become protocol-relative URLs). */
 export function safeHref(url: string | undefined): string | undefined {
+  // eslint-disable-next-line no-control-regex -- intentional: refuse control chars in hrefs
   if (!url || /[\x00-\x20\\]/.test(url)) return undefined
   if (/^\/(?![/\\])/.test(url) || url === '/') return url
   return /^(https?:\/\/|mailto:)[^\s\\]+$/i.test(url) ? url : undefined

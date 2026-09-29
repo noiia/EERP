@@ -619,3 +619,6 @@ msgstr ""
 
 msgid "Select a block to configure it."
 msgstr ""
+
+msgid "Could not save."
+msgstr ""
