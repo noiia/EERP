@@ -6,7 +6,7 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
-import { byPrefixAndName, FontAwesomeIcon, layout, useT, type MenuModule } from '@eerp/core-front'
+import { byPrefixAndName, erpPath, FontAwesomeIcon, layout, useT, type MenuModule } from '@eerp/core-front'
 
 // The landing menu: one square tile per installed application. A Client Component
 // because each tile uses MUI's `component={Link}` (a function prop MUI can't receive
@@ -61,7 +61,7 @@ function MenuTile({ href, label, icon }: { href: string; label: string; icon?: R
     >
       <CardActionArea
         component={Link}
-        href={href}
+        href={erpPath(href)}
         sx={{
           height: '100%',
           display: 'flex',

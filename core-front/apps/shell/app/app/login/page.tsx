@@ -8,13 +8,13 @@ import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useSessionStore } from '@eerp/core-front'
+import { erpPath, useSessionStore } from '@eerp/core-front'
 import { authBffUrl } from '@/lib/auth-url'
 
 // Must match session.ts's FORCE_PASSWORD_CHANGE_PATH — duplicated as a literal
 // rather than imported because that module is 'server-only' and this is a
 // client component.
-const FORCE_PASSWORD_CHANGE_PATH = '/force-password-change'
+const FORCE_PASSWORD_CHANGE_PATH = erpPath('/force-password-change')
 
 function LoginForm() {
   const router = useRouter()
@@ -47,7 +47,9 @@ function LoginForm() {
 
     const identity = (data?.identity as { mustChangePassword?: boolean } | undefined) ?? null
     useSessionStore.getState().setIdentity(identity as never)
-    router.push(identity?.mustChangePassword ? FORCE_PASSWORD_CHANGE_PATH : params.get('next') || '/')
+    // erpPath() also pins `next` inside the ERP, so a crafted ?next=//evil.example
+    // can never navigate off-site.
+    router.push(erpPath(identity?.mustChangePassword ? FORCE_PASSWORD_CHANGE_PATH : params.get('next') || '/'))
     // The login cookie was just set, but the (server) root layout — and the app top bar
     // it renders — was already cached without a session. Re-fetch the server tree so it
     // re-resolves identity from the new cookie; otherwise the chrome only appears after a

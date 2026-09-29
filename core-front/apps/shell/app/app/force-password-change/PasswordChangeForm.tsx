@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { changeMyPassword, type SelfUserProfile } from '@/lib/force-password-change'
 import { authBffUrl } from '@/lib/auth-url'
+import { erpPath } from '@eerp/core-front'
 
 export default function PasswordChangeForm({ profile }: { profile: SelfUserProfile | null }) {
   const router = useRouter()
@@ -52,7 +53,7 @@ export default function PasswordChangeForm({ profile }: { profile: SelfUserProfi
     await fetch(authBffUrl('refresh'), { method: 'POST' })
     setPending(false)
 
-    router.push('/')
+    router.push(erpPath('/'))
     router.refresh()
   }
 

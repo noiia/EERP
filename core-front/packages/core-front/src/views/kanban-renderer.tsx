@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -181,7 +182,7 @@ export function KanbanRenderer<T extends HasId>({
                     // A real drag never fires click (the browser suppresses it once the
                     // pointer moves past the drag threshold), so a plain click here is
                     // unambiguously "clicked, didn't drag" — no separate bookkeeping needed.
-                    onClick={formPath ? () => router.push(formPath.replace(':id', record.id)) : undefined}
+                    onClick={formPath ? () => router.push(erpPath(formPath.replace(':id', record.id))) : undefined}
                     sx={{ cursor: formPath ? 'pointer' : 'grab' }}
                   >
                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -173,7 +174,7 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
   if (!formPath || !createPermission || !allowed) return null
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-      <Button variant="contained" onClick={() => router.push(formPath.replace(':id', 'new'))}>
+      <Button variant="contained" onClick={() => router.push(erpPath(formPath.replace(':id', 'new')))}>
         {t('Create')}
       </Button>
     </Box>
@@ -273,7 +274,7 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
   // dropLast doc comment.
   const goTo = (i: number) => {
     useBreadcrumbStore.getState().dropLast()
-    router.push(formPath.replace(':id', ids[i]))
+    router.push(erpPath(formPath.replace(':id', ids[i])))
   }
 
   return (
@@ -401,11 +402,11 @@ function FormRenderer<T extends HasId>({
     actions
       .remove(idToRemove)
       .then(() => {
-        router.push(listPath)
+        router.push(erpPath(listPath))
         useUndoToastStore.getState().show({
           message: t('Record deleted.'),
           onRecover: () => {
-            void actions.restore?.(idToRemove).then(() => router.push(formPathNow))
+            void actions.restore?.(idToRemove).then(() => router.push(erpPath(formPathNow)))
           },
         })
       })
@@ -1047,7 +1048,7 @@ function TreeRenderer<T extends HasId>({
             onRowSelectionModelChange={setSelectionModel}
             onRowClick={
               formPath
-                ? (params) => router.push(formPath.replace(':id', String(params.id)))
+                ? (params) => router.push(erpPath(formPath.replace(':id', String(params.id))))
                 : undefined
             }
             sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
@@ -1210,7 +1211,7 @@ function DashboardRenderer<T extends HasId>({
           <Grid key={widget.id} size={{ xs: 12, sm: 6, md: 3 }}>
             <Card variant="outlined">
               {href ? (
-                <CardActionArea component="a" href={href}>
+                <CardActionArea component="a" href={erpPath(href)}>
                   {block}
                 </CardActionArea>
               ) : (

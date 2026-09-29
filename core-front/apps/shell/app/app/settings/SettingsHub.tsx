@@ -6,7 +6,7 @@ import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { erpPath, useT } from '@eerp/core-front'
 
 // The main settings page: the catalog of setting sections, rendered as navigable
 // cards (the same shape as the application menu). Purely presentational — the page
@@ -86,7 +86,7 @@ export default function SettingsHub({
       >
         {sections.map((section) => (
           <Card key={section.path} variant="outlined">
-            <CardActionArea component={Link} href={section.path} sx={{ p: 2, height: '100%' }}>
+            <CardActionArea component={Link} href={erpPath(section.path)} sx={{ p: 2, height: '100%' }}>
               <Stack spacing={1}>
                 <Typography variant="subtitle1">{t(section.title)}</Typography>
                 <Typography variant="body2" color="text.secondary">

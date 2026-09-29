@@ -5,6 +5,7 @@ import Box from '@mui/material/Box'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import Typography from '@mui/material/Typography'
+import { erpPath } from '@eerp/core-front'
 
 // The row list for Settings -> Apps. A CLIENT component specifically because
 // `ListItemButton component={Link}` passes the Link function as a prop into
@@ -25,7 +26,7 @@ function AppRow({ m }: { m: AppListRow }) {
   return (
     <ListItemButton
       component={Link}
-      href={`/settings/apps/${m.name}`}
+      href={erpPath(`/settings/apps/${m.name}`)}
       divider
       sx={{ py: 1.5, alignItems: 'flex-start' }}
     >

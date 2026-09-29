@@ -17,7 +17,7 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { byPrefixAndName, FontAwesomeIcon, useT } from '@eerp/core-front'
+import { byPrefixAndName, erpPath, FontAwesomeIcon, useT } from '@eerp/core-front'
 import { seedDemoData, type SeedEntityResult, type SeedVolume } from '@/lib/dev-seed'
 
 // Settings → Developer: dev-only tools for testing the software. Two
@@ -74,7 +74,7 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
                 )}
               </Typography>
               <Stack direction="row">
-                <Button variant="outlined" component={Link} href="/cron">
+                <Button variant="outlined" component={Link} href={erpPath('/cron')}>
                   {t('Manage crons')}
                 </Button>
               </Stack>

@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { erpPath } from '../navigation'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
@@ -104,7 +105,7 @@ export function CatalogRenderer<T extends HasId>({
         const title = String(row[catalog.title] ?? '')
         const subtitleValue = catalog.subtitle ? row[catalog.subtitle] : undefined
         const icon = catalog.icon ? row[catalog.icon] : undefined
-        const onClick = formPath ? () => router.push(formPath.replace(':id', record.id)) : undefined
+        const onClick = formPath ? () => router.push(erpPath(formPath.replace(':id', record.id))) : undefined
         return (
           <CatalogRow
             key={record.id}
