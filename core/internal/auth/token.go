@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"core/internal/types"
@@ -9,6 +10,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+// AudienceWebsite marks a website-visitor token (ADR-024). ERP tokens carry no audience.
+const AudienceWebsite = "website"
+
+// IsWebsite reports whether the token was issued to a website user.
+func (c *Claims) IsWebsite() bool { return slices.Contains(c.Audience, AudienceWebsite) }
 
 // Claims is the JWT payload for access tokens.
 type Claims struct {
@@ -72,6 +79,9 @@ func (t *TokenService) IssueAccessWithTTL(user Users, roles []string, groups []s
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 		},
+	}
+	if user.IsWebsite() {
+		claims.Audience = jwt.ClaimStrings{AudienceWebsite}
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString([]byte(t.cfg.MasterPassword))
