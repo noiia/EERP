@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"slices"
 	"testing"
 
 	"core/orm"
@@ -116,5 +117,17 @@ func TestSeedUUID_DeterministicPerTenantAndLabel(t *testing.T) {
 	}
 	if seedUUID(t1, "a") == seedUUID(t2, "a") {
 		t.Error("the same label for different tenants must yield different ids")
+	}
+}
+
+func TestRegister_DeclaresPublicFields(t *testing.T) {
+	if err := (&warehouseModule{}).Register(); err != nil {
+		t.Fatal(err)
+	}
+	for table, want := range map[string]string{"product": "description", "product_variant": "unit_price"} {
+		fields, ok := orm.PublicFields(table)
+		if !ok || !slices.Contains(fields, want) {
+			t.Errorf("%s public fields = %v, want to contain %s", table, fields, want)
+		}
 	}
 }

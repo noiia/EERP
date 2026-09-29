@@ -28,6 +28,9 @@ func init() {
 type Product struct {
 	model.BaseModel
 	Name string `db:"name" json:"name"`
+	// Description is long-form catalog copy, added for the public website's
+	// product pages (ADR-024); optional, blank by default.
+	Description string `db:"description" json:"description"`
 	// Reference is a free-text SKU/internal code — optional, no uniqueness
 	// enforced (this ORM has no unique-constraint support yet).
 	Reference string `db:"reference" json:"reference"`
@@ -99,10 +102,12 @@ type warehouseModule struct{}
 func (m *warehouseModule) Name() string { return "warehouse" }
 
 func (m *warehouseModule) Register() error {
-	if err := orm.Register[Product](); err != nil {
+	if err := orm.Register[Product](orm.WithPublicFields(
+		"name", "reference", "unit", "unit_price", "description", "picture")); err != nil {
 		return err
 	}
-	if err := orm.Register[ProductVariant](); err != nil {
+	if err := orm.Register[ProductVariant](orm.WithPublicFields(
+		"product_id", "name", "unit_price", "picture")); err != nil {
 		return err
 	}
 	return orm.Register[ProductUoms]()
