@@ -16,6 +16,7 @@ import (
 	_ "core/modules/crminheritdemo"
 	_ "core/modules/cron"
 	_ "core/modules/graphfield"
+	_ "core/modules/mail"
 	_ "core/modules/notebook"
 	_ "core/modules/pictures"
 	_ "core/modules/presence"
