@@ -882,3 +882,6 @@ msgstr "Mes réservations"
 
 msgid "Your bookings will appear here."
 msgstr "Vos réservations apparaîtront ici."
+
+msgid "Staff sign-in"
+msgstr "Connexion du personnel"

@@ -673,3 +673,6 @@ msgstr ""
 
 msgid "Your bookings will appear here."
 msgstr ""
+
+msgid "Staff sign-in"
+msgstr ""

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { erpPath } from '@eerp/core-front'
 import Container from '@mui/material/Container'
 import { getSitePage, serverPublicSource } from '@/website/public-api'
 import { BlockView } from '@/website/blocks/BlockView'
@@ -13,6 +14,9 @@ async function resolve(params: Props['params']) {
   const { slug = [] } = await params
   if (slug.length > 2) return null
   const page = await getSitePage(slug[0] ?? '')
+  // No published home page (e.g. right after upgrading an ERP-only install): "/"
+  // was the ERP, so send visitors there rather than to a 404.
+  if (!page && slug.length === 0) redirect(erpPath('/'))
   return page ? { page, id: slug[1] } : null
 }
 
