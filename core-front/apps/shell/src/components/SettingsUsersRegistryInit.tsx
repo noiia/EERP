@@ -29,7 +29,7 @@ import {
   roleViewPermissionFormDescriptor,
   rolesListDescriptor,
   usersListDescriptor,
-} from '../../app/settings/users/descriptors'
+} from '../../app/app/settings/users/descriptors'
 
 const registryModule: FrontModule = {
   name: 'settings-users',

@@ -3,7 +3,7 @@ import { ApiError, apiRequest, createServerApiClient } from '@eerp/core-front/se
 import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
 import { getMyLocalePreferences } from './preferences'
-import { PAPER_SIZE_PRESETS } from '../../app/settings/appearance/page-formats/descriptors'
+import { PAPER_SIZE_PRESETS } from '../../app/app/settings/appearance/page-formats/descriptors'
 
 // Settings -> Developer: populates the workspace with realistic-looking demo
 // records through the SAME generic entity API (POST /{entity}) any other write
