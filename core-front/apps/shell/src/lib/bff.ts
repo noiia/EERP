@@ -67,6 +67,7 @@ export async function goAuthExchange(
     headers: { 'Content-Type': 'application/json', ...(await forwardedFor(opts.forwardedFor)) },
     body: JSON.stringify(body),
     cache: 'no-store',
+    signal: AbortSignal.timeout(5000),
   })
   if (!res.ok) throw await parseError(res)
 
@@ -93,6 +94,7 @@ export async function goLogout(refreshToken: string, base: AuthBase = 'auth'): P
       headers: { 'Content-Type': 'application/json', ...(await forwardedFor()) },
       body: JSON.stringify({ refresh_token: refreshToken }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
     })
   } catch {
     // Logout is best-effort; clearing the local cookies is what matters to the client.

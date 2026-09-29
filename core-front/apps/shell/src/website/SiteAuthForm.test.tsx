@@ -46,6 +46,10 @@ describe('SiteAuthForm', () => {
     ['https://evil.com', '/account'],
     ['/app/crm', '/account'],
     ['/app', '/account'],
+    ['/./app/crm', '/account'],
+    ['/../app/crm', '/account'],
+    ['/products/../app', '/account'],
+    ['/a.b/c', '/a.b/c'],
     ['/account', '/account'],
     ['/products', '/products'],
   ])('login ?next=%j goes to %s (same-site, never the ERP)', async (next, want) => {

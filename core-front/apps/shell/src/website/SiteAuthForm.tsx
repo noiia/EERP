@@ -13,9 +13,16 @@ import { safeHref } from './urls'
 const MIN_PASSWORD = 8 // Go's website signup rule (8 to 72 characters)
 
 // Same-site relative paths only (safeHref refuses control chars, whitespace and
-// backslashes the URL parser would strip into "//evil.example"), never into the ERP.
+// backslashes the URL parser would strip into "//evil.example"), never into the ERP
+// ("/./app" and "/../app" normalise into it, so dot segments are refused too).
 const safeNext = (n?: string) =>
-  n && n.startsWith('/') && safeHref(n) && n.split(/[/?#]/)[1] !== 'app' ? n : '/account'
+  n &&
+  n.startsWith('/') &&
+  safeHref(n) &&
+  n.split(/[/?#]/)[1] !== 'app' &&
+  !n.split(/[?#]/)[0].split('/').some((s) => s === '.' || s === '..')
+    ? n
+    : '/account'
 
 /** Website visitor login/signup, posting to the /api/site-auth BFF routes (ADR-024). */
 export function SiteAuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: string }) {
