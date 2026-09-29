@@ -132,7 +132,7 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, tenantID, id uuid.UU
 	}
 	updated, err := r.users.Update(ctx, u, id)
 	if err != nil {
-		return Users{}, fmt.Errorf("user: update profile: %w", err)
+		return Users{}, fmt.Errorf("user: update profile: %w", mapUserWriteErr(err))
 	}
 	return updated, nil
 }
@@ -155,7 +155,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, tenantID uuid.UUID, pro
 
 	created, err := r.users.Create(ctx, u)
 	if err != nil {
-		return Users{}, fmt.Errorf("user: create: %w", err)
+		return Users{}, fmt.Errorf("user: create: %w", mapUserWriteErr(err))
 	}
 	return created, nil
 }
@@ -263,12 +263,18 @@ func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UU
 			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)})
 		return err
 	})
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
-		return Users{}, ErrEmailTaken
-	}
 	if err != nil {
-		return Users{}, fmt.Errorf("user: create website: %w", err)
+		return Users{}, fmt.Errorf("user: create website: %w", mapUserWriteErr(err))
 	}
 	return created, nil
+}
+
+// mapUserWriteErr maps a violation of idx_users_email_live to ErrEmailTaken;
+// any other error (including other unique indexes) passes through.
+func mapUserWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == "idx_users_email_live" {
+		return ErrEmailTaken
+	}
+	return err
 }

@@ -152,6 +152,22 @@ func TestWebsiteAccounts(t *testing.T) {
 		})
 	}
 
+	t.Run("admin create/update refuse a case-insensitive email collision", func(t *testing.T) {
+		other := "Other-" + uuid.NewString() + "@Test.io"
+		t.Cleanup(func() { _, _ = c.a.db.DB.Exec(ctx, `DELETE FROM users WHERE lower(email) = lower($1)`, other) })
+		if code, body := c.do(http.MethodPost, "/api/v1/users", map[string]string{"email": strings.ToUpper(email)}); code != http.StatusConflict {
+			t.Fatalf("create dup: %d %s", code, body)
+		}
+		code, body := c.do(http.MethodPost, "/api/v1/users", map[string]string{"email": other})
+		if code != http.StatusCreated {
+			t.Fatalf("create: %d %s", code, body)
+		}
+		id, _ := decode(t, body)["id"].(string)
+		if code, body := c.do(http.MethodPut, "/api/v1/users/"+id, map[string]string{"email": strings.ToUpper(email)}); code != http.StatusConflict {
+			t.Errorf("update dup: %d %s", code, body)
+		}
+	})
+
 	t.Run("settings users list hides website users", func(t *testing.T) {
 		_, body := c.do(http.MethodGet, "/api/v1/users", nil)
 		if strings.Contains(strings.ToLower(string(body)), strings.ToLower(email)) {

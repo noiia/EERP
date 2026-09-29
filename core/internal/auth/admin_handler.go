@@ -221,6 +221,9 @@ func (h *AdminHandler) CreateUser(c *echo.Context) error {
 
 	created, err := h.users.CreateUser(c.Request().Context(), identity.TenantID, profile)
 	if err != nil {
+		if errors.Is(err, ErrEmailTaken) {
+			return adminErrorJSON(c, http.StatusConflict, "CONFLICT", "A user with that email already exists.")
+		}
 		return fmt.Errorf("admin: create user: %w", err)
 	}
 	return c.JSON(http.StatusCreated, toUserResponse(created))
@@ -267,6 +270,9 @@ func (h *AdminHandler) UpdateUser(c *echo.Context) error {
 	if err != nil {
 		if errors.Is(err, orm.ErrNotFound) {
 			return adminErrorJSON(c, http.StatusNotFound, "NOT_FOUND", "User not found.")
+		}
+		if errors.Is(err, ErrEmailTaken) {
+			return adminErrorJSON(c, http.StatusConflict, "CONFLICT", "A user with that email already exists.")
 		}
 		return fmt.Errorf("admin: update user: %w", err)
 	}
