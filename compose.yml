@@ -128,7 +128,8 @@ services:
   # regularly-used dev feature (rent receipts) and 502s from a missing pdf-service were
   # a recurring surprise. core-back now reaches it exclusively over NATS (Phase 5,
   # see eerp-config.docker.json's nats_url) rather than direct HTTP — this replica's
-  # own HTTP server still runs too (its healthcheck below uses it), but core no longer
+  # own HTTP server still runs too (its healthcheck below probes it via the binary's own
+  # `-healthcheck` flag — the image ships no curl), but core no longer
   # calls it directly. Scale with `docker compose up -d --build --scale pdf-service=N`;
   # N replicas subscribed to the same NATS queue group are competing consumers with
   # zero code change. No container_name: a static name would collide across replicas.
@@ -145,7 +146,7 @@ services:
       nats:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8090/healthz"]
+      test: ["CMD", "/app/pdf-service", "-healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 5

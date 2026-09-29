@@ -28,7 +28,7 @@ func newTestRenderer(t *testing.T) *ChromeRenderer {
 	if execPath == "" {
 		t.Skip("no Chrome/Chromium binary found; set CHROME_PATH to run this test")
 	}
-	r, err := NewChromeRenderer(execPath)
+	r, err := NewChromeRenderer(execPath, 2)
 	if err != nil {
 		t.Fatalf("NewChromeRenderer: %v", err)
 	}
@@ -65,7 +65,8 @@ func TestRender_ValidFixture(t *testing.T) {
 		t.Fatalf("output does not look like a PDF, starts with: %q", pdf[:min(20, len(pdf))])
 	}
 	if got := countPDFPages(pdf); got != 2 {
-		t.Errorf("expected 2 pages (fixture has an explicit page-break), got %d", got)
+		// 1 would mean the fixture's script ran and replaced the body.
+		t.Errorf("expected 2 pages (fixture has an explicit page-break, JS disabled), got %d", got)
 	}
 }
 
@@ -115,5 +116,23 @@ func TestRender_ReusesBrowserAcrossCalls(t *testing.T) {
 		if !bytes.HasPrefix(pdf, []byte("%PDF-")) {
 			t.Fatalf("call %d: output does not look like a PDF", i)
 		}
+	}
+}
+
+func TestRender_WaitsForAFreeSlot(t *testing.T) {
+	r := newTestRenderer(t)
+	for i := 0; i < cap(r.slots); i++ {
+		r.slots <- struct{}{} // every slot busy
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if _, err := r.Render(ctx, RenderRequest{URL: fixtureURL(t)}); err == nil {
+		t.Fatal("expected an error while every slot is busy, got nil")
+	}
+
+	<-r.slots // one frees up
+	if _, err := r.Render(context.Background(), RenderRequest{URL: fixtureURL(t), WaitFor: "[data-report-ready]"}); err != nil {
+		t.Fatalf("Render after a slot freed: %v", err)
 	}
 }

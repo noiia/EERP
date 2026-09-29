@@ -59,8 +59,11 @@ above as bounded and, per the sizing above, not an actual bottleneck for this do
 ### 2. Deployment shape: standalone Go microservice (`pdf-service`), not embedded in core
 
 Isolates Chromium's resource and fault domain from the API server. Runs alongside `core` as
-its own container (own health check, own restart policy, own image — the ~300-400MB Chromium
-footprint never lands in the core image or its deploy path).
+its own container (own health check, own restart policy, own image — the Chromium footprint
+never lands in the core image or its deploy path). That image is built on
+`chromedp/headless-shell` (Chrome's headless-only build, no GUI stack) rather than Debian's
+full `chromium` package: ~540MB instead of ~1.1GB (~160MB vs ~300MB compressed), with identical
+PDF output.
 
 ### 3. Transport v1: synchronous HTTP; NATS is a pre-wired, deferred extension point
 
@@ -96,6 +99,26 @@ benchmarking via `headerTemplate`/`footerTemplate`. CSS `running()` (dynamic per
 migrating from the body into a margin box, e.g. "repeat the current section name") is *not*
 supported by Chromium and is a known, documented limitation, not a bug to chase.
 
+### 7. Print the server-rendered HTML with page JavaScript disabled
+
+The print route is a Server Component: the HTML it returns already contains the whole report
+and its `data-report-ready` marker. Letting Chrome run the page's scripts would only download,
+parse and hydrate the entire app shell (every module's registration, MUI, the root layout's
+client providers) for a document nobody interacts with — the single largest cost of a render.
+`pdf-service` therefore turns scripts off per tab (`Emulation.setScriptExecutionDisabled`)
+before navigating; CSS and inline SSR styles still apply. Measured on a real invoice
+end-to-end (`POST /api/v1/reports/sale.invoice/:id/pdf`): ~410ms → ~220ms per report.
+
+The contract this imposes: **every report node must render fully on the server.** A node that
+only fills in after a client-side effect prints blank. `ReportRenderer` is a plain props-only
+component for exactly this reason.
+
+Font determinism follows from the same "print what the server sent" stance: every report CSS
+rule and the footer template name a font family (`Helvetica, Arial, sans-serif`, served by
+`fonts-liberation`). An element with no declared font falls through to the image's fontconfig
+default, which differs between base images and silently changes glyph widths — and thus page
+breaks.
+
 ## Consequences
 
 - New service in the deployment topology: `compose.yml` gains a `pdf-service` entry; Chromium
@@ -105,7 +128,9 @@ supported by Chromium and is a known, documented limitation, not a bug to chase.
   writing a view, which was the whole point.
 - Throughput scales via replica count past roughly 2× a single instance's vCPU count in
   concurrent tabs, not by raising per-instance concurrency further — capacity planning must
-  add replicas, not just raise a concurrency knob.
+  add replicas, not just raise a concurrency knob. Each replica caps its own in-flight tabs
+  (`MAX_CONCURRENT_RENDERS`, default 4 — set it to ~2× the container's vCPUs); excess
+  requests queue instead of opening tabs until the container runs out of memory.
 - NATS integration is explicitly deferred but pre-wired (`Renderer` interface) — adding it
   later touches only the transport, never the render path.
 

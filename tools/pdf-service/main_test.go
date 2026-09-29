@@ -28,6 +28,30 @@ func (f *fakeRenderer) Render(_ context.Context, req renderer.RenderRequest) ([]
 	return f.pdf, f.err
 }
 
+func TestHealthcheck(t *testing.T) {
+	ok := httptest.NewServer(newMux(&fakeRenderer{}))
+	defer ok.Close()
+	broken := httptest.NewServer(http.NotFoundHandler())
+	defer broken.Close()
+
+	for _, tc := range []struct {
+		name    string
+		addr    string
+		wantErr bool
+	}{
+		{"healthy", strings.TrimPrefix(ok.URL, "http://"), false},
+		{"healthy, port-only addr", ":" + ok.URL[strings.LastIndex(ok.URL, ":")+1:], false},
+		{"non-200", strings.TrimPrefix(broken.URL, "http://"), true},
+		{"nothing listening", "127.0.0.1:1", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := healthcheck(tc.addr); (err != nil) != tc.wantErr {
+				t.Fatalf("healthcheck(%q) err = %v, wantErr %v", tc.addr, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	mux := newMux(&fakeRenderer{})
 	rec := httptest.NewRecorder()

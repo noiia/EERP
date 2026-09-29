@@ -66,8 +66,8 @@ POST /render
 > `tools/eerp-init-module`). `renderer.NewChromeRenderer` passes `chromedp.NoSandbox` —
 > required for Chromium to launch at all inside a container, which has no setuid sandbox
 > helper available; without it the browser fails to start. The runtime image is
-> `debian:bookworm-slim` + `chromium` (not `golang:1.26` like `core/Dockerfile`, which has no
-> browser) — verified end to end with a real `docker build` + `docker compose --profile pdf
+> `debian:bookworm-slim` + `chromium` (since replaced by `chromedp/headless-shell` to halve the
+> image — ADR-010 decision 2; not `golang:1.26` like `core/Dockerfile`, which has no browser) — verified end to end with a real `docker build` + `docker compose --profile pdf
 > up`, hitting `/healthz` and `/render` against the running container. `compose.yml`'s
 > `pdf-service` entry is gated behind `profiles: ["pdf"]` exactly as planned, confirmed absent
 > from `docker compose config --services` without the flag.
@@ -515,6 +515,12 @@ for anyone who doesn't need it yet.
   chromedp `WaitVisible` without the print route setting `data-report-ready` itself produces
   a PDF of a loading state. The readiness marker is the print route's responsibility, not the
   renderer's guess.
+- **A report node that only renders client-side prints blank** — `pdf-service` disables page
+  JavaScript (ADR-010 decision 7), so the print route's server HTML is exactly what gets
+  printed. Keep `ReportRenderer` and every node it renders free of effects/client-only state.
+- **A report element with no `font-family` depends on the image's font fallback** — declare
+  `Helvetica, Arial, sans-serif` on every new `eerp-report-*` rule (and in any header/footer
+  template), or glyph widths and page breaks shift when the base image changes.
 - **Chromium `running()` CSS will silently not work** — don't design a report layout that
   depends on dynamic per-page running headers; static header/footer templates (page number,
   fixed title) are the supported mechanism.

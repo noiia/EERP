@@ -304,6 +304,7 @@
 .eerp-report-payment {
   display: flex;
   gap: 0.4rem;
+  font-family: Helvetica, Arial, sans-serif;
   font-size: 0.85rem;
   color: var(--eerp-report-text-muted, #333);
   padding-bottom: 0.35rem;
