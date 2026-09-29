@@ -1,4 +1,5 @@
 import 'server-only'
+import { unstable_cache } from 'next/cache'
 import { forwardedFor } from '@/lib/bff'
 import type { Block, PublicDataSource } from './types'
 
@@ -8,19 +9,36 @@ function base(): string {
   return `${api}/api/v${process.env.API_VERSION ?? '1'}/public`
 }
 
-// A 429 (Go's per-IP public limit) is transient: a block renders nothing
-// (`transient: 'empty'`) instead of failing the whole page with a 500.
+class PublicAPIError extends Error {
+  constructor(readonly path: string, readonly status: number) {
+    super(`public API ${path}: ${status}`)
+  }
+}
+
+// Go rate-limits /public per client IP, so the visitor's IP is forwarded — but
+// only through the closure: unstable_cache keys on [path] alone, so the 60 s
+// cache stays shared across visitors (a fetch-level `next` cache would key on the
+// header, i.e. per IP), and each miss is charged to the visitor who caused it.
+// Every non-2xx but 404 throws inside the wrapper, so failures are never cached.
+// Outside it, a 429 is transient: a block renders nothing (`transient: 'empty'`)
+// instead of failing the whole page with a 500.
 async function getJSON<T>(path: string, tags: string[], transient: 'empty' | 'throw' = 'empty'): Promise<T | null> {
-  const res = await fetch(base() + path, {
-    // Go rate-limits /public per client IP: forward the visitor's, or every
-    // visitor shares this server's bucket. (Headers are part of Next's fetch
-    // cache key, so the 60 s cache is per visitor IP.)
-    headers: await forwardedFor(),
-    next: { tags, revalidate: 60 },
-  })
-  if (res.status === 404 || (res.status === 429 && transient === 'empty')) return null
-  if (!res.ok) throw new Error(`public API ${path}: ${res.status}`)
-  return (await res.json()) as T
+  const ip = await forwardedFor()
+  try {
+    return await unstable_cache(
+      async (): Promise<T | null> => {
+        const res = await fetch(base() + path, { headers: ip, cache: 'no-store' })
+        if (res.status === 404) return null
+        if (!res.ok) throw new PublicAPIError(path, res.status)
+        return (await res.json()) as T
+      },
+      [path],
+      { tags, revalidate: 60 },
+    )()
+  } catch (e) {
+    if (e instanceof PublicAPIError && e.status === 429 && transient === 'empty') return null
+    throw e
+  }
 }
 
 type ListBody = { data: Record<string, unknown>[]; total: number }
