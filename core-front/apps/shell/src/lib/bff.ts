@@ -17,11 +17,13 @@ import {
 // returns the access token in the JSON body and rotates the refresh token via a
 // Set-Cookie header — never the body — so we read it from the response headers.
 
-function authUrl(path: string): string {
-  const base = process.env.API_BASE
-  if (!base) throw new Error('API_BASE is not set — the BFF cannot reach the backend')
+export type AuthBase = 'auth' | 'website/auth'
+
+function authUrl(path: string, base: AuthBase = 'auth'): string {
+  const apiBase = process.env.API_BASE
+  if (!apiBase) throw new Error('API_BASE is not set — the BFF cannot reach the backend')
   const version = process.env.API_VERSION ?? '1'
-  return `${base}/api/v${version}/auth/${path}`
+  return `${apiBase}/api/v${version}/${base}/${path}`
 }
 
 export interface TokenExchange {
@@ -35,8 +37,8 @@ export interface TokenExchange {
  * non-OK response. Returns the access token, the rotated refresh token (from Go's
  * Set-Cookie), and the access lifetime.
  */
-export async function goAuthExchange(path: string, body: unknown): Promise<TokenExchange> {
-  const res = await fetch(authUrl(path), {
+export async function goAuthExchange(path: string, body: unknown, base: AuthBase = 'auth'): Promise<TokenExchange> {
+  const res = await fetch(authUrl(path, base), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -60,9 +62,9 @@ export async function goAuthExchange(path: string, body: unknown): Promise<Token
 }
 
 /** Best-effort Go logout so the refresh token is revoked server-side. */
-export async function goLogout(refreshToken: string): Promise<void> {
+export async function goLogout(refreshToken: string, base: AuthBase = 'auth'): Promise<void> {
   try {
-    await fetch(authUrl('logout'), {
+    await fetch(authUrl('logout', base), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
