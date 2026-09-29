@@ -94,6 +94,9 @@ services:
       redis:
         condition: service_healthy
         required: false
+      mailpit:
+        condition: service_healthy
+        required: false
 
   core-front:
     container_name: frontend
@@ -186,6 +189,22 @@ services:
       - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Dev mail catcher (internal/mail): every email the outbox sends lands in
+  # the Mailpit inbox at http://127.0.0.1:8025 — nothing reaches a real
+  # address. Optional like redis: core-back waits on it with required: false.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: always
+    container_name: mailpit
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI
+      - "127.0.0.1:1025:1025"   # SMTP, for host-native runs
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
       timeout: 5s
       retries: 10
