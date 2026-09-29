@@ -40,8 +40,9 @@ export async function getPublished(): Promise<PublishedTable[]> {
   }
 }
 
-export const savePublished = (table: string, sel: PublishedSelection) =>
-  save('PUT', `/settings/website/public/${encodeURIComponent(table)}`, sel)
+export async function savePublished(table: string, sel: PublishedSelection): Promise<SaveResult> {
+  return save('PUT', `/settings/website/public/${encodeURIComponent(table)}`, sel)
+}
 
 export interface Routing {
   mode: 'path' | 'host'
@@ -82,7 +83,10 @@ export async function listWebsiteUsers(): Promise<WebsiteUser[]> {
   }
 }
 
-export const updateWebsiteUser = (
+// 'use server' exports must be async function declarations (Next rejects arrow consts at build).
+export async function updateWebsiteUser(
   id: string,
   patch: Partial<Pick<WebsiteUser, 'disabled' | 'name' | 'surname' | 'phone'>>,
-) => save('PUT', `/website_admin/users/${encodeURIComponent(id)}`, patch)
+): Promise<SaveResult> {
+  return save('PUT', `/website_admin/users/${encodeURIComponent(id)}`, patch)
+}
