@@ -146,6 +146,7 @@ func TestApp_Routes(t *testing.T) {
 		{http.MethodGet, "/api/v1/cron_history", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/notebook_pages?table=crm&record=00000000-0000-0000-0000-000000000001", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/saved_filters?entity=crm", nil, http.StatusOK},
+		{http.MethodGet, "/api/v1/mail_outbox", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/chatter_messages?table=crm&record=00000000-0000-0000-0000-000000000001", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/nope", nil, http.StatusNotFound},
 	}
