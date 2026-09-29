@@ -29,5 +29,7 @@
     "s3_secret_key": "change-me-in-production",
     "nats_url": "nats://nats:4222",
     "redis_url": "redis://redis:6379/0",
-    "frontend_base_url": "http://core-front:3000"
+    "frontend_base_url": "http://core-front:3000",
+    "website_tenant_id": "",
+    "public_rate_limit_per_minute": 300
 }

@@ -29,5 +29,7 @@
     "s3_access_key": "change-me-in-production",
     "s3_secret_key": "change-me-in-production",
     "pdf_service_url": "http://127.0.0.1:8090",
-    "frontend_base_url": "http://127.0.0.1:3000"
+    "frontend_base_url": "http://127.0.0.1:3000",
+    "website_tenant_id": "",
+    "public_rate_limit_per_minute": 300
 }
