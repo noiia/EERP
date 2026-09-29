@@ -2,6 +2,10 @@ import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { proxy } from './proxy'
 
+// The generated module manifest is a codegen artefact: keep the registry empty so
+// erpRoots is just the shell's own sections (settings, appstore, …).
+vi.mock('@/generated/generated-modules', () => ({}))
+
 // Go's refresh response: new access token in the body, rotated refresh token in a
 // Set-Cookie header (never in the body) — same shape ApiClient.test.ts exercises.
 function refreshResponse(access: string, rotatedRefresh: string): Response {
@@ -14,8 +18,8 @@ function refreshResponse(access: string, rotatedRefresh: string): Response {
   })
 }
 
-function request(cookieHeader: string): NextRequest {
-  return new NextRequest('http://localhost/crm', {
+function request(cookieHeader: string, url = 'http://localhost/app/crm'): NextRequest {
+  return new NextRequest(url, {
     headers: cookieHeader ? { cookie: cookieHeader } : {},
   })
 }
@@ -25,6 +29,22 @@ beforeEach(() => {
   delete process.env.API_VERSION
 })
 afterEach(() => vi.restoreAllMocks())
+
+describe('proxy (legacy ERP paths)', () => {
+  it('308-redirects a bare ERP path under /app, keeping the query and the CSP', async () => {
+    const res = await proxy(request('', 'http://localhost/settings/users?tab=roles'))
+    expect(res.status).toBe(308)
+    expect(res.headers.get('location')).toBe('http://localhost/app/settings/users?tab=roles')
+    expect(res.headers.get('Content-Security-Policy')).toMatch(/nonce-/)
+  })
+
+  it('passes /app, /print and non-ERP paths through', async () => {
+    for (const url of ['http://localhost/app/settings', 'http://localhost/print/report/x/1', 'http://localhost/']) {
+      const res = await proxy(request('', url))
+      expect(res.headers.get('location')).toBeNull()
+    }
+  })
+})
 
 describe('proxy (session refresh ahead of RSC render)', () => {
   it('passes an anonymous request through untouched (no refresh token to rotate)', async () => {

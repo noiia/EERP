@@ -4,9 +4,14 @@ import {
   ACCESS_TTL_SECONDS,
   REFRESH_COOKIE,
   REFRESH_TTL_SECONDS,
+  moduleRegistry,
   sessionCookieOptions,
 } from '@eerp/core-front/server'
+// Side-effect import: registers every discovered module, so erpRoots below knows
+// every module route's first segment.
+import '@/generated/generated-modules'
 import { goAuthExchange } from '@/lib/bff'
+import { routeDecision } from '@/lib/routing'
 
 // Proactively rotates the session ahead of every request, so by the time a Server
 // Component renders, the access cookie is already fresh. This is the one place
@@ -21,8 +26,21 @@ import { goAuthExchange } from '@/lib/bff'
 // no JWT decoding needed here.
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth|api/site-auth).*)'],
 }
+
+// First path segment of every ERP page that used to live at the root (website
+// spec 2 moved the ERP under /app): every registered module route plus the
+// shell's own ERP sections. A bare hit on one (an old bookmark) 308s to /app/….
+// Built once — the module set is compiled in.
+const erpRoots: ReadonlySet<string> = new Set([
+  ...[...moduleRegistry.buildRegistry().keys()]
+    .map((path) => path.split('/')[1] ?? '')
+    .filter((seg) => seg !== '' && !seg.startsWith(':')),
+  'settings',
+  'appstore',
+  'force-password-change',
+])
 
 // Per-request CSP nonce (https://nextjs.org/docs/app/guides/content-security-policy):
 // App Router streams hydration/RSC payloads via inline `<script>` tags it injects
@@ -45,6 +63,20 @@ function withCsp(response: NextResponse, nonce: string): NextResponse {
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const nonce = btoa(crypto.randomUUID())
+
+  // Routing is path mode until the site session lands (Task 9 reads the real one).
+  const decision = routeDecision({
+    pathname: request.nextUrl.pathname,
+    host: request.headers.get('host') ?? '',
+    erpRoots,
+    routing: { mode: 'path' },
+  })
+  if (decision.kind === 'redirect') {
+    const target = new URL(decision.location, request.url)
+    target.search = request.nextUrl.search
+    return withCsp(NextResponse.redirect(target, 308), nonce)
+  }
+
   const forwardedRequest = new Headers(request.headers)
   forwardedRequest.set('x-nonce', nonce)
   forwardedRequest.set('Content-Security-Policy', cspHeaderValue(nonce))
