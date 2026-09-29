@@ -1,6 +1,8 @@
 package sale
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"core/internal/module"
@@ -28,27 +30,27 @@ type Invoice struct {
 	// bytes). The print route resolves it to a data: URL before rendering
 	// (docs/adr/ADR-011) — ReportRenderer never talks to the picture service.
 	Logo *bool `db:"logo"`
-	// Issuer* is the seller's own letterhead block — a snapshot on the
-	// invoice, not a live join to a workspace-wide "company profile" (no
-	// such concept exists yet in this codebase; app_settings would be the
-	// natural home for one once multiple invoices need to share a single
-	// issuer identity without re-entering it).
-	IssuerName string `db:"issuer_name"`
+	// Issuer* is an optional per-document override of the seller's
+	// letterhead block. The form no longer offers it: a blank value prints
+	// the active company's own profile instead (the report's companyFallback,
+	// Settings -> Company). Pointers, so a create may omit them — a
+	// non-pointer column is required on every generic-API create.
+	IssuerName *string `db:"issuer_name"`
 	// IssuerAddress* — the type: 'address' composite field's 7 sibling
 	// columns (core-front's AddressWidget, core/CLAUDE.md's ORM section),
 	// prefixed to match the frontend field name 'issuer_address'. Real
 	// columns rather than a JSON blob for the same reason
 	// property_management.Address is: they stay filterable/searchable
 	// through the generic list endpoint.
-	IssuerAddressNumber     *int   `db:"issuer_address_number"`
-	IssuerAddressComplement string `db:"issuer_address_complement"`
-	IssuerAddressStreet     string `db:"issuer_address_street"`
-	IssuerAddressZipCode    string `db:"issuer_address_zip_code"`
-	IssuerAddressCity       string `db:"issuer_address_city"`
-	IssuerAddressState      string `db:"issuer_address_state"`
-	IssuerAddressCountry    string `db:"issuer_address_country"`
-	IssuerPhone             string `db:"issuer_phone"`
-	IssuerEmail             string `db:"issuer_email"`
+	IssuerAddressNumber     *int    `db:"issuer_address_number"`
+	IssuerAddressComplement *string `db:"issuer_address_complement"`
+	IssuerAddressStreet     *string `db:"issuer_address_street"`
+	IssuerAddressZipCode    *string `db:"issuer_address_zip_code"`
+	IssuerAddressCity       *string `db:"issuer_address_city"`
+	IssuerAddressState      *string `db:"issuer_address_state"`
+	IssuerAddressCountry    *string `db:"issuer_address_country"`
+	IssuerPhone             *string `db:"issuer_phone"`
+	IssuerEmail             *string `db:"issuer_email"`
 	// Number is the human-facing invoice reference (e.g. "INV-2026-0001"),
 	// distinct from the record's own UUID id.
 	Number    string     `db:"number"`
@@ -226,19 +228,19 @@ type SaleLineTax struct {
 // not a flag flip — that conversion isn't built yet.
 type Quote struct {
 	model.BaseModel
-	Logo       *bool  `db:"logo"`
-	IssuerName string `db:"issuer_name"`
+	Logo       *bool   `db:"logo"`
+	IssuerName *string `db:"issuer_name"`
 	// IssuerAddress*/CustomerAddress* mirror Invoice's own 7-column
 	// type: 'address' composite shape (see Invoice's doc comment above).
 	IssuerAddressNumber       *int       `db:"issuer_address_number"`
-	IssuerAddressComplement   string     `db:"issuer_address_complement"`
-	IssuerAddressStreet       string     `db:"issuer_address_street"`
-	IssuerAddressZipCode      string     `db:"issuer_address_zip_code"`
-	IssuerAddressCity         string     `db:"issuer_address_city"`
-	IssuerAddressState        string     `db:"issuer_address_state"`
-	IssuerAddressCountry      string     `db:"issuer_address_country"`
-	IssuerPhone               string     `db:"issuer_phone"`
-	IssuerEmail               string     `db:"issuer_email"`
+	IssuerAddressComplement   *string    `db:"issuer_address_complement"`
+	IssuerAddressStreet       *string    `db:"issuer_address_street"`
+	IssuerAddressZipCode      *string    `db:"issuer_address_zip_code"`
+	IssuerAddressCity         *string    `db:"issuer_address_city"`
+	IssuerAddressState        *string    `db:"issuer_address_state"`
+	IssuerAddressCountry      *string    `db:"issuer_address_country"`
+	IssuerPhone               *string    `db:"issuer_phone"`
+	IssuerEmail               *string    `db:"issuer_email"`
 	Number                    string     `db:"number"`
 	IssueDate                 *time.Time `db:"issue_date"`
 	Subject                   string     `db:"subject"`
@@ -282,6 +284,30 @@ type QuoteLine struct {
 }
 
 type saleModule struct{}
+
+// issuerColumns are Invoice/Quote's Issuer* columns, made optional (plain
+// string -> *string) once the issuer moved to the company profile.
+var issuerColumns = []string{
+	"issuer_name", "issuer_address_complement", "issuer_address_street",
+	"issuer_address_zip_code", "issuer_address_city", "issuer_address_state",
+	"issuer_address_country", "issuer_phone", "issuer_email",
+}
+
+// Migrate drops the NOT NULL a pre-existing invoice/quote table kept on its
+// Issuer* columns: auto-migration is purely additive and never relaxes a
+// constraint (same reasoning as propertymanagement's Migrate). A no-op on a
+// fresh database, which creates them nullable already.
+func (m *saleModule) Migrate(ctx context.Context, db *orm.DB) error {
+	for _, table := range []string{"invoice", "quote"} {
+		for _, col := range issuerColumns {
+			// #nosec G201 — table/column names are the constants above.
+			if _, err := db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", table, col)); err != nil {
+				return fmt.Errorf("sale: drop %s.%s NOT NULL: %w", table, col, err)
+			}
+		}
+	}
+	return nil
+}
 
 func (m *saleModule) Name() string { return "sale" }
 

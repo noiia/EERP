@@ -387,3 +387,27 @@ msgstr ""
 
 msgid "failed"
 msgstr ""
+
+msgid "Copy details"
+msgstr ""
+
+msgid "Copied"
+msgstr ""
+
+msgid "Required fields are missing"
+msgstr ""
+
+msgid "Fill in"
+msgstr ""
+
+msgid "These required fields are not on this form, so they cannot be filled in here. Please send the details to your administrator:"
+msgstr ""
+
+msgid "Missing:"
+msgstr ""
+
+msgid "Reference for your administrator"
+msgstr ""
+
+msgid "The server could not complete this request. If it keeps happening, contact your administrator."
+msgstr ""

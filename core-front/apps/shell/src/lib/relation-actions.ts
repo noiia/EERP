@@ -1,6 +1,8 @@
 'use server'
 import {
   createServerApiClient,
+  settleAction,
+  type ActionError,
   type EntityListOptions,
 } from '@eerp/core-front/server'
 import type { RelationRecord } from '@eerp/core-front'
@@ -14,29 +16,29 @@ import type { RelationRecord } from '@eerp/core-front'
 export async function listRecords(
   entity: string,
   options?: EntityListOptions,
-): Promise<RelationRecord[]> {
-  return createServerApiClient().list<RelationRecord>(entity, options)
+): Promise<RelationRecord[] | ActionError> {
+  return settleAction(() => createServerApiClient().list<RelationRecord>(entity, options))
 }
 
-export async function getRecord(entity: string, id: string): Promise<RelationRecord> {
-  return createServerApiClient().get<RelationRecord>(entity, id)
+export async function getRecord(entity: string, id: string): Promise<RelationRecord | ActionError> {
+  return settleAction(() => createServerApiClient().get<RelationRecord>(entity, id))
 }
 
 export async function createRelationRecord(
   entity: string,
   body: Record<string, unknown>,
-): Promise<RelationRecord> {
-  return createServerApiClient().create<RelationRecord>(entity, body)
+): Promise<RelationRecord | ActionError> {
+  return settleAction(() => createServerApiClient().create<RelationRecord>(entity, body))
 }
 
-export async function removeRelationRecord(entity: string, id: string): Promise<void> {
-  await createServerApiClient().remove(entity, id)
+export async function removeRelationRecord(entity: string, id: string): Promise<void | ActionError> {
+  return settleAction(() => createServerApiClient().remove(entity, id))
 }
 
 export async function distinctValues(
   entity: string,
   column: string,
   options?: EntityListOptions,
-): Promise<{ value: string; total: number }[]> {
-  return createServerApiClient().distinctValues(entity, column, options)
+): Promise<{ value: string; total: number }[] | ActionError> {
+  return settleAction(() => createServerApiClient().distinctValues(entity, column, options))
 }

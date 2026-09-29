@@ -143,6 +143,7 @@ export function createFormStore<T extends HasId>(
             code: 'VALIDATION_ERROR',
             message: `Missing required field(s): ${missing.join(', ')}`,
             status: 0,
+            fields: missing,
           }),
         })
         return null

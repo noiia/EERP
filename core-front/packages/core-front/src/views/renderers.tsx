@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -17,7 +17,7 @@ import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef, type GridRowSelectionModel } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
-import { serializeError, toApiError, type SerializedError } from '../api/errors'
+import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
 import {
   availableDisplayModes,
   DISPLAY_MODES,
@@ -126,7 +126,12 @@ export interface EntityViewProps<T extends HasId> {
 }
 
 /** Top-level dispatcher: render a load error, otherwise the renderer for the viewType. */
-export function EntityView<T extends HasId>(props: EntityViewProps<T>) {
+export function EntityView<T extends HasId>(rawProps: EntityViewProps<T>) {
+  // The bound Server Actions return failures as values (settleAction) — the
+  // only way Go's code/message/fields/request id survive a production build.
+  // Unwrapped once here, so every renderer below keeps plain try/catch.
+  const actions = useMemo(() => unwrapActions(rawProps.actions), [rawProps.actions])
+  const props = { ...rawProps, actions }
   if (props.error) return <ErrorAlert error={props.error} />
   switch (props.descriptor.viewType) {
     case 'form':
@@ -579,9 +584,7 @@ function FormRenderer<T extends HasId>({
           <CardContent sx={{ p: 3 }}>
             <Stack spacing={2.5}>
               {error ? (
-                <ErrorAlert
-                  error={{ code: error.code, message: error.message, requestId: error.requestId }}
-                />
+                <ErrorAlert error={serializeError(error)} fields={descriptor.fields} />
               ) : null}
               {deleteError ? <ErrorAlert error={deleteError} /> : null}
               <PictureSizeProvider size={pictureSize}>

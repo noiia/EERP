@@ -596,3 +596,27 @@ msgstr "créé(s)"
 
 msgid "failed"
 msgstr "échoué(s)"
+
+msgid "Copy details"
+msgstr "Copier les détails"
+
+msgid "Copied"
+msgstr "Copié"
+
+msgid "Required fields are missing"
+msgstr "Des champs obligatoires sont manquants"
+
+msgid "Fill in"
+msgstr "À renseigner"
+
+msgid "These required fields are not on this form, so they cannot be filled in here. Please send the details to your administrator:"
+msgstr "Ces champs obligatoires ne figurent pas sur ce formulaire et ne peuvent donc pas être renseignés ici. Transmettez les détails à votre administrateur :"
+
+msgid "Missing:"
+msgstr "Manquant :"
+
+msgid "Reference for your administrator"
+msgstr "Référence pour votre administrateur"
+
+msgid "The server could not complete this request. If it keeps happening, contact your administrator."
+msgstr "Le serveur n'a pas pu traiter cette demande. Si le problème persiste, contactez votre administrateur."

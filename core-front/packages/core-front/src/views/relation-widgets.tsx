@@ -35,6 +35,8 @@ import {
 import { useCompanyStore } from './company-store'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { serializeError } from '../api/errors'
+import { ErrorAlert } from './error-alert'
 import { LayoutForm } from './layout-renderer'
 import { useNumberFormat } from './format-store'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
@@ -405,11 +407,7 @@ function RelationCreateWizard({
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
-            {error ? (
-              <Typography variant="caption" color="error">
-                {error.message}
-              </Typography>
-            ) : null}
+            {error ? <ErrorAlert error={serializeError(error)} fields={descriptor.fields} /> : null}
             {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
                 walks the target descriptor's normalized layout tree, so a
                 registered form's grouping/rows render here too, not just a

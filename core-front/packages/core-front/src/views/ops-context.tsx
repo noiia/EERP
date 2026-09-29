@@ -1,5 +1,6 @@
 'use client'
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import { unwrapActions, type Settled } from '../api/errors'
 
 // Shared shape behind RelationOps/GraphOps/NotebookOps: a context of bound Server
 // Action references the host mounts once (root layout) — client code never talks to
@@ -9,8 +10,11 @@ import { createContext, useContext, type ReactNode } from 'react'
 export function createOpsContext<T>() {
   const Context = createContext<T | null>(null)
 
-  function Provider({ ops, children }: { ops: T; children: ReactNode }) {
-    return <Context.Provider value={ops}>{children}</Context.Provider>
+  function Provider({ ops, children }: { ops: T | Settled<T>; children: ReactNode }) {
+    // Server Actions return failures as values (settleAction); turn them back
+    // into thrown ApiErrors here, once, for every consumer.
+    const value = useMemo(() => unwrapActions(ops as object) as T, [ops])
+    return <Context.Provider value={value}>{children}</Context.Provider>
   }
 
   function useOps(): T | null {

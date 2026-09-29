@@ -110,6 +110,22 @@ func TestApp_SaleFlow(t *testing.T) {
 	f.expect(http.MethodPost, "/api/v1/product_variant", "not an object", http.StatusBadRequest)
 
 	invoice := f.create("invoice", map[string]any{})
+	// The invoice/quote forms never send issuer_*: a blank issuer prints the
+	// company profile instead, so a create without them must succeed.
+	for _, table := range []string{"invoice", "quote"} {
+		body := withRequired(t, table, map[string]any{})
+		for k := range body {
+			if strings.HasPrefix(k, "issuer_") {
+				delete(body, k)
+			}
+		}
+		f.createAt("/api/v1/"+table, table, body)
+	}
+	// A 422 names every missing field, so the form can list them for the user.
+	missing := string(f.expect(http.MethodPost, "/api/v1/invoice", map[string]any{}, http.StatusUnprocessableEntity))
+	if !strings.Contains(missing, `"fields":[`) || !strings.Contains(missing, `"number"`) {
+		t.Errorf("422 body lacks the missing field list: %s", missing)
+	}
 	tax := f.create("sale_tax", map[string]any{"name": "VAT", "kind": "percentage", "rate": 0.2})
 
 	line := f.create("sale_line", map[string]any{"invoice_id": invoice, "variant_id": variant, "quantity": 2})
