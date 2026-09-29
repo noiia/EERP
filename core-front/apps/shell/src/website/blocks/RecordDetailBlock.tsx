@@ -1,5 +1,5 @@
 import Typography from '@mui/material/Typography'
-import { pictureUrl } from '../public-api'
+import { pictureUrl } from '../urls'
 import type { PublicDataSource, RecordDetailConfig } from '../types'
 import { FieldLines } from './fields'
 

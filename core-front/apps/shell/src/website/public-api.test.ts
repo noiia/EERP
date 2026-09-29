@@ -32,3 +32,10 @@ it('getMenuPages sorts by menu_sequence, null as 0', async () => {
   ]))
   expect((await getMenuPages()).map((p) => p.slug)).toEqual(['a', 'b'])
 })
+
+it('encodes table and id path segments', async () => {
+  const fetchMock = json([])
+  vi.stubGlobal('fetch', fetchMock)
+  await serverPublicSource.get('a b', '../x')
+  expect(String(fetchMock.mock.calls[0][0])).toBe('http://api.test/api/v1/public/a%20b/..%2Fx')
+})

@@ -21,15 +21,10 @@ export const serverPublicSource: PublicDataSource = {
     for (const [k, v] of Object.entries(q.filter ?? {})) params.set(`filter[${k}]`, v)
     const qs = params.toString()
     const body = await getJSON<{ data: Record<string, unknown>[]; total: number }>(
-      `/${table}${qs ? '?' + qs : ''}`, ['website_page', table])
+      `/${encodeURIComponent(table)}${qs ? '?' + qs : ''}`, ['website_page', table])
     return body ? { records: body.data, total: body.total } : null
   },
-  get: (table, id) => getJSON<Record<string, unknown>>(`/${table}/${encodeURIComponent(id)}`, ['website_page', table]),
-}
-
-/** Browser-relative: the gateway routes /api/v1/* to Go, and public pictures need no session. */
-export function pictureUrl(table: string, record: string, field: string): string {
-  return `/api/v1/public/${table}/${record}/picture/${field}`
+  get: (table, id) => getJSON<Record<string, unknown>>(`/${encodeURIComponent(table)}/${encodeURIComponent(id)}`, ['website_page', table]),
 }
 
 export interface SitePage { id: string; slug: string; title: string; seo_description?: string | null; layout: Block[] }

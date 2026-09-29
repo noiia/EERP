@@ -3,7 +3,7 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
-import { pictureUrl } from '../public-api'
+import { pictureUrl } from '../urls'
 import type { PublicDataSource, RecordListConfig } from '../types'
 import { FieldLines } from './fields'
 
@@ -28,7 +28,7 @@ export async function RecordListBlock({ config, source }: { config: RecordListCo
         )
         return (
           <Card key={id}>
-            {config.detail_slug ? <CardActionArea href={`/${config.detail_slug}/${id}`}>{body}</CardActionArea> : body}
+            {config.detail_slug ? <CardActionArea href={`/${encodeURIComponent(config.detail_slug)}/${encodeURIComponent(id)}`}>{body}</CardActionArea> : body}
           </Card>
         )
       })}

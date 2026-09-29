@@ -26,6 +26,13 @@ describe('blocks', () => {
     expect(screen.getByRole('link', { name: 'Go' }).getAttribute('href')).toBe('/x')
   })
 
+  it('hero and image drop unsafe links', async () => {
+    await renderBlock(block('hero', { title: 'W', cta_label: 'Go', cta_href: 'javascript:alert(1)' }), source([]))
+    expect(screen.queryByRole('link', { name: 'Go' })).toBeNull()
+    await renderBlock(block('image', { table: 't', record: 'r', field: 'f', alt: 'Pic', href: '//evil.com' }), source([]))
+    expect(screen.getByAltText('Pic').closest('a')).toBeNull()
+  })
+
   it('image: points at the public picture route', async () => {
     await renderBlock(block('image', { table: 'product', record: 'r1', field: 'photo', alt: 'A chair' }), source([]))
     expect(screen.getByAltText('A chair').getAttribute('src')).toBe('/api/v1/public/product/r1/picture/photo')
