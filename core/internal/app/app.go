@@ -43,6 +43,7 @@ import (
 	"core/modules/warehouse"
 	websitemodule "core/modules/website"
 	"core/orm"
+	"core/orm/access"
 	ormserver "core/orm/server"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
@@ -343,12 +344,35 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// CRUD surface). Mounted only when the config carries an object store —
 	// without s3_* the feature is absent, not broken. The permission middleware
 	// derives pictures:pictures:read|write|delete from the routes.
+	var publicPictures ormserver.PictureServer
 	if pictures.S3Configured(configContent) {
 		objects, err := pictures.NewS3Store(configContent)
 		if err != nil {
 			return fmt.Errorf("Error building S3 object store: %w", err)
 		}
-		picturesHandler := pictures.NewHandler(pictures.NewRepository(app.DB), objects)
+		picRepo := pictures.NewRepository(app.DB)
+		publicPictures = func(c *echo.Context, table string, recordID uuid.UUID, field string) error {
+			ctx := c.Request().Context()
+			tenant, _ := access.TenantFromContext(ctx)
+			p, err := picRepo.FindByAnchor(ctx, tenant, table, recordID, field)
+			if errors.Is(err, orm.ErrNotFound) {
+				return echo.NewHTTPError(http.StatusNotFound, "not found")
+			}
+			if err != nil {
+				return err
+			}
+			body, ctype, err := objects.Get(ctx, p.ObjectKey)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = body.Close() }()
+			if p.Mime != "" {
+				ctype = p.Mime
+			}
+			c.Response().Header().Set("Cache-Control", "public, max-age=300")
+			return c.Stream(http.StatusOK, ctype, body)
+		}
+		picturesHandler := pictures.NewHandler(picRepo, objects)
 		picturesGroup := srv.Echo().Group("/api/v1/pictures", jwtMw, permMw)
 		picturesGroup.POST("", picturesHandler.Upload)
 		picturesGroup.GET("", picturesHandler.Find)
@@ -648,7 +672,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		publicGroup := srv.Echo().Group("/api/v1/public",
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
-		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve))
+		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
 
 		// Seed the published-pages selection once (never overwrite an admin's choice).
 		siteSettings := settings.NewRepository(app.DB)

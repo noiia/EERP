@@ -341,3 +341,13 @@ func (h *GenericHandler) Restore(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, crud.BuildResponse(ctx, h.meta, result))
 }
+
+// Visible reports whether id is readable under ctx's scope (tenant, soft
+// delete, public filter) — the public picture route's record check.
+func (h *GenericHandler) Visible(ctx context.Context, id uuid.UUID) (bool, error) {
+	_, err := h.svc.GetByID(ctx, id)
+	if errors.Is(err, crud.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
