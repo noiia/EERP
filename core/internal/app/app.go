@@ -673,12 +673,23 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// event / event_availability: validation (and event defaults) in front of the generic writes.
 	for table, mw := range map[string]echo.MiddlewareFunc{
 		"event": eventmodule.ValidateEventBody, "event_availability": eventmodule.ValidateAvailabilityBody,
+		"event_session": eventmodule.ValidateSessionBody,
 	} {
 		h := handlers[table]
 		srv.Echo().POST("/api/v1/"+table, h.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
 		srv.Echo().PUT("/api/v1/"+table+"/:id", h.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
 	}
-	eventH := eventmodule.NewHandler(app.DB)
+	eventH := eventmodule.NewHandler(app.DB, eventmodule.NewService(app.DB, chatter.NewRepository(app.DB), configContent.SiteURL))
+	// event_booking writes go through the booking service (seat accounting);
+	// a booking is cancelled, never deleted; a session with confirmed
+	// bookings can't be deleted. seats_taken is read-only on the generic
+	// session update and capped by capacity in the DB.
+	bookingH := handlers["event_booking"]
+	srv.Echo().POST("/api/v1/event_booking", eventH.StaffBook(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().PUT("/api/v1/event_booking/:id", eventH.StaffUpdate(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().DELETE("/api/v1/event_booking/:id", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().POST("/api/v1/event_booking/:id/restore", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().DELETE("/api/v1/event_session/:id", handlers["event_session"].Delete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventH.GuardSessionDelete)
 
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver
@@ -689,6 +700,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			website.TenantMiddleware(siteTenant))
 		publicGroup.GET("/site", routing.PublicSite)
 		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
+		publicGroup.GET("/event/:id/slots", eventH.PublicSlots)
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
 
 		// Seed the published selections once (never overwrite an admin's choice).
@@ -724,6 +736,17 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
 		websiteGroup.GET("/me", siteMe.Get)
 		websiteGroup.PUT("/me", siteMe.Put)
+		websiteGroup.GET("/me/bookings", eventH.MyBookings)
+		websiteGroup.POST("/me/bookings/:id/cancel", eventH.CancelMine)
+
+		// Bookings: anonymous visitors OR logged-in website users. The site
+		// tenant is stamped first; a website token's tenant is the same.
+		bookings := srv.Echo().Group("/api/v1/website/bookings",
+			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
+			website.TenantMiddleware(siteTenant),
+			authmw.OptionalWebsiteJWTMiddleware(tokenSvc))
+		bookings.POST("", eventH.Book)
+		bookings.POST("/cancel", eventH.CancelByToken)
 	} else {
 		// No site tenant: the Next proxy still needs an answer.
 		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)
