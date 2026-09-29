@@ -91,12 +91,19 @@ func (r *Repository) publicConditions(ctx context.Context) ([]query.Condition, e
 	conds := make([]query.Condition, 0, len(cols))
 	for _, col := range cols {
 		if !r.meta.HasField(col) {
-			return nil, fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+			return nil, fmt.Errorf("%w: %s.%s", ErrPublicScopeMisconfigured, r.meta.TableName, col)
 		}
 		conds = append(conds, query.NewCondition(col+"::text = $1", scope.Equals[col]))
 	}
 	return conds, nil
 }
+
+// ErrPublicScopeMisconfigured is returned when a public scope forces a filter
+// on a column the table lacks (bad admin config). Deliberately distinct from
+// ErrUnknownColumn: that one becomes a 400 echoing the column name, while this
+// one falls through to the generic 500 (logged server-side, never shown to the
+// anonymous caller).
+var ErrPublicScopeMisconfigured = errors.New("crud: public scope forces an unknown column")
 
 // ErrUnknownColumn is returned when a list filter names a column the table
 // does not have. Column names end up as SQL identifiers, so the whitelist

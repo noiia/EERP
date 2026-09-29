@@ -63,7 +63,9 @@ func (p *Publisher) Resolve(ctx context.Context, table string) (access.PublicSco
 			cols = append(cols, f)
 		}
 	}
-	if len(cols) == 0 {
+	// Non-column anchor fields (e.g. "picture") alone would publish the table
+	// as bare ids — require at least one real column.
+	if !slices.ContainsFunc(cols, func(f string) bool { return orm.TableHasColumn(table, f) }) {
 		return access.PublicScope{}, false, nil
 	}
 	return access.PublicScope{Columns: append(cols, "id"), Equals: sel.Filter}, true, nil
@@ -88,6 +90,9 @@ func validateSelection(table string, declared []string, sel Selection) error {
 		if !slices.Contains(declared, f) {
 			return fmt.Errorf("%w: %s is not declared public by its module", errSelection, f)
 		}
+	}
+	if len(sel.Fields) > 0 && !slices.ContainsFunc(sel.Fields, func(f string) bool { return f != "id" && orm.TableHasColumn(table, f) }) {
+		return fmt.Errorf("%w: select at least one data column, not only attachments/pictures", errSelection)
 	}
 	for col := range sel.Filter {
 		if !orm.TableHasColumn(table, col) {

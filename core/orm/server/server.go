@@ -72,6 +72,11 @@ func New(app *orm.App, cfg Config) *Server {
 func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	e := echo.New()
 
+	// Every request reaches Go through nginx and/or the Next BFF (private
+	// addresses), so RealIP — what the rate limiters key on — must come from
+	// X-Forwarded-For, trusting only loopback/link-local/private hops.
+	e.IPExtractor = echo.ExtractIPFromXFFHeader(echo.TrustPrivateNet(true))
+
 	e.Use(middleware.RequestID())
 
 	if app != nil && app.Logger != nil {

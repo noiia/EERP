@@ -26,6 +26,8 @@ func TestPublicScopeMiddleware(t *testing.T) {
 		{"published table", "product", "", http.StatusOK, true},
 		{"unpublished table is 404", "crm", "", http.StatusNotFound, false},
 		{"aggregate refused", "product", "?aggregate=count", http.StatusBadRequest, false},
+		{"page_size at cap allowed", "product", "?page_size=100", http.StatusOK, true},
+		{"page_size over cap refused", "product", "?page_size=101", http.StatusBadRequest, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

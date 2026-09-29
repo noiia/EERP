@@ -30,7 +30,7 @@ type pubThing struct {
 }
 
 func TestPublisher_Resolve(t *testing.T) {
-	if err := orm.Register[pubThing](orm.WithPublicFields("name", "cost")); err != nil {
+	if err := orm.Register[pubThing](orm.WithPublicFields("name", "cost", "picture")); err != nil {
 		t.Fatal(err)
 	}
 	sel := func(s Selection) string { b, _ := json.Marshal(s); return string(b) }
@@ -47,6 +47,9 @@ func TestPublisher_Resolve(t *testing.T) {
 			true, []string{"name", "id"}, map[string]string{"published": "true"}},
 		// Review Focus #5: a field the module no longer declares is dropped, never exposed.
 		{"undeclared field dropped", sel(Selection{Fields: []string{"name", "published"}}), true, []string{"name", "id"}, nil},
+		// "picture" is a non-column anchor field: alone it would publish bare ids.
+		{"only non-column fields is unpublished", sel(Selection{Fields: []string{"picture"}}), false, nil, nil},
+		{"non-column field kept beside a column", sel(Selection{Fields: []string{"name", "picture"}}), true, []string{"name", "picture", "id"}, nil},
 		{"corrupt JSON degrades to unpublished", "{", false, nil, nil},
 	}
 	for _, tt := range tests {
@@ -72,7 +75,7 @@ func TestPublisher_Resolve(t *testing.T) {
 }
 
 func TestValidateSelection(t *testing.T) {
-	declared := []string{"name", "cost"}
+	declared := []string{"name", "cost", "picture"}
 	tests := []struct {
 		name    string
 		sel     Selection
@@ -80,6 +83,8 @@ func TestValidateSelection(t *testing.T) {
 	}{
 		{"valid", Selection{Fields: []string{"name"}, Filter: map[string]string{"published": "true"}}, false},
 		{"field not declared", Selection{Fields: []string{"published"}}, true},
+		{"only non-column fields", Selection{Fields: []string{"picture"}}, true},
+		{"empty field list unpublishes", Selection{}, false},
 		{"filter column unknown", Selection{Fields: []string{"name"}, Filter: map[string]string{"nope": "1"}}, true},
 	}
 	for _, tt := range tests {

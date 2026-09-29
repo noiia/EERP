@@ -3,16 +3,21 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"core/internal/auth"
+	"core/internal/common"
 	"core/internal/settings"
 	"core/internal/testdb"
 	"core/internal/website"
 
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
 )
 
 // buildSiteApp is buildApp with the dev tenant pinned as the website tenant
@@ -252,5 +257,35 @@ func TestWebsiteProfileAndAdmin(t *testing.T) {
 	}
 	if code, _ := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"disabled": false}); code != http.StatusConflict {
 		t.Errorf("re-enable with email taken = %d, want 409", code)
+	}
+}
+
+// A website-role seeding failure must not block boot: only signup (which
+// assigns website_user) is left unmounted.
+func TestMountWebsiteAuth(t *testing.T) {
+	if common.Logger == nil {
+		common.Logger = zap.NewNop()
+	}
+	ok := func(c *echo.Context) error { return c.NoContent(http.StatusNoContent) }
+	tests := []struct {
+		name       string
+		seedErr    error
+		wantSignup int
+	}{
+		{"seeded", nil, http.StatusNoContent},
+		{"seed failed", errors.New("idx_roles_tenant_technical_name"), http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			mountWebsiteAuth(e.Group("/a"), ok, ok, ok, ok, tt.seedErr)
+			for path, want := range map[string]int{"/a/signup": tt.wantSignup, "/a/login": http.StatusNoContent, "/a/refresh": http.StatusNoContent, "/a/logout": http.StatusNoContent} {
+				rec := httptest.NewRecorder()
+				e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+				if rec.Code != want {
+					t.Errorf("%s = %d, want %d", path, rec.Code, want)
+				}
+			}
+		})
 	}
 }

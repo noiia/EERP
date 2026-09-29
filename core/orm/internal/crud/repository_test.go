@@ -636,6 +636,9 @@ func TestRepository_PublicScope_ForcesEqualsOnEveryRead(t *testing.T) {
 	if _, err := repo.DistinctValues(ctx, "label", crud.ListFilter{}); err != nil {
 		t.Fatal(err)
 	}
+	if len(ex.queries) < 3 {
+		t.Fatalf("captured %d queries, want >= 3", len(ex.queries))
+	}
 	for i, q := range ex.queries {
 		if !strings.Contains(q, "price::text = $") {
 			t.Errorf("query %d missing forced filter: %s", i, q)
@@ -646,7 +649,9 @@ func TestRepository_PublicScope_ForcesEqualsOnEveryRead(t *testing.T) {
 func TestRepository_PublicScope_UnknownForcedColumnFailsClosed(t *testing.T) {
 	ctx := publicCtx([]string{"id", "label"}, map[string]string{"nope": "x"})
 	_, _, err := crud.NewRepository(&captureExec{}, rangeMeta(t)).FindAll(ctx, crud.ListFilter{})
-	if !errors.Is(err, crud.ErrUnknownColumn) {
-		t.Fatalf("err = %v, want ErrUnknownColumn", err)
+	// A distinct sentinel (never ErrUnknownColumn, which the handler turns
+	// into a 400 echoing the column name to the anonymous caller).
+	if !errors.Is(err, crud.ErrPublicScopeMisconfigured) || errors.Is(err, crud.ErrUnknownColumn) {
+		t.Fatalf("err = %v, want ErrPublicScopeMisconfigured only", err)
 	}
 }

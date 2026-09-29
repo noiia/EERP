@@ -256,6 +256,16 @@ func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UU
 	}
 	var created Users
 	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		// Explicit pre-check: idx_users_email_live is the race-proof guard, but
+		// its creation is non-fatal (modules/auth Migrate), so it may be missing.
+		var taken bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($1) AND deleted_at IS NULL)`, email).Scan(&taken); err != nil {
+			return err
+		}
+		if taken {
+			return ErrEmailTaken
+		}
 		u := Users{BaseModel: model.BaseModel{TenantID: tenantID}, Email: email, PasswordHash: string(hash), Name: name, Kind: KindWebsite}
 		if created, err = r.users.WithTx(tx).Create(ctx, u); err != nil {
 			return err

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"core/orm/access"
 	"core/orm/internal/handler"
@@ -31,12 +32,20 @@ func MountPublic(g *echo.Group, handlers map[string]*handler.GenericHandler, res
 	}
 }
 
+// maxPublicPageSize caps page_size on the anonymous surface.
+const maxPublicPageSize = 100
+
 // PublicScopeMiddleware resolves table's scope and stamps it on the context.
 func PublicScopeMiddleware(table string, resolve PublicResolver) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			if c.QueryParam("aggregate") != "" {
 				return echo.NewHTTPError(http.StatusBadRequest, "aggregate is not available on public routes")
+			}
+			// Anonymous callers get a hard page cap: an unbounded page_size is a
+			// one-request DoS on a large published table.
+			if ps, _ := strconv.Atoi(c.QueryParam("page_size")); ps > maxPublicPageSize {
+				return echo.NewHTTPError(http.StatusBadRequest, "page_size must be at most 100")
 			}
 			ctx := c.Request().Context()
 			scope, ok, err := resolve(ctx, table)

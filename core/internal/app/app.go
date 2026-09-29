@@ -44,6 +44,7 @@ import (
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
@@ -630,15 +631,10 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			website.TenantMiddleware(siteTenant))
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve))
 
-		if err := auth.SeedWebsiteRoles(ctx, app.DB, siteTenant); err != nil {
-			return fmt.Errorf("seed website roles: %w", err)
-		}
 		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
 		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
-		websiteAuthGroup.POST("/signup", siteAuth.Signup)
-		websiteAuthGroup.POST("/login", siteAuth.Login)
-		websiteAuthGroup.POST("/refresh", siteAuth.Refresh)
-		websiteAuthGroup.POST("/logout", siteAuth.Logout)
+		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout,
+			auth.SeedWebsiteRoles(ctx, app.DB, siteTenant))
 
 		websiteJWT := authmw.WebsiteJWTMiddleware(tokenSvc)
 		siteMe := website.NewMeHandler(userRepo)
@@ -864,4 +860,20 @@ func publicRateLimit(cfg *types.Config) int {
 		return cfg.PublicRateLimitPerMinute
 	}
 	return 300
+}
+
+// mountWebsiteAuth mounts the visitor auth routes. A website-role seeding
+// failure (e.g. a live role already holding website_user's technical name
+// under another id) must not stop the backend booting: it is logged, and
+// only signup — which assigns website_user — stays unmounted; existing
+// accounts keep login/refresh/logout.
+func mountWebsiteAuth(g *echo.Group, signup, login, refresh, logout echo.HandlerFunc, seedErr error) {
+	if seedErr != nil {
+		common.Logger.Warn("⚠️  seed website roles failed — website signup disabled", zap.Error(seedErr))
+	} else {
+		g.POST("/signup", signup)
+	}
+	g.POST("/login", login)
+	g.POST("/refresh", refresh)
+	g.POST("/logout", logout)
 }
