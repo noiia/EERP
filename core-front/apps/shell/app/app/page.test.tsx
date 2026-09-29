@@ -27,9 +27,9 @@ describe('Menu', () => {
 
     // The application is "crm" — one tile labeled by the app, linking to its first route.
     const app = screen.getByRole('link', { name: 'Crm' })
-    expect(app).toHaveAttribute('href', '/crm/contacts')
+    expect(app).toHaveAttribute('href', '/app/crm/contacts')
 
-    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings')
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/app/settings')
   })
 
   it('shows an empty-state message when no application is available', () => {

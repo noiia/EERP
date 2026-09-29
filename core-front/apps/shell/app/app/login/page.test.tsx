@@ -50,7 +50,7 @@ describe('LoginPage', () => {
     render(<LoginPage />)
     fillAndSubmit()
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app'))
     // Re-fetches the server tree so the cached root layout picks up the new session cookie.
     expect(refreshMock).toHaveBeenCalled()
   })

@@ -73,7 +73,7 @@ describe('CatalogRenderer', () => {
       />,
     )
     screen.getByText('CRM').click()
-    expect(pushMock).toHaveBeenCalledWith('/appstore/crm')
+    expect(pushMock).toHaveBeenCalledWith('/app/appstore/crm')
   })
 
   it('does not navigate when the descriptor declares no formPath', () => {

@@ -21,9 +21,9 @@ describe('Menu', () => {
 
   it('renders one tile per module plus the built-in Settings tile, each linking to its first route', () => {
     render(<Menu menu={menu} />)
-    expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/crm')
-    expect(screen.getByRole('link', { name: /stock manager/i })).toHaveAttribute('href', '/stock')
-    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings')
+    expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/app/crm')
+    expect(screen.getByRole('link', { name: /stock manager/i })).toHaveAttribute('href', '/app/stock')
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/app/settings')
   })
 
   it('renders with stable keys — no React key warning (the key sits on the mapped tile, not an inner child)', () => {
@@ -80,6 +80,6 @@ describe('Menu', () => {
   it('shows the empty-state message when no applications are installed (Settings still listed)', () => {
     render(<Menu menu={[]} />)
     expect(screen.getByText('No applications are available for your account.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings')
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/app/settings')
   })
 })

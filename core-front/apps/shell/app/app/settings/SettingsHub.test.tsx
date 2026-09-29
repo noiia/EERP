@@ -11,7 +11,7 @@ describe('SettingsHub', () => {
     render(<SettingsHub />)
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     const link = screen.getByRole('link', { name: /global settings/i })
-    expect(link).toHaveAttribute('href', '/settings/appearance')
+    expect(link).toHaveAttribute('href', '/app/settings/appearance')
   })
 
   it('ships Global settings (Colors + Reports, at the stable /settings/appearance path) as a default section', () => {
@@ -23,14 +23,14 @@ describe('SettingsHub', () => {
     render(<SettingsHub />)
     expect(screen.getByRole('link', { name: /^account/i })).toHaveAttribute(
       'href',
-      '/settings/account',
+      '/app/settings/account',
     )
   })
 
   it('ships Company as a default section, linked from the hub', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/company')).toBe(true)
     render(<SettingsHub />)
-    expect(screen.getByRole('link', { name: /^company/i })).toHaveAttribute('href', '/settings/company')
+    expect(screen.getByRole('link', { name: /^company/i })).toHaveAttribute('href', '/app/settings/company')
   })
 
   it('ships Translations as a default section, linked from the hub', () => {
@@ -38,14 +38,14 @@ describe('SettingsHub', () => {
     render(<SettingsHub />)
     expect(screen.getByRole('link', { name: /translations/i })).toHaveAttribute(
       'href',
-      '/settings/translations',
+      '/app/settings/translations',
     )
   })
 
   it('ships Apps as a default section, linked from the hub (folds in the old Views/Formats pages)', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/apps')).toBe(true)
     render(<SettingsHub />)
-    expect(screen.getByRole('link', { name: /^apps/i })).toHaveAttribute('href', '/settings/apps')
+    expect(screen.getByRole('link', { name: /^apps/i })).toHaveAttribute('href', '/app/settings/apps')
   })
 
   it('no longer ships the standalone Views/Formats sections', () => {
@@ -58,7 +58,7 @@ describe('SettingsHub', () => {
     render(<SettingsHub />)
     expect(screen.getByRole('link', { name: /^users/i })).toHaveAttribute(
       'href',
-      '/settings/users',
+      '/app/settings/users',
     )
   })
 
@@ -67,7 +67,7 @@ describe('SettingsHub', () => {
     render(<SettingsHub />)
     expect(screen.getByRole('link', { name: /^developer/i })).toHaveAttribute(
       'href',
-      '/settings/developer',
+      '/app/settings/developer',
     )
   })
 })

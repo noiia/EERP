@@ -6,7 +6,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 // a plain mutable var a test can reassign before rendering, mirroring how
 // pushMock is a plain shared mock every test already reads/clears.
 const pushMock = vi.fn()
-let mockPathname = '/crm/c1'
+let mockPathname = '/app/crm/c1'
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
   usePathname: () => mockPathname,
@@ -33,7 +33,7 @@ function identityWith(permissions: string[]): Identity {
 
 beforeEach(() => {
   pushMock.mockClear()
-  mockPathname = '/crm/c1'
+  mockPathname = '/app/crm/c1'
   useSessionStore.setState({ identity: null })
   useUiStore.setState({ viewMode: {} })
   useRecordLabelStore.setState({ id: null, label: null })
@@ -294,7 +294,7 @@ describe('EntityView', () => {
       />,
     )
     fireEvent.click(screen.getByText('Ada'))
-    expect(pushMock).toHaveBeenCalledWith('/crm/42')
+    expect(pushMock).toHaveBeenCalledWith('/app/crm/42')
   })
 
   it('keeps rows inert when the descriptor has no formPath', () => {
@@ -593,7 +593,7 @@ describe('EntityView', () => {
     it('commits immediately (not deferred): remove is called right away, navigation + toast follow its success', async () => {
       useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
       const remove = vi.fn(async () => {})
-      mockPathname = '/crm/c1'
+      mockPathname = '/app/crm/c1'
       render(
         <EntityView
           descriptor={formDescriptor}
@@ -606,7 +606,7 @@ describe('EntityView', () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
 
       expect(remove).toHaveBeenCalledWith('c1')
-      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/crm'))
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm'))
       expect(useUndoToastStore.getState().pending?.message).toBeTruthy()
     })
 
@@ -614,7 +614,7 @@ describe('EntityView', () => {
       useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
       const remove = vi.fn(async () => {})
       const restore = vi.fn(async (id: string) => ({ id, name: 'Ada' }))
-      mockPathname = '/crm/c1'
+      mockPathname = '/app/crm/c1'
       render(
         <EntityView
           descriptor={formDescriptor}
@@ -630,7 +630,7 @@ describe('EntityView', () => {
       useUndoToastStore.getState().recover()
 
       await waitFor(() => expect(restore).toHaveBeenCalledWith('c1'))
-      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/crm/c1'))
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm/c1'))
     })
 
     it('a rejected delete never navigates away and shows an inline error instead', async () => {
@@ -638,7 +638,7 @@ describe('EntityView', () => {
       const remove = vi.fn(async () => {
         throw new Error('boom')
       })
-      mockPathname = '/crm/c1'
+      mockPathname = '/app/crm/c1'
       render(
         <EntityView
           descriptor={formDescriptor}
@@ -706,7 +706,7 @@ describe('EntityView', () => {
       expect(next).toBeEnabled()
 
       fireEvent.click(next)
-      expect(pushMock).toHaveBeenCalledWith('/crm/2')
+      expect(pushMock).toHaveBeenCalledWith('/app/crm/2')
     })
 
     it('stepping to the next record REPLACES the current record\'s breadcrumb entry instead of appending', () => {
@@ -1203,7 +1203,7 @@ describe('EntityView', () => {
       useSessionStore.setState({ identity: identityWith(['crm:contacts:write']) })
       render(<CreateBar descriptor={creatableList} />)
       fireEvent.click(screen.getByRole('button', { name: 'Create' }))
-      expect(pushMock).toHaveBeenCalledWith('/crm/new')
+      expect(pushMock).toHaveBeenCalledWith('/app/crm/new')
     })
 
     it('honors role wildcards from the session mirror', () => {
@@ -1296,7 +1296,7 @@ describe('EntityView', () => {
     expect(screen.getByText('Contacts')).toBeInTheDocument()
     expect(screen.getByText('12')).toBeInTheDocument()
     // The block links to its list view.
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/crm/list')
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/app/crm/list')
   })
 
   it('shows a dash for a dashboard block whose count failed to load', () => {

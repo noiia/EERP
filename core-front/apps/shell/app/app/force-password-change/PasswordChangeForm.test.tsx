@@ -62,7 +62,7 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm profile={profile} />)
     fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'me@x.test' } })
     fill('longenough1', 'longenough1')
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/app'))
     expect(changeMyPassword).toHaveBeenCalledWith(profile, 'longenough1', 'me@x.test')
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('refresh'), { method: 'POST' })
     expect(router.refresh).toHaveBeenCalled()

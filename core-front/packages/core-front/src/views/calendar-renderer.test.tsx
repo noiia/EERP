@@ -169,7 +169,7 @@ describe('CalendarRenderer', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('calendar-card-1'))
-    expect(pushMock).toHaveBeenCalledWith('/tasks/1')
+    expect(pushMock).toHaveBeenCalledWith('/app/tasks/1')
   })
 
   it('does nothing on click when the descriptor has no formPath', () => {

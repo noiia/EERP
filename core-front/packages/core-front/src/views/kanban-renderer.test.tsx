@@ -170,7 +170,7 @@ describe('KanbanRenderer', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('kanban-card-1'))
-    expect(pushMock).toHaveBeenCalledWith('/deals/1')
+    expect(pushMock).toHaveBeenCalledWith('/app/deals/1')
   })
 
   it('does nothing on click when the descriptor has no formPath', () => {

@@ -72,17 +72,17 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('AppTopBar', () => {
   it('shows the current page rooted at the menu, on a fresh (first) visit', () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} />)
 
-    expect(screen.getByRole('link', { name: /menu/i })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: /menu/i })).toHaveAttribute('href', '/app')
     // The current (only, on a first visit) crumb is plain text, not a link.
     expect(screen.queryByRole('link', { name: 'Contacts' })).not.toBeInTheDocument()
     expect(screen.getByText('Contacts')).toBeInTheDocument()
   })
 
   it("shows the record's real name on a form route once record-label-store reports it, instead of the raw id", () => {
-    pathnameMock.mockReturnValue('/crm/contacts/3fa85f64-5717-4562-b3fc-2c963f66afa6')
+    pathnameMock.mockReturnValue('/app/crm/contacts/3fa85f64-5717-4562-b3fc-2c963f66afa6')
     useRecordLabelStore.getState().setLabel('3fa85f64-5717-4562-b3fc-2c963f66afa6', 'Ada Lovelace')
     render(<AppTopBar identity={identity} />)
 
@@ -91,7 +91,7 @@ describe('AppTopBar', () => {
   })
 
   it('falls back to the titleized (garbled) id segment when record-label-store has no matching entry yet', () => {
-    pathnameMock.mockReturnValue('/crm/contacts/3fa85f64-5717-4562-b3fc-2c963f66afa6')
+    pathnameMock.mockReturnValue('/app/crm/contacts/3fa85f64-5717-4562-b3fc-2c963f66afa6')
     render(<AppTopBar identity={identity} />)
 
     // The exact bug being fixed: with no record-label-store entry, the raw uuid
@@ -100,7 +100,7 @@ describe('AppTopBar', () => {
   })
 
   it('ignores a stale record-label-store entry left over from a different record', () => {
-    pathnameMock.mockReturnValue('/crm/contacts/new-record-id')
+    pathnameMock.mockReturnValue('/app/crm/contacts/new-record-id')
     useRecordLabelStore.getState().setLabel('some-other-id', 'Stale Name')
     render(<AppTopBar identity={identity} />)
 
@@ -109,7 +109,7 @@ describe('AppTopBar', () => {
   })
 
   it('a form reached directly (e.g. clicking a row in an unrelated record\'s embedded relation grid) shows only its own crumb — no "List" ancestor for a page never visited', () => {
-    pathnameMock.mockReturnValue('/crm/42')
+    pathnameMock.mockReturnValue('/app/crm/42')
     render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
 
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
@@ -122,20 +122,20 @@ describe('AppTopBar', () => {
   })
 
   it('a form reached BY WAY of its list keeps the list\'s own crumb — because the user actually visited it, not because it\'s inferred from the URL', () => {
-    pathnameMock.mockReturnValue('/crm/list')
+    pathnameMock.mockReturnValue('/app/crm/list')
     const { rerender } = render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
 
     // Now the user clicks a row: navigates on to the record's own form.
-    pathnameMock.mockReturnValue('/crm/42')
+    pathnameMock.mockReturnValue('/app/crm/42')
     rerender(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
 
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    expect(breadcrumb.getByRole('link', { name: 'Crm - List' })).toHaveAttribute('href', '/crm/list')
+    expect(breadcrumb.getByRole('link', { name: 'Crm - List' })).toHaveAttribute('href', '/app/crm/list')
     expect(breadcrumb.getByText('42')).toBeInTheDocument()
   })
 
   it('being on a list page itself shows its own merged "<Entity> - List" crumb, not two separate crumbs', () => {
-    pathnameMock.mockReturnValue('/crm/list')
+    pathnameMock.mockReturnValue('/app/crm/list')
     render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     // The trailing crumb is the plain-text current page — one merged crumb,
@@ -145,7 +145,7 @@ describe('AppTopBar', () => {
   })
 
   it('nested shape: "/sale/quote/list" reads as "Quote - List" on a fresh visit — no "Sale" ancestor the user never passed through', () => {
-    pathnameMock.mockReturnValue('/sale/quote/list')
+    pathnameMock.mockReturnValue('/app/sale/quote/list')
     render(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByRole('link', { name: 'Sale' })).not.toBeInTheDocument()
@@ -155,7 +155,7 @@ describe('AppTopBar', () => {
   })
 
   it('the trail is exactly the sequence of pages actually visited — a deep jump straight to a nested form shows only that form, an earlier real visit is remembered', () => {
-    pathnameMock.mockReturnValue('/sale/orders/quote/99')
+    pathnameMock.mockReturnValue('/app/sale/orders/quote/99')
     const { rerender } = render(<AppTopBar identity={identity} />)
     let breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByText('Sale')).not.toBeInTheDocument()
@@ -163,12 +163,12 @@ describe('AppTopBar', () => {
     expect(breadcrumb.getByText('99')).toBeInTheDocument()
 
     // A genuinely separate real visit still accumulates onto the trail.
-    pathnameMock.mockReturnValue('/settings')
+    pathnameMock.mockReturnValue('/app/settings')
     rerender(<AppTopBar identity={identity} />)
     breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.getByRole('link', { name: '99' })).toHaveAttribute(
       'href',
-      '/sale/orders/quote/99',
+      '/app/sale/orders/quote/99',
     )
     expect(breadcrumb.getByText('Settings')).toBeInTheDocument()
   })
@@ -176,9 +176,9 @@ describe('AppTopBar', () => {
   it('collapses older crumbs under a single "…" once more real visits accumulate than fit, leaving "… > parent > current"', () => {
     // Five genuinely separate real visits (not one deep URL) build a trail
     // long enough to exceed maxItems.
-    pathnameMock.mockReturnValue('/crm')
+    pathnameMock.mockReturnValue('/app/crm')
     const { rerender } = render(<AppTopBar identity={identity} />)
-    for (const page of ['/sale', '/settings', '/propertymanagement', '/appstore']) {
+    for (const page of ['/app/sale', '/app/settings', '/app/propertymanagement', '/app/appstore']) {
       pathnameMock.mockReturnValue(page)
       rerender(<AppTopBar identity={identity} />)
     }
@@ -188,7 +188,7 @@ describe('AppTopBar', () => {
     expect(breadcrumb.queryByText('Sale')).not.toBeInTheDocument()
     expect(breadcrumb.getByRole('link', { name: 'Property Management' })).toHaveAttribute(
       'href',
-      '/propertymanagement',
+      '/app/propertymanagement',
     )
     expect(breadcrumb.getByText('Appstore')).toBeInTheDocument()
   })
@@ -215,7 +215,7 @@ describe('AppTopBar', () => {
     })
 
     it('collapses to ONE bare trail-summary icon button — no separate home button, no text at all', () => {
-      pathnameMock.mockReturnValue('/crm/contacts')
+      pathnameMock.mockReturnValue('/app/crm/contacts')
       render(<AppTopBar identity={identity} />)
 
       expect(screen.getByRole('button', { name: /breadcrumb trail/i })).toBeInTheDocument()
@@ -228,7 +228,7 @@ describe('AppTopBar', () => {
     })
 
     it('never collapses the bare root — nothing to summarize on the menu page itself', () => {
-      pathnameMock.mockReturnValue('/')
+      pathnameMock.mockReturnValue('/app')
       render(<AppTopBar identity={identity} />)
 
       expect(screen.queryByRole('button', { name: /breadcrumb trail/i })).not.toBeInTheDocument()
@@ -236,20 +236,20 @@ describe('AppTopBar', () => {
     })
 
     it('clicking the summary button lists every VISITED page as a VERTICAL menu, current page non-clickable', () => {
-      pathnameMock.mockReturnValue('/crm')
+      pathnameMock.mockReturnValue('/app/crm')
       const { rerender } = render(<AppTopBar identity={identity} />)
-      pathnameMock.mockReturnValue('/crm/contacts')
+      pathnameMock.mockReturnValue('/app/crm/contacts')
       rerender(<AppTopBar identity={identity} />)
       fireEvent.click(screen.getByRole('button', { name: /breadcrumb trail/i }))
 
-      expect(screen.getByRole('menuitem', { name: 'Menu' })).toHaveAttribute('href', '/')
-      expect(screen.getByRole('menuitem', { name: 'Crm' })).toHaveAttribute('href', '/crm')
+      expect(screen.getByRole('menuitem', { name: 'Menu' })).toHaveAttribute('href', '/app')
+      expect(screen.getByRole('menuitem', { name: 'Crm' })).toHaveAttribute('href', '/app/crm')
       const current = screen.getByRole('menuitem', { name: 'Contacts' })
       expect(current).not.toHaveAttribute('href')
     })
 
     it('drops the company-name text, keeping the building icon accessible via aria-label', () => {
-      pathnameMock.mockReturnValue('/crm/contacts')
+      pathnameMock.mockReturnValue('/app/crm/contacts')
       render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
 
       // Still findable by its accessible name (explicit aria-label, not the
@@ -260,30 +260,30 @@ describe('AppTopBar', () => {
   })
 
   it('remembers the prior app when navigating into an unrelated section, appending rather than replacing', () => {
-    pathnameMock.mockReturnValue('/sale')
+    pathnameMock.mockReturnValue('/app/sale')
     const { rerender } = render(<AppTopBar identity={identity} />)
 
     // Jump to Settings — an unrelated section, not a child of /sale.
-    pathnameMock.mockReturnValue('/settings')
+    pathnameMock.mockReturnValue('/app/settings')
     rerender(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     // The prior "Sale" crumb is still there (now clickable), with the new
     // "Settings" page appended as the current (non-link) crumb.
-    expect(breadcrumb.getByRole('link', { name: 'Sale' })).toHaveAttribute('href', '/sale')
+    expect(breadcrumb.getByRole('link', { name: 'Sale' })).toHaveAttribute('href', '/app/sale')
     expect(breadcrumb.getByText('Settings')).toBeInTheDocument()
     expect(breadcrumb.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
   })
 
   it('clicking an earlier crumb truncates the forward history instead of leaving it dangling', () => {
-    pathnameMock.mockReturnValue('/sale')
+    pathnameMock.mockReturnValue('/app/sale')
     const { rerender } = render(<AppTopBar identity={identity} />)
 
-    pathnameMock.mockReturnValue('/settings')
+    pathnameMock.mockReturnValue('/app/settings')
     rerender(<AppTopBar identity={identity} />)
 
     // Simulate following the "Sale" crumb back — the pathname returns to a
     // page already in the trail, so it should truncate rather than append.
-    pathnameMock.mockReturnValue('/sale')
+    pathnameMock.mockReturnValue('/app/sale')
     rerender(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByText('Settings')).not.toBeInTheDocument()
@@ -291,7 +291,7 @@ describe('AppTopBar', () => {
   })
 
   it('collapses "/settings/apps/:module" to one "Configuration (<display name>)" crumb instead of the full Settings > Apps > Crm path', () => {
-    pathnameMock.mockReturnValue('/settings/apps/crm')
+    pathnameMock.mockReturnValue('/app/settings/apps/crm')
     render(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
 
@@ -302,7 +302,7 @@ describe('AppTopBar', () => {
   })
 
   it('falls back to a titleized module slug in the collapsed Configuration crumb when the module has no registered display name', () => {
-    pathnameMock.mockReturnValue('/settings/apps/unregisteredmod')
+    pathnameMock.mockReturnValue('/app/settings/apps/unregisteredmod')
     render(<AppTopBar identity={identity} />)
     expect(
       within(screen.getByRole('navigation', { name: 'breadcrumb' })).getByText(
@@ -312,20 +312,20 @@ describe('AppTopBar', () => {
   })
 
   it("keeps a record's resolved display name once the user navigates away from its form, instead of falling back to the raw id", () => {
-    pathnameMock.mockReturnValue('/crm/42')
+    pathnameMock.mockReturnValue('/app/crm/42')
     useRecordLabelStore.getState().setLabel('42', 'Widget Co')
     const { rerender } = render(<AppTopBar identity={identity} />)
 
-    pathnameMock.mockReturnValue('/settings')
+    pathnameMock.mockReturnValue('/app/settings')
     rerender(<AppTopBar identity={identity} />)
 
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
-    expect(breadcrumb.getByRole('link', { name: 'Widget Co' })).toHaveAttribute('href', '/crm/42')
+    expect(breadcrumb.getByRole('link', { name: 'Widget Co' })).toHaveAttribute('href', '/app/crm/42')
     expect(breadcrumb.queryByText('42')).not.toBeInTheDocument()
   })
 
   it('labels the /settings/appearance crumb "Global settings", not the titleized "Appearance" slug', () => {
-    pathnameMock.mockReturnValue('/settings/appearance')
+    pathnameMock.mockReturnValue('/app/settings/appearance')
     render(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.getByText('Global settings')).toBeInTheDocument()
@@ -333,7 +333,7 @@ describe('AppTopBar', () => {
   })
 
   it('labels the /propertymanagement crumb "Property Management - List", not the titleized "Propertymanagement" slug', () => {
-    pathnameMock.mockReturnValue('/propertymanagement/list')
+    pathnameMock.mockReturnValue('/app/propertymanagement/list')
     render(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.getByText('Property Management - List')).toBeInTheDocument()
@@ -343,7 +343,7 @@ describe('AppTopBar', () => {
   it('never shows the "page-formats" segment itself (no page of its own — the list is embedded in Global settings)', () => {
     // Cold/direct load: no "page-formats" text, and no "Global settings"
     // ancestor either, since this render never actually visited it.
-    pathnameMock.mockReturnValue('/settings/appearance/page-formats/42')
+    pathnameMock.mockReturnValue('/app/settings/appearance/page-formats/42')
     render(<AppTopBar identity={identity} />)
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.queryByText('Page Formats')).not.toBeInTheDocument()
@@ -353,22 +353,22 @@ describe('AppTopBar', () => {
   })
 
   it('shows "Global settings" as an ancestor for a page-format record when the user actually visited it first (the only real way to get there)', () => {
-    pathnameMock.mockReturnValue('/settings/appearance')
+    pathnameMock.mockReturnValue('/app/settings/appearance')
     const { rerender } = render(<AppTopBar identity={identity} />)
     // A page-format row embedded there opens its own record form.
-    pathnameMock.mockReturnValue('/settings/appearance/page-formats/42')
+    pathnameMock.mockReturnValue('/app/settings/appearance/page-formats/42')
     rerender(<AppTopBar identity={identity} />)
 
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.getByRole('link', { name: 'Global settings' })).toHaveAttribute(
       'href',
-      '/settings/appearance',
+      '/app/settings/appearance',
     )
     expect(breadcrumb.getByText('42')).toBeInTheDocument()
   })
 
   it('shows the current module header menus next to the breadcrumb, each navigable', () => {
-    pathnameMock.mockReturnValue('/crm/list')
+    pathnameMock.mockReturnValue('/app/crm/list')
     render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
 
     expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
@@ -378,37 +378,37 @@ describe('AppTopBar', () => {
     // A single-line menu (Dashboard/List here) navigates straight from the
     // button — no dropdown for a list of exactly one item.
     fireEvent.click(screen.getByRole('button', { name: 'List' }))
-    expect(pushMock).toHaveBeenCalledWith('/crm/list')
+    expect(pushMock).toHaveBeenCalledWith('/app/crm/list')
   })
 
   const acme = { id: 'co-1', name: 'Acme Corp' }
   const globex = { id: 'co-2', name: 'Globex' }
 
   it('shows the active company name as a button, not a plain link', () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
     expect(screen.getByRole('button', { name: /acme corp/i })).toBeInTheDocument()
   })
 
   it('renders no company switcher when the active company is unknown', () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} />)
     expect(screen.queryByRole('button', { name: /acme corp/i })).not.toBeInTheDocument()
   })
 
   it('opens a menu listing every company, with a link to manage them', () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme, globex]} />)
     fireEvent.click(screen.getByRole('button', { name: /acme corp/i }))
 
     expect(screen.getByRole('menuitem', { name: 'Acme Corp' })).toHaveClass('Mui-selected')
     expect(screen.getByRole('menuitem', { name: 'Globex' })).not.toHaveClass('Mui-selected')
     const manage = screen.getByRole('menuitem', { name: /manage companies/i })
-    expect(manage).toHaveAttribute('href', '/settings/company')
+    expect(manage).toHaveAttribute('href', '/app/settings/company')
   })
 
   it('switching to a different company calls setActiveCompany and refreshes', async () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme, globex]} />)
     fireEvent.click(screen.getByRole('button', { name: /acme corp/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Globex' }))
@@ -418,7 +418,7 @@ describe('AppTopBar', () => {
   })
 
   it('clicking the already-active company is a no-op', async () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme, globex]} />)
     fireEvent.click(screen.getByRole('button', { name: /acme corp/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Acme Corp' }))
@@ -430,52 +430,52 @@ describe('AppTopBar', () => {
     // The "module pages" nav landmark still renders (it doubles as the
     // Toolbar's flex-grow spacer, keeping CompanySwitcher/UserMenu pinned
     // right even off a module route) but stays empty — no header menus.
-    pathnameMock.mockReturnValue('/settings')
+    pathnameMock.mockReturnValue('/app/settings')
     render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
     const nav = screen.getByRole('navigation', { name: /module pages/i })
     expect(nav).toBeEmptyDOMElement()
   })
 
   it('is hidden without a session', () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     const { container } = render(<AppTopBar identity={null} />)
     expect(container).toBeEmptyDOMElement()
   })
 
   it('is hidden on the login page', () => {
-    pathnameMock.mockReturnValue('/login')
+    pathnameMock.mockReturnValue('/app/login')
     const { container } = render(<AppTopBar identity={identity} />)
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('logs out: revokes at the BFF, clears the session mirror, redirects to /login', async () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+  it('logs out: revokes at the BFF, clears the session mirror, redirects to the ERP login', async () => {
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} />)
 
     fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /logout/i }))
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/login'))
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/login'))
     expect(fetch).toHaveBeenCalledWith('/api/v1/auth/logout', { method: 'POST' })
     expect(useSessionStore.getState().identity).toBeNull()
   })
 
   it('shows the caller\'s email after "Signed in as" — the closest thing to a display name this schema has', () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} email="ada@example.test" />)
     fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
     expect(screen.getByText(/signed in as/i)).toHaveTextContent('Signed in as ada@example.test')
   })
 
   it('falls back to the raw user id when email has not resolved yet', () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} />)
     fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
     expect(screen.getByText(/signed in as/i)).toHaveTextContent(`Signed in as ${identity.userId}`)
   })
 
   it('picking "Busy" from the account menu PUTs the override and closes the menu', async () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} />)
     fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /^busy$/i }))
@@ -490,7 +490,7 @@ describe('AppTopBar', () => {
   })
 
   it('picking "Online" clears the override (sends an empty status)', async () => {
-    pathnameMock.mockReturnValue('/crm/contacts')
+    pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} />)
     fireEvent.click(screen.getByRole('button', { name: /account menu/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /^online$/i }))
