@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+
+// The visitor's IP, as the gateway reported it to Next.
+vi.mock('next/headers', () => ({ headers: async () => new Headers({ 'x-forwarded-for': '198.51.100.4' }) }))
 import { getMenuPages, getSitePage, serverPublicSource } from './public-api'
 
 beforeEach(() => { process.env.API_BASE = 'http://api.test' })
@@ -17,12 +20,28 @@ it('lists through /api/v1/public with filters, null on 404', async () => {
   expect(await serverPublicSource.list('crm', {})).toBeNull()
 })
 
-it('getSitePage: home ("") is picked from the unfiltered list; null layout becomes []', async () => {
-  const fetchMock = json([{ id: 'a', slug: 'about', title: 'About', layout: [] }, { id: 'h', slug: '', title: 'Home', layout: null }])
+it('getSitePage: home ("") is queried with empty[slug]=1; null layout becomes []', async () => {
+  const fetchMock = json([{ id: 'h', slug: '', title: 'Home', layout: null }])
   vi.stubGlobal('fetch', fetchMock)
   const home = await getSitePage('')
   expect(home).toMatchObject({ id: 'h', layout: [] })
-  expect(String(fetchMock.mock.calls[0][0])).toBe('http://api.test/api/v1/public/website_page?page_size=50')
+  expect(String(fetchMock.mock.calls[0][0])).toBe('http://api.test/api/v1/public/website_page?page_size=1&empty%5Bslug%5D=1')
+})
+
+it('forwards the visitor IP (Go rate-limits /public per client IP)', async () => {
+  const fetchMock = json([])
+  vi.stubGlobal('fetch', fetchMock)
+  await serverPublicSource.list('product', {})
+  const init = fetchMock.mock.calls[0][1] as RequestInit
+  expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBe('198.51.100.4')
+})
+
+it('a 429 empties a block (null) but fails the page fetch itself', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 429 })))
+  expect(await serverPublicSource.list('product', {})).toBeNull()
+  expect(await serverPublicSource.get('product', '1')).toBeNull()
+  expect(await getMenuPages()).toEqual([])
+  await expect(getSitePage('about')).rejects.toThrow('429')
 })
 
 it('getMenuPages sorts by menu_sequence, null as 0', async () => {
