@@ -39,7 +39,7 @@ services:
   # S3-compatible object storage for the picture service (see infra/garage/README.md).
   # Starts empty: `make bootstrap` (or `make garage-init`) creates the layout, key and bucket.
   garage:
-    image: dxflrs/garage:v2.3.0
+    image: dxflrs/garage:v2.4.0
     restart: always
     container_name: garage
     environment:
@@ -163,7 +163,7 @@ services:
   # nats-server only takes max_payload from a config file, not a CLI flag, so raising it
   # later means mounting one, not just editing this command.
   nats:
-    image: nats:2.10-alpine
+    image: nats:latest
     restart: always
     container_name: nats
     expose:
@@ -197,7 +197,7 @@ services:
   # the Mailpit inbox at http://127.0.0.1:8025 — nothing reaches a real
   # address. Optional like redis: core-back waits on it with required: false.
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: axllent/mailpit:latest
     restart: always
     container_name: mailpit
     ports:
