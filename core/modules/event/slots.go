@@ -13,11 +13,16 @@ type SlotRules struct {
 	Loc                                                     *time.Location
 }
 
-// RulesFor builds a SlotRules from an Event, loading its timezone and providing
-// sensible defaults for optional fields (BufferMinutes defaults to 0 if nil;
-// zero-valued int fields use their schema-documented defaults).
+// RulesFor builds a SlotRules from an Event, loading its timezone and dereferencing
+// BufferMinutes (nil → 0, negative → 0). Stored int fields are used AS-IS; the POST
+// validation middleware fills defaults, so 0 is legitimate (e.g., "no notice required").
+// Empty Timezone defaults to Europe/Paris; invalid names return an error.
 func RulesFor(e Event) (SlotRules, error) {
-	loc, err := time.LoadLocation(e.Timezone)
+	tz := e.Timezone
+	if tz == "" {
+		tz = "Europe/Paris"
+	}
+	loc, err := time.LoadLocation(tz)
 	if err != nil {
 		return SlotRules{}, fmt.Errorf("event %s: timezone: %w", e.ID, err)
 	}
@@ -25,28 +30,16 @@ func RulesFor(e Event) (SlotRules, error) {
 	buffer := 0
 	if e.BufferMinutes != nil {
 		buffer = *e.BufferMinutes
-	}
-
-	slotMinutes := e.SlotMinutes
-	if slotMinutes == 0 {
-		slotMinutes = 30
-	}
-
-	horizonDays := e.BookingHorizonDays
-	if horizonDays == 0 {
-		horizonDays = 60
-	}
-
-	minNoticeHours := e.MinNoticeHours
-	if minNoticeHours == 0 {
-		minNoticeHours = 2
+		if buffer < 0 {
+			buffer = 0
+		}
 	}
 
 	return SlotRules{
-		SlotMinutes:    slotMinutes,
+		SlotMinutes:    e.SlotMinutes,
 		BufferMinutes:  buffer,
-		HorizonDays:    horizonDays,
-		MinNoticeHours: minNoticeHours,
+		HorizonDays:    e.BookingHorizonDays,
+		MinNoticeHours: e.MinNoticeHours,
 		Loc:            loc,
 	}, nil
 }
@@ -59,10 +52,13 @@ func ExpandSlots(r SlotRules, avail []EventAvailability, from, to, now time.Time
 	if r.SlotMinutes <= 0 {
 		return nil
 	}
-	earliest := now.Add(time.Duration(r.MinNoticeHours) * time.Hour)
-	latest := now.AddDate(0, 0, r.HorizonDays)
 	slot := time.Duration(r.SlotMinutes) * time.Minute
 	step := slot + time.Duration(r.BufferMinutes)*time.Minute
+	if step <= 0 {
+		return nil
+	}
+	earliest := now.Add(time.Duration(r.MinNoticeHours) * time.Hour)
+	latest := now.AddDate(0, 0, r.HorizonDays)
 	var out []Slot
 	f := from.In(r.Loc)
 	for day := time.Date(f.Year(), f.Month(), f.Day(), 0, 0, 0, 0, r.Loc); day.Before(to); day = day.AddDate(0, 0, 1) {

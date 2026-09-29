@@ -76,4 +76,105 @@ func TestExpandSlots(t *testing.T) {
 			t.Fatalf("got %v, want no slots for to_time < from_time", got2)
 		}
 	})
+
+	t.Run("negative buffer returns no slots (step <= 0)", func(t *testing.T) {
+		r := rules
+		// With 30min slots and -30min buffer, step would be 0, returning nil
+		negBuffer := -30
+		r.BufferMinutes = negBuffer
+		got := ExpandSlots(r, monday9to10, at("2026-09-28 00:00"), at("2026-09-29 00:00"), at("2026-09-27 00:00"))
+		if got != nil {
+			t.Fatalf("got %v, want nil for step <= 0", got)
+		}
+	})
+}
+
+func TestRulesFor(t *testing.T) {
+	tests := []struct {
+		name    string
+		event   Event
+		wantErr bool
+		check   func(r SlotRules) bool
+	}{
+		{
+			name: "nil BufferMinutes → 0",
+			event: Event{
+				Timezone:           "Europe/Paris",
+				SlotMinutes:        30,
+				BufferMinutes:      nil,
+				BookingHorizonDays: 60,
+				MinNoticeHours:     2,
+			},
+			wantErr: false,
+			check: func(r SlotRules) bool {
+				return r.BufferMinutes == 0
+			},
+		},
+		{
+			name: "negative BufferMinutes → 0",
+			event: Event{
+				Timezone:           "Europe/Paris",
+				SlotMinutes:        30,
+				BufferMinutes:      func() *int { v := -15; return &v }(),
+				BookingHorizonDays: 60,
+				MinNoticeHours:     2,
+			},
+			wantErr: false,
+			check: func(r SlotRules) bool {
+				return r.BufferMinutes == 0
+			},
+		},
+		{
+			name: "empty Timezone → Europe/Paris",
+			event: Event{
+				Timezone:           "",
+				SlotMinutes:        30,
+				BufferMinutes:      nil,
+				BookingHorizonDays: 60,
+				MinNoticeHours:     2,
+			},
+			wantErr: false,
+			check: func(r SlotRules) bool {
+				return r.Loc != nil && r.Loc.String() == "Europe/Paris"
+			},
+		},
+		{
+			name: "invalid Timezone → error",
+			event: Event{
+				Timezone:           "Invalid/Zone",
+				SlotMinutes:        30,
+				BufferMinutes:      nil,
+				BookingHorizonDays: 60,
+				MinNoticeHours:     2,
+			},
+			wantErr: true,
+			check:   nil,
+		},
+		{
+			name: "min_notice 0 stays 0",
+			event: Event{
+				Timezone:           "Europe/Paris",
+				SlotMinutes:        30,
+				BufferMinutes:      nil,
+				BookingHorizonDays: 60,
+				MinNoticeHours:     0,
+			},
+			wantErr: false,
+			check: func(r SlotRules) bool {
+				return r.MinNoticeHours == 0
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := RulesFor(tt.event)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("RulesFor error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && !tt.check(r) {
+				t.Fatalf("RulesFor check failed: %+v", r)
+			}
+		})
+	}
 }
