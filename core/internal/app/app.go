@@ -622,14 +622,13 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	srv.RegisterRoutes(handlers, nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
-	// published scope is the only gate. ponytail: no ActiveGateMiddleware here —
-	// it derives the table from the first path segment, which would read "public";
-	// a deactivated module's published table stays readable. Fix in spec 2.
+	// published scope is the only gate. The active gate lives in the resolver
+	// because ActiveGateMiddleware keys on the first path segment ("public").
 	if siteTenant != uuid.Nil {
 		publicGroup := srv.Echo().Group("/api/v1/public",
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
-		ormserver.MountPublic(publicGroup, handlers, publisher.Resolve)
+		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve))
 	}
 
 	// ── crminheritdemo: Create() override reference example ─────────────────

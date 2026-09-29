@@ -144,3 +144,17 @@ func (p *Publisher) PutPublished(c *echo.Context) error {
 	}
 	return c.NoContent(http.StatusNoContent)
 }
+
+// ActiveOnly hides tables of deactivated modules from the public surface.
+// Plain func types keep this package free of an orm/server import.
+func ActiveOnly(
+	isActive func(table string) bool,
+	resolve func(context.Context, string) (access.PublicScope, bool, error),
+) func(context.Context, string) (access.PublicScope, bool, error) {
+	return func(ctx context.Context, table string) (access.PublicScope, bool, error) {
+		if !isActive(table) {
+			return access.PublicScope{}, false, nil
+		}
+		return resolve(ctx, table)
+	}
+}

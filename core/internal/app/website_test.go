@@ -51,11 +51,12 @@ func TestPublicRoutes(t *testing.T) {
 	id, _ := decode(t, body)["id"].(string)
 	t.Cleanup(func() { _, _ = c.a.db.DB.Exec(ctx, `DELETE FROM product WHERE id = $1`, id) })
 
+	oldSel, _, _ := store.Get(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product"))
 	if code, body := c.do(http.MethodPut, "/api/v1/settings/website/public/product",
 		map[string]any{"fields": []string{"name"}}); code != http.StatusNoContent {
 		t.Fatalf("publish: %d %s", code, body)
 	}
-	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product"), "") })
+	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product"), oldSel) })
 
 	tests := []struct {
 		name string
