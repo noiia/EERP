@@ -350,9 +350,15 @@ func TestWrites_CheckViolationIs400(t *testing.T) {
 	_, c, _ := newEchoRequest(http.MethodPut, "/", `{"name":"x"}`)
 	c.SetPath("/:id")
 	c.SetPathValues(echo.PathValues{{Name: "id", Value: "6f1e0b0e-6a57-4c53-8d6c-0d3a1f0b7e11"}})
+	err := h.Update(c)
 	var he *echo.HTTPError
-	if err := h.Update(c); !errors.As(err, &he) || he.Code != http.StatusBadRequest {
+	if !errors.As(err, &he) || he.Code != http.StatusBadRequest {
 		t.Fatalf("err = %v, want 400 HTTPError", err)
+	}
+	// The constraint name stays server-side: not in the message, but wrapped
+	// so the error handler can log it.
+	if strings.Contains(he.Message, "event_session_capacity") || !errors.Is(err, check) {
+		t.Fatalf("message = %q, wrapped pg error = %v", he.Message, errors.Is(err, check))
 	}
 }
 
