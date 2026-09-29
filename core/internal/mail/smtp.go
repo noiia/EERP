@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strconv"
 	"time"
@@ -29,6 +30,9 @@ func NewSMTPTransport(cfg *types.Config) *SMTPTransport {
 	port := cfg.SMTPPort
 	if port == 0 {
 		port = 587
+		if cfg.SMTPTLS == "implicit" {
+			port = 465
+		}
 	}
 	mode := cfg.SMTPTLS
 	if mode == "" {
@@ -110,4 +114,21 @@ func envelopeAddress(from string) string {
 		return a
 	}
 	return from
+}
+
+// ValidateConfig rejects SMTP settings that would otherwise fail silently at
+// send time: an unknown smtp_tls (treated as plaintext) or an unusable smtp_from.
+func ValidateConfig(cfg *types.Config) error {
+	if !Configured(cfg) {
+		return nil
+	}
+	switch cfg.SMTPTLS {
+	case "", "starttls", "implicit", "none":
+	default:
+		return fmt.Errorf("smtp_tls %q is invalid — use starttls, implicit or none", cfg.SMTPTLS)
+	}
+	if _, err := mail.ParseAddress(cfg.SMTPFrom); err != nil {
+		return fmt.Errorf("smtp_from %q is not a valid address: %w", cfg.SMTPFrom, err)
+	}
+	return nil
 }

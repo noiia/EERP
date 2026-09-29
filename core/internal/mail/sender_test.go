@@ -127,3 +127,50 @@ func TestSender_ConcurrentTicksSendOnce(t *testing.T) {
 		t.Errorf("transport called %d times, want exactly 10", got)
 	}
 }
+
+// cancelOnSecond cancels the shared ctx during its 2nd Send, as a shutdown would.
+type cancelOnSecond struct {
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (c *cancelOnSecond) Send(ctx context.Context, _ Outbox) error {
+	c.calls++
+	if c.calls == 2 {
+		c.cancel()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func TestSender_ShutdownKeepsSentMarksAndDoesNotBurnAttempt(t *testing.T) {
+	app, tenant := setup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for i, to := range []string{"a@x.io", "b@x.io"} {
+		if err := Enqueue(context.Background(), app.DB, Message{TenantID: tenant, To: to, Subject: "s", Text: "t"}); err != nil {
+			t.Fatal(err)
+		}
+		// Deterministic order: first enqueued is claimed first.
+		if _, err := app.DB.Exec(context.Background(),
+			`UPDATE mail_outbox SET next_attempt_at = now() - make_interval(mins => $2) WHERE tenant_id = $1 AND to_address = $3`,
+			tenant, 10-i, to); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := NewSender(app.DB, &cancelOnSecond{cancel: cancel})
+	if _, _, err := s.Tick(ctx, tenant); err != nil {
+		t.Fatal(err)
+	}
+	var sent, pending, pendingAttempts int
+	if err := app.DB.QueryRow(context.Background(), `SELECT
+		count(*) FILTER (WHERE status = 'sent'),
+		count(*) FILTER (WHERE status = 'pending'),
+		coalesce(max(attempts) FILTER (WHERE status = 'pending'), -1)
+		FROM mail_outbox WHERE tenant_id = $1`, tenant).Scan(&sent, &pending, &pendingAttempts); err != nil {
+		t.Fatal(err)
+	}
+	if sent != 1 || pending != 1 || pendingAttempts != 0 {
+		t.Fatalf("sent=%d pending=%d pendingAttempts=%d, want 1/1/0", sent, pending, pendingAttempts)
+	}
+}

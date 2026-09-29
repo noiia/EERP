@@ -40,9 +40,7 @@ func (h *Handler) List(c *echo.Context) error {
 	}
 	page, _ := echo.QueryParamOr(c, "page", 1)
 	size, _ := echo.QueryParamOr(c, "page_size", 50)
-	if page < 1 {
-		page = 1
-	}
+	page = min(max(page, 1), 100000)
 	if size < 1 || size > 200 {
 		size = 50
 	}

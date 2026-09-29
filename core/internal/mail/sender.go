@@ -47,9 +47,12 @@ func (s *Sender) Run(ctx context.Context) {
 // the claim back. Delivery is therefore at-least-once: a crash after the relay
 // accepted a message but before COMMIT re-sends it on the next tick.
 func (s *Sender) Tick(ctx context.Context, tenant uuid.UUID) (sent, failed int, err error) {
-	err = orm.Transact(ctx, s.db, func(tx *orm.Tx) error {
+	// ctx only bounds transport.Send: on shutdown, DB work must still commit the
+	// sent marks already earned, or every mail of the batch would be re-sent.
+	dbctx := context.WithoutCancel(ctx)
+	err = orm.Transact(dbctx, s.db, func(tx *orm.Tx) error {
 		sent, failed = 0, 0
-		rows, err := tx.Query(ctx, `
+		rows, err := tx.Query(dbctx, `
 			SELECT id, to_address, subject, body_text, body_html, attempts
 			FROM mail_outbox
 			WHERE status = $1 AND next_attempt_at <= now() AND deleted_at IS NULL
@@ -74,15 +77,21 @@ func (s *Sender) Tick(ctx context.Context, tenant uuid.UUID) (sent, failed int, 
 			return err
 		}
 		for _, o := range due {
+			if ctx.Err() != nil {
+				break
+			}
 			if sendErr := s.transport.Send(ctx, o); sendErr != nil {
+				if ctx.Err() != nil {
+					break // aborted by shutdown, not a relay failure: stay pending, no attempt burned
+				}
 				failed++
-				if err := markFailed(ctx, tx, o, sendErr); err != nil {
+				if err := markFailed(dbctx, tx, o, sendErr); err != nil {
 					return err
 				}
 				continue
 			}
 			sent++
-			if _, err := tx.Exec(ctx,
+			if _, err := tx.Exec(dbctx,
 				`UPDATE mail_outbox SET status = $2, sent_at = now(), attempts = attempts + 1, last_error = '', updated_at = now() WHERE id = $1`,
 				o.ID, StatusSent); err != nil {
 				return err

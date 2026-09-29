@@ -92,6 +92,10 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 		return nil, errors.New("db_password is set to a value previously committed to this repo's history — it must be treated as compromised; generate a new secret")
 	}
 
+	if err := mail.ValidateConfig(configContent); err != nil {
+		return nil, err
+	}
+
 	// "environment" drives two behaviors (types.Config's own doc comment): demo
 	// seeding only ever runs in development, and a freshly-seeded default admin
 	// is only forced to change its password in production. No silent default —

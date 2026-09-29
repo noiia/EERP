@@ -41,6 +41,8 @@ func TestBuild_RejectsBadConfig(t *testing.T) {
 		{"master key too short", with(func(c *types.Config) { c.MasterPassword = "short" })},
 		{"empty db password", with(func(c *types.Config) { c.DbPassword = "" })},
 		{"db password leaked in repo history", with(func(c *types.Config) { c.DbPassword = "postgres" })},
+		{"smtp_tls typo", with(func(c *types.Config) { c.SMTPHost, c.SMTPFrom, c.SMTPTLS = "h", "a@x.io", "starttsl" })},
+		{"smtp_from empty", with(func(c *types.Config) { c.SMTPHost = "h" })},
 		{"unknown environment", with(func(c *types.Config) { c.Environment = "staging" })},
 		{"missing api config file", with(func(c *types.Config) { c.ApiConfigPath = filepath.Join(t.TempDir(), "nope.yaml") })},
 		{"malformed api config file", with(func(c *types.Config) { c.ApiConfigPath = badYAML })},
