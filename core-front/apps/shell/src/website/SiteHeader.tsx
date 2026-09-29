@@ -7,7 +7,7 @@ import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Toolbar from '@mui/material/Toolbar'
-import { erpPath, T } from '@eerp/core-front'
+import { erpPath, T, useT } from '@eerp/core-front'
 
 export interface SiteHeaderProps {
   menu: { slug: string; title: string }[]
@@ -16,6 +16,7 @@ export interface SiteHeaderProps {
 }
 
 export function SiteHeader({ menu, signedIn, staff }: SiteHeaderProps) {
+  const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const links = menu.map((p) => ({ href: p.slug ? `/${encodeURIComponent(p.slug)}` : '/', label: p.title }))
   return (
@@ -23,7 +24,7 @@ export function SiteHeader({ menu, signedIn, staff }: SiteHeaderProps) {
       <Toolbar sx={{ gap: 1 }}>
         <IconButton
           sx={{ display: { xs: 'inline-flex', md: 'none' } }}
-          aria-label="Menu"
+          aria-label={t('Menu')}
           onClick={(e) => setAnchor(e.currentTarget)}
         >
           <span aria-hidden>☰</span>

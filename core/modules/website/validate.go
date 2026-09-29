@@ -45,8 +45,8 @@ type block struct {
 }
 
 // validatePage checks the keys present in body (a PUT may send a subset).
-// isModule reports registered Go module names: proxy.ts 308s those first
-// segments into /app, so a page owning one would be unreachable.
+// isModule reports registered Go module names, refused as slugs: proxy.ts
+// 308s those first segments into /app, so a page owning one is unreachable.
 func validatePage(body map[string]any, isModule func(string) bool) error {
 	if raw, ok := body["slug"]; ok {
 		slug, isStr := raw.(string)
