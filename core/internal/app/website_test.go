@@ -289,3 +289,43 @@ func TestMountWebsiteAuth(t *testing.T) {
 		})
 	}
 }
+
+func TestWebsitePages(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	slug := "t-" + uuid.NewString()[:8]
+	t.Cleanup(func() { _, _ = c.a.db.DB.Exec(ctx, `DELETE FROM website_page WHERE slug = $1`, slug) })
+
+	layout := []map[string]any{{"id": "b1", "type": "text", "x": 0, "y": 0, "w": 12, "h": 2, "config": map[string]any{"body": "Hi"}}}
+	code, body := c.do(http.MethodPost, "/api/v1/website_page",
+		map[string]any{"slug": slug, "title": "T", "published": false, "layout": layout})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	id, _ := decode(t, body)["id"].(string)
+
+	if code, _ := c.do(http.MethodPost, "/api/v1/website_page", map[string]any{"slug": slug, "title": "dup"}); code != http.StatusConflict {
+		t.Errorf("duplicate slug = %d, want 409", code)
+	}
+	if code, _ := c.do(http.MethodPost, "/api/v1/website_page", map[string]any{"slug": "api", "title": "x"}); code != http.StatusBadRequest {
+		t.Errorf("reserved slug = %d, want 400", code)
+	}
+	if code, _ := c.do(http.MethodPut, "/api/v1/website_page/"+id, map[string]any{"layout": []map[string]any{{"id": "x", "type": "iframe", "x": 0, "y": 0, "w": 1, "h": 1}}}); code != http.StatusBadRequest {
+		t.Errorf("bad block type on update = %d, want 400", code)
+	}
+
+	// Unpublished page is invisible publicly; published one is visible.
+	if code, _ := anon.do(http.MethodGet, "/api/v1/public/website_page?filter[slug]="+slug, nil); code != http.StatusOK {
+		t.Fatalf("public list = %d", code)
+	}
+	_, body = anon.do(http.MethodGet, "/api/v1/public/website_page?filter[slug]="+slug, nil)
+	if decode(t, body)["total"].(float64) != 0 {
+		t.Error("unpublished page visible publicly")
+	}
+	c.do(http.MethodPut, "/api/v1/website_page/"+id, map[string]any{"published": true})
+	_, body = anon.do(http.MethodGet, "/api/v1/public/website_page?filter[slug]="+slug, nil)
+	if decode(t, body)["total"].(float64) != 1 {
+		t.Errorf("published page not visible: %s", body)
+	}
+}

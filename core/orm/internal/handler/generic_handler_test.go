@@ -14,6 +14,7 @@ import (
 	"core/orm/internal/registry"
 	"core/orm/model"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
 
@@ -313,6 +314,28 @@ func TestCreate_MissingRequired_Returns422(t *testing.T) {
 	// The handler may return an error or write 422 directly.
 	if err == nil && rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422, got status=%d err=nil", rec.Code)
+	}
+}
+
+// A unique-index violation is the caller's conflict, not a server fault.
+func TestCreateUpdate_UniqueViolationIs409(t *testing.T) {
+	uniq := &pgconn.PgError{Code: "23505"}
+	svc := &mockSvc{
+		create: func(context.Context, map[string]any) (map[string]any, error) { return nil, uniq },
+		update: func(context.Context, any, map[string]any) (map[string]any, error) { return nil, uniq },
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	for name, call := range map[string]func(*echo.Context) error{"create": h.Create, "update": h.Update} {
+		t.Run(name, func(t *testing.T) {
+			_, c, _ := newEchoRequest(http.MethodPost, "/", `{"name":"x"}`)
+			c.SetPath("/:id")
+			c.SetPathValues(echo.PathValues{{Name: "id", Value: "6f1e0b0e-6a57-4c53-8d6c-0d3a1f0b7e11"}})
+			err := call(c)
+			var he *echo.HTTPError
+			if !errors.As(err, &he) || he.Code != http.StatusConflict {
+				t.Fatalf("err = %v, want 409 HTTPError", err)
+			}
+		})
 	}
 }
 

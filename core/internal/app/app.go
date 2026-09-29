@@ -7,6 +7,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -40,6 +41,7 @@ import (
 	"core/modules/propertymanagement"
 	"core/modules/sale"
 	"core/modules/warehouse"
+	websitemodule "core/modules/website"
 	"core/orm"
 	ormserver "core/orm/server"
 
@@ -633,6 +635,12 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	handlers := ormserver.BuildHandlers(app)
 	srv.RegisterRoutes(handlers, nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
+	// website_page: validation in front of the generic Create/Update (mounted
+	// AFTER the generic block so Echo's router keeps these registrations).
+	pageH := handlers["website_page"]
+	srv.Echo().POST("/api/v1/website_page", pageH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
+	srv.Echo().PUT("/api/v1/website_page/:id", pageH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
+
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver
 	// because ActiveGateMiddleware keys on the first path segment ("public").
@@ -641,6 +649,17 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve))
+
+		// Seed the published-pages selection once (never overwrite an admin's choice).
+		siteSettings := settings.NewRepository(app.DB)
+		pagesKey := website.PublicKey("website_page")
+		if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, pagesKey); err == nil && !found {
+			sel, _ := json.Marshal(website.Selection{
+				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout"},
+				Filter: map[string]string{"published": "true"},
+			})
+			_ = siteSettings.Set(ctx, siteTenant, uuid.Nil, pagesKey, string(sel))
+		}
 
 		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
 		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))

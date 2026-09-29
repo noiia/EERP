@@ -12,6 +12,7 @@ import (
 	"core/orm/internal/registry"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
 
@@ -247,7 +248,7 @@ func (h *GenericHandler) Create(c *echo.Context) error {
 	ctx := c.Request().Context()
 	result, err := h.svc.Create(ctx, clean)
 	if err != nil {
-		return err
+		return mapWriteErr(err)
 	}
 
 	return c.JSON(http.StatusCreated, crud.BuildResponse(ctx, h.meta, result))
@@ -287,10 +288,20 @@ func (h *GenericHandler) Update(c *echo.Context) error {
 		if errors.Is(err, crud.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
-		return err
+		return mapWriteErr(err)
 	}
 
 	return c.JSON(http.StatusOK, crud.BuildResponse(ctx, h.meta, result))
+}
+
+// mapWriteErr turns a Postgres unique violation (23505) into a 409 so any
+// table with a unique index reports a conflict instead of a 500.
+func mapWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return echo.NewHTTPError(http.StatusConflict, "a record with this value already exists")
+	}
+	return err
 }
 
 // Delete handles DELETE /api/v1/{table}/:id
