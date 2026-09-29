@@ -619,6 +619,9 @@ func TestBookingFlow(t *testing.T) {
 		if code, _ := c.do(http.MethodPut, "/api/v1/event_session/"+s3, map[string]any{"capacity": 2}); code != http.StatusBadRequest {
 			t.Errorf("capacity below seats_taken = %d, want 400", code)
 		}
+		if code, _ := c.do(http.MethodPut, "/api/v1/event_session/"+s3, map[string]any{"event_id": nil}); code != http.StatusBadRequest {
+			t.Errorf("event_id null = %d, want 400", code)
+		}
 		if code, _ := c.do(http.MethodPut, "/api/v1/event_session/"+s3, map[string]any{"event_id": eventID}); code != http.StatusBadRequest {
 			t.Errorf("moving a session to another event = %d, want 400", code)
 		}

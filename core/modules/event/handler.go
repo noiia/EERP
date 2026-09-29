@@ -366,12 +366,16 @@ func (h *Handler) GuardSessionUpdate(next echo.HandlerFunc) echo.HandlerFunc {
 			return echo.NewHTTPError(http.StatusBadRequest, "unreadable body")
 		}
 		c.Request().Body = io.NopCloser(bytes.NewReader(raw))
-		var body struct {
-			EventID *string `json:"event_id"`
+		var body map[string]json.RawMessage
+		if json.Unmarshal(raw, &body) != nil {
+			return next(c) // malformed: the generic handler decides
 		}
-		if json.Unmarshal(raw, &body) != nil || body.EventID == nil {
-			return next(c) // malformed or no event_id: the generic handler decides
+		sent, has := body["event_id"]
+		if !has {
+			return next(c)
 		}
+		var eventID string // a null or non-string event_id is a change too
+		_ = json.Unmarshal(sent, &eventID)
 		var stored uuid.UUID
 		err = h.db.QueryRow(ctx, `SELECT event_id FROM event_session WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
 			id, tenant).Scan(&stored)
@@ -381,7 +385,7 @@ func (h *Handler) GuardSessionUpdate(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		if want, err := uuid.Parse(*body.EventID); err != nil || want != stored {
+		if want, err := uuid.Parse(eventID); err != nil || want != stored {
 			return echo.NewHTTPError(http.StatusBadRequest, "event_id cannot be changed; create a session on the other event instead")
 		}
 		return next(c)
