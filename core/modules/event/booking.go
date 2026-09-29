@@ -357,3 +357,13 @@ func randomToken() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// AttachBookings gives a just-verified website user (website.AttachFunc) the
+// anonymous bookings made earlier with the same address in their tenant —
+// never someone else's: the address is now proven theirs, and rows already
+// owned by an account (user_id set) are left alone.
+func AttachBookings(ctx context.Context, tx *orm.Tx, tenant, userID uuid.UUID, email string) error {
+	_, err := tx.Exec(ctx, `UPDATE event_booking SET user_id = $3, updated_at = now()
+		WHERE tenant_id = $1 AND lower(email) = lower($2) AND user_id IS NULL AND deleted_at IS NULL`, tenant, email, userID)
+	return err
+}

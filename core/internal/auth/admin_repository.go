@@ -3,11 +3,15 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
+	"core/internal/mail"
 	"core/orm"
 	"core/orm/model"
 
@@ -248,8 +252,10 @@ func (r *RoleRepository) UpdateRole(ctx context.Context, tenantID, id uuid.UUID,
 var ErrEmailTaken = errors.New("email already registered")
 
 // CreateWebsiteUser creates a kind=website user holding website_user, in one
-// transaction. email must already be normalised (trimmed, lower-cased).
-func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name string) (Users, error) {
+// transaction, together with its email-verification token (only the sha256
+// is stored, valid 48h) and the "Confirm your email" mail linking to
+// siteURL/account/verify. email must already be normalised (trimmed, lower-cased).
+func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name, siteURL string) (Users, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return Users{}, fmt.Errorf("user: create website: %w", err)
@@ -270,9 +276,23 @@ func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UU
 		if created, err = r.users.WithTx(tx).Create(ctx, u); err != nil {
 			return err
 		}
-		_, err = orm.MustRepo[UserRoles](r.db).WithTx(tx).Create(ctx,
-			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)})
-		return err
+		if _, err := orm.MustRepo[UserRoles](r.db).WithTx(tx).Create(ctx,
+			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)}); err != nil {
+			return err
+		}
+		tok := make([]byte, 32)
+		if _, err := rand.Read(tok); err != nil {
+			return err
+		}
+		raw := hex.EncodeToString(tok)
+		sum := sha256.Sum256([]byte(raw))
+		if _, err := tx.Exec(ctx, `UPDATE users SET verify_token_hash = $2, verify_expires_at = now() + interval '48 hours' WHERE id = $1`,
+			created.ID, hex.EncodeToString(sum[:])); err != nil {
+			return err
+		}
+		return mail.Enqueue(ctx, tx, mail.Message{TenantID: tenantID, To: email, Subject: "Confirm your email",
+			Text: "Confirm your email address to see your bookings:\n\n" + strings.TrimRight(siteURL, "/") +
+				"/account/verify?token=" + raw + "\n\nThis link expires in 48 hours."})
 	})
 	if err != nil {
 		return Users{}, fmt.Errorf("user: create website: %w", mapUserWriteErr(err))

@@ -681,7 +681,7 @@ func TestIntegration_CreateWebsiteUser_EmailTakenCaseInsensitive(t *testing.T) {
 	}
 	email := "Dup-" + uuid.NewString() + "@Example.test"
 	seedUser(t, app.DB, email, "pw-123456789", tenantID)
-	_, err := auth.NewUserRepository(app.DB).CreateWebsiteUser(context.Background(), tenantID, strings.ToLower(email), "pw-123456789", "Dup")
+	_, err := auth.NewUserRepository(app.DB).CreateWebsiteUser(context.Background(), tenantID, strings.ToLower(email), "pw-123456789", "Dup", "")
 	if !errors.Is(err, auth.ErrEmailTaken) {
 		t.Fatalf("err = %v, want ErrEmailTaken", err)
 	}

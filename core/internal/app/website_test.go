@@ -668,3 +668,98 @@ func TestBookingFlow(t *testing.T) {
 		}
 	})
 }
+
+// Review Focus #5: earlier anonymous bookings attach to an account only once
+// its email is verified — signing up with someone's address claims nothing.
+func TestVerifyAttachesHistoryOnlyAfterVerification(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	email := "verify-" + uuid.NewString()[:8] + "@test.io"
+	var eventID string
+	t.Cleanup(func() {
+		for _, q := range []string{
+			`DELETE FROM event_booking WHERE email = $1`,
+			`DELETE FROM mail_outbox WHERE to_address = $1`,
+			`DELETE FROM contact WHERE email = $1`,
+			`DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email = $1)`,
+			`DELETE FROM users WHERE email = $1`,
+		} {
+			_, _ = c.a.db.DB.Exec(ctx, q, email)
+		}
+		for _, q := range []string{
+			`DELETE FROM event_booking WHERE event_id = $1`,
+			`DELETE FROM chatter_message WHERE record_id = $1`,
+			`DELETE FROM event_session WHERE event_id = $1`,
+			`DELETE FROM event WHERE id = $1`,
+		} {
+			_, _ = c.a.db.DB.Exec(ctx, q, eventID)
+		}
+	})
+	code, body := c.do(http.MethodPost, "/api/v1/event", map[string]any{"name": "V", "kind": "sessions", "published": true})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create event: %d %s", code, body)
+	}
+	eventID = decode(t, body)["id"].(string)
+	start := time.Now().Add(72 * time.Hour).UTC()
+	code, body = c.do(http.MethodPost, "/api/v1/event_session", map[string]any{"event_id": eventID,
+		"starts_at": start.Format(time.RFC3339), "ends_at": start.Add(time.Hour).Format(time.RFC3339), "capacity": 5})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create session: %d %s", code, body)
+	}
+	sessionID := decode(t, body)["id"].(string)
+	// An anonymous booking made with this address (different case), before any account exists.
+	if code, body := anon.do(http.MethodPost, "/api/v1/website/bookings", map[string]any{"event_id": eventID,
+		"session_id": sessionID, "seats": 1, "email": strings.ToUpper(email[:1]) + email[1:], "name": "V"}); code != http.StatusCreated {
+		t.Fatalf("book: %d %s", code, body)
+	}
+
+	code, body = anon.do(http.MethodPost, "/api/v1/website/auth/signup", map[string]string{"email": email, "password": "correct horse", "name": "V"})
+	if code != http.StatusOK && code != http.StatusCreated {
+		t.Fatalf("signup: %d %s", code, body)
+	}
+	site := &client{t: t, h: c.h, token: decode(t, body)["access_token"].(string)}
+	count := func() int {
+		_, body := site.do(http.MethodGet, "/api/v1/website/me/bookings", nil)
+		return len(decode(t, body)["data"].([]any))
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("unverified account sees %d bookings, want 0", n)
+	}
+
+	// Only the hash is stored; the raw token lives in the queued email.
+	var stored string
+	_ = c.a.db.DB.QueryRow(ctx, `SELECT verify_token_hash FROM users WHERE email = $1`, email).Scan(&stored)
+	var text string
+	_ = c.a.db.DB.QueryRow(ctx, `SELECT body_text FROM mail_outbox WHERE to_address = $1 AND subject LIKE 'Confirm%'`, email).Scan(&text)
+	i := strings.Index(text, "/account/verify?token=")
+	if i < 0 || len(stored) != 64 {
+		t.Fatalf("verification mail/hash missing: hash=%q text=%q", stored, text)
+	}
+	raw := text[i+len("/account/verify?token="):][:64]
+	if raw == stored {
+		t.Fatal("raw token stored in clear")
+	}
+	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": "0" + raw[1:]}); code != http.StatusBadRequest {
+		t.Errorf("wrong token = %d, want 400", code)
+	}
+	// Expired: same 400 as unknown.
+	_, _ = c.a.db.DB.Exec(ctx, `UPDATE users SET verify_expires_at = now() - interval '1 minute' WHERE email = $1`, email)
+	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": raw}); code != http.StatusBadRequest {
+		t.Errorf("expired token = %d, want 400", code)
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("after expired verify, account sees %d bookings, want 0", n)
+	}
+	_, _ = c.a.db.DB.Exec(ctx, `UPDATE users SET verify_expires_at = now() + interval '1 hour' WHERE email = $1`, email)
+	if code, body := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": raw}); code != http.StatusNoContent {
+		t.Fatalf("verify = %d %s", code, body)
+	}
+	if n := count(); n != 1 {
+		t.Errorf("verified account sees %d bookings, want 1", n)
+	}
+	// Single use.
+	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/verify", map[string]string{"token": raw}); code != http.StatusBadRequest {
+		t.Errorf("reused token = %d, want 400", code)
+	}
+}

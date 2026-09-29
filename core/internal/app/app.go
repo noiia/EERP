@@ -728,10 +728,12 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			}
 		}
 
-		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
+		siteAuth := authHandler.ForWebsite(siteTenant, userRepo, configContent.SiteURL)
 		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
 		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout,
 			auth.SeedWebsiteRoles(ctx, app.DB, siteTenant))
+		// Email verification: attaches the visitor's earlier anonymous bookings.
+		websiteAuthGroup.POST("/verify", website.NewVerifyHandler(app.DB, eventmodule.AttachBookings).Verify)
 
 		websiteJWT := authmw.WebsiteJWTMiddleware(tokenSvc)
 		siteMe := website.NewMeHandler(userRepo)

@@ -66,6 +66,11 @@ type Users struct {
 	// EmailVerifiedAt is set once a website user confirms their address
 	// (spec 4); nil = unverified. Unused for internal users.
 	EmailVerifiedAt *time.Time `db:"email_verified_at"`
+	// VerifyTokenHash is the sha256 hex of the pending email-verification
+	// token ("" once verified); only the hash is stored, the raw token only
+	// ever travels in the email. Never serialized.
+	VerifyTokenHash string     `db:"verify_token_hash" json:"-"`
+	VerifyExpiresAt *time.Time `db:"verify_expires_at" json:"-"`
 }
 
 // KindWebsite is Users.Kind for a website (visitor) account.
