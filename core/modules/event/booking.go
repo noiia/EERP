@@ -37,8 +37,10 @@ type BookRequest struct {
 	Email     string
 	Name      string
 	Phone     string
-	UserID    *uuid.UUID
-	Staff     bool // ERP-side booking: unpublished events allowed
+	// Never bound from a request body: handlers set these from the
+	// authenticated identity / the ERP route.
+	UserID *uuid.UUID `json:"-"`
+	Staff  bool       `json:"-"` // ERP-side booking: unpublished events allowed
 }
 
 type SlotAvailability struct {
@@ -98,6 +100,9 @@ func (s *Service) Book(ctx context.Context, tenant uuid.UUID, req BookRequest) (
 	err = orm.Transact(ctx, s.db, func(tx *orm.Tx) error {
 		var err error
 		if req.SessionID != nil {
+			if ev.Kind != KindSessions {
+				return ErrNotBookable
+			}
 			if when, err = captureSessionSeats(ctx, tx, ev, *req.SessionID, req.Seats); err != nil {
 				return err
 			}

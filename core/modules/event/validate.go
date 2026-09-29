@@ -82,6 +82,32 @@ func validateAvailability(body map[string]any) error {
 	return nil
 }
 
+// validateSession checks the keys present in body. The stored counterpart of
+// a partial update (only ends_at, say) isn't checked here; seats_taken <=
+// capacity is a DB constraint (module.go) so it also holds under concurrency.
+func validateSession(body map[string]any) error {
+	if err := checkInt(body, "capacity", 1, 100000); err != nil {
+		return err
+	}
+	var at [2]time.Time
+	for i, key := range []string{"starts_at", "ends_at"} {
+		raw, ok := body[key]
+		if !ok || raw == nil { // null: left to the generic handler
+			continue
+		}
+		s, _ := raw.(string)
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return fmt.Errorf("%w: %s must be an RFC 3339 time", errEvent, key)
+		}
+		at[i] = t
+	}
+	if !at[0].IsZero() && !at[1].IsZero() && !at[1].After(at[0]) {
+		return fmt.Errorf("%w: ends_at must be after starts_at", errEvent)
+	}
+	return nil
+}
+
 // eventDefaults fill a POSTed event's omitted required columns.
 var eventDefaults = map[string]any{
 	"kind": KindSessions, "timezone": "Europe/Paris", "slot_minutes": 30, "slot_capacity": 1,
@@ -100,6 +126,10 @@ func validateBody(validate func(map[string]any) error, mutate func(*http.Request
 			var body map[string]any
 			if err := json.Unmarshal(raw, &body); err != nil {
 				return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
+			}
+			if body == nil { // a literal JSON null
+				body = map[string]any{}
+				raw = []byte("{}")
 			}
 			if err := validate(body); err != nil {
 				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -126,6 +156,9 @@ var ValidateEventBody = validateBody(validateEvent, func(r *http.Request, body m
 		}
 	}
 })
+
+// ValidateSessionBody runs in front of the GENERIC event_session Create/Update.
+var ValidateSessionBody = validateBody(validateSession, nil)
 
 // ValidateAvailabilityBody runs in front of the GENERIC event_availability Create/Update.
 var ValidateAvailabilityBody = validateBody(validateAvailability, nil)

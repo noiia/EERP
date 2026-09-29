@@ -46,6 +46,12 @@ func (m *eventModule) Migrate(ctx context.Context, db *orm.DB) error {
 			ALTER TABLE event_session ADD CONSTRAINT event_session_seats
 			CHECK (seats_taken >= 0);
 		EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+		// Staff can't shrink a session below its booked seats (400 via the
+		// generic handler's check-violation mapping), even racing a booking.
+		`DO $$ BEGIN
+			ALTER TABLE event_session ADD CONSTRAINT event_session_capacity
+			CHECK (seats_taken <= capacity);
+		EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
 	} {
 		if _, err := db.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("event: migrate: %w", err)

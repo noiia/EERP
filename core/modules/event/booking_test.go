@@ -109,6 +109,8 @@ func TestBook_SessionRules(t *testing.T) {
 	unpublished := f.event(t, Event{Name: "Draft", Kind: KindSessions})
 	_, _ = f.db.Exec(context.Background(), `UPDATE event SET published = false WHERE id = $1`, unpublished.ID)
 	draftSession := f.session(t, unpublished, 10, time.Now().Add(48*time.Hour))
+	appt := f.event(t, Event{Name: "Appt", Kind: KindAppointment, SlotMinutes: 30, SlotCapacity: 1})
+	apptSession := f.session(t, appt, 10, time.Now().Add(48*time.Hour))
 
 	tests := []struct {
 		name string
@@ -122,6 +124,7 @@ func TestBook_SessionRules(t *testing.T) {
 		{"past session", BookRequest{EventID: ev.ID, SessionID: &past.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrFull},
 		{"session of another event", BookRequest{EventID: other.ID, SessionID: &future.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrNotBookable},
 		{"unpublished event", BookRequest{EventID: unpublished.ID, SessionID: &draftSession.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrNotBookable},
+		{"session of an appointment event", BookRequest{EventID: appt.ID, SessionID: &apptSession.ID, Seats: 1, Email: "a@x.io", Name: "A"}, ErrNotBookable},
 		{"staff books an unpublished event", BookRequest{EventID: unpublished.ID, SessionID: &draftSession.ID, Seats: 1, Email: "s@x.io", Name: "S", Staff: true}, nil},
 	}
 	for _, tt := range tests {
