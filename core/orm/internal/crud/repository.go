@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -76,6 +78,26 @@ func (r *Repository) tenantCondition(ctx context.Context) (query.Condition, bool
 	return query.NewCondition(tenantColumn+" = $1", tid), true, nil
 }
 
+// publicConditions returns the forced row filter of a public-scoped request
+// (ADR-024), sorted for a deterministic SQL (the read cache keys on it). A
+// forced column the table lacks fails closed — it came from admin config.
+// Deliberately NOT routed through checkColumn: scope columns need not be public.
+func (r *Repository) publicConditions(ctx context.Context) ([]query.Condition, error) {
+	scope, ok := access.PublicScopeFromContext(ctx)
+	if !ok {
+		return nil, nil
+	}
+	cols := slices.Sorted(maps.Keys(scope.Equals))
+	conds := make([]query.Condition, 0, len(cols))
+	for _, col := range cols {
+		if !r.meta.HasField(col) {
+			return nil, fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+		}
+		conds = append(conds, query.NewCondition(col+"::text = $1", scope.Equals[col]))
+	}
+	return conds, nil
+}
+
 // ErrUnknownColumn is returned when a list filter names a column the table
 // does not have. Column names end up as SQL identifiers, so the whitelist
 // check is a security boundary, not a convenience.
@@ -95,6 +117,9 @@ var ErrUnknownColumn = errors.New("crud: unknown filter column")
 func (r *Repository) checkColumn(ctx context.Context, col string) error {
 	fm, ok := r.meta.FieldByColumn(col)
 	if !ok {
+		return fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+	}
+	if scope, ok := access.PublicScopeFromContext(ctx); ok && !scope.Allows(col) {
 		return fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
 	}
 	if len(fm.Groups) > 0 {
@@ -207,6 +232,13 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 	} else if ok {
 		b = b.Where(cond)
 	}
+	pubConds, err := r.publicConditions(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, cond := range pubConds {
+		b = b.Where(cond)
+	}
 	filters, err := r.filterConditions(ctx, f)
 	if err != nil {
 		return nil, 0, err
@@ -309,6 +341,13 @@ func (r *Repository) DistinctValues(ctx context.Context, column string, f ListFi
 	} else if ok {
 		b = b.Where(cond)
 	}
+	pubConds, err := r.publicConditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, cond := range pubConds {
+		b = b.Where(cond)
+	}
 	filters, err := r.filterConditions(ctx, f)
 	if err != nil {
 		return nil, err
@@ -368,6 +407,13 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 	if cond, ok, err := r.tenantCondition(ctx); err != nil {
 		return nil, err
 	} else if ok {
+		b = b.Where(cond)
+	}
+	pubConds, err := r.publicConditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, cond := range pubConds {
 		b = b.Where(cond)
 	}
 

@@ -56,3 +56,15 @@ func TestBuildResponse_UngatedFieldsUnaffectedByEmptyGroups(t *testing.T) {
 		t.Errorf("expected both ungated fields to pass through untouched, got %v", out)
 	}
 }
+
+func TestBuildResponse_PublicScopeOmitsNonPublicKeys(t *testing.T) {
+	meta := registry.TableMeta{Fields: []registry.FieldMeta{
+		{Name: "id", Column: "id"}, {Name: "name", Column: "name"}, {Name: "cost", Column: "cost"},
+	}}
+	row := map[string]any{"id": "1", "name": "Chair", "cost": 12}
+	ctx := access.WithPublicScope(context.Background(), access.PublicScope{Columns: []string{"id", "name"}})
+	out := BuildResponse(ctx, meta, row)
+	if _, ok := out["cost"]; ok || out["name"] != "Chair" || out["id"] != "1" {
+		t.Errorf("out = %v, want id+name only", out)
+	}
+}

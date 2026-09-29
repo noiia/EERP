@@ -136,6 +136,13 @@ func (r *Repository) Aggregate(ctx context.Context, req AggregateRequest, f List
 	} else if ok {
 		b = b.Where(cond)
 	}
+	pubConds, err := r.publicConditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, cond := range pubConds {
+		b = b.Where(cond)
+	}
 	filters, err := r.filterConditions(ctx, f)
 	if err != nil {
 		return nil, err
