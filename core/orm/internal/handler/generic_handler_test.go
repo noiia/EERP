@@ -341,6 +341,21 @@ func TestWrites_UniqueViolationIs409(t *testing.T) {
 	}
 }
 
+// A check-constraint violation is bad input (e.g. event_session capacity
+// below its booked seats), not a server fault.
+func TestWrites_CheckViolationIs400(t *testing.T) {
+	check := &pgconn.PgError{Code: "23514", ConstraintName: "event_session_capacity"}
+	svc := &mockSvc{update: func(context.Context, any, map[string]any) (map[string]any, error) { return nil, check }}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodPut, "/", `{"name":"x"}`)
+	c.SetPath("/:id")
+	c.SetPathValues(echo.PathValues{{Name: "id", Value: "6f1e0b0e-6a57-4c53-8d6c-0d3a1f0b7e11"}})
+	var he *echo.HTTPError
+	if err := h.Update(c); !errors.As(err, &he) || he.Code != http.StatusBadRequest {
+		t.Fatalf("err = %v, want 400 HTTPError", err)
+	}
+}
+
 // ── Delete / Restore route presence ──────────────────────────────────────────
 
 func TestMeta_SoftDelete_True_ForItemStruct(t *testing.T) {

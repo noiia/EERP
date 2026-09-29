@@ -294,12 +294,18 @@ func (h *GenericHandler) Update(c *echo.Context) error {
 	return c.JSON(http.StatusOK, crud.BuildResponse(ctx, h.meta, result))
 }
 
-// mapWriteErr turns a Postgres unique violation (23505) into a 409 so any
-// table with a unique index reports a conflict instead of a 500.
+// mapWriteErr turns a Postgres unique violation (23505) into a 409 and a
+// check violation (23514) into a 400, so constraints a module hand-writes in
+// Migrate() report the caller's mistake instead of a 500.
 func mapWriteErr(err error) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return echo.NewHTTPError(http.StatusConflict, "a record with this value already exists")
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505":
+			return echo.NewHTTPError(http.StatusConflict, "a record with this value already exists")
+		case "23514":
+			return echo.NewHTTPError(http.StatusBadRequest, "value violates constraint "+pgErr.ConstraintName)
+		}
 	}
 	return err
 }
