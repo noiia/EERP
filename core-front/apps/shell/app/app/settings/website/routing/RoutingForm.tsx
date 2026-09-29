@@ -17,7 +17,7 @@ export default function RoutingForm({ initial }: { initial: Routing }) {
 
   async function save() {
     const res = await saveRouting(r)
-    setMsg(res.ok ? { ok: true, text: t('Saved.') } : { ok: false, text: res.message })
+    setMsg(res.ok ? { ok: true, text: t('Saved.') } : { ok: false, text: res.message || t('Could not save.') })
   }
 
   return (

@@ -20,7 +20,7 @@ export default function WebsiteUsersTable({ initial }: { initial: WebsiteUser[] 
   async function patch(id: string, p: Parameters<typeof updateWebsiteUser>[1]) {
     setError(null)
     const res = await updateWebsiteUser(id, p)
-    if (!res.ok) setError(res.message)
+    if (!res.ok) setError(res.message || t('Could not save.'))
     else setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...p } : u)))
   }
   const edit = (id: string, k: 'name' | 'phone', v: string) =>

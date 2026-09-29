@@ -32,7 +32,7 @@ function TableCard({ table }: { table: PublishedTable }) {
   async function save() {
     const filter = Object.fromEntries(rows.filter(([c]) => c.trim() !== ''))
     const res = await savePublished(table.table, { fields: [...fields], filter })
-    setMsg(res.ok ? { ok: true, text: t('Saved.') } : { ok: false, text: res.message })
+    setMsg(res.ok ? { ok: true, text: t('Saved.') } : { ok: false, text: res.message || t('Could not save.') })
   }
 
   return (

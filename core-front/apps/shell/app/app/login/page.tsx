@@ -11,9 +11,8 @@ import Typography from '@mui/material/Typography'
 import { erpPath, useSessionStore } from '@eerp/core-front'
 import { authBffUrl } from '@/lib/auth-url'
 
-// Must match session.ts's FORCE_PASSWORD_CHANGE_PATH — duplicated as a literal
-// rather than imported because that module is 'server-only' and this is a
-// client component.
+// Must match session.ts's FORCE_PASSWORD_CHANGE_PATH — rebuilt here rather than
+// imported because that module is 'server-only' and this is a client component.
 const FORCE_PASSWORD_CHANGE_PATH = erpPath('/force-password-change')
 
 function LoginForm() {

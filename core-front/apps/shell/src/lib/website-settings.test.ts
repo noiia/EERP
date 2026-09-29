@@ -5,6 +5,8 @@ vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return { ...actual, apiRequest: (...a: unknown[]) => apiRequestMock(...a) }
 })
+const revalidateTag = vi.fn()
+vi.mock('next/cache', () => ({ revalidateTag: (...a: unknown[]) => revalidateTag(...a) }))
 vi.mock('next/headers', () => ({
   headers: async () => new Headers({ host: 'erp.acme.fr' }),
 }))
@@ -21,6 +23,7 @@ import {
 
 beforeEach(() => {
   apiRequestMock.mockReset()
+  revalidateTag.mockReset()
 })
 
 describe('website-settings actions', () => {
@@ -41,6 +44,23 @@ describe('website-settings actions', () => {
       ok: false,
       message: 'nope',
     })
+  })
+
+  it('an unexpected failure returns an empty message (the form translates its fallback)', async () => {
+    apiRequestMock.mockImplementation(() => Promise.reject(new Error('boom')))
+    await expect(saveRouting({ mode: 'path', site_host: '', erp_host: '' })).resolves.toEqual({ ok: false, message: '' })
+  })
+
+  it('savePublished expires the site caches immediately, only on success', async () => {
+    apiRequestMock.mockResolvedValue(undefined)
+    await savePublished('product', { fields: [], filter: {} })
+    expect(revalidateTag).toHaveBeenCalledWith('product', { expire: 0 })
+    expect(revalidateTag).toHaveBeenCalledWith('website_page', { expire: 0 })
+
+    revalidateTag.mockReset()
+    apiRequestMock.mockImplementation(() => Promise.reject(new Error('boom')))
+    await savePublished('product', { fields: [], filter: {} })
+    expect(revalidateTag).not.toHaveBeenCalled()
   })
 
   it('reads and writes published data and users', async () => {

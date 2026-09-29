@@ -1,4 +1,5 @@
 'use server'
+import { revalidateTag } from 'next/cache'
 import { headers } from 'next/headers'
 import { ApiError, apiRequest } from '@eerp/core-front/server'
 
@@ -6,10 +7,12 @@ import { ApiError, apiRequest } from '@eerp/core-front/server'
 // accounts (dedicated Go endpoints, not the generic CRUD surface). Mutations
 // return a result object — Next masks errors thrown inside Server Actions.
 
+/** `message` is Go's message, or '' for an unexpected failure: the form shows
+ * its own translated fallback (Server Actions have no user locale). */
 export type SaveResult = { ok: true } | { ok: false; message: string }
 
-function failure(e: unknown, fallback: string): SaveResult {
-  return { ok: false, message: e instanceof ApiError ? e.message : fallback }
+function failure(e: unknown): SaveResult {
+  return { ok: false, message: e instanceof ApiError ? e.message : '' }
 }
 
 async function save(method: 'PUT', path: string, body: unknown, extra?: Record<string, string>): Promise<SaveResult> {
@@ -17,7 +20,7 @@ async function save(method: 'PUT', path: string, body: unknown, extra?: Record<s
     await (extra ? apiRequest(method, path, body, extra) : apiRequest(method, path, body))
     return { ok: true }
   } catch (e) {
-    return failure(e, 'Could not save.')
+    return failure(e)
   }
 }
 
@@ -41,7 +44,15 @@ export async function getPublished(): Promise<PublishedTable[]> {
 }
 
 export async function savePublished(table: string, sel: PublishedSelection): Promise<SaveResult> {
-  return save('PUT', `/settings/website/public/${encodeURIComponent(table)}`, sel)
+  const res = await save('PUT', `/settings/website/public/${encodeURIComponent(table)}`, sel)
+  if (res.ok) {
+    // Expire the site's cached public reads now (public-api.ts tags them with the
+    // table and 'website_page'), so an unpublish is never served stale. Public
+    // pictures keep their own 300 s HTTP max-age.
+    revalidateTag(table, { expire: 0 })
+    revalidateTag('website_page', { expire: 0 })
+  }
+  return res
 }
 
 export interface Routing {
