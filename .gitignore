@@ -48,3 +48,4 @@ __debug*
 /eerp-config.json
 /eerp-config.docker.json
 /eerp-config.prod.json
+.worktrees/
