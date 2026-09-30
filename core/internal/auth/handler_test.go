@@ -191,7 +191,7 @@ func TestLogin_RefusesTheOtherKind(t *testing.T) {
 			user.TenantID = uuid.New()
 			h := buildHandler(user, nil, nil, nil)
 			if tt.website {
-				h = h.ForWebsite(user.TenantID, nil)
+				h = h.ForWebsite(user.TenantID, nil, "")
 			}
 			e := buildEchoForAuth()
 			e.POST("/login", h.Login)

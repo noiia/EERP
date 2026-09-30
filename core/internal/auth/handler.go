@@ -58,16 +58,17 @@ type Handler struct {
 	website    bool
 	siteTenant uuid.UUID
 	creator    WebsiteUserCreator
+	siteURL    string // verification links point here
 }
 
 // WebsiteUserCreator creates a website account (Task 8: *UserRepository).
 type WebsiteUserCreator interface {
-	CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name string) (Users, error)
+	CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name, siteURL string) (Users, error)
 }
 
 // ForWebsite returns a copy serving website (visitor) accounts.
-func (h Handler) ForWebsite(siteTenant uuid.UUID, creator WebsiteUserCreator) *Handler {
-	h.website, h.siteTenant, h.creator = true, siteTenant, creator
+func (h Handler) ForWebsite(siteTenant uuid.UUID, creator WebsiteUserCreator, siteURL string) *Handler {
+	h.website, h.siteTenant, h.creator, h.siteURL = true, siteTenant, creator, siteURL
 	return &h
 }
 
@@ -350,7 +351,7 @@ func (h *Handler) Signup(c *echo.Context) error {
 	if name == "" || len(name) > 200 {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required (max 200 characters)")
 	}
-	user, err := h.creator.CreateWebsiteUser(c.Request().Context(), h.siteTenant, email, req.Password, name)
+	user, err := h.creator.CreateWebsiteUser(c.Request().Context(), h.siteTenant, email, req.Password, name, h.siteURL)
 	if errors.Is(err, ErrEmailTaken) {
 		return echo.NewHTTPError(http.StatusConflict, "this email cannot be used")
 	}

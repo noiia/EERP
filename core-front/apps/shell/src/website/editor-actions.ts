@@ -1,6 +1,6 @@
 'use server'
 import type { ReactNode } from 'react'
-import { ApiError, unwrapActionResult } from '@eerp/core-front/server'
+import { ApiError, apiRequest, unwrapActionResult } from '@eerp/core-front/server'
 import { updateRecord } from '../../app/app/[...module]/actions'
 import { getIdentity } from '@/lib/session'
 import { BlockView } from './blocks/BlockView'
@@ -34,5 +34,16 @@ export async function saveLayout(id: string, layout: Block[]): Promise<string | 
     return null
   } catch (e) {
     return e instanceof ApiError ? e.message : ''
+  }
+}
+
+/** Events a booking block can point at (staff view: published or not — the
+ * block renders nothing until the event is published). */
+export async function listEditorEvents(kind: 'sessions' | 'appointment'): Promise<{ id: string; name: string }[]> {
+  try {
+    const q = new URLSearchParams({ page_size: '200', 'filter[kind]': kind })
+    return (await apiRequest<{ data: { id: string; name: string }[] }>('GET', `/event?${q}`)).data ?? []
+  } catch {
+    return []
   }
 }

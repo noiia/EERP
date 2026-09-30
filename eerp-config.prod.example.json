@@ -30,6 +30,7 @@
     "nats_url": "nats://nats:4222",
     "redis_url": "redis://redis:6379/0",
     "frontend_base_url": "http://core-front:3000",
+    "site_url": "https://localhost",
     "smtp_host": "",
     "smtp_port": 587,
     "smtp_tls": "starttls",

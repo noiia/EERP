@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"core/internal/auth"
 	"core/orm"
+	"core/orm/access"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -33,7 +33,10 @@ type outboxRow struct {
 // List handles GET /api/v1/mail_outbox?status=&page=&page_size=.
 func (h *Handler) List(c *echo.Context) error {
 	ctx := c.Request().Context()
-	tenant := auth.MustIdentity(ctx).TenantID
+	tenant, ok := access.TenantFromContext(ctx)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
+	}
 	status := c.QueryParam("status")
 	if status != "" && status != StatusPending && status != StatusSent && status != StatusFailed {
 		return echo.NewHTTPError(http.StatusBadRequest, "status must be pending, sent or failed")
@@ -79,10 +82,14 @@ func (h *Handler) Retry(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid id")
 	}
+	tenant, ok := access.TenantFromContext(ctx)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
+	}
 	tag, err := h.db.Exec(ctx, `
 		UPDATE mail_outbox SET status = $3, attempts = 0, next_attempt_at = now(), updated_at = now()
 		WHERE id = $1 AND tenant_id = $2 AND status = $4 AND deleted_at IS NULL`,
-		id, auth.MustIdentity(ctx).TenantID, StatusPending, StatusFailed)
+		id, tenant, StatusPending, StatusFailed)
 	if err != nil {
 		return err
 	}

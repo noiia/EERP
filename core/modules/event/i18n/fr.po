@@ -1,0 +1,142 @@
+# Event module — French. Locale = this file's basename ('fr').
+msgid ""
+msgstr ""
+"Project-Id-Version: event 0.0.1\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Events"
+msgstr "Événements"
+
+msgid "Event"
+msgstr "Événement"
+
+msgid "Kind"
+msgstr "Type"
+
+msgid "sessions"
+msgstr "sessions"
+
+msgid "appointment"
+msgstr "rendez-vous"
+
+msgid "Location"
+msgstr "Lieu"
+
+msgid "Published"
+msgstr "Publié"
+
+msgid "Time zone (IANA, e.g. Europe/Paris)"
+msgstr "Fuseau horaire (IANA, ex. Europe/Paris)"
+
+msgid "Max seats per booking"
+msgstr "Places max par réservation"
+
+msgid "Slot length (minutes)"
+msgstr "Durée d'un créneau (minutes)"
+
+msgid "Seats per slot"
+msgstr "Places par créneau"
+
+msgid "Buffer between slots (minutes)"
+msgstr "Battement entre créneaux (minutes)"
+
+msgid "Bookable up to (days ahead)"
+msgstr "Réservable jusqu'à (jours à l'avance)"
+
+msgid "Minimum notice (hours)"
+msgstr "Délai minimum (heures)"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Sessions"
+msgstr "Sessions"
+
+msgid "Weekly availability"
+msgstr "Disponibilités hebdomadaires"
+
+msgid "Availability"
+msgstr "Disponibilités"
+
+msgid "Bookings"
+msgstr "Réservations"
+
+msgid "End"
+msgstr "Fin"
+
+msgid "Start"
+msgstr "Début"
+
+msgid "Capacity"
+msgstr "Capacité"
+
+msgid "Seats taken"
+msgstr "Places prises"
+
+msgid "From"
+msgstr "De"
+
+msgid "To"
+msgstr "À"
+
+msgid "Email"
+msgstr "E-mail"
+
+msgid "Seats"
+msgstr "Places"
+
+msgid "Status"
+msgstr "Statut"
+
+
+msgid "Repeat weekly"
+msgstr "Répéter chaque semaine"
+
+msgid "Price (display only)"
+msgstr "Prix (affichage seulement)"
+
+msgid "Weekday (0 = Sunday … 6 = Saturday)"
+msgstr "Jour (0 = dimanche … 6 = samedi)"
+
+msgid "From (HH:MM)"
+msgstr "De (HH:MM)"
+
+msgid "To (HH:MM)"
+msgstr "À (HH:MM)"
+
+msgid "confirmed"
+msgstr "confirmée"
+
+msgid "cancelled"
+msgstr "annulée"
+
+msgid "Slot"
+msgstr "Créneau"
+
+msgid "Booked on"
+msgstr "Réservée le"
+
+msgid "Session"
+msgstr "Session"
+
+msgid "Slot start (appointments)"
+msgstr "Début du créneau (rendez-vous)"
+
+msgid "Phone"
+msgstr "Téléphone"
+
+msgid "Contact"
+msgstr "Contact"
+
+msgid "Cancelled on"
+msgstr "Annulée le"
+
+msgid "Cancel booking"
+msgstr "Annuler la réservation"
+
+msgid "Weekly copies to add (Repeat weekly)"
+msgstr "Copies hebdomadaires à ajouter (Répéter chaque semaine)"

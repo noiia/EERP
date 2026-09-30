@@ -1,0 +1,20 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "event",
+    "display_name": "Events",
+    "version": "0.0.1",
+    "author": "",
+    "description": "Events, sessions, appointment slots and bookings",
+    "depends": [
+        "website"
+    ],
+    "static_files": {
+        "views": [
+            "EventViews.ts"
+        ]
+    },
+    "is_service": false,
+    "auto_install": false,
+    "app_mode": false
+}

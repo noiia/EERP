@@ -295,6 +295,14 @@ func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
 	`); err != nil {
 		common.Logger.Warn("⚠️  idx_users_email_live not created — live users share an email case-insensitively; dedupe them", zap.Error(err))
 	}
+	// Email verification looks users up by token hash (website.VerifyHandler).
+	if _, err := db.Exec(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_users_verify_token
+		ON users (verify_token_hash)
+		WHERE verify_token_hash <> ''
+	`); err != nil {
+		return fmt.Errorf("auth: create idx_users_verify_token: %w", err)
+	}
 
 	return nil
 }

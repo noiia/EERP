@@ -1,0 +1,141 @@
+# Event module — translation template. Copy to <locale>.po per language.
+msgid ""
+msgstr ""
+"Project-Id-Version: event 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Name"
+msgstr ""
+
+msgid "Events"
+msgstr ""
+
+msgid "Event"
+msgstr ""
+
+msgid "Kind"
+msgstr ""
+
+msgid "sessions"
+msgstr ""
+
+msgid "appointment"
+msgstr ""
+
+msgid "Location"
+msgstr ""
+
+msgid "Published"
+msgstr ""
+
+msgid "Time zone (IANA, e.g. Europe/Paris)"
+msgstr ""
+
+msgid "Max seats per booking"
+msgstr ""
+
+msgid "Slot length (minutes)"
+msgstr ""
+
+msgid "Seats per slot"
+msgstr ""
+
+msgid "Buffer between slots (minutes)"
+msgstr ""
+
+msgid "Bookable up to (days ahead)"
+msgstr ""
+
+msgid "Minimum notice (hours)"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Sessions"
+msgstr ""
+
+msgid "Weekly availability"
+msgstr ""
+
+msgid "Availability"
+msgstr ""
+
+msgid "Bookings"
+msgstr ""
+
+msgid "End"
+msgstr ""
+
+msgid "Start"
+msgstr ""
+
+msgid "Capacity"
+msgstr ""
+
+msgid "Seats taken"
+msgstr ""
+
+msgid "From"
+msgstr ""
+
+msgid "To"
+msgstr ""
+
+msgid "Email"
+msgstr ""
+
+msgid "Seats"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+
+msgid "Repeat weekly"
+msgstr ""
+
+msgid "Price (display only)"
+msgstr ""
+
+msgid "Weekday (0 = Sunday … 6 = Saturday)"
+msgstr ""
+
+msgid "From (HH:MM)"
+msgstr ""
+
+msgid "To (HH:MM)"
+msgstr ""
+
+msgid "confirmed"
+msgstr ""
+
+msgid "cancelled"
+msgstr ""
+
+msgid "Slot"
+msgstr ""
+
+msgid "Booked on"
+msgstr ""
+
+msgid "Session"
+msgstr ""
+
+msgid "Slot start (appointments)"
+msgstr ""
+
+msgid "Phone"
+msgstr ""
+
+msgid "Contact"
+msgstr ""
+
+msgid "Cancelled on"
+msgstr ""
+
+msgid "Cancel booking"
+msgstr ""
+
+msgid "Weekly copies to add (Repeat weekly)"
+msgstr ""

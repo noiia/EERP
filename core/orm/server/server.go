@@ -238,6 +238,11 @@ func newErrorHandler(logger *zap.Logger) echo.HTTPErrorHandler {
 			if errors.As(err, &he) && he.Message != "" {
 				msg = he.Message
 			}
+			// A wrapped cause (e.g. the pg error behind a constraint 400) is
+			// for the operator, never the response.
+			if he != nil && he.Unwrap() != nil && logger != nil {
+				logger.Warn("request error", zap.Int("status", code), zap.Error(he.Unwrap()), zap.String("request_id", requestID))
+			}
 			_ = c.JSON(code, ErrorResponse{Error: ErrorBody{Code: httpCode(code), Message: msg, RequestID: requestID}})
 			return
 		}

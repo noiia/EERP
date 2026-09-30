@@ -443,6 +443,30 @@ function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
   )
 }
 
+// date/datetime: a timestamptz column (an instant). Edited in the BROWSER's
+// time zone — datetime-local takes 'YYYY-MM-DDTHH:mm' with no zone — and
+// written back as UTC ISO, so the stored instant is exact whatever the zone.
+function DateTimeWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const d = typeof value === 'string' && value ? new Date(value) : null
+  const local =
+    d && !Number.isNaN(d.getTime())
+      ? new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+      : ''
+  return (
+    <TextField
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      type="datetime-local"
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      slotProps={{ inputLabel: { shrink: true } }}
+      value={local}
+      onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
+    />
+  )
+}
+
 // ── boolean ───────────────────────────────────────────────────────────────────
 
 function BooleanSwitchWidget({ field, value, onChange, disabled }: WidgetProps) {
@@ -720,6 +744,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'boolean/file': BooleanFileWidget,
   'boolean/signature': BooleanSignatureWidget,
   'date/simple': DateWidget,
+  'date/datetime': DateTimeWidget,
   'selection/select': SelectionWidget,
   'selection/linked': SelectionLinkedWidget,
   'relation/search': RelationSearchWidget,

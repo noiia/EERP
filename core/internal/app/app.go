@@ -38,6 +38,7 @@ import (
 	authmodule "core/modules/auth"
 	"core/modules/crminheritdemo"
 	cronmodule "core/modules/cron"
+	eventmodule "core/modules/event"
 	"core/modules/propertymanagement"
 	"core/modules/sale"
 	"core/modules/warehouse"
@@ -669,6 +670,29 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	srv.Echo().POST("/api/v1/website_page", pageH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
 	srv.Echo().PUT("/api/v1/website_page/:id", pageH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
 
+	// event / event_availability: validation (and event defaults) in front of the generic writes.
+	for table, mw := range map[string]echo.MiddlewareFunc{
+		"event": eventmodule.ValidateEventBody, "event_availability": eventmodule.ValidateAvailabilityBody,
+	} {
+		h := handlers[table]
+		srv.Echo().POST("/api/v1/"+table, h.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
+		srv.Echo().PUT("/api/v1/"+table+"/:id", h.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
+	}
+	eventH := eventmodule.NewHandler(app.DB, eventmodule.NewService(app.DB, chatter.NewRepository(app.DB), configContent.SiteURL))
+	// event_booking writes go through the booking service (seat accounting);
+	// a booking is cancelled, never deleted; a session with confirmed
+	// bookings can't be deleted nor move to another event. seats_taken is
+	// read-only on the generic session update and capped by capacity in the DB.
+	bookingH := handlers["event_booking"]
+	srv.Echo().POST("/api/v1/event_booking", eventH.StaffBook(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().PUT("/api/v1/event_booking/:id", eventH.StaffUpdate(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().DELETE("/api/v1/event_booking/:id", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().POST("/api/v1/event_booking/:id/restore", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	sessionH := handlers["event_session"]
+	srv.Echo().POST("/api/v1/event_session", sessionH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventmodule.ValidateSessionBody)
+	srv.Echo().PUT("/api/v1/event_session/:id", sessionH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventmodule.ValidateSessionBody, eventH.GuardSessionUpdate)
+	srv.Echo().DELETE("/api/v1/event_session/:id", eventH.DeleteSession, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver
 	// because ActiveGateMiddleware keys on the first path segment ("public").
@@ -677,33 +701,61 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
 		publicGroup.GET("/site", routing.PublicSite)
+		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
+		publicGroup.GET("/event/:id/slots", eventH.PublicSlots)
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
 
-		// Seed the published-pages selection once (never overwrite an admin's choice).
+		// Seed the published selections once (never overwrite an admin's choice).
 		siteSettings := settings.NewRepository(app.DB)
-		pagesKey := website.PublicKey("website_page")
-		if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, pagesKey); err != nil {
-			common.Logger.Warn("website: reading the published-pages selection failed; not seeding it", zap.Error(err))
-		} else if !found {
-			sel, _ := json.Marshal(website.Selection{
+		for table, sel := range map[string]website.Selection{
+			"website_page": {
 				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout"},
 				Filter: map[string]string{"published": "true"},
-			})
-			if err := siteSettings.Set(ctx, siteTenant, uuid.Nil, pagesKey, string(sel)); err != nil {
-				common.Logger.Warn("website: seeding the published-pages selection failed", zap.Error(err))
+			},
+			"event": {
+				Fields: []string{"name", "description", "location", "kind", "slot_minutes", "timezone"},
+				Filter: map[string]string{"published": "true"},
+			},
+		} {
+			key := website.PublicKey(table)
+			if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, key); err != nil {
+				common.Logger.Warn("website: reading the published selection failed; not seeding it", zap.String("table", table), zap.Error(err))
+			} else if !found {
+				enc, _ := json.Marshal(sel)
+				if err := siteSettings.Set(ctx, siteTenant, uuid.Nil, key, string(enc)); err != nil {
+					common.Logger.Warn("website: seeding the published selection failed", zap.String("table", table), zap.Error(err))
+				}
 			}
 		}
 
-		siteAuth := authHandler.ForWebsite(siteTenant, userRepo)
+		siteAuth := authHandler.ForWebsite(siteTenant, userRepo, configContent.SiteURL)
 		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
-		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout,
-			auth.SeedWebsiteRoles(ctx, app.DB, siteTenant))
+		seedErr := auth.SeedWebsiteRoles(ctx, app.DB, siteTenant)
+		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout, seedErr)
+		if seedErr == nil && configContent.SiteURL == "" {
+			common.Logger.Warn("⚠️  site_url not set — website verification emails will carry a relative link")
+		}
 
 		websiteJWT := authmw.WebsiteJWTMiddleware(tokenSvc)
 		siteMe := website.NewMeHandler(userRepo)
 		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
 		websiteGroup.GET("/me", siteMe.Get)
 		websiteGroup.PUT("/me", siteMe.Put)
+		websiteGroup.GET("/me/bookings", eventH.MyBookings)
+		// Email verification (owner session only) attaches earlier anonymous bookings.
+		siteVerify := website.NewVerifyHandler(app.DB, eventmodule.AttachBookings, userRepo, configContent.SiteURL)
+		websiteGroup.POST("/me/verify", siteVerify.Verify)
+		websiteGroup.POST("/me/verify/resend", siteVerify.Resend)
+		websiteGroup.POST("/me/bookings/:id/cancel", eventH.CancelMine)
+
+		// Bookings: anonymous visitors OR logged-in website users. The site
+		// tenant is stamped first; a website token's tenant is the same.
+		bookings := srv.Echo().Group("/api/v1/website/bookings",
+			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
+			website.TenantMiddleware(siteTenant),
+			authmw.OptionalWebsiteJWTMiddleware(tokenSvc))
+		bookings.POST("", eventH.Book)
+		bookings.POST("/cancel", eventH.CancelByToken)
 	} else {
 		// No site tenant: the Next proxy still needs an answer.
 		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)

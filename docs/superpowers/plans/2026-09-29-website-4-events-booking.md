@@ -63,7 +63,7 @@
 **Interfaces:**
 - Produces: structs `Event`, `EventSession`, `EventAvailability`, `EventBooking` (tables `event`, `event_session`, `event_availability`, `event_booking`); `KindSessions = "sessions"`, `KindAppointment = "appointment"`; `BookingConfirmed = "confirmed"`, `BookingCancelled = "cancelled"`; `ValidateEventBody` middleware; `(*Handler).PublicSessions` (`GET /api/v1/public/event/:id/sessions`).
 
-- [ ] **Step 1: Scaffold** (as in the command above), then write the failing tests
+- [x] **Step 1: Scaffold** (as in the command above), then write the failing tests
 
 `validate_test.go`:
 
@@ -123,12 +123,12 @@ func TestValidateAvailability(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `rtk make run-back-tests BACKTESTPATH=./modules/event/... ARGS="-run TestValidate"`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `models.go`:
 
@@ -292,12 +292,12 @@ func (h *Handler) PublicSessions(c *echo.Context) error {
 
 `app.go`: mount `ValidateEventBody` in front of the generic POST/PUT `/api/v1/event` and `ValidateAvailabilityBody` for `/api/v1/event_availability` (same pattern as spec 2's page validation); `publicGroup.GET("/event/:id/sessions", eventHandler.PublicSessions)`; seed the `event` selection (`fields`: all declared, `filter`: `{"published":"true"}`) exactly like spec 2 seeds `website_page`.
 
-- [ ] **Step 4: Run to verify, plus all backend** — also an app test (append to `core/internal/app/website_test.go`): create an unpublished event with one future session → `GET /api/v1/public/event/<id>/sessions` returns `data: []`; publish it → one session with `seats_left` = capacity.
+- [x] **Step 4: Run to verify, plus all backend** — also an app test (append to `core/internal/app/website_test.go`): create an unpublished event with one future session → `GET /api/v1/public/event/<id>/sessions` returns `data: []`; publish it → one session with `seats_left` = capacity.
 
 Run: `rtk make run-back-tests`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add core/modules/event core/modules/all/all.go core/internal/app core-front/pnpm-lock.yaml
@@ -314,7 +314,7 @@ rtk git commit -m "feat(event): event, session, availability and booking models;
 **Interfaces:**
 - Produces: `type Slot struct{ Start, End time.Time }`; `type SlotRules struct{ SlotMinutes, BufferMinutes, HorizonDays, MinNoticeHours int; Loc *time.Location }`; `ExpandSlots(r SlotRules, avail []EventAvailability, from, to, now time.Time) []Slot` (sorted, UTC-comparable); `RulesFor(e Event) (SlotRules, error)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package event
@@ -385,12 +385,12 @@ func TestExpandSlots(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `rtk make run-back-tests BACKTESTPATH=./modules/event/... ARGS="-run TestExpandSlots"`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** `slots.go`
+- [x] **Step 3: Implement** `slots.go`
 
 ```go
 package event
@@ -461,11 +461,11 @@ func clock(day time.Time, hhmm string, loc *time.Location) (time.Time, bool) {
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: same as Step 2. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add core/modules/event/slots.go core/modules/event/slots_test.go
@@ -484,7 +484,7 @@ rtk git commit -m "feat(event): slot expansion from weekly availability, DST-saf
 - Consumes: Task 1 models, Task 2 `ExpandSlots`/`RulesFor`; spec 3 `mail.Enqueue(ctx, ex, mail.Message)`; `chatter.Repository.Create`.
 - Produces: `NewService(db *orm.DB, chat *chatter.Repository, siteURL string) *Service`; `type BookRequest struct{ EventID uuid.UUID; SessionID *uuid.UUID; SlotStart *time.Time; Seats int; Email, Name, Phone string; UserID *uuid.UUID }`; `(*Service).Book(ctx, tenant uuid.UUID, req BookRequest) (EventBooking, error)`; `(*Service).CancelByToken(ctx, tenant uuid.UUID, token string) error`; `(*Service).CancelByID(ctx, tenant, id uuid.UUID, ownerID *uuid.UUID) error` (ownerID nil = staff); `(*Service).Slots(ctx, tenant, eventID uuid.UUID, from, to time.Time) ([]SlotAvailability, error)` with `SlotAvailability{Start, End time.Time; SeatsLeft int}`; errors `ErrFull`, `ErrNotBookable`, `ErrBadRequest` (wrapping a message), `ErrNotFound`.
 
-- [ ] **Step 1: Write the failing tests** `booking_test.go`
+- [x] **Step 1: Write the failing tests** `booking_test.go`
 
 ```go
 package event
@@ -714,12 +714,12 @@ func TestCancel(t *testing.T) {
 
 Add a tiny helper in `booking_test.go`: `func modelTenant(t uuid.UUID) model.BaseModel { return model.BaseModel{TenantID: t} }` (import `core/orm/model`). If `core/modules/contact` isn't registered as a migratable module name `"contact"`, use the name its `Name()` returns.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `rtk make run-back-tests BACKTESTPATH=./modules/event/... ARGS="-run 'TestBook|TestCancel'"`
 Expected: FAIL — `undefined: NewService`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `booking.go`:
 
@@ -1045,12 +1045,12 @@ Add `isNoRows(err) bool` (`errors.Is(err, pgx.ErrNoRows) || errors.Is(err, orm.E
 
 `emails.go` — `confirmationEmail(ev Event, b EventBooking, when time.Time, siteURL string) (eerpmail.Message, error)` and `cancellationEmail(b EventBooking) eerpmail.Message` using `text/template` + `html/template` constants: subject `Booking confirmed: {{event}}` / `Booking cancelled`; body lists event name, local date/time (`when.In(loc).Format("Monday 2 January 2006, 15:04 MST")`), seats, location, and the cancel link `{{siteURL}}/booking/cancel?token={{token}}`. `To` = `b.Email`. HTML-escape through `html/template`. (English copy in v1; per-locale templates are a follow-up — note it in the docs task.)
 
-- [ ] **Step 4: Run to verify, plus the package**
+- [x] **Step 4: Run to verify, plus the package**
 
 Run: `rtk make run-back-tests BACKTESTPATH=./modules/event/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add core/modules/event core/internal/types/config.go eerp-config*.example.json
@@ -1081,7 +1081,7 @@ rtk git commit -m "feat(event): booking service — atomic seats, slot locks, co
 
 `StaffBook` sets `BookRequest.Staff = true` (Task 3), so staff can book unpublished events.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `jwt_test.go` (spec 1 style):
 
@@ -1178,12 +1178,12 @@ func TestBookingFlow(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `rtk make run-back-tests BACKTESTPATH=./internal/... ARGS="-run 'OptionalWebsiteJWT|TestBookingFlow'"`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `OptionalWebsiteJWTMiddleware` in `jwt.go`:
 
@@ -1254,12 +1254,12 @@ Handlers: `PublicSlots` (parse `from`/`to` RFC 3339; missing → today..+7 days)
 
 Route collision: `/api/v1/website/bookings` (this group) and `/api/v1/website/me/...` (spec 1's `websiteGroup` with `WebsiteJWTMiddleware`) are distinct paths; Echo resolves by full path — confirm with the test.
 
-- [ ] **Step 4: Run to verify, plus all backend; lint**
+- [x] **Step 4: Run to verify, plus all backend; lint**
 
 Run: `rtk make run-back-tests` then (from `core/`) `rtk golangci-lint run ./...`
 Expected: PASS, clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add core
@@ -1279,7 +1279,7 @@ rtk git commit -m "feat(event): public slots, website bookings (anonymous or log
 - Consumes: spec 1 `CreateWebsiteUser`, `ForWebsite`; spec 3 `mail.Enqueue`.
 - Produces: `CreateWebsiteUser(ctx, tenantID, email, password, name, siteURL string)` (new trailing param) — generates a 32-byte token, stores `sha256` hex in `verify_token_hash`, `verify_expires_at = now()+48h`, enqueues "Confirm your email" with `${siteURL}/account/verify?token=<raw>`; `website.NewVerifyHandler(db *orm.DB, attach AttachFunc) *VerifyHandler`, `type AttachFunc func(ctx context.Context, tx *orm.Tx, tenant, userID uuid.UUID, email string) error`; `eventmodule.AttachBookings` matches `AttachFunc`; route `POST /api/v1/website/auth/verify` `{token}` → 204 / 400 (unknown/expired).
 
-- [ ] **Step 1: Write the failing test** (append to `website_test.go`)
+- [x] **Step 1: Write the failing test** (append to `website_test.go`)
 
 ```go
 // Review Focus #5.
@@ -1333,12 +1333,12 @@ func TestVerifyAttachesHistoryOnlyAfterVerification(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `rtk make run-back-tests BACKTESTPATH=./internal/app/... ARGS="-run TestVerifyAttaches"`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `CreateWebsiteUser`'s transaction, after creating the user and role link:
 
@@ -1421,12 +1421,12 @@ func AttachBookings(ctx context.Context, tx *orm.Tx, tenant, userID uuid.UUID, e
 
 `app.go`: `websiteAuthGroup.POST("/verify", website.NewVerifyHandler(app.DB, eventmodule.AttachBookings).Verify)`.
 
-- [ ] **Step 4: Run to verify, plus all backend**
+- [x] **Step 4: Run to verify, plus all backend**
 
 Run: `rtk make run-back-tests`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add core
@@ -1445,7 +1445,7 @@ rtk git commit -m "feat(website): email verification attaches earlier bookings t
 **Interfaces:**
 - Produces: FrontModule `event` (registered under the Website app's header menu — set `module.json` `app_mode: false` and contribute routes under `/website/events…` so they appear in the Website app menu; check how header menus group routes by module and, if grouping is per-module, use `app_mode: true` with display name "Events" instead) with routes `/website/events` (tree), `/website/events/:id` (form), `/website/bookings` (tree: event, start, name, email, seats, status; filters by status), `/website/bookings/:id` (form: name/phone editable, a "Cancel booking" header button → `ctx.setFieldAndCommit({ status: 'cancelled' })`); the event form has notebook pages Sessions (o2m `event_session` via `event_id`, visible when `kind = sessions`), Availability (o2m `event_availability`, visible when `kind = appointment`), Bookings (o2m `event_booking`), fields for appointment settings visible when `kind = appointment`, and a header button `event.duplicateWeekly`.
 
-- [ ] **Step 1: Write the failing test** `EventViews.test.ts`
+- [x] **Step 1: Write the failing test** `EventViews.test.ts`
 
 ```ts
 import { describe, expect, it, vi } from 'vitest'
@@ -1480,12 +1480,12 @@ describe('event views', () => {
 
 (Check `RelationOps.list`'s real signature/return shape in `relation-ops.tsx` and adapt the stub and the handler to it. "One week apart" is added in UTC days here; note in the handler comment that a session crossing a DST change keeps its UTC time — staff adjust by hand, acceptable for v1.)
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `rtk pnpm --filter @eerp/event vitest run` (package name from the scaffold)
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** the descriptors following `quote_views.ts` (o2m + header buttons) and `crm_views.ts` (tree/form/dashboard). The duplicate handler:
+- [x] **Step 3: Implement** the descriptors following `quote_views.ts` (o2m + header buttons) and `crm_views.ts` (tree/form/dashboard). The duplicate handler:
 
 ```ts
 registerHeaderButtonAction({
@@ -1516,12 +1516,12 @@ registerHeaderButtonAction({
 
 Outbox page: MUI table (to, subject, status chip, attempts, last error, created) with a status filter and a "Retry" button on failed rows → `retryOutbox(id)` → refresh. Translate labels.
 
-- [ ] **Step 4: Run to verify; typecheck; smoke**
+- [x] **Step 4: Run to verify; typecheck; smoke**
 
 Run: the Step 2 command, `rtk tsc --noEmit -p core-front/apps/shell`. Manual: create an event with sessions, duplicate weekly, book from the ERP, cancel it, check seats.
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add core/modules/event core-front/apps/shell
@@ -1541,7 +1541,7 @@ rtk git commit -m "feat(event): ERP views for events, sessions, availability, bo
 - Consumes: Go routes from Task 4/5; spec 1 `SITE_ACCESS_COOKIE`; spec 2 `PublicDataSource`, `BlockView`, `BlockSettings`.
 - Produces: `POST /api/site-booking` (BFF) → Go `POST /api/v1/website/bookings`, adding `Authorization: Bearer <site access cookie>` when present, passing status + `{error}` through; block configs `{ event_id: string }`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `route.test.ts` (reuse the cookie-jar mock from spec 1's site-auth tests):
 
@@ -1596,12 +1596,12 @@ it('a full session is shown but not selectable', () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `rtk pnpm --filter shell vitest run src/website app/api/site-booking`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `EventBookingBlock` (server): `source.get('event', cfg.event_id)` (null → render nothing), fetch `${API_BASE}/api/v1/public/event/${id}/sessions` (`next: { tags: ['event'], revalidate: 30 }`), map to `choices` (`label` = `Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'short', timeZone: event.timezone })`), render name/description/location + `<BookingForm kind="session" …/>`. Seats-left numbers are 30 s stale at worst; the server's 409 is the truth, and the form says so ("Just taken — pick another time").
 - `AppointmentBookingBlock`: server part renders the event header; client part `SlotPicker` fetches `/api/v1/public/event/${id}/slots?from=&to=` for a 7-day window directly (public, via the gateway), with previous/next week buttons, grouped by day, then the same `BookingForm kind="slot"` (posts `slot_start`).
@@ -1614,12 +1614,12 @@ Expected: FAIL.
 
 Translations for every string into `shell.pot` + `fr.po`.
 
-- [ ] **Step 4: Run to verify; typecheck; end-to-end smoke**
+- [x] **Step 4: Run to verify; typecheck; end-to-end smoke**
 
 Run: Step 2 command, `rtk pnpm -r vitest run`, `rtk tsc --noEmit -p core-front/apps/shell`. Manual, with Mailpit up: publish an event page with a booking block, book anonymously, see the email in Mailpit (`http://127.0.0.1:8025`), follow the cancel link, cancel; sign up with the same address, verify from the Mailpit email, see the (cancelled) booking under My bookings; book an appointment slot, see it disappear from the picker once full.
 Expected: PASS and the flow works.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add core-front/apps/shell
@@ -1634,18 +1634,18 @@ rtk git commit -m "feat(website): event and appointment booking blocks, cancel a
 - Modify: `CLAUDE.md`, `core-front/CLAUDE.md`, `docs/superpowers/specs/2026-09-29-website-4-events-booking-design.md`, `docs/adr/ADR-024-public-access-and-website-identities.md` (verification section)
 - Create: `docs/adr/ADR-026-booking-capacity.md`
 
-- [ ] **Step 1: Write**
+- [x] **Step 1: Write**
 
 ADR-026 — why seats are captured with a guarded `UPDATE` (sessions) and an advisory lock + recount (computed slots, no row to lock); why slots are computed rather than stored (no regeneration job, availability edits take effect immediately); why ERP deletes of bookings are refused (seat counts can't drift); at-least-once emails via the outbox; per-event time zone; contact linking by email without a unique index (ponytail, with the upgrade path). Include a mermaid sequence of `POST /website/bookings` (validate → capture → contact → insert → enqueue → commit → chatter log).
 
 Root `CLAUDE.md`: a `core/modules/event` bullet (tables, service, routes, overrides, `site_url` config). `core-front/CLAUDE.md`: rows for the booking blocks and `/api/site-booking`. Spec 4: record the deltas listed in Global Constraints, plus English-only email copy in v1.
 
-- [ ] **Step 2: Full verification**
+- [x] **Step 2: Full verification**
 
 Run: `rtk make run-back-tests`, `rtk pnpm -r vitest run`, (from `core/`) `rtk golangci-lint run ./...`
 Expected: PASS / clean.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 rtk git add CLAUDE.md core-front/CLAUDE.md docs

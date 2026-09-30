@@ -1,6 +1,6 @@
 # Spec 4 — Events and booking
 
-**Date:** 2026-09-29 · **Status:** draft · **Depends on:** specs [1](2026-09-29-website-1-public-access-design.md),
+**Date:** 2026-09-29 · **Status:** implemented (see Implementation notes; [ADR-026](../../adr/ADR-026-booking-capacity.md)) · **Depends on:** specs [1](2026-09-29-website-1-public-access-design.md),
 [2](2026-09-29-website-2-core-design.md), [3](2026-09-29-website-3-mail-outbox-design.md)
 · **Overview:** [website overview](2026-09-29-website-overview.md)
 
@@ -101,3 +101,33 @@ logic (Create override on `event_booking`), never a raw insert.
 ## Out of scope
 Payment, waiting lists, reminders before the event (a cron action can add it later), staff
 assignment per appointment, iCal export.
+
+## Implementation notes
+Where the build differs from this draft:
+- **Time zone is per event** (`event.timezone`, IANA, default `Europe/Paris`) instead of a
+  workspace `general.timezone` setting: events in different places can differ, and no new
+  settings endpoint is needed. Emails and the site show times in that zone.
+- **Session window columns are `starts_at`/`ends_at`**: the ORM doesn't quote identifiers and
+  `end` is reserved in Postgres.
+- **Contact linking is SQL on the `contact` table** (select by `lower(email)` in the tenant,
+  insert if absent): `contact` lives in an internal, non-importable package. No unique index on
+  contact email yet (ADR-026).
+- **`site_url`** (new config key, the public site origin) builds email links;
+  `frontend_base_url` is internal (pdf-service) and unsuitable.
+- **ERP-side `event_booking`**: POST books through the service, PUT changes only name/phone or
+  sets `status: "cancelled"`, DELETE is refused (409) — seat counts can't drift.
+- **Verification is `POST /api/v1/website/me/verify`** (not `/website/auth/verify`): it must come
+  from the account's own session, so a leaked link can't verify an address into someone else's
+  account; `POST /website/me/verify/resend` re-issues it. The site's `/account/verify` page asks
+  the visitor to sign in first and spends the token on a button click (link scanners prefetch
+  GETs).
+- **"Duplicate weekly × N"** is the **Repeat weekly** header button, N read from a display-only
+  field beside the sessions table (module views have no DOM, so no prompt). Copies keep their UTC
+  time across a DST change.
+- **`picture` on `event`** is not built; events publish name, description, location, kind,
+  slot_minutes and timezone. `max_seats_per_booking` isn't public, so the site caps seats at
+  seats-left and 10, and Go enforces the event's real maximum (400).
+- **Emails are English-only in v1** (Go has no per-visitor locale).
+- The site books through the BFF route `POST /api/site-booking` (visitor token forwarded, never
+  the ERP one); seats-left and slot reads are cached 60 s and expired on every site booking or
+  cancel — Go's 409 is the truth.

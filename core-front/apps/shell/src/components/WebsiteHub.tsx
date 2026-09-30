@@ -14,6 +14,7 @@ const PAGES = [
   { path: '/settings/website/published', title: 'Published data', description: 'Which tables and columns the public website may read.' },
   { path: '/settings/website/routing', title: 'Routing', description: 'Serve the website from a path or its own domain.' },
   { path: '/settings/website/users', title: 'Website users', description: 'Visitor accounts registered on the website.' },
+  { path: '/settings/website/outbox', title: 'Outgoing emails', description: 'Booking and account emails, their delivery status, and retries.' },
 ] as const
 
 export default function WebsiteHub() {

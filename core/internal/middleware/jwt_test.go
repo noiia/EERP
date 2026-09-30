@@ -268,3 +268,38 @@ func TestAudienceIsEnforced(t *testing.T) {
 		})
 	}
 }
+
+func TestOptionalWebsiteJWT(t *testing.T) {
+	svc := newSvc()
+	siteTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}, Kind: auth.KindWebsite}, nil, nil, nil)
+	erpTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}}, nil, nil, nil)
+	for _, tt := range []struct {
+		name, header string
+		want         int
+		wantIdentity bool
+	}{
+		{"anonymous", "", http.StatusOK, false},
+		{"website token", "Bearer " + siteTok, http.StatusOK, true},
+		{"erp token", "Bearer " + erpTok, http.StatusForbidden, false},
+		{"garbage", "Bearer x", http.StatusUnauthorized, false},
+		{"non-bearer scheme", "Basic x", http.StatusUnauthorized, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := testEcho()
+			var got bool
+			e.GET("/t", func(c *echo.Context) error {
+				_, got = auth.IdentityFromContext(c.Request().Context())
+				return c.NoContent(http.StatusOK)
+			}, authmw.OptionalWebsiteJWTMiddleware(svc))
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tt.want || got != tt.wantIdentity {
+				t.Errorf("code=%d identity=%v, want %d %v", rec.Code, got, tt.want, tt.wantIdentity)
+			}
+		})
+	}
+}

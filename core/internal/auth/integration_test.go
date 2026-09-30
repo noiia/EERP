@@ -681,8 +681,30 @@ func TestIntegration_CreateWebsiteUser_EmailTakenCaseInsensitive(t *testing.T) {
 	}
 	email := "Dup-" + uuid.NewString() + "@Example.test"
 	seedUser(t, app.DB, email, "pw-123456789", tenantID)
-	_, err := auth.NewUserRepository(app.DB).CreateWebsiteUser(context.Background(), tenantID, strings.ToLower(email), "pw-123456789", "Dup")
+	_, err := auth.NewUserRepository(app.DB).CreateWebsiteUser(context.Background(), tenantID, strings.ToLower(email), "pw-123456789", "Dup", "")
 	if !errors.Is(err, auth.ErrEmailTaken) {
 		t.Fatalf("err = %v, want ErrEmailTaken", err)
+	}
+}
+
+// website_admin runs the site's events and reads its outbox (plan 4).
+func TestIntegration_SeedWebsiteRoles_EventPermissions(t *testing.T) {
+	app, _ := integrationSetup(t)
+	tenantID := newTenant(t, app)
+	if err := auth.SeedWebsiteRoles(context.Background(), app.DB, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"event:*:*", "event_session:*:*", "event_availability:*:*", "event_booking:*:*",
+		"mail_outbox:mail_outbox:read", "mail_outbox:mail_outbox:write"} {
+		var n int
+		if err := app.DB.QueryRow(context.Background(), `
+			SELECT count(*) FROM role_permissions rp
+			JOIN roles r ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id
+			WHERE r.tenant_id = $1 AND r.technical_name = 'website_admin' AND p.code = $2`, tenantID, code).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("website_admin lacks %s", code)
+		}
 	}
 }

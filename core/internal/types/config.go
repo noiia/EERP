@@ -142,6 +142,9 @@ type Config struct {
 	// generation is simply not mounted, same posture as the picture service.
 	PDFServiceURL   string `json:"pdf_service_url" needed:"false"`
 	FrontendBaseURL string `json:"frontend_base_url" needed:"false"`
+	// SiteURL is the public website origin, used to build links in
+	// customer emails (e.g. a booking's cancel link).
+	SiteURL string `json:"site_url" needed:"false"`
 	// NatsURL switches report rendering from a direct HTTP call to
 	// pdf-service onto NATS request-reply (docs/roadmaps/pdf-reports.md
 	// Phase 5) — N pdf-service replicas subscribed to the same queue group

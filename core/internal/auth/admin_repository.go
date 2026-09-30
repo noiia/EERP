@@ -3,11 +3,15 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
+	"core/internal/mail"
 	"core/orm"
 	"core/orm/model"
 
@@ -248,8 +252,10 @@ func (r *RoleRepository) UpdateRole(ctx context.Context, tenantID, id uuid.UUID,
 var ErrEmailTaken = errors.New("email already registered")
 
 // CreateWebsiteUser creates a kind=website user holding website_user, in one
-// transaction. email must already be normalised (trimmed, lower-cased).
-func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name string) (Users, error) {
+// transaction, together with its email-verification token (only the sha256
+// is stored, valid 48h) and the "Confirm your email" mail linking to
+// siteURL/account/verify. email must already be normalised (trimmed, lower-cased).
+func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name, siteURL string) (Users, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return Users{}, fmt.Errorf("user: create website: %w", err)
@@ -270,14 +276,58 @@ func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UU
 		if created, err = r.users.WithTx(tx).Create(ctx, u); err != nil {
 			return err
 		}
-		_, err = orm.MustRepo[UserRoles](r.db).WithTx(tx).Create(ctx,
-			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)})
+		if _, err := orm.MustRepo[UserRoles](r.db).WithTx(tx).Create(ctx,
+			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)}); err != nil {
+			return err
+		}
+		sent, err := issueVerification(ctx, tx, tenantID, created.ID, siteURL)
+		if err == nil && !sent {
+			err = errors.New("verification token not set")
+		}
 		return err
 	})
 	if err != nil {
 		return Users{}, fmt.Errorf("user: create website: %w", mapUserWriteErr(err))
 	}
 	return created, nil
+}
+
+// ResendVerification replaces a still-unverified website user's token (the
+// old link stops working) and re-queues the mail. A verified, disabled or
+// unknown account is a silent no-op.
+func (r *UserRepository) ResendVerification(ctx context.Context, tenantID, userID uuid.UUID, siteURL string) error {
+	return orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		_, err := issueVerification(ctx, tx, tenantID, userID, siteURL)
+		return err
+	})
+}
+
+// issueVerification sets a fresh 48h email-verification token on an
+// unverified, live website user and queues the "Confirm your email" mail, in
+// tx. Only the token's sha256 is stored; the raw one only travels in the
+// mail. Reports false (nothing sent) when no such user matched.
+func issueVerification(ctx context.Context, tx *orm.Tx, tenantID, userID uuid.UUID, siteURL string) (bool, error) {
+	tok := make([]byte, 32)
+	if _, err := rand.Read(tok); err != nil {
+		return false, err
+	}
+	raw := hex.EncodeToString(tok)
+	sum := sha256.Sum256([]byte(raw))
+	var email string
+	err := tx.QueryRow(ctx, `
+		UPDATE users SET verify_token_hash = $3, verify_expires_at = now() + interval '48 hours', updated_at = now()
+		WHERE id = $1 AND tenant_id = $2 AND kind = 'website' AND email_verified_at IS NULL AND deleted_at IS NULL
+		RETURNING email`, userID, tenantID, hex.EncodeToString(sum[:])).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, mail.Enqueue(ctx, tx, mail.Message{TenantID: tenantID, To: email, Subject: "Confirm your email",
+		Text: "Confirm your email address to see your bookings:\n\n" + strings.TrimRight(siteURL, "/") +
+			"/account/verify?token=" + raw + "\n\nThis link expires in 48 hours. " +
+			"If you didn't create this account, you can ignore this email."})
 }
 
 // mapUserWriteErr maps a violation of idx_users_email_live to ErrEmailTaken;

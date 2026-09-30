@@ -1,7 +1,8 @@
-import type { Block, HeroConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, TextConfig } from '../types'
+import type { Block, BookingConfig, HeroConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, TextConfig } from '../types'
+import { AppointmentBookingBlock } from './AppointmentBookingBlock'
+import { EventBookingBlock } from './EventBookingBlock'
 import { HeroBlock } from './HeroBlock'
 import { ImageBlock } from './ImageBlock'
-import { PendingBlock } from './PendingBlock'
 import { RecordDetailBlock } from './RecordDetailBlock'
 import { RecordListBlock } from './RecordListBlock'
 import { TextBlock } from './TextBlock'
@@ -16,6 +17,8 @@ export async function BlockView({ block, source, params }: { block: Block; sourc
     case 'hero': return <HeroBlock config={c as unknown as HeroConfig} />
     case 'record_list': return RecordListBlock({ config: c as unknown as RecordListConfig, source })
     case 'record_detail': return RecordDetailBlock({ config: c as unknown as RecordDetailConfig, source, id: params.id })
-    default: return <PendingBlock />
+    case 'event_booking': return EventBookingBlock({ config: c as unknown as BookingConfig, source })
+    case 'appointment_booking': return AppointmentBookingBlock({ config: c as unknown as BookingConfig, source })
+    default: return null
   }
 }

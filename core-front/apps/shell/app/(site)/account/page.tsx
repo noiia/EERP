@@ -7,6 +7,7 @@ import { T } from '@eerp/core-front'
 import { getSiteIdentity } from '@/lib/site-session'
 import { getWebsiteMe } from '@/website/account'
 import { LogoutButton, ProfileForm } from '@/website/AccountForm'
+import { MyBookings } from './MyBookings'
 
 // The website visitor's own account page (ADR-024).
 export default async function AccountPage() {
@@ -21,10 +22,9 @@ export default async function AccountPage() {
         </Stack>
         <ProfileForm me={me} />
         <Divider />
-        {/* Filled by website spec 4 (bookings). */}
         <section>
           <Typography variant="h5" component="h2" gutterBottom><T text="My bookings" /></Typography>
-          <Typography color="text.secondary"><T text="Your bookings will appear here." /></Typography>
+          <MyBookings verified={me.email_verified} />
         </section>
       </Stack>
     </Container>

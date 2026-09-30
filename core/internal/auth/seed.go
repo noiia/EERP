@@ -311,7 +311,9 @@ func SeedWebsiteRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 			return fmt.Errorf("seed website roles: %w", err)
 		}
 	}
-	for _, code := range []string{"settings:website:read", "settings:website:write", "website_admin:*:*"} {
+	for _, code := range []string{"settings:website:read", "settings:website:write", "website_admin:*:*",
+		"event:*:*", "event_session:*:*", "event_availability:*:*", "event_booking:*:*",
+		"mail_outbox:mail_outbox:read", "mail_outbox:mail_outbox:write"} {
 		p, err := perms.UpsertPartial(ctx,
 			Permissions{ID: seedUUID(tenantID, "permission:"+code), Code: code, Description: "Website admin (default)", Module: "website"},
 			[]string{"code"}, "deleted_at IS NULL", "")

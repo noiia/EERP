@@ -630,8 +630,6 @@ msgstr "affichés ce mois-ci"
 msgid "shown"
 msgstr "affichés"
 
-msgid "Booking will be available soon."
-msgstr "Réservation bientôt disponible."
 
 msgid "ERP"
 msgstr "ERP"
@@ -885,3 +883,123 @@ msgstr "Vos réservations apparaîtront ici."
 
 msgid "Staff sign-in"
 msgstr "Connexion du personnel"
+
+msgid "Outgoing emails"
+msgstr "E-mails sortants"
+
+msgid "Booking and account emails, their delivery status, and retries."
+msgstr "E-mails de réservation et de compte, leur statut d'envoi et les relances."
+
+msgid "Could not retry."
+msgstr "Relance impossible."
+
+msgid "All"
+msgstr "Tous"
+
+msgid "pending"
+msgstr "en attente"
+
+msgid "sent"
+msgstr "envoyé"
+
+msgid "Recipient"
+msgstr "Destinataire"
+
+msgid "Subject"
+msgstr "Objet"
+
+msgid "Status"
+msgstr "Statut"
+
+msgid "Attempts"
+msgstr "Tentatives"
+
+msgid "Last error"
+msgstr "Dernière erreur"
+
+msgid "Retry"
+msgstr "Relancer"
+
+msgid "Just taken — pick another time."
+msgstr "Déjà pris — choisissez un autre horaire."
+
+msgid "Too many attempts. Please wait a minute and try again."
+msgstr "Trop de tentatives. Patientez une minute puis réessayez."
+
+msgid "Booking confirmed — a confirmation email is on its way to"
+msgstr "Réservation confirmée — un e-mail de confirmation est en route vers"
+
+msgid "No dates available right now."
+msgstr "Aucune date disponible pour le moment."
+
+msgid "Full"
+msgstr "Complet"
+
+msgid "Seats"
+msgstr "Places"
+
+msgid "Book"
+msgstr "Réserver"
+
+msgid "Previous week"
+msgstr "Semaine précédente"
+
+msgid "Next week"
+msgstr "Semaine suivante"
+
+msgid "Loading"
+msgstr "Chargement"
+
+msgid "This link is invalid or was already used."
+msgstr "Ce lien est invalide ou a déjà été utilisé."
+
+msgid "Cancel this booking?"
+msgstr "Annuler cette réservation ?"
+
+msgid "Cancel booking"
+msgstr "Annuler la réservation"
+
+msgid "Your booking is cancelled."
+msgstr "Votre réservation est annulée."
+
+msgid "Confirm your email address"
+msgstr "Confirmez votre adresse e-mail"
+
+msgid "Confirm my email"
+msgstr "Confirmer mon e-mail"
+
+msgid "Your email is confirmed. Your earlier bookings now appear in your account."
+msgstr "Votre e-mail est confirmé. Vos réservations précédentes apparaissent maintenant dans votre compte."
+
+msgid "confirmed"
+msgstr "confirmée"
+
+msgid "cancelled"
+msgstr "annulée"
+
+msgid "Confirm your email to see bookings made before you signed up."
+msgstr "Confirmez votre e-mail pour voir les réservations faites avant votre inscription."
+
+msgid "Upcoming"
+msgstr "À venir"
+
+msgid "Past and cancelled"
+msgstr "Passées et annulées"
+
+msgid "Could not cancel — retry"
+msgstr "Annulation impossible — réessayer"
+
+msgid "Email sent"
+msgstr "E-mail envoyé"
+
+msgid "Could not send — retry"
+msgstr "Envoi impossible — réessayer"
+
+msgid "Resend the email"
+msgstr "Renvoyer l'e-mail"
+
+msgid "Event"
+msgstr "Événement"
+
+msgid "The block shows once the event is published."
+msgstr "Le bloc s'affiche une fois l'événement publié."

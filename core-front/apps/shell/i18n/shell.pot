@@ -421,8 +421,6 @@ msgstr ""
 msgid "shown"
 msgstr ""
 
-msgid "Booking will be available soon."
-msgstr ""
 
 msgid "ERP"
 msgstr ""
@@ -675,4 +673,124 @@ msgid "Your bookings will appear here."
 msgstr ""
 
 msgid "Staff sign-in"
+msgstr ""
+
+msgid "Outgoing emails"
+msgstr ""
+
+msgid "Booking and account emails, their delivery status, and retries."
+msgstr ""
+
+msgid "Could not retry."
+msgstr ""
+
+msgid "All"
+msgstr ""
+
+msgid "pending"
+msgstr ""
+
+msgid "sent"
+msgstr ""
+
+msgid "Recipient"
+msgstr ""
+
+msgid "Subject"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Attempts"
+msgstr ""
+
+msgid "Last error"
+msgstr ""
+
+msgid "Retry"
+msgstr ""
+
+msgid "Just taken — pick another time."
+msgstr ""
+
+msgid "Too many attempts. Please wait a minute and try again."
+msgstr ""
+
+msgid "Booking confirmed — a confirmation email is on its way to"
+msgstr ""
+
+msgid "No dates available right now."
+msgstr ""
+
+msgid "Full"
+msgstr ""
+
+msgid "Seats"
+msgstr ""
+
+msgid "Book"
+msgstr ""
+
+msgid "Previous week"
+msgstr ""
+
+msgid "Next week"
+msgstr ""
+
+msgid "Loading"
+msgstr ""
+
+msgid "This link is invalid or was already used."
+msgstr ""
+
+msgid "Cancel this booking?"
+msgstr ""
+
+msgid "Cancel booking"
+msgstr ""
+
+msgid "Your booking is cancelled."
+msgstr ""
+
+msgid "Confirm your email address"
+msgstr ""
+
+msgid "Confirm my email"
+msgstr ""
+
+msgid "Your email is confirmed. Your earlier bookings now appear in your account."
+msgstr ""
+
+msgid "confirmed"
+msgstr ""
+
+msgid "cancelled"
+msgstr ""
+
+msgid "Confirm your email to see bookings made before you signed up."
+msgstr ""
+
+msgid "Upcoming"
+msgstr ""
+
+msgid "Past and cancelled"
+msgstr ""
+
+msgid "Could not cancel — retry"
+msgstr ""
+
+msgid "Email sent"
+msgstr ""
+
+msgid "Could not send — retry"
+msgstr ""
+
+msgid "Resend the email"
+msgstr ""
+
+msgid "Event"
+msgstr ""
+
+msgid "The block shows once the event is published."
 msgstr ""

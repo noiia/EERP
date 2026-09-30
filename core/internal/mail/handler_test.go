@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"core/internal/auth"
+	"core/orm/access"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -18,7 +18,7 @@ func call(t *testing.T, h echo.HandlerFunc, method, path, route string, tenant u
 	e := echo.New()
 	e.Add(method, route, h)
 	req := httptest.NewRequest(method, path, nil)
-	req = req.WithContext(auth.SetIdentity(req.Context(), auth.Identity{UserID: uuid.New(), TenantID: tenant}))
+	req = req.WithContext(access.WithTenant(req.Context(), tenant))
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	return rec
