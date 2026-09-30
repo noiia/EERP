@@ -28,6 +28,8 @@ export interface PublishedTable {
   table: string
   declared: string[]
   fields: string[]
+  /** Declared fields able to hold a picture (anchor fields, boolean picture flags). */
+  pictures?: string[]
   filter: Record<string, string>
 }
 export interface PublishedSelection {

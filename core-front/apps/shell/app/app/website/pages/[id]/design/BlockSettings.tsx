@@ -36,6 +36,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   const tables = published
   const current = tables.find((p) => p.table === c.table)
   const fields = current?.declared ?? []
+  const pictures = current?.pictures ?? [] // only fields that can hold a picture
   const chosen = Array.isArray(c.fields) ? (c.fields as string[]) : []
   const id = (k: string) => `block-${block.id}-${k}`
   const bookingKind = block.type === 'event_booking' ? 'sessions' : block.type === 'appointment_booking' ? 'appointment' : null
@@ -114,7 +115,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         select('padding', 'Padding', ['none', 'compact', 'normal', 'spacious'], { labels: { none: 'None', compact: 'Compact', normal: 'Normal', spacious: 'Spacious' } })]
       break
     case 'image':
-      form = [tableSelect, text('record', 'Record id'), select('field', 'Picture field', fields), text('alt', 'Alternative text'), text('href', 'Link')]
+      form = [tableSelect, text('record', 'Record id'), select('field', 'Picture field', pictures), text('alt', 'Alternative text'), text('href', 'Link')]
       break
     case 'record_list':
       form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields),
@@ -122,10 +123,10 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         <TextField key="page_size" id={id('page_size')} size="small" type="number" label={t('Records shown')}
           value={typeof c.page_size === 'number' ? c.page_size : ''} slotProps={{ htmlInput: { min: 1, max: 100 } }}
           onChange={(e) => set({ page_size: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        text('detail_slug', 'Detail page slug'), select('picture_field', 'Picture field', fields, { none: true }), filterRows()]
+        text('detail_slug', 'Detail page slug'), select('picture_field', 'Picture field', pictures, { none: true }), filterRows()]
       break
     case 'record_detail':
-      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', fields, { none: true })]
+      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true })]
       break
     case 'event_booking':
     case 'appointment_booking':

@@ -107,6 +107,20 @@ type publishedTable struct {
 	Declared []string          `json:"declared"`
 	Fields   []string          `json:"fields"`
 	Filter   map[string]string `json:"filter"`
+	// Pictures are the declared fields that can hold a picture: an anchor
+	// field that isn't a column, or a boolean column (the picture widgets'
+	// "true ⇔ a picture exists" flag). The editor's picture pickers offer only these.
+	Pictures []string `json:"pictures"`
+}
+
+func pictureFields(table string, declared []string) []string {
+	out := []string{}
+	for _, f := range declared {
+		if t, isCol := orm.ColumnGoType(table, f); !isCol || t == "bool" || t == "*bool" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // GetPublished handles GET /api/v1/settings/website/public (settings:website:read).
@@ -122,7 +136,7 @@ func (p *Publisher) GetPublished(c *echo.Context) error {
 		if sel.Fields == nil { // unpublished: [] not null, the client's contract is string[]
 			sel.Fields = []string{}
 		}
-		out = append(out, publishedTable{Table: table, Declared: declared, Fields: sel.Fields, Filter: sel.Filter})
+		out = append(out, publishedTable{Table: table, Declared: declared, Fields: sel.Fields, Filter: sel.Filter, Pictures: pictureFields(table, declared)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Table < out[j].Table })
 	return c.JSON(http.StatusOK, out)

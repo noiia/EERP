@@ -85,6 +85,21 @@ func PublicTables() map[string][]string {
 	return out
 }
 
+// ColumnGoType returns the Go type of table's column col (e.g. "bool",
+// "*bool", "string"); ok is false for an unknown table or column.
+func ColumnGoType(table, col string) (string, bool) {
+	m, ok := registry.Get(table)
+	if !ok {
+		return "", false
+	}
+	for _, f := range m.Fields {
+		if f.Column == col {
+			return f.GoType, true
+		}
+	}
+	return "", false
+}
+
 // TableHasColumn reports whether table is registered and has column col.
 func TableHasColumn(table, col string) bool {
 	m, ok := registry.Get(table)

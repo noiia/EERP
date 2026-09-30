@@ -115,4 +115,8 @@ func TestGetPublished_UnpublishedFieldsIsEmptyArray(t *testing.T) {
 	if body := rec.Body.String(); strings.Contains(body, `"fields":null`) || !strings.Contains(body, `"fields":[]`) {
 		t.Errorf("body = %s, want \"fields\":[] for the unpublished table", body)
 	}
+	// pub_thing: "picture" is an anchor (no column), "published" a bool but not declared.
+	if body := rec.Body.String(); !strings.Contains(body, `"pictures":["picture"]`) {
+		t.Errorf("body = %s, want pictures [picture]", body)
+	}
 }

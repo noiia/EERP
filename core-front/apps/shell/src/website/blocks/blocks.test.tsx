@@ -59,6 +59,19 @@ describe('blocks', () => {
     expect(screen.queryByText(/Unit price/)).toBeNull()
   })
 
+  it('record_list skips structured values (a JSON layout has no one-line form)', async () => {
+    await renderBlock(block('record_list', { table: 'website_page', fields: ['title', 'layout'], title_field: 'title' }), source([{ id: '1', title: 'Home', layout: [{ id: 'b' }] }]))
+    expect(screen.queryByText(/object Object/)).toBeNull()
+  })
+
+  it('a picture only for an anchor or a true flag, never a number field', async () => {
+    const s = source([{ id: '1', name: 'A', menu_sequence: 0, photo: false }, { id: '2', name: 'B', menu_sequence: 1, photo: true }])
+    const { container } = await renderBlock(block('record_list', { table: 't', fields: ['name'], title_field: 'name', picture_field: 'menu_sequence' }), s)
+    expect(container.querySelector('img')).toBeNull()
+    const again = await renderBlock(block('record_list', { table: 't', fields: ['name'], title_field: 'name', picture_field: 'photo' }), s)
+    expect(again.container.querySelectorAll('img')).toHaveLength(1)
+  })
+
   it('record_list on an unpublished table renders nothing', async () => {
     const { container } = await renderBlock(block('record_list', { table: 'crm', fields: ['name'], title_field: 'name' }), source(null))
     expect(container.textContent).toBe('')

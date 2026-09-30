@@ -11,7 +11,7 @@ import { PageEditor } from './PageEditor'
 import type { Block } from '@/website/types'
 
 const published = [
-  { table: 'product', declared: ['name', 'unit_price', 'reference'], fields: ['name', 'unit_price'], filter: {} },
+  { table: 'product', declared: ['name', 'unit_price', 'reference', 'picture'], fields: ['name', 'unit_price'], filter: {}, pictures: ['picture'] },
   { table: 'company', declared: ['name'], fields: [], filter: {} },
 ]
 const layout: Block[] = [
@@ -41,6 +41,8 @@ describe('PageEditor', () => {
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['product', 'company'])
     fireEvent.click(screen.getByRole('option', { name: 'product' }))
     expect(within(panel).getByRole('checkbox', { name: 'reference' })).toBeTruthy() // declared, not yet published
+    fireEvent.mouseDown(within(panel).getByLabelText(/picture field/i))
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['None', 'picture']) // not name/unit_price
   })
 
   it('flags an unpublished field and publishes it on click, keeping the published ones', async () => {

@@ -5,7 +5,7 @@ import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import { pictureUrl } from '../urls'
 import type { PublicDataSource, RecordListConfig } from '../types'
-import { FieldLines } from './fields'
+import { FieldLines, hasPicture } from './fields'
 
 export async function RecordListBlock({ config, source }: { config: RecordListConfig; source: PublicDataSource }) {
   const res = await source.list(config.table, { filter: config.filter, page_size: config.page_size ?? 12 })
@@ -17,7 +17,7 @@ export async function RecordListBlock({ config, source }: { config: RecordListCo
         const id = String(rec.id)
         const body = (
           <>
-            {config.picture_field && (
+            {hasPicture(rec, config.picture_field) && (
               <img src={pictureUrl(config.table, id, config.picture_field)} alt="" loading="lazy" style={{ width: '100%', height: 'auto' }} />
             )}
             <CardContent>

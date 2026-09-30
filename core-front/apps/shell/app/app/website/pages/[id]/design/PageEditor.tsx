@@ -24,9 +24,10 @@ const PANEL_WIDTH = 340
 /** Live preview: the public site's own BlockView, rendered server-side by a
  * Server Action (300 ms debounce, keyed by the block's type + config: moving or
  * resizing a block must not refetch its preview). */
-function BlockPreview({ block }: { block: Block }) {
+function BlockPreview({ block, version }: { block: Block; version: number }) {
   const t = useT()
-  const key = JSON.stringify({ type: block.type, config: block.config })
+  // version: bumped when the editor publishes fields — the same config then reads more data.
+  const key = JSON.stringify({ type: block.type, config: block.config, version })
   const [shown, setShown] = useState<{ key: string; node: ReactNode } | null>(null)
   useEffect(() => {
     let live = true
@@ -61,6 +62,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const [pub, setPub] = useState(published) // updated in place when a block publishes fields
+  const [pubVersion, setPubVersion] = useState(0)
   const dirty = JSON.stringify(layout) !== savedJSON
 
   useEffect(() => {
@@ -87,7 +89,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
         <BlockSettings
           block={block}
           published={pub}
-          onPublished={(tb) => setPub((p) => p.map((x) => (x.table === tb.table ? tb : x)))}
+          onPublished={(tb) => { setPub((p) => p.map((x) => (x.table === tb.table ? tb : x))); setPubVersion((v) => v + 1) }}
           onChange={(config) => setLayout((l) => updateConfig(l, block.id, config))}
           onDelete={() => { setLayout((l) => removeBlock(l, block.id)); setSelected(null) }}
         />
@@ -124,7 +126,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
                 // Phones: the public site's stacked projection, (y, x) order, no drag.
                 <Stack spacing={2}>
                   {stackOrder(layout).map((b) => (
-                    <Box key={b.id} {...frame(b, { minHeight: b.h * 40 })}><BlockPreview block={b} /></Box>
+                    <Box key={b.id} {...frame(b, { minHeight: b.h * 40 })}><BlockPreview block={b} version={pubVersion} /></Box>
                   ))}
                 </Stack>
               ) : mounted ? (
@@ -139,7 +141,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
                   onLayoutChange={(rgl) => setLayout((l) => applyGeometry(l, rgl))}
                 >
                   {layout.map((b) => (
-                    <Box key={b.id} {...frame(b)}><BlockPreview block={b} /></Box>
+                    <Box key={b.id} {...frame(b)}><BlockPreview block={b} version={pubVersion} /></Box>
                   ))}
                 </ReactGridLayout>
               ) : null}
