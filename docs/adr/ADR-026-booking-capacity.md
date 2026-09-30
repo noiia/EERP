@@ -1,0 +1,79 @@
+# ADR-026 — Booking capacity: no overbooking without a lock table
+
+**Status:** accepted — see the [events & booking spec](../superpowers/specs/2026-09-29-website-4-events-booking-design.md).
+Builds on [ADR-024](ADR-024-public-access-and-website-identities.md) (public access, website identities).
+
+## Problem
+Website visitors book seats on **event sessions** (fixed dates, a capacity) and on **appointment
+slots** (derived from a weekly availability). Many visitors can race for the last seat, staff
+book and cancel from the ERP at the same time, and each confirmed booking must produce exactly
+one confirmation email. None of this may overbook, and a seat count must never drift from the
+bookings that hold it.
+
+## Decision
+1. **Sessions: one guarded `UPDATE`.** The seat is captured by
+   `UPDATE event_session SET seats_taken = seats_taken + n WHERE id = … AND seats_taken + n <= capacity AND starts_at > now()`.
+   Postgres row locking serializes concurrent updates on the row; zero rows affected means full
+   (409). No lock table, no `SELECT … FOR UPDATE` round trip. A `CHECK (seats_taken <= capacity)`
+   also stops staff from shrinking a session below its booked seats.
+2. **Appointment slots are computed, never stored.** `ExpandSlots` turns weekly availability
+   (local wall-clock hours in the event's **own time zone**, DST-safe) into slots, dropping those
+   inside the minimum notice, past the horizon, or already full. With no row to lock, a booking
+   takes `pg_advisory_xact_lock(hashtextextended(event_id || slot_start))`, re-derives the slot
+   from the availability (a forged or stale `slot_start` is a 400), recounts confirmed seats, and
+   inserts — all in one transaction. Consequence: editing availability takes effect immediately,
+   with no regeneration job and no orphaned slot rows.
+3. **One transaction per booking, email through the outbox.** Capture, contact link, booking
+   insert and `mail.Enqueue` commit together; a rollback leaves no seat, no booking and no email.
+   Delivery is at-least-once (the outbox's contract). The chatter log on the event is posted after
+   commit, best-effort.
+4. **Bookings are cancelled, never deleted.** ERP-side: `POST /event_booking` books through the
+   same service (staff may book unpublished events), `PUT` changes only name/phone or sets
+   `status: "cancelled"` (which frees the seats), `DELETE` is a 409 "cancel instead". Changing
+   seats or target is cancel-and-rebook. Cancel is idempotent (cancel twice → 200, seats freed
+   once).
+5. **Contact linking by email, in SQL.** The `contact` module is internal (not importable), so the
+   booking selects the tenant's contact by `lower(email)` and inserts one if absent. There is no
+   unique index on contact email: two concurrent first bookings by the same new address may
+   create two contacts (ponytail — add a partial unique index on `(tenant_id, lower(email))` if
+   duplicates become a problem).
+
+```mermaid
+sequenceDiagram
+    participant V as Visitor (site)
+    participant N as Next BFF (/api/site-booking)
+    participant G as Go (POST /website/bookings)
+    participant DB as PostgreSQL
+    V->>N: event, session or slot, seats, email
+    N->>G: forward (+ visitor token if signed in)
+    G->>DB: BEGIN
+    G->>G: validate (published, seats ≤ max, future, belongs to event)
+    alt session
+        G->>DB: guarded UPDATE seats_taken (0 rows → 409)
+    else slot
+        G->>DB: advisory lock (event, slot) · re-derive slot · recount
+    end
+    G->>DB: find or insert contact by lower(email)
+    G->>DB: INSERT event_booking (cancel_token)
+    G->>DB: INSERT mail_outbox (confirmation + cancel link)
+    G->>DB: COMMIT
+    G-->>N: 201 {id, status}
+    G->>DB: chatter log on the event (best-effort)
+    N-->>V: "Booking confirmed" (seats-left cache expired)
+```
+
+## Consequences
+- Concurrency tests prove it: 20 visitors racing for 5 session seats end with exactly 5
+  bookings and `seats_taken = 5`; 6 racing for a slot with `slot_capacity` 2 end with 2.
+- Seats-left figures the site shows are hints (cached up to a minute, expired on every
+  booking/cancel through the site); the 409 is the truth, and the form answers "just taken".
+- A session's copy made with "Repeat weekly" keeps its UTC time, so a copy crossing a DST change
+  is one hour off in local time until staff adjust it.
+
+## Pitfalls
+- Never write `event_booking` or `seats_taken` with a raw insert/update elsewhere: go through the
+  booking service, or seat counts drift.
+- Slot times are validated against the availability at booking time — a slot a visitor saw may
+  legitimately be refused a minute later (availability edited, notice window passed).
+- Emails link to `site_url` (config). Unset, links are relative and useless in a mail client
+  (Go logs a warning at boot).
