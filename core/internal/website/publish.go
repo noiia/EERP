@@ -119,6 +119,9 @@ func (p *Publisher) GetPublished(c *echo.Context) error {
 		if err != nil {
 			return err
 		}
+		if sel.Fields == nil { // unpublished: [] not null, the client's contract is string[]
+			sel.Fields = []string{}
+		}
 		out = append(out, publishedTable{Table: table, Declared: declared, Fields: sel.Fields, Filter: sel.Filter})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Table < out[j].Table })

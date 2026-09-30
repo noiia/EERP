@@ -3,12 +3,17 @@ package website
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
+	"core/internal/auth"
 	"core/orm"
 
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 )
 
 type memStore map[string]string
@@ -93,5 +98,21 @@ func TestValidateSelection(t *testing.T) {
 				t.Errorf("err = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// The editor reads fields as string[]: an unpublished table must serialize [] not null.
+func TestGetPublished_UnpublishedFieldsIsEmptyArray(t *testing.T) {
+	if err := orm.Register[pubThing](orm.WithPublicFields("name", "cost", "picture")); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(auth.SetIdentity(req.Context(), auth.Identity{TenantID: uuid.New()}))
+	rec := httptest.NewRecorder()
+	if err := NewPublisher(memStore{}, uuid.New()).GetPublished(echo.New().NewContext(req, rec)); err != nil {
+		t.Fatal(err)
+	}
+	if body := rec.Body.String(); strings.Contains(body, `"fields":null`) || !strings.Contains(body, `"fields":[]`) {
+		t.Errorf("body = %s, want \"fields\":[] for the unpublished table", body)
 	}
 }

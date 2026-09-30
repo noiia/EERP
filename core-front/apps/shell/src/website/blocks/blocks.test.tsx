@@ -33,6 +33,11 @@ describe('blocks', () => {
     expect(screen.getByAltText('Pic').closest('a')).toBeNull()
   })
 
+  it('image: an unconfigured block renders nothing (no /public///picture/ request)', async () => {
+    const { container } = await renderBlock(block('image', {}), source([]))
+    expect(container.querySelector('img')).toBeNull()
+  })
+
   it('image: points at the public picture route', async () => {
     await renderBlock(block('image', { table: 'product', record: 'r1', field: 'photo', alt: 'A chair' }), source([]))
     expect(screen.getByAltText('A chair').getAttribute('src')).toBe('/api/v1/public/product/r1/picture/photo')
