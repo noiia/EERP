@@ -14,7 +14,15 @@ export interface Block {
 
 export interface TextConfig { heading?: string; body: string; align?: 'left' | 'center' | 'right' }
 export interface ImageConfig { table: string; record: string; field: string; alt: string; href?: string }
-export interface HeroConfig { title: string; subtitle?: string; cta_label?: string; cta_href?: string }
+export interface HeroConfig {
+  title: string; subtitle?: string; cta_label?: string; cta_href?: string
+  /** Horizontal / vertical placement of the content inside the block (default center / center). */
+  align?: 'left' | 'center' | 'right'; valign?: 'top' | 'center' | 'bottom'
+  /** Button size (default large) and width: its text width, or the block's full width. */
+  button_size?: 'small' | 'medium' | 'large'; button_width?: 'auto' | 'full'
+  /** Inner padding (default normal). */
+  padding?: 'none' | 'compact' | 'normal' | 'spacious'
+}
 export interface RecordListConfig {
   table: string; fields: string[]; title_field: string; filter?: Record<string, string>
   page_size?: number; display?: 'grid' | 'list'; detail_slug?: string; picture_field?: string

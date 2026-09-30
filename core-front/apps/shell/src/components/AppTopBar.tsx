@@ -536,8 +536,9 @@ export function AppTopBar({
       {/* position="fixed" (MUI's own default — spelled out here since sticky used to
           override it) pins the bar to the viewport top on every view, regardless of
           which element actually scrolls; it's no longer just "stuck" within its own
-          scroll container. */}
-      <AppBar position="fixed">
+          scroll container. Above every drawer (a permanent Drawer paper sits at
+          zIndex.drawer, over MUI's AppBar default) — only modals/popovers go higher. */}
+      <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar variant="dense">
           <PathBreadcrumbs pathname={pathname} />
           <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />

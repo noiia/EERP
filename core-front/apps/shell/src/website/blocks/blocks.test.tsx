@@ -26,6 +26,14 @@ describe('blocks', () => {
     expect(screen.getByRole('link', { name: 'Go' }).getAttribute('href')).toBe('/x')
   })
 
+  it('hero: a lone button renders no heading; size, width and alignment come from config', async () => {
+    await renderBlock(block('hero', { title: '', cta_label: 'Book', cta_href: '/book', button_size: 'small', button_width: 'full', align: 'right' }), source([]))
+    expect(screen.queryByRole('heading')).toBeNull()
+    const btn = screen.getByRole('link', { name: 'Book' })
+    expect(btn.className).toMatch(/sizeSmall/)
+    expect(btn.className).toMatch(/fullWidth/)
+  })
+
   it('hero and image drop unsafe links', async () => {
     await renderBlock(block('hero', { title: 'W', cta_label: 'Go', cta_href: 'javascript:alert(1)' }), source([]))
     expect(screen.queryByRole('link', { name: 'Go' })).toBeNull()

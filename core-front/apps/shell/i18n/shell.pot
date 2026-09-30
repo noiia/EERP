@@ -794,3 +794,54 @@ msgstr ""
 
 msgid "The block shows once the event is published."
 msgstr ""
+
+msgid "Horizontal alignment"
+msgstr ""
+
+msgid "Vertical alignment"
+msgstr ""
+
+msgid "Top"
+msgstr ""
+
+msgid "Bottom"
+msgstr ""
+
+msgid "Button size"
+msgstr ""
+
+msgid "Small"
+msgstr ""
+
+msgid "Medium"
+msgstr ""
+
+msgid "Large"
+msgstr ""
+
+msgid "Button width"
+msgstr ""
+
+msgid "Fit its text"
+msgstr ""
+
+msgid "Full width"
+msgstr ""
+
+msgid "Padding"
+msgstr ""
+
+msgid "Compact"
+msgstr ""
+
+msgid "Normal"
+msgstr ""
+
+msgid "Spacious"
+msgstr ""
+
+msgid "Publish"
+msgstr ""
+
+msgid "Not public yet — the website shows nothing for these fields:"
+msgstr ""

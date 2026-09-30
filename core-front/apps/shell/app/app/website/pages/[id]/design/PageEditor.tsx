@@ -38,7 +38,7 @@ function BlockPreview({ block }: { block: Block }) {
   if (shown?.key !== key) return <Skeleton variant="rectangular" height="100%" />
   // Inert: a preview link must not navigate away from the editor, and clicks select the block.
   return (
-    <Box sx={{ pointerEvents: 'none' }}>
+    <Box sx={{ pointerEvents: 'none', height: '100%' }}>
       {shown.node ?? <Typography variant="body2" color="text.secondary">{t('Nothing to show yet: configure this block.')}</Typography>}
     </Box>
   )
@@ -60,6 +60,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
   const [selected, setSelected] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pub, setPub] = useState(published) // updated in place when a block publishes fields
   const dirty = JSON.stringify(layout) !== savedJSON
 
   useEffect(() => {
@@ -85,7 +86,8 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
       {block ? (
         <BlockSettings
           block={block}
-          published={published}
+          published={pub}
+          onPublished={(tb) => setPub((p) => p.map((x) => (x.table === tb.table ? tb : x)))}
           onChange={(config) => setLayout((l) => updateConfig(l, block.id, config))}
           onDelete={() => { setLayout((l) => removeBlock(l, block.id)); setSelected(null) }}
         />
@@ -105,48 +107,58 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-      <Stack direction="row" spacing={1} sx={{ p: 2, alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
-        <Typography variant="h5" component="h1" sx={{ flex: 1 }}>{title}</Typography>
-        <BlockPalette onAdd={(type) => setLayout((l) => addBlock(l, type))} />
-        <Button variant="contained" onClick={() => void onSave()} disabled={saving}>{t('Save')}</Button>
-        <Button href={`/${slug}`} target="_blank" rel="noopener">{t('View on site')}</Button>
-        <Button href={erpPath(`/website/pages/${pageId}`)}>{t('Back')}</Button>
-      </Stack>
-      {status && <Alert severity={status.ok ? 'success' : 'error'} sx={{ mx: 2 }} onClose={() => setStatus(null)}>{status.text}</Alert>}
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* Same width as the public site's Container, so blocks wrap as they will there. */}
-        <Container maxWidth="lg" sx={{ py: 2, flex: 1, minWidth: 0 }}>
-          <Box ref={containerRef}>
-            {phone ? (
-              // Phones: the public site's stacked projection, (y, x) order, no drag.
-              <Stack spacing={2}>
-                {stackOrder(layout).map((b) => (
-                  <Box key={b.id} {...frame(b, { minHeight: b.h * 40 })}><BlockPreview block={b} /></Box>
-                ))}
-              </Stack>
-            ) : mounted ? (
-              <ReactGridLayout
-                layout={layout.map((b) => ({ i: b.id, x: b.x, y: b.y, w: b.w, h: b.h }))}
-                width={width}
-                // margin 16 = the public grid's gap (theme spacing 2).
-                gridConfig={{ cols: 12, rowHeight: 40, margin: [16, 16], containerPadding: [0, 0] }}
-                dragConfig={{ enabled: true }}
-                resizeConfig={{ enabled: true, handles: ['se', 'e', 's'] }}
-                compactor={verticalCompactor}
-                onLayoutChange={(rgl) => setLayout((l) => applyGeometry(l, rgl))}
-              >
-                {layout.map((b) => (
-                  <Box key={b.id} {...frame(b)}><BlockPreview block={b} /></Box>
-                ))}
-              </ReactGridLayout>
-            ) : null}
-          </Box>
-        </Container>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ p: 2, alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
+            <Typography variant="h5" component="h1" sx={{ flex: 1 }}>{title}</Typography>
+            <BlockPalette onAdd={(type) => setLayout((l) => addBlock(l, type))} />
+            <Button variant="contained" onClick={() => void onSave()} disabled={saving}>{t('Save')}</Button>
+            <Button href={`/${slug}`} target="_blank" rel="noopener">{t('View on site')}</Button>
+            <Button href={erpPath(`/website/pages/${pageId}`)}>{t('Back')}</Button>
+          </Stack>
+          {status && <Alert severity={status.ok ? 'success' : 'error'} sx={{ mx: 2 }} onClose={() => setStatus(null)}>{status.text}</Alert>}
+          {/* Same width as the public site's Container, so blocks wrap as they will there. */}
+          <Container maxWidth="lg" sx={{ py: 2, flex: 1, minWidth: 0 }}>
+            <Box ref={containerRef}>
+              {phone ? (
+                // Phones: the public site's stacked projection, (y, x) order, no drag.
+                <Stack spacing={2}>
+                  {stackOrder(layout).map((b) => (
+                    <Box key={b.id} {...frame(b, { minHeight: b.h * 40 })}><BlockPreview block={b} /></Box>
+                  ))}
+                </Stack>
+              ) : mounted ? (
+                <ReactGridLayout
+                  layout={layout.map((b) => ({ i: b.id, x: b.x, y: b.y, w: b.w, h: b.h }))}
+                  width={width}
+                  // margin 16 = the public grid's gap (theme spacing 2).
+                  gridConfig={{ cols: 12, rowHeight: 40, margin: [16, 16], containerPadding: [0, 0] }}
+                  dragConfig={{ enabled: true }}
+                  resizeConfig={{ enabled: true, handles: ['se', 'e', 's'] }}
+                  compactor={verticalCompactor}
+                  onLayoutChange={(rgl) => setLayout((l) => applyGeometry(l, rgl))}
+                >
+                  {layout.map((b) => (
+                    <Box key={b.id} {...frame(b)}><BlockPreview block={b} /></Box>
+                  ))}
+                </ReactGridLayout>
+              ) : null}
+            </Box>
+          </Container>
+        </Box>
         {!phone && (
-          <Drawer variant="permanent" anchor="right"
-            sx={{ width: PANEL_WIDTH, flexShrink: 0, '& .MuiDrawer-paper': { width: PANEL_WIDTH, position: 'relative' } }}>
-            {settings}
-          </Drawer>
+          // Fixed below the top bar (dense Toolbar = 48px), so the settings stay beside
+          // whatever the user scrolled to. Not `sticky`: the ERP layout's overflowX box
+          // is a scroll container that never scrolls, which would pin it to the page top.
+          // The empty spacer keeps the canvas from running under it.
+          <Box sx={{ width: PANEL_WIDTH, flexShrink: 0 }}>
+            <Box component="aside" sx={{
+              position: 'fixed', top: 48, right: 0, bottom: 0, width: PANEL_WIDTH, overflowY: 'auto',
+              zIndex: (theme) => theme.zIndex.drawer, borderLeft: 1, borderColor: 'divider', bgcolor: 'background.paper',
+            }}>
+              {settings}
+            </Box>
+          </Box>
         )}
       </Box>
       {phone && (

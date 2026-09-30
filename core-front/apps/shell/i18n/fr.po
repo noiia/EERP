@@ -1003,3 +1003,54 @@ msgstr "Événement"
 
 msgid "The block shows once the event is published."
 msgstr "Le bloc s'affiche une fois l'événement publié."
+
+msgid "Horizontal alignment"
+msgstr "Alignement horizontal"
+
+msgid "Vertical alignment"
+msgstr "Alignement vertical"
+
+msgid "Top"
+msgstr "Haut"
+
+msgid "Bottom"
+msgstr "Bas"
+
+msgid "Button size"
+msgstr "Taille du bouton"
+
+msgid "Small"
+msgstr "Petit"
+
+msgid "Medium"
+msgstr "Moyen"
+
+msgid "Large"
+msgstr "Grand"
+
+msgid "Button width"
+msgstr "Largeur du bouton"
+
+msgid "Fit its text"
+msgstr "Ajustée au texte"
+
+msgid "Full width"
+msgstr "Toute la largeur"
+
+msgid "Padding"
+msgstr "Marge intérieure"
+
+msgid "Compact"
+msgstr "Compacte"
+
+msgid "Normal"
+msgstr "Normale"
+
+msgid "Spacious"
+msgstr "Spacieuse"
+
+msgid "Publish"
+msgstr "Publier"
+
+msgid "Not public yet — the website shows nothing for these fields:"
+msgstr "Pas encore public — le site n'affiche rien pour ces champs :"

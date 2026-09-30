@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, type ReactNode } from 'react'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -10,19 +11,21 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '@eerp/core-front'
-import type { PublishedTable } from '@/lib/website-settings'
+import { savePublished, type PublishedTable } from '@/lib/website-settings'
 import { listEditorEvents } from '@/website/editor-actions'
 import type { Block } from '@/website/types'
 import { BLOCK_LABELS } from './BlockPalette'
 
 type Config = Record<string, unknown>
 
-// Per-type block forms. Table and field pickers offer ONLY published data
-// (Settings → Website → Published data): a table with no published field is
-// unreadable by the public site, so it is not offered at all.
-export function BlockSettings({ block, published, onChange, onDelete }: {
+// Per-type block forms. Table and field pickers offer every table a module declares
+// public-capable, with its declared fields (ADR-024's ceiling). A field the site can't
+// read yet (not published) is flagged, with a button publishing it — the admin's half
+// of the two-party act, done from here instead of Settings → Website → Published data.
+export function BlockSettings({ block, published, onPublished, onChange, onDelete }: {
   block: Block
   published: PublishedTable[]
+  onPublished?: (table: PublishedTable) => void
   onChange: (config: Config) => void
   onDelete: () => void
 }) {
@@ -30,8 +33,9 @@ export function BlockSettings({ block, published, onChange, onDelete }: {
   const c = block.config
   const str = (k: string) => (typeof c[k] === 'string' ? (c[k] as string) : '')
   const set = (patch: Config) => onChange({ ...c, ...patch })
-  const tables = published.filter((p) => p.fields.length > 0)
-  const fields = tables.find((p) => p.table === c.table)?.fields ?? []
+  const tables = published
+  const current = tables.find((p) => p.table === c.table)
+  const fields = current?.declared ?? []
   const chosen = Array.isArray(c.fields) ? (c.fields as string[]) : []
   const id = (k: string) => `block-${block.id}-${k}`
   const bookingKind = block.type === 'event_booking' ? 'sessions' : block.type === 'appointment_booking' ? 'appointment' : null
@@ -102,7 +106,12 @@ export function BlockSettings({ block, published, onChange, onDelete }: {
         select('align', 'Alignment', ['left', 'center', 'right'], { none: true, labels: { left: 'Left', center: 'Center', right: 'Right' } })]
       break
     case 'hero':
-      form = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), text('cta_href', 'Button link')]
+      form = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), text('cta_href', 'Button link'),
+        select('align', 'Horizontal alignment', ['left', 'center', 'right'], { labels: { left: 'Left', center: 'Center', right: 'Right' } }),
+        select('valign', 'Vertical alignment', ['top', 'center', 'bottom'], { labels: { top: 'Top', center: 'Center', bottom: 'Bottom' } }),
+        select('button_size', 'Button size', ['small', 'medium', 'large'], { labels: { small: 'Small', medium: 'Medium', large: 'Large' } }),
+        select('button_width', 'Button width', ['auto', 'full'], { labels: { auto: 'Fit its text', full: 'Full width' } }),
+        select('padding', 'Padding', ['none', 'compact', 'normal', 'spacious'], { labels: { none: 'None', compact: 'Compact', normal: 'Normal', spacious: 'Spacious' } })]
       break
     case 'image':
       form = [tableSelect, text('record', 'Record id'), select('field', 'Picture field', fields), text('alt', 'Alternative text'), text('href', 'Link')]
@@ -135,7 +144,47 @@ export function BlockSettings({ block, published, onChange, onDelete }: {
     <Stack spacing={2}>
       <Typography variant="h6">{t(BLOCK_LABELS[block.type])}</Typography>
       {form}
+      {current && <PublishFields table={current} used={usedFields(c)} onPublished={onPublished} />}
       <Button color="error" variant="outlined" onClick={onDelete}>{t('Delete block')}</Button>
     </Stack>
+  )
+}
+
+/** Every column a block config reads: shown fields, title/picture/image field, filter columns. */
+function usedFields(c: Config): string[] {
+  const one = (k: string) => (typeof c[k] === 'string' && c[k] ? [c[k] as string] : [])
+  const list = Array.isArray(c.fields) ? (c.fields as string[]) : []
+  const filter = c.filter && typeof c.filter === 'object' ? Object.keys(c.filter as object) : []
+  return [...new Set([...list, ...one('title_field'), ...one('picture_field'), ...one('field'), ...filter])]
+}
+
+/** Warns about fields the site can't read yet and publishes them on click (keeps
+ * the table's existing published fields and forced filter). Go re-checks the
+ * caller's settings:website:write and the module's declared ceiling. */
+function PublishFields({ table, used, onPublished }: {
+  table: PublishedTable
+  used: string[]
+  onPublished?: (table: PublishedTable) => void
+}) {
+  const t = useT()
+  const [state, setState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null })
+  const missing = used.filter((f) => !table.fields.includes(f))
+  if (missing.length === 0) return null
+  async function publish() {
+    setState({ busy: true, error: null })
+    const fields = [...table.fields, ...missing]
+    const res = await savePublished(table.table, { fields, filter: table.filter ?? {} })
+    if (res.ok) {
+      setState({ busy: false, error: null })
+      onPublished?.({ ...table, fields })
+    } else setState({ busy: false, error: res.message || t('Could not save.') })
+  }
+  return (
+    <Alert severity="warning" action={
+      <Button color="inherit" size="small" disabled={state.busy} onClick={() => void publish()}>{t('Publish')}</Button>
+    }>
+      {t('Not public yet — the website shows nothing for these fields:')} {missing.join(', ')}
+      {state.error && <><br />{state.error}</>}
+    </Alert>
   )
 }

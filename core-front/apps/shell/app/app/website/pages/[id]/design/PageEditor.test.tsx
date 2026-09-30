@@ -3,7 +3,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 
 const phone = vi.hoisted(() => ({ value: false }))
 vi.mock('@mui/material/useMediaQuery', () => ({ default: () => phone.value }))
-vi.mock('@/website/editor-actions', () => ({ previewBlock: async () => null }))
+vi.mock('@/website/editor-actions', () => ({ previewBlock: async () => null, listEditorEvents: async () => [] }))
+const savePublished = vi.hoisted(() => vi.fn(async () => ({ ok: true as const })))
+vi.mock('@/lib/website-settings', () => ({ savePublished }))
 
 import { PageEditor } from './PageEditor'
 import type { Block } from '@/website/types'
@@ -31,16 +33,29 @@ describe('PageEditor', () => {
     expect(screen.getAllByTestId(/^editor-block-/)).toHaveLength(3)
   })
 
-  it('record_list settings offer only published tables and published fields', () => {
+  it('record_list settings offer every declared table and its declared fields', () => {
     setup()
     fireEvent.click(screen.getByTestId('editor-block-b-1'))
     const panel = screen.getByTestId('block-settings')
     fireEvent.mouseDown(within(panel).getByLabelText(/table/i))
-    const options = screen.getAllByRole('option').map((o) => o.textContent)
-    expect(options).toEqual(['product']) // company publishes no field
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['product', 'company'])
     fireEvent.click(screen.getByRole('option', { name: 'product' }))
-    expect(within(panel).getByRole('checkbox', { name: 'name' })).toBeTruthy()
-    expect(within(panel).queryByRole('checkbox', { name: 'reference' })).toBeNull() // declared, not published
+    expect(within(panel).getByRole('checkbox', { name: 'reference' })).toBeTruthy() // declared, not yet published
+  })
+
+  it('flags an unpublished field and publishes it on click, keeping the published ones', async () => {
+    setup()
+    fireEvent.click(screen.getByTestId('editor-block-b-1'))
+    const panel = screen.getByTestId('block-settings')
+    fireEvent.mouseDown(within(panel).getByLabelText(/table/i))
+    fireEvent.click(screen.getByRole('option', { name: 'product' }))
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'name' }))
+    expect(within(panel).queryByText(/not public yet/i)).toBeNull()
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'reference' }))
+    expect(within(panel).getByText(/not public yet/i).textContent).toContain('reference')
+    fireEvent.click(within(panel).getByRole('button', { name: 'Publish' }))
+    await vi.waitFor(() => expect(within(panel).queryByText(/not public yet/i)).toBeNull())
+    expect(savePublished).toHaveBeenCalledWith('product', { fields: ['name', 'unit_price', 'reference'], filter: {} })
   })
 
   it('saves the current layout', async () => {
