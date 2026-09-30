@@ -1,5 +1,6 @@
 'use server'
-import { ApiError, apiRequest, createServerApiClient } from '@eerp/core-front/server'
+import { deflateSync, crc32 } from 'node:zlib'
+import { ApiError, apiRequest, createServerApiClient, uploadPicture } from '@eerp/core-front/server'
 import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
 import { getMyLocalePreferences } from './preferences'
@@ -64,12 +65,42 @@ const TAG_NAMES = ['VIP', 'Newsletter', 'Hot lead', 'Enterprise', 'Churn risk', 
 // realistically as concrete offerings than as randomly combined words, unlike
 // contacts/CRM records above. tax_rate is a 0..1 ratio (see warehouse/module.go).
 const PRODUCTS = [
-  { name: 'Standard consulting hour', reference: 'CONS-STD', unit: 'hour', unit_price: 85, tax_rate: 0.2 },
-  { name: 'Onboarding package', reference: 'ONB-PKG', unit: 'pcs', unit_price: 1200, tax_rate: 0.2 },
-  { name: 'Support retainer (monthly)', reference: 'SUP-MO', unit: 'month', unit_price: 400, tax_rate: 0.2 },
-  { name: 'Server rack unit', reference: 'HW-RACK', unit: 'pcs', unit_price: 650, tax_rate: 0.055 },
-  { name: 'Training workshop (half day)', reference: 'TRN-HD', unit: 'pcs', unit_price: 300, tax_rate: 0.2 },
-  { name: 'Custom integration', reference: 'DEV-INT', unit: 'pcs', unit_price: 2400, tax_rate: 0.2 },
+  {
+    name: 'Standard consulting hour', reference: 'CONS-STD', unit: 'hour', unit_price: 85, tax_rate: 0.2,
+    description: 'An hour of senior consulting, remote or on site, billed in quarter hours.',
+    variants: [{ name: 'Standard consulting hour — On site', unit_price: 110 }, { name: 'Standard consulting hour — Weekend', unit_price: 130 }],
+    color: [37, 99, 235],
+  },
+  {
+    name: 'Onboarding package', reference: 'ONB-PKG', unit: 'pcs', unit_price: 1200, tax_rate: 0.2,
+    description: 'Kick-off workshop, data import and two weeks of guided start for your team.',
+    variants: [{ name: 'Onboarding package — Team (up to 20)', unit_price: 1900 }],
+    color: [22, 163, 74],
+  },
+  {
+    name: 'Support retainer (monthly)', reference: 'SUP-MO', unit: 'month', unit_price: 400, tax_rate: 0.2,
+    description: 'Business-hours support with a next-day answer on every ticket.',
+    variants: [{ name: 'Support retainer — Premium 24/7', unit_price: 900 }, { name: 'Support retainer — Annual', unit_price: 4200 }],
+    color: [217, 119, 6],
+  },
+  {
+    name: 'Server rack unit', reference: 'HW-RACK', unit: 'pcs', unit_price: 650, tax_rate: 0.055,
+    description: '1U rack server, 32 GB RAM, dual power supply, three-year warranty.',
+    variants: [{ name: 'Server rack unit — 2U, 64 GB', unit_price: 1150 }, { name: 'Server rack unit — Refurbished', unit_price: 420 }],
+    color: [100, 116, 139],
+  },
+  {
+    name: 'Training workshop (half day)', reference: 'TRN-HD', unit: 'pcs', unit_price: 300, tax_rate: 0.2,
+    description: 'A hands-on half day for up to 8 people, slides and exercises included.',
+    variants: [{ name: 'Training workshop — Full day', unit_price: 550 }],
+    color: [219, 39, 119],
+  },
+  {
+    name: 'Custom integration', reference: 'DEV-INT', unit: 'pcs', unit_price: 2400, tax_rate: 0.2,
+    description: 'A connector between EERP and one of your tools, specified, built and documented.',
+    variants: [{ name: 'Custom integration — With maintenance', unit_price: 3100 }],
+    color: [124, 58, 237],
+  },
 ] as const
 
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled'] as const
@@ -177,16 +208,84 @@ function buildTagLinks(
 }
 
 function buildProducts(): Record<string, unknown>[] {
-  return PRODUCTS.map((p) => ({ ...p }))
+  return PRODUCTS.map((p) => ({
+    name: p.name, reference: p.reference, unit: p.unit, unit_price: p.unit_price, tax_rate: p.tax_rate, description: p.description,
+  }))
 }
 
 /**
- * One variant per product, Name left BLANK on purpose — exercises
- * warehouse.Handler's Create override, which defaults it from the product's
- * own name ("each product automatically references a variant").
+ * Per product: a first variant with its Name left BLANK on purpose — exercises
+ * warehouse.Handler's Create override, which defaults it from the product's own
+ * name ("each product automatically references a variant") — then its named
+ * variants, each with its own price. `products` is in PRODUCTS order (a failed
+ * create drops out, hence the lookup by reference).
  */
-function buildProductVariants(products: { id: string }[]): Record<string, unknown>[] {
-  return products.map((p) => ({ product_id: p.id }))
+function buildProductVariants(products: { id: string; reference?: unknown }[]): Record<string, unknown>[] {
+  return products.flatMap((p) => {
+    const def = PRODUCTS.find((d) => d.reference === p.reference)
+    return [{ product_id: p.id }, ...(def?.variants ?? []).map((v) => ({ product_id: p.id, ...v }))]
+  })
+}
+
+/** A 96×96 PNG: the product's color with a lighter diagonal band — enough for the
+ * website's picture blocks to show something recognizable per product. */
+function productPng([r, g, b]: readonly number[], shade: number): Buffer {
+  const size = 96
+  const raw = Buffer.alloc((size * 3 + 1) * size)
+  for (let y = 0; y < size; y += 1) {
+    const row = y * (size * 3 + 1)
+    for (let x = 0; x < size; x += 1) {
+      const band = Math.abs(x - y) < 16 ? 60 : 0
+      const k = Math.min(1, 0.75 + shade * 0.15)
+      raw[row + 1 + x * 3] = Math.min(255, r * k + band)
+      raw[row + 2 + x * 3] = Math.min(255, g * k + band)
+      raw[row + 3 + x * 3] = Math.min(255, b * k + band)
+    }
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const head = Buffer.alloc(8)
+    head.writeUInt32BE(data.length, 0)
+    head.write(type, 4, 'ascii')
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0)
+    return Buffer.concat([head, data, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr.set([8, 2, 0, 0, 0], 8) // 8-bit RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+/** A picture on every product and variant (the `picture` anchor; Go sets the flag). */
+async function seedPictures(
+  products: { id: string; reference?: unknown }[],
+  variants: { id: string; product_id?: unknown }[],
+): Promise<SeedEntityResult> {
+  const result: SeedEntityResult = { entity: 'picture', created: 0, failed: 0, errors: [] }
+  const colorOf = new Map(products.map((p) => [p.id, PRODUCTS.find((d) => d.reference === p.reference)?.color ?? [80, 80, 80]]))
+  const targets = [
+    ...products.map((p) => ({ table: 'product', id: p.id, color: colorOf.get(p.id)!, shade: 1 })),
+    ...variants.map((v, i) => ({ table: 'product_variant', id: v.id, color: colorOf.get(String(v.product_id)) ?? [80, 80, 80], shade: i % 3 })),
+  ]
+  for (const t of targets) {
+    const form = new FormData()
+    form.set('table_name', t.table)
+    form.set('record_id', t.id)
+    form.set('field', 'picture')
+    form.set('file', new Blob([new Uint8Array(productPng(t.color, t.shade))], { type: 'image/png' }), `${t.table}.png`)
+    try {
+      await uploadPicture(form)
+      result.created += 1
+    } catch (e) {
+      result.failed += 1
+      if (result.errors.length < 5) result.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  return result
 }
 
 /**
@@ -304,7 +403,7 @@ async function createMany<R extends { id: string }>(
 
 /**
  * Seed the workspace with fake contacts, CRM opportunities, tags, warehouse
- * products, sale invoices/quotes (with their line items), and default report
+ * products (described, with named variants and generated pictures), sale invoices/quotes (with their line items), and default report
  * page formats — through the ordinary entity API, in dependency order
  * (parents before the rows that reference their ids).
  */
@@ -334,14 +433,17 @@ export async function seedDemoData(volume: SeedVolume = 'light'): Promise<SeedRe
     results.push(linksOutcome.result)
   }
 
-  const productsOutcome = await createMany<{ id: string }>('product', buildProducts())
+  const productsOutcome = await createMany<{ id: string; reference?: unknown }>('product', buildProducts())
   results.push(productsOutcome.result)
 
-  const variantsOutcome = await createMany<{ id: string }>(
+  const variantsOutcome = await createMany<{ id: string; product_id?: unknown }>(
     'product_variant',
     buildProductVariants(productsOutcome.records),
   )
   results.push(variantsOutcome.result)
+  // Pictures need the S3-backed picture service; without it every upload fails,
+  // reported like any other entity instead of aborting the seed.
+  results.push(await seedPictures(productsOutcome.records, variantsOutcome.records))
 
   const invoicesOutcome = await createMany<{ id: string }>(
     'invoice',

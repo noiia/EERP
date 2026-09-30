@@ -3,11 +3,13 @@ import { ApiError } from '@eerp/core-front/server'
 
 const createMock = vi.fn()
 const apiRequestMock = vi.fn()
+const uploadPictureMock = vi.fn<(form: FormData) => Promise<{ id: string }>>(async () => ({ id: 'pic' }))
 vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return {
     ...actual,
     createServerApiClient: () => ({ create: createMock }),
+    uploadPicture: (form: FormData) => uploadPictureMock(form),
     apiRequest: (...args: unknown[]) => apiRequestMock(...args),
   }
 })
@@ -33,6 +35,7 @@ function callsFor(entity: string): unknown[][] {
 
 beforeEach(() => {
   createMock.mockReset()
+  uploadPictureMock.mockClear()
   let idCounter = 0
   createMock.mockImplementation(async (entity: string, body: Record<string, unknown>) => ({
     id: `${entity}-${(idCounter += 1)}`,
@@ -159,6 +162,7 @@ describe('seedDemoData', () => {
       'crm_tag',
       'product',
       'product_variant',
+      'picture',
       'invoice',
       'sale_line',
       'quote',
@@ -168,15 +172,26 @@ describe('seedDemoData', () => {
     expect(outcome.results.every((r) => r.failed === 0)).toBe(true)
   })
 
-  it('seeds products, one blank-name variant per product, and invoices/quotes with line items over those variants', async () => {
+  it('seeds described products, a blank-name variant plus named ones per product, pictures, and invoices/quotes with line items over those variants', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
     const outcome = await seedDemoData()
     if (!outcome.ok) throw new Error('expected seeding to succeed')
 
     expect(callsFor('product')).toHaveLength(6)
-    const [, variantBody] = callsFor('product_variant')[0] as [string, Record<string, unknown>]
-    expect(variantBody).toEqual({ product_id: expect.stringMatching(/^product-\d+$/) })
+    expect((callsFor('product')[0] as [string, Record<string, unknown>])[1].description).toEqual(expect.any(String))
+    const variantBodies = callsFor('product_variant').map(([, b]) => b as Record<string, unknown>)
+    expect(variantBodies[0]).toEqual({ product_id: expect.stringMatching(/^product-\d+$/) })
+    expect(variantBodies.length).toBe(15) // one default per product + 9 named variants
+    expect(variantBodies[1]).toEqual({ product_id: variantBodies[0].product_id, name: 'Standard consulting hour — On site', unit_price: 110 })
+
+    // A generated PNG on every product and variant, on the `picture` anchor.
+    expect(uploadPictureMock).toHaveBeenCalledTimes(6 + 15)
+    const form = uploadPictureMock.mock.calls[0][0]
+    expect([form.get('table_name'), form.get('field')]).toEqual(['product', 'picture'])
+    const png = new Uint8Array(await (form.get('file') as Blob).arrayBuffer())
+    expect(Array.from(png.slice(1, 4))).toEqual([0x50, 0x4e, 0x47]) // "PNG"
+    expect(outcome.results.find((r) => r.entity === 'picture')).toMatchObject({ created: 21, failed: 0 })
 
     expect(callsFor('invoice')).toHaveLength(6)
     expect(callsFor('quote')).toHaveLength(6)
