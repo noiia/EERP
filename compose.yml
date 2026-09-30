@@ -163,7 +163,9 @@ services:
   # nats-server only takes max_payload from a config file, not a CLI flag, so raising it
   # later means mounting one, not just editing this command.
   nats:
-    image: nats:latest
+    # Alpine variant on purpose: the default (scratch) image has no nc/shell,
+    # so the healthcheck below could never run and the service stays unhealthy.
+    image: nats:2-alpine
     restart: always
     container_name: nats
     expose:
