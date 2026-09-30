@@ -404,3 +404,19 @@ func TestWithPublicFields_PopulatesMeta(t *testing.T) {
 		t.Errorf("PublicFields = %v, want %v", m.PublicFields, want)
 	}
 }
+
+func TestWithPublicFields_AllExpandsColumns(t *testing.T) {
+	resetRegistry()
+	if err := registry.Register[product](
+		registry.WithPublicFields(registry.AllPublicFields, "picture", "name"),
+		registry.WithFieldGroups(map[string][]string{"internal_cost": {"finance"}}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := registry.Get("product")
+	// Never the PK, tenant_id, deleted_at or a group-gated column; extra names kept, no duplicates.
+	want := []string{"created_at", "updated_at", "name", "price", "picture"}
+	if !slices.Equal(m.PublicFields, want) {
+		t.Errorf("PublicFields = %v, want %v", m.PublicFields, want)
+	}
+}

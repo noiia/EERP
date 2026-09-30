@@ -44,7 +44,7 @@ func (m *settingsModule) Register() error {
 // single atomic Migrate() is safe; a real expand/contract split would only
 // be needed if that changes later.
 func (m *settingsModule) Migrate(ctx context.Context, db *orm.DB) error {
-	if err := company.NewRepository(db).BackfillCompanyID(ctx, "app_settings"); err != nil {
+	if err := company.NewRepository(db).BackfillCompanyID(ctx, "app_settings", "key"); err != nil {
 		return fmt.Errorf("settings: %w", err)
 	}
 

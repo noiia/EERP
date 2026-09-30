@@ -35,3 +35,10 @@ type Picture struct {
 	Mime      string    `db:"mime"`
 	Size      int64     `db:"size"`
 }
+
+// The workspace favicon's anchor: (WorkspaceTable, <tenant id>, FaviconField).
+// "workspace" is no registered table — only a name for workspace-wide pictures.
+const (
+	WorkspaceTable = "workspace"
+	FaviconField   = "favicon"
+)

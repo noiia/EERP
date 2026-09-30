@@ -72,7 +72,9 @@ func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int) ([]Result,
 	err := db.Transaction(ctx, func(tx *orm.Tx) error {
 		var seeded bool
 		if err := tx.QueryRow(ctx,
-			`SELECT EXISTS (SELECT 1 FROM app_settings WHERE tenant_id = $1 AND company_id IS NULL AND key = $2 AND deleted_at IS NULL)`,
+			// Tenant-wide: any company — older markers were written at NULL and
+			// moved to the default company by the settings module's boot backfill.
+			`SELECT EXISTS (SELECT 1 FROM app_settings WHERE tenant_id = $1 AND key = $2 AND deleted_at IS NULL)`,
 			tenantID, MarkerKey).Scan(&seeded); err != nil {
 			return fmt.Errorf("devseed: marker: %w", err)
 		}
@@ -102,8 +104,9 @@ func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int) ([]Result,
 		}
 		results = append(results, graphResults...)
 		_, err = tx.Exec(ctx,
-			`INSERT INTO app_settings (tenant_id, company_id, key, value) VALUES ($1, NULL, $2, $3)`,
-			tenantID, MarkerKey, time.Now().UTC().Format(time.RFC3339))
+			// uuid.Nil (the site-wide slot), not NULL: the boot backfill moves NULL rows.
+			`INSERT INTO app_settings (tenant_id, company_id, key, value) VALUES ($1, $2, $3, $4)`,
+			tenantID, uuid.Nil, MarkerKey, time.Now().UTC().Format(time.RFC3339))
 		return err
 	})
 	return results, err

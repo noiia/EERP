@@ -31,6 +31,7 @@ import OSMConnectorSettings from './OSMConnectorSettings'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
 import TaxSettings from './TaxSettings'
 import UnitSettings from './UnitSettings'
+import { FaviconSettings } from './FaviconSettings'
 
 // Settings → Global settings (formerly "Appearance", docs/roadmaps/
 // pdf-reports.md's Reports settings subsection): three collapsible sections —
@@ -259,6 +260,17 @@ export default function AppearanceSettings({
           </AccordionSummary>
           <AccordionDetails>
             <UnitSettings canEdit={canEditUnits} initialSettings={initialUnitSettings} />
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Favicon')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <FaviconSettings />
           </AccordionDetails>
         </Accordion>
 

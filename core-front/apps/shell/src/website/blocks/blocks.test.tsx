@@ -84,6 +84,14 @@ describe('blocks', () => {
     expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['C', 'A'])
   })
 
+  it('record_carousel: a right-side picture sits beside the text, at the configured width', async () => {
+    const s = source([{ id: '1', name: 'A', photo: true }])
+    await renderBlock(block('record_carousel', { table: 't', fields: [], title_field: 'name', picture_field: 'photo', records: ['1'], picture_position: 'right', picture_width: 30 }), s)
+    const img = screen.getByRole('presentation') as HTMLImageElement
+    expect(getComputedStyle(img.parentElement!).flexDirection).toBe('row-reverse')
+    expect(getComputedStyle(img).width).toBe('30%')
+  })
+
   it('record_carousel without picks shows the first `limit` records', async () => {
     const s: PublicDataSource = {
       list: async (_t, q) => ({ records: [{ id: '1', name: 'A' }, { id: '2', name: 'B' }].slice(0, q.page_size), total: 2 }),

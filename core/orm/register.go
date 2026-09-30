@@ -61,6 +61,10 @@ func LoadAPIConfig(path string) error {
 	return registry.LoadAPIConfig(path)
 }
 
+// AllPublicFields, as a WithPublicFields name, declares every eligible column
+// public-capable (see registry.AllPublicFields for what is never included).
+const AllPublicFields = registry.AllPublicFields
+
 // WithPublicFields declares the table's public-capable fields (ADR-024).
 func WithPublicFields(fields ...string) Option { return registry.WithPublicFields(fields...) }
 

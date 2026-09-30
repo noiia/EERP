@@ -44,6 +44,7 @@ type pictureStore interface {
 	FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Picture, error)
 	FindByAnchor(ctx context.Context, tenantID uuid.UUID, table string, recordID uuid.UUID, field string) (Picture, error)
 	Delete(ctx context.Context, tenantID, id uuid.UUID) error
+	SetFlag(ctx context.Context, tenantID uuid.UUID, table string, recordID uuid.UUID, field string, has bool) error
 }
 
 type Handler struct {
@@ -124,6 +125,7 @@ func (h *Handler) Upload(c *echo.Context) error {
 		if err := h.objects.Delete(c.Request().Context(), oldKey); err != nil {
 			common.Logger.Warn("pictures: orphaned object after replace", zap.String("key", oldKey), zap.Error(err))
 		}
+		h.syncFlag(c.Request().Context(), identity.TenantID, table, recordID, field, true)
 		return c.JSON(http.StatusCreated, toResponse(updated))
 	case errors.Is(err, orm.ErrNotFound):
 		created, err := h.store.Create(c.Request().Context(), Picture{
@@ -133,6 +135,7 @@ func (h *Handler) Upload(c *echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("pictures: create metadata: %w", err)
 		}
+		h.syncFlag(c.Request().Context(), identity.TenantID, table, recordID, field, true)
 		return c.JSON(http.StatusCreated, toResponse(created))
 	default:
 		return fmt.Errorf("pictures: find anchor: %w", err)
@@ -217,7 +220,18 @@ func (h *Handler) Delete(c *echo.Context) error {
 	if err := h.objects.Delete(c.Request().Context(), picture.ObjectKey); err != nil {
 		common.Logger.Warn("pictures: orphaned object after delete", zap.String("key", picture.ObjectKey), zap.Error(err))
 	}
+	h.syncFlag(c.Request().Context(), identity.TenantID, picture.TableName, picture.RecordID, picture.Field, false)
 	return c.NoContent(http.StatusNoContent)
+}
+
+// syncFlag keeps the anchor's boolean flag column (a picture field's "true ⇔ a
+// picture exists", read by the public site) in step with the picture itself,
+// instead of trusting the form's next Save. Best-effort: the picture is already
+// stored or removed; a failure is logged.
+func (h *Handler) syncFlag(ctx context.Context, tenant uuid.UUID, table string, record uuid.UUID, field string, has bool) {
+	if err := h.store.SetFlag(ctx, tenant, table, record, field, has); err != nil {
+		common.Logger.Warn("pictures: flag not synced", zap.String("table", table), zap.String("field", field), zap.Error(err))
+	}
 }
 
 func errorJSON(c *echo.Context, status int, code, msg string) error {

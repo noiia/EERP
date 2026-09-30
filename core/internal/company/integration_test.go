@@ -162,3 +162,39 @@ func TestBackfillCompanyID(t *testing.T) {
 		})
 	}
 }
+
+// A NULL row whose key the default company already holds stays NULL instead of
+// colliding with a unique (tenant_id, company_id, key) index and failing boot.
+func TestBackfillCompanyID_SkipsTakenKeys(t *testing.T) {
+	app := integrationSetup(t)
+	repo := company.NewRepository(app.DB)
+	ctx := context.Background()
+	table := "backfill_keys_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	if _, err := app.DB.Exec(ctx, `CREATE TABLE `+table+` (tenant_id UUID NOT NULL, company_id UUID, key TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB.Exec(ctx, `CREATE UNIQUE INDEX ON `+table+` (tenant_id, company_id, key)`); err != nil {
+		t.Fatal(err)
+	}
+	tenant := uuid.New()
+	t.Cleanup(func() {
+		app.DB.Exec(ctx, `DROP TABLE `+table)                                //nolint:errcheck
+		app.DB.Exec(ctx, `DELETE FROM company WHERE tenant_id = $1`, tenant) //nolint:errcheck
+	})
+	def, err := repo.EnsureDefaultCompany(ctx, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB.Exec(ctx, `INSERT INTO `+table+` VALUES ($1, $2, 'taken'), ($1, NULL, 'taken'), ($1, NULL, 'free')`, tenant, def.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.BackfillCompanyID(ctx, table, "key"); err != nil {
+		t.Fatalf("BackfillCompanyID: %v", err)
+	}
+	var nullTaken, movedFree int
+	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE key = 'taken' AND company_id IS NULL`).Scan(&nullTaken)
+	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE key = 'free' AND company_id = $1`, def.ID).Scan(&movedFree)
+	if nullTaken != 1 || movedFree != 1 {
+		t.Errorf("taken row left NULL = %d (want 1), free row moved = %d (want 1)", nullTaken, movedFree)
+	}
+}

@@ -109,6 +109,12 @@ func WithFieldGroups(groups map[string][]string) Option {
 	return func(o *regOptions) { o.fieldGroups = groups }
 }
 
+// AllPublicFields, passed to WithPublicFields, declares every API column of the
+// table public-capable — except tenant_id, deleted_at, the PK (always served
+// anyway) and group-gated columns (ADR-013: gated means sensitive). The admin
+// still publishes a subset; this only raises the ceiling.
+const AllPublicFields = "*"
+
 // WithPublicFields declares the columns (and picture anchor fields) a table
 // may expose on /api/v1/public. See ADR-024.
 func WithPublicFields(fields ...string) Option {
@@ -457,7 +463,7 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 		PKField:      pkField,
 		SoftDelete:   hasSoftDel,
 		Excluded:     o.excluded,
-		PublicFields: o.publicFields,
+		PublicFields: expandPublic(o.publicFields, fields, pkField.Column),
 		TypeRef:      t,
 		StructMeta:   sm,
 	}
@@ -482,4 +488,30 @@ func toSet(ss []string) map[string]bool {
 		m[s] = true
 	}
 	return m
+}
+
+// expandPublic replaces AllPublicFields by every eligible API column, keeping
+// the other names (picture anchors aren't columns) and dropping duplicates.
+func expandPublic(declared []string, fields []FieldMeta, pk string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(n string) {
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	for _, d := range declared {
+		if d != AllPublicFields {
+			add(d)
+			continue
+		}
+		for _, f := range fields {
+			if f.Column == pk || f.Column == "tenant_id" || f.Column == "deleted_at" || len(f.Groups) > 0 {
+				continue
+			}
+			add(f.Column)
+		}
+	}
+	return out
 }

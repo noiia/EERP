@@ -138,6 +138,13 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
           onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
         str('table') && <RecordPicker key="records" multiple table={str('table')} labelField={str('title_field')} label="Records (empty = the first ones)"
           value={Array.isArray(c.records) ? (c.records as string[]) : []} onChange={(ids) => set({ records: ids })} />,
+        select('picture_position', 'Picture position', ['top', 'left', 'right'], { labels: { top: 'Top', left: 'Left', right: 'Right' } }),
+        <TextField key="picture_width" id={id('picture_width')} size="small" type="number" label={t('Picture width beside the text (%)')}
+          value={typeof c.picture_width === 'number' ? c.picture_width : ''} slotProps={{ htmlInput: { min: 10, max: 90 } }}
+          onChange={(e) => set({ picture_width: e.target.value === '' ? undefined : Number(e.target.value) })} />,
+        <TextField key="card_width" id={id('card_width')} size="small" type="number" label={t('Card width (px)')}
+          value={typeof c.card_width === 'number' ? c.card_width : ''} slotProps={{ htmlInput: { min: 160, max: 1200 } }}
+          onChange={(e) => set({ card_width: e.target.value === '' ? undefined : Number(e.target.value) })} />,
         text('detail_slug', 'Detail page slug')]
       break
     case 'event_booking':

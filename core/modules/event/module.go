@@ -23,7 +23,7 @@ func (m *eventModule) Name() string { return "event" }
 
 func (m *eventModule) Register() error {
 	if err := orm.Register[Event](orm.WithTableName("event"),
-		orm.WithPublicFields("name", "description", "location", "kind", "slot_minutes", "timezone")); err != nil {
+		orm.WithPublicFields(orm.AllPublicFields)); err != nil {
 		return err
 	}
 	if err := orm.Register[EventSession](orm.WithTableName("event_session"), orm.WithReadOnlyFields("seats_taken")); err != nil {

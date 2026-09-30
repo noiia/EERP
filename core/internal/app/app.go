@@ -710,6 +710,15 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		publicGroup.GET("/site", routing.PublicSite)
 		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
 		publicGroup.GET("/event/:id/slots", eventH.PublicSlots)
+		if publicPictures != nil {
+			// The workspace favicon (Settings → Global settings): a picture on the
+			// (workspace, <tenant id>, favicon) anchor, served to anyone — browsers
+			// fetch it before any login. 404 until one is uploaded.
+			publicGroup.GET("/favicon", func(c *echo.Context) error {
+				tenant, _ := access.TenantFromContext(c.Request().Context())
+				return publicPictures(c, pictures.WorkspaceTable, tenant, pictures.FaviconField)
+			})
+		}
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
 
 		// Seed the published selections once (never overwrite an admin's choice).

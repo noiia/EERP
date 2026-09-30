@@ -42,7 +42,7 @@ func (m *websiteModule) Name() string { return "website" }
 func (m *websiteModule) Register() error {
 	return orm.Register[WebsitePage](
 		orm.WithTableName("website_page"),
-		orm.WithPublicFields("slug", "title", "seo_description", "in_menu", "menu_sequence", "layout"),
+		orm.WithPublicFields(orm.AllPublicFields),
 	)
 }
 

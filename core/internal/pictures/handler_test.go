@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -36,6 +37,7 @@ type stubPictures struct {
 	deleteErr error
 
 	gotTenant uuid.UUID
+	flags     []string // SetFlag calls, as table.field=value
 }
 
 func (s *stubPictures) Create(_ context.Context, p Picture) (Picture, error) {
@@ -52,6 +54,11 @@ func (s *stubPictures) Update(_ context.Context, p Picture, _ uuid.UUID) (Pictur
 func (s *stubPictures) FindInTenant(_ context.Context, tenantID, _ uuid.UUID) (Picture, error) {
 	s.gotTenant = tenantID
 	return s.found, s.foundErr
+}
+
+func (s *stubPictures) SetFlag(_ context.Context, _ uuid.UUID, table string, _ uuid.UUID, field string, has bool) error {
+	s.flags = append(s.flags, fmt.Sprintf("%s.%s=%v", table, field, has))
+	return nil
 }
 
 func (s *stubPictures) FindByAnchor(_ context.Context, tenantID uuid.UUID, _ string, _ uuid.UUID, _ string) (Picture, error) {
@@ -210,6 +217,10 @@ func TestUpload(t *testing.T) {
 		}
 		if string(objects.putData) != "png-bytes" || objects.putMime != "image/png" {
 			t.Errorf("stored (%q, %s), want (png-bytes, image/png)", objects.putData, objects.putMime)
+		}
+		// The site reads the flag: set it now, not on the form's next Save.
+		if len(store.flags) != 1 || store.flags[0] != "contact.signature=true" {
+			t.Errorf("flags = %v, want [contact.signature=true]", store.flags)
 		}
 	})
 
@@ -397,7 +408,7 @@ func TestDelete(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 
 	t.Run("removes the row then the object", func(t *testing.T) {
-		row := Picture{ObjectKey: "k/1", Mime: "image/png"}
+		row := Picture{ObjectKey: "k/1", Mime: "image/png", TableName: "contact", Field: "signature"}
 		row.ID = uuid.New()
 		store := &stubPictures{found: row}
 		objects := &stubObjects{}
@@ -414,6 +425,9 @@ func TestDelete(t *testing.T) {
 		}
 		if len(objects.deletedKeys) != 1 || objects.deletedKeys[0] != "k/1" {
 			t.Errorf("deleted objects = %v, want [k/1]", objects.deletedKeys)
+		}
+		if len(store.flags) != 1 || store.flags[0] != "contact.signature=false" {
+			t.Errorf("flags = %v, want [contact.signature=false]", store.flags)
 		}
 	})
 

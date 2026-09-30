@@ -860,3 +860,33 @@ msgstr ""
 
 msgid "No records"
 msgstr ""
+
+msgid "Picture position"
+msgstr ""
+
+msgid "Picture width beside the text (%)"
+msgstr ""
+
+msgid "Card width (px)"
+msgstr ""
+
+msgid "Favicon"
+msgstr ""
+
+msgid "The small icon shown in browser tabs, for the ERP and the public website. A square PNG (e.g. 64×64) works best; browsers may keep the old one for a few minutes."
+msgstr ""
+
+msgid "Replace"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Company logo"
+msgstr ""
+
+msgid "Change the company logo"
+msgstr ""
+
+msgid "Add the company logo"
+msgstr ""

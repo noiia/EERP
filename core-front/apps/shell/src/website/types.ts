@@ -35,6 +35,10 @@ export interface RecordDetailConfig { table: string; fields: string[]; title_fie
 export interface RecordCarouselConfig {
   table: string; fields: string[]; title_field: string; picture_field?: string; detail_slug?: string
   records?: string[]; limit?: number; filter?: Record<string, string>
+  /** Where the card's picture sits (default top) and, beside the text, its width in % (default 40). */
+  picture_position?: 'top' | 'left' | 'right'; picture_width?: number
+  /** Card width in px on the row (default 280). */
+  card_width?: number
 }
 
 /** Where blocks read published data — the public API server-side, a Server

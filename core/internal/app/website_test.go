@@ -65,6 +65,12 @@ func TestPublicRoutes(t *testing.T) {
 		t.Fatalf("publish: %d %s", code, body)
 	}
 	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product"), oldSel) })
+	// product_variant must read as unpublished here, whatever the dev DB holds.
+	oldVariant, _, _ := store.Get(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product_variant"))
+	if err := store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product_variant"), `{"fields":[]}`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product_variant"), oldVariant) })
 
 	tests := []struct {
 		name string

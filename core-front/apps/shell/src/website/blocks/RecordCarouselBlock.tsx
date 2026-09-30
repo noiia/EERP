@@ -15,10 +15,11 @@ export async function RecordCarouselBlock({ config, source }: { config: RecordCa
     records = (await source.list(config.table, { filter: config.filter, page_size: limit }))?.records ?? []
   }
   if (records.length === 0) return null
+  const cardWidth = Math.min(Math.max(config.card_width ?? (config.picture_position && config.picture_position !== 'top' ? 480 : 280), 160), 1200)
   return (
     <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', scrollSnapType: 'x mandatory', pb: 1 }}>
       {records.map((rec) => (
-        <Box key={String(rec.id)} sx={{ flex: '0 0 min(280px, 80%)', scrollSnapAlign: 'start' }}>
+        <Box key={String(rec.id)} sx={{ flex: `0 0 min(${cardWidth}px, 85%)`, scrollSnapAlign: 'start' }}>
           <RecordCard config={config} rec={rec} />
         </Box>
       ))}

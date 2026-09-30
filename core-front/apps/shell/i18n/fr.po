@@ -1069,3 +1069,33 @@ msgstr "Nombre maximum d'enregistrements"
 
 msgid "No records"
 msgstr "Aucun enregistrement"
+
+msgid "Picture position"
+msgstr "Position de l'image"
+
+msgid "Picture width beside the text (%)"
+msgstr "Largeur de l'image à côté du texte (%)"
+
+msgid "Card width (px)"
+msgstr "Largeur des cartes (px)"
+
+msgid "Favicon"
+msgstr "Favicon"
+
+msgid "The small icon shown in browser tabs, for the ERP and the public website. A square PNG (e.g. 64×64) works best; browsers may keep the old one for a few minutes."
+msgstr "La petite icône affichée dans les onglets du navigateur, pour l'ERP et le site public. Un PNG carré (ex. 64×64) convient le mieux ; les navigateurs peuvent garder l'ancienne quelques minutes."
+
+msgid "Replace"
+msgstr "Remplacer"
+
+msgid "Upload"
+msgstr "Téléverser"
+
+msgid "Company logo"
+msgstr "Logo de l'entreprise"
+
+msgid "Change the company logo"
+msgstr "Changer le logo de l'entreprise"
+
+msgid "Add the company logo"
+msgstr "Ajouter le logo de l'entreprise"

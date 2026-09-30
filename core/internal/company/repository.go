@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"core/orm"
 
@@ -112,7 +113,11 @@ func (r *Repository) ResolveActive(ctx context.Context, tenantID, userID uuid.UU
 // Two set-based statements whatever the tenant count (it used to be two
 // round trips per tenant). A tenant whose default company is soft-deleted
 // keeps NULL rather than failing the boot.
-func (r *Repository) BackfillCompanyID(ctx context.Context, table string) error {
+//
+// uniqueCols (optional) are the table's other unique-key columns beside
+// (tenant_id, company_id): a NULL row whose key the default company already
+// holds is left NULL instead of colliding and failing the boot.
+func (r *Repository) BackfillCompanyID(ctx context.Context, table string, uniqueCols ...string) error {
 	// #nosec G201 -- table is a fixed caller-supplied constant, never user input.
 	if _, err := r.db.Exec(ctx, fmt.Sprintf(`
 		INSERT INTO company (tenant_id, name, is_default)
@@ -125,8 +130,22 @@ func (r *Repository) BackfillCompanyID(ctx context.Context, table string) error 
 		UPDATE %s t SET company_id = c.id
 		FROM company c
 		WHERE c.tenant_id = t.tenant_id AND c.is_default AND c.deleted_at IS NULL
-		  AND t.company_id IS NULL`, table)); err != nil {
+		  AND t.company_id IS NULL%s`, table, notTaken(table, uniqueCols))); err != nil {
 		return fmt.Errorf("company: backfill company_id on %s: %w", table, err)
 	}
 	return nil
+}
+
+// notTaken is BackfillCompanyID's "the company doesn't already hold this key"
+// guard; empty without unique columns. Identifiers are caller constants.
+func notTaken(table string, cols []string) string {
+	if len(cols) == 0 {
+		return ""
+	}
+	var same strings.Builder
+	for _, c := range cols {
+		fmt.Fprintf(&same, " AND o.%s = t.%s", c, c)
+	}
+	return fmt.Sprintf(`
+		  AND NOT EXISTS (SELECT 1 FROM %s o WHERE o.tenant_id = t.tenant_id AND o.company_id = c.id%s)`, table, same.String())
 }

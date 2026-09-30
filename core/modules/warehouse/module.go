@@ -110,12 +110,10 @@ type warehouseModule struct{}
 func (m *warehouseModule) Name() string { return "warehouse" }
 
 func (m *warehouseModule) Register() error {
-	if err := orm.Register[Product](orm.WithPublicFields(
-		"name", "reference", "unit", "unit_price", "description", "picture")); err != nil {
+	if err := orm.Register[Product](orm.WithPublicFields(orm.AllPublicFields)); err != nil {
 		return err
 	}
-	if err := orm.Register[ProductVariant](orm.WithPublicFields(
-		"product_id", "name", "unit_price", "picture")); err != nil {
+	if err := orm.Register[ProductVariant](orm.WithPublicFields(orm.AllPublicFields)); err != nil {
 		return err
 	}
 	return orm.Register[ProductUoms]()
