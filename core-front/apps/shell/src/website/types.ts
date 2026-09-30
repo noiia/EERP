@@ -19,6 +19,8 @@ export interface RecordListConfig {
   table: string; fields: string[]; title_field: string; filter?: Record<string, string>
   page_size?: number; display?: 'grid' | 'list'; detail_slug?: string; picture_field?: string
 }
+/** event_booking / appointment_booking: the event to book. */
+export interface BookingConfig { event_id: string }
 export interface RecordDetailConfig { table: string; fields: string[]; title_field: string; picture_field?: string }
 
 /** Where blocks read published data — the public API server-side, a Server

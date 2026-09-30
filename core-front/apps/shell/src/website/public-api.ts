@@ -22,7 +22,7 @@ class PublicAPIError extends Error {
 // Every non-2xx but 404 throws inside the wrapper, so failures are never cached.
 // Outside it, a 429 is transient: a block renders nothing (`transient: 'empty'`)
 // instead of failing the whole page with a 500.
-async function getJSON<T>(path: string, tags: string[], transient: 'empty' | 'throw' = 'empty'): Promise<T | null> {
+export async function getJSON<T>(path: string, tags: string[], transient: 'empty' | 'throw' = 'empty'): Promise<T | null> {
   const ip = await forwardedFor()
   try {
     return await unstable_cache(

@@ -59,9 +59,11 @@ describe('blocks', () => {
     expect(container.textContent).not.toContain('8')
   })
 
-  it('event blocks render a placeholder until spec 4', async () => {
-    const { container } = await renderBlock(block('event_booking', {}), source([]))
-    expect(container.textContent).not.toBe('')
+  it('booking blocks render nothing for a missing, unpublished or wrong-kind event', async () => {
+    let { container } = await renderBlock(block('event_booking', {}), source([]))
+    expect(container.textContent).toBe('')
+    ;({ container } = await renderBlock(block('appointment_booking', { event_id: 'e1' }), source([{ id: 'e1', kind: 'sessions' }])))
+    expect(container.textContent).toBe('')
   })
 })
 

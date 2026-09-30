@@ -1,5 +1,5 @@
 'use client'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -11,6 +11,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '@eerp/core-front'
 import type { PublishedTable } from '@/lib/website-settings'
+import { listEditorEvents } from '@/website/editor-actions'
 import type { Block } from '@/website/types'
 import { BLOCK_LABELS } from './BlockPalette'
 
@@ -33,6 +34,11 @@ export function BlockSettings({ block, published, onChange, onDelete }: {
   const fields = tables.find((p) => p.table === c.table)?.fields ?? []
   const chosen = Array.isArray(c.fields) ? (c.fields as string[]) : []
   const id = (k: string) => `block-${block.id}-${k}`
+  const bookingKind = block.type === 'event_booking' ? 'sessions' : block.type === 'appointment_booking' ? 'appointment' : null
+  const [events, setEvents] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    if (bookingKind) void listEditorEvents(bookingKind).then(setEvents)
+  }, [bookingKind])
 
   const text = (k: string, label: string, extra: { multiline?: boolean; type?: string } = {}) => (
     <TextField key={k} id={id(k)} size="small" label={t(label)} value={str(k)} onChange={(e) => set({ [k]: e.target.value })}
@@ -112,8 +118,17 @@ export function BlockSettings({ block, published, onChange, onDelete }: {
     case 'record_detail':
       form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', fields, { none: true })]
       break
-    default:
-      form = [<Typography key="pending" color="text.secondary">{t('Booking will be available soon.')}</Typography>]
+    case 'event_booking':
+    case 'appointment_booking':
+      form = [
+        <TextField key="event_id" id={id('event_id')} select size="small" label={t('Event')} value={str('event_id')}
+          onChange={(e) => set({ event_id: e.target.value })}>
+          {events.map((ev) => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
+        </TextField>,
+        <Typography key="hint" variant="body2" color="text.secondary">
+          {t('The block shows once the event is published.')}
+        </Typography>,
+      ]
   }
 
   return (
