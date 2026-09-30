@@ -885,3 +885,39 @@ msgstr "Vos réservations apparaîtront ici."
 
 msgid "Staff sign-in"
 msgstr "Connexion du personnel"
+
+msgid "Outgoing emails"
+msgstr "E-mails sortants"
+
+msgid "Booking and account emails, their delivery status, and retries."
+msgstr "E-mails de réservation et de compte, leur statut d'envoi et les relances."
+
+msgid "Could not retry."
+msgstr "Relance impossible."
+
+msgid "All"
+msgstr "Tous"
+
+msgid "pending"
+msgstr "en attente"
+
+msgid "sent"
+msgstr "envoyé"
+
+msgid "Recipient"
+msgstr "Destinataire"
+
+msgid "Subject"
+msgstr "Objet"
+
+msgid "Status"
+msgstr "Statut"
+
+msgid "Attempts"
+msgstr "Tentatives"
+
+msgid "Last error"
+msgstr "Dernière erreur"
+
+msgid "Retry"
+msgstr "Relancer"

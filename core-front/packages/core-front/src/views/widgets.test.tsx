@@ -487,3 +487,16 @@ describe('hideLabel', () => {
     expect(screen.getByLabelText('Name')).toBeInTheDocument()
   })
 })
+
+describe('date/datetime', () => {
+  it('round-trips an instant through local time and clears to null', () => {
+    const iso = '2026-10-05T07:30:00.000Z'
+    const { onChange } = renderWidget({ name: 'starts_at', label: 'Start', type: 'date', widget: 'datetime' }, iso)
+    const input = screen.getByLabelText('Start') as HTMLInputElement
+    expect(new Date(input.value).toISOString()).toBe(iso) // local wall clock, no zone
+    fireEvent.change(input, { target: { value: '2026-10-06T09:15' } })
+    expect(onChange).toHaveBeenLastCalledWith(new Date('2026-10-06T09:15').toISOString())
+    fireEvent.change(input, { target: { value: '' } })
+    expect(onChange).toHaveBeenLastCalledWith(null)
+  })
+})

@@ -84,7 +84,7 @@ export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username', 'user-presence'],
   number: ['float', 'int', 'percent', 'stars', 'phone', 'monetary'],
   boolean: ['switch', 'picture', 'signature', 'file'],
-  date: ['simple'],
+  date: ['simple', 'datetime'],
   relation: ['search', 'tags', 'list', 'carousel', 'summary'],
   address: ['form'],
   selection: ['select', 'linked'],

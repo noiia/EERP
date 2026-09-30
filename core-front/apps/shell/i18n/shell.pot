@@ -676,3 +676,39 @@ msgstr ""
 
 msgid "Staff sign-in"
 msgstr ""
+
+msgid "Outgoing emails"
+msgstr ""
+
+msgid "Booking and account emails, their delivery status, and retries."
+msgstr ""
+
+msgid "Could not retry."
+msgstr ""
+
+msgid "All"
+msgstr ""
+
+msgid "pending"
+msgstr ""
+
+msgid "sent"
+msgstr ""
+
+msgid "Recipient"
+msgstr ""
+
+msgid "Subject"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Attempts"
+msgstr ""
+
+msgid "Last error"
+msgstr ""
+
+msgid "Retry"
+msgstr ""

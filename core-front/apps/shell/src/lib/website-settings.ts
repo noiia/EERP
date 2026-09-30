@@ -101,3 +101,38 @@ export async function updateWebsiteUser(
 ): Promise<SaveResult> {
   return save('PUT', `/website_admin/users/${encodeURIComponent(id)}`, patch)
 }
+
+export type OutboxStatus = 'pending' | 'sent' | 'failed'
+
+export interface OutboxMail {
+  id: string
+  to_address: string
+  subject: string
+  status: OutboxStatus
+  attempts: number
+  next_attempt_at: string
+  last_error: string
+  sent_at: string | null
+  created_at: string
+}
+
+/** Newest 200 outbox rows, optionally one status only (Go caps page_size at 200). */
+export async function listOutbox(status?: OutboxStatus): Promise<OutboxMail[]> {
+  const q = new URLSearchParams({ page_size: '200' })
+  if (status) q.set('status', status)
+  try {
+    return (await apiRequest<{ data: OutboxMail[] }>('GET', `/mail_outbox?${q}`)).data ?? []
+  } catch {
+    return []
+  }
+}
+
+/** A failed row back to pending with a fresh attempt budget. */
+export async function retryOutbox(id: string): Promise<SaveResult> {
+  try {
+    await apiRequest('POST', `/mail_outbox/${encodeURIComponent(id)}/retry`)
+    return { ok: true }
+  } catch (e) {
+    return failure(e)
+  }
+}

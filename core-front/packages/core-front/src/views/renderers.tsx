@@ -1024,6 +1024,9 @@ function TreeRenderer<T extends HasId>({
           // own id is the user id), so this renders that row's avatar + live
           // presence bubble beside the field's own value instead of the bare
           // text DataGrid renders by default (Settings -> Users' first user).
+          if (f.widget === 'datetime') {
+            col.valueFormatter = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString() : '')
+          }
           if (f.widget === 'user-presence') {
             col.renderCell = (params) => (
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', height: '100%' }}>
