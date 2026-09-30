@@ -73,3 +73,6 @@ msgstr "Surface"
 
 msgid "custom"
 msgstr "Personnalisé"
+
+msgid "Picture"
+msgstr "Image"

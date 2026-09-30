@@ -1,5 +1,5 @@
 // Keep in sync with core/modules/website/validate.go BlockTypes.
-export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'event_booking', 'appointment_booking'] as const
+export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'event_booking', 'appointment_booking'] as const
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 export interface Block {
@@ -29,7 +29,13 @@ export interface RecordListConfig {
 }
 /** event_booking / appointment_booking: the event to book. */
 export interface BookingConfig { event_id: string }
-export interface RecordDetailConfig { table: string; fields: string[]; title_field: string; picture_field?: string }
+/** `record`: a fixed record to show; unset = the id from the URL (/<slug>/<id>). */
+export interface RecordDetailConfig { table: string; fields: string[]; title_field: string; picture_field?: string; record?: string }
+/** `records`: hand-picked ids, in order; unset = the table's first ones. `limit` caps either. */
+export interface RecordCarouselConfig {
+  table: string; fields: string[]; title_field: string; picture_field?: string; detail_slug?: string
+  records?: string[]; limit?: number; filter?: Record<string, string>
+}
 
 /** Where blocks read published data — the public API server-side, a Server
  * Action in the editor. null = table not published (404). */

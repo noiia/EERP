@@ -72,6 +72,27 @@ describe('blocks', () => {
     expect(again.container.querySelectorAll('img')).toHaveLength(1)
   })
 
+  it('record_detail with a fixed record ignores the URL id', async () => {
+    const s = source([{ id: '7', name: 'Lamp' }, { id: '8', name: 'Desk' }])
+    await renderBlock(block('record_detail', { table: 'product', fields: ['name'], title_field: 'name', record: '8' }), s, { id: '7' })
+    expect(screen.getByRole('heading', { name: 'Desk' })).toBeTruthy()
+  })
+
+  it('record_carousel: picked records in their order, capped by limit; missing ones drop out', async () => {
+    const s = source([{ id: '1', name: 'A' }, { id: '2', name: 'B' }, { id: '3', name: 'C' }])
+    await renderBlock(block('record_carousel', { table: 't', fields: [], title_field: 'name', records: ['3', 'gone', '1', '2'], limit: 3 }), s)
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['C', 'A'])
+  })
+
+  it('record_carousel without picks shows the first `limit` records', async () => {
+    const s: PublicDataSource = {
+      list: async (_t, q) => ({ records: [{ id: '1', name: 'A' }, { id: '2', name: 'B' }].slice(0, q.page_size), total: 2 }),
+      get: async () => null,
+    }
+    await renderBlock(block('record_carousel', { table: 't', fields: [], title_field: 'name', limit: 1 }), s)
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['A'])
+  })
+
   it('record_list on an unpublished table renders nothing', async () => {
     const { container } = await renderBlock(block('record_list', { table: 'crm', fields: ['name'], title_field: 'name' }), source(null))
     expect(container.textContent).toBe('')

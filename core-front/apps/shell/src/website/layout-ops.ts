@@ -9,6 +9,7 @@ const DEFAULTS: Record<BlockType, { w: number; h: number; config: () => Record<s
   image: { w: 6, h: 4, config: () => ({ table: '', record: '', field: '', alt: '' }) },
   record_list: { w: 12, h: 6, config: () => ({ table: '', fields: [], title_field: '', display: 'grid', page_size: 12 }) },
   record_detail: { w: 12, h: 6, config: () => ({ table: '', fields: [], title_field: '' }) },
+  record_carousel: { w: 12, h: 6, config: () => ({ table: '', fields: [], title_field: '', limit: 10 }) },
   event_booking: { w: 12, h: 6, config: () => ({}) },
   appointment_booking: { w: 12, h: 6, config: () => ({}) },
 }

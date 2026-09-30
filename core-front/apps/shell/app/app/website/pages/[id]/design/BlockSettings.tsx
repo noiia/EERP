@@ -15,6 +15,7 @@ import { savePublished, type PublishedTable } from '@/lib/website-settings'
 import { listEditorEvents } from '@/website/editor-actions'
 import type { Block } from '@/website/types'
 import { BLOCK_LABELS } from './BlockPalette'
+import { RecordPicker } from './RecordPicker'
 
 type Config = Record<string, unknown>
 
@@ -58,7 +59,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   // Changing table resets everything picked from the previous one.
   const tableSelect = (
     <TextField key="table" id={id('table')} select size="small" label={t('Table')} value={str('table')}
-      onChange={(e) => set({ table: e.target.value, fields: [], title_field: '', picture_field: '', field: '', filter: {} })}>
+      onChange={(e) => set({ table: e.target.value, fields: [], title_field: '', picture_field: '', field: '', filter: {}, record: '', records: [] })}>
       {tables.map((p) => <MenuItem key={p.table} value={p.table}>{p.table}</MenuItem>)}
     </TextField>
   )
@@ -126,7 +127,18 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         text('detail_slug', 'Detail page slug'), select('picture_field', 'Picture field', pictures, { none: true }), filterRows()]
       break
     case 'record_detail':
-      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true })]
+      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
+        str('table') && <RecordPicker key="record" table={str('table')} labelField={str('title_field')} label="Record (empty = the one in the URL)"
+          value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />]
+      break
+    case 'record_carousel':
+      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
+        <TextField key="limit" id={id('limit')} size="small" type="number" label={t('Maximum number of records')}
+          value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 100 } }}
+          onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
+        str('table') && <RecordPicker key="records" multiple table={str('table')} labelField={str('title_field')} label="Records (empty = the first ones)"
+          value={Array.isArray(c.records) ? (c.records as string[]) : []} onChange={(ids) => set({ records: ids })} />,
+        text('detail_slug', 'Detail page slug')]
       break
     case 'event_booking':
     case 'appointment_booking':

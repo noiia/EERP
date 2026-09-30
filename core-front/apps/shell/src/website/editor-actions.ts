@@ -15,7 +15,7 @@ import type { Block } from './types'
 export async function previewBlock(block: Block, params: { id?: string }): Promise<ReactNode> {
   if (!(await getIdentity())) return null
   let id = params.id
-  if (!id && block.type === 'record_detail' && typeof block.config.table === 'string' && block.config.table) {
+  if (!id && block.type === 'record_detail' && !block.config.record && typeof block.config.table === 'string' && block.config.table) {
     const first = await serverPublicSource.list(block.config.table, { page_size: 1 })
     id = first?.records[0]?.id as string | undefined
   }
@@ -43,6 +43,23 @@ export async function listEditorEvents(kind: 'sessions' | 'appointment'): Promis
   try {
     const q = new URLSearchParams({ page_size: '200', 'filter[kind]': kind })
     return (await apiRequest<{ data: { id: string; name: string }[] }>('GET', `/event?${q}`)).data ?? []
+  } catch {
+    return []
+  }
+}
+
+/** Records a block can point at, for the editor's record picker (staff view, so
+ * unpublished rows are offered too — the site shows only published ones).
+ * `q` searches the label column; `ids` fetches the labels of already-picked rows. */
+export async function listEditorRecords(table: string, labelField: string, q: { search?: string; ids?: string[] }): Promise<{ id: string; label: string }[]> {
+  if (!table) return []
+  const col = labelField || 'id'
+  const params = new URLSearchParams({ page_size: '20' })
+  if (q.ids?.length) params.set('in[id]', q.ids.join(','))
+  else if (q.search && col !== 'id') params.set(`search[${col}]`, q.search)
+  try {
+    const res = await apiRequest<{ data: Record<string, unknown>[] }>('GET', `/${encodeURIComponent(table)}?${params}`)
+    return (res.data ?? []).map((r) => ({ id: String(r.id), label: String(r[col] ?? r.id) }))
   } catch {
     return []
   }

@@ -17,7 +17,7 @@ import (
 // BlockTypes is the closed set of block types — keep in sync with
 // core-front/apps/shell/src/website/types.ts BLOCK_TYPES.
 var BlockTypes = map[string]bool{
-	"text": true, "image": true, "hero": true, "record_list": true, "record_detail": true,
+	"text": true, "image": true, "hero": true, "record_list": true, "record_detail": true, "record_carousel": true,
 	"event_booking": true, "appointment_booking": true,
 }
 

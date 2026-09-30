@@ -51,7 +51,10 @@ const variantListView: ViewDescriptor = {
 const variantFormView: ViewDescriptor = {
   entity: 'product_variant',
   viewType: 'form',
-  fields: variantFields,
+  fields: [
+    { name: 'picture', label: 'Picture', type: 'boolean', widget: 'picture', hideLabel: true },
+    ...variantFields,
+  ],
   permissions: ['product_variant:product_variant:read'],
 }
 

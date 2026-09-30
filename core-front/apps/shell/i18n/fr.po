@@ -1054,3 +1054,18 @@ msgstr "Publier"
 
 msgid "Not public yet — the website shows nothing for these fields:"
 msgstr "Pas encore public — le site n'affiche rien pour ces champs :"
+
+msgid "Record carousel"
+msgstr "Carrousel d'enregistrements"
+
+msgid "Record (empty = the one in the URL)"
+msgstr "Enregistrement (vide = celui de l'URL)"
+
+msgid "Records (empty = the first ones)"
+msgstr "Enregistrements (vide = les premiers)"
+
+msgid "Maximum number of records"
+msgstr "Nombre maximum d'enregistrements"
+
+msgid "No records"
+msgstr "Aucun enregistrement"

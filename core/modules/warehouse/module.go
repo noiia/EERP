@@ -45,6 +45,10 @@ type Product struct {
 	// it lives per product, since sale.Invoice.TaxAmount is now the sum of
 	// each line's own product tax.
 	TaxRate float64 `db:"tax_rate" json:"tax_rate"`
+	// Picture is the flag behind the form's boolean/picture widget: true ⇔ a
+	// picture exists on the (table, record, picture) anchor; the picture
+	// service owns the bytes. Public-declared, so the website shows it.
+	Picture *bool `db:"picture" json:"picture"`
 }
 
 // ProductVariant is a concrete, sellable instance of a Product — the entity
@@ -75,6 +79,10 @@ type ProductVariant struct {
 	// Product.TaxRate when present, so a sale line's tax percent is always
 	// resolved from the specific variant sold, not just its product.
 	TaxRate *float64 `db:"tax_rate" json:"tax_rate"`
+	// Picture is the flag behind the form's boolean/picture widget: true ⇔ a
+	// picture exists on the (table, record, picture) anchor; the picture
+	// service owns the bytes. Public-declared, so the website shows it.
+	Picture *bool `db:"picture" json:"picture"`
 }
 
 // ProductUoms is the unit-of-measure catalog other modules' many2one fields

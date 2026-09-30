@@ -6,3 +6,6 @@ msgstr ""
 
 msgid "Name"
 msgstr ""
+
+msgid "Picture"
+msgstr ""

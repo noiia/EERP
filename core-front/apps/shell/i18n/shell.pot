@@ -845,3 +845,18 @@ msgstr ""
 
 msgid "Not public yet — the website shows nothing for these fields:"
 msgstr ""
+
+msgid "Record carousel"
+msgstr ""
+
+msgid "Record (empty = the one in the URL)"
+msgstr ""
+
+msgid "Records (empty = the first ones)"
+msgstr ""
+
+msgid "Maximum number of records"
+msgstr ""
+
+msgid "No records"
+msgstr ""

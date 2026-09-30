@@ -12,6 +12,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   hero: 'Hero',
   record_list: 'Record list',
   record_detail: 'Record detail',
+  record_carousel: 'Record carousel',
   event_booking: 'Event booking',
   appointment_booking: 'Appointment booking',
 }

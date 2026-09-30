@@ -28,6 +28,7 @@ const productFields: ViewDescriptor['fields'] = [
 // exists" (module.go's doc comment) visible: a product's own form shows
 // whichever variant(s) already exist for it.
 const productFormFields: ViewDescriptor['fields'] = [
+  { name: 'picture', label: 'Picture', type: 'boolean', widget: 'picture', hideLabel: true },
   ...productFields,
   {
     name: 'variants',
