@@ -36,6 +36,7 @@ import (
 	"core/internal/website"
 	_ "core/modules/all"
 	authmodule "core/modules/auth"
+	contactmodule "core/modules/contact"
 	"core/modules/crminheritdemo"
 	cronmodule "core/modules/cron"
 	eventmodule "core/modules/event"
@@ -255,6 +256,12 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	tokenSvc := auth.NewTokenService(configContent)
 	refreshStore := auth.NewRefreshStore(app.DB)
 	userRepo := auth.NewUserRepository(app.DB)
+	// A website signup also creates its contact (contact.website = true), in the
+	// same transaction; bookings made from that account link to it.
+	userRepo.OnWebsiteSignup = func(ctx context.Context, tx *orm.Tx, u auth.Users) error {
+		_, err := contactmodule.CreateWebsiteContact(ctx, tx, u.TenantID, u.Name, u.Email)
+		return err
+	}
 	permRepo := auth.NewPermissionRepository(app.DB)
 	authHandler := auth.NewHandler(userRepo, tokenSvc, refreshStore, permRepo)
 

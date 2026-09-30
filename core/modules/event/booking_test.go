@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"core/internal/auth"
 	"core/internal/chatter"
 	"core/internal/testdb"
+	_ "core/modules/auth"
 	_ "core/modules/chatter"
-	_ "core/modules/contact"
+	"core/modules/contact"
 	_ "core/modules/mail"
 	"core/orm"
 
@@ -28,11 +30,11 @@ type fixture struct {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "chatter", "contact", "mail", "event")
+	testdb.MigrateModules(t, app, "auth", "chatter", "contact", "mail", "event")
 	tenant := uuid.New()
 	t.Cleanup(func() {
 		ctx := context.Background()
-		for _, table := range []string{"event_booking", "event_session", "event_availability", "event", "contact", "mail_outbox", "chatter_message"} {
+		for _, table := range []string{"event_booking", "event_session", "event_availability", "event", "contact", "mail_outbox", "chatter_message", "user_roles", "users"} {
 			_, _ = app.DB.Exec(ctx, `DELETE FROM `+table+` WHERE tenant_id = $1`, tenant)
 		}
 	})
@@ -148,12 +150,37 @@ func TestBook_SessionRules(t *testing.T) {
 		})
 	}
 
-	t.Run("a booking links a contact and queues exactly one email", func(t *testing.T) {
+	t.Run("an anonymous booking creates no contact and queues exactly one email", func(t *testing.T) {
 		var contacts, mails int
 		_ = f.db.QueryRow(context.Background(), `SELECT count(*) FROM contact WHERE tenant_id = $1 AND lower(email) = 'a@x.io'`, f.tenant).Scan(&contacts)
 		_ = f.db.QueryRow(context.Background(), `SELECT count(*) FROM mail_outbox WHERE tenant_id = $1 AND to_address = 'a@x.io'`, f.tenant).Scan(&mails)
-		if contacts != 1 || mails != 1 {
-			t.Errorf("contacts=%d mails=%d, want 1 and 1", contacts, mails)
+		if contacts != 0 || mails != 1 {
+			t.Errorf("contacts=%d mails=%d, want 0 and 1", contacts, mails)
+		}
+	})
+
+	t.Run("signup creates a website contact; the account's bookings link to it", func(t *testing.T) {
+		ctx := context.Background()
+		users := auth.NewUserRepository(f.db)
+		users.OnWebsiteSignup = func(ctx context.Context, tx *orm.Tx, u auth.Users) error {
+			_, err := contact.CreateWebsiteContact(ctx, tx, u.TenantID, u.Name, u.Email)
+			return err
+		}
+		u, err := users.CreateWebsiteUser(ctx, f.tenant, "member@x.io", "pw-123456789", "Member", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cid uuid.UUID
+		var website *bool
+		if err := f.db.QueryRow(ctx, `SELECT id, website FROM contact WHERE tenant_id = $1 AND email = 'member@x.io'`, f.tenant).Scan(&cid, &website); err != nil || website == nil || !*website {
+			t.Fatalf("website contact: err=%v website=%v", err, website)
+		}
+		b, err := f.svc.Book(ctx, f.tenant, BookRequest{EventID: ev.ID, SessionID: &future.ID, Seats: 1, Email: "other@x.io", Name: "M", UserID: &u.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.ContactID == nil || *b.ContactID != cid {
+			t.Errorf("contact_id = %v, want the account's website contact %v", b.ContactID, cid)
 		}
 	})
 }

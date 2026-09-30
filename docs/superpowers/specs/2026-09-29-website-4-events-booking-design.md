@@ -109,9 +109,10 @@ Where the build differs from this draft:
   settings endpoint is needed. Emails and the site show times in that zone.
 - **Session window columns are `starts_at`/`ends_at`**: the ORM doesn't quote identifiers and
   `end` is reserved in Postgres.
-- **Contact linking is SQL on the `contact` table** (select by `lower(email)` in the tenant,
-  insert if absent): `contact` lives in an internal, non-importable package. No unique index on
-  contact email yet (ADR-026).
+- **Contacts are accounts only** (replaces §3 step 3): signup creates a `contact` with the new
+  `website` flag set; a signed-in booking links to it; anonymous and staff bookings create no
+  contact (name, email, phone stay on the booking). Verification attaches earlier anonymous
+  bookings to the account and its contact.
 - **`site_url`** (new config key, the public site origin) builds email links;
   `frontend_base_url` is internal (pdf-service) and unsuitable.
 - **ERP-side `event_booking`**: POST books through the service, PUT changes only name/phone or

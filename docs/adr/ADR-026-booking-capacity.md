@@ -32,11 +32,12 @@ bookings that hold it.
    `status: "cancelled"` (which frees the seats), `DELETE` is a 409 "cancel instead". Changing
    seats or target is cancel-and-rebook. Cancel is idempotent (cancel twice → 200, seats freed
    once).
-5. **Contact linking by email, in SQL.** The `contact` module is internal (not importable), so the
-   booking selects the tenant's contact by `lower(email)` and inserts one if absent. There is no
-   unique index on contact email: two concurrent first bookings by the same new address may
-   create two contacts (ponytail — add a partial unique index on `(tenant_id, lower(email))` if
-   duplicates become a problem).
+5. **Only accounts are contacts.** A website signup creates a `contact` with `website = true` in
+   the signup transaction (auth's `OnWebsiteSignup` hook, wired in `internal/app`; `contact`
+   stays out of `auth`). A booking made while signed in links to that contact; an anonymous or
+   staff booking is just its name, email and phone on the booking row — no contact is created,
+   so one-off visitors never flood the contact list. Verifying an email attaches earlier
+   anonymous bookings to the account and to its contact.
 
 ```mermaid
 sequenceDiagram
@@ -53,7 +54,7 @@ sequenceDiagram
     else slot
         G->>DB: advisory lock (event, slot) · re-derive slot · recount
     end
-    G->>DB: find or insert contact by lower(email)
+    G->>DB: signed in? link the account's website contact
     G->>DB: INSERT event_booking (cancel_token)
     G->>DB: INSERT mail_outbox (confirmation + cancel link)
     G->>DB: COMMIT

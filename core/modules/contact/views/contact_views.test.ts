@@ -49,6 +49,7 @@ describe('contacts FrontModule', () => {
       'email',
       'company',
       'status',
+      'website',
     ])
   })
 

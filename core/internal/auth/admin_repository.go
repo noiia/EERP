@@ -280,6 +280,11 @@ func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UU
 			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)}); err != nil {
 			return err
 		}
+		if r.OnWebsiteSignup != nil {
+			if err := r.OnWebsiteSignup(ctx, tx, created); err != nil {
+				return err
+			}
+		}
 		sent, err := issueVerification(ctx, tx, tenantID, created.ID, siteURL)
 		if err == nil && !sent {
 			err = errors.New("verification token not set")

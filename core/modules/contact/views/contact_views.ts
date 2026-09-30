@@ -16,6 +16,8 @@ export interface Contact {
   email: string
   company?: string
   status?: string
+  /** Created by a website signup (set by Go, never edited). */
+  website?: boolean | null
 }
 
 const fields: ViewDescriptor['fields'] = [
@@ -23,6 +25,7 @@ const fields: ViewDescriptor['fields'] = [
   { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'company', label: 'Company', type: 'text' },
   { name: 'status', label: 'Status', type: 'text' },
+  { name: 'website', label: 'Website', type: 'boolean', widget: 'switch', readOnly: true },
 ]
 
 // Form-only: the inverse side of crm.contact_id — every CRM record pointing at

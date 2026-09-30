@@ -22,3 +22,6 @@ msgstr "Statut"
 
 msgid "CRM records"
 msgstr "Fiches CRM"
+
+msgid "Website"
+msgstr "Site web"

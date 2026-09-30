@@ -13,6 +13,7 @@ import (
 	"core/internal/chatter"
 	"core/internal/common"
 	eerpmail "core/internal/mail"
+	"core/modules/contact"
 	"core/orm"
 	"core/orm/model"
 
@@ -62,7 +63,7 @@ func NewService(db *orm.DB, chat *chatter.Repository, siteURL string) *Service {
 
 func isNoRows(err error) bool { return errors.Is(err, orm.ErrNotFound) }
 
-// Book captures seats, links a contact, inserts the booking and queues its
+// Book captures seats, links the account's contact (if any), inserts the booking and queues its
 // confirmation email — one transaction, so a failure anywhere leaves no trace.
 func (s *Service) Book(ctx context.Context, tenant uuid.UUID, req BookRequest) (EventBooking, error) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
@@ -113,11 +114,9 @@ func (s *Service) Book(ctx context.Context, tenant uuid.UUID, req BookRequest) (
 			}
 			b.SlotStart, b.SlotEnd, when = &slot.Start, &slot.End, slot.Start
 		}
-		contactID, err := linkContact(ctx, tx, tenant, req.Email, req.Name)
-		if err != nil {
+		if b.ContactID, err = accountContact(ctx, tx, tenant, req.UserID); err != nil {
 			return err
 		}
-		b.ContactID = &contactID
 		if b, err = orm.MustRepo[EventBooking](tx).Create(ctx, b); err != nil {
 			return err
 		}
@@ -208,23 +207,26 @@ func captureSlot(ctx context.Context, tx *orm.Tx, ev Event, start time.Time, sea
 	return *slot, nil
 }
 
-// linkContact finds the tenant's contact by email or creates one.
-// ponytail: select-then-insert; two first-time bookings racing on one new
-// address may create two contacts — merge by hand; a unique index on contact
-// emails would need existing duplicates cleaned first.
-func linkContact(ctx context.Context, tx *orm.Tx, tenant uuid.UUID, email, name string) (uuid.UUID, error) {
-	var id uuid.UUID
-	err := tx.QueryRow(ctx, `SELECT id FROM contact WHERE tenant_id = $1 AND lower(email) = $2 AND deleted_at IS NULL ORDER BY created_at LIMIT 1`,
-		tenant, email).Scan(&id)
-	if err == nil {
-		return id, nil
+// accountContact is the website contact of the booking account (created at
+// signup, contact.website = true), or nil: an anonymous or staff booking is
+// just its name, email and phone — it creates no contact.
+func accountContact(ctx context.Context, tx *orm.Tx, tenant uuid.UUID, userID *uuid.UUID) (*uuid.UUID, error) {
+	if userID == nil {
+		return nil, nil
 	}
-	if !isNoRows(err) {
-		return uuid.Nil, err
+	var email string
+	err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1 AND tenant_id = $2`, *userID, tenant).Scan(&email)
+	if isNoRows(err) {
+		return nil, nil
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO contact (tenant_id, name, email, company, status) VALUES ($1, $2, $3, '', 'lead') RETURNING id`,
-		tenant, name, email).Scan(&id)
-	return id, err
+	if err != nil {
+		return nil, err
+	}
+	id, err := contact.WebsiteContactID(ctx, tx, tenant, email)
+	if err != nil || id == uuid.Nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 // CancelByToken cancels via the emailed link. Idempotent: an already
@@ -363,8 +365,17 @@ func randomToken() (string, error) {
 // never someone else's: the address is now proven theirs, and rows already
 // owned by an account (user_id set) are left alone. Every status attaches:
 // cancelled bookings are history too.
+// They also take the account's website contact, as a logged-in booking does.
 func AttachBookings(ctx context.Context, tx *orm.Tx, tenant, userID uuid.UUID, email string) error {
-	_, err := tx.Exec(ctx, `UPDATE event_booking SET user_id = $3, updated_at = now()
-		WHERE tenant_id = $1 AND lower(email) = lower($2) AND user_id IS NULL AND deleted_at IS NULL`, tenant, email, userID)
+	cid, err := contact.WebsiteContactID(ctx, tx, tenant, email)
+	if err != nil {
+		return err
+	}
+	var contactID *uuid.UUID
+	if cid != uuid.Nil {
+		contactID = &cid
+	}
+	_, err = tx.Exec(ctx, `UPDATE event_booking SET user_id = $3, contact_id = COALESCE($4, contact_id), updated_at = now()
+		WHERE tenant_id = $1 AND lower(email) = lower($2) AND user_id IS NULL AND deleted_at IS NULL`, tenant, email, userID, contactID)
 	return err
 }

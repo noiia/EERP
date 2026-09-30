@@ -16,6 +16,10 @@ import (
 type UserRepository struct {
 	users *orm.Repository[Users]
 	db    *orm.DB
+	// OnWebsiteSignup runs inside the website-signup transaction, after the
+	// user row exists (internal/app wires the contact module's
+	// CreateWebsiteContact): an error rolls the whole signup back. nil = none.
+	OnWebsiteSignup func(ctx context.Context, tx *orm.Tx, user Users) error
 }
 
 // NewUserRepository constructs a UserRepository bound to db.
