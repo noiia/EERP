@@ -52,7 +52,7 @@ import { HeaderButtonContainer } from './header-button-container'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
-import { useListNavStore } from './list-nav-store'
+import { useListNavStore, type ListNav } from './list-nav-store'
 import { SelectionBar } from './list-selection'
 import { PictureSizeProvider } from './picture-widgets'
 import { AvatarWithPresence } from './presence-bubble'
@@ -248,14 +248,20 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
   const router = useRouter()
   const relationOps = useRelationOps()
   const formPath = moduleRegistry.formPathFor(entity) ?? undefined
-  const ids = useListNavStore((s) => s.ids[entity])
+  const nav = useListNavStore((s) => s.nav[entity])
+  const [busy, setBusy] = useState(false)
   useEffect(() => {
-    if (ids || !relationOps) return
+    if (nav || !relationOps) return
     let cancelled = false
-    relationOps
-      .list(entity)
-      .then((records) => {
-        if (!cancelled) useListNavStore.getState().setIds(entity, records.map((r) => r.id))
+    // Server-paged when it can be, so the total counts every row, not one page.
+    const load = relationOps.listPage
+      ? relationOps.listPage(entity, { page: 1, pageSize: DEFAULT_DISPLAY_PAGE_SIZE }).then((res): ListNav => ({
+          ids: res.records.map((r) => r.id), offset: 0, total: res.total, paging: { pageSize: DEFAULT_DISPLAY_PAGE_SIZE },
+        }))
+      : relationOps.list(entity).then((records): ListNav => ({ ids: records.map((r) => r.id), offset: 0, total: records.length }))
+    load
+      .then((n) => {
+        if (!cancelled) useListNavStore.getState().setNav(entity, n)
       })
       .catch(() => {
         // No default order to fall back to — the stepper just stays hidden.
@@ -263,18 +269,40 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
     return () => {
       cancelled = true
     }
-  }, [ids, relationOps, entity])
+  }, [nav, relationOps, entity])
 
-  if (!formPath || !recordId || !ids) return null
-  const index = ids.indexOf(recordId)
+  if (!formPath || !recordId || !nav) return null
+  const index = nav.ids.indexOf(recordId)
   if (index === -1) return null
+  const position = nav.offset + index // 0-based, over the whole filtered set
 
   // Stepping through the list REPLACES this record's own breadcrumb entry
   // instead of piling on a new one per step — see breadcrumb-store.ts's
   // dropLast doc comment.
-  const goTo = (i: number) => {
+  const open = (id: string) => {
     useBreadcrumbStore.getState().dropLast()
-    router.push(erpPath(formPath.replace(':id', ids[i])))
+    router.push(erpPath(formPath.replace(':id', id)))
+  }
+  // Inside the loaded page: route straight there. Past its edge (server-paged):
+  // fetch the neighboring page with the list's own filter, then route.
+  const goTo = async (target: number) => {
+    const i = target - nav.offset
+    if (i >= 0 && i < nav.ids.length) return open(nav.ids[i])
+    const paging = nav.paging
+    if (!paging || !relationOps?.listPage) return
+    const page = Math.floor(target / paging.pageSize)
+    setBusy(true)
+    try {
+      const res = await relationOps.listPage(entity, { ...paging.options, page: page + 1, pageSize: paging.pageSize })
+      const ids = res.records.map((r) => r.id)
+      const id = ids[target - page * paging.pageSize]
+      useListNavStore.getState().setNav(entity, { ...nav, ids, offset: page * paging.pageSize, total: res.total })
+      if (id) open(id)
+    } catch {
+      // The page couldn't load; stay on this record.
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -282,19 +310,19 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
       <IconButton
         size="small"
         aria-label={t('Previous record')}
-        disabled={index <= 0}
-        onClick={() => goTo(index - 1)}
+        disabled={busy || position <= 0}
+        onClick={() => void goTo(position - 1)}
       >
         <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} size="xs" />
       </IconButton>
       <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums, whiteSpace: 'nowrap' }}>
-        {index + 1} / {ids.length}
+        {position + 1} / {nav.total}
       </Typography>
       <IconButton
         size="small"
         aria-label={t('Next record')}
-        disabled={index >= ids.length - 1}
-        onClick={() => goTo(index + 1)}
+        disabled={busy || position >= nav.total - 1}
+        onClick={() => void goTo(position + 1)}
       >
         <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} size="xs" />
       </IconButton>
@@ -893,9 +921,15 @@ function TreeRenderer<T extends HasId>({
   // list-nav store — a form navigated to from here (List/Kanban/Calendar all
   // route through the same formPath click) can then step </> through this
   // SAME order without coming back to this view (see FormListNav below).
+  // Server-paged List mode also records where this page sits and Go's total over
+  // the active filter, so the form reads "position / total" over every matching
+  // row and steps across page boundaries; other modes hold all their rows.
   useEffect(() => {
-    useListNavStore.getState().setIds(descriptor.entity, liveRecords.map((r) => r.id))
-  }, [liveRecords, descriptor.entity])
+    const ids = liveRecords.map((r) => r.id)
+    useListNavStore.getState().setNav(descriptor.entity, serverPaged && mode === 'list'
+      ? { ids, offset: paginationModel.page * paginationModel.pageSize, total, paging: { options: baseOptions, pageSize: paginationModel.pageSize } }
+      : { ids, offset: 0, total: ids.length })
+  }, [liveRecords, descriptor.entity, serverPaged, mode, paginationModel, total, baseOptions])
 
   // Flat data (no parent links) renders as a grid, with row checkboxes; hierarchical
   // data as a read-only tree (RichTreeView has no selection UI here — out of scope).

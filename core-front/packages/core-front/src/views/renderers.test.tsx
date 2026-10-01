@@ -37,7 +37,7 @@ beforeEach(() => {
   useSessionStore.setState({ identity: null })
   useUiStore.setState({ viewMode: {} })
   useRecordLabelStore.setState({ id: null, label: null })
-  useListNavStore.setState({ ids: {} })
+  useListNavStore.setState({ nav: {} })
   useBreadcrumbStore.setState({ trail: [] })
   useUndoToastStore.setState({ pending: null })
 })
@@ -763,6 +763,25 @@ describe('EntityView', () => {
       )
       expect(list).toHaveBeenCalledWith('crm')
       await waitFor(() => expect(screen.getByText('2 / 2')).toBeInTheDocument())
+    })
+
+    it('counts over the whole filtered set and fetches the next page, with the list filter, past the loaded one', async () => {
+      const options = { filter: { status: 'won' } }
+      // Page 1 of a server-paged list: 20 rows of 45 matching the filter.
+      useListNavStore.getState().setNav('crm', {
+        ids: Array.from({ length: 20 }, (_, i) => `r${i + 1}`), offset: 0, total: 45, paging: { options, pageSize: 20 },
+      })
+      const listPage = vi.fn(async () => ({ records: [{ id: 'r21' }, { id: 'r22' }], total: 45 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={formDescriptor} initialData={[{ id: 'r20', name: 'Ada' }]} actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      expect(screen.getByText('20 / 45')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Next record' }))
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm/r21'))
+      expect(listPage).toHaveBeenCalledWith('crm', { ...options, page: 2, pageSize: 20 })
+      expect(useListNavStore.getState().nav.crm).toMatchObject({ offset: 20, total: 45 })
     })
   })
 
