@@ -5,7 +5,7 @@ import Typography from '@mui/material/Typography'
 export const hasPicture = (record: Record<string, unknown>, field?: string): field is string =>
   !!field && (record[field] === undefined || record[field] === true)
 
-const label = (k: string) => k.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+export const label = (k: string) => k.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
 /** `label: value` lines for the configured fields; a field Go omitted (unpublished) is
  * skipped, and so is a structured value (JSON object/array, e.g. a page layout): it has

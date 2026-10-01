@@ -3,7 +3,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 
 const phone = vi.hoisted(() => ({ value: false }))
 vi.mock('@mui/material/useMediaQuery', () => ({ default: () => phone.value }))
-vi.mock('@/website/editor-actions', () => ({ previewBlock: async () => null, listEditorEvents: async () => [] }))
+vi.mock('@/website/editor-actions', () => ({ previewBlock: async () => null, listEditorEvents: async () => [],
+  listEditorPages: async () => [{ slug: 'product', title: 'Product', published: true }] }))
 const savePublished = vi.hoisted(() => vi.fn(async () => ({ ok: true as const })))
 vi.mock('@/lib/website-settings', () => ({ savePublished }))
 
@@ -43,6 +44,17 @@ describe('PageEditor', () => {
     expect(within(panel).getByRole('checkbox', { name: 'reference' })).toBeTruthy() // declared, not yet published
     fireEvent.mouseDown(within(panel).getByLabelText(/picture field/i))
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['None', 'picture']) // not name/unit_price
+  })
+
+  it('detail page picker lists pages and keeps a slug matching none, flagged', async () => {
+    const save = vi.fn(async () => null)
+    const dangling: Block = { id: 'b-1', type: 'record_list', x: 0, y: 0, w: 36, h: 18, config: { table: '', fields: [], title_field: '', detail_slug: 'test-details' } }
+    render(<PageEditor pageId="p1" slug="home" title="Home" layout={[dangling]} published={published} save={save} />)
+    fireEvent.click(screen.getByTestId('editor-block-b-1'))
+    const panel = screen.getByTestId('block-settings')
+    await screen.findByText(/test-details — page not found/i)
+    fireEvent.mouseDown(within(panel).getByLabelText(/detail page/i))
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['None', 'Product (/product)', 'test-details — page not found'])
   })
 
   it('flags an unpublished field and publishes it on click, keeping the published ones', async () => {

@@ -14,7 +14,7 @@ import type { Theme } from '@mui/material/styles'
 import { erpPath, useT } from '@eerp/core-front'
 import type { PublishedTable } from '@/lib/website-settings'
 import { previewBlock } from '@/website/editor-actions'
-import { addBlock, applyGeometry, removeBlock, updateConfig } from '@/website/layout-ops'
+import { addBlock, applyGeometry, GRID, removeBlock, rowsPx, updateConfig } from '@/website/layout-ops'
 import { stackOrder, type Block } from '@/website/types'
 import { BlockPalette } from './BlockPalette'
 import { BlockSettings } from './BlockSettings'
@@ -126,7 +126,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
                 // Phones: the public site's stacked projection, (y, x) order, no drag.
                 <Stack spacing={2}>
                   {stackOrder(layout).map((b) => (
-                    <Box key={b.id} {...frame(b, { minHeight: b.h * 40 })}><BlockPreview block={b} version={pubVersion} /></Box>
+                    <Box key={b.id} {...frame(b, { minHeight: rowsPx(b.h) })}><BlockPreview block={b} version={pubVersion} /></Box>
                   ))}
                 </Stack>
               ) : mounted ? (
@@ -134,7 +134,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
                   layout={layout.map((b) => ({ i: b.id, x: b.x, y: b.y, w: b.w, h: b.h }))}
                   width={width}
                   // margin 16 = the public grid's gap (theme spacing 2).
-                  gridConfig={{ cols: 12, rowHeight: 40, margin: [16, 16], containerPadding: [0, 0] }}
+                  gridConfig={{ cols: GRID.cols, rowHeight: GRID.rowHeight, margin: [GRID.gap, GRID.gap], containerPadding: [0, 0] }}
                   dragConfig={{ enabled: true }}
                   resizeConfig={{ enabled: true, handles: ['se', 'e', 's'] }}
                   compactor={verticalCompactor}

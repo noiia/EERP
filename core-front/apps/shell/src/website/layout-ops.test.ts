@@ -5,7 +5,7 @@ describe('layout ops', () => {
   it('adds below the lowest block with the type defaults', () => {
     const one = addBlock([], 'text')
     const two = addBlock(one, 'record_list')
-    expect(two[1]).toMatchObject({ type: 'record_list', x: 0, y: 2, w: 12, h: 6 })
+    expect(two[1]).toMatchObject({ type: 'record_list', x: 0, y: 6, w: 36, h: 18 })
     expect(new Set(two.map((b) => b.id)).size).toBe(2)
   })
   it('applies drag/resize geometry by id and ignores unknown ids', () => {

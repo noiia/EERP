@@ -46,12 +46,27 @@ func (m *websiteModule) Register() error {
 	)
 }
 
-// Migrate adds the per-tenant unique slug (struct tags can't express one).
+// Migrate adds the per-tenant unique slug (struct tags can't express one) and
+// scales layouts saved on the old 12-column grid to the 36-column one, once:
+// rows predating layout_scale are NULL, scaled, then marked; the column's
+// default (set after) marks every row created since.
 func (m *websiteModule) Migrate(ctx context.Context, db *orm.DB) error {
 	if _, err := db.Exec(ctx, `
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_website_page_tenant_slug
 		ON website_page (tenant_id, slug) WHERE deleted_at IS NULL`); err != nil {
 		return fmt.Errorf("website: create slug index: %w", err)
+	}
+	if _, err := db.Exec(ctx, `
+		ALTER TABLE website_page ADD COLUMN IF NOT EXISTS layout_scale int;
+		UPDATE website_page SET layout_scale = 3, layout = (
+			SELECT coalesce(jsonb_agg(b || jsonb_build_object(
+				'x', (b->>'x')::int * 3, 'y', (b->>'y')::int * 3,
+				'w', (b->>'w')::int * 3, 'h', (b->>'h')::int * 3) ORDER BY n), '[]'::jsonb)
+			FROM jsonb_array_elements(layout) WITH ORDINALITY AS e(b, n))
+		WHERE layout_scale IS NULL AND jsonb_typeof(layout) = 'array';
+		UPDATE website_page SET layout_scale = 3 WHERE layout_scale IS NULL;
+		ALTER TABLE website_page ALTER COLUMN layout_scale SET DEFAULT 3`); err != nil {
+		return fmt.Errorf("website: scale layouts to 36 columns: %w", err)
 	}
 	return nil
 }

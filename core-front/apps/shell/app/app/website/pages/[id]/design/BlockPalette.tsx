@@ -13,6 +13,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   record_list: 'Record list',
   record_detail: 'Record detail',
   record_carousel: 'Record carousel',
+  image_carousel: 'Image carousel',
   event_booking: 'Event booking',
   appointment_booking: 'Appointment booking',
 }

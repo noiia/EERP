@@ -12,7 +12,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT } from '@eerp/core-front'
 import { savePublished, type PublishedTable } from '@/lib/website-settings'
-import { listEditorEvents } from '@/website/editor-actions'
+import { listEditorEvents, listEditorPages } from '@/website/editor-actions'
 import type { Block } from '@/website/types'
 import { BLOCK_LABELS } from './BlockPalette'
 import { RecordPicker } from './RecordPicker'
@@ -45,6 +45,11 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   useEffect(() => {
     if (bookingKind) void listEditorEvents(bookingKind).then(setEvents)
   }, [bookingKind])
+  const links = block.type === 'record_list' || block.type === 'record_carousel' || block.type === 'image_carousel'
+  const [pages, setPages] = useState<{ slug: string; title: string; published: boolean }[]>([])
+  useEffect(() => {
+    if (links) void listEditorPages().then(setPages)
+  }, [links])
 
   const text = (k: string, label: string, extra: { multiline?: boolean; type?: string } = {}) => (
     <TextField key={k} id={id(k)} size="small" label={t(label)} value={str(k)} onChange={(e) => set({ [k]: e.target.value })}
@@ -56,10 +61,27 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
       {options.map((o) => <MenuItem key={o} value={o}>{opts.labels ? t(opts.labels[o]) : o}</MenuItem>)}
     </TextField>
   )
+  // Where a card click goes: /<slug>/<id>, a page whose record_detail block (record
+  // left empty) shows that id. A slug matching no page (typed before this picker) is
+  // kept as a flagged option rather than silently dropped.
+  const detailSelect = (
+    <Stack key="detail_slug" spacing={0.5}>
+      <TextField id={id('detail_slug')} select size="small" label={t('Detail page')} value={str('detail_slug')}
+        onChange={(e) => set({ detail_slug: e.target.value })}>
+        <MenuItem value="">{t('None')}</MenuItem>
+        {pages.map((p) => <MenuItem key={p.slug} value={p.slug}>{p.title} (/{p.slug}){p.published ? '' : ` — ${t('not published')}`}</MenuItem>)}
+        {str('detail_slug') && !pages.some((p) => p.slug === str('detail_slug')) &&
+          <MenuItem value={str('detail_slug')}>{str('detail_slug')} — {t('page not found')}</MenuItem>}
+      </TextField>
+      <Typography variant="caption" color="text.secondary">
+        {t('Create a page holding a Record detail block on the same table, its record left empty, publish it, then pick it here.')}
+      </Typography>
+    </Stack>
+  )
   // Changing table resets everything picked from the previous one.
   const tableSelect = (
     <TextField key="table" id={id('table')} select size="small" label={t('Table')} value={str('table')}
-      onChange={(e) => set({ table: e.target.value, fields: [], title_field: '', picture_field: '', field: '', filter: {}, record: '', records: [] })}>
+      onChange={(e) => set({ table: e.target.value, fields: [], title_field: '', picture_field: '', field: '', filter: {}, record: '', records: [], related: undefined })}>
       {tables.map((p) => <MenuItem key={p.table} value={p.table}>{p.table}</MenuItem>)}
     </TextField>
   )
@@ -101,6 +123,51 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
     )
   }
 
+  // record_detail's related table (e.g. product_variant by product_id): its own table,
+  // link column and field pickers, kept under config.related.
+  const rel = (c.related ?? {}) as Config
+  const relStr = (k: string) => (typeof rel[k] === 'string' ? (rel[k] as string) : '')
+  const setRel = (patch: Config) => set({ related: { ...rel, ...patch } })
+  const relTable = tables.find((p) => p.table === rel.table)
+  const relFields = relTable?.declared ?? []
+  const relChosen = Array.isArray(rel.fields) ? (rel.fields as string[]) : []
+  const relSelect = (k: string, label: string, options: string[], none = false) => (
+    <TextField key={`related-${k}`} id={id(`related-${k}`)} select size="small" label={t(label)} value={relStr(k)} onChange={(e) => setRel({ [k]: e.target.value })}>
+      {none && <MenuItem value="">{t('None')}</MenuItem>}
+      {options.map((o) => <MenuItem key={o} value={o}>{o}</MenuItem>)}
+    </TextField>
+  )
+  const relatedForm = (
+    <Stack key="related" spacing={2}>
+      <Typography variant="subtitle2">{t('Related records picker')}</Typography>
+      <TextField id={id('related-table')} select size="small" label={t('Related table')} value={relStr('table')}
+        // A new table: guess the link column `<detail table>_id` when it has one.
+        onChange={(e) => {
+          const next = tables.find((p) => p.table === e.target.value)
+          const guess = `${str('table')}_id`
+          set({ related: e.target.value ? { table: e.target.value, link_field: next?.declared.includes(guess) ? guess : '', fields: [], title_field: '', picture_field: '' } : undefined })
+        }}>
+        <MenuItem value="">{t('None')}</MenuItem>
+        {tables.map((p) => <MenuItem key={p.table} value={p.table}>{p.table}</MenuItem>)}
+      </TextField>
+      {relTable && <>
+        {relSelect('link_field', 'Column holding the record id', relFields)}
+        {relSelect('title_field', 'Related title field', relFields)}
+        {relSelect('picture_field', 'Related picture field', relTable.pictures ?? [], true)}
+        <FormGroup>
+          <Typography variant="subtitle2">{t('Related fields')}</Typography>
+          {relFields.map((f) => (
+            <FormControlLabel key={f} label={f} control={
+              <Checkbox size="small" checked={relChosen.includes(f)}
+                onChange={(e) => setRel({ fields: e.target.checked ? [...relChosen, f] : relChosen.filter((x) => x !== f) })} />
+            } />
+          ))}
+        </FormGroup>
+        <PublishFields table={relTable} used={[...usedFields(rel), ...(relStr('link_field') ? [relStr('link_field')] : [])]} onPublished={onPublished} />
+      </>}
+    </Stack>
+  )
+
   let form: ReactNode[]
   switch (block.type) {
     case 'text':
@@ -121,15 +188,16 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
     case 'record_list':
       form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields),
         select('display', 'Display', ['grid', 'list'], { labels: { grid: 'Grid', list: 'List' } }),
-        <TextField key="page_size" id={id('page_size')} size="small" type="number" label={t('Records shown')}
+        <TextField key="page_size" id={id('page_size')} size="small" type="number" label={t('Records per page')}
           value={typeof c.page_size === 'number' ? c.page_size : ''} slotProps={{ htmlInput: { min: 1, max: 100 } }}
           onChange={(e) => set({ page_size: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        text('detail_slug', 'Detail page slug'), select('picture_field', 'Picture field', pictures, { none: true }), filterRows()]
+        detailSelect, select('picture_field', 'Picture field', pictures, { none: true }), filterRows()]
       break
     case 'record_detail':
       form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
         str('table') && <RecordPicker key="record" table={str('table')} labelField={str('title_field')} label="Record (empty = the one in the URL)"
-          value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />]
+          value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />,
+        relatedForm]
       break
     case 'record_carousel':
       form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
@@ -145,7 +213,16 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         <TextField key="card_width" id={id('card_width')} size="small" type="number" label={t('Card width (px)')}
           value={typeof c.card_width === 'number' ? c.card_width : ''} slotProps={{ htmlInput: { min: 160, max: 1200 } }}
           onChange={(e) => set({ card_width: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        text('detail_slug', 'Detail page slug')]
+        detailSelect]
+      break
+    case 'image_carousel':
+      form = [tableSelect, select('picture_field', 'Picture field', pictures), select('title_field', 'Caption field', fields, { none: true }),
+        <TextField key="limit" id={id('limit')} size="small" type="number" label={t('Maximum number of records')}
+          value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 100 } }}
+          onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
+        str('table') && <RecordPicker key="records" multiple table={str('table')} labelField={str('title_field')} label="Records (empty = the first ones)"
+          value={Array.isArray(c.records) ? (c.records as string[]) : []} onChange={(ids) => set({ records: ids })} />,
+        filterRows(), detailSelect]
       break
     case 'event_booking':
     case 'appointment_booking':

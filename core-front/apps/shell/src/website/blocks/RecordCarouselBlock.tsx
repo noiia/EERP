@@ -1,6 +1,6 @@
 import Box from '@mui/material/Box'
 import type { PublicDataSource, RecordCarouselConfig } from '../types'
-import { RecordCard } from './RecordListBlock'
+import { RecordCard } from './RecordCard'
 
 /** Hand-picked records (in the chosen order) or the table's first ones, capped at
  * `limit`, as a horizontal row of cards. Native scroll-snap: swipe on touch, scroll

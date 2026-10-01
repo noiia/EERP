@@ -17,7 +17,7 @@ import (
 // BlockTypes is the closed set of block types — keep in sync with
 // core-front/apps/shell/src/website/types.ts BLOCK_TYPES.
 var BlockTypes = map[string]bool{
-	"text": true, "image": true, "hero": true, "record_list": true, "record_detail": true, "record_carousel": true,
+	"text": true, "image": true, "hero": true, "record_list": true, "record_detail": true, "record_carousel": true, "image_carousel": true,
 	"event_booking": true, "appointment_booking": true,
 }
 
@@ -27,7 +27,8 @@ var ReservedSlugs = map[string]bool{
 	"account": true, "settings": true, "appstore": true, "force-password-change": true, "booking": true, "_next": true, "favicon.ico": true,
 }
 
-const gridCols = 12
+// gridCols: 36 columns (3x finer than the original 12; Migrate scaled old layouts).
+const gridCols = 36
 
 var (
 	slugPattern    = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -83,7 +84,7 @@ func validatePage(body map[string]any, isModule func(string) bool) error {
 		case b.W < 1 || b.H < 1:
 			return fmt.Errorf("%w: block %q: w/h must be >= 1", errPage, b.ID)
 		case b.X+b.W > gridCols:
-			return fmt.Errorf("%w: block %q exceeds the grid's 12 columns", errPage, b.ID)
+			return fmt.Errorf("%w: block %q exceeds the grid's %d columns", errPage, b.ID, gridCols)
 		}
 		seen[b.ID] = true
 	}

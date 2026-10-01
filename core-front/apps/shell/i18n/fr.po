@@ -806,11 +806,20 @@ msgstr "Affichage"
 msgid "Grid"
 msgstr "Grille"
 
-msgid "Records shown"
-msgstr "Enregistrements affichés"
+msgid "Records per page"
+msgstr "Enregistrements par page"
 
-msgid "Detail page slug"
-msgstr "Slug de la page de détail"
+msgid "Detail page"
+msgstr "Page de détail"
+
+msgid "not published"
+msgstr "non publiée"
+
+msgid "page not found"
+msgstr "page introuvable"
+
+msgid "Create a page holding a Record detail block on the same table, its record left empty, publish it, then pick it here."
+msgstr "Créez une page contenant un bloc Détail d'enregistrement sur la même table, sans enregistrement fixé, publiez-la, puis choisissez-la ici."
 
 msgid "Delete block"
 msgstr "Supprimer le bloc"
@@ -1099,3 +1108,36 @@ msgstr "Changer le logo de l'entreprise"
 
 msgid "Add the company logo"
 msgstr "Ajouter le logo de l'entreprise"
+
+msgid "Per page"
+msgstr "Par page"
+
+msgid "Previous picture"
+msgstr "Image précédente"
+
+msgid "Next picture"
+msgstr "Image suivante"
+
+msgid "Image carousel"
+msgstr "Carrousel d'images"
+
+msgid "Related records picker"
+msgstr "Sélecteur d'enregistrements liés"
+
+msgid "Related table"
+msgstr "Table liée"
+
+msgid "Column holding the record id"
+msgstr "Colonne contenant l'id de l'enregistrement"
+
+msgid "Related title field"
+msgstr "Champ titre lié"
+
+msgid "Related picture field"
+msgstr "Champ image lié"
+
+msgid "Related fields"
+msgstr "Champs liés"
+
+msgid "Caption field"
+msgstr "Champ de légende"

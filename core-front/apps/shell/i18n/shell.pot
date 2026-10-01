@@ -597,10 +597,19 @@ msgstr ""
 msgid "Grid"
 msgstr ""
 
-msgid "Records shown"
+msgid "Records per page"
 msgstr ""
 
-msgid "Detail page slug"
+msgid "Detail page"
+msgstr ""
+
+msgid "not published"
+msgstr ""
+
+msgid "page not found"
+msgstr ""
+
+msgid "Create a page holding a Record detail block on the same table, its record left empty, publish it, then pick it here."
 msgstr ""
 
 msgid "Delete block"
@@ -889,4 +898,37 @@ msgid "Change the company logo"
 msgstr ""
 
 msgid "Add the company logo"
+msgstr ""
+
+msgid "Per page"
+msgstr ""
+
+msgid "Previous picture"
+msgstr ""
+
+msgid "Next picture"
+msgstr ""
+
+msgid "Image carousel"
+msgstr ""
+
+msgid "Related records picker"
+msgstr ""
+
+msgid "Related table"
+msgstr ""
+
+msgid "Column holding the record id"
+msgstr ""
+
+msgid "Related title field"
+msgstr ""
+
+msgid "Related picture field"
+msgstr ""
+
+msgid "Related fields"
+msgstr ""
+
+msgid "Caption field"
 msgstr ""

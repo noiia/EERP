@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { BlockView } from './BlockView'
 import { stackOrder, type Block, type PublicDataSource } from '../types'
 
@@ -101,9 +101,46 @@ describe('blocks', () => {
     expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['A'])
   })
 
+  it('record_list: pages of 10 by default, visitor pages and switches grid → table', async () => {
+    const recs = Array.from({ length: 30 }, (_, i) => ({ id: String(i), name: `R${i}`, price: i }))
+    await renderBlock(block('record_list', { table: 't', fields: ['name', 'price'], title_field: 'name', detail_slug: 'p' }), source(recs))
+    expect(screen.getAllByRole('heading')).toHaveLength(10)
+    fireEvent.click(screen.getByRole('button', { name: /page 3/ }))
+    expect(screen.getAllByRole('heading')[0].textContent).toBe('R20')
+    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+    expect(screen.getAllByRole('row')).toHaveLength(11) // header + 10
+    expect(screen.getByRole('link', { name: 'R20' }).getAttribute('href')).toBe('/p/20')
+    expect(screen.getByRole('columnheader', { name: 'Price' }).className).toBe('col-0')
+  })
+
   it('record_list on an unpublished table renders nothing', async () => {
     const { container } = await renderBlock(block('record_list', { table: 'crm', fields: ['name'], title_field: 'name' }), source(null))
     expect(container.textContent).toBe('')
+  })
+
+  it('image_carousel shows one picture at a time, skips records without one, arrows cycle', async () => {
+    const s = source([{ id: '1', name: 'A', picture: true }, { id: '2', name: 'B', picture: false }, { id: '3', name: 'C', picture: true }])
+    await renderBlock(block('image_carousel', { table: 'product', picture_field: 'picture', title_field: 'name', detail_slug: 'p' }), s)
+    expect(screen.getByAltText('A').getAttribute('src')).toBe('/api/v1/public/product/1/picture/picture')
+    expect(screen.getByAltText('A').closest('a')?.getAttribute('href')).toBe('/p/1')
+    fireEvent.click(screen.getByRole('button', { name: 'Next picture' }))
+    expect(screen.getByAltText('C')).toBeTruthy() // B has no picture
+    expect(screen.queryByAltText('A')).toBeNull()
+  })
+
+  it('record_detail with a related table: picker shows the picked row fields and moves the carousel to its picture', async () => {
+    const product = { id: '7', name: 'Chair', picture: true }
+    const variants = [{ id: 'v1', product_id: '7', name: 'Red', unit_price: 10, picture: true }, { id: 'v2', product_id: '7', name: 'Blue', unit_price: 12, picture: true }]
+    const s: PublicDataSource = {
+      get: async () => product,
+      list: async (table, q) => (table === 'product_variant' && q.filter?.product_id === '7' ? { records: variants, total: 2 } : null),
+    }
+    await renderBlock(block('record_detail', { table: 'product', fields: ['name'], title_field: 'name', picture_field: 'picture',
+      related: { table: 'product_variant', link_field: 'product_id', fields: ['unit_price'], title_field: 'name', picture_field: 'picture' } }), s, { id: '7' })
+    expect(screen.getByText('Unit price: 10')).toBeTruthy() // first variant picked by default
+    fireEvent.click(screen.getByRole('button', { name: 'Blue' }))
+    expect(screen.getByText('Unit price: 12')).toBeTruthy()
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/api/v1/public/product_variant/v2/picture/picture')
   })
 
   it('record_detail reads the id from the URL; unknown id renders nothing', async () => {

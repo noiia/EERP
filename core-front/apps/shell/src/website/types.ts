@@ -1,5 +1,5 @@
 // Keep in sync with core/modules/website/validate.go BlockTypes.
-export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'event_booking', 'appointment_booking'] as const
+export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking'] as const
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 export interface Block {
@@ -30,7 +30,18 @@ export interface RecordListConfig {
 /** event_booking / appointment_booking: the event to book. */
 export interface BookingConfig { event_id: string }
 /** `record`: a fixed record to show; unset = the id from the URL (/<slug>/<id>). */
-export interface RecordDetailConfig { table: string; fields: string[]; title_field: string; picture_field?: string; record?: string }
+export interface RecordDetailConfig {
+  table: string; fields: string[]; title_field: string; picture_field?: string; record?: string
+  related?: RelatedConfig
+}
+/** A table whose rows point at the detail's record (`link_field` holds its id), shown
+ * as a picker on the detail — e.g. product_variant by product_id. */
+export interface RelatedConfig { table: string; link_field: string; fields: string[]; title_field: string; picture_field?: string }
+/** Pictures of hand-picked records (in order) or the table's first ones, capped at `limit`. */
+export interface ImageCarouselConfig {
+  table: string; picture_field: string; title_field?: string; detail_slug?: string
+  records?: string[]; limit?: number; filter?: Record<string, string>
+}
 /** `records`: hand-picked ids, in order; unset = the table's first ones. `limit` caps either. */
 export interface RecordCarouselConfig {
   table: string; fields: string[]; title_field: string; picture_field?: string; detail_slug?: string

@@ -14,7 +14,7 @@ func TestValidatePage(t *testing.T) {
 		body    map[string]any
 		wantErr string // substring; "" = valid
 	}{
-		{"home page", map[string]any{"slug": "", "layout": []any{block("a", "text", 0, 0, 12, 2)}}, ""},
+		{"home page", map[string]any{"slug": "", "layout": []any{block("a", "text", 0, 0, 36, 6)}}, ""},
 		{"simple slug", map[string]any{"slug": "products"}, ""},
 		{"dashes and digits", map[string]any{"slug": "events-2026"}, ""},
 		{"uppercase", map[string]any{"slug": "Products"}, "slug"},
@@ -32,7 +32,7 @@ func TestValidatePage(t *testing.T) {
 		{"duplicate block id", map[string]any{"layout": []any{block("a", "text", 0, 0, 1, 1), block("a", "text", 0, 1, 1, 1)}}, "duplicate"},
 		{"negative x", map[string]any{"layout": []any{block("a", "text", -1, 0, 1, 1)}}, "x/y"},
 		{"zero width", map[string]any{"layout": []any{block("a", "text", 0, 0, 0, 1)}}, "w/h"},
-		{"wider than grid", map[string]any{"layout": []any{block("a", "text", 6, 0, 7, 1)}}, "12 columns"},
+		{"wider than grid", map[string]any{"layout": []any{block("a", "text", 30, 0, 7, 1)}}, "36 columns"},
 		{"layout not an array", map[string]any{"layout": "nope"}, "layout"},
 		{"no slug key on update is fine", map[string]any{"title": "x"}, ""},
 	}
