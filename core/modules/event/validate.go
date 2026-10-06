@@ -28,9 +28,13 @@ var intRanges = map[string][2]int{
 	"max_seats_per_booking": {1, 100},
 }
 
+// nullableInts are the integer settings stored as a nullable column: the
+// form sends null for them when empty (or hidden, e.g. on a sessions event).
+var nullableInts = map[string]bool{"buffer_minutes": true}
+
 func checkInt(body map[string]any, key string, lo, hi int) error {
 	raw, ok := body[key]
-	if !ok {
+	if !ok || (raw == nil && nullableInts[key]) {
 		return nil
 	}
 	n, isNum := raw.(float64) // JSON numbers

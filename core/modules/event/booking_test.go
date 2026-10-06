@@ -153,12 +153,12 @@ func TestBook_SessionRules(t *testing.T) {
 		})
 	}
 
-	t.Run("an anonymous booking creates no contact and queues exactly one email", func(t *testing.T) {
+	t.Run("an anonymous booking creates one contact and queues exactly one email", func(t *testing.T) {
 		var contacts, mails int
 		_ = f.db.QueryRow(context.Background(), `SELECT count(*) FROM contact WHERE tenant_id = $1 AND lower(email) = 'a@x.io'`, f.tenant).Scan(&contacts)
 		_ = f.db.QueryRow(context.Background(), `SELECT count(*) FROM mail_outbox WHERE tenant_id = $1 AND to_address = 'a@x.io'`, f.tenant).Scan(&mails)
-		if contacts != 0 || mails != 1 {
-			t.Errorf("contacts=%d mails=%d, want 0 and 1", contacts, mails)
+		if contacts != 1 || mails != 1 {
+			t.Errorf("contacts=%d mails=%d, want 1 and 1", contacts, mails)
 		}
 	})
 

@@ -182,13 +182,17 @@ export interface SelectionDescriptor {
 // [('status','=','lead')]}"/>` becomes `states: { visible: { field: 'status',
 // op: 'ne', value: 'lead' } }`.
 
-export type ConditionOp = 'eq' | 'ne' | 'in' | 'set' | 'unset'
+export type ConditionOp = 'eq' | 'ne' | 'in' | 'set' | 'unset' | 'before_now' | 'after_now'
 
 /** A single comparison against another field's value in the same record/draft. */
 export interface FieldCondition {
   field: string
   op: ConditionOp
-  /** Required for 'eq'/'ne'/'in' (an array for 'in'); ignored for 'set'/'unset'. */
+  /** Required for 'eq'/'ne'/'in' (an array for 'in'); ignored for 'set'/'unset'.
+   * For 'before_now'/'after_now' (a date field compared with the current time):
+   * an optional offset in minutes added to now — `{ field: 'starts_at', op:
+   * 'before_now', value: 60 }` holds from one hour before starts_at on.
+   * Evaluated at render time; the form doesn't re-render as the clock moves. */
   value?: JsonValue
 }
 
@@ -574,6 +578,14 @@ export function evaluateCondition(cond: Condition, record: Record<string, unknow
       return !isUnset(value)
     case 'unset':
       return isUnset(value)
+    case 'before_now':
+    case 'after_now': {
+      // An unset or unparseable date is "off" either way, never a crash.
+      const at = typeof value === 'string' && value !== '' ? Date.parse(value) : NaN
+      if (Number.isNaN(at)) return false
+      const ref = Date.now() + (typeof cond.value === 'number' ? cond.value : 0) * 60_000
+      return cond.op === 'before_now' ? at < ref : at > ref
+    }
   }
 }
 

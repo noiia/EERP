@@ -3,6 +3,7 @@ package contact
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"core/modules/contact/internal"
 	"core/orm"
@@ -31,5 +32,30 @@ func WebsiteContactID(ctx context.Context, ex orm.Executor, tenant uuid.UUID, em
 	if errors.Is(err, orm.ErrNotFound) {
 		return uuid.Nil, nil
 	}
+	return c.ID, err
+}
+
+// FindOrCreate returns the contact a booking (or any other record raised for
+// a person known only by email) belongs to: the website contact of that
+// email, else the oldest contact with it, else a new "customer" contact.
+// Serialized per (tenant, email) with a transaction-scoped advisory lock, so
+// concurrent first bookings create one contact — call it inside a
+// transaction (ex = the *orm.Tx).
+func FindOrCreate(ctx context.Context, ex orm.Executor, tenant uuid.UUID, name, email string) (uuid.UUID, error) {
+	if _, err := ex.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"contact|"+tenant.String()+"|"+strings.ToLower(email)); err != nil {
+		return uuid.Nil, err
+	}
+	var id uuid.UUID
+	err := ex.QueryRow(ctx, `SELECT id FROM contact WHERE tenant_id = $1 AND lower(email) = lower($2) AND deleted_at IS NULL
+		ORDER BY website IS TRUE DESC, created_at LIMIT 1`, tenant, email).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, orm.ErrNotFound) {
+		return uuid.Nil, err
+	}
+	c, err := orm.MustRepo[internal.Contact](ex).Create(ctx, internal.Contact{
+		BaseModel: model.BaseModel{TenantID: tenant}, Name: name, Email: strings.ToLower(email), Status: "customer"})
 	return c.ID, err
 }

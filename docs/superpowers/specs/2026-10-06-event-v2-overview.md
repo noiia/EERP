@@ -130,3 +130,13 @@ flowchart LR
 ## Out of scope for v2
 Automated refunds, waiting lists for appointment slots, staff assignment per appointment,
 multiple reminders per booking.
+
+## Changes after review
+- **Every booking has a native contact** (supersedes v1's "contacts are accounts only"): the
+  account's website contact, else one found or created by email, for anonymous and staff
+  bookings too; the contact form shows the person's bookings (Bookings tab). The invoice's
+  customer is that contact.
+- **Check-in buttons show only once check-in is open** (1 h before the start), through a new
+  generic `before_now`/`after_now` condition in the engine's states DSL.
+- Saving an event with an empty buffer (sent as null) is accepted.
+

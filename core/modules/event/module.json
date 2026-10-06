@@ -8,7 +8,8 @@
     "description": "Events, sessions, appointment slots and bookings",
     "depends": [
         "website",
-        "sale"
+        "sale",
+        "contact"
     ],
     "static_files": {
         "views": [

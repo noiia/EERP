@@ -163,6 +163,28 @@ export const eventPagesOperations: Operation[] = [
   { op: 'addNode', node: { kind: 'page', title: 'Bookings', children: [{ kind: 'field', name: 'bookings' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
 ]
 
+// Every booking is tied to a native contact (Go: contact.FindOrCreate), so
+// the contact form gets a Bookings tab: the inverse of event_booking.contact_id.
+export const contactBookingsOperations: Operation[] = [
+  {
+    op: 'addField',
+    field: {
+      name: 'event_bookings',
+      label: 'Bookings',
+      type: 'relation',
+      relation: { entity: 'event_booking', kind: 'one2many', inverseField: 'contact_id', labelField: 'name', formPath: '/event/bookings/:id' },
+      widgetOptions: {
+        columns: [
+          { key: 'starts_at', label: 'Start' },
+          { key: 'seats', label: 'Seats' },
+          { key: 'status', label: 'Status' },
+        ],
+      },
+    },
+  },
+  { op: 'addNode', node: { kind: 'page', title: 'Bookings', children: [{ kind: 'field', name: 'event_bookings' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
+]
+
 const sessionFields: ViewDescriptor['fields'] = [
   { name: 'event_id', label: 'Event', type: 'relation', required: true, relation: { entity: 'event', kind: 'many2one', labelField: 'name', filter: { kind: 'sessions' } } },
   { name: 'starts_at', label: 'Start', type: 'date', widget: 'datetime', required: true },
@@ -222,6 +244,7 @@ const bookingFormFields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'event_id', label: 'Event', type: 'relation', required: true, relation: { entity: 'event', kind: 'many2one', labelField: 'name' } },
   { name: 'session_id', label: 'Session', type: 'relation', relation: { entity: 'event_session', kind: 'many2one', labelField: 'starts_at' } },
+  { name: 'starts_at', label: 'Start', type: 'date', widget: 'datetime', readOnly: true },
   { name: 'slot_start', label: 'Slot start (appointments)', type: 'date', widget: 'datetime' },
   { name: 'seats', label: 'Seats', type: 'number', widget: 'int', default: 1 },
   { name: 'email', label: 'Email', type: 'text', required: true },
@@ -249,6 +272,10 @@ registerHeaderButtonAction({
     await ctx.setFieldAndCommit({ status: 'cancelled' })
   },
 })
+
+// Check-in opens 1 h before the start: Go refuses earlier (SetAttendance), so
+// the buttons only show from then on (re-evaluated on each render).
+const checkInOpen = { field: 'starts_at', op: 'before_now', value: 60 } as const
 
 // "Mark paid" (pay at the event): Go marks the invoice paid and stamps paid_at.
 registerHeaderButtonAction({
@@ -288,13 +315,13 @@ const bookingHeaderButtons: HeaderButtonDescriptor[] = [
     name: 'event.checkIn',
     label: 'Check in',
     variant: 'primary',
-    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'no_show'] }] } },
+    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'no_show'] }, checkInOpen] } },
   },
   {
     name: 'event.noShow',
     label: 'No show',
     variant: 'secondary',
-    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'attended'] }] } },
+    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'attended'] }, checkInOpen] } },
   },
 ]
 
@@ -392,7 +419,10 @@ const routes: FrontModule['routes'] = [
 const event: FrontModule = {
   name: 'event',
   routes: routes.map((r) => ({ ...r, permission: r.descriptor.permissions?.[0] })),
-  extends: [{ path: '/event/:id', operations: eventPagesOperations }],
+  extends: [
+    { path: '/event/:id', operations: eventPagesOperations },
+    { path: '/contacts/:id', operations: contactBookingsOperations },
+  ],
 }
 
 export default event

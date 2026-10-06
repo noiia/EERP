@@ -1050,3 +1050,28 @@ describe('requiredMissing', () => {
     expect(requiredMissing(d, { b: 'x' })).toEqual(['a', 'c'])
   })
 })
+
+describe('evaluateCondition — date ops', () => {
+  const inMinutes = (m: number) => new Date(Date.now() + m * 60_000).toISOString()
+
+  it('before_now: the date is earlier than now plus value minutes', () => {
+    const opensIn60 = { field: 'starts_at', op: 'before_now', value: 60 } as const
+    expect(evaluateCondition(opensIn60, { starts_at: inMinutes(30) })).toBe(true)
+    expect(evaluateCondition(opensIn60, { starts_at: inMinutes(-10) })).toBe(true)
+    expect(evaluateCondition(opensIn60, { starts_at: inMinutes(3 * 24 * 60) })).toBe(false)
+    expect(evaluateCondition({ field: 'starts_at', op: 'before_now' }, { starts_at: inMinutes(-1) })).toBe(true)
+  })
+
+  it('after_now: the date is later than now plus value minutes', () => {
+    expect(evaluateCondition({ field: 'due', op: 'after_now' }, { due: inMinutes(5) })).toBe(true)
+    expect(evaluateCondition({ field: 'due', op: 'after_now', value: -60 }, { due: inMinutes(-30) })).toBe(true)
+    expect(evaluateCondition({ field: 'due', op: 'after_now' }, { due: inMinutes(-5) })).toBe(false)
+  })
+
+  it('an unset or unparseable date is off for both', () => {
+    for (const v of [null, undefined, '', 'not a date']) {
+      expect(evaluateCondition({ field: 'd', op: 'before_now' }, { d: v })).toBe(false)
+      expect(evaluateCondition({ field: 'd', op: 'after_now' }, { d: v })).toBe(false)
+    }
+  })
+})

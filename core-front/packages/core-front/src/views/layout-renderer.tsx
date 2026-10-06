@@ -550,7 +550,10 @@ function LayoutNodeView({
           sx={{
             display: 'grid',
             gridTemplateColumns: '1fr',
-            gap: 1,
+            // Same vertical rhythm as a single-column group (Stack spacing 2.5),
+            // and a wider gutter so side-by-side fields don't touch.
+            rowGap: 2.5,
+            columnGap: 3,
             alignItems: 'start',
             [`@container (min-width: ${containerMinWidth}px)`]: {
               gridTemplateColumns,

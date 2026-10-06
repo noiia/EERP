@@ -135,7 +135,7 @@ func (s *Service) Book(ctx context.Context, tenant uuid.UUID, req BookRequest) (
 			b.SlotStart, b.SlotEnd, when = &slot.Start, &slot.End, slot.Start
 		}
 		b.StartsAt = &when
-		if b.ContactID, err = accountContact(ctx, tx, tenant, req.UserID); err != nil {
+		if b.ContactID, err = bookerContact(ctx, tx, tenant, req.UserID, req.Email, req.Name); err != nil {
 			return err
 		}
 		if b, err = orm.MustRepo[EventBooking](tx).Create(ctx, b); err != nil {
@@ -249,23 +249,30 @@ func captureSlot(ctx context.Context, tx *orm.Tx, ev Event, start time.Time, sea
 	return *slot, nil
 }
 
-// accountContact is the website contact of the booking account (created at
-// signup, contact.website = true), or nil: an anonymous or staff booking is
-// just its name, email and phone — it creates no contact.
-func accountContact(ctx context.Context, tx *orm.Tx, tenant uuid.UUID, userID *uuid.UUID) (*uuid.UUID, error) {
-	if userID == nil {
-		return nil, nil
+// bookerContact is the native contact a booking belongs to — every booking
+// has one. A signed-in booking takes its account's website contact (created
+// at signup); otherwise, and for an account older than that link, the
+// booker's email finds or creates one (contact.FindOrCreate), for anonymous
+// and staff bookings alike.
+func bookerContact(ctx context.Context, tx *orm.Tx, tenant uuid.UUID, userID *uuid.UUID, email, name string) (*uuid.UUID, error) {
+	if userID != nil {
+		var accountEmail string
+		err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1 AND tenant_id = $2`, *userID, tenant).Scan(&accountEmail)
+		if err != nil && !isNoRows(err) {
+			return nil, err
+		}
+		if err == nil {
+			id, err := contact.WebsiteContactID(ctx, tx, tenant, accountEmail)
+			if err != nil {
+				return nil, err
+			}
+			if id != uuid.Nil {
+				return &id, nil
+			}
+		}
 	}
-	var email string
-	err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1 AND tenant_id = $2`, *userID, tenant).Scan(&email)
-	if isNoRows(err) {
-		return nil, nil
-	}
+	id, err := contact.FindOrCreate(ctx, tx, tenant, name, email)
 	if err != nil {
-		return nil, err
-	}
-	id, err := contact.WebsiteContactID(ctx, tx, tenant, email)
-	if err != nil || id == uuid.Nil {
 		return nil, err
 	}
 	return &id, nil
@@ -372,7 +379,7 @@ func (s *Service) SetAttendance(ctx context.Context, tenant, id uuid.UUID, statu
 		case b.Status == status:
 			return nil
 		case b.StartsAt == nil || time.Now().Before(b.StartsAt.Add(-checkInOpens)):
-			return fmt.Errorf("%w: check-in opens %s before the start", ErrBadRequest, checkInOpens)
+			return fmt.Errorf("%w: check-in opens %d minutes before the start", ErrBadRequest, int(checkInOpens.Minutes()))
 		}
 		_, err = tx.Exec(ctx, `UPDATE event_booking SET status = $2, updated_at = now() WHERE id = $1`, id, status)
 		return err

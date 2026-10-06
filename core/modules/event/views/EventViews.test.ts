@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { headerButtonRegistry, headerMenuRegistry, ModuleRegistry, useEntityRefreshStore } from '@eerp/core-front'
+import contacts from '../../contact/views/contact_views'
 import mod from './EventViews'
 
 describe('event views', () => {
   it('registers a standalone Event app under /event', () => {
     const registry = new ModuleRegistry()
+    registry.register(contacts) // the event module extends the contact form
     registry.register(mod, { appMode: true }) // throws on an invalid descriptor or extension
     expect(mod.routes.every((r) => r.path === '/event' || r.path.startsWith('/event/'))).toBe(true)
     for (const list of ['/event', '/event/sessions', '/event/bookings', '/event/availability']) {
@@ -96,8 +98,11 @@ describe('event views', () => {
     }
     const form = mod.routes.find((r) => r.path === '/event/bookings/:id')!.descriptor
     const visible = (name: string) => form.headerButtons!.find((b) => b.name === name)!.states!.visible
-    expect(visible('event.checkIn')).toEqual({ all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'no_show'] }] })
-    expect(visible('event.noShow')).toEqual({ all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'attended'] }] })
+    // Shown once check-in opens, 1 h before the start (Go enforces the same rule).
+    const opens = { field: 'starts_at', op: 'before_now', value: 60 }
+    expect(visible('event.checkIn')).toEqual({ all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'no_show'] }, opens] })
+    expect(visible('event.noShow')).toEqual({ all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'attended'] }, opens] })
+    expect(form.fields.find((f) => f.name === 'starts_at')).toMatchObject({ readOnly: true, widget: 'datetime' })
     const status = form.fields.find((f) => f.name === 'status')!
     expect(status.selection?.options).toEqual(['waitlisted', 'pending_payment', 'confirmed', 'attended', 'no_show', 'cancelled', 'expired'])
   })
@@ -127,5 +132,14 @@ describe('event views', () => {
     const setFieldAndCommit = vi.fn(async () => null)
     await headerButtonRegistry.get('event.markPaid')!.handler({ entity: 'event_booking', recordId: 'b1', draft: {}, setFieldAndCommit, relationOps: null })
     expect(setFieldAndCommit).toHaveBeenCalledWith({ paid_at: expect.any(String) })
+  })
+
+  it("adds a Bookings tab to the contact form", () => {
+    const registry = new ModuleRegistry()
+    registry.register(contacts)
+    registry.register(mod)
+    const form = registry.formDescriptorFor('contact')!
+    const field = form.fields.find((f) => f.name === 'event_bookings')
+    expect(field?.relation).toMatchObject({ entity: 'event_booking', kind: 'one2many', inverseField: 'contact_id', formPath: '/event/bookings/:id' })
   })
 })

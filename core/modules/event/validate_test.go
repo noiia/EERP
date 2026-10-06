@@ -22,6 +22,9 @@ func TestValidateEvent(t *testing.T) {
 		{"bad timezone", map[string]any{"timezone": "Mars/Olympus"}, "timezone"},
 		{"slot too short", map[string]any{"slot_minutes": 4.0}, "slot_minutes"},
 		{"negative buffer", map[string]any{"buffer_minutes": -1.0}, "buffer_minutes"},
+		// The form sends null for an empty optional field (buffer_minutes is the only nullable one).
+		{"null buffer", map[string]any{"buffer_minutes": nil}, ""},
+		{"null slot length", map[string]any{"slot_minutes": nil}, "slot_minutes"},
 		{"horizon too long", map[string]any{"booking_horizon_days": 400.0}, "booking_horizon_days"},
 		{"zero slot capacity", map[string]any{"slot_capacity": 0.0}, "slot_capacity"},
 		{"max seats zero", map[string]any{"max_seats_per_booking": 0.0}, "max_seats_per_booking"},
