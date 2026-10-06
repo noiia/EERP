@@ -61,10 +61,10 @@ func analyze(temp string, tables ...string) []step {
 }
 
 // Seed writes the full volume for tenantID: n rows each of contacts, CRM
-// leads, products, variants, quotes, invoices and rent receipts (quote and
-// invoice lines at 2 per document, sale-line tax tags on a share of them),
-// plus extra companies, the tax catalog, tags and 1 property per 100
-// receipts — then Graph views and calculated fields for every list-view
+// leads, products, variants, quotes, invoices, rent receipts and event
+// bookings (quote and invoice lines at 2 per document, sale-line tax tags on
+// a share of them), plus extra companies, the tax catalog, tags, 1 property
+// per 100 receipts, and n/100 events with n/10 sessions — then Graph views and calculated fields for every list-view
 // entity that ends up over GraphThreshold rows (graphs.go). One transaction:
 // all or nothing.
 func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int) ([]Result, error) {
@@ -358,4 +358,4 @@ SELECT $1, r.id, 'Rent ' || r.period, r.subtotal, CASE WHEN r.tax_amount > 0 THE
   CASE WHEN r.tax_amount > 0 THEN 'VAT 20%' ELSE '' END, r.subtotal, r.total
 FROM property_management_rent_receipt r
 WHERE r.tenant_id = $1 AND r.property_name LIKE 'Seed property %' AND $2::int IS NOT NULL`},
-})
+}, eventSteps)

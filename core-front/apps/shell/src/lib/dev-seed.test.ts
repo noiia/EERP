@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@eerp/core-front/server'
 
 const createMock = vi.fn()
+const updateMock = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ id, ...body }))
 const apiRequestMock = vi.fn()
 const uploadPictureMock = vi.fn<(form: FormData) => Promise<{ id: string }>>(async () => ({ id: 'pic' }))
 vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return {
     ...actual,
-    createServerApiClient: () => ({ create: createMock }),
+    createServerApiClient: () => ({ create: createMock, update: updateMock }),
     uploadPicture: (form: FormData) => uploadPictureMock(form),
     apiRequest: (...args: unknown[]) => apiRequestMock(...args),
   }
@@ -35,6 +36,14 @@ function callsFor(entity: string): unknown[][] {
 
 beforeEach(() => {
   createMock.mockReset()
+  updateMock.mockClear()
+  apiRequestMock.mockReset()
+  // The appointment event's bookable slots (GET /public/event/:id/slots).
+  apiRequestMock.mockImplementation(async (method: string, path: string) =>
+    method === 'GET' && path.includes('/slots')
+      ? { data: [0, 1, 2, 3, 4, 5, 6, 7].map((d) => ({ start: `2026-11-1${d}T09:00:00Z`, end: `2026-11-1${d}T09:30:00Z`, seats_left: 1 })) }
+      : {},
+  )
   uploadPictureMock.mockClear()
   let idCounter = 0
   createMock.mockImplementation(async (entity: string, body: Record<string, unknown>) => ({
@@ -168,6 +177,11 @@ describe('seedDemoData', () => {
       'quote',
       'quote_line',
       'report_page_format',
+      'event',
+      'event_session',
+      'event_availability',
+      'event_booking',
+      'event_booking (status changes)',
     ])
     expect(outcome.results.every((r) => r.failed === 0)).toBe(true)
   })
@@ -315,3 +329,34 @@ describe('seedDemoData', () => {
     expect(contactResult?.errors.every((m) => m === 'Unknown error')).toBe(true)
   })
 })
+
+describe('seedDemoData events', () => {
+  it('seeds a paid, a free, an appointment and an unpublished event with sessions, availability and bookings in every state', async () => {
+    const before = Date.now()
+    const outcome = await seedDemoData()
+    if (!outcome.ok) throw new Error('seed failed')
+
+    const events = callsFor('event').map(([, body]) => body as Record<string, unknown>)
+    expect(events.map((e) => e.kind)).toEqual(['sessions', 'sessions', 'appointment', 'sessions'])
+    expect(events.filter((e) => e.published === false)).toHaveLength(1)
+    const variantId = (await createMock.mock.results.find((_, i) => createMock.mock.calls[i][0] === 'product_variant')!.value).id
+    expect(events[0].product_variant_id).toBe(variantId) // the paid event
+
+    const sessions = callsFor('event_session').map(([, body]) => body as Record<string, unknown>)
+    const startsIn = (s: Record<string, unknown>) => Date.parse(String(s.starts_at)) - before
+    // A drop-in session starting within the hour, so its bookings can be checked in.
+    expect(sessions.some((s) => startsIn(s) > 0 && startsIn(s) < 3600_000)).toBe(true)
+    expect(sessions.every((s) => startsIn(s) > 0)).toBe(true)
+    expect(callsFor('event_availability')).toHaveLength(5)
+
+    const bookings = callsFor('event_booking').map(([, body]) => body as Record<string, unknown>)
+    expect(bookings.some((b) => b.waitlist === true)).toBe(true)
+    expect(bookings.filter((b) => typeof b.slot_start === 'string')).toHaveLength(3)
+    expect(bookings.every((b) => typeof b.email === 'string' && typeof b.name === 'string')).toBe(true)
+
+    const statuses = updateMock.mock.calls.map(([, , body]) => (body as Record<string, unknown>).status)
+    expect(statuses).toEqual(expect.arrayContaining(['attended', 'no_show', 'cancelled']))
+    expect(outcome.results.find((r) => r.entity === 'event_booking')).toMatchObject({ failed: 0 })
+  })
+})
+

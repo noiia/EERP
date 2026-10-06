@@ -13,6 +13,7 @@ import (
 	_ "core/modules/company"
 	_ "core/modules/contact"
 	_ "core/modules/crm"
+	_ "core/modules/event"
 	_ "core/modules/graphfield"
 	_ "core/modules/propertymanagement"
 	_ "core/modules/sale"
@@ -23,6 +24,7 @@ import (
 )
 
 var seededTables = []string{
+	"event_booking", "event_session", "event_availability", "event",
 	"property_management_rent_receipt_line", "property_management_rent_receipt", "property_management",
 	"sale_line_tax", "sale_line", "invoice", "quote_line", "quote", "crm_tag", "tag", "crm", "contact",
 	"product_variant", "product", "sale_tax", "graph_field", "app_settings", "company",
@@ -33,7 +35,7 @@ var seededTables = []string{
 // that a second run is refused.
 func TestSeed(t *testing.T) {
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "auth", "company", "settings", "graphfield", "contact", "crm", "warehouse", "sale", "propertymanagement")
+	testdb.MigrateModules(t, app, "auth", "company", "settings", "graphfield", "contact", "crm", "warehouse", "sale", "propertymanagement", "event")
 	ctx := context.Background()
 	tenant := uuid.New()
 	t.Cleanup(func() {
@@ -53,13 +55,14 @@ func TestSeed(t *testing.T) {
 	}
 	created := map[string]int64{}
 	for _, r := range results {
-		created[r.Entity] = r.Created
+		created[r.Entity] += r.Created // event_booking comes in two steps (sessions, slots)
 	}
 	for entity, want := range map[string]int64{
 		"company": 3, "sale_tax": 6, "product": int64(n), "product_variant": int64(n), "contact": int64(n), "crm": int64(n),
 		"crm_tag": int64(n), "quote": int64(n), "quote_line": 2 * int64(n), "invoice": int64(n), "sale_line": 2 * int64(n),
 		"property_management": int64(n / 100), "property_management_rent_receipt": int64(n), "property_management_rent_receipt_line": int64(n),
 		"graph view: invoice": 8, "graph view: contact": 4,
+		"event": int64(n / 100), "event_session": int64(n / 10), "event_booking": int64(n),
 	} {
 		if created[entity] != want {
 			t.Errorf("%s: created %d, want %d", entity, created[entity], want)
@@ -104,6 +107,27 @@ func TestSeed(t *testing.T) {
 	}
 	if got := one(`SELECT avg(total) FROM invoice WHERE tenant_id = $1`); got <= 0 || math.IsNaN(got) {
 		t.Errorf("invoices have no totals: %v", got)
+	}
+
+	// Events: seat counts match the bookings holding seats and never pass
+	// capacity; every booking has a contact; past sessions carry check-ins.
+	if got := one(`SELECT count(*) FROM event_session s WHERE s.tenant_id = $1 AND (s.seats_taken > s.capacity OR s.seats_taken <>
+		(SELECT coalesce(sum(b.seats), 0) FROM event_booking b WHERE b.session_id = s.id AND b.status IN ('confirmed', 'attended', 'no_show')))`); got != 0 {
+		t.Errorf("%v sessions have seats_taken out of step with their bookings", got)
+	}
+	if got := one(`SELECT count(*) FROM event_booking WHERE tenant_id = $1 AND (contact_id IS NULL OR starts_at IS NULL OR length(cancel_token) <> 64)`); got != 0 {
+		t.Errorf("%v bookings lack a contact, start or cancel token", got)
+	}
+	if got := one(`SELECT count(*) FROM event_booking WHERE tenant_id = $1 AND status = 'attended' AND starts_at > now()`); got != 0 {
+		t.Errorf("%v future bookings are checked in", got)
+	}
+	for _, status := range []string{"confirmed", "attended", "no_show", "cancelled"} {
+		if got := one(`SELECT count(*) FROM event_booking WHERE tenant_id = $1 AND status = '` + status + `'`); got == 0 {
+			t.Errorf("no %s bookings seeded", status)
+		}
+	}
+	if got := one(`SELECT count(*) FROM event_booking WHERE tenant_id = $1 AND slot_start IS NOT NULL`); got == 0 {
+		t.Error("no appointment bookings seeded")
 	}
 
 	if _, err := devseed.Seed(ctx, app.DB, tenant, n); !errors.Is(err, devseed.ErrAlreadySeeded) {

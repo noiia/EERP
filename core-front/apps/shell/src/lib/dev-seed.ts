@@ -401,10 +401,123 @@ async function createMany<R extends { id: string }>(
   return { result, records }
 }
 
+// ── Events ───────────────────────────────────────────────────────────────────
+
+type Person = { name: string; email: string }
+
+/** An ISO instant `days` from now at `hour`:00 UTC (minutes 0). */
+function inDays(days: number, hour: number): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() + days)
+  d.setUTCHours(hour, 0, 0, 0)
+  return d.toISOString()
+}
+
+/** A session body `start` + `hours` long. */
+function session(eventId: string, start: string, hours: number, capacity: number): Record<string, unknown> {
+  return { event_id: eventId, starts_at: start, ends_at: new Date(Date.parse(start) + hours * 3600_000).toISOString(), capacity }
+}
+
+/**
+ * The Event app's demo set, through the real booking service (staff route
+ * POST /event_booking): seat counts, contacts, confirmation emails and the
+ * paid event's invoices come out exactly as for real bookings.
+ * - Pottery workshop: paid (the first seeded variant), weekly sessions.
+ * - Sunrise yoga: free; one session filled, with a waiting list, and a drop-in
+ *   session starting in 30 minutes — check-in opens 1 h before the start, so
+ *   its bookings can be checked in (attended / no-show).
+ * - Product demo call: appointment event, weekday mornings, booked on real
+ *   computed slots (GET /public/event/:id/slots).
+ * - Team offsite: unpublished, staff only.
+ * Bookings can't be made in the past (Go refuses), so history comes from the
+ * full volume.
+ */
+async function seedEvents(people: Person[], variantId: string | undefined): Promise<SeedEntityResult[]> {
+  const results: SeedEntityResult[] = []
+  const eventsOutcome = await createMany<{ id: string; kind?: unknown }>('event', [
+    {
+      name: 'Pottery workshop', kind: 'sessions', location: 'Studio A', published: true, max_seats_per_booking: 4,
+      description: 'Shape, glaze and fire your own bowl. All materials included.', product_variant_id: variantId ?? null,
+    },
+    { name: 'Sunrise yoga', kind: 'sessions', location: 'Rooftop', published: true, description: 'A gentle flow to start the day.' },
+    {
+      name: 'Product demo call', kind: 'appointment', location: 'Online', published: true, slot_minutes: 30, slot_capacity: 1,
+      booking_horizon_days: 60, min_notice_hours: 2, description: 'A 30-minute walkthrough with our team.',
+    },
+    { name: 'Team offsite', kind: 'sessions', location: 'Lakeside lodge', published: false, description: 'Staff only.' },
+  ])
+  results.push(eventsOutcome.result)
+  const [pottery, yoga, demo, offsite] = eventsOutcome.records
+  if (!pottery || !yoga || !demo || !offsite) return results
+
+  const dropIn = new Date(Date.now() + 30 * 60_000)
+  dropIn.setSeconds(0, 0)
+  const sessionsOutcome = await createMany<{ id: string; event_id?: unknown }>('event_session', [
+    ...[7, 14, 21, 28].map((d) => session(pottery.id, inDays(d, 14), 3, 8)),
+    session(yoga.id, inDays(2, 6), 1, 3), // filled below, then a waiting list
+    session(yoga.id, inDays(5, 6), 1, 12),
+    session(yoga.id, dropIn.toISOString(), 1, 6), // drop-in: check-in is open
+    session(offsite.id, inDays(30, 8), 8, 20),
+  ])
+  results.push(sessionsOutcome.result)
+  const [p1, p2, , , yogaFull, yogaLater, yogaDropIn, offsiteDay] = sessionsOutcome.records
+
+  results.push((await createMany('event_availability', [1, 2, 3, 4, 5].map((weekday) => ({
+    event_id: demo.id, weekday, from_time: '09:00', to_time: '12:00',
+  })))).result)
+
+  let next = 0
+  const who = () => people[next++ % people.length]
+  const book = (eventId: string, target: Record<string, unknown>, seats = 1, extra: Record<string, unknown> = {}) => {
+    const p = who()
+    return { event_id: eventId, ...target, seats, name: p.name, email: p.email, ...extra }
+  }
+  const bodies: Record<string, unknown>[] = []
+  if (p1) bodies.push(book(pottery.id, { session_id: p1.id }, 2), book(pottery.id, { session_id: p1.id }), book(pottery.id, { session_id: p1.id }))
+  if (p2) bodies.push(book(pottery.id, { session_id: p2.id }, 2))
+  if (yogaFull) {
+    bodies.push(book(yoga.id, { session_id: yogaFull.id }, 2), book(yoga.id, { session_id: yogaFull.id }))
+    bodies.push(book(yoga.id, { session_id: yogaFull.id }, 1, { waitlist: true }), book(yoga.id, { session_id: yogaFull.id }, 2, { waitlist: true }))
+  }
+  if (yogaLater) bodies.push(book(yoga.id, { session_id: yogaLater.id }), book(yoga.id, { session_id: yogaLater.id }, 3))
+  if (yogaDropIn) bodies.push(...[1, 1, 2, 1].map((seats) => book(yoga.id, { session_id: yogaDropIn.id }, seats)))
+  if (offsiteDay) bodies.push(book(offsite.id, { session_id: offsiteDay.id }), book(offsite.id, { session_id: offsiteDay.id }))
+  try {
+    const slots = await apiRequest<{ data: { start: string }[] }>('GET', `/public/event/${encodeURIComponent(demo.id)}/slots`)
+    for (const slot of (slots?.data ?? []).filter((_, i) => i % 2 === 0).slice(0, 3)) bodies.push(book(demo.id, { slot_start: slot.start }))
+  } catch {
+    // no public site tenant (or the event isn't readable publicly): no appointment bookings
+  }
+  const bookingsOutcome = await createMany<{ id: string; session_id?: unknown }>('event_booking', bodies)
+  results.push(bookingsOutcome.result)
+
+  // Check-in on the drop-in session, and one cancellation (it cancels its invoice).
+  const client = createServerApiClient()
+  const changes: SeedEntityResult = { entity: 'event_booking (status changes)', created: 0, failed: 0, errors: [] }
+  const created = bookingsOutcome.records
+  const dropIns = created.filter((b) => yogaDropIn && b.session_id === yogaDropIn.id)
+  const updates: [string | undefined, string][] = [
+    [dropIns[0]?.id, 'attended'], [dropIns[1]?.id, 'attended'], [dropIns[2]?.id, 'no_show'],
+    [created.find((b) => p1 && b.session_id === p1.id)?.id, 'cancelled'],
+  ]
+  for (const [id, status] of updates) {
+    if (!id) continue
+    try {
+      await client.update('event_booking', id, { status })
+      changes.created += 1
+    } catch (e) {
+      changes.failed += 1
+      if (changes.errors.length < 5) changes.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  results.push(changes)
+  return results
+}
+
 /**
  * Seed the workspace with fake contacts, CRM opportunities, tags, warehouse
- * products (described, with named variants and generated pictures), sale invoices/quotes (with their line items), and default report
- * page formats — through the ordinary entity API, in dependency order
+ * products (described, with named variants and generated pictures), sale invoices/quotes (with their line items), default report
+ * page formats and the Event app's demo events (seedEvents) — through the ordinary entity API, in dependency order
  * (parents before the rows that reference their ids).
  */
 export async function seedDemoData(volume: SeedVolume = 'light'): Promise<SeedResult> {
@@ -475,6 +588,11 @@ export async function seedDemoData(volume: SeedVolume = 'light'): Promise<SeedRe
     buildPageFormats(preferences?.active_company?.id ?? null),
   )
   results.push(pageFormatsOutcome.result)
+
+  const people = (contactsOutcome.records as unknown as { name?: unknown; email?: unknown }[])
+    .filter((c) => typeof c.name === 'string' && typeof c.email === 'string')
+    .map((c) => ({ name: c.name as string, email: c.email as string }))
+  results.push(...(await seedEvents(people, variantsOutcome.records[0]?.id)))
 
   return { ok: true, results }
 }
