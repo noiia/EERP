@@ -139,3 +139,45 @@ msgstr ""
 
 msgid "Weekly copies to add (Repeat weekly)"
 msgstr ""
+
+msgid "attended"
+msgstr ""
+
+msgid "no_show"
+msgstr ""
+
+msgid "Check in"
+msgstr ""
+
+msgid "No show"
+msgstr ""
+
+msgid "Picture"
+msgstr ""
+
+msgid "Email templates"
+msgstr ""
+
+msgid "waitlisted"
+msgstr ""
+
+msgid "pending_payment"
+msgstr ""
+
+msgid "expired"
+msgstr ""
+
+msgid "Product (paid bookings)"
+msgstr ""
+
+msgid "Price (overrides the event product's)"
+msgstr ""
+
+msgid "Invoice"
+msgstr ""
+
+msgid "Paid on"
+msgstr ""
+
+msgid "Mark paid"
+msgstr ""

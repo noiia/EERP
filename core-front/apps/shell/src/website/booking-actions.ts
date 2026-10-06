@@ -17,7 +17,7 @@ export async function fetchSlots(eventId: string, from: string, to: string): Pro
   return body?.data ?? null
 }
 
-export type TokenResult = 'ok' | 'invalid' | 'session' | 'failed' | null
+export type TokenResult = 'ok' | 'invalid' | 'session' | 'taken' | 'failed' | null
 
 /** The cancel link from a confirmation email: POST /website/bookings/cancel. */
 export async function cancelByToken(_prev: TokenResult, form: FormData): Promise<TokenResult> {
@@ -27,6 +27,18 @@ export async function cancelByToken(_prev: TokenResult, form: FormData): Promise
   }, 'none').catch(() => null)
   if (res?.ok) revalidateTag('event', { expire: 0 })
   return res?.ok ? 'ok' : res?.status === 404 ? 'invalid' : 'failed'
+}
+
+/** A waiting-list offer's link: POST /website/bookings/claim — 409 when the seat
+ * went to someone faster (the visitor stays on the list). */
+export async function claimByToken(_prev: TokenResult, form: FormData): Promise<TokenResult> {
+  const res = await goSiteFetch('/website/bookings/claim', {
+    method: 'POST',
+    body: JSON.stringify({ token: String(form.get('token') ?? '') }),
+  }, 'none').catch(() => null)
+  if (res?.ok) revalidateTag('event', { expire: 0 })
+  if (res?.ok) return 'ok'
+  return res?.status === 404 ? 'invalid' : res?.status === 409 ? 'taken' : 'failed'
 }
 
 /** The verification link: POST /website/me/verify — only the signed-in owner can

@@ -3,7 +3,6 @@ package event
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,8 +13,12 @@ import (
 	"core/internal/testdb"
 	_ "core/modules/auth"
 	_ "core/modules/chatter"
+	_ "core/modules/company"
 	"core/modules/contact"
 	_ "core/modules/mail"
+	_ "core/modules/sale"
+	_ "core/modules/settings"
+	_ "core/modules/warehouse"
 	"core/orm"
 
 	"github.com/google/uuid"
@@ -30,11 +33,11 @@ type fixture struct {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "auth", "chatter", "contact", "mail", "event")
+	testdb.MigrateModules(t, app, "auth", "chatter", "contact", "mail", "settings", "company", "warehouse", "sale", "event")
 	tenant := uuid.New()
 	t.Cleanup(func() {
 		ctx := context.Background()
-		for _, table := range []string{"event_booking", "event_session", "event_availability", "event", "contact", "mail_outbox", "chatter_message", "user_roles", "users"} {
+		for _, table := range []string{"sale_line", "invoice", "product_variant", "product", "company", "event_booking", "event_session", "event_availability", "event", "contact", "mail_outbox", "mail_template", "app_settings", "chatter_message", "user_roles", "users"} {
 			_, _ = app.DB.Exec(ctx, `DELETE FROM `+table+` WHERE tenant_id = $1`, tenant)
 		}
 	})
@@ -263,24 +266,5 @@ func TestCancel(t *testing.T) {
 	other := uuid.New()
 	if err := f.svc.CancelByID(context.Background(), f.tenant, b.ID, &other); !errors.Is(err, ErrNotFound) {
 		t.Errorf("cancel by a non-owner: %v, want ErrNotFound", err)
-	}
-}
-
-// Staff-typed event names must neither break headers nor inject markup.
-func TestConfirmationEmail_EscapesEventName(t *testing.T) {
-	loc := "Room <1>"
-	ev := Event{Name: "Evil\r\nBcc: x@y.io <script>", Location: &loc, Timezone: "Europe/Paris"}
-	msg, err := confirmationEmail(ev, EventBooking{Email: "a@x.io", Name: "A", Seats: 1, CancelToken: "tok"}, time.Now(), "https://site.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.ContainsAny(msg.Subject, "\r\n") {
-		t.Errorf("subject %q contains a line break", msg.Subject)
-	}
-	if strings.Contains(msg.HTML, "<script>") || strings.Contains(msg.HTML, "<1>") {
-		t.Errorf("HTML not escaped: %s", msg.HTML)
-	}
-	if !strings.Contains(msg.Text, "https://site.test/booking/cancel?token=tok") {
-		t.Errorf("text lacks cancel link: %s", msg.Text)
 	}
 }

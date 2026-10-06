@@ -28,6 +28,8 @@ import type { TaxSettings as TaxSettingsValue } from '@/lib/tax-settings'
 import type { UnitSettings as UnitSettingsValue } from '@/lib/unit-settings'
 import AccountsSettings from './AccountsSettings'
 import OSMConnectorSettings from './OSMConnectorSettings'
+import StripeConnectorSettings from './StripeConnectorSettings'
+import type { StripeStatus } from '@/lib/stripe-settings'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
 import TaxSettings from './TaxSettings'
 import UnitSettings from './UnitSettings'
@@ -46,6 +48,8 @@ export default function AppearanceSettings({
   reportPageFormats,
   canEditIntegrations = false,
   initialOSMConnector = { enabled: false, base_url: '', user_agent: '' },
+  initialStripe = null,
+  stripeWebhookURL = '',
   canEditTax = false,
   initialTaxSettings = { price_mode: 'tax_excluded' },
   canEditUnits = false,
@@ -63,6 +67,9 @@ export default function AppearanceSettings({
   reportPageFormats?: ReactNode
   canEditIntegrations?: boolean
   initialOSMConnector?: OSMConnector
+  /** null: the payment_stripe module isn't installed — no Stripe section. */
+  initialStripe?: StripeStatus | null
+  stripeWebhookURL?: string
   canEditTax?: boolean
   initialTaxSettings?: TaxSettingsValue
   canEditUnits?: boolean
@@ -237,7 +244,12 @@ export default function AppearanceSettings({
             <Typography variant="subtitle1">{t('Integrations')}</Typography>
           </AccordionSummary>
           <AccordionDetails>
-            <OSMConnectorSettings canEdit={canEditIntegrations} initialConnector={initialOSMConnector} />
+            <Stack spacing={4}>
+              <OSMConnectorSettings canEdit={canEditIntegrations} initialConnector={initialOSMConnector} />
+              {initialStripe && (
+                <StripeConnectorSettings canEdit={canEditIntegrations} initial={initialStripe} webhookURL={stripeWebhookURL} />
+              )}
+            </Stack>
           </AccordionDetails>
         </Accordion>
 

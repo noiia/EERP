@@ -30,6 +30,9 @@ type Outbox struct {
 	NextAttemptAt time.Time  `db:"next_attempt_at"`
 	LastError     string     `db:"last_error"`
 	SentAt        *time.Time `db:"sent_at"`
+	// Attachments is the JSON of the message's []Attachment ("" = none) —
+	// text, so the column needs no driver-specific type.
+	Attachments string `db:"attachments"`
 }
 
 // Message is what a caller enqueues. Text is required (every client can show
@@ -40,4 +43,13 @@ type Message struct {
 	Subject  string
 	Text     string
 	HTML     string
+	// Attachments ride with the message, e.g. a calendar invite (.ics).
+	Attachments []Attachment
+}
+
+// Attachment is one file attached to a message; Data is base64 in JSON.
+type Attachment struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Data        []byte `json:"data"`
 }

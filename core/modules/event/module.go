@@ -32,8 +32,12 @@ func (m *eventModule) Register() error {
 	if err := orm.Register[EventAvailability](orm.WithTableName("event_availability")); err != nil {
 		return err
 	}
-	// cancel_token never leaves Go: excluded from the API entirely.
-	return orm.Register[EventBooking](orm.WithTableName("event_booking"), orm.WithExcludeFields("cancel_token"))
+	// Staff calendar feed tokens: off the generic CRUD surface (FeedHandler).
+	if err := orm.Register[EventFeed](orm.WithTableName("event_feed"), orm.WithExcluded()); err != nil {
+		return err
+	}
+	// cancel_token and offer_token never leave Go: excluded from the API entirely.
+	return orm.Register[EventBooking](orm.WithTableName("event_booking"), orm.WithExcludeFields("cancel_token", "offer_token"))
 }
 
 // checks are the CHECK constraints struct tags can't express.
@@ -54,7 +58,21 @@ var checks = []struct{ table, name, expr string }{
 func (m *eventModule) Migrate(ctx context.Context, db *orm.DB) error {
 	for _, stmt := range []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_booking_cancel_token ON event_booking (cancel_token) WHERE cancel_token <> ''`,
-		`CREATE INDEX IF NOT EXISTS idx_event_booking_slot ON event_booking (event_id, slot_start) WHERE status = 'confirmed'`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_booking_offer_token ON event_booking (offer_token) WHERE offer_token <> ''`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_feed_token ON event_feed (token_hash)`,
+		// Slot capacity counts every booking but cancelled ones (a checked-in
+		// booking keeps its seats); this replaces the confirmed-only index.
+		`DROP INDEX IF EXISTS idx_event_booking_slot`,
+		`CREATE INDEX IF NOT EXISTS idx_event_booking_slot_held ON event_booking (event_id, slot_start) WHERE status <> 'cancelled'`,
+		// The reminder sweep scans confirmed, not-yet-reminded bookings by start.
+		`CREATE INDEX IF NOT EXISTS idx_event_booking_reminder_due ON event_booking (starts_at)
+		 WHERE status = 'confirmed' AND reminder_sent_at IS NULL AND deleted_at IS NULL`,
+		// starts_at: backfill rows from before the column, and heal any drift a
+		// crash between a session update and its SyncSessionStart left behind.
+		`UPDATE event_booking b SET starts_at = s.starts_at FROM event_session s
+		 WHERE b.session_id = s.id AND b.starts_at IS DISTINCT FROM s.starts_at`,
+		`UPDATE event_booking SET starts_at = slot_start
+		 WHERE session_id IS NULL AND starts_at IS DISTINCT FROM slot_start`,
 	} {
 		if _, err := db.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("event: migrate: %w", err)
@@ -71,5 +89,5 @@ func (m *eventModule) Migrate(ctx context.Context, db *orm.DB) error {
 				zap.String("constraint", c.name), zap.Error(err))
 		}
 	}
-	return nil
+	return seedPresets(ctx, db)
 }

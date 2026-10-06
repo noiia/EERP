@@ -13,6 +13,7 @@ import (
 	"core/internal/chatter"
 	"core/internal/common"
 	eerpmail "core/internal/mail"
+	"core/internal/payment"
 	"core/modules/contact"
 	"core/orm"
 	"core/orm/model"
@@ -26,7 +27,13 @@ var (
 	ErrNotBookable = errors.New("not bookable")
 	ErrBadRequest  = errors.New("invalid booking")
 	ErrNotFound    = errors.New("booking not found")
+	// ErrState: the booking's status forbids the change (cancelling a
+	// checked-in booking, checking in a cancelled one).
+	ErrState = errors.New("booking status does not allow this")
 )
+
+// checkInOpens is how long before the start staff may record attendance.
+const checkInOpens = time.Hour
 
 // BookRequest targets exactly one of a session (SessionID) or an appointment
 // slot (SlotStart).
@@ -38,6 +45,9 @@ type BookRequest struct {
 	Email     string
 	Name      string
 	Phone     string
+	// Waitlist: when the session is full, join its waiting list instead of
+	// failing with ErrFull (sessions only; the booking holds no seat).
+	Waitlist bool
 	// Never bound from a request body: handlers set these from the
 	// authenticated identity / the ERP route.
 	UserID *uuid.UUID `json:"-"`
@@ -104,7 +114,17 @@ func (s *Service) Book(ctx context.Context, tenant uuid.UUID, req BookRequest) (
 			if ev.Kind != KindSessions {
 				return ErrNotBookable
 			}
-			if when, err = captureSessionSeats(ctx, tx, ev, *req.SessionID, req.Seats); err != nil {
+			when, err = captureSessionSeats(ctx, tx, ev, *req.SessionID, req.Seats)
+			if errors.Is(err, ErrFull) && req.Waitlist {
+				// captureSessionSeats said "full" for a past session too: only a
+				// future one has a waiting list.
+				err = tx.QueryRow(ctx, `SELECT starts_at FROM event_session WHERE id = $1 AND starts_at > now()`, *req.SessionID).Scan(&when)
+				if isNoRows(err) {
+					return ErrFull
+				}
+				b.Status = BookingWaitlisted
+			}
+			if err != nil {
 				return err
 			}
 		} else {
@@ -114,23 +134,45 @@ func (s *Service) Book(ctx context.Context, tenant uuid.UUID, req BookRequest) (
 			}
 			b.SlotStart, b.SlotEnd, when = &slot.Start, &slot.End, slot.Start
 		}
+		b.StartsAt = &when
 		if b.ContactID, err = accountContact(ctx, tx, tenant, req.UserID); err != nil {
 			return err
 		}
 		if b, err = orm.MustRepo[EventBooking](tx).Create(ctx, b); err != nil {
 			return err
 		}
-		msg, err := confirmationEmail(ev, b, when, s.siteURL)
+		var msg eerpmail.Message
+		if b.Status == BookingWaitlisted {
+			msg, err = bookingEmail(ctx, tx, TemplateWaitlist, ev, b, when, s.siteURL)
+		} else {
+			due, cerr := s.charge(ctx, tx, ev, &b)
+			if cerr != nil {
+				return cerr
+			}
+			// A visitor's paid booking goes to online payment when a provider is
+			// connected: seats held, no email until the payment confirms it.
+			if due != "" && !req.Staff {
+				if _, online, perr := payment.Available(ctx, tenant); perr != nil {
+					return perr
+				} else if online {
+					return holdForPayment(ctx, tx, &b)
+				}
+			}
+			msg, err = confirmationEmail(ctx, tx, ev, b, when, s.siteURL, due)
+		}
 		if err != nil {
 			return err
 		}
-		msg.TenantID = tenant
 		return eerpmail.Enqueue(ctx, tx, msg)
 	})
 	if err != nil {
 		return EventBooking{}, err
 	}
-	s.log(ctx, tenant, ev.ID, req.Email, fmt.Sprintf("Booking: %s, %d seat(s), %s", req.Name, req.Seats, when.Format(time.RFC3339)))
+	what := "Booking"
+	if b.Status == BookingWaitlisted {
+		what = "Waiting list"
+	}
+	s.log(ctx, tenant, ev.ID, req.Email, fmt.Sprintf("%s: %s, %d seat(s), %s", what, req.Name, req.Seats, when.Format(time.RFC3339)))
 	return b, nil
 }
 
@@ -197,8 +239,8 @@ func captureSlot(ctx context.Context, tx *orm.Tx, ev Event, start time.Time, sea
 	var taken int
 	if err := tx.QueryRow(ctx, `
 		SELECT COALESCE(sum(seats), 0) FROM event_booking
-		WHERE event_id = $1 AND slot_start = $2 AND status = $3 AND deleted_at IS NULL`,
-		ev.ID, start, BookingConfirmed).Scan(&taken); err != nil {
+		WHERE event_id = $1 AND slot_start = $2 AND status <> $3 AND deleted_at IS NULL`,
+		ev.ID, start, BookingCancelled).Scan(&taken); err != nil {
 		return Slot{}, err
 	}
 	if taken+seats > ev.SlotCapacity {
@@ -250,46 +292,105 @@ func (s *Service) CancelByID(ctx context.Context, tenant, id uuid.UUID, ownerID 
 // serialize and only the first frees the seats.
 func (s *Service) cancel(ctx context.Context, tenant uuid.UUID, where string, args ...any) error {
 	var b EventBooking
-	var eventName string
 	var already bool
 	err := orm.Transact(ctx, s.db, func(tx *orm.Tx) error {
 		err := tx.QueryRow(ctx, `
-			SELECT id, event_id, session_id, seats, email, name, status FROM event_booking
+			SELECT id, event_id, session_id, seats, email, name, status, user_id, starts_at, slot_end, invoice_id FROM event_booking
 			WHERE tenant_id = $1 AND deleted_at IS NULL AND `+where+` FOR UPDATE`, append([]any{tenant}, args...)...).
-			Scan(&b.ID, &b.EventID, &b.SessionID, &b.Seats, &b.Email, &b.Name, &b.Status)
+			Scan(&b.ID, &b.EventID, &b.SessionID, &b.Seats, &b.Email, &b.Name, &b.Status, &b.UserID, &b.StartsAt, &b.SlotEnd, &b.InvoiceID)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		if b.Status == BookingCancelled {
+		if b.Status == BookingCancelled || b.Status == BookingExpired {
 			already = true
 			return nil
 		}
-		if _, err := tx.Exec(ctx, `UPDATE event_booking SET status = $2, cancelled_at = now(), updated_at = now() WHERE id = $1`,
+		if b.Status != BookingConfirmed && b.Status != BookingWaitlisted && b.Status != BookingPendingPayment {
+			return fmt.Errorf("%w: a checked-in booking can't be cancelled", ErrState)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE event_booking SET status = $2, cancelled_at = now(), offer_token = '', offer_expires_at = NULL, updated_at = now() WHERE id = $1`,
 			b.ID, BookingCancelled); err != nil {
 			return err
 		}
-		if b.SessionID != nil {
+		// Only a confirmed or pending-payment booking holds seats; freeing them
+		// offers them to the waiting list.
+		if b.SessionID != nil && (b.Status == BookingConfirmed || b.Status == BookingPendingPayment) {
 			if _, err := tx.Exec(ctx, `UPDATE event_session SET seats_taken = seats_taken - $2, updated_at = now() WHERE id = $1`,
 				*b.SessionID, b.Seats); err != nil {
 				return err
 			}
+			if err := s.offerNext(ctx, tx, tenant, *b.SessionID); err != nil {
+				return err
+			}
 		}
-		if err := tx.QueryRow(ctx, `SELECT name FROM event WHERE id = $1`, b.EventID).Scan(&eventName); err != nil {
+		if err := releaseInvoice(ctx, tx, tenant, b.InvoiceID); err != nil {
 			return err
 		}
-		msg, err := cancellationEmail(eventName, b)
+		// Raw read: a deleted event's bookings can still be cancelled.
+		ev := Event{TenantID: tenant}
+		if err := tx.QueryRow(ctx, `SELECT name, location, timezone FROM event WHERE id = $1`, b.EventID).
+			Scan(&ev.Name, &ev.Location, &ev.Timezone); err != nil {
+			return err
+		}
+		msg, err := cancellationEmail(ctx, tx, ev, b, b.Status == BookingConfirmed)
 		if err != nil {
 			return err
 		}
-		msg.TenantID = tenant
 		return eerpmail.Enqueue(ctx, tx, msg)
 	})
 	if err == nil && !already {
 		s.log(ctx, tenant, b.EventID, b.Email, fmt.Sprintf("Cancelled: %s, %d seat(s)", b.Name, b.Seats))
 	}
+	return err
+}
+
+// SetAttendance records a check-in outcome (BookingAttended or
+// BookingNoShow) from checkInOpens before the start. A confirmed booking may
+// take either, and staff may correct one into the other; seats stay taken.
+func (s *Service) SetAttendance(ctx context.Context, tenant, id uuid.UUID, status string) error {
+	if status != BookingAttended && status != BookingNoShow {
+		return fmt.Errorf("%w: attendance is %q or %q", ErrBadRequest, BookingAttended, BookingNoShow)
+	}
+	var b EventBooking
+	err := orm.Transact(ctx, s.db, func(tx *orm.Tx) error {
+		err := tx.QueryRow(ctx, `
+			SELECT event_id, name, email, status, starts_at FROM event_booking
+			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL FOR UPDATE`, id, tenant).
+			Scan(&b.EventID, &b.Name, &b.Email, &b.Status, &b.StartsAt)
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		switch {
+		case b.Status != BookingConfirmed && b.Status != BookingAttended && b.Status != BookingNoShow:
+			return fmt.Errorf("%w: only a confirmed booking can be checked in (it is %s)", ErrState, b.Status)
+		case b.Status == status:
+			return nil
+		case b.StartsAt == nil || time.Now().Before(b.StartsAt.Add(-checkInOpens)):
+			return fmt.Errorf("%w: check-in opens %s before the start", ErrBadRequest, checkInOpens)
+		}
+		_, err = tx.Exec(ctx, `UPDATE event_booking SET status = $2, updated_at = now() WHERE id = $1`, id, status)
+		return err
+	})
+	if err == nil {
+		s.log(ctx, tenant, b.EventID, b.Email, fmt.Sprintf("Attendance: %s, %s", b.Name, status))
+	}
+	return err
+}
+
+// SyncSessionStart copies a session's start onto its bookings' starts_at,
+// after the session was moved (GuardSessionUpdate).
+func (s *Service) SyncSessionStart(ctx context.Context, tenant, sessionID uuid.UUID) error {
+	_, err := s.db.Exec(ctx, `
+		UPDATE event_booking b SET starts_at = s.starts_at, updated_at = now()
+		FROM event_session s
+		WHERE s.id = $1 AND s.tenant_id = $2 AND b.session_id = s.id AND b.tenant_id = $2
+		  AND b.starts_at IS DISTINCT FROM s.starts_at`, sessionID, tenant)
 	return err
 }
 
@@ -316,8 +417,8 @@ func (s *Service) Slots(ctx context.Context, tenant, eventID uuid.UUID, from, to
 	taken := map[time.Time]int{}
 	rows, err := s.db.Query(ctx, `
 		SELECT slot_start, sum(seats) FROM event_booking
-		WHERE event_id = $1 AND status = $2 AND deleted_at IS NULL AND slot_start >= $3 AND slot_start < $4
-		GROUP BY slot_start`, ev.ID, BookingConfirmed, from, to)
+		WHERE event_id = $1 AND status <> $2 AND deleted_at IS NULL AND slot_start >= $3 AND slot_start < $4
+		GROUP BY slot_start`, ev.ID, BookingCancelled, from, to)
 	if err != nil {
 		return nil, err
 	}

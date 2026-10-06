@@ -63,6 +63,31 @@ sequenceDiagram
     N-->>V: "Booking confirmed" (seats-left cache expired)
 ```
 
+## Addendum (Event v2): check-in holds seats
+Staff record attendance from 1 h before the start: `confirmed` → `attended` | `no_show`
+(correctable into each other), through `Service.SetAttendance` behind the same
+`PUT /api/v1/event_booking/:id` override. A checked-in booking **keeps its seats** — the event
+happened — so every capacity count now means "all bookings but cancelled ones" (slot recount,
+`/slots`, the partial index `idx_event_booking_slot_held`), and a checked-in booking can no
+longer be cancelled (409), which would otherwise free seats of a past session.
+
+`event_booking.starts_at` copies the session start (or `slot_start`) so the bookings calendar
+has one date column. The booking service writes it; moving a session re-syncs its bookings right
+after the generic update commits (`GuardSessionUpdate` → `SyncSessionStart`, a separate
+statement since the generic update owns its transaction), and every boot's `Migrate` heals any
+drift a crash in between would leave. A DB trigger was rejected: its write would bypass the
+Redis read cache's invalidation (ADR-022).
+
+```mermaid
+stateDiagram-v2
+    [*] --> confirmed: book (seats captured)
+    confirmed --> cancelled: cancel (seats freed)
+    confirmed --> attended: check in (from start - 1 h)
+    confirmed --> no_show: no show (from start - 1 h)
+    attended --> no_show: correction
+    no_show --> attended: correction
+```
+
 ## Consequences
 - Concurrency tests prove it: 20 visitors racing for 5 session seats end with exactly 5
   bookings and `seats_taken = 5`; 6 racing for a slot with `slot_capacity` 2 end with 2.
@@ -72,6 +97,9 @@ sequenceDiagram
   is one hour off in local time until staff adjust it.
 
 ## Pitfalls
+- Count held seats with `status <> 'cancelled'`, never `status = 'confirmed'`: attended,
+  no-show and pending-payment bookings still occupy their seats. Waitlisted (and expired)
+  bookings never hold seats; they exist on sessions only, whose count is `seats_taken`.
 - Never write `event_booking` or `seats_taken` with a raw insert/update elsewhere: go through the
   booking service, or seat counts drift.
 - Slot times are validated against the availability at booking time — a slot a visitor saw may

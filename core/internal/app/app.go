@@ -27,6 +27,7 @@ import (
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
+	"core/internal/payment"
 	"core/internal/pictures"
 	"core/internal/presence"
 	"core/internal/reports"
@@ -40,6 +41,7 @@ import (
 	"core/modules/crminheritdemo"
 	cronmodule "core/modules/cron"
 	eventmodule "core/modules/event"
+	paymentstripe "core/modules/payment_stripe"
 	"core/modules/propertymanagement"
 	"core/modules/sale"
 	"core/modules/warehouse"
@@ -299,6 +301,14 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	meGroup := srv.Echo().Group("/api/v1/me", jwtMw)
 	meGroup.GET("/preferences", settingsHandler.GetMyPreferences)
 	meGroup.PUT("/preferences", settingsHandler.PutMyPreferences)
+	// Staff calendar feed (modules/event/feeds.go): the caller's own secret link.
+	eventFeeds := eventmodule.NewFeedHandler(app.DB, userRepo, permRepo)
+	meGroup.GET("/event_feed", eventFeeds.GetMine)
+	meGroup.POST("/event_feed", eventFeeds.Create)
+	meGroup.DELETE("/event_feed", eventFeeds.Delete)
+	// The feed itself: no session (calendar apps can't log in) — the token is the
+	// credential, and the owner's permission is re-checked on every fetch.
+	srv.Echo().GET("/api/v1/calendar/:file", eventFeeds.Feed, ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
 
 	// Tenant-wide settings: JWT + permission middleware (PUT /settings/i18n
 	// derives settings:i18n:write, PUT /settings/format settings:format:write,
@@ -326,6 +336,17 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	settingsGroup.PUT("/tax", settingsHandler.PutTaxSettings)
 	settingsGroup.GET("/units", settingsHandler.GetUnitSettings)
 	settingsGroup.PUT("/units", settingsHandler.PutUnitSettings)
+	// Online payment (internal/payment, ADR-028): a provider counts only while
+	// its module is active; Stripe's keys are edited here (settings:integrations:*).
+	payment.SetActiveCheck(moduleRuntime.IsActive)
+	stripe := paymentstripe.Use(settings.NewRepository(app.DB))
+	settingsGroup.GET("/integrations/stripe", stripe.GetSettings(moduleRuntime.IsActive))
+	settingsGroup.PUT("/integrations/stripe", stripe.PutSettings)
+	// Email templates (internal/mail, ADR-027): settings:mail_templates:*, route-derived.
+	mailTemplates := mail.NewTemplateHandler(app.DB)
+	settingsGroup.GET("/mail_templates", mailTemplates.List)
+	settingsGroup.PUT("/mail_templates/:key/:locale", mailTemplates.Put)
+	settingsGroup.DELETE("/mail_templates/:key/:locale", mailTemplates.Delete)
 	settingsGroup.GET("/accounts", settingsHandler.GetAccountsSettings)
 	settingsGroup.PUT("/accounts", settingsHandler.PutAccountsSettings)
 
@@ -686,6 +707,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		srv.Echo().PUT("/api/v1/"+table+"/:id", h.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
 	}
 	eventH := eventmodule.NewHandler(app.DB, eventmodule.NewService(app.DB, chatter.NewRepository(app.DB), configContent.SiteURL))
+	// Event app settings (reminders): settings:events:read|write, route-derived.
+	settingsGroup.GET("/events", eventH.GetSettings)
+	settingsGroup.PUT("/events", eventH.PutSettings)
 	// event_booking writes go through the booking service (seat accounting);
 	// a booking is cancelled, never deleted; a session with confirmed
 	// bookings can't be deleted nor move to another event. seats_taken is
@@ -710,6 +734,10 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		publicGroup.GET("/site", routing.PublicSite)
 		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
 		publicGroup.GET("/event/:id/slots", eventH.PublicSlots)
+		publicGroup.GET("/event/:id/calendar.ics", eventH.PublicCalendar)
+		// Payment provider webhooks (signed by the provider, for the site tenant).
+		publicGroup.POST("/payments/:provider/webhook", eventH.PaymentWebhook)
+		publicGroup.GET("/events/upcoming", eventH.PublicUpcoming(website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve)))
 		if publicPictures != nil {
 			// The workspace favicon (Settings → Global settings): a picture on the
 			// (workspace, <tenant id>, favicon) anchor, served to anyone — browsers
@@ -763,6 +791,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteGroup.POST("/me/verify", siteVerify.Verify)
 		websiteGroup.POST("/me/verify/resend", siteVerify.Resend)
 		websiteGroup.POST("/me/bookings/:id/cancel", eventH.CancelMine)
+		websiteGroup.GET("/me/bookings/:id/calendar.ics", eventH.MyBookingCalendar)
 
 		// Bookings: anonymous visitors OR logged-in website users. The site
 		// tenant is stamped first; a website token's tenant is the same.
@@ -772,6 +801,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			authmw.OptionalWebsiteJWTMiddleware(tokenSvc))
 		bookings.POST("", eventH.Book)
 		bookings.POST("/cancel", eventH.CancelByToken)
+		bookings.POST("/claim", eventH.ClaimByToken) // a waiting-list offer's link
 	} else {
 		// No site tenant: the Next proxy still needs an answer.
 		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)
@@ -980,6 +1010,33 @@ func (a *App) Run(ctx context.Context) error {
 			case <-ticker.C:
 				if err := presence.SweepAbsentToOffline(ctx, presenceRepo, a.presenceHub); err != nil {
 					common.Logger.Warn("presence: sweep absent to offline", zap.Error(err))
+				}
+			}
+		}
+	}()
+
+	// Event sweep (modules/event): every 5 minutes, queue the reminder of
+	// bookings entering their tenant's reminder window (events.settings
+	// reminder_hours), expire unclaimed waiting-list offers (their seats pass to
+	// the next in line) and release unpaid payment holds. Same inline-ticker
+	// shape as above.
+	eventSvc := eventmodule.NewService(app.DB, chatter.NewRepository(app.DB), a.cfg.SiteURL)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := eventSvc.SendReminders(ctx); err != nil {
+					common.Logger.Warn("event: send reminders", zap.Error(err))
+				}
+				if err := eventSvc.ExpireOffers(ctx); err != nil {
+					common.Logger.Warn("event: expire waiting-list offers", zap.Error(err))
+				}
+				if err := eventSvc.ExpireHolds(ctx); err != nil {
+					common.Logger.Warn("event: release unpaid holds", zap.Error(err))
 				}
 			}
 		}

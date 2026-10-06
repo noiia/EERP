@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -22,10 +23,18 @@ func Enqueue(ctx context.Context, ex orm.Executor, m Message) error {
 	if err := validate(m); err != nil {
 		return err
 	}
+	attachments := ""
+	if len(m.Attachments) > 0 {
+		raw, err := json.Marshal(m.Attachments)
+		if err != nil {
+			return err
+		}
+		attachments = string(raw)
+	}
 	_, err := ex.Exec(ctx, `
-		INSERT INTO mail_outbox (tenant_id, to_address, subject, body_text, body_html, status, next_attempt_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now())`,
-		m.TenantID, m.To, m.Subject, m.Text, m.HTML, StatusPending)
+		INSERT INTO mail_outbox (tenant_id, to_address, subject, body_text, body_html, attachments, status, next_attempt_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+		m.TenantID, m.To, m.Subject, m.Text, m.HTML, attachments, StatusPending)
 	if err != nil {
 		return fmt.Errorf("mail: enqueue: %w", err)
 	}

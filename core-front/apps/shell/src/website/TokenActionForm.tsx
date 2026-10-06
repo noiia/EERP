@@ -20,6 +20,7 @@ export function TokenActionForm({ action, token, button, done }: {
   const errors: Record<Exclude<TokenResult, 'ok' | null>, string> = {
     invalid: t('This link is invalid or was already used.'),
     session: t('Your session has expired. Please log in again.'),
+    taken: t('Someone booked this seat first. You stay on the waiting list.'),
     failed: t('Something went wrong. Please try again.'),
   }
   return (

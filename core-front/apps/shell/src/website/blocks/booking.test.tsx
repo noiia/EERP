@@ -60,16 +60,53 @@ describe('BookingForm', () => {
     await screen.findByText('seats must be between 1 and 10')
   })
 
+  it('shows each paid session price in the workspace currency', () => {
+    render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" currency="EUR" choices={[{ id: 's1', start, seatsLeft: 2, price: 15 }]} />)
+    expect(screen.getByRole('radio').closest('label')?.textContent).toMatch(/15[.,]00\s?€/)
+  })
+
+  it('sends a paid booking to the payment page', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: 'b1', status: 'pending_payment', checkout_url: 'https://pay.test/cs_1' }), { status: 201 })))
+    const assign = vi.fn()
+    vi.stubGlobal('location', { ...window.location, assign })
+    render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" choices={[{ id: 's1', start, seatsLeft: 2, price: 15 }]} />)
+    fireEvent.click(screen.getByRole('radio'))
+    fill()
+    fireEvent.click(screen.getByRole('button', { name: /book/i }))
+    await screen.findByText(/taking you to the payment page/i)
+    expect(assign).toHaveBeenCalledWith('https://pay.test/cs_1')
+  })
+
+  it('says when online payment is down', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ error: { message: 'x' } }), { status: 502 })))
+    render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" choices={[{ id: 's1', start, seatsLeft: 2 }]} />)
+    fireEvent.click(screen.getByRole('radio'))
+    fill()
+    fireEvent.click(screen.getByRole('button', { name: /book/i }))
+    await screen.findByText(/online payment is unavailable/i)
+  })
+
   it('seat count is capped by seats left and by the event maximum', () => {
     render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" maxSeats={3} choices={[{ id: 's1', start, seatsLeft: 2 }]} />)
     fireEvent.click(screen.getByRole('radio'))
     expect(Number((screen.getByLabelText(/seats/i) as HTMLInputElement).max)).toBe(2)
   })
 
-  it('a full session is shown but not selectable', () => {
+  it('a full session offers the waiting list', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: 'b1', status: 'waitlisted' }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
     render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" choices={[{ id: 's1', start, seatsLeft: 0 }]} />)
+    expect(screen.getByText(/full — join the waiting list/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio'))
+    fill()
+    fireEvent.click(screen.getByRole('button', { name: /join the waiting list/i }))
+    await screen.findByText(/you're on the waiting list/i)
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1]!).body))).toMatchObject({ session_id: 's1', waitlist: true })
+  })
+
+  it('a full slot stays unselectable (no waiting list for appointments)', () => {
+    render(<BookingForm eventId="e1" kind="slot" timeZone="Europe/Paris" choices={[{ id: start, start, seatsLeft: 0 }]} />)
     expect((screen.getByRole('radio') as HTMLInputElement).disabled).toBe(true)
-    expect(screen.getByText(/full/i)).toBeTruthy()
   })
 })
 

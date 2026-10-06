@@ -53,7 +53,7 @@ func (s *Sender) Tick(ctx context.Context, tenant uuid.UUID) (sent, failed int, 
 	err = orm.Transact(dbctx, s.db, func(tx *orm.Tx) error {
 		sent, failed = 0, 0
 		rows, err := tx.Query(dbctx, `
-			SELECT id, to_address, subject, body_text, body_html, attempts
+			SELECT id, to_address, subject, body_text, body_html, attachments, attempts
 			FROM mail_outbox
 			WHERE status = $1 AND next_attempt_at <= now() AND deleted_at IS NULL
 			  AND ($2 = '00000000-0000-0000-0000-000000000000'::uuid OR tenant_id = $2)
@@ -66,7 +66,7 @@ func (s *Sender) Tick(ctx context.Context, tenant uuid.UUID) (sent, failed int, 
 		var due []Outbox
 		for rows.Next() {
 			var o Outbox
-			if err := rows.Scan(&o.ID, &o.ToAddress, &o.Subject, &o.BodyText, &o.BodyHTML, &o.Attempts); err != nil {
+			if err := rows.Scan(&o.ID, &o.ToAddress, &o.Subject, &o.BodyText, &o.BodyHTML, &o.Attachments, &o.Attempts); err != nil {
 				rows.Close()
 				return err
 			}

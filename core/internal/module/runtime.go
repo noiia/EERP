@@ -239,6 +239,14 @@ func (r *Registry) IsTableActive(table string) bool {
 	return r.active[owner]
 }
 
+// IsActive reports whether the module named name is loaded and active — for
+// a module owning no table (a payment provider), which IsTableActive can't see.
+func (r *Registry) IsActive(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.active[name]
+}
+
 // ActiveGateMiddleware 403s any request to a deactivated module's table.
 // Passed as an extra middleware to ormserver.RegisterRoutes in main.go — it
 // needs no change to that package's signature (middlewares is already

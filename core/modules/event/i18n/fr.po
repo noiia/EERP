@@ -140,3 +140,45 @@ msgstr "Annuler la réservation"
 
 msgid "Weekly copies to add (Repeat weekly)"
 msgstr "Copies hebdomadaires à ajouter (Répéter chaque semaine)"
+
+msgid "attended"
+msgstr "présente"
+
+msgid "no_show"
+msgstr "absente"
+
+msgid "Check in"
+msgstr "Enregistrer l'arrivée"
+
+msgid "No show"
+msgstr "Absent"
+
+msgid "Picture"
+msgstr "Image"
+
+msgid "Email templates"
+msgstr "Modèles d'e-mail"
+
+msgid "waitlisted"
+msgstr "en liste d'attente"
+
+msgid "pending_payment"
+msgstr "en attente de paiement"
+
+msgid "expired"
+msgstr "expirée"
+
+msgid "Product (paid bookings)"
+msgstr "Produit (réservations payantes)"
+
+msgid "Price (overrides the event product's)"
+msgstr "Prix (remplace celui du produit de l'événement)"
+
+msgid "Invoice"
+msgstr "Facture"
+
+msgid "Paid on"
+msgstr "Payée le"
+
+msgid "Mark paid"
+msgstr "Marquer payée"

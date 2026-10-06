@@ -12,7 +12,18 @@ import Typography from '@mui/material/Typography'
 import { useI18nStore, useT } from '@eerp/core-front'
 
 /** One bookable time: a session (id = session id) or a slot (id = its start). */
-export interface BookingChoice { id: string; start: string; seatsLeft: number }
+export interface BookingChoice { id: string; start: string; seatsLeft: number; price?: number | null }
+
+/** A paid session's price, tax included, in the workspace currency (bare when unknown). */
+export function formatPrice(price: number, currency: string | undefined, locale: string | null): string {
+  const tag = locale && locale !== 'source' ? locale : undefined
+  try {
+    if (currency) return new Intl.NumberFormat(tag, { style: 'currency', currency }).format(price)
+  } catch {
+    // an unknown currency code: fall through to the bare amount
+  }
+  return price.toFixed(2)
+}
 
 /** Choices render in the event's own time zone, in the visitor's language. */
 export function formatChoice(start: string, timeZone: string, locale: string | null): string {
@@ -24,16 +35,22 @@ export function formatChoice(start: string, timeZone: string, locale: string | n
   }
 }
 
-type Status = { kind: 'idle' | 'submitting' } | { kind: 'confirmed'; email: string } | { kind: 'error'; message: string }
+type Status =
+  | { kind: 'idle' | 'submitting' }
+  | { kind: 'confirmed' | 'waitlisted'; email: string }
+  | { kind: 'paying' }
+  | { kind: 'error'; message: string }
 
 // Seat caps shown here are hints (seat counts are cached up to a minute); Go's 409
 // is the truth, answered with "just taken" and a refresh of the choices.
-export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, defaults, onTaken }: {
+export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, currency, defaults, onTaken }: {
   eventId: string
   kind: 'session' | 'slot'
   choices: BookingChoice[]
   timeZone: string
   maxSeats?: number
+  /** ISO 4217 code prices are shown in (Go's /sessions `currency`). */
+  currency?: string
   defaults?: { name?: string; email?: string }
   onTaken?: () => void
 }) {
@@ -44,7 +61,10 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, d
   const [seats, setSeats] = useState(1)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const picked = choices.find((c) => c.id === choice)
-  const cap = Math.max(1, Math.min(maxSeats, picked?.seatsLeft ?? maxSeats))
+  // A full session can still be picked to join its waiting list (sessions only:
+  // a full appointment slot is just another time to avoid).
+  const waitlist = kind === 'session' && picked !== undefined && picked.seatsLeft <= 0
+  const cap = waitlist ? maxSeats : Math.max(1, Math.min(maxSeats, picked?.seatsLeft ?? maxSeats))
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -61,10 +81,18 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, d
         name: String(f.get('name') ?? ''),
         email,
         phone: String(f.get('phone') ?? ''),
+        ...(waitlist ? { waitlist: true } : {}),
       }),
     }).catch(() => null)
     if (res?.ok) {
-      setStatus({ kind: 'confirmed', email })
+      const ok = (await res.json().catch(() => null)) as { status?: string; checkout_url?: string } | null
+      if (ok?.checkout_url) {
+        // Held for payment: the provider's page confirms it (seats held 30 minutes).
+        setStatus({ kind: 'paying' })
+        window.location.assign(ok.checkout_url)
+        return
+      }
+      setStatus({ kind: ok?.status === 'waitlisted' ? 'waitlisted' : 'confirmed', email })
       return
     }
     const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null
@@ -75,6 +103,8 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, d
       else router.refresh()
     } else if (res?.status === 400 && body?.error?.message) {
       setStatus({ kind: 'error', message: body.error.message })
+    } else if (res?.status === 502) {
+      setStatus({ kind: 'error', message: t('Online payment is unavailable right now. Please try again in a few minutes.') })
     } else if (res?.status === 429) {
       setStatus({ kind: 'error', message: t('Too many attempts. Please wait a minute and try again.') })
     } else {
@@ -82,6 +112,16 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, d
     }
   }
 
+  if (status.kind === 'paying') {
+    return <Alert severity="info">{t('Taking you to the payment page…')}</Alert>
+  }
+  if (status.kind === 'waitlisted') {
+    return (
+      <Alert severity="info">
+        {t("You're on the waiting list — we'll email you if a seat frees up:")} {status.email}
+      </Alert>
+    )
+  }
   if (status.kind === 'confirmed') {
     return (
       <Alert severity="success">
@@ -100,12 +140,13 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, d
           <FormControlLabel
             key={c.id}
             value={c.id}
-            disabled={c.seatsLeft <= 0}
+            disabled={c.seatsLeft <= 0 && kind !== 'session'}
             control={<Radio required />}
             label={
               <span suppressHydrationWarning>
                 {formatChoice(c.start, timeZone, locale)}
-                {c.seatsLeft <= 0 ? ` — ${t('Full')}` : ''}
+                {c.price != null && c.price > 0 ? ` — ${formatPrice(c.price, currency, locale)}` : ''}
+                {c.seatsLeft <= 0 ? ` — ${kind === 'session' ? t('Full — join the waiting list') : t('Full')}` : ''}
               </span>
             }
           />
@@ -124,7 +165,7 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, d
       <TextField name="email" label={t('Email')} type="email" required defaultValue={defaults?.email} />
       <TextField name="phone" label={t('Phone')} type="tel" slotProps={{ htmlInput: { maxLength: 50 } }} />
       <Button type="submit" variant="contained" disabled={!choice || status.kind === 'submitting'} sx={{ alignSelf: 'flex-start' }}>
-        {t('Book')}
+        {waitlist ? t('Join the waiting list') : t('Book')}
       </Button>
     </Stack>
   )

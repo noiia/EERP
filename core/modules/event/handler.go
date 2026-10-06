@@ -2,15 +2,19 @@ package event
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
 	"core/internal/auth"
+	"core/modules/sale"
 	"core/orm"
 	"core/orm/access"
 
@@ -47,22 +51,135 @@ func (h *Handler) PublicSessions(c *echo.Context) error {
 		return err
 	}
 	defer rows.Close()
-	out := []map[string]any{}
+	type row struct {
+		id         uuid.UUID
+		start, end time.Time
+		capacity   int
+		taken      int
+		price      *float64
+	}
+	var sessions []row
 	for rows.Next() {
-		var sid uuid.UUID
-		var start, end time.Time
-		var capacity, taken int
-		var price *float64
-		if err := rows.Scan(&sid, &start, &end, &capacity, &taken, &price); err != nil {
+		var r row
+		if err := rows.Scan(&r.id, &r.start, &r.end, &r.capacity, &r.taken, &r.price); err != nil {
 			return err
 		}
-		out = append(out, map[string]any{"id": sid, "starts_at": start, "ends_at": end,
-			"capacity": capacity, "seats_left": capacity - taken, "price": price})
+		sessions = append(sessions, r)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]any{"data": out})
+	rows.Close()
+	// A paid event shows what the visitor pays: the session's price, else the
+	// variant's, tax included. Without a variant the price is display text as entered.
+	var variantPrice float64
+	var display sale.PriceDisplay
+	var variantID *uuid.UUID
+	if err := h.db.QueryRow(ctx, `SELECT product_variant_id FROM event WHERE id = $1`, id).Scan(&variantID); err != nil && !isNoRows(err) {
+		return err
+	}
+	if variantID != nil {
+		if variantPrice, display, err = sale.VariantPricing(ctx, h.db, tenant, *variantID); err != nil && !errors.Is(err, sale.ErrNoVariant) {
+			return err
+		}
+	}
+	out := []map[string]any{}
+	for _, r := range sessions {
+		price := r.price
+		if display != nil {
+			unit := variantPrice
+			if r.price != nil {
+				unit = *r.price
+			}
+			p := display(unit)
+			price = &p
+		}
+		out = append(out, map[string]any{"id": r.id, "starts_at": r.start, "ends_at": r.end,
+			"capacity": r.capacity, "seats_left": r.capacity - r.taken, "price": price})
+	}
+	currency, err := sale.WorkspaceCurrency(ctx, h.db, tenant)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, map[string]any{"data": out, "currency": currency})
+}
+
+// PublicResolver is the public scope of a table (website.Publisher.Resolve
+// wrapped by website.ActiveOnly): ok false = not published, or its module is off.
+type PublicResolver func(ctx context.Context, table string) (access.PublicScope, bool, error)
+
+// PublicUpcoming handles GET /api/v1/public/events/upcoming?limit= (1–50,
+// default 12): published events with their next future session (start and
+// seats left) — sessions events without one are left out, appointment events
+// are listed after them (they book slots, not sessions). The event table's
+// own published scope applies: 404 when unpublished, only published columns
+// returned, its forced filter enforced. The site's event_list block reads it.
+func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		ctx := c.Request().Context()
+		tenant, _ := access.TenantFromContext(ctx)
+		limit := 12
+		if raw := c.QueryParam("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 1 || n > 50 {
+				return echo.NewHTTPError(http.StatusBadRequest, "limit must be 1 to 50")
+			}
+			limit = n
+		}
+		scope, ok, err := resolve(ctx, "event")
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return echo.NewHTTPError(http.StatusNotFound, "not found")
+		}
+		args := []any{tenant, limit}
+		where := ""
+		for col, val := range scope.Equals {
+			if !orm.TableHasColumn("event", col) { // col becomes an identifier
+				continue
+			}
+			args = append(args, val)
+			where += fmt.Sprintf(" AND e.%s::text = $%d", col, len(args))
+		}
+		rows, err := h.db.Query(ctx, `
+			SELECT e.id, e.name, e.description, e.location, e.kind, e.timezone, e.picture, n.starts_at, n.seats_left
+			FROM event e
+			LEFT JOIN LATERAL (
+				SELECT s.starts_at, s.capacity - s.seats_taken AS seats_left FROM event_session s
+				WHERE s.event_id = e.id AND s.tenant_id = e.tenant_id AND s.deleted_at IS NULL AND s.starts_at > now()
+				ORDER BY s.starts_at LIMIT 1) n ON true
+			WHERE e.tenant_id = $1 AND e.deleted_at IS NULL AND e.published IS TRUE
+			  AND (e.kind = 'appointment' OR n.starts_at IS NOT NULL)`+where+`
+			ORDER BY n.starts_at NULLS LAST, e.name LIMIT $2`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		out := []map[string]any{}
+		for rows.Next() {
+			var id uuid.UUID
+			var name, kind, tz string
+			var desc, loc *string
+			var picture *bool
+			var next *time.Time
+			var left *int
+			if err := rows.Scan(&id, &name, &desc, &loc, &kind, &tz, &picture, &next, &left); err != nil {
+				return err
+			}
+			row := map[string]any{"id": id, "next_session_at": next, "seats_left": left}
+			for col, v := range map[string]any{"name": name, "description": desc, "location": loc, "kind": kind, "timezone": tz, "picture": picture} {
+				if scope.Allows(col) {
+					row[col] = v
+				}
+			}
+			out = append(out, row)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, map[string]any{"data": out})
+	}
 }
 
 // httpErr maps the booking service's errors. Not-bookable and not-found share
@@ -71,6 +188,8 @@ func httpErr(err error) error {
 	switch {
 	case errors.Is(err, ErrFull):
 		return echo.NewHTTPError(http.StatusConflict, "no seats left")
+	case errors.Is(err, ErrState):
+		return echo.NewHTTPError(http.StatusConflict, err.Error())
 	case errors.Is(err, ErrNotBookable), errors.Is(err, ErrNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	case errors.Is(err, ErrBadRequest):
@@ -113,6 +232,7 @@ type bookBody struct {
 	Email     string     `json:"email"`
 	Name      string     `json:"name"`
 	Phone     string     `json:"phone"`
+	Waitlist  bool       `json:"waitlist"`
 }
 
 func (h *Handler) book(c *echo.Context, staff bool) (EventBooking, error) {
@@ -123,7 +243,7 @@ func (h *Handler) book(c *echo.Context, staff bool) (EventBooking, error) {
 		return EventBooking{}, echo.NewHTTPError(http.StatusBadRequest, "malformed body")
 	}
 	req := BookRequest{EventID: in.EventID, SessionID: in.SessionID, SlotStart: in.SlotStart, Seats: in.Seats,
-		Email: in.Email, Name: in.Name, Phone: in.Phone, Staff: staff}
+		Email: in.Email, Name: in.Name, Phone: in.Phone, Waitlist: in.Waitlist, Staff: staff}
 	if id, ok := auth.IdentityFromContext(ctx); ok && !staff {
 		req.UserID = &id.UserID
 	}
@@ -133,13 +253,27 @@ func (h *Handler) book(c *echo.Context, staff bool) (EventBooking, error) {
 
 // Book handles POST /api/v1/website/bookings — anonymous visitor or logged-in
 // website user (then the booking is theirs). The response never says whether
-// the email belongs to an account.
+// the email belongs to an account. A booking held for online payment also
+// carries checkout_url, the provider's payment page; a 502 when it couldn't
+// be opened (the hold is already released).
 func (h *Handler) Book(c *echo.Context) error {
 	b, err := h.book(c, false)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, map[string]any{"id": b.ID, "status": b.Status})
+	out := map[string]any{"id": b.ID, "status": b.Status}
+	if b.Status == BookingPendingPayment {
+		tenant, _ := access.TenantFromContext(c.Request().Context())
+		url, err := h.svc.Checkout(c.Request().Context(), tenant, b.ID)
+		if errors.Is(err, ErrPaymentUnavailable) {
+			return echo.NewHTTPError(http.StatusBadGateway, err.Error())
+		}
+		if err != nil {
+			return err
+		}
+		out["checkout_url"] = url
+	}
+	return c.JSON(http.StatusCreated, out)
 }
 
 // StaffBook returns the POST /api/v1/event_booking override of the generic
@@ -170,6 +304,23 @@ func (h *Handler) CancelByToken(c *echo.Context) error {
 		return httpErr(err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"status": BookingCancelled})
+}
+
+// ClaimByToken handles POST /api/v1/website/bookings/claim {token} — a
+// waiting-list offer's link: 404 unknown/expired/spent, 409 taken meanwhile.
+func (h *Handler) ClaimByToken(c *echo.Context) error {
+	ctx := c.Request().Context()
+	tenant, _ := access.TenantFromContext(ctx)
+	var in struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(c.Request().Body).Decode(&in); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
+	}
+	if err := h.svc.ClaimOffer(ctx, tenant, in.Token); err != nil {
+		return httpErr(err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"status": BookingConfirmed})
 }
 
 // MyBookings handles GET /api/v1/website/me/bookings (website token).
@@ -228,7 +379,9 @@ func (h *Handler) CancelMine(c *echo.Context) error {
 
 // StaffUpdate returns the PUT /api/v1/event_booking/:id override of the
 // generic update. Only name/phone change freely; status "cancelled" cancels
-// through the service (freeing the seats). Any other key must carry its
+// through the service (freeing the seats), "attended"/"no_show" record the
+// check-in through it (SetAttendance), and a paid_at on an unpaid booking
+// marks its invoice paid (MarkPaid). Any other key must carry its
 // stored value — the ERP form PUTs its whole draft — or it's a 400: seats,
 // target or event changes would make seat counts drift (cancel and rebook).
 // Answered by the generic get.
@@ -258,7 +411,7 @@ func (h *Handler) StaffUpdate(get echo.HandlerFunc) echo.HandlerFunc {
 			return err
 		}
 		set := map[string]any{}
-		cancel := false
+		cancel, attendance, markPaid := false, "", false
 		for k, v := range body {
 			s, isStr := v.(string)
 			switch {
@@ -268,10 +421,14 @@ func (h *Handler) StaffUpdate(get echo.HandlerFunc) echo.HandlerFunc {
 				set[k] = v
 			case k == "status" && v == BookingCancelled && stored[k] != BookingCancelled:
 				cancel = true
+			case k == "status" && (v == BookingAttended || v == BookingNoShow) && stored[k] != v:
+				attendance = v.(string)
+			case k == "paid_at" && isStr && stored[k] == nil: // "Mark paid": the server stamps the time
+				markPaid = true
 			case sameValue(v, stored[k]):
 			default:
 				return echo.NewHTTPError(http.StatusBadRequest,
-					"only name, phone, or status \"cancelled\" can be changed; cancel and rebook for anything else ("+k+")")
+					"only name, phone, paid_at or status (cancelled, attended, no_show) can be changed; cancel and rebook for anything else ("+k+")")
 			}
 		}
 		if len(set) > 0 {
@@ -285,6 +442,18 @@ func (h *Handler) StaffUpdate(get echo.HandlerFunc) echo.HandlerFunc {
 		}
 		if cancel {
 			if err := h.svc.CancelByID(ctx, tenant, id, nil); err != nil {
+				return httpErr(err)
+			}
+		}
+		if attendance != "" {
+			if err := h.svc.SetAttendance(ctx, tenant, id, attendance); err != nil {
+				return httpErr(err)
+			}
+		}
+		if markPaid {
+			if err := h.svc.MarkPaid(ctx, tenant, id); errors.Is(err, ErrState) {
+				return echo.NewHTTPError(http.StatusConflict, "this booking has no invoice")
+			} else if err != nil {
 				return httpErr(err)
 			}
 		}
@@ -352,7 +521,10 @@ func (h *Handler) DeleteSession(c *echo.Context) error {
 // GuardSessionUpdate sits in front of the generic event_session update: a
 // session never changes event (its bookings carry the event id, and the
 // generic layer doesn't check the new target's tenant). Sending the stored
-// event_id back — the ERP form PUTs its whole draft — is fine.
+// event_id back — the ERP form PUTs its whole draft — is fine. After a
+// successful update the bookings' starts_at follow the session's start (a
+// separate statement: the generic update owns its transaction; Migrate heals
+// the rare drift a crash in between would leave).
 func (h *Handler) GuardSessionUpdate(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		ctx := c.Request().Context()
@@ -368,11 +540,11 @@ func (h *Handler) GuardSessionUpdate(next echo.HandlerFunc) echo.HandlerFunc {
 		c.Request().Body = io.NopCloser(bytes.NewReader(raw))
 		var body map[string]json.RawMessage
 		if json.Unmarshal(raw, &body) != nil {
-			return next(c) // malformed: the generic handler decides
+			return h.syncAfter(c, next, tenant, id) // malformed: the generic handler decides
 		}
 		sent, has := body["event_id"]
 		if !has {
-			return next(c)
+			return h.syncAfter(c, next, tenant, id)
 		}
 		var eventID string // a null or non-string event_id is a change too
 		_ = json.Unmarshal(sent, &eventID)
@@ -388,6 +560,23 @@ func (h *Handler) GuardSessionUpdate(next echo.HandlerFunc) echo.HandlerFunc {
 		if want, err := uuid.Parse(eventID); err != nil || want != stored {
 			return echo.NewHTTPError(http.StatusBadRequest, "event_id cannot be changed; create a session on the other event instead")
 		}
-		return next(c)
+		return h.syncAfter(c, next, tenant, id)
 	}
+}
+
+// syncAfter runs the generic session update, then — if it succeeded —
+// re-syncs the bookings' starts_at and offers any newly free seats.
+func (h *Handler) syncAfter(c *echo.Context, next echo.HandlerFunc, tenant, id uuid.UUID) error {
+	if err := next(c); err != nil {
+		return err
+	}
+	if resp, _ := echo.UnwrapResponse(c.Response()); resp != nil && resp.Status >= http.StatusMultipleChoices {
+		return nil
+	}
+	ctx := c.Request().Context()
+	if err := h.svc.SyncSessionStart(ctx, tenant, id); err != nil {
+		return err
+	}
+	// A capacity increase frees seats for the waiting list.
+	return orm.Transact(ctx, h.db, func(tx *orm.Tx) error { return h.svc.offerNext(ctx, tx, tenant, id) })
 }

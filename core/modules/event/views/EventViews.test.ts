@@ -3,16 +3,31 @@ import { headerButtonRegistry, headerMenuRegistry, ModuleRegistry, useEntityRefr
 import mod from './EventViews'
 
 describe('event views', () => {
-  it('registers valid routes under the Website app', () => {
+  it('registers a standalone Event app under /event', () => {
     const registry = new ModuleRegistry()
-    registry.register(mod) // throws on an invalid descriptor or extension
-    expect(mod.routes.every((r) => r.path.startsWith('/website/'))).toBe(true)
-    const menus = headerMenuRegistry.forModule('website')
-    expect(menus.find((m) => m.name === 'events')?.entries.map((e) => e.label)).toEqual(['Events', 'Bookings'])
+    registry.register(mod, { appMode: true }) // throws on an invalid descriptor or extension
+    expect(mod.routes.every((r) => r.path === '/event' || r.path.startsWith('/event/'))).toBe(true)
+    for (const list of ['/event', '/event/sessions', '/event/bookings', '/event/availability']) {
+      expect(mod.routes.find((r) => r.path === list)?.descriptor.viewType).toBe('tree')
+      const form = list === '/event' ? '/event/:id' : `${list}/:id`
+      expect(mod.routes.find((r) => r.path === form)?.descriptor.viewType).toBe('form')
+    }
+    expect(registry.menu().map((m) => m.name)).toContain('event')
+
+    const menus = registry.headerMenus().find((m) => m.module === 'event')!.menus
+    expect(menus.map((m) => m.label)).toEqual(['Events', 'Sessions', 'Bookings', 'Configuration'])
+    expect(menus.at(-1)!.entries.map((e) => e.label)).toEqual(['Settings', 'Availability', 'Email templates'])
+    expect(headerMenuRegistry.forModule('website').some((m) => m.name === 'events')).toBe(false)
+  })
+
+  it('opens o2m rows in the Event app forms', () => {
+    const form = mod.routes.find((r) => r.path === '/event/:id')!.descriptor
+    const paths = form.fields.filter((f) => f.relation?.kind === 'one2many').map((f) => f.relation!.formPath)
+    expect(paths).toEqual(['/event/sessions/:id', '/event/availability/:id', '/event/bookings/:id'])
   })
 
   it('shows sessions or availability depending on kind', () => {
-    const form = mod.routes.find((r) => r.path === '/website/events/:id')!.descriptor
+    const form = mod.routes.find((r) => r.path === '/event/:id')!.descriptor
     const field = (name: string) => form.fields.find((f) => f.name === name)!
     expect(field('sessions').states?.visible).toEqual({ field: 'kind', op: 'eq', value: 'sessions' })
     expect(field('availability').states?.visible).toEqual({ field: 'kind', op: 'eq', value: 'appointment' })
@@ -65,5 +80,52 @@ describe('event views', () => {
       relationOps: null,
     })
     expect(setFieldAndCommit).toHaveBeenCalledWith({ status: 'cancelled' })
+  })
+
+  it('records attendance from the booking form', async () => {
+    for (const [name, status] of [['event.checkIn', 'attended'], ['event.noShow', 'no_show']] as const) {
+      const setFieldAndCommit = vi.fn(async () => null)
+      await headerButtonRegistry.get(name)!.handler({
+        entity: 'event_booking',
+        recordId: 'b1',
+        draft: {},
+        setFieldAndCommit,
+        relationOps: null,
+      })
+      expect(setFieldAndCommit).toHaveBeenCalledWith({ status })
+    }
+    const form = mod.routes.find((r) => r.path === '/event/bookings/:id')!.descriptor
+    const visible = (name: string) => form.headerButtons!.find((b) => b.name === name)!.states!.visible
+    expect(visible('event.checkIn')).toEqual({ all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'no_show'] }] })
+    expect(visible('event.noShow')).toEqual({ all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'attended'] }] })
+    const status = form.fields.find((f) => f.name === 'status')!
+    expect(status.selection?.options).toEqual(['waitlisted', 'pending_payment', 'confirmed', 'attended', 'no_show', 'cancelled', 'expired'])
+  })
+
+  it('ships kanban, calendar and graph defaults', () => {
+    const list = (path: string) => mod.routes.find((r) => r.path === path)!.descriptor
+    expect(list('/event/bookings').viewModeDefaults).toEqual({ kanbanStatusField: 'status', calendarDateField: 'starts_at', enableGraphs: true })
+    expect(list('/event/sessions').viewModeDefaults).toEqual({ calendarDateField: 'starts_at', enableGraphs: true })
+    expect(list('/event').viewModeDefaults).toEqual({ kanbanStatusField: 'kind' })
+    const bookingCols = list('/event/bookings').fields.map((f) => f.name)
+    expect(bookingCols).toEqual(expect.arrayContaining(['event_id', 'starts_at', 'status']))
+  })
+
+  it('shows the event picture in the form header', () => {
+    const form = mod.routes.find((r) => r.path === '/event/:id')!.descriptor
+    expect(form.fields[0]).toMatchObject({ name: 'picture', type: 'boolean', widget: 'picture' })
+  })
+
+  it('prices events with a sale product and marks booking invoices paid', async () => {
+    const eventForm = mod.routes.find((r) => r.path === '/event/:id')!.descriptor
+    expect(eventForm.fields.find((f) => f.name === 'product_variant_id')?.relation).toMatchObject({ entity: 'product_variant', kind: 'many2one' })
+    const form = mod.routes.find((r) => r.path === '/event/bookings/:id')!.descriptor
+    expect(form.fields.find((f) => f.name === 'invoice_id')).toMatchObject({ widget: 'summary', relation: { entity: 'invoice' } })
+    expect(form.headerButtons!.find((b) => b.name === 'event.markPaid')!.states!.visible).toEqual({
+      all: [{ field: 'id', op: 'set' }, { field: 'invoice_id', op: 'set' }, { field: 'paid_at', op: 'unset' }],
+    })
+    const setFieldAndCommit = vi.fn(async () => null)
+    await headerButtonRegistry.get('event.markPaid')!.handler({ entity: 'event_booking', recordId: 'b1', draft: {}, setFieldAndCommit, relationOps: null })
+    expect(setFieldAndCommit).toHaveBeenCalledWith({ paid_at: expect.any(String) })
   })
 })

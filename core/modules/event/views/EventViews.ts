@@ -11,10 +11,10 @@ import {
 
 // event frontend — DESCRIPTORS ONLY. Entities map 1:1 to the Go route prefixes
 // (event, event_session, event_availability, event_booking); permissions
-// mirror the route (<table>:<table>:<action>). Routes live under /website/…
-// so they belong to the Website app: the top bar picks the current module's
-// menus by the path's first segment, hence registerHeaderMenu('website', …)
-// below instead of an app of their own.
+// mirror the route (<table>:<table>:<action>). The module is an application of
+// its own (module.json app_mode): routes live under /event…, each tree route
+// gets its top-bar menu automatically, and Availability sits in the module's
+// Configuration menu instead (registerHeaderMenu('event', 'configuration', …)).
 //
 // Seat accounting is Go's (core/modules/event/handler.go): a booking POST goes
 // through the booking service, a PUT only changes name/phone or cancels, a
@@ -51,8 +51,13 @@ const eventListFields: ViewDescriptor['fields'] = [
 ]
 
 const eventFormFields: ViewDescriptor['fields'] = [
+  // The form header's picture; the site's event_list cards show it once published.
+  { name: 'picture', label: 'Picture', type: 'boolean', widget: 'picture', hideLabel: true },
   ...eventListFields,
   { name: 'timezone', label: 'Time zone (IANA, e.g. Europe/Paris)', type: 'text', required: true, default: 'Europe/Paris' },
+  // Set: bookings are invoiced at this product's price and taxes (a session's
+  // own price overrides the unit price). Empty: bookings are free.
+  { name: 'product_variant_id', label: 'Product (paid bookings)', type: 'relation', relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' } },
   { name: 'max_seats_per_booking', label: 'Max seats per booking', type: 'number', widget: 'int', default: 10 },
   { name: 'slot_minutes', label: 'Slot length (minutes)', type: 'number', widget: 'int', default: 30, states: { visible: isAppointment } },
   { name: 'slot_capacity', label: 'Seats per slot', type: 'number', widget: 'int', default: 1, states: { visible: isAppointment } },
@@ -64,7 +69,7 @@ const eventFormFields: ViewDescriptor['fields'] = [
     name: 'sessions',
     label: 'Sessions',
     type: 'relation',
-    relation: { entity: 'event_session', kind: 'one2many', inverseField: 'event_id', labelField: 'starts_at', formPath: '/website/sessions/:id' },
+    relation: { entity: 'event_session', kind: 'one2many', inverseField: 'event_id', labelField: 'starts_at', formPath: '/event/sessions/:id' },
     widgetOptions: {
       deletable: true,
       columns: [
@@ -88,7 +93,7 @@ const eventFormFields: ViewDescriptor['fields'] = [
     name: 'availability',
     label: 'Weekly availability',
     type: 'relation',
-    relation: { entity: 'event_availability', kind: 'one2many', inverseField: 'event_id', labelField: 'weekday', formPath: '/website/availability/:id' },
+    relation: { entity: 'event_availability', kind: 'one2many', inverseField: 'event_id', labelField: 'weekday', formPath: '/event/availability/:id' },
     widgetOptions: {
       deletable: true,
       columns: [
@@ -102,7 +107,7 @@ const eventFormFields: ViewDescriptor['fields'] = [
     name: 'bookings',
     label: 'Bookings',
     type: 'relation',
-    relation: { entity: 'event_booking', kind: 'one2many', inverseField: 'event_id', labelField: 'name', formPath: '/website/bookings/:id' },
+    relation: { entity: 'event_booking', kind: 'one2many', inverseField: 'event_id', labelField: 'name', formPath: '/event/bookings/:id' },
     widgetOptions: {
       columns: [
         { key: 'email', label: 'Email' },
@@ -164,7 +169,15 @@ const sessionFields: ViewDescriptor['fields'] = [
   { name: 'ends_at', label: 'End', type: 'date', widget: 'datetime', required: true },
   { name: 'capacity', label: 'Capacity', type: 'number', widget: 'int', default: 10 },
   { name: 'seats_taken', label: 'Seats taken', type: 'number', widget: 'int', readOnly: true },
-  { name: 'price', label: 'Price (display only)', type: 'number', widget: 'monetary' },
+  { name: 'price', label: "Price (overrides the event product's)", type: 'number', widget: 'monetary' },
+]
+
+const sessionListFields: ViewDescriptor['fields'] = [
+  { name: 'event_id', label: 'Event', type: 'relation', relation: { entity: 'event', kind: 'many2one', labelField: 'name' } },
+  { name: 'starts_at', label: 'Start', type: 'date', widget: 'datetime' },
+  { name: 'ends_at', label: 'End', type: 'date', widget: 'datetime' },
+  { name: 'capacity', label: 'Capacity', type: 'number', widget: 'int' },
+  { name: 'seats_taken', label: 'Seats taken', type: 'number', widget: 'int', readOnly: true },
 ]
 
 const availabilityFields: ViewDescriptor['fields'] = [
@@ -174,12 +187,32 @@ const availabilityFields: ViewDescriptor['fields'] = [
   { name: 'to_time', label: 'To (HH:MM)', type: 'text', required: true, default: '17:00' },
 ]
 
+const availabilityListFields: ViewDescriptor['fields'] = [
+  { name: 'event_id', label: 'Event', type: 'relation', relation: { entity: 'event', kind: 'many2one', labelField: 'name' } },
+  { name: 'weekday', label: 'Weekday (0 = Sunday … 6 = Saturday)', type: 'number', widget: 'int' },
+  { name: 'from_time', label: 'From', type: 'text' },
+  { name: 'to_time', label: 'To', type: 'text' },
+]
+
+// attended / no_show are the check-in outcomes (Go's SetAttendance): both keep
+// their seats, and a checked-in booking can't be cancelled any more.
+// waitlisted holds no seat until its claim offer is booked; an unclaimed
+// offer ends as expired.
+const bookingStatus: ViewDescriptor['fields'][number] = {
+  name: 'status',
+  label: 'Status',
+  type: 'selection',
+  selection: { options: ['waitlisted', 'pending_payment', 'confirmed', 'attended', 'no_show', 'cancelled', 'expired'] },
+  readOnly: true,
+}
+
 const bookingListFields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
+  { name: 'event_id', label: 'Event', type: 'relation', relation: { entity: 'event', kind: 'many2one', labelField: 'name' } },
+  { name: 'starts_at', label: 'Start', type: 'date', widget: 'datetime', readOnly: true },
   { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'seats', label: 'Seats', type: 'number', widget: 'int', default: 1 },
-  { name: 'status', label: 'Status', type: 'selection', selection: { options: ['confirmed', 'cancelled'] }, readOnly: true },
-  { name: 'slot_start', label: 'Slot', type: 'date', widget: 'datetime' },
+  bookingStatus,
   { name: 'created_at', label: 'Booked on', type: 'date', widget: 'datetime', readOnly: true },
 ]
 
@@ -193,9 +226,20 @@ const bookingFormFields: ViewDescriptor['fields'] = [
   { name: 'seats', label: 'Seats', type: 'number', widget: 'int', default: 1 },
   { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
-  { name: 'status', label: 'Status', type: 'selection', selection: { options: ['confirmed', 'cancelled'] }, readOnly: true },
+  bookingStatus,
   { name: 'contact_id', label: 'Contact', type: 'relation', readOnly: true, relation: { entity: 'contact', kind: 'many2one', labelField: 'name' } },
   { name: 'cancelled_at', label: 'Cancelled on', type: 'date', widget: 'datetime', readOnly: true },
+  // A paid event's invoice, shown live (its status stays the Sale app's truth).
+  {
+    name: 'invoice_id',
+    label: 'Invoice',
+    type: 'relation',
+    readOnly: true,
+    widget: 'summary',
+    widgetOptions: { fields: ['number', 'total', 'status'] },
+    relation: { entity: 'invoice', kind: 'many2one', labelField: 'number' },
+  },
+  { name: 'paid_at', label: 'Paid on', type: 'date', widget: 'datetime', readOnly: true },
 ]
 
 registerHeaderButtonAction({
@@ -206,68 +250,149 @@ registerHeaderButtonAction({
   },
 })
 
+// "Mark paid" (pay at the event): Go marks the invoice paid and stamps paid_at.
+registerHeaderButtonAction({
+  entity: 'event_booking',
+  name: 'event.markPaid',
+  handler: async (ctx) => {
+    await ctx.setFieldAndCommit({ paid_at: new Date().toISOString() })
+  },
+})
+
+// Check-in: Go accepts it from 1 h before the start (400 before), and lets
+// staff correct attended <-> no_show.
+for (const [name, status] of [['event.checkIn', 'attended'], ['event.noShow', 'no_show']] as const) {
+  registerHeaderButtonAction({
+    entity: 'event_booking',
+    name,
+    handler: async (ctx) => {
+      await ctx.setFieldAndCommit({ status })
+    },
+  })
+}
+
 const bookingHeaderButtons: HeaderButtonDescriptor[] = [
   {
     name: 'event.cancelBooking',
     label: 'Cancel booking',
     variant: 'secondary',
-    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'eq', value: 'confirmed' }] } },
+    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'waitlisted'] }] } },
+  },
+  {
+    name: 'event.markPaid',
+    label: 'Mark paid',
+    variant: 'secondary',
+    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'invoice_id', op: 'set' }, { field: 'paid_at', op: 'unset' }] } },
+  },
+  {
+    name: 'event.checkIn',
+    label: 'Check in',
+    variant: 'primary',
+    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'no_show'] }] } },
+  },
+  {
+    name: 'event.noShow',
+    label: 'No show',
+    variant: 'secondary',
+    states: { visible: { all: [{ field: 'id', op: 'set' }, { field: 'status', op: 'in', value: ['confirmed', 'attended'] }] } },
   },
 ]
 
-registerHeaderMenu('website', 'events', {
-  label: 'Events',
+registerHeaderMenu('event', 'configuration', {
   entries: [
-    { kind: 'line', label: 'Events', path: '/website/events', permission: 'event:event:read' },
-    { kind: 'line', label: 'Bookings', path: '/website/bookings', permission: 'event_booking:event_booking:read' },
+    { kind: 'line', label: 'Availability', path: '/event/availability', permission: 'event_availability:event_availability:read' },
+    // Booking emails are core mail templates (Settings → Email templates).
+    { kind: 'line', label: 'Email templates', path: '/settings/email-templates', permission: 'settings:mail_templates:read' },
   ],
 })
 
 const perm = (table: string) => [`${table}:${table}:read`]
 
+// The route's own permission gates the app tile and menu lines (the descriptor's
+// `permissions` only gates rendering), so each route carries its entity's read.
+const routes: FrontModule['routes'] = [
+  {
+    path: '/event',
+    descriptor: {
+      entity: 'event',
+      viewType: 'tree',
+      navLabel: 'Events',
+      fields: eventListFields,
+      formPath: '/event/:id',
+      createPermission: 'event:event:write',
+      permissions: perm('event'),
+      viewModeDefaults: { kanbanStatusField: 'kind' },
+    },
+  },
+  {
+    path: '/event/:id',
+    descriptor: { entity: 'event', viewType: 'form', fields: eventFormFields, headerButtons: eventHeaderButtons, permissions: perm('event') },
+  },
+  {
+    path: '/event/sessions',
+    descriptor: {
+      entity: 'event_session',
+      viewType: 'tree',
+      navLabel: 'Sessions',
+      fields: sessionListFields,
+      formPath: '/event/sessions/:id',
+      createPermission: 'event_session:event_session:write',
+      permissions: perm('event_session'),
+      // Graph tiles are seeded by Go (presets.go), fill rate included.
+      viewModeDefaults: { calendarDateField: 'starts_at', enableGraphs: true },
+    },
+  },
+  {
+    path: '/event/sessions/:id',
+    descriptor: { entity: 'event_session', viewType: 'form', fields: sessionFields, permissions: perm('event_session') },
+  },
+  {
+    path: '/event/availability',
+    descriptor: {
+      entity: 'event_availability',
+      viewType: 'tree',
+      fields: availabilityListFields,
+      formPath: '/event/availability/:id',
+      createPermission: 'event_availability:event_availability:write',
+      permissions: perm('event_availability'),
+      // Setup, not day-to-day: listed under Configuration (above).
+      hideFromTopBar: true,
+    },
+  },
+  {
+    path: '/event/availability/:id',
+    descriptor: { entity: 'event_availability', viewType: 'form', fields: availabilityFields, permissions: perm('event_availability') },
+  },
+  {
+    path: '/event/bookings',
+    descriptor: {
+      entity: 'event_booking',
+      viewType: 'tree',
+      navLabel: 'Bookings',
+      fields: bookingListFields,
+      formPath: '/event/bookings/:id',
+      createPermission: 'event_booking:event_booking:write',
+      permissions: perm('event_booking'),
+      viewModeDefaults: { kanbanStatusField: 'status', calendarDateField: 'starts_at', enableGraphs: true },
+    },
+  },
+  {
+    path: '/event/bookings/:id',
+    descriptor: {
+      entity: 'event_booking',
+      viewType: 'form',
+      fields: bookingFormFields,
+      headerButtons: bookingHeaderButtons,
+      statusBar: { field: 'status' },
+      permissions: perm('event_booking'),
+    },
+  },
+]
+
 const event: FrontModule = {
   name: 'event',
-  routes: [
-    {
-      path: '/website/events',
-      descriptor: { entity: 'event', viewType: 'tree', fields: eventListFields, formPath: '/website/events/:id', createPermission: 'event:event:write', permissions: perm('event') },
-    },
-    {
-      path: '/website/events/:id',
-      descriptor: { entity: 'event', viewType: 'form', fields: eventFormFields, headerButtons: eventHeaderButtons, permissions: perm('event') },
-    },
-    {
-      path: '/website/sessions/:id',
-      descriptor: { entity: 'event_session', viewType: 'form', fields: sessionFields, permissions: perm('event_session') },
-    },
-    {
-      path: '/website/availability/:id',
-      descriptor: { entity: 'event_availability', viewType: 'form', fields: availabilityFields, permissions: perm('event_availability') },
-    },
-    {
-      path: '/website/bookings',
-      descriptor: {
-        entity: 'event_booking',
-        viewType: 'tree',
-        fields: bookingListFields,
-        formPath: '/website/bookings/:id',
-        createPermission: 'event_booking:event_booking:write',
-        permissions: perm('event_booking'),
-      },
-    },
-    {
-      path: '/website/bookings/:id',
-      descriptor: {
-        entity: 'event_booking',
-        viewType: 'form',
-        fields: bookingFormFields,
-        headerButtons: bookingHeaderButtons,
-        statusBar: { field: 'status' },
-        permissions: perm('event_booking'),
-      },
-    },
-  ],
-  extends: [{ path: '/website/events/:id', operations: eventPagesOperations }],
+  routes: routes.map((r) => ({ ...r, permission: r.descriptor.permissions?.[0] })),
+  extends: [{ path: '/event/:id', operations: eventPagesOperations }],
 }
 
 export default event

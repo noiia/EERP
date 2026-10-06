@@ -19,6 +19,7 @@ import (
 	_ "core/modules/graphfield"
 	_ "core/modules/mail"
 	_ "core/modules/notebook"
+	_ "core/modules/payment_stripe"
 	_ "core/modules/pictures"
 	_ "core/modules/presence"
 	_ "core/modules/reportlayout"

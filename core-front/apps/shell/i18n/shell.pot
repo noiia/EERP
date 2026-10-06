@@ -777,6 +777,12 @@ msgstr ""
 msgid "cancelled"
 msgstr ""
 
+msgid "attended"
+msgstr ""
+
+msgid "no_show"
+msgstr ""
+
 msgid "Confirm your email to see bookings made before you signed up."
 msgstr ""
 
@@ -931,4 +937,217 @@ msgid "Related fields"
 msgstr ""
 
 msgid "Caption field"
+msgstr ""
+
+msgid "Event list"
+msgstr ""
+
+msgid "No upcoming events."
+msgstr ""
+
+msgid "Book a slot"
+msgstr ""
+
+msgid "seats left"
+msgstr ""
+
+msgid "The event in the URL"
+msgstr ""
+
+msgid "Left on the event in the URL, this page can serve every event: pick it as the Event page of an Event list block."
+msgstr ""
+
+msgid "Cards"
+msgstr ""
+
+msgid "Maximum number of events"
+msgstr ""
+
+msgid "Lists published events with a future session (appointment events too), soonest first."
+msgstr ""
+
+msgid "Event page"
+msgstr ""
+
+msgid "Create a page holding Event booking and Appointment booking blocks left on the event in the URL, publish it, then pick it here."
+msgstr ""
+
+msgid "Email templates"
+msgstr ""
+
+msgid "The emails the workspace sends, reworded and translated."
+msgstr ""
+
+msgid "No email templates are registered."
+msgstr ""
+
+msgid "Customized"
+msgstr ""
+
+msgid "Default text"
+msgstr ""
+
+msgid "Language"
+msgstr ""
+
+msgid "Reset to default"
+msgstr ""
+
+msgid "Back to the default text."
+msgstr ""
+
+msgid "Click a variable to insert it; it is replaced by the real value in each email. The plain-text version is built from this text."
+msgstr ""
+
+msgid "Reminders"
+msgstr ""
+
+msgid "Send the reminder email this many hours before the start (0 = no reminders)"
+msgstr ""
+
+msgid "Bookings made less than that before the start get no reminder: their confirmation is recent enough."
+msgstr ""
+
+msgid "Edit the email texts"
+msgstr ""
+
+msgid "Event booking confirmed"
+msgstr ""
+
+msgid "Event booking reminder"
+msgstr ""
+
+msgid "Event booking cancelled"
+msgstr ""
+
+msgid "Website: confirm your email"
+msgstr ""
+
+msgid "Bold"
+msgstr ""
+
+msgid "Italic"
+msgstr ""
+
+msgid "Underline"
+msgstr ""
+
+msgid "Bulleted list"
+msgstr ""
+
+msgid "Numbered list"
+msgstr ""
+
+msgid "Remove link"
+msgstr ""
+
+msgid "Link address (https://…, mailto:… or {{variable}})"
+msgstr ""
+
+msgid "Full — join the waiting list"
+msgstr ""
+
+msgid "Join the waiting list"
+msgstr ""
+
+msgid "You're on the waiting list — we'll email you if a seat frees up:"
+msgstr ""
+
+msgid "Someone booked this seat first. You stay on the waiting list."
+msgstr ""
+
+msgid "A seat is free"
+msgstr ""
+
+msgid "Book my seat"
+msgstr ""
+
+msgid "Your seat is booked — a confirmation email is on its way."
+msgstr ""
+
+msgid "Waiting list"
+msgstr ""
+
+msgid "Hours a freed seat stays reserved for the next person on the waiting list"
+msgstr ""
+
+msgid "waitlisted"
+msgstr ""
+
+msgid "expired"
+msgstr ""
+
+msgid "pending_payment"
+msgstr ""
+
+msgid "Event waiting list joined"
+msgstr ""
+
+msgid "Event waiting list: a seat is free"
+msgstr ""
+
+msgid "Event booking confirmed, to pay at the event"
+msgstr ""
+
+msgid "Add to calendar"
+msgstr ""
+
+msgid "Add all dates to my calendar"
+msgstr ""
+
+msgid "Events calendar feed"
+msgstr ""
+
+msgid "Subscribe to every event session and appointment from your calendar app. Keep the link private: anyone with it can read the schedule."
+msgstr ""
+
+msgid "Calendar link"
+msgstr ""
+
+msgid "Copy it now: it is not shown again."
+msgstr ""
+
+msgid "Replace my calendar link"
+msgstr ""
+
+msgid "Create my calendar link"
+msgstr ""
+
+msgid "Stop the link"
+msgstr ""
+
+msgid "Online payment is unavailable right now. Please try again in a few minutes."
+msgstr ""
+
+msgid "Taking you to the payment page…"
+msgstr ""
+
+msgid "Thank you"
+msgstr ""
+
+msgid "Your payment is being confirmed. Your booking confirmation will arrive by email in a moment."
+msgstr ""
+
+msgid "Takes card payments for paid event bookings through Stripe Checkout. Without it, bookings are paid at the event."
+msgstr ""
+
+msgid "Activate the Stripe payments app (Settings → Apps) for these settings to take effect."
+msgstr ""
+
+msgid "Take payments online"
+msgstr ""
+
+msgid "Secret key (sk_…)"
+msgstr ""
+
+msgid "A secret key is saved; leave blank to keep it."
+msgstr ""
+
+msgid "Webhook signing secret (whsec_…)"
+msgstr ""
+
+msgid "A signing secret is saved; leave blank to keep it."
+msgstr ""
+
+msgid "In the Stripe dashboard, add a webhook endpoint for the checkout.session.completed and checkout.session.expired events at:"
 msgstr ""

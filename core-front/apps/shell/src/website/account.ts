@@ -40,7 +40,7 @@ export interface MyBooking {
   start: string | null
   end: string | null
   seats: number
-  status: 'confirmed' | 'cancelled'
+  status: 'waitlisted' | 'pending_payment' | 'confirmed' | 'attended' | 'no_show' | 'cancelled' | 'expired'
 }
 
 /** The visitor's bookings (newest first); null without a valid site session. */

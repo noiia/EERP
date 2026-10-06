@@ -7,7 +7,8 @@
     "author": "",
     "description": "Events, sessions, appointment slots and bookings",
     "depends": [
-        "website"
+        "website",
+        "sale"
     ],
     "static_files": {
         "views": [
@@ -16,5 +17,6 @@
     },
     "is_service": false,
     "auto_install": false,
-    "app_mode": false
+    "app_mode": true,
+    "menu_icon": "calendar-days"
 }

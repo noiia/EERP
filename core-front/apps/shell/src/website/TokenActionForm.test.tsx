@@ -15,4 +15,11 @@ describe('TokenActionForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel booking' }))
     await screen.findByText(/invalid or was already used/)
   })
+
+  it('says the seat was taken when a claim lost the race', async () => {
+    const action = vi.fn(async (): Promise<TokenResult> => 'taken')
+    render(<TokenActionForm action={action} token="t" button="Book my seat" done="Your seat is booked." />)
+    fireEvent.click(screen.getByRole('button', { name: 'Book my seat' }))
+    await screen.findByText(/someone booked this seat first/i)
+  })
 })

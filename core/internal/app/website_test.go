@@ -70,7 +70,9 @@ func TestPublicRoutes(t *testing.T) {
 	if err := store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product_variant"), `{"fields":[]}`); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product_variant"), oldVariant) })
+	t.Cleanup(func() {
+		_ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("product_variant"), oldVariant)
+	})
 
 	tests := []struct {
 		name string
@@ -673,6 +675,124 @@ func TestBookingFlow(t *testing.T) {
 			t.Errorf("delete an already deleted session = %d, want 404", code)
 		}
 	})
+
+	t.Run("paid event", func(t *testing.T) {
+		code, body := c.do(http.MethodPost, "/api/v1/product", map[string]any{"name": prefix + "-ticket", "description": "", "reference": "T",
+			"unit": "unit", "tax_rate": 0.2, "unit_price": 12.5})
+		if code != http.StatusCreated && code != http.StatusOK {
+			t.Fatalf("create product: %d %s", code, body)
+		}
+		productID := decode(t, body)["id"].(string)
+		variantID := mustCreate("/api/v1/product_variant", map[string]any{"product_id": productID, "name": "Ticket"})
+		t.Cleanup(func() {
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM sale_line WHERE variant_id = $1`, variantID)
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM invoice WHERE customer_email LIKE $1`, prefix+"%")
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM product_variant WHERE id = $1`, variantID)
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM product WHERE id = $1`, productID)
+		})
+		paidID := newEvent(map[string]any{"name": "Paid", "kind": "sessions", "published": true, "product_variant_id": variantID})
+		s6 := mustCreate("/api/v1/event_session", map[string]any{"event_id": paidID,
+			"starts_at": start.Format(time.RFC3339), "ends_at": start.Add(time.Hour).Format(time.RFC3339), "capacity": 5})
+		_, body = anon.do(http.MethodGet, "/api/v1/public/event/"+paidID+"/sessions", nil)
+		sessions, _ := decode(t, body)["data"].([]any)
+		if len(sessions) != 1 || sessions[0].(map[string]any)["price"] != 15.0 {
+			t.Errorf("public sessions = %s, want the variant's price with tax: 15", body)
+		}
+		code, body = c.do(http.MethodPost, "/api/v1/event_booking", map[string]any{"event_id": paidID, "session_id": s6, "seats": 2,
+			"email": prefix + "-paid@test.io", "name": "Payer"})
+		if code != http.StatusCreated && code != http.StatusOK {
+			t.Fatalf("staff book: %d %s", code, body)
+		}
+		booking := decode(t, body)
+		invoiceID, _ := booking["invoice_id"].(string)
+		var total float64
+		var status string
+		_ = c.a.db.DB.QueryRow(ctx, `SELECT total, status FROM invoice WHERE id = $1`, invoiceID).Scan(&total, &status)
+		if total != 30 || status != "sent" {
+			t.Errorf("invoice %q: total %v status %q, want 30 sent", invoiceID, total, status)
+		}
+		// "Mark paid": the form PUTs its draft with paid_at set.
+		booking["paid_at"] = time.Now().UTC().Format(time.RFC3339)
+		if code, body := c.do(http.MethodPut, "/api/v1/event_booking/"+booking["id"].(string), booking); code != http.StatusOK || decode(t, body)["paid_at"] == nil {
+			t.Errorf("mark paid: %d %s", code, body)
+		}
+		_ = c.a.db.DB.QueryRow(ctx, `SELECT status FROM invoice WHERE id = $1`, invoiceID).Scan(&status)
+		if status != "paid" {
+			t.Errorf("invoice after mark paid = %q", status)
+		}
+	})
+
+	t.Run("waiting list", func(t *testing.T) {
+		s5 := mustCreate("/api/v1/event_session", map[string]any{"event_id": eventID,
+			"starts_at": start.Format(time.RFC3339), "ends_at": start.Add(time.Hour).Format(time.RFC3339), "capacity": 1})
+		first := map[string]any{"event_id": eventID, "session_id": s5, "seats": 1, "email": prefix + "-w1@test.io", "name": "W1"}
+		if code, body := anon.do(http.MethodPost, "/api/v1/website/bookings", first); code != http.StatusCreated {
+			t.Fatalf("first booking: %d %s", code, body)
+		}
+		waiter := prefix + "-w2@test.io"
+		code, body := anon.do(http.MethodPost, "/api/v1/website/bookings", map[string]any{"event_id": eventID, "session_id": s5,
+			"seats": 1, "email": waiter, "name": "W2", "waitlist": true})
+		if code != http.StatusCreated || decode(t, body)["status"] != "waitlisted" {
+			t.Fatalf("join waiting list: %d %s", code, body)
+		}
+		// Staff raise the capacity: the waiting list gets the new seat as an offer.
+		if code, body := c.do(http.MethodPut, "/api/v1/event_session/"+s5, map[string]any{"capacity": 2}); code != http.StatusOK {
+			t.Fatalf("raise capacity: %d %s", code, body)
+		}
+		var token string
+		_ = c.a.db.DB.QueryRow(ctx, `SELECT offer_token FROM event_booking WHERE email = $1`, waiter).Scan(&token)
+		if len(token) != 64 {
+			t.Fatalf("no offer after the capacity increase (token %q)", token)
+		}
+		if code, body := anon.do(http.MethodPost, "/api/v1/website/bookings/claim", map[string]any{"token": token}); code != http.StatusOK {
+			t.Fatalf("claim: %d %s", code, body)
+		}
+		if seatsTaken(s5) != 2 {
+			t.Errorf("seats after claim = %d, want 2", seatsTaken(s5))
+		}
+		if code, _ := anon.do(http.MethodPost, "/api/v1/website/bookings/claim", map[string]any{"token": token}); code != http.StatusNotFound {
+			t.Errorf("second claim = %d, want 404", code)
+		}
+	})
+
+	t.Run("check-in and session move", func(t *testing.T) {
+		s4 := mustCreate("/api/v1/event_session", map[string]any{"event_id": eventID,
+			"starts_at": start.Format(time.RFC3339), "ends_at": start.Add(time.Hour).Format(time.RFC3339), "capacity": 5})
+		code, body := c.do(http.MethodPost, "/api/v1/event_booking",
+			map[string]any{"event_id": eventID, "session_id": s4, "seats": 2, "email": prefix + "-in@test.io", "name": "In"})
+		if code != http.StatusCreated && code != http.StatusOK {
+			t.Fatalf("staff book: %d %s", code, body)
+		}
+		id := decode(t, body)["id"].(string)
+		bookingStart := func() time.Time {
+			_, body := c.do(http.MethodGet, "/api/v1/event_booking/"+id, nil)
+			at, _ := time.Parse(time.RFC3339, decode(t, body)["starts_at"].(string))
+			return at
+		}
+		if !bookingStart().Equal(start.Truncate(time.Second)) {
+			t.Errorf("booking starts_at = %v, want %v", bookingStart(), start)
+		}
+		if code, _ := c.do(http.MethodPut, "/api/v1/event_booking/"+id, map[string]any{"status": "attended"}); code != http.StatusBadRequest {
+			t.Errorf("check-in 3 days early = %d, want 400", code)
+		}
+		soon := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
+		if code, body := c.do(http.MethodPut, "/api/v1/event_session/"+s4, map[string]any{
+			"starts_at": soon.Format(time.RFC3339), "ends_at": soon.Add(time.Hour).Format(time.RFC3339)}); code != http.StatusOK {
+			t.Fatalf("move session: %d %s", code, body)
+		}
+		if !bookingStart().Equal(soon) {
+			t.Errorf("after moving the session, booking starts_at = %v, want %v", bookingStart(), soon)
+		}
+		if code, body := c.do(http.MethodPut, "/api/v1/event_booking/"+id, map[string]any{"status": "attended"}); code != http.StatusOK || decode(t, body)["status"] != "attended" {
+			t.Errorf("check-in = %d %s", code, body)
+		}
+		if seatsTaken(s4) != 2 {
+			t.Errorf("seats_taken after check-in = %d, want 2", seatsTaken(s4))
+		}
+		if code, _ := c.do(http.MethodPut, "/api/v1/event_booking/"+id, map[string]any{"status": "cancelled"}); code != http.StatusConflict {
+			t.Errorf("cancel a checked-in booking = %d, want 409", code)
+		}
+	})
 }
 
 // Review Focus #5: earlier anonymous bookings attach to an account only once
@@ -788,7 +908,11 @@ func TestVerifyAttachesHistoryOnlyAfterVerification(t *testing.T) {
 	if n := count(intruder) + count(site); n != 0 {
 		t.Fatalf("bookings attached by a foreign verify: %d", n)
 	}
-	if code := verify(site, "0"+raw[1:]); code != http.StatusBadRequest {
+	wrong := "0" + raw[1:] // a different token, even when raw already starts with "0"
+	if raw[0] == '0' {
+		wrong = "1" + raw[1:]
+	}
+	if code := verify(site, wrong); code != http.StatusBadRequest {
 		t.Errorf("wrong token = %d, want 400", code)
 	}
 	// Expired: same 400 as unknown.
@@ -815,5 +939,89 @@ func TestVerifyAttachesHistoryOnlyAfterVerification(t *testing.T) {
 	}
 	if n := mails(); n != 2 {
 		t.Errorf("verified resend queued a mail (%d total)", n)
+	}
+}
+
+func TestPublicUpcomingEvents(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	store := settings.NewRepository(c.a.db.DB)
+	oldSel, _, _ := store.Get(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"))
+	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"), oldSel) })
+	if err := store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"),
+		`{"fields":["name","kind","location","timezone","picture"]}`); err != nil {
+		t.Fatal(err)
+	}
+
+	var ids []string
+	t.Cleanup(func() {
+		for _, id := range ids {
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event_session WHERE event_id = $1`, id)
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event WHERE id = $1`, id)
+		}
+	})
+	newEvent := func(body map[string]any, sessionIn time.Duration) string {
+		t.Helper()
+		body["name"] = "up-" + uuid.NewString()[:8]
+		body["description"] = "secret"
+		code, resp := c.do(http.MethodPost, "/api/v1/event", body)
+		if code != http.StatusCreated && code != http.StatusOK {
+			t.Fatalf("create event: %d %s", code, resp)
+		}
+		id := decode(t, resp)["id"].(string)
+		ids = append(ids, id)
+		if sessionIn != 0 {
+			start := time.Now().Add(sessionIn).UTC()
+			if code, resp := c.do(http.MethodPost, "/api/v1/event_session", map[string]any{"event_id": id,
+				"starts_at": start.Format(time.RFC3339), "ends_at": start.Add(time.Hour).Format(time.RFC3339), "capacity": 8}); code != http.StatusCreated && code != http.StatusOK {
+				t.Fatalf("create session: %d %s", code, resp)
+			}
+		}
+		return id
+	}
+	sessions := newEvent(map[string]any{"kind": "sessions", "published": true, "location": "Hall"}, 48*time.Hour)
+	appointment := newEvent(map[string]any{"kind": "appointment", "published": true}, 0)
+	noFuture := newEvent(map[string]any{"kind": "sessions", "published": true}, 0)
+	draft := newEvent(map[string]any{"kind": "sessions"}, 48*time.Hour)
+
+	upcoming := func() map[string]map[string]any {
+		t.Helper()
+		code, body := anon.do(http.MethodGet, "/api/v1/public/events/upcoming?limit=50", nil)
+		if code != http.StatusOK {
+			t.Fatalf("upcoming: %d %s", code, body)
+		}
+		out := map[string]map[string]any{}
+		data, _ := decode(t, body)["data"].([]any)
+		for _, row := range data {
+			r := row.(map[string]any)
+			out[r["id"].(string)] = r
+		}
+		return out
+	}
+	got := upcoming()
+	s, ok := got[sessions]
+	if !ok || s["next_session_at"] == nil || s["seats_left"] != float64(8) || s["location"] != "Hall" || s["kind"] != "sessions" {
+		t.Errorf("sessions event = %v, want next session, 8 seats left, location", s)
+	}
+	if _, leaked := s["description"]; leaked {
+		t.Errorf("unpublished column description returned: %v", s)
+	}
+	if a, ok := got[appointment]; !ok || a["next_session_at"] != nil || a["kind"] != "appointment" {
+		t.Errorf("appointment event = %v (listed %v), want listed without a session", a, ok)
+	}
+	for name, id := range map[string]string{"no future session": noFuture, "unpublished": draft} {
+		if _, ok := got[id]; ok {
+			t.Errorf("%s event listed", name)
+		}
+	}
+	if code, _ := anon.do(http.MethodGet, "/api/v1/public/events/upcoming?limit=500", nil); code != http.StatusBadRequest {
+		t.Errorf("limit 500 = %d, want 400", code)
+	}
+	if err := store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"), `{"fields":[]}`); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := anon.do(http.MethodGet, "/api/v1/public/events/upcoming", nil); code != http.StatusNotFound {
+		t.Errorf("event table unpublished = %d, want 404", code)
 	}
 }

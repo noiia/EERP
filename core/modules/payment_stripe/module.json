@@ -1,0 +1,14 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "payment_stripe",
+    "display_name": "Stripe payments",
+    "version": "0.0.1",
+    "author": "",
+    "description": "Online card payment through Stripe Checkout (event bookings)",
+    "depends": [],
+    "static_files": {},
+    "is_service": false,
+    "auto_install": false,
+    "app_mode": false
+}

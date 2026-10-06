@@ -3,7 +3,9 @@ import { EntityViewServer } from '@eerp/core-front/server'
 import { getEffectivePermissions, requireAuth } from '@/lib/session'
 import { getReportsLayout } from '@/lib/report-settings'
 import { getMyLocalePreferences } from '@/lib/preferences'
+import { headers } from 'next/headers'
 import { getOSMConnector } from '@/lib/osm-settings'
+import { getStripeStatus } from '@/lib/stripe-settings'
 import { getTaxSettings } from '@/lib/tax-settings'
 import { getUnitSettings } from '@/lib/unit-settings'
 import { createRecord, removeRecord, updateRecord } from '../../[...module]/actions'
@@ -27,14 +29,17 @@ import AppearanceSettings from '@/components/AppearanceSettings'
 // generic CRUD surface rather than a dedicated handler like app_settings.
 export default async function AppearancePage() {
   await requireAuth('/settings/appearance')
-  const [permissions, reportsLayout, preferences, osmConnector, taxSettings, unitSettings] = await Promise.all([
+  const [permissions, reportsLayout, preferences, osmConnector, taxSettings, unitSettings, stripe] = await Promise.all([
     getEffectivePermissions(),
     getReportsLayout(),
     getMyLocalePreferences(),
     getOSMConnector(),
     getTaxSettings(),
     getUnitSettings(),
+    getStripeStatus(),
   ])
+  // Stripe calls the site origin (where /api/v1 reaches Go through the gateway).
+  const host = (await headers()).get('host') ?? 'localhost'
   const activeCompanyId = preferences?.active_company?.id
 
   // create is unused in practice: CreateBar navigates to the form route
@@ -55,6 +60,8 @@ export default async function AppearancePage() {
       initialAddress={reportsLayout.address}
       canEditIntegrations={hasPermission(permissions, 'settings:integrations:write')}
       initialOSMConnector={osmConnector}
+      initialStripe={stripe}
+      stripeWebhookURL={`${process.env.SITE_URL ?? `https://${host}`}/api/v1/public/payments/payment_stripe/webhook`}
       canEditTax={hasPermission(permissions, 'settings:tax:write')}
       initialTaxSettings={taxSettings}
       canEditUnits={hasPermission(permissions, 'settings:units:write')}
