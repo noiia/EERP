@@ -89,5 +89,37 @@ func (m *eventModule) Migrate(ctx context.Context, db *orm.DB) error {
 				zap.String("constraint", c.name), zap.Error(err))
 		}
 	}
+	if err := backfillContacts(ctx, db); err != nil {
+		return err
+	}
 	return seedPresets(ctx, db)
+}
+
+// backfillContacts links bookings made before every booking had a contact
+// (contact.FindOrCreate's rule, set-based): a contact is created for each
+// booker email no contact has yet, then each unlinked booking takes the
+// website contact of its email, else the oldest one. Idempotent: a no-op
+// once every booking is linked. Skipped while the contact table is missing.
+func backfillContacts(ctx context.Context, db *orm.DB) error {
+	var ready bool
+	if err := db.QueryRow(ctx, `SELECT to_regclass('contact') IS NOT NULL`).Scan(&ready); err != nil || !ready {
+		return err
+	}
+	for _, stmt := range []string{`
+		INSERT INTO contact (tenant_id, name, email, company, status)
+		SELECT DISTINCT ON (b.tenant_id, lower(b.email)) b.tenant_id, b.name, lower(b.email), '', 'customer'
+		FROM event_booking b
+		WHERE b.contact_id IS NULL AND b.deleted_at IS NULL AND b.email <> ''
+		  AND NOT EXISTS (SELECT 1 FROM contact c WHERE c.tenant_id = b.tenant_id AND lower(c.email) = lower(b.email) AND c.deleted_at IS NULL)
+		ORDER BY b.tenant_id, lower(b.email), b.created_at`, `
+		UPDATE event_booking b SET contact_id = (
+			SELECT c.id FROM contact c WHERE c.tenant_id = b.tenant_id AND lower(c.email) = lower(b.email) AND c.deleted_at IS NULL
+			ORDER BY c.website IS TRUE DESC, c.created_at LIMIT 1)
+		WHERE b.contact_id IS NULL AND b.deleted_at IS NULL AND b.email <> ''`,
+	} {
+		if _, err := db.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("event: backfill booking contacts: %w", err)
+		}
+	}
+	return nil
 }

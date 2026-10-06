@@ -76,3 +76,41 @@ func TestBooking_LinksANativeContact(t *testing.T) {
 		t.Errorf("concurrent bookings created %d contacts, want 1", n)
 	}
 }
+
+// Bookings from before every booking had a contact are linked at boot:
+// to an existing contact with their email, or a new one.
+func TestMigrate_BackfillsBookingContacts(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	ev := f.event(t, Event{Name: "Old", Kind: KindSessions})
+	s := f.session(t, ev, 20, time.Now().Add(48*time.Hour))
+	var known uuid.UUID
+	if err := f.db.QueryRow(ctx, `INSERT INTO contact (tenant_id, name, email, company, status) VALUES ($1, 'Known', 'known@x.io', '', 'lead') RETURNING id`,
+		f.tenant).Scan(&known); err != nil {
+		t.Fatal(err)
+	}
+	legacy := func(email string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := f.db.QueryRow(ctx, `INSERT INTO event_booking (tenant_id, event_id, session_id, seats, email, name, status, cancel_token, starts_at)
+			VALUES ($1, $2, $3, 1, $4, 'Legacy', 'confirmed', '', $5) RETURNING id`, f.tenant, ev.ID, s.ID, email, s.StartsAt).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	a, b1, b2 := legacy("Known@X.io"), legacy("new@x.io"), legacy("NEW@x.io")
+
+	for range 2 { // idempotent
+		if err := (&eventModule{}).Migrate(ctx, f.db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _, _ := contactOf(t, f, a); got == nil || *got != known {
+		t.Errorf("legacy booking with a known email linked %v, want %v", got, known)
+	}
+	c1, name, email := contactOf(t, f, b1)
+	c2, _, _ := contactOf(t, f, b2)
+	if c1 == nil || c2 == nil || *c1 != *c2 || name != "Legacy" || email != "new@x.io" {
+		t.Errorf("legacy bookings of one new email linked %v and %v (%q %q), want one new contact", c1, c2, name, email)
+	}
+}
