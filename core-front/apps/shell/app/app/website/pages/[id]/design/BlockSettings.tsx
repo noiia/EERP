@@ -45,7 +45,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   useEffect(() => {
     if (bookingKind) void listEditorEvents(bookingKind).then(setEvents)
   }, [bookingKind])
-  const links = block.type === 'record_list' || block.type === 'record_carousel' || block.type === 'image_carousel'
+  const links = block.type === 'record_list' || block.type === 'record_carousel' || block.type === 'image_carousel' || block.type === 'event_list'
   const [pages, setPages] = useState<{ slug: string; title: string; published: boolean }[]>([])
   useEffect(() => {
     if (links) void listEditorPages().then(setPages)
@@ -66,7 +66,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   // kept as a flagged option rather than silently dropped.
   const detailSelect = (
     <Stack key="detail_slug" spacing={0.5}>
-      <TextField id={id('detail_slug')} select size="small" label={t('Detail page')} value={str('detail_slug')}
+      <TextField id={id('detail_slug')} select size="small" label={t(block.type === 'event_list' ? 'Event page' : 'Detail page')} value={str('detail_slug')}
         onChange={(e) => set({ detail_slug: e.target.value })}>
         <MenuItem value="">{t('None')}</MenuItem>
         {pages.map((p) => <MenuItem key={p.slug} value={p.slug}>{p.title} (/{p.slug}){p.published ? '' : ` — ${t('not published')}`}</MenuItem>)}
@@ -74,7 +74,9 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
           <MenuItem value={str('detail_slug')}>{str('detail_slug')} — {t('page not found')}</MenuItem>}
       </TextField>
       <Typography variant="caption" color="text.secondary">
-        {t('Create a page holding a Record detail block on the same table, its record left empty, publish it, then pick it here.')}
+        {block.type === 'event_list'
+          ? t('Create a page holding Event booking and Appointment booking blocks left on the event in the URL, publish it, then pick it here.')
+          : t('Create a page holding a Record detail block on the same table, its record left empty, publish it, then pick it here.')}
       </Typography>
     </Stack>
   )
@@ -229,10 +231,26 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
       form = [
         <TextField key="event_id" id={id('event_id')} select size="small" label={t('Event')} value={str('event_id')}
           onChange={(e) => set({ event_id: e.target.value })}>
+          <MenuItem value="">{t('The event in the URL')}</MenuItem>
           {events.map((ev) => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
         </TextField>,
         <Typography key="hint" variant="body2" color="text.secondary">
           {t('The block shows once the event is published.')}
+        </Typography>,
+        !str('event_id') && <Typography key="url-hint" variant="body2" color="text.secondary">
+          {t('Left on the event in the URL, this page can serve every event: pick it as the Event page of an Event list block.')}
+        </Typography>,
+      ]
+      break
+    case 'event_list':
+      form = [
+        select('display', 'Display', ['cards', 'list'], { labels: { cards: 'Cards', list: 'List' } }),
+        <TextField key="limit" id={id('limit')} size="small" type="number" label={t('Maximum number of events')}
+          value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 50 } }}
+          onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
+        detailSelect,
+        <Typography key="hint" variant="body2" color="text.secondary">
+          {t('Lists published events with a future session (appointment events too), soonest first.')}
         </Typography>,
       ]
   }

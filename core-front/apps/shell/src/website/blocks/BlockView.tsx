@@ -1,6 +1,7 @@
-import type { Block, BookingConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, TextConfig } from '../types'
+import type { Block, BookingConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, TextConfig } from '../types'
 import { AppointmentBookingBlock } from './AppointmentBookingBlock'
 import { EventBookingBlock } from './EventBookingBlock'
+import { EventListBlock } from './EventListBlock'
 import { HeroBlock } from './HeroBlock'
 import { ImageBlock } from './ImageBlock'
 import { ImageCarouselBlock } from './ImageCarouselBlock'
@@ -24,8 +25,16 @@ export async function BlockView({ block, source, params }: { block: Block; sourc
     }
     case 'record_carousel': return RecordCarouselBlock({ config: c as unknown as RecordCarouselConfig, source })
     case 'image_carousel': return ImageCarouselBlock({ config: c as unknown as ImageCarouselConfig, source })
-    case 'event_booking': return EventBookingBlock({ config: c as unknown as BookingConfig, source })
-    case 'appointment_booking': return AppointmentBookingBlock({ config: c as unknown as BookingConfig, source })
+    // Unset event: the one in the URL — a single generic event page serves every event.
+    case 'event_booking': {
+      const cfg = c as unknown as BookingConfig
+      return EventBookingBlock({ config: { event_id: cfg.event_id || params.id }, source })
+    }
+    case 'appointment_booking': {
+      const cfg = c as unknown as BookingConfig
+      return AppointmentBookingBlock({ config: { event_id: cfg.event_id || params.id }, source })
+    }
+    case 'event_list': return EventListBlock({ config: c as unknown as EventListConfig })
     default: return null
   }
 }

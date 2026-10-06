@@ -11,12 +11,19 @@ import type { Block } from './types'
 
 /** Live preview: the SAME BlockView the public site renders, over the same public
  * API, returned as RSC. A record_detail block has no URL id in the editor, so it
- * previews the table's first published record. */
+ * previews the table's first published record (a URL-driven booking block: the first
+ * published event of its kind). */
 export async function previewBlock(block: Block, params: { id?: string }): Promise<ReactNode> {
   if (!(await getIdentity())) return null
   let id = params.id
   if (!id && block.type === 'record_detail' && !block.config.record && typeof block.config.table === 'string' && block.config.table) {
     const first = await serverPublicSource.list(block.config.table, { page_size: 1 })
+    id = first?.records[0]?.id as string | undefined
+  }
+  // Same for a booking block left on "the event in the URL": the first published event of its kind.
+  const bookingKind = block.type === 'event_booking' ? 'sessions' : block.type === 'appointment_booking' ? 'appointment' : null
+  if (!id && bookingKind && !block.config.event_id) {
+    const first = await serverPublicSource.list('event', { filter: { kind: bookingKind }, page_size: 1 })
     id = first?.records[0]?.id as string | undefined
   }
   try {

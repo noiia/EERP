@@ -1,6 +1,10 @@
 package website
 
 import (
+	"maps"
+	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -46,5 +50,25 @@ func TestValidatePage(t *testing.T) {
 				t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// BlockTypes and the frontend's BLOCK_TYPES are one closed set written twice;
+// a type known to only one side is either refused on save or never rendered.
+func TestBlockTypes_MatchFrontend(t *testing.T) {
+	src, err := os.ReadFile("../../../core-front/apps/shell/src/website/types.ts")
+	if err != nil {
+		t.Skipf("frontend source not available: %v", err)
+	}
+	m := regexp.MustCompile(`BLOCK_TYPES = \[([^\]]*)\]`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("BLOCK_TYPES not found in types.ts")
+	}
+	front := map[string]bool{}
+	for _, q := range regexp.MustCompile(`'([a-z_]+)'`).FindAllSubmatch(m[1], -1) {
+		front[string(q[1])] = true
+	}
+	if !maps.Equal(front, BlockTypes) {
+		t.Errorf("frontend BLOCK_TYPES %v != Go BlockTypes %v", slices.Sorted(maps.Keys(front)), slices.Sorted(maps.Keys(BlockTypes)))
 	}
 }

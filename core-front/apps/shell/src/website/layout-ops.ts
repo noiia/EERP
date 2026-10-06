@@ -17,6 +17,7 @@ const DEFAULTS: Record<BlockType, { w: number; h: number; config: () => Record<s
   image_carousel: { w: 36, h: 18, config: () => ({ table: '', picture_field: '', limit: 10 }) },
   event_booking: { w: 36, h: 18, config: () => ({}) },
   appointment_booking: { w: 36, h: 18, config: () => ({}) },
+  event_list: { w: 36, h: 18, config: () => ({ display: 'cards', limit: 12 }) },
 }
 
 /** Appends a block of `type` below the lowest one, with that type's default size and config. */

@@ -16,6 +16,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   image_carousel: 'Image carousel',
   event_booking: 'Event booking',
   appointment_booking: 'Appointment booking',
+  event_list: 'Event list',
 }
 
 export function BlockPalette({ onAdd }: { onAdd: (type: BlockType) => void }) {

@@ -1,5 +1,5 @@
 // Keep in sync with core/modules/website/validate.go BlockTypes.
-export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking'] as const
+export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking', 'event_list'] as const
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 export interface Block {
@@ -27,8 +27,12 @@ export interface RecordListConfig {
   table: string; fields: string[]; title_field: string; filter?: Record<string, string>
   page_size?: number; display?: 'grid' | 'list'; detail_slug?: string; picture_field?: string
 }
-/** event_booking / appointment_booking: the event to book. */
-export interface BookingConfig { event_id: string }
+/** event_booking / appointment_booking: the event to book; unset = the id from the URL
+ * (/<slug>/<id>, what an event_list's `detail_slug` links to). */
+export interface BookingConfig { event_id?: string }
+/** event_list: upcoming published events (Go's /public/events/upcoming), as cards or a
+ * list, each linking to `/<detail_slug>/<id>` when set. `limit` caps it (1–50, default 12). */
+export interface EventListConfig { display?: 'cards' | 'list'; limit?: number; detail_slug?: string }
 /** `record`: a fixed record to show; unset = the id from the URL (/<slug>/<id>). */
 export interface RecordDetailConfig {
   table: string; fields: string[]; title_field: string; picture_field?: string; record?: string
