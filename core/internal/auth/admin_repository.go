@@ -329,10 +329,17 @@ func issueVerification(ctx context.Context, tx *orm.Tx, tenantID, userID uuid.UU
 	if err != nil {
 		return false, err
 	}
-	return true, mail.Enqueue(ctx, tx, mail.Message{TenantID: tenantID, To: email, Subject: "Confirm your email",
-		Text: "Confirm your email address to see your bookings:\n\n" + strings.TrimRight(siteURL, "/") +
-			"/account/verify?token=" + raw + "\n\nThis link expires in 48 hours. " +
-			"If you didn't create this account, you can ignore this email."})
+	locale, err := mail.ResolveLocale(ctx, tx, tenantID, &userID)
+	if err != nil {
+		return false, err
+	}
+	msg, err := mail.Render(ctx, tx, tenantID, TemplateVerifyEmail, locale, map[string]string{
+		"verify_url": strings.TrimRight(siteURL, "/") + "/account/verify?token=" + raw})
+	if err != nil {
+		return false, err
+	}
+	msg.TenantID, msg.To = tenantID, email
+	return true, mail.Enqueue(ctx, tx, msg)
 }
 
 // mapUserWriteErr maps a violation of idx_users_email_live to ErrEmailTaken;

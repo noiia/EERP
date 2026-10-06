@@ -1,7 +1,7 @@
 {
   "name": "@eerp/core-front",
   "version": "0.0.0",
-  "description": "EERP frontend engine — descriptors, Zustand stores, renderers, server ApiClient, module registry (the frontend ABI).",
+  "description": "EERP frontend engine \u2014 descriptors, Zustand stores, renderers, server ApiClient, module registry (the frontend ABI).",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -33,6 +33,9 @@
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/react-fontawesome": "^0.2.2",
+    "@tiptap/pm": "^3.31.4",
+    "@tiptap/react": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
     "server-only": "^0.0.1",
     "zustand": "^5.0.0"
   },

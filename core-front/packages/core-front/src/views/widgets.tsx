@@ -15,6 +15,7 @@ import TableContainer from '@mui/material/TableContainer'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { HtmlEditor } from './html-editor'
 import { useT } from '../i18n/translate'
 import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
 import { AddressWidget } from './address-widget'
@@ -260,6 +261,21 @@ function TextLongWidget({ field, value, onChange, disabled }: WidgetProps) {
       minRows={4}
       value={(value as string) ?? ''}
       onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+// ── html ──────────────────────────────────────────────────────────────────────
+
+/** text/html: rich text stored as HTML — the server must sanitize it (html-editor.tsx). */
+function TextHtmlWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  return (
+    <HtmlEditor
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      value={(value as string) ?? ''}
+      onChange={onChange}
+      disabled={disabled}
     />
   )
 }
@@ -727,6 +743,7 @@ function PhoneWidget({ field, value, onChange, disabled }: WidgetProps) {
 const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'text/simple': TextSimpleWidget,
   'text/long': TextLongWidget,
+  'text/html': TextHtmlWidget,
   'text/phone': PhoneWidget,
   'text/table': TableWidget,
   'text/color': TextColorWidget,
