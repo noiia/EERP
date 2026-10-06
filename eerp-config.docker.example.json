@@ -33,6 +33,8 @@
     "site_url": "https://localhost",
     "smtp_host": "mailpit",
     "smtp_port": 1025,
+    "smtp_user": "",
+    "smtp_password": "",
     "smtp_tls": "none",
     "smtp_from": "EERP <no-reply@eerp.localhost>",
     "website_tenant_id": "",

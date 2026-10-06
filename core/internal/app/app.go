@@ -105,6 +105,9 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 	if err := mail.ValidateConfig(configContent); err != nil {
 		return nil, err
 	}
+	for _, w := range mail.ConfigWarnings(configContent) {
+		common.Logger.Warn("mail: " + w)
+	}
 
 	// "environment" drives two behaviors (types.Config's own doc comment): demo
 	// seeding only ever runs in development, and a freshly-seeded default admin

@@ -38,7 +38,28 @@ func NewSMTPTransport(cfg *types.Config) *SMTPTransport {
 	if mode == "" {
 		mode = "starttls"
 	}
-	return &SMTPTransport{host: cfg.SMTPHost, port: port, user: cfg.SMTPUser, password: cfg.SMTPPassword, from: cfg.SMTPFrom, tlsMode: mode}
+	return &SMTPTransport{host: cfg.SMTPHost, port: port, user: smtpLogin(cfg), password: cfg.SMTPPassword, from: cfg.SMTPFrom, tlsMode: mode}
+}
+
+// smtpLogin is the AUTH user: smtp_user, else — when a password is set —
+// smtp_from's address, the login of a mailbox at most providers (OVH, Gmail,
+// Microsoft 365…). "" means no AUTH (a local catcher or an open relay).
+func smtpLogin(cfg *types.Config) string {
+	if cfg.SMTPUser != "" || cfg.SMTPPassword == "" {
+		return cfg.SMTPUser
+	}
+	return envelopeAddress(cfg.SMTPFrom)
+}
+
+// localSMTPHost: a catcher on this machine or in the Compose network, where
+// plaintext and no AUTH are expected (Go's PLAIN auth allows clear text only
+// to localhost).
+func localSMTPHost(host string) bool {
+	if host == "localhost" || host == "mailpit" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Send dials, optionally upgrades to TLS, authenticates when a user is set,
@@ -82,12 +103,15 @@ func (s *SMTPTransport) Send(ctx context.Context, o Outbox) error {
 			return fmt.Errorf("smtp starttls: %w", err)
 		}
 	}
-	if s.user != "" {
+	if s.user != "" { // plaintext to a remote host is refused at boot (ValidateConfig)
 		if err := c.Auth(smtp.PlainAuth("", s.user, s.password, s.host)); err != nil {
 			return fmt.Errorf("smtp auth: %w", err)
 		}
 	}
 	if err := c.Mail(envelopeAddress(s.from)); err != nil {
+		if s.user == "" {
+			return fmt.Errorf("smtp MAIL FROM: %w (no credentials are configured: set smtp_password, and smtp_user if the login isn't smtp_from's address)", err)
+		}
 		return fmt.Errorf("smtp MAIL FROM: %w", err)
 	}
 	if err := c.Rcpt(o.ToAddress); err != nil {
@@ -130,5 +154,18 @@ func ValidateConfig(cfg *types.Config) error {
 	if _, err := mail.ParseAddress(cfg.SMTPFrom); err != nil {
 		return fmt.Errorf("smtp_from %q is not a valid address: %w", cfg.SMTPFrom, err)
 	}
+	if smtpLogin(cfg) != "" && cfg.SMTPTLS == "none" && !localSMTPHost(cfg.SMTPHost) {
+		return fmt.Errorf("smtp_tls \"none\" would send the password in clear to %s — use \"starttls\" (port 587) or \"implicit\" (port 465)", cfg.SMTPHost)
+	}
 	return nil
+}
+
+// ConfigWarnings are SMTP settings that boot accepts but that likely fail
+// at send time: a remote relay with no credentials (most refuse with
+// "530 not authenticated").
+func ConfigWarnings(cfg *types.Config) []string {
+	if !Configured(cfg) || localSMTPHost(cfg.SMTPHost) || smtpLogin(cfg) != "" {
+		return nil
+	}
+	return []string{"smtp_host " + cfg.SMTPHost + " is remote but no credentials are set: set smtp_password (the login defaults to smtp_from's address, or set smtp_user)"}
 }
