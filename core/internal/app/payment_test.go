@@ -52,6 +52,9 @@ func TestStripeSettingsAndWebhook(t *testing.T) {
 	}
 	eventID := decode(t, body)["id"].(string)
 	t.Cleanup(func() {
+		// The paid webhook queues a confirmation: delete it before a live sender delivers it.
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM mail_outbox WHERE to_address = 'card@test.io'`)
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM contact WHERE email = 'card@test.io'`)
 		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event_booking WHERE event_id = $1`, eventID)
 		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event_session WHERE event_id = $1`, eventID)
 		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event WHERE id = $1`, eventID)

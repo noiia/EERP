@@ -197,6 +197,10 @@ func TestWebsiteProfileAndAdmin(t *testing.T) {
 	ctx := context.Background()
 	email := "visitor-" + uuid.NewString() + "@test.io"
 	t.Cleanup(func() {
+		// Signup also queues a verification email and creates a website contact:
+		// leave no outbox row behind for a live sender to deliver.
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM mail_outbox WHERE to_address = $1`, email)
+		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM contact WHERE email = $1`, email)
 		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email = $1)`, email)
 		_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM users WHERE email = $1`, email)
 	})
