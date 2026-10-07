@@ -520,11 +520,11 @@ async function seedEvents(people: Person[], variantId: string | undefined): Prom
  * page formats and the Event app's demo events (seedEvents) — through the ordinary entity API, in dependency order
  * (parents before the rows that reference their ids).
  */
-export async function seedDemoData(volume: SeedVolume = 'light'): Promise<SeedResult> {
+export async function seedDemoData(volume: SeedVolume = 'light', groups: string[] = []): Promise<SeedResult> {
   if (!(await seedingAllowed())) {
     return { ok: false, message: 'Demo data seeding is disabled outside development.' }
   }
-  if (volume === 'full') return seedFullVolume()
+  if (volume === 'full') return seedFullVolume(groups)
 
   const results: SeedEntityResult[] = []
 
@@ -597,18 +597,41 @@ export async function seedDemoData(volume: SeedVolume = 'light'): Promise<SeedRe
   return { ok: true, results }
 }
 
-/** The full volume: one Go call (it refuses outside development and when this
- * workspace was already fully seeded — both surface as the error message). */
-async function seedFullVolume(): Promise<SeedResult> {
+/** One group of the full volume (Go: internal/devseed AllGroups): a business
+ * area, the groups its rows point at, and whether this workspace seeded it. */
+export interface SeedGroup {
+  key: string
+  label: string
+  deps: string[]
+  seeded: boolean
+}
+
+/** The full volume's groups; null when Go can't be reached. */
+export async function getSeedGroups(): Promise<SeedGroup[] | null> {
   try {
-    const res = await apiRequest<{ results: { entity: string; created: number }[] }>('POST', '/dev_seed')
+    return (await apiRequest<{ data: SeedGroup[] }>('GET', '/dev_seed')).data ?? []
+  } catch {
+    return null
+  }
+}
+
+/** The full volume: one Go call for the selected groups ([] = all; Go adds
+ * their dependencies and skips groups already seeded — it refuses outside
+ * development and when everything selected was seeded, both surfaced as the
+ * error message). An entity Go reports twice (bookings come in two steps)
+ * is summed into one row. */
+async function seedFullVolume(groups: string[]): Promise<SeedResult> {
+  try {
+    const res = await apiRequest<{ results: { entity: string; created: number }[] }>('POST', '/dev_seed', { groups })
     // Go wrote straight to the tables: drop every cached list page it touched.
-    for (const r of res.results) {
-      if (!r.entity.includes(' ')) revalidateTag(r.entity, 'max')
+    const merged = new Map<string, number>()
+    for (const r of res.results) merged.set(r.entity, (merged.get(r.entity) ?? 0) + r.created)
+    for (const entity of merged.keys()) {
+      if (!entity.includes(' ')) revalidateTag(entity, 'max')
     }
     return {
       ok: true,
-      results: res.results.map((r) => ({ entity: r.entity, created: r.created, failed: 0, errors: [] })),
+      results: [...merged].map(([entity, created]) => ({ entity, created, failed: 0, errors: [] })),
     }
   } catch (e) {
     return { ok: false, message: e instanceof ApiError ? e.message : 'The full demo seed failed.' }

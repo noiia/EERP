@@ -27,7 +27,7 @@ vi.mock('./preferences', () => ({
   getMyLocalePreferences: () => getMyLocalePreferencesMock(),
 }))
 
-import { seedDemoData } from './dev-seed'
+import { getSeedGroups, seedDemoData } from './dev-seed'
 import { seedingAllowed } from './dev-seed-allowed'
 
 function callsFor(entity: string): unknown[][] {
@@ -83,6 +83,29 @@ describe('seedingAllowed', () => {
 })
 
 describe('seedDemoData full volume', () => {
+  it('sends the selected groups and merges entities Go reports twice', async () => {
+    apiRequestMock.mockReset().mockResolvedValue({
+      results: [
+        { entity: 'event_booking', created: 90 },
+        { entity: 'event_booking', created: 10 },
+      ],
+    })
+    await expect(seedDemoData('full', ['events', 'crm'])).resolves.toEqual({
+      ok: true,
+      results: [{ entity: 'event_booking', created: 100, failed: 0, errors: [] }],
+    })
+    expect(apiRequestMock).toHaveBeenCalledWith('POST', '/dev_seed', { groups: ['events', 'crm'] })
+  })
+
+  it('lists the seed groups, null when Go is unreachable', async () => {
+    const data = [{ key: 'contacts', label: 'Contacts', deps: [], seeded: false }]
+    apiRequestMock.mockReset().mockResolvedValueOnce({ data })
+    await expect(getSeedGroups()).resolves.toEqual(data)
+    expect(apiRequestMock).toHaveBeenCalledWith('GET', '/dev_seed')
+    apiRequestMock.mockRejectedValueOnce(new Error('down'))
+    await expect(getSeedGroups()).resolves.toBeNull()
+  })
+
   it('asks Go for the full volume, revalidates the seeded entities, and reports per table', async () => {
     apiRequestMock.mockReset().mockResolvedValue({
       results: [
@@ -99,7 +122,7 @@ describe('seedDemoData full volume', () => {
         { entity: 'graph view: invoice', created: 8, failed: 0, errors: [] },
       ],
     })
-    expect(apiRequestMock).toHaveBeenCalledWith('POST', '/dev_seed')
+    expect(apiRequestMock).toHaveBeenCalledWith('POST', '/dev_seed', { groups: [] })
     expect(revalidateTagMock).toHaveBeenCalledTimes(1)
     expect(revalidateTagMock).toHaveBeenCalledWith('invoice', 'max')
     expect(createMock).not.toHaveBeenCalled()

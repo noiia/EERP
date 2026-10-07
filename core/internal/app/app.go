@@ -547,6 +547,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// tenant; permission dev_seed:dev_seed:write derives from the route.
 	devSeedHandler := devseed.NewHandler(app.DB, a.cfg.Environment)
 	srv.Echo().POST("/api/v1/dev_seed", devSeedHandler.Seed, jwtMw, permMw)
+	srv.Echo().GET("/api/v1/dev_seed", devSeedHandler.Groups, jwtMw, permMw)
 
 	// ── Chatter ───────────────────────────────────────────────────────────────
 	// A record's activity feed: user-authored messages plus the frontend's own

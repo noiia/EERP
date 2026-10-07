@@ -3,14 +3,25 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SeedResult } from '@/lib/dev-seed'
 
 const seedMock = vi.fn()
+const groupsMock = vi.fn()
 vi.mock('@/lib/dev-seed', () => ({
-  seedDemoData: (volume: string) => seedMock(volume),
+  seedDemoData: (...args: unknown[]) => seedMock(...args),
+  getSeedGroups: () => groupsMock(),
 }))
+
+const groups = [
+  { key: 'contacts', label: 'Contacts', deps: [], seeded: false },
+  { key: 'products', label: 'Products & variants', deps: [], seeded: true },
+  { key: 'crm', label: 'CRM leads & tags', deps: ['contacts'], seeded: false },
+  { key: 'events', label: 'Events & bookings', deps: ['contacts'], seeded: false },
+]
+const box = (name: RegExp) => screen.getByRole('checkbox', { name }) as HTMLInputElement
 
 import DeveloperSettings from './DeveloperSettings'
 
 beforeEach(() => {
   seedMock.mockReset()
+  groupsMock.mockReset().mockResolvedValue(groups)
 })
 
 describe('DeveloperSettings', () => {
@@ -39,10 +50,33 @@ describe('DeveloperSettings', () => {
 
     render(<DeveloperSettings isDev />)
     fireEvent.click(screen.getByRole('radio', { name: /^Full/ }))
+    await screen.findByRole('checkbox', { name: /^Contacts/ }) // the button waits for the group list
     fireEvent.click(screen.getByRole('button', { name: 'Seed demo data' }))
 
     expect(await screen.findByText('invoice: 100000 created')).toBeInTheDocument()
-    expect(seedMock).toHaveBeenCalledWith('full')
+    expect(seedMock).toHaveBeenCalledWith('full', ['contacts', 'crm', 'events'])
+  })
+
+  it('lists the full-volume groups: all unseeded ticked, seeded ones locked, dependencies locked while needed', async () => {
+    seedMock.mockResolvedValue({ ok: true, results: [] })
+    render(<DeveloperSettings isDev />)
+    fireEvent.click(screen.getByRole('radio', { name: /^Full/ }))
+    await screen.findByRole('checkbox', { name: /^Contacts/ })
+
+    expect(box(/^Products/)).toMatchObject({ checked: true, disabled: true })
+    expect(screen.getByText(/already seeded/i)).toBeInTheDocument()
+    // CRM and Events need Contacts: it stays ticked and locked while either is ticked.
+    expect(box(/^Contacts/)).toMatchObject({ checked: true, disabled: true })
+    fireEvent.click(box(/^CRM/))
+    expect(box(/^Contacts/).disabled).toBe(true)
+    fireEvent.click(box(/^Events/))
+    expect(box(/^Contacts/).disabled).toBe(false)
+    fireEvent.click(box(/^Contacts/))
+    expect(screen.getByRole('button', { name: 'Seed demo data' })).toBeDisabled()
+
+    fireEvent.click(box(/^Events/))
+    fireEvent.click(screen.getByRole('button', { name: 'Seed demo data' }))
+    await waitFor(() => expect(seedMock).toHaveBeenCalledWith('full', ['contacts', 'events']))
   })
 
   it('surfaces the disabled-outside-development message as an error', async () => {

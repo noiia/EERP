@@ -1360,3 +1360,39 @@ msgstr "Un secret de signature est enregistré ; laissez vide pour le conserver.
 
 msgid "In the Stripe dashboard, add a webhook endpoint for the checkout.session.completed and checkout.session.expired events at:"
 msgstr "Dans le tableau de bord Stripe, ajoutez un point de terminaison webhook pour les événements checkout.session.completed et checkout.session.expired à l'adresse :"
+
+msgid "Groups to seed"
+msgstr "Groupes à générer"
+
+msgid "already seeded"
+msgstr "déjà généré"
+
+msgid "needed by"
+msgstr "requis par"
+
+msgid "Companies & tax catalog"
+msgstr "Sociétés et catalogue de taxes"
+
+msgid "Products & variants"
+msgstr "Produits et variantes"
+
+msgid "Contacts"
+msgstr "Contacts"
+
+msgid "CRM leads & tags"
+msgstr "Pistes CRM et étiquettes"
+
+msgid "Quotes"
+msgstr "Devis"
+
+msgid "Invoices"
+msgstr "Factures"
+
+msgid "Property management"
+msgstr "Gestion locative"
+
+msgid "Events & bookings"
+msgstr "Événements et réservations"
+
+msgid "About 100,000 rows each of contacts, CRM leads, products, variants, quotes, invoices, rent receipts and event bookings, with lines, several taxes and companies, plus graph views with calculated fields on every list over 10,000 rows. Pick the groups below; each is seeded once per workspace, and all of them take about half a minute."
+msgstr "Environ 100 000 lignes de contacts, pistes CRM, produits, variantes, devis, factures, quittances et réservations d'événements, avec leurs lignes, plusieurs taxes et sociétés, plus des vues graphiques avec champs calculés sur chaque liste de plus de 10 000 lignes. Choisissez les groupes ci-dessous ; chacun n'est généré qu'une fois par espace de travail, et l'ensemble prend environ une demi-minute."

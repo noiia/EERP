@@ -4,9 +4,9 @@
 // instead of the hours a per-row HTTP seed would. The "light" volume stays
 // the frontend's own generic-API seed (core-front/apps/shell/src/lib/dev-seed.ts).
 //
-// Development-only and once per tenant: the handler refuses outside
-// environment "development", and a marker setting (MarkerKey) makes a second
-// run a 409 instead of doubling the data.
+// Development-only and once per group per tenant: the handler refuses
+// outside environment "development", and a marker setting per group
+// (MarkerKey) keeps a later run from doubling data (groups.go).
 package devseed
 
 import (
@@ -21,7 +21,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// MarkerKey is the tenant-level app_settings key recording a full seed.
+// MarkerKey prefixes the tenant-level app_settings keys recording which
+// groups were seeded (MarkerKey + "." + group); the bare key, written before
+// groups existed, means every group.
 const MarkerKey = "dev.seed.full"
 
 // Result is one table's seeded row count.
@@ -30,8 +32,8 @@ type Result struct {
 	Created int64  `json:"created"`
 }
 
-// ErrAlreadySeeded is returned when MarkerKey already exists for the tenant.
-var ErrAlreadySeeded = fmt.Errorf("the full demo volume was already seeded for this workspace")
+// ErrAlreadySeeded: every selected group was already seeded for the tenant.
+var ErrAlreadySeeded = fmt.Errorf("the selected demo data was already seeded for this workspace")
 
 // step is one set-based statement; entity names its Result row ("" = none).
 type step struct {
@@ -64,38 +66,60 @@ func analyze(temp string, tables ...string) []step {
 // leads, products, variants, quotes, invoices, rent receipts and event
 // bookings (quote and invoice lines at 2 per document, sale-line tax tags on
 // a share of them), plus extra companies, the tax catalog, tags, 1 property
-// per 100 receipts, and n/100 events with n/10 sessions — then Graph views and calculated fields for every list-view
-// entity that ends up over GraphThreshold rows (graphs.go). One transaction:
-// all or nothing.
-func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int) ([]Result, error) {
+// per 100 receipts, and n/100 events with n/10 sessions — restricted to the
+// selected groups (nil = all) and their dependencies, skipping groups this
+// tenant already seeded (groups.go). Then Graph views and calculated fields
+// for every list-view entity that ends up over GraphThreshold rows
+// (graphs.go). One transaction: all or nothing. ErrAlreadySeeded when every
+// selected group was already seeded.
+func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int, groups []string) ([]Result, error) {
+	byGroup, err := groupSteps()
+	if err != nil {
+		return nil, err
+	}
 	var results []Result
-	err := db.Transaction(ctx, func(tx *orm.Tx) error {
-		var seeded bool
-		if err := tx.QueryRow(ctx,
-			// Tenant-wide: any company — older markers were written at NULL and
-			// moved to the default company by the settings module's boot backfill.
-			`SELECT EXISTS (SELECT 1 FROM app_settings WHERE tenant_id = $1 AND key = $2 AND deleted_at IS NULL)`,
-			tenantID, MarkerKey).Scan(&seeded); err != nil {
-			return fmt.Errorf("devseed: marker: %w", err)
+	err = db.Transaction(ctx, func(tx *orm.Tx) error {
+		seeded, err := seededGroups(ctx, tx, tenantID)
+		if err != nil {
+			return fmt.Errorf("devseed: markers: %w", err)
 		}
-		if seeded {
+		seed, prepare, err := plan(groups, seeded)
+		if err != nil {
+			return err
+		}
+		if len(seed) == 0 {
 			return ErrAlreadySeeded
 		}
 		// Deterministic data run to run (random() is seeded per session).
 		if _, err := tx.Exec(ctx, `SELECT setseed(0.42)`); err != nil {
 			return fmt.Errorf("devseed: setseed: %w", err)
 		}
-		for _, s := range steps {
-			args := []any{tenantID, n}
-			if !strings.Contains(s.sql, "$1") { // ANALYZE / CREATE INDEX take no parameters
-				args = nil
+		for _, g := range AllGroups {
+			if !seed[g.Key] && !prepare[g.Key] {
+				continue
 			}
-			tag, err := tx.Exec(ctx, s.sql, args...)
-			if err != nil {
-				return fmt.Errorf("devseed: %s: %w", s.entity, err)
+			for _, s := range byGroup[g.Key] {
+				if !seed[g.Key] && !s.prepare() {
+					continue
+				}
+				args := []any{tenantID, n}
+				if !strings.Contains(s.sql, "$1") { // ANALYZE / CREATE INDEX take no parameters
+					args = nil
+				}
+				tag, err := tx.Exec(ctx, s.sql, args...)
+				if err != nil {
+					return fmt.Errorf("devseed: %s: %w", s.entity, err)
+				}
+				if s.entity != "" {
+					results = append(results, Result{Entity: s.entity, Created: tag.RowsAffected()})
+				}
 			}
-			if s.entity != "" {
-				results = append(results, Result{Entity: s.entity, Created: tag.RowsAffected()})
+			if seed[g.Key] {
+				// uuid.Nil (the site-wide slot), not NULL: the boot backfill moves NULL rows.
+				if _, err := tx.Exec(ctx, `INSERT INTO app_settings (tenant_id, company_id, key, value) VALUES ($1, $2, $3, $4)`,
+					tenantID, uuid.Nil, markerKey(g.Key), time.Now().UTC().Format(time.RFC3339)); err != nil {
+					return err
+				}
 			}
 		}
 		graphResults, err := seedGraphs(ctx, tx, tenantID)
@@ -103,11 +127,7 @@ func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int) ([]Result,
 			return err
 		}
 		results = append(results, graphResults...)
-		_, err = tx.Exec(ctx,
-			// uuid.Nil (the site-wide slot), not NULL: the boot backfill moves NULL rows.
-			`INSERT INTO app_settings (tenant_id, company_id, key, value) VALUES ($1, $2, $3, $4)`,
-			tenantID, uuid.Nil, MarkerKey, time.Now().UTC().Format(time.RFC3339))
-		return err
+		return nil
 	})
 	return results, err
 }

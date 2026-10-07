@@ -49,7 +49,7 @@ func TestSeed(t *testing.T) {
 	}
 
 	n := devseed.GraphThreshold + 1
-	results, err := devseed.Seed(ctx, app.DB, tenant, n)
+	results, err := devseed.Seed(ctx, app.DB, tenant, n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,81 @@ func TestSeed(t *testing.T) {
 		t.Error("no appointment bookings seeded")
 	}
 
-	if _, err := devseed.Seed(ctx, app.DB, tenant, n); !errors.Is(err, devseed.ErrAlreadySeeded) {
+	if _, err := devseed.Seed(ctx, app.DB, tenant, n, nil); !errors.Is(err, devseed.ErrAlreadySeeded) {
 		t.Fatalf("second run: %v, want ErrAlreadySeeded", err)
+	}
+}
+
+// A selection seeds only those groups plus what they reference; a later run
+// seeds the rest, reusing the earlier rows instead of seeding them twice.
+func TestSeed_Groups(t *testing.T) {
+	app := testdb.Open(t)
+	testdb.MigrateModules(t, app, "auth", "company", "settings", "graphfield", "contact", "crm", "warehouse", "sale", "propertymanagement", "event")
+	ctx := context.Background()
+	tenant := uuid.New()
+	t.Cleanup(func() {
+		for _, table := range seededTables {
+			_, _ = app.DB.Exec(ctx, "DELETE FROM "+table+" WHERE tenant_id = $1", tenant)
+		}
+	})
+	if _, err := app.DB.Exec(ctx, "INSERT INTO company (tenant_id, name, currency, is_default) VALUES ($1, 'Home', 'EUR', true)", tenant); err != nil {
+		t.Fatal(err)
+	}
+	const n = 1000 // 10 events, 2 of them appointment events (one in five)
+	count := func(table string) int {
+		t.Helper()
+		var c int
+		if err := app.DB.QueryRow(ctx, "SELECT count(*) FROM "+table+" WHERE tenant_id = $1", tenant).Scan(&c); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"crm"}); err != nil {
+		t.Fatal(err)
+	}
+	if count("crm") != n || count("contact") != n || count("invoice") != 0 || count("product") != 0 {
+		t.Fatalf("crm only: crm %d contact %d invoice %d product %d", count("crm"), count("contact"), count("invoice"), count("product"))
+	}
+
+	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"invoices"}); err != nil {
+		t.Fatal(err)
+	}
+	if count("invoice") != n || count("product") != n || count("contact") != n || count("quote") != 0 {
+		t.Fatalf("then invoices: invoice %d product %d contact %d (want no second batch) quote %d",
+			count("invoice"), count("product"), count("contact"), count("quote"))
+	}
+	var orphans int
+	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM invoice i WHERE i.tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM contact c WHERE c.id = i.customer_id)`, tenant).Scan(&orphans)
+	if orphans != 0 {
+		t.Errorf("%d invoices point at no seeded contact", orphans)
+	}
+
+	status, err := devseed.Groups(ctx, app.DB, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seeded := map[string]bool{}
+	for _, g := range status {
+		seeded[g.Key] = g.Seeded
+	}
+	for key, want := range map[string]bool{"contacts": true, "crm": true, "products": true, "base": true, "invoices": true, "quotes": false, "events": false} {
+		if seeded[key] != want {
+			t.Errorf("group %s seeded = %v, want %v", key, seeded[key], want)
+		}
+	}
+
+	// All groups: only the remaining ones are written.
+	if _, err := devseed.Seed(ctx, app.DB, tenant, n, nil); err != nil {
+		t.Fatal(err)
+	}
+	if count("quote") != n || count("event_booking") != n || count("invoice") != n || count("crm") != n {
+		t.Errorf("rest: quote %d booking %d invoice %d crm %d", count("quote"), count("event_booking"), count("invoice"), count("crm"))
+	}
+	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"crm"}); !errors.Is(err, devseed.ErrAlreadySeeded) {
+		t.Errorf("re-seeding a seeded group: %v, want ErrAlreadySeeded", err)
+	}
+	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"nope"}); !errors.Is(err, devseed.ErrUnknownGroup) {
+		t.Errorf("unknown group: %v, want ErrUnknownGroup", err)
 	}
 }
