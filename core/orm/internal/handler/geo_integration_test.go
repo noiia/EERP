@@ -105,6 +105,16 @@ func TestGeo_CRUDRoundTrip(t *testing.T) {
 		t.Errorf("read geo_location = %s", loc)
 	}
 
+	// List responses convert too.
+	list := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places", ""))
+	rows, _ := list["data"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("list = %v", list)
+	}
+	if loc, _ := json.Marshal(rows[0].(map[string]any)["geo_location"]); string(loc) != `{"coordinates":[2.35,48.85],"type":"Point"}` {
+		t.Errorf("list geo_location = %s", loc)
+	}
+
 	// Clearing stores NULL (Review Focus 3).
 	rec = doAs(e, tenant, nil, http.MethodPut, "/api/v1/geo_places/"+id, `{"name":"Paris","geo_location":null}`)
 	if rec.Code != http.StatusOK || decodeObj(t, rec)["geo_location"] != nil {
@@ -138,5 +148,34 @@ func TestGeo_InvalidGeometryIs422(t *testing.T) {
 		if errObj["code"] != "VALIDATION_ERROR" {
 			t.Errorf("%s: %v", body, errObj)
 		}
+		if f, _ := json.Marshal(errObj["fields"]); string(f) != `["geo_location"]` {
+			t.Errorf("%s: fields = %s", body, f)
+		}
+	}
+}
+
+func TestGeo_InvalidUpdateIs422AndWritesNothing(t *testing.T) {
+	_, e := setupGeo(t)
+	tenant := uuid.New()
+	rec := doAs(e, tenant, nil, http.MethodPost, "/api/v1/geo_places",
+		`{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	id := decodeObj(t, rec)["id"].(string)
+
+	rec = doAs(e, tenant, nil, http.MethodPut, "/api/v1/geo_places/"+id,
+		`{"name":"Lyon","geo_location":{"type":"Point","coordinates":[200,0]}}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
+	}
+	errObj := decodeObj(t, rec)["error"].(map[string]any)
+	if f, _ := json.Marshal(errObj["fields"]); errObj["code"] != "VALIDATION_ERROR" || string(f) != `["geo_location"]` {
+		t.Errorf("envelope = %v", errObj)
+	}
+
+	got := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places/"+id, ""))
+	if loc, _ := json.Marshal(got["geo_location"]); string(loc) != `{"coordinates":[2.35,48.85],"type":"Point"}` || got["name"] != "Paris" {
+		t.Errorf("record changed: %v", got)
 	}
 }
