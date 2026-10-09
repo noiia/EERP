@@ -45,9 +45,16 @@ flowchart TD
     H -->|otherwise path mode| P{first segment}
     P -->|"published slug"| SITE[site page]
     P -->|"ERP root, not /app"| L["307 to /app/..."]
-    P -->|"/app, /api, /print, /database"| PASS[served as is]
+    P -->|"/app, /api, /print, /database, /robots.txt, /security.txt, /.well-known"| PASS[served as is]
     P -->|other| SITE
 ```
+
+7. **Crawler and security files answer on every host.** `/robots.txt`, `/security.txt` and
+   `/.well-known/security.txt` are never redirected: they are Next route handlers relaying Go's
+   `/api/v1/public/{robots,security}.txt`, built from Settings → Website. robots.txt is computed
+   for the requesting host — the ERP host in host mode gets `Disallow: /`, every other host the
+   site rules (ERP, API, print, database and visitor pages disallowed, then the admin's extra
+   lines). security.txt (RFC 9116) is served only while it has a contact and has not expired.
 
 ## Consequences and pitfalls
 - A navigation site that forgets `erpPath` still works (through the 307) but costs a round trip.

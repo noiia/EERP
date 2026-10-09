@@ -11,8 +11,19 @@ export type RouteDecision = { kind: 'next' } | { kind: 'redirect'; location: str
 
 // First path segments that are never a legacy ERP path: the ERP itself, the BFF,
 // report print targets (pdf-service renders frontend_base_url + /print/...), the
-// master-key database manager, and Next's own assets.
-const ROOT_PASSTHROUGH = new Set(['app', 'api', 'print', 'database', '_next', 'favicon.ico'])
+// master-key database manager, Next's own assets, and the per-host crawler/security
+// files (robots.txt answers per host, so it must not redirect to the site host).
+const ROOT_PASSTHROUGH = new Set([
+  'app',
+  'api',
+  'print',
+  'database',
+  '_next',
+  'favicon.ico',
+  'robots.txt',
+  'security.txt',
+  '.well-known',
+])
 
 /** Pure routing decision for proxy.ts (website spec 2).
  *

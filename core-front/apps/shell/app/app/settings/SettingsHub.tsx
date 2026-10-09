@@ -57,6 +57,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Published data, routing and website accounts.',
   },
   {
+    path: '/legal-notice',
+    title: 'Legal notice',
+    description: 'The publisher and host of this workspace and its website.',
+  },
+  {
     path: '/settings/email-templates',
     title: 'Email templates',
     description: 'The emails the workspace sends, reworded and translated.',

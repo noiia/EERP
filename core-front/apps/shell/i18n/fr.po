@@ -1450,3 +1450,105 @@ msgstr "Définissez une image d'arrière-plan (et la parallaxe) dans le formulai
 
 msgid "Open the page form"
 msgstr "Ouvrir le formulaire de la page"
+
+msgid "Legal notice"
+msgstr "Mentions légales"
+
+msgid "No legal notice has been set yet."
+msgstr "Aucune mention légale n'a encore été renseignée."
+
+msgid "Publisher"
+msgstr "Éditeur"
+
+msgid "Hosting"
+msgstr "Hébergement"
+
+msgid "Company name"
+msgstr "Raison sociale"
+
+msgid "Legal form"
+msgstr "Forme juridique"
+
+msgid "Share capital"
+msgstr "Capital social"
+
+msgid "Registered office"
+msgstr "Siège social"
+
+msgid "Registration (SIRET / RCS)"
+msgstr "Immatriculation (SIRET / RCS)"
+
+msgid "VAT number"
+msgstr "Numéro de TVA"
+
+msgid "Publication director"
+msgstr "Directeur de la publication"
+
+msgid "Host"
+msgstr "Hébergeur"
+
+msgid "Address"
+msgstr "Adresse"
+
+msgid "Additional text (privacy, cookies, credits…)"
+msgstr "Texte complémentaire (confidentialité, cookies, crédits…)"
+
+msgid "View on the website"
+msgstr "Voir sur le site"
+
+msgid "The publisher and host details shown on the website and in the ERP."
+msgstr "Les informations sur l'éditeur et l'hébergeur affichées sur le site et dans l'ERP."
+
+msgid "The publisher and host of this workspace and its website."
+msgstr "L'éditeur et l'hébergeur de cet espace de travail et de son site."
+
+msgid "security.txt"
+msgstr "security.txt"
+
+msgid "How security researchers can reach you (RFC 9116)."
+msgstr "Comment les chercheurs en sécurité peuvent vous contacter (RFC 9116)."
+
+msgid "robots.txt"
+msgstr "robots.txt"
+
+msgid "What search engines may crawl."
+msgstr "Ce que les moteurs de recherche peuvent explorer."
+
+msgid "Contacts (one per line)"
+msgstr "Contacts (un par ligne)"
+
+msgid "mailto:, tel: or https:// addresses. Leave empty to stop serving the file."
+msgstr "Adresses mailto:, tel: ou https://. Laissez vide pour ne plus servir le fichier."
+
+msgid "Expires"
+msgstr "Expiration"
+
+msgid "At most a year away. Renew it before then, or the file stops being served."
+msgstr "Dans un an au plus. Renouvelez-la avant, sinon le fichier n'est plus servi."
+
+msgid "Policy URL"
+msgstr "URL de la politique"
+
+msgid "Acknowledgments URL"
+msgstr "URL des remerciements"
+
+msgid "Encryption key URL"
+msgstr "URL de la clé de chiffrement"
+
+msgid "Preferred languages"
+msgstr "Langues préférées"
+
+msgid "Served file"
+msgstr "Fichier servi"
+
+msgid "Not served."
+msgstr "Non servi."
+
+msgid "Additional rules"
+msgstr "Règles supplémentaires"
+
+msgid "Appended after the built-in rules, which keep crawlers out of the ERP, the API and visitor pages."
+msgstr "Ajoutées après les règles intégrées, qui tiennent les robots à l'écart de l'ERP, de l'API et des pages visiteurs."
+
+msgid "Served file (for this address)"
+msgstr "Fichier servi (pour cette adresse)"

@@ -1,6 +1,7 @@
 import 'server-only'
 import { unstable_cache } from 'next/cache'
 import { forwardedFor } from '@/lib/bff'
+import type { LegalNotice } from '@/lib/website-settings'
 import type { Block, PublicDataSource } from './types'
 
 function base(): string {
@@ -84,4 +85,9 @@ export async function getMenuPages(): Promise<Pick<SitePage, 'slug' | 'title'>[]
   return ((res?.records ?? []) as unknown as (SitePage & { menu_sequence?: number | null })[])
     .sort((a, b) => seq(a) - seq(b))
     .map((p) => ({ slug: p.slug, title: p.title }))
+}
+
+/** The site's legal notice, or null when none is set (Go 404s). */
+export function getLegalNotice(): Promise<LegalNotice | null> {
+  return getJSON<LegalNotice>('/legal', ['site_legal'])
 }

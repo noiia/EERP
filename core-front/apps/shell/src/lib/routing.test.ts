@@ -37,6 +37,10 @@ describe('routeDecision — host mode', () => {
     ['erp.acme.fr', '/products', { kind: 'redirect', location: 'https://www.acme.fr/products' }],
     ['erp.acme.fr', '/contacts', { kind: 'redirect', location: 'https://www.acme.fr/contacts' }],
     ['erp.acme.fr', '/api/v1/public/site', { kind: 'next' }],
+    // Crawler/security files answer on each host (robots.txt closes the ERP host).
+    ['erp.acme.fr', '/robots.txt', { kind: 'next' }],
+    ['erp.acme.fr', '/.well-known/security.txt', { kind: 'next' }],
+    ['erp.acme.fr', '/legal-notice', { kind: 'redirect', location: 'https://www.acme.fr/legal-notice' }],
     ['erp.acme.fr:443', '/app', { kind: 'next' }],
     // Unknown host (IP, localhost): behave like path mode so admins are never locked out.
     ['10.0.0.5', '/app/crm', { kind: 'next' }],

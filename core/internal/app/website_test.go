@@ -384,6 +384,44 @@ func TestWebsiteRouting(t *testing.T) {
 	}
 }
 
+// The admin's legal notice and security.txt reach the anonymous public routes;
+// robots.txt always answers.
+func TestWebsiteSiteFiles(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	store := settings.NewRepository(c.a.db.DB)
+	for _, key := range []string{website.LegalKey, website.SecurityKey, website.RobotsKey} {
+		old, _, _ := store.Get(ctx, auth.DevTenantID, uuid.Nil, key)
+		t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, key, old) })
+	}
+
+	if code, body := c.do(http.MethodPut, "/api/v1/settings/website/legal", map[string]any{"contact_email": "nope"}); code != http.StatusBadRequest {
+		t.Errorf("bad legal = %d %s", code, body)
+	}
+	if code, body := c.do(http.MethodPut, "/api/v1/settings/website/legal", map[string]any{"company_name": "Acme SAS"}); code != http.StatusNoContent {
+		t.Fatalf("put legal = %d %s", code, body)
+	}
+	if code, body := anon.do(http.MethodGet, "/api/v1/public/legal", nil); code != http.StatusOK || decode(t, body)["company_name"] != "Acme SAS" {
+		t.Errorf("public legal = %d %s", code, body)
+	}
+
+	expires := time.Now().AddDate(0, 6, 0).UTC().Format(time.RFC3339)
+	if code, body := c.do(http.MethodPut, "/api/v1/settings/website/security", map[string]any{"contacts": []string{"mailto:sec@acme.fr"}, "expires": expires}); code != http.StatusNoContent {
+		t.Fatalf("put security = %d %s", code, body)
+	}
+	if code, body := anon.do(http.MethodGet, "/api/v1/public/security.txt", nil); code != http.StatusOK || !strings.Contains(string(body), "Contact: mailto:sec@acme.fr") {
+		t.Errorf("public security.txt = %d %s", code, body)
+	}
+
+	if code, body := c.do(http.MethodPut, "/api/v1/settings/website/robots", map[string]any{"extra": "Disallow: /private"}); code != http.StatusNoContent {
+		t.Fatalf("put robots = %d %s", code, body)
+	}
+	if code, body := anon.do(http.MethodGet, "/api/v1/public/robots.txt?host=localhost", nil); code != http.StatusOK || !strings.Contains(string(body), "Disallow: /private") {
+		t.Errorf("public robots.txt = %d %s", code, body)
+	}
+}
+
 func TestPublicEventSessions(t *testing.T) {
 	c := buildSiteApp(t)
 	anon := &client{t: t, h: c.h}

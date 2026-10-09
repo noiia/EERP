@@ -13,6 +13,9 @@ import { T, erpPath } from '@eerp/core-front'
 const PAGES = [
   { path: '/settings/website/published', title: 'Published data', description: 'Which tables and columns the public website may read.' },
   { path: '/settings/website/routing', title: 'Routing', description: 'Serve the website from a path or its own domain.' },
+  { path: '/settings/website/legal', title: 'Legal notice', description: 'The publisher and host details shown on the website and in the ERP.' },
+  { path: '/settings/website/security-txt', title: 'security.txt', description: 'How security researchers can reach you (RFC 9116).' },
+  { path: '/settings/website/robots-txt', title: 'robots.txt', description: 'What search engines may crawl.' },
   { path: '/settings/website/users', title: 'Website users', description: 'Visitor accounts registered on the website.' },
   { path: '/settings/website/outbox', title: 'Outgoing emails', description: 'Booking and account emails, their delivery status, and retries.' },
 ] as const

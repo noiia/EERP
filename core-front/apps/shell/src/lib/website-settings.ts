@@ -138,3 +138,88 @@ export async function retryOutbox(id: string): Promise<SaveResult> {
     return failure(e)
   }
 }
+
+export interface LegalNotice {
+  company_name: string
+  legal_form: string
+  share_capital: string
+  address: string
+  registration: string
+  vat_number: string
+  publication_director: string
+  contact_email: string
+  contact_phone: string
+  host_name: string
+  host_address: string
+  host_phone: string
+  extra_text: string
+}
+
+const EMPTY_LEGAL: LegalNotice = {
+  company_name: '', legal_form: '', share_capital: '', address: '', registration: '', vat_number: '',
+  publication_director: '', contact_email: '', contact_phone: '', host_name: '', host_address: '', host_phone: '', extra_text: '',
+}
+
+export async function getLegal(): Promise<LegalNotice> {
+  try {
+    return { ...EMPTY_LEGAL, ...(await apiRequest<Partial<LegalNotice>>('GET', '/settings/website/legal')) }
+  } catch {
+    return EMPTY_LEGAL
+  }
+}
+
+export async function saveLegal(l: LegalNotice): Promise<SaveResult> {
+  const res = await save('PUT', '/settings/website/legal', l)
+  // public-api.ts caches the site's copy under this tag (footer link + page).
+  if (res.ok) revalidateTag('site_legal', { expire: 0 })
+  return res
+}
+
+/** RFC 9116 security.txt fields. */
+export interface SecurityTxt {
+  contacts: string[]
+  expires: string
+  policy: string
+  acknowledgments: string
+  encryption: string
+  preferred_languages: string
+}
+
+export async function getSecurityTxt(): Promise<SecurityTxt> {
+  const empty: SecurityTxt = { contacts: [], expires: '', policy: '', acknowledgments: '', encryption: '', preferred_languages: '' }
+  try {
+    const s = await apiRequest<Partial<SecurityTxt>>('GET', '/settings/website/security')
+    return { ...empty, ...s, contacts: s.contacts ?? [] }
+  } catch {
+    return empty
+  }
+}
+
+export async function saveSecurityTxt(s: SecurityTxt): Promise<SaveResult> {
+  return save('PUT', '/settings/website/security', s)
+}
+
+export async function getRobotsExtra(): Promise<string> {
+  try {
+    return (await apiRequest<{ extra?: string }>('GET', '/settings/website/robots')).extra ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export async function saveRobotsExtra(extra: string): Promise<SaveResult> {
+  return save('PUT', '/settings/website/robots', { extra })
+}
+
+/** The file as the site serves it right now ('' when it isn't served), for the
+ * settings preview. Read from Go's public route, so it is the site tenant's copy. */
+export async function previewSiteFile(name: 'robots.txt' | 'security.txt'): Promise<string> {
+  const host = (await headers()).get('host') ?? ''
+  const q = name === 'robots.txt' ? `?host=${encodeURIComponent(host)}` : ''
+  try {
+    const res = await fetch(`${process.env.API_BASE}/api/v${process.env.API_VERSION ?? '1'}/public/${name}${q}`, { cache: 'no-store' })
+    return res.ok ? await res.text() : ''
+  } catch {
+    return ''
+  }
+}

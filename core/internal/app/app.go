@@ -365,6 +365,14 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	settingsGroup.PUT("/website/routing", routing.Put)
 	settingsGroup.GET("/website/public", publisher.GetPublished)
 	settingsGroup.PUT("/website/public/:table", publisher.PutPublished)
+	// Legal notice, security.txt and robots.txt (same settings:website:* permissions).
+	siteFiles := website.NewSiteFilesHandler(siteStore, siteTenant)
+	settingsGroup.GET("/website/legal", siteFiles.GetLegal)
+	settingsGroup.PUT("/website/legal", siteFiles.PutLegal)
+	settingsGroup.GET("/website/security", siteFiles.GetSecurity)
+	settingsGroup.PUT("/website/security", siteFiles.PutSecurity)
+	settingsGroup.GET("/website/robots", siteFiles.GetRobots)
+	settingsGroup.PUT("/website/robots", siteFiles.PutRobots)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new
@@ -738,6 +746,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
 			website.TenantMiddleware(siteTenant))
 		publicGroup.GET("/site", routing.PublicSite)
+		publicGroup.GET("/legal", siteFiles.PublicLegal)
+		publicGroup.GET("/security.txt", siteFiles.PublicSecurityTxt)
+		publicGroup.GET("/robots.txt", siteFiles.PublicRobotsTxt)
 		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
 		publicGroup.GET("/event/:id/slots", eventH.PublicSlots)
 		publicGroup.GET("/event/:id/calendar.ics", eventH.PublicCalendar)
@@ -811,6 +822,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	} else {
 		// No site tenant: the Next proxy still needs an answer.
 		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)
+		// Crawlers still need an answer: the default rules (no site settings to read).
+		srv.Echo().GET("/api/v1/public/robots.txt", siteFiles.PublicRobotsTxt)
 	}
 
 	// Website users administration (ADR-024): website_admin:users:read|write.

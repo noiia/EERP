@@ -24,7 +24,7 @@ var BlockTypes = map[string]bool{
 // ReservedSlugs are first path segments the site can never own.
 var ReservedSlugs = map[string]bool{
 	"app": true, "api": true, "print": true, "database": true, "login": true, "signup": true,
-	"account": true, "settings": true, "appstore": true, "force-password-change": true, "booking": true, "_next": true, "favicon.ico": true,
+	"account": true, "settings": true, "legal-notice": true, "appstore": true, "force-password-change": true, "booking": true, "_next": true, "favicon.ico": true,
 }
 
 // gridCols: 36 columns (3x finer than the original 12; Migrate scaled old layouts).
