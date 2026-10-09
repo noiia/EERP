@@ -53,7 +53,7 @@ not drawn), clustering many markers on a list map view, reverse geocoding.
 - Generic CRUD (`map[string]any`): a geo column is recognized by its registered Go type
   (`FieldMeta.GoType`). On read, `scanToMaps`' callers convert that column's text to a
   GeoJSON object; on write, a GeoJSON object in the body is validated and converted to EWKT.
-- Validation (400 `VALIDATION_ERROR`): GeoJSON parses; geometry kind allowed for the type
+- Validation (422 `VALIDATION_ERROR`, the generic CRUD's existing validation status, with the field in `fields`): GeoJSON parses; geometry kind allowed for the type
   (Point for `GeoPoint`; Polygon/MultiPolygon/LineString for `GeoShape`); lon ∈ [-180, 180],
   lat ∈ [-90, 90]; polygon rings closed with ≥ 4 positions; ≤ 10 000 positions total.
 - Conversions use `github.com/twpayne/go-geom` (`encoding/ewkbhex`, `encoding/wkt`,
@@ -80,14 +80,15 @@ not drawn), clustering many markers on a list map view, reverse geocoding.
   for the caller's roles (lazy, memoized per request) — mirroring `WithGroups`, so
   `core/orm` never imports `auth`. The referenced table must be registered, readable by the
   caller, the record in the caller's tenant and not soft-deleted, and the shape column not
-  gated for the caller. Any failure → 404 (existence is not leaked).
+  gated for the caller; any of these failing → 404. A record that doesn't exist or belongs to
+  another tenant simply matches nothing (the subquery yields NULL) — existence is not leaked.
 - The Redis read cache keys on SQL + args: geo queries cache with no change.
 - `?distinct=` and `?aggregate=` ignore `near` (they don't page/order); filters still apply.
 
 ### Distance between two records
 - `GET /api/v1/geo/distance?from=<table>:<id>:<col>&to=<table>:<id>:<col>` → `{"meters": n}`
-  or `{"meters": null}` when either side is empty. `internal/geo` package; route permission
-  derived as `geo:geo:read`; both references resolved with the same checks as `inside`.
+  or `{"meters": null}` when either side is empty (or the record is missing). `internal/geo`
+  package; route permission derived as `geo:distance:read`; both references resolved with the same checks as `inside`.
 - `ST_Distance(a, b)` on geography: point–point, point–zone (0 when inside, else distance to
   the zone's boundary), zone–zone.
 
@@ -113,24 +114,25 @@ not drawn), clustering many markers on a list map view, reverse geocoding.
   is disabled.
 - **`shape`** — same map with a minimal polygon editor: click adds a vertex, drag moves one,
   a vertex's popup removes it, "Clear". Stored LineStrings render read-only.
-- Read-only forms render a static map (no interaction). Value in the draft is the GeoJSON
+- Read-only forms render a static map (no interaction). The marker is a `divIcon` (no image
+  assets to bundle); Leaflet's CSS is imported once by the shell's root layout. Value in the draft is the GeoJSON
   object, `null` when empty.
 - CSP unchanged: Leaflet's CSS is bundled, tiles load under `img-src https:`.
 
 ### Field type `distance` (computed, `store: false`)
 - Widget `meters`. Options:
-  `{from: {relation?: '<many2one field>', field: '<geo field>'}, to: {relation?, field}}` —
-  each side is a geo field of this record, or of the record a many2one points at.
+  `{from: {entity: '<table>', id?: '<draft field holding the id>', field: '<geo column>'}, to: {…}}`
+  — `id` omitted = this record. Explicit `entity` because a widget only sees its own field.
 - Fetches the BFF route `/api/geo/distance` (→ Go `/api/v1/geo/distance`) whenever the
   resolved references change; renders `12.4 km`, or miles when the workspace unit system
   (`units.system`) is imperial; "—" when either side is empty.
 
 ### List search bar
 Shown only for entities with a geo field (from the descriptor):
-- **Near** — center: an address (Nominatim), "my location" (browser), or a record of an entity
-  with a point; optional radius → `near` + `within`; the list gains a "Distance" column
+- **Near** — center: an address (Nominatim) or "my location" (browser); optional radius → `near` + `within`; the list gains a "Distance" column
   (`_distance_m`, formatted like the distance widget).
-- **Inside zone of** — pick a record of an entity with a shape field → `inside`.
+- **Inside zone of** — pick a record of a zone entity declared on the point field
+  (`widgetOptions.zones: [{entity, field, label}]`) → `inside`.
 - Both are ordinary filter chips: removable, and stored in saved filters' config.
 
 ### Website
@@ -142,7 +144,7 @@ Shown only for entities with a geo field (from the descriptor):
 
 | Entity | Fields | UI |
 |---|---|---|
-| company (`internal/company`) | `geo_location` point, `service_zone` shape | point "Locate from address"; a "Contacts in this zone" link → contact list with `inside` |
+| company (`internal/company`) | `geo_location` point, `service_zone` shape | point "Locate from address"; a read-only "Contacts in this zone" list (a one2many relation with `inside: {field, zone}` instead of `inverseField`) |
 | contact | `geo_location` point | point widget (search box; contact has no address) |
 | event | `geo_location` point (beside free-text `location`) | point widget |
 | property (`propertymanagement`) | `geo_location` point, `parcel` shape | point "Locate from address" |
