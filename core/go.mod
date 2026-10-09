@@ -1,6 +1,6 @@
 module core
 
-go 1.26
+go 1.26.3
 
 require (
 	github.com/bytecodealliance/wasmtime-go/v15 v15.0.0
@@ -14,11 +14,12 @@ require (
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/nats-io/nats-server/v2 v2.14.4
 	github.com/nats-io/nats.go v1.52.0
+	github.com/redis/go-redis/v9 v9.22.0
 	github.com/rogpeppe/go-internal v1.15.0
+	github.com/twpayne/go-geom v1.7.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
-	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -42,7 +43,6 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/redis/go-redis/v9 v9.22.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
@@ -52,5 +52,6 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	gopkg.in/ini.v1 v1.67.2 // indirect
 )

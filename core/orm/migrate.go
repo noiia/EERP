@@ -1,9 +1,11 @@
 package orm
 
 import (
+	"fmt"
 	"reflect"
 	"time"
 
+	"core/orm/geo"
 	"core/orm/internal/registry"
 
 	"github.com/google/uuid"
@@ -107,6 +109,10 @@ func reflectTypeToSQL(t reflect.Type) string {
 		return "UUID"
 	case reflect.TypeOf(time.Time{}):
 		return "TIMESTAMPTZ"
+	case reflect.TypeOf(geo.Point{}):
+		return fmt.Sprintf("geography(Point,%d)", geo.SRID)
+	case reflect.TypeOf(geo.Shape{}):
+		return fmt.Sprintf("geography(Geometry,%d)", geo.SRID)
 	}
 	switch t.Kind() {
 	case reflect.String:

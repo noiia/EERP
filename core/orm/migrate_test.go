@@ -82,3 +82,31 @@ func TestMigrationFieldsForTable_ExtendedColumns(t *testing.T) {
 		t.Errorf("columns missing from migration: %v", want)
 	}
 }
+
+type geoFixture struct {
+	model.BaseModel
+	Where *orm.GeoPoint `db:"where_at,index=gist"`
+	Zone  *orm.GeoShape `db:"zone"`
+}
+
+func TestMigrationFieldsForTable_GeoColumns(t *testing.T) {
+	if err := orm.Register[geoFixture](); err != nil {
+		t.Fatal(err)
+	}
+	fields, _ := orm.MigrationFieldsForTable("geo_fixture")
+	want := map[string]string{"where_at": "geography(Point,4326)", "zone": "geography(Geometry,4326)"}
+	for _, f := range fields {
+		if sqlType, ok := want[f.Column]; ok {
+			delete(want, f.Column)
+			if f.SQLType != sqlType || !f.Nullable {
+				t.Errorf("%s = %q nullable=%v, want %q nullable", f.Column, f.SQLType, f.Nullable, sqlType)
+			}
+			if f.Column == "where_at" && (!f.Index || f.IndexType != "gist") {
+				t.Errorf("where_at index = %v %q, want gist", f.Index, f.IndexType)
+			}
+		}
+	}
+	if len(want) > 0 {
+		t.Errorf("missing: %v", want)
+	}
+}

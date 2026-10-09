@@ -45,6 +45,7 @@ package orm
 
 import (
 	"context"
+	"core/orm/geo"
 	"core/orm/qcache"
 
 	"core/orm/internal/cache"
@@ -58,6 +59,14 @@ import (
 	"core/orm/repo"
 
 	"github.com/jackc/pgx/v5"
+)
+
+// GeoPoint and GeoShape are the geographic column types (ADR-029): a
+// geography(Point,4326) and a geography(Geometry,4326) column, GeoJSON on the
+// wire. Declare them as pointers: `Location *orm.GeoPoint `+"`"+`db:"geo_location,index=gist"`+"`"+`.
+type (
+	GeoPoint = geo.Point
+	GeoShape = geo.Shape
 )
 
 // ── Sentinel errors ───────────────────────────────────────────────────────────
