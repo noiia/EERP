@@ -1,9 +1,10 @@
 'use client'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { DataGrid, type GridColDef } from '@mui/x-data-grid'
 import type { Tile } from '../api/graph'
@@ -124,6 +125,17 @@ const AGGREGATE_LABELS: Record<FullAggregate, string> = {
  * roadmap's Phase 5 contract). `total` may be undefined ("unknown"), which
  * is treated the same as "possibly partial", not "definitely complete".
  */
+/** Instant hover pop-up on one chart mark (point, bar or slice). Replaces the native
+ * SVG <title>, which shows only after ~1 s and is easy to miss on a small point. A
+ * string title also becomes the mark's aria-label. */
+function ChartTip({ title, children }: { title: string; children: ReactElement }) {
+  return (
+    <Tooltip title={title} followCursor disableInteractive enterDelay={0} leaveDelay={0}>
+      {children}
+    </Tooltip>
+  )
+}
+
 function PartialDataBadge({ shown, total }: { shown: number; total: number | undefined }) {
   const t = useT()
   if (total == null || total <= shown) return null
@@ -324,9 +336,16 @@ function XyChart({
                 <g key={s.label || seriesIndex}>
                   <path d={smoothPath(coords)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" />
                   {coords.map((c) => (
-                    <circle key={c.point.bucket} cx={c.x} cy={c.y} r={3.5} fill={color}>
-                      <title>{`${s.label ? `${s.label} — ` : ''}${c.point.bucket}: ${format(c.point.value)}`}</title>
-                    </circle>
+                    <ChartTip
+                      key={c.point.bucket}
+                      title={`${s.label ? `${s.label} — ` : ''}${formatBucketLabel(c.point.bucket, bucket, locale)}: ${format(c.point.value)}`}
+                    >
+                      {/* A wider transparent hit area around the small visible point. */}
+                      <Box component="g" sx={{ cursor: 'pointer', '&:hover .graph-point': { r: 5.5 } }}>
+                        <circle cx={c.x} cy={c.y} r={10} fill="transparent" />
+                        <circle className="graph-point" cx={c.x} cy={c.y} r={3.5} fill={color} />
+                      </Box>
+                    </ChartTip>
                   ))}
                 </g>
               )
@@ -469,16 +488,19 @@ function BarChart({
                       if (v === 0) return null
                       const color = colorFor(seriesIndex, palette.categorical)
                       return (
-                        <rect
+                        <ChartTip
                           key={series[seriesIndex]!.label || seriesIndex}
-                          x={xForGroup(bucketIndex)}
-                          y={yTop}
-                          width={barWidth}
-                          height={Math.max(0, yBottom - yTop)}
-                          fill={color}
+                          title={`${series[seriesIndex]!.label ? `${series[seriesIndex]!.label} — ` : ''}${formatBucketLabel(bucketKeyValue, bucket, locale)}: ${format(v)}`}
                         >
-                          <title>{`${series[seriesIndex]!.label ? `${series[seriesIndex]!.label} — ` : ''}${bucketKeyValue}: ${format(v)}`}</title>
-                        </rect>
+                          <rect
+                            x={xForGroup(bucketIndex)}
+                            y={yTop}
+                            width={barWidth}
+                            height={Math.max(0, yBottom - yTop)}
+                            fill={color}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </ChartTip>
                       )
                     })}
                   </g>
@@ -492,16 +514,19 @@ function BarChart({
                     const y = yForValue(v)
                     const color = colorFor(seriesIndex, palette.categorical)
                     return (
-                      <rect
+                      <ChartTip
                         key={series[seriesIndex]!.label || seriesIndex}
-                        x={x}
-                        y={y}
-                        width={barWidth}
-                        height={Math.max(0, innerH - (y - AXIS_PADDING.top))}
-                        fill={color}
+                        title={`${series[seriesIndex]!.label ? `${series[seriesIndex]!.label} — ` : ''}${formatBucketLabel(bucketKeyValue, bucket, locale)}: ${format(v)}`}
                       >
-                        <title>{`${series[seriesIndex]!.label ? `${series[seriesIndex]!.label} — ` : ''}${bucketKeyValue}: ${format(v)}`}</title>
-                      </rect>
+                        <rect
+                          x={x}
+                          y={y}
+                          width={barWidth}
+                          height={Math.max(0, innerH - (y - AXIS_PADDING.top))}
+                          fill={color}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </ChartTip>
                     )
                   })}
                 </g>
@@ -672,19 +697,22 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
                 const color =
                   slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical)
                 return (
-                  <circle
+                  <ChartTip
                     key={slice.label}
-                    cx={size / 2}
-                    cy={size / 2}
-                    r={radius}
-                    fill="none"
-                    stroke={color}
-                    strokeWidth={strokeWidth}
-                    strokeDasharray={`${length} ${circumference - length}`}
-                    strokeDashoffset={dashoffset}
+                    title={`${slice.label === OTHER_LABEL ? t('Other') : slice.label}: ${format(slice.displayValue)}`}
                   >
-                    <title>{`${slice.label === OTHER_LABEL ? t('Other') : slice.label}: ${format(slice.displayValue)}`}</title>
-                  </circle>
+                    <circle
+                      cx={size / 2}
+                      cy={size / 2}
+                      r={radius}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={`${length} ${circumference - length}`}
+                      strokeDashoffset={dashoffset}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </ChartTip>
                 )
               })}
             </g>

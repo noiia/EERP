@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { GraphWidgetBody } from './graph-widgets'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import type { Tile } from '../api/graph'
@@ -124,7 +124,24 @@ describe('GraphWidgetBody: xy', () => {
       />,
     )
     const chart = screen.getByRole('img', { name: 'Line chart' })
-    expect(chart.querySelectorAll('circle')).toHaveLength(2) // Jan + Feb buckets
+    expect(chart.querySelectorAll('.graph-point')).toHaveLength(2) // Jan + Feb buckets
+  })
+
+  it('pops up a point\'s bucket and value on hover', async () => {
+    render(
+      <GraphWidgetBody
+        tile={tile({
+          type: 'xy',
+          config: { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' },
+        })}
+        descriptor={descriptor}
+        records={records}
+        recordTotal={3}
+      />,
+    )
+    const point = screen.getByRole('img', { name: 'Line chart' }).querySelector('.graph-point')!
+    fireEvent.mouseOver(point.parentElement!)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/150\.0/) // Jan: 100 + 50
   })
 
   it('shows a placeholder with no data points', () => {
@@ -337,8 +354,8 @@ describe('GraphWidgetBody: pie', () => {
     const lengths = circles.map((c) => Number(c.getAttribute('stroke-dasharray')!.split(' ')[0]))
     // 'open' (count 2) sorts/sizes first; its arc is exactly twice 'won's (count 1).
     expect(lengths[0]! / lengths[1]!).toBeCloseTo(2, 5)
-    expect(circles[0]!.querySelector('title')?.textContent).toBe('open: 150.0')
-    expect(circles[1]!.querySelector('title')?.textContent).toBe('won: 200.0')
+    expect(circles[0]).toHaveAttribute('aria-label', 'open: 150.0')
+    expect(circles[1]).toHaveAttribute('aria-label', 'won: 200.0')
   })
 })
 
