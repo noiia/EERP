@@ -991,8 +991,12 @@ func TestPublicUpcomingEvents(t *testing.T) {
 	store := settings.NewRepository(c.a.db.DB)
 	oldSel, _, _ := store.Get(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"))
 	t.Cleanup(func() { _ = store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"), oldSel) })
+	// The site tenant is the shared dev tenant, which may already hold hundreds
+	// of published events (dev seed) that fill the limit before ours: a forced
+	// filter on a per-run marker scopes the endpoint to this test's events.
+	marker := "upcoming-test-" + uuid.NewString()
 	if err := store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"),
-		`{"fields":["name","kind","location","timezone","picture"]}`); err != nil {
+		`{"fields":["name","kind","location","timezone","picture"],"filter":{"description":"`+marker+`"}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1006,7 +1010,7 @@ func TestPublicUpcomingEvents(t *testing.T) {
 	newEvent := func(body map[string]any, sessionIn time.Duration) string {
 		t.Helper()
 		body["name"] = "up-" + uuid.NewString()[:8]
-		body["description"] = "secret"
+		body["description"] = marker // unpublished column: must never leak
 		code, resp := c.do(http.MethodPost, "/api/v1/event", body)
 		if code != http.StatusCreated && code != http.StatusOK {
 			t.Fatalf("create event: %d %s", code, resp)

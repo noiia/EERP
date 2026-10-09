@@ -1,3 +1,7 @@
+// @vitest-environment node
+// Route handlers are server code: under jsdom, FormData/Blob are jsdom's while
+// Request is Node's (undici), which never finishes streaming a jsdom Blob — a
+// multipart request.formData() then hangs until the test times out.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@eerp/core-front/server'
 
