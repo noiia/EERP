@@ -237,3 +237,7 @@ var (
 	ErrGeoParam = crud.ErrGeoParam
 	ErrGeoRef   = crud.ErrGeoRef
 )
+
+// SetTableActiveCheck wires the live module state (module.Registry.IsTableActive)
+// at boot so geo references to a deactivated module's table are refused.
+func SetTableActiveCheck(fn func(table string) bool) { crud.SetTableActiveCheck(fn) }

@@ -354,6 +354,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// Online payment (internal/payment, ADR-028): a provider counts only while
 	// its module is active; Stripe's keys are edited here (settings:integrations:*).
 	payment.SetActiveCheck(moduleRuntime.IsActive)
+	orm.SetTableActiveCheck(moduleRuntime.IsTableActive)
 	stripe := paymentstripe.Use(settings.NewRepository(app.DB))
 	settingsGroup.GET("/integrations/stripe", stripe.GetSettings(moduleRuntime.IsActive))
 	settingsGroup.PUT("/integrations/stripe", stripe.PutSettings)

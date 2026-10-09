@@ -1191,3 +1191,18 @@ func (r *countRow) Scan(dest ...any) error {
 	*(dest[0].(*int64)) = r.n
 	return nil
 }
+
+func TestCondition_Rebase_TwoDigitPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	b := query.Select[order](mustMeta[order](t))
+	for i := 0; i < 9; i++ {
+		b = b.Where(query.NewCondition("status = $1", "x"))
+	}
+	sql, args := b.Where(query.NewCondition("a = $1 AND b = $2", 1, 2)).ToSQL()
+
+	assertContains(t, sql, "a = $10 AND b = $11")
+	if len(args) != 11 {
+		t.Errorf("args = %v", args)
+	}
+}

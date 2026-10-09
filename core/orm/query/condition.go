@@ -9,8 +9,12 @@ package query
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
+
+var placeholderRE = regexp.MustCompile(`\$(\d+)`)
 
 // Condition represents a single WHERE predicate with its bound arguments.
 // The SQL fragment must use $N placeholders starting at the offset the builder
@@ -38,13 +42,15 @@ func (c Condition) rebase(offset int) (string, []any) {
 	if len(c.args) == 0 {
 		return c.sql, nil
 	}
-	sql := c.sql
-	// Walk backwards so "$10" isn't partially rewritten before "$1".
-	for i := len(c.args); i >= 1; i-- {
-		old := fmt.Sprintf("$%d", i)
-		new := fmt.Sprintf("$%d", offset+i-1)
-		sql = strings.ReplaceAll(sql, old, new)
-	}
+	// Single pass: sequential ReplaceAll would corrupt "$11" (from "$2") when
+	// "$1" is rewritten next.
+	sql := placeholderRE.ReplaceAllStringFunc(c.sql, func(m string) string {
+		n, _ := strconv.Atoi(m[1:])
+		if n < 1 || n > len(c.args) {
+			return m
+		}
+		return fmt.Sprintf("$%d", offset+n-1)
+	})
 	return sql, c.args
 }
 

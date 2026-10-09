@@ -118,6 +118,12 @@ func (r *Repository) nearClause(ctx context.Context, f GeoFilter) (selectExpr, o
 	return "", "", nil
 }
 
+var tableActive func(table string) bool
+
+// SetTableActiveCheck wires the live module state so a reference to a table of
+// a deactivated module is refused like an unreadable one. nil = all active.
+func SetTableActiveCheck(fn func(table string) bool) { tableActive = fn }
+
 // resolveGeoRef turns "table:id:column" into a scalar subquery selecting that
 // record's geography value, after the same checks a list read of that table
 // would make: registered and on the CRUD surface, readable by the caller
@@ -139,7 +145,7 @@ func resolveGeoRef(ctx context.Context, ref string, want geo.Kind, argOffset int
 		return "", nil, fmt.Errorf("%w: references are not available publicly", ErrGeoParam)
 	}
 	meta, ok := registry.Get(table)
-	if !ok || meta.Excluded || !access.CanRead(ctx, table) {
+	if !ok || meta.Excluded || !access.CanRead(ctx, table) || (tableActive != nil && !tableActive(table)) {
 		return "", nil, ErrGeoRef
 	}
 	fm, ok := meta.FieldByColumn(col)
