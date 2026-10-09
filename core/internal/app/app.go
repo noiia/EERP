@@ -280,7 +280,11 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		Addr:         fmt.Sprintf("%s:%d", configContent.PublicAddress, configContent.BackendPort),
 		AllowOrigins: configContent.AllowedOrigins,
 		BodyLimit:    configContent.RequestBodyLimit,
+		// File uploads get their own, larger cap (uploadLimit below) instead of
+		// raising request_body_limit for every JSON route.
+		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments"},
 	}
+	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {
 		common.Logger.Warn("⚠️  allowed_origins not set — CORS defaults to \"*\"; set it to the frontend origin(s) in production")
 	}
@@ -419,7 +423,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			return c.Stream(http.StatusOK, ctype, body)
 		}
 		picturesHandler := pictures.NewHandler(picRepo, objects)
-		picturesGroup := srv.Echo().Group("/api/v1/pictures", jwtMw, permMw)
+		picturesGroup := srv.Echo().Group("/api/v1/pictures", uploadLimit, jwtMw, permMw)
 		picturesGroup.POST("", picturesHandler.Upload)
 		picturesGroup.GET("", picturesHandler.Find)
 		picturesGroup.GET("/:id", picturesHandler.Get)
@@ -442,7 +446,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			return fmt.Errorf("Error building S3 object store for attachments: %w", err)
 		}
 		attachmentsHandler := attachments.NewHandler(attachments.NewRepository(app.DB), attachmentObjects)
-		attachmentsGroup := srv.Echo().Group("/api/v1/attachments", jwtMw, permMw)
+		attachmentsGroup := srv.Echo().Group("/api/v1/attachments", uploadLimit, jwtMw, permMw)
 		attachmentsGroup.POST("", attachmentsHandler.Upload)
 		attachmentsGroup.GET("", attachmentsHandler.Find)
 		attachmentsGroup.GET("/:id", attachmentsHandler.Get)

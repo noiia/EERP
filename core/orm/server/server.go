@@ -27,6 +27,10 @@ type Config struct {
 	AllowOrigins []string
 	// BodyLimit caps request body size (e.g. "1M"). Empty defaults to "1M".
 	BodyLimit string
+	// BodyLimitExempt lists path prefixes the global BodyLimit skips (a prefix
+	// matches itself and anything under "<prefix>/"). Such routes must apply
+	// their own cap with BodyLimit(size) — e.g. file uploads.
+	BodyLimitExempt []string
 }
 
 // Server wraps an Echo instance and the App.
@@ -86,7 +90,10 @@ func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	e.Use(middleware.Recover())
 
 	// Cap request bodies to bound memory use / basic DoS. Default 1M.
-	e.Use(middleware.BodyLimit(parseByteSize(cfg.BodyLimit)))
+	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
+		LimitBytes: parseByteSize(cfg.BodyLimit),
+		Skipper:    func(c *echo.Context) bool { return pathUnder(c.Request().URL.Path, cfg.BodyLimitExempt) },
+	}))
 
 	// CORS: restrict to configured origins; fall back to "*" only when unset (dev).
 	allowOrigins := cfg.AllowOrigins
@@ -109,6 +116,22 @@ func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	}
 
 	return e
+}
+
+// BodyLimit caps a route group's request bodies at size ("20M", "512K"; empty
+// or unparsable = 1M) — for routes exempted from the server-wide limit through
+// Config.BodyLimitExempt.
+func BodyLimit(size string) echo.MiddlewareFunc {
+	return middleware.BodyLimit(parseByteSize(size))
+}
+
+func pathUnder(path string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // AuthRateLimiter returns an in-memory, per-IP rate limiter for the public auth

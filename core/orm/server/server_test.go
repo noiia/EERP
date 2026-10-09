@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -351,6 +352,35 @@ func TestBodyLimit_ParsesConfigSize(t *testing.T) {
 			e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/p", strings.NewReader(strings.Repeat("x", tc.size))))
 			if rec.Code != tc.want {
 				t.Fatalf("limit %q, %d bytes: status %d, want %d", tc.limit, tc.size, rec.Code, tc.want)
+			}
+		})
+	}
+}
+
+// An exempt prefix skips the global cap and is bounded by its own BodyLimit;
+// a look-alike path ("/up-x") and everything else keep the global cap.
+func TestBodyLimit_ExemptPrefixUsesOwnLimit(t *testing.T) {
+	e := ormserver.New(nil, ormserver.Config{BodyLimit: "1K", BodyLimitExempt: []string{"/up"}}).Echo()
+	ok := func(c *echo.Context) error { return c.NoContent(http.StatusOK) }
+	e.Group("/up", ormserver.BodyLimit("4K")).POST("/file", ok)
+	e.POST("/up-x", ok)
+	e.POST("/json", ok)
+	for _, tc := range []struct {
+		path string
+		size int
+		want int
+	}{
+		{"/up/file", 2048, http.StatusOK},
+		{"/up/file", 4097, http.StatusRequestEntityTooLarge},
+		{"/up-x", 2048, http.StatusRequestEntityTooLarge},
+		{"/json", 2048, http.StatusRequestEntityTooLarge},
+		{"/json", 1024, http.StatusOK},
+	} {
+		t.Run(fmt.Sprintf("%s/%d", tc.path, tc.size), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(strings.Repeat("x", tc.size))))
+			if rec.Code != tc.want {
+				t.Fatalf("status %d, want %d", rec.Code, tc.want)
 			}
 		})
 	}

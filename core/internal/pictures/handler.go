@@ -19,7 +19,8 @@ import (
 // Handler serves the dedicated picture endpoints. Mounted behind jwtMw + permMw:
 // the permission middleware derives pictures:pictures:read|write from the route,
 // and every query is pinned to the caller's tenant. Uploads are multipart and
-// bounded by the server-wide request body limit (request_body_limit).
+// bounded by the upload route limit (upload_body_limit, default 20M), not the
+// server-wide request_body_limit this route is exempt from.
 //
 // The service invariant is ONE picture per (table, record, field) anchor — the
 // picture-backed boolean contract (field true ⇔ picture exists) needs exactly

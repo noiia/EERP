@@ -213,6 +213,8 @@ flowchart LR
     Browser -->|"HTTPS :443"| Gateway["api-gateway (nginx)"]
     Gateway -->|"/ (everything else)"| Front["core-front (Next.js :3000)"]
     Gateway -->|"/api/v1/*, /health"| Back["core-back (Go :8080)"]
+**Request body limits:** `request_body_limit` (default `1M`) caps every request body; the file upload routes `/api/v1/pictures` and `/api/v1/attachments` are exempt (`ormserver.Config.BodyLimitExempt`) and capped by `upload_body_limit` instead (default `20M`, applied per group with `ormserver.BodyLimit`), so raising the upload size never loosens the JSON routes. A body over its limit gets Echo's `413 Request Entity Too Large`. The other hops: nginx allows 50 MB (`client_max_body_size`), and `core-front`'s `proxy.ts` skips the upload BFF routes, since Next buffers proxied bodies only up to 10 MB. Pitfall: a new upload route must be added to `BodyLimitExempt` and given `uploadLimit`, or it stays at 1 MB.
+
     Front -->|"BFF: server-side fetch"| Back
     Back --> DB[("PostgreSQL")]
     Back --> Garage[("Garage / S3")]

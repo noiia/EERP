@@ -23,8 +23,8 @@ import (
 // images. Mounted behind jwtMw + permMw: the permission middleware derives
 // attachments:attachments:read|write from the route, and every query is
 // pinned to the caller's tenant. Uploads are multipart and bounded by the
-// server-wide request body limit (request_body_limit) — no extra size cap
-// here, same as pictures.
+// upload route limit (upload_body_limit, default 20M — this route is exempt
+// from request_body_limit) — no extra size cap here, same as pictures.
 //
 // The service invariant is ONE attachment per (table, record, field) anchor
 // — the file-backed boolean contract (field true ⇔ attachment exists) needs

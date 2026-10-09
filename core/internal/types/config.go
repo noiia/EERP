@@ -109,6 +109,9 @@ type Config struct {
 	AllowedOrigins []string `json:"allowed_origins" needed:"false"`
 	// RequestBodyLimit caps request body size (e.g. "1M", "512K"). Defaults to "1M".
 	RequestBodyLimit string `json:"request_body_limit" needed:"false"`
+	// UploadBodyLimit caps the file upload routes (/api/v1/pictures,
+	// /api/v1/attachments), which are exempt from RequestBodyLimit. Defaults to "20M".
+	UploadBodyLimit string `json:"upload_body_limit" needed:"false"`
 	// AuthRateLimitPerMinute throttles the public auth endpoints per client IP to
 	// blunt credential brute-forcing. Defaults to 20/min when unset.
 	AuthRateLimitPerMinute int `json:"auth_rate_limit_per_minute" needed:"false"`
@@ -200,4 +203,12 @@ func (c Config) BackendBaseURL() string {
 		version = "v1"
 	}
 	return host + "/api/" + version
+}
+
+// UploadBodyLimitOrDefault is UploadBodyLimit, or "20M" when unset.
+func (c Config) UploadBodyLimitOrDefault() string {
+	if c.UploadBodyLimit == "" {
+		return "20M"
+	}
+	return c.UploadBodyLimit
 }
