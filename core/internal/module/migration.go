@@ -256,6 +256,21 @@ func withSchemaLock(ctx context.Context, db *orm.DB, fn func() error) error {
 	return fn()
 }
 
+// ensureExtensions installs the Postgres extensions the ORM's column types
+// need — today PostGIS, for orm.GeoPoint/orm.GeoShape geography columns.
+// Idempotent, and run under the schema lock by every DDL entry point (boot,
+// EnsureSchema, MigrateModules), so a database created before geo fields
+// existed — or a brand-new one from internal/dbmanage — gets it before its
+// first geography column. Needs a role allowed to create extensions (the
+// compose `postgres` superuser); on a managed database, have an admin run
+// CREATE EXTENSION postgis once.
+func ensureExtensions(ctx context.Context, db orm.Executor) error {
+	if _, err := db.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS postgis`); err != nil {
+		return fmt.Errorf("create extension postgis: %w", err)
+	}
+	return nil
+}
+
 // EnsureSchema creates/extends each registered table to match its struct
 // (BaseModel columns, fields, indexes) — the same idempotent DDL the module
 // loader runs at boot, exposed for callers that need a table without booting
@@ -265,6 +280,9 @@ func EnsureSchema(ctx context.Context, db *orm.DB, tables ...string) error {
 }
 
 func ensureSchema(ctx context.Context, db orm.Executor, tables ...string) error {
+	if err := ensureExtensions(ctx, db); err != nil {
+		return err
+	}
 	for _, table := range tables {
 		fields, ok := orm.MigrationFieldsForTable(table)
 		if !ok {

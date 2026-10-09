@@ -27,6 +27,9 @@
 # Usage: docker compose -f compose.yml -f compose.prod.yml up -d
 services:
   db:
+    # The image is postgis/postgis:18-3.6 (inherited from compose.yml): Postgres 18
+    # plus PostGIS, same data directory format, so the existing volume is reused —
+    # pull and recreate the container; core-back creates the extension at boot.
     ports: !reset []
     # compose.yml's named `pgdata` volume is NOT applied here yet: a production
     # database already lives in the postgres image's anonymous volume, and

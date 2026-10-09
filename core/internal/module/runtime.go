@@ -115,6 +115,9 @@ func (r *Registry) boot(ctx context.Context, onProgress func(done, total int)) (
 }
 
 func (r *Registry) bootLocked(ctx context.Context, onProgress func(done, total int)) []error {
+	if err := ensureExtensions(ctx, r.db); err != nil {
+		return []error{err}
+	}
 	if err := bootstrapMigrationsTable(ctx, r.db); err != nil {
 		return []error{fmt.Errorf("bootstrap module_migrations: %w", err)}
 	}
