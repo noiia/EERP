@@ -1224,12 +1224,15 @@ interface RelationListPreviewRowConfig {
 
 const PREVIEW_ROW_ID = '__preview__'
 
-export function RelationListWidget({ field, disabled, recordId, draft }: WidgetProps) {
+export function RelationListWidget({ field, disabled, entity, recordId, draft }: WidgetProps) {
   const t = useT()
   const router = useRouter()
   const ops = useRelationOps()
   const rel = relationOf(field)
-  const inverseField = rel.inverseField as string // registration validated presence
+  // A zone relation (`rel.inside`) has no inverse FK: rows are matched by
+  // containment in this record's shape, so it is read-only and not creatable.
+  const inverseField = rel.inverseField ?? null
+  const insideRef = rel.inside && entity && recordId ? `${entity}:${recordId}:${rel.inside.zone}` : null
   const labelField = rel.labelField ?? 'name'
   const [rows, setRows] = useState<RelationRecord[]>([])
   const [createOpen, setCreateOpen] = useState(false)
@@ -1326,7 +1329,12 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
-    const options = { filter: { [inverseField]: recordId }, pageSize: EMBED_PAGE_SIZE }
+    const options = rel.inside
+      ? insideRef
+        ? { inside: { [rel.inside.field]: insideRef }, pageSize: EMBED_PAGE_SIZE }
+        : null
+      : { filter: { [inverseField as string]: recordId }, pageSize: EMBED_PAGE_SIZE }
+    if (!options) return
     const load = ops.listPage
       ? ops.listPage(rel.entity, options)
       : ops.list(rel.entity, options).then((records) => ({ records, total: null }))
@@ -1342,7 +1350,7 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, inverseField, recordId, refreshSignal, reverse])
+  }, [ops, rel.entity, rel.inside, insideRef, inverseField, recordId, refreshSignal, reverse])
 
   useEffect(() => {
     if (!ops || !expandField || rows.length === 0) {
@@ -1395,7 +1403,7 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
   const displayRows = previewRow ? [previewRow, ...literalRows] : literalRows
   const columns = explicitColumns
     ? explicitRelationColumns(explicitColumns, labelField, t)
-    : relatedColumns(displayRows, labelField, t, [inverseField])
+    : relatedColumns(displayRows, labelField, t, inverseField ? [inverseField] : [])
 
   return (
     <Box>
@@ -1444,6 +1452,8 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
           {EMBED_PAGE_SIZE} / {rowTotal} {t('shown')}
         </Typography>
       ) : null}
+      {inverseField ? (
+        <>
       {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
           rather than relying on the Button default staying primary. */}
       <Button
@@ -1469,7 +1479,7 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
           targetField={multiCreate.field}
           groupByModule={multiCreate.groupByModule === true}
           ops={ops}
-          preset={{ [inverseField]: recordId }}
+          preset={{ [inverseField as string]: recordId }}
           excludeIds={rows.map((r) => r[multiCreate.field])}
           onClose={() => setCreateOpen(false)}
           onCreated={(records) => setRows((prev) => [...prev, ...records])}
@@ -1480,11 +1490,13 @@ export function RelationListWidget({ field, disabled, recordId, draft }: WidgetP
           rel={rel}
           ops={ops}
           // The context decides the link: preset the inverse FK, never ask for it.
-          preset={{ [inverseField]: recordId }}
-          hidden={[inverseField]}
+          preset={{ [inverseField as string]: recordId }}
+          hidden={[inverseField as string]}
           onClose={() => setCreateOpen(false)}
           onCreated={(record) => setRows((prev) => [...prev, record])}
         />
+      ) : null}
+        </>
       ) : null}
     </Box>
   )

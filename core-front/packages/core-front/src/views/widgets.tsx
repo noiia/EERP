@@ -19,6 +19,7 @@ import { HtmlEditor } from './html-editor'
 import { useT } from '../i18n/translate'
 import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
 import { AddressWidget } from './address-widget'
+import { DistanceWidget } from './distance-widget'
 import { GeoPointWidget, GeoShapeWidget } from './geo-widgets'
 import { RelationCarouselWidget } from './carousel-widget'
 import { RelationSummaryWidget } from './relation-summary-widget'
@@ -772,6 +773,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'relation/summary': RelationSummaryWidget,
   'totals/recap': TaxTotalsWidget,
   'address/form': AddressWidget,
+  'distance/meters': DistanceWidget,
   'geo/point': GeoPointWidget,
   'geo/shape': GeoShapeWidget,
 }

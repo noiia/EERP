@@ -1184,3 +1184,24 @@ describe('totals/recap', () => {
     }
   })
 })
+
+describe('relation/list by zone (inside)', () => {
+  it('lists rows inside the record zone for an inside relation', async () => {
+    const list = vi.fn(async (_entity: string, _options?: unknown) => [] as RelationRecord[])
+    const field: FieldDescriptor = {
+      name: 'zone_contacts',
+      type: 'relation',
+      readOnly: true,
+      relation: { entity: 'contact', kind: 'one2many', inside: { field: 'geo_location', zone: 'service_zone' }, labelField: 'name' },
+    }
+    const Widget = fieldWidget(field)
+    render(
+      <RelationOpsProvider ops={stubOps({ list })}>
+        <Widget field={field} value={null} onChange={vi.fn()} entity="company" recordId="co1" />
+      </RelationOpsProvider>,
+    )
+    await waitFor(() => expect(list).toHaveBeenCalled())
+    expect(list.mock.calls[0][1]).toMatchObject({ inside: { geo_location: 'company:co1:service_zone' } })
+    expect(screen.queryByRole('button', { name: /create a new/i })).toBeNull()
+  })
+})
