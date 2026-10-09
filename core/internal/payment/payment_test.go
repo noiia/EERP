@@ -52,3 +52,9 @@ func TestMinorUnits(t *testing.T) {
 		}
 	}
 }
+
+func reset() {
+	mu.Lock()
+	defer mu.Unlock()
+	providers, isActive = nil, func(string) bool { return true }
+}

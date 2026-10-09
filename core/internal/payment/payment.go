@@ -121,9 +121,3 @@ func MinorUnits(amount float64, currency string) int64 {
 	}
 	return int64(math.Round(amount * 100))
 }
-
-func reset() { // tests
-	mu.Lock()
-	defer mu.Unlock()
-	providers, isActive = nil, func(string) bool { return true }
-}

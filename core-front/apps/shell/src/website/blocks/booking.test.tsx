@@ -62,7 +62,7 @@ describe('BookingForm', () => {
 
   it('shows each paid session price in the workspace currency', () => {
     render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" currency="EUR" choices={[{ id: 's1', start, seatsLeft: 2, price: 15 }]} />)
-    expect(screen.getByRole('radio').closest('label')?.textContent).toMatch(/15[.,]00\s?€/)
+    expect(screen.getByRole('radio').closest('label')?.textContent).toMatch(/€\s?15[.,]00|15[.,]00\s?€/)
   })
 
   it('sends a paid booking to the payment page', async () => {

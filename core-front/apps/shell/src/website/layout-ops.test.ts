@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { BLOCK_TYPES } from './types'
 import { addBlock, applyGeometry, removeBlock, updateConfig } from './layout-ops'
 
 describe('layout ops', () => {
@@ -17,5 +18,10 @@ describe('layout ops', () => {
     const l = addBlock(addBlock([], 'text'), 'hero')
     expect(removeBlock(l, l[0].id).map((b) => b.id)).toEqual([l[1].id])
     expect(updateConfig(l, l[1].id, { title: 'Hi' })[1].config).toEqual({ title: 'Hi' })
+  })
+  it('has defaults for every block type', () => {
+    const l = BLOCK_TYPES.reduce((acc, t) => addBlock(acc, t), [] as ReturnType<typeof addBlock>)
+    expect(l.map((b) => b.type)).toEqual([...BLOCK_TYPES])
+    for (const b of l) expect(b.w).toBeGreaterThan(0)
   })
 })

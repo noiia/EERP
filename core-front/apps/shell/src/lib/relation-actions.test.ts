@@ -6,6 +6,7 @@ const client = {
   create: vi.fn(async () => ({ id: 'r2' })),
   remove: vi.fn(async () => undefined),
   distinctValues: vi.fn(async () => [{ value: 'lead', total: 2 }]),
+  listWithTotal: vi.fn(async () => ({ records: [{ id: 'r1' }], total: 7 })),
 }
 vi.mock('@eerp/core-front/server', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@eerp/core-front/server')>()),
@@ -17,6 +18,7 @@ import {
   distinctValues,
   getRecord,
   listRecords,
+  listRecordsPage,
   removeRelationRecord,
 } from './relation-actions'
 
@@ -25,6 +27,8 @@ describe('relation actions', () => {
     const opts = { pageSize: 5 }
     await expect(listRecords('crm', opts)).resolves.toEqual([{ id: 'r1' }])
     expect(client.list).toHaveBeenCalledWith('crm', opts)
+    await expect(listRecordsPage('crm', opts)).resolves.toEqual({ records: [{ id: 'r1' }], total: 7 })
+    expect(client.listWithTotal).toHaveBeenCalledWith('crm', opts)
     await expect(getRecord('crm', 'r1')).resolves.toEqual({ id: 'r1' })
     expect(client.get).toHaveBeenCalledWith('crm', 'r1')
     await expect(createRelationRecord('crm', { name: 'x' })).resolves.toEqual({ id: 'r2' })

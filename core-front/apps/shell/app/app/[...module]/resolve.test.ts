@@ -11,10 +11,11 @@ vi.mock('@eerp/core-front/server', () => ({
   moduleRegistry: {
     match: (pathname: string) =>
       pathname === '/demo/items' ? { route, params: {} } : null,
+    listViews: () => [{ path: '/demo/sale_lines', descriptor: { entity: 'sale_lines' } }],
   },
 }))
 
-import { modulePageTitle, modulePathFromSegments, resolveModuleRoute } from './resolve'
+import { dashboardListViews, modulePageTitle, modulePathFromSegments, resolveModuleRoute } from './resolve'
 
 describe('modulePathFromSegments', () => {
   it('joins catch-all segments into a leading-slash path', () => {
@@ -43,5 +44,11 @@ describe('modulePageTitle', () => {
 
   it('handles slugs with separators', () => {
     expect(modulePageTitle(['crm', 'sales_orders'], {})).toBe('Sales Orders')
+  })
+})
+
+describe('dashboardListViews', () => {
+  it("rolls a module's list views into titled dashboard blocks", () => {
+    expect(dashboardListViews('demo')).toEqual([{ entity: 'sale_lines', title: 'Sale Lines', href: '/demo/sale_lines' }])
   })
 })
