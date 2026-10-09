@@ -2,12 +2,14 @@ package query
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"core/orm/internal/cache"
 	"core/orm/internal/scan"
 	"core/orm/pool/executor"
+	"core/orm/pool/tx"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -28,7 +30,24 @@ type SelectBuilder[T any] struct {
 	orderBy []string
 	limit   int // 0 = no limit
 	offset  int // 0 = no offset
+	lock    rowLock
 }
+
+// rowLock is the FOR UPDATE clause; the zero value means no locking.
+type rowLock struct {
+	on   bool
+	of   []string // FOR UPDATE OF <tables> — lock only these when joining
+	wait string   // "", "SKIP LOCKED" or "NOWAIT"
+}
+
+// ErrLockOutsideTx is returned by All/One when a ForUpdate query runs on an
+// executor that is not a transaction: the lock would be released as soon as
+// the statement ends, protecting nothing.
+var ErrLockOutsideTx = errors.New("select: FOR UPDATE outside a transaction")
+
+// ErrLockWithAggregate is returned by All/One when a ForUpdate query also has
+// GROUP BY or HAVING, which PostgreSQL refuses.
+var ErrLockWithAggregate = errors.New("select: FOR UPDATE cannot be combined with GROUP BY or HAVING")
 
 // Select creates a SelectBuilder for T using the provided StructMeta.
 func Select[T any](meta cache.StructMeta) SelectBuilder[T] {
@@ -84,6 +103,57 @@ func (b SelectBuilder[T]) Limit(n int) SelectBuilder[T] {
 func (b SelectBuilder[T]) Offset(n int) SelectBuilder[T] {
 	b.offset = n
 	return b
+}
+
+// ForUpdate locks the selected rows until the transaction ends (SELECT … FOR
+// UPDATE): a concurrent ForUpdate on the same rows waits, so a
+// read-check-write sequence can't race. All/One refuse to run it outside a
+// transaction (ErrLockOutsideTx).
+//
+//	err := orm.Transact(ctx, db, func(tx *orm.Tx) error {
+//	    order, err := orders.SelectForUpdate().Where(orm.Cond("id = $1", id)).One(ctx, tx)
+//	    …
+//	})
+func (b SelectBuilder[T]) ForUpdate() SelectBuilder[T] {
+	b.lock.on = true
+	return b
+}
+
+// SkipLocked (implies ForUpdate) skips rows another transaction holds instead
+// of waiting — the work-queue pattern: concurrent workers each claim a
+// different batch.
+func (b SelectBuilder[T]) SkipLocked() SelectBuilder[T] {
+	b.lock.on, b.lock.wait = true, "SKIP LOCKED"
+	return b
+}
+
+// NoWait (implies ForUpdate) fails at once (SQLSTATE 55P03) instead of
+// waiting when a row is already locked.
+func (b SelectBuilder[T]) NoWait() SelectBuilder[T] {
+	b.lock.on, b.lock.wait = true, "NOWAIT"
+	return b
+}
+
+// Of (implies ForUpdate) restricts the lock to the named tables or aliases —
+// with a Join, only the rows of these are locked.
+func (b SelectBuilder[T]) Of(tables ...string) SelectBuilder[T] {
+	b.lock.on = true
+	b.lock.of = append(append([]string{}, b.lock.of...), tables...)
+	return b
+}
+
+// checkLock refuses a locking query that can't lock anything meaningful.
+func (b SelectBuilder[T]) checkLock(ex executor.Executor) error {
+	if !b.lock.on {
+		return nil
+	}
+	if len(b.groupBy) > 0 || len(b.having) > 0 {
+		return ErrLockWithAggregate
+	}
+	if _, ok := ex.(*tx.Tx); !ok {
+		return ErrLockOutsideTx
+	}
+	return nil
 }
 
 // ToSQL returns the final SQL string and argument slice.
@@ -146,11 +216,27 @@ func (b SelectBuilder[T]) ToSQL() (string, []any) {
 		sb.WriteString(fmt.Sprintf(" OFFSET %d", b.offset))
 	}
 
+	// FOR UPDATE [OF …] [SKIP LOCKED | NOWAIT]
+	if b.lock.on {
+		sb.WriteString(" FOR UPDATE")
+		if len(b.lock.of) > 0 {
+			sb.WriteString(" OF ")
+			sb.WriteString(strings.Join(b.lock.of, ", "))
+		}
+		if b.lock.wait != "" {
+			sb.WriteByte(' ')
+			sb.WriteString(b.lock.wait)
+		}
+	}
+
 	return sb.String(), args
 }
 
 // All executes the query and returns all matching rows as []T.
 func (b SelectBuilder[T]) All(ctx context.Context, ex executor.Executor) ([]T, error) {
+	if err := b.checkLock(ex); err != nil {
+		return nil, err
+	}
 	sql, args := b.ToSQL()
 	rows, err := ex.Query(ctx, sql, args...)
 	if err != nil {
@@ -162,6 +248,10 @@ func (b SelectBuilder[T]) All(ctx context.Context, ex executor.Executor) ([]T, e
 // One executes the query with LIMIT 1 and returns the first matching row.
 // Returns an error wrapping pgx.ErrNoRows when no row is found.
 func (b SelectBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, error) {
+	if err := b.checkLock(ex); err != nil {
+		var zero T
+		return zero, err
+	}
 	sql, args := b.Limit(1).ToSQL()
 	rows, err := ex.Query(ctx, sql, args...)
 	if err != nil {
@@ -194,6 +284,7 @@ func (b SelectBuilder[T]) Count(ctx context.Context, ex executor.Executor) (int6
 	count.orderBy = nil
 	count.limit = 0
 	count.offset = 0
+	count.lock = rowLock{} // FOR UPDATE is not allowed with an aggregate
 
 	sql, args := count.ToSQL()
 	row := ex.QueryRow(ctx, sql, args...)

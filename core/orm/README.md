@@ -286,6 +286,43 @@ err := orm.Transact(ctx, db, func(tx *orm.Tx) error {
 })
 ```
 
+### Row locking (`SelectForUpdate`)
+
+A read-check-write sequence (claim a job, take the last seat, mark a payment)
+races unless the rows read stay locked until the write commits. `SelectForUpdate`
+adds `FOR UPDATE` to a select; the locks are released on `COMMIT`/`ROLLBACK`.
+
+```go
+err := orm.Transact(ctx, db, func(tx *orm.Tx) error {
+    // Wait for any other holder, then own the row until the tx ends.
+    order, err := orders.SelectForUpdate().Where(orm.Cond("id = $1", id)).One(ctx, tx)
+    if err != nil {
+        return err
+    }
+    order.Status = "paid"
+    _, err = orders.WithTx(tx).Update(ctx, order, order.ID)
+    return err
+})
+
+// Work queue: concurrent workers each claim a different batch.
+due, err := orm.SelectForUpdate[Job](jobs.Meta()).SkipLocked().
+    Where(orm.Cond("status = $1", "pending")).OrderBy("run_at").Limit(20).
+    All(ctx, tx)
+```
+
+| Modifier | SQL | Use |
+|---|---|---|
+| `SkipLocked()` | `FOR UPDATE SKIP LOCKED` | queues — skip rows another tx holds |
+| `NoWait()` | `FOR UPDATE NOWAIT` | fail at once (SQLSTATE `55P03`) instead of waiting |
+| `Of("o")` | `FOR UPDATE OF o` | with a `Join`, lock only that table's rows |
+
+`Repository.SelectForUpdate()` excludes soft-deleted rows; `orm.SelectForUpdate[T](meta)`
+doesn't. Pitfalls: `All`/`One` return `orm.ErrLockOutsideTx` on anything but a `*orm.Tx`
+(outside a transaction the lock would end with the statement), and
+`orm.ErrLockWithAggregate` with `GroupBy`/`Having` (PostgreSQL refuses it); `Count()` drops
+the lock. Lock rows in a consistent order (e.g. `OrderBy("id")`) when a transaction locks
+several, or two transactions can deadlock.
+
 ### Query builders (advanced)
 
 Use builders directly when the repository layer isn't expressive enough.
@@ -401,6 +438,33 @@ orm.Register[Product](
     orm.WithExcludeFields("internal_cost", "supplier_margin"),
 )
 ```
+
+### Extending another module's table
+
+A module adds columns to a table another module owns, without touching that module's
+code, in one of two ways:
+
+| | `orm.ExtendSchema` | Embed + re-`Register` |
+|---|---|---|
+| Shape | column list, no Go struct | ``type CRM struct { crm.CRM; Date *time.Time `db:"date"` }`` registered with `WithTableName("crm")` |
+| Several extenders on one table | yes, they compose | no — the last `Register` replaces the entry |
+| Typed Go access to the new fields | no (generic CRUD / raw SQL) | yes |
+
+```go
+func (m *loyaltyModule) Register() error {
+    return orm.ExtendSchema("crm", []orm.SchemaField{
+        {Column: "loyalty_points", Type: reflect.TypeFor[int]()}, // INTEGER
+        {Column: "loyalty_note"},                                  // nil Type = TEXT
+    })
+}
+```
+
+Extension columns are always nullable (a required column would break every writer of the
+base table that doesn't know about it) and are kept when the table is registered again later
+— by an embedding extender, or when every module re-registers on a database switch. The base
+module must register first: list it in `depends` (module.json) and import its package.
+Pitfall: an embedding extender's own new fields must be pointers, for the same nullability
+reason.
 
 ### api.yaml — bulk overrides without code changes
 

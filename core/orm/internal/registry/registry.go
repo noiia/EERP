@@ -136,6 +136,8 @@ func WithExcluded() Option {
 var (
 	mu      sync.RWMutex
 	entries = map[string]TableMeta{}
+	// extensions holds every ExtendSchema call per table, re-applied by Register.
+	extensions = map[string][]SchemaField{}
 
 	apiCfg     *apiConfig
 	apiCfgOnce sync.Once
@@ -170,16 +172,28 @@ func Register[T any](opts ...Option) error {
 	applyAPIConfig(&meta, ensureAPIConfig())
 
 	mu.Lock()
-	entries[meta.TableName] = meta
+	entries[meta.TableName] = applyExtensions(meta, extensions[meta.TableName])
 	mu.Unlock()
 	return nil
 }
 
-// ExtendSchema appends extra columns to an already-registered table.
-// Use this from an inheriting module to add fields to another module's entity
-// without touching the base module's code.
-// Returns an error if tableName has not been registered yet — ensure the base
-// module's Register() runs before the inheriting module's (import it with _).
+// ExtendSchema appends extra columns to an already-registered table — the
+// composable way for a module to add fields to another module's entity
+// without touching its code: several modules may extend the same table, each
+// with its own columns (unlike re-registering an embedding struct under the
+// base table name, where the last Register replaces the whole entry).
+//
+// Extension columns are always nullable: a required column would make every
+// create of the base table fail for writers that don't know the extension
+// exists (the base module's own form included). A field's Type sets the SQL
+// type and the API's GoType (range-filter casts, graph aggregation); nil means
+// TEXT. A non-pointer Type is stored as its pointer.
+//
+// Extensions are remembered: a later Register of the same table (an embedding
+// extender, or every module re-running on a database switch) keeps them.
+// Columns already present are skipped. Returns an error if tableName has not
+// been registered yet — the base module's Register() must run first (depend on
+// it in module.json and import its package).
 func ExtendSchema(tableName string, extra []SchemaField) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -188,39 +202,59 @@ func ExtendSchema(tableName string, extra []SchemaField) error {
 	if !ok {
 		return fmt.Errorf("registry: extend: table %q is not registered", tableName)
 	}
-
-	existingCols := make(map[string]bool, len(existing.StructMeta.Fields))
-	for _, f := range existing.StructMeta.Fields {
-		existingCols[f.Column] = true
-	}
-
-	cacheFields := make([]cache.FieldMeta, len(existing.StructMeta.Fields))
-	copy(cacheFields, existing.StructMeta.Fields)
-	regFields := make([]FieldMeta, len(existing.Fields))
-	copy(regFields, existing.Fields)
-
 	for _, f := range extra {
-		if existingCols[f.Column] {
+		if f.Column == "" || f.IsPK || f.SoftDel {
+			return fmt.Errorf("registry: extend %q: column %q must be a named, non-PK, non-softdelete column", tableName, f.Column)
+		}
+	}
+	extensions[tableName] = mergeExtensions(extensions[tableName], extra)
+	entries[tableName] = applyExtensions(existing, extensions[tableName])
+	return nil
+}
+
+// mergeExtensions appends extra to have, a later declaration of a column
+// replacing the earlier one.
+func mergeExtensions(have, extra []SchemaField) []SchemaField {
+	out := append([]SchemaField{}, have...)
+	for _, f := range extra {
+		replaced := false
+		for i := range out {
+			if out[i].Column == f.Column {
+				out[i], replaced = f, true
+			}
+		}
+		if !replaced {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// applyExtensions returns meta with every extension column it lacks appended
+// (nullable; typed when Type is set).
+func applyExtensions(meta TableMeta, ext []SchemaField) TableMeta {
+	if len(ext) == 0 {
+		return meta
+	}
+	cacheFields := append([]cache.FieldMeta{}, meta.StructMeta.Fields...)
+	regFields := append([]FieldMeta{}, meta.Fields...)
+	for _, f := range ext {
+		if meta.StructMeta.ColumnIndex(f.Column) >= 0 {
 			continue
 		}
-		cacheFields = append(cacheFields, cache.FieldMeta{
-			Name:    f.Column,
-			Column:  f.Column,
-			IsPK:    f.IsPK,
-			SoftDel: f.SoftDel,
-		})
-		regFields = append(regFields, FieldMeta{
-			Name:     f.Column,
-			Column:   f.Column,
-			Nullable: f.Nullable,
-			ReadOnly: f.IsPK,
-		})
+		t, goType := f.Type, "*string"
+		if t != nil {
+			if t.Kind() != reflect.Ptr {
+				t = reflect.PointerTo(t)
+			}
+			goType = goTypeName(t)
+		}
+		cacheFields = append(cacheFields, cache.FieldMeta{Name: f.Column, Column: f.Column, Type: t})
+		regFields = append(regFields, FieldMeta{Name: f.Column, Column: f.Column, GoType: goType, Nullable: true})
 	}
-
-	existing.StructMeta = cache.NewStructMeta(existing.TableName, existing.StructMeta.PK, cacheFields)
-	existing.Fields = regFields
-	entries[tableName] = existing
-	return nil
+	meta.StructMeta = cache.NewStructMeta(meta.TableName, meta.StructMeta.PK, cacheFields)
+	meta.Fields = regFields
+	return meta
 }
 
 // SchemaField describes one column for dynamic (non-reflect) registration.
@@ -229,6 +263,9 @@ type SchemaField struct {
 	Nullable bool
 	IsPK     bool
 	SoftDel  bool
+	// Type is the column's Go type (e.g. reflect.TypeFor[time.Time]()); it
+	// sets the SQL type on migration. nil means TEXT.
+	Type reflect.Type
 }
 
 // RegisterSchema stores a TableMeta built entirely from runtime data.
@@ -248,6 +285,7 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 			Column:  f.Column,
 			IsPK:    f.IsPK,
 			SoftDel: f.SoftDel,
+			Type:    f.Type,
 		}
 		if f.IsPK {
 			pkCol = f.Column
@@ -260,6 +298,9 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 			Column:   f.Column,
 			Nullable: f.Nullable,
 			ReadOnly: f.IsPK,
+		}
+		if f.Type != nil {
+			rf.GoType = goTypeName(f.Type)
 		}
 		if f.IsPK {
 			pkField = rf
@@ -279,7 +320,7 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 	applyAPIConfig(&meta, ensureAPIConfig())
 
 	mu.Lock()
-	entries[meta.TableName] = meta
+	entries[meta.TableName] = applyExtensions(meta, extensions[meta.TableName])
 	mu.Unlock()
 	return nil
 }

@@ -1121,3 +1121,73 @@ func TestInsert_OnConflict_NoDoUpdate_IsDoNothing(t *testing.T) {
 
 	assertContains(t, sql, "ON CONFLICT (id) DO NOTHING")
 }
+
+// ── Row locking (ForUpdate) ───────────────────────────────────────────────────
+
+func TestSelect_ToSQL_ForUpdate(t *testing.T) {
+	t.Parallel()
+	meta := mustMeta[order](t)
+	base := query.Select[order](meta).Where(query.NewCondition("status = $1", "open")).OrderBy("id").Limit(5)
+	tests := []struct {
+		name string
+		b    query.SelectBuilder[order]
+		want string
+	}{
+		{"plain", base.ForUpdate(), "LIMIT 5 FOR UPDATE"},
+		{"skip locked", base.ForUpdate().SkipLocked(), "LIMIT 5 FOR UPDATE SKIP LOCKED"},
+		{"nowait", base.NoWait(), "LIMIT 5 FOR UPDATE NOWAIT"},
+		{"of tables", base.Of("o").SkipLocked(), "LIMIT 5 FOR UPDATE OF o SKIP LOCKED"},
+		{"last wait mode wins", base.SkipLocked().NoWait(), "FOR UPDATE NOWAIT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sql, _ := tt.b.ToSQL()
+			if !strings.HasSuffix(sql, tt.want) {
+				t.Errorf("sql = %q, want suffix %q", sql, tt.want)
+			}
+		})
+	}
+	if sql, _ := base.ToSQL(); strings.Contains(sql, "FOR UPDATE") {
+		t.Errorf("no lock requested but got %q", sql)
+	}
+}
+
+func TestSelect_ForUpdate_Guards(t *testing.T) {
+	t.Parallel()
+	meta := mustMeta[order](t)
+	ctx := context.Background()
+
+	t.Run("outside a transaction", func(t *testing.T) {
+		ex := &mockExecutor{}
+		if _, err := query.Select[order](meta).ForUpdate().All(ctx, ex); !errors.Is(err, query.ErrLockOutsideTx) {
+			t.Errorf("All err = %v", err)
+		}
+		if _, err := query.Select[order](meta).SkipLocked().One(ctx, ex); !errors.Is(err, query.ErrLockOutsideTx) {
+			t.Errorf("One err = %v", err)
+		}
+		if ex.lastSQL != "" {
+			t.Errorf("query reached the executor: %q", ex.lastSQL)
+		}
+	})
+	t.Run("with group by", func(t *testing.T) {
+		if _, err := query.Select[order](meta).GroupBy("status").ForUpdate().All(ctx, &mockExecutor{}); !errors.Is(err, query.ErrLockWithAggregate) {
+			t.Errorf("err = %v", err)
+		}
+	})
+	t.Run("count drops the lock", func(t *testing.T) {
+		ex := &mockExecutor{row: &countRow{n: 3}}
+		if _, err := query.Select[order](meta).ForUpdate().Count(ctx, ex); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(ex.lastSQL, "FOR UPDATE") {
+			t.Errorf("count sql = %q", ex.lastSQL)
+		}
+	})
+}
+
+type countRow struct{ n int64 }
+
+func (r *countRow) Scan(dest ...any) error {
+	*(dest[0].(*int64)) = r.n
+	return nil
+}

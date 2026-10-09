@@ -157,6 +157,26 @@ func Select[T model.Entity](meta cache.StructMeta) query.SelectBuilder[T] {
 	return query.Select[T](meta)
 }
 
+// SelectForUpdate is Select with row locking (SELECT … FOR UPDATE): the rows
+// read stay locked until the transaction ends. It must run on a *Tx (All/One
+// return ErrLockOutsideTx otherwise). Chain SkipLocked() for work queues,
+// NoWait() to fail instead of waiting, Of(tables…) with joins.
+//
+//	err := orm.Transact(ctx, db, func(tx *orm.Tx) error {
+//	    due, err := orm.SelectForUpdate[Job](jobs.Meta()).SkipLocked().
+//	        Where(orm.Cond("status = $1", "pending")).Limit(20).All(ctx, tx)
+//	    …
+//	})
+func SelectForUpdate[T model.Entity](meta cache.StructMeta) query.SelectBuilder[T] {
+	return query.Select[T](meta).ForUpdate()
+}
+
+// ErrLockOutsideTx: a SelectForUpdate query ran outside a transaction.
+var ErrLockOutsideTx = query.ErrLockOutsideTx
+
+// ErrLockWithAggregate: a SelectForUpdate query has GROUP BY or HAVING.
+var ErrLockWithAggregate = query.ErrLockWithAggregate
+
 // Cond is a shorthand for query.NewCondition.
 // Lets ERP code stay readable without importing the query sub-package.
 //

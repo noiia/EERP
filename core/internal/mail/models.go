@@ -35,6 +35,9 @@ type Outbox struct {
 	Attachments string `db:"attachments"`
 }
 
+// TableName maps Outbox to mail_outbox for typed repositories (orm.MustRepo).
+func (Outbox) TableName() string { return "mail_outbox" }
+
 // Message is what a caller enqueues. Text is required (every client can show
 // it); HTML is optional and sent as the preferred alternative.
 type Message struct {

@@ -73,12 +73,18 @@ func MigrationFieldsForTable(tableName string) ([]MigrationField, bool) {
 		return nil, false
 	}
 
+	// Schema-registered and extension columns may have no Go type (or a
+	// non-pointer one) yet be declared nullable: honor the API field's flag too.
+	declaredNullable := make(map[string]bool, len(meta.Fields))
+	for _, f := range meta.Fields {
+		declaredNullable[f.Column] = f.Nullable
+	}
 	fields := make([]MigrationField, len(meta.StructMeta.Fields))
 	for i, f := range meta.StructMeta.Fields {
 		fields[i] = MigrationField{
 			Column:    f.Column,
 			SQLType:   reflectTypeToSQL(f.Type),
-			Nullable:  f.Type != nil && f.Type.Kind() == reflect.Ptr,
+			Nullable:  (f.Type != nil && f.Type.Kind() == reflect.Ptr) || declaredNullable[f.Column],
 			IsPK:      f.IsPK,
 			SoftDel:   f.SoftDel,
 			Index:     f.Index,

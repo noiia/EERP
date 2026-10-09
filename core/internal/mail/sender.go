@@ -52,28 +52,15 @@ func (s *Sender) Tick(ctx context.Context, tenant uuid.UUID) (sent, failed int, 
 	dbctx := context.WithoutCancel(ctx)
 	err = orm.Transact(dbctx, s.db, func(tx *orm.Tx) error {
 		sent, failed = 0, 0
-		rows, err := tx.Query(dbctx, `
-			SELECT id, to_address, subject, body_text, body_html, attachments, attempts
-			FROM mail_outbox
-			WHERE status = $1 AND next_attempt_at <= now() AND deleted_at IS NULL
-			  AND ($2 = '00000000-0000-0000-0000-000000000000'::uuid OR tenant_id = $2)
-			ORDER BY next_attempt_at
-			LIMIT $3
-			FOR UPDATE SKIP LOCKED`, StatusPending, tenant, batchSize)
+		claim := orm.MustRepo[Outbox](s.db).SelectForUpdate().SkipLocked().
+			Where(orm.Cond("status = $1 AND next_attempt_at <= now()", StatusPending)).
+			OrderBy("next_attempt_at").
+			Limit(batchSize)
+		if tenant != uuid.Nil {
+			claim = claim.Where(orm.Cond("tenant_id = $1", tenant))
+		}
+		due, err := claim.All(dbctx, tx)
 		if err != nil {
-			return err
-		}
-		var due []Outbox
-		for rows.Next() {
-			var o Outbox
-			if err := rows.Scan(&o.ID, &o.ToAddress, &o.Subject, &o.BodyText, &o.BodyHTML, &o.Attachments, &o.Attempts); err != nil {
-				rows.Close()
-				return err
-			}
-			due = append(due, o)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		for _, o := range due {

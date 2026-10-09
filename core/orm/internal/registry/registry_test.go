@@ -420,3 +420,79 @@ func TestWithPublicFields_AllExpandsColumns(t *testing.T) {
 		t.Errorf("PublicFields = %v, want %v", m.PublicFields, want)
 	}
 }
+
+// productExtended stands for an embedding extender re-registering the table.
+type productExtended struct {
+	product
+	Sku *string `db:"sku"`
+}
+
+func fieldByColumn(m registry.TableMeta, col string) (registry.FieldMeta, bool) {
+	for _, f := range m.Fields {
+		if f.Column == col {
+			return f, true
+		}
+	}
+	return registry.FieldMeta{}, false
+}
+
+func TestExtendSchema(t *testing.T) {
+	t.Run("unregistered table is an error", func(t *testing.T) {
+		resetRegistry()
+		if err := registry.ExtendSchema("nope", []registry.SchemaField{{Column: "x"}}); err == nil {
+			t.Fatal("want error")
+		}
+	})
+	t.Run("pk, softdelete or unnamed columns are refused", func(t *testing.T) {
+		for _, f := range []registry.SchemaField{{Column: ""}, {Column: "x", IsPK: true}, {Column: "x", SoftDel: true}} {
+			resetRegistry()
+			_ = registry.Register[product]()
+			if err := registry.ExtendSchema("product", []registry.SchemaField{f}); err == nil {
+				t.Errorf("%+v: want error", f)
+			}
+		}
+	})
+	t.Run("typed, always nullable, existing columns skipped", func(t *testing.T) {
+		resetRegistry()
+		_ = registry.Register[product]()
+		err := registry.ExtendSchema("product", []registry.SchemaField{
+			{Column: "points", Type: reflect.TypeFor[int]()},
+			{Column: "note"},
+			{Column: "name", Type: reflect.TypeFor[int]()}, // already a column: untouched
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, _ := registry.Get("product")
+		points, ok := fieldByColumn(m, "points")
+		if !ok || points.GoType != "*int" || !points.Nullable {
+			t.Errorf("points = %+v", points)
+		}
+		note, ok := fieldByColumn(m, "note")
+		if !ok || note.GoType != "*string" || !note.Nullable {
+			t.Errorf("note = %+v", note)
+		}
+		if name, _ := fieldByColumn(m, "name"); name.GoType != "string" {
+			t.Errorf("name was overwritten: %+v", name)
+		}
+		if i := m.StructMeta.ColumnIndex("points"); i < 0 || m.StructMeta.Fields[i].Type != reflect.TypeFor[*int]() {
+			t.Errorf("points struct meta type missing")
+		}
+	})
+	t.Run("two extenders compose and survive a later Register", func(t *testing.T) {
+		resetRegistry()
+		_ = registry.Register[product]()
+		_ = registry.ExtendSchema("product", []registry.SchemaField{{Column: "a"}})
+		_ = registry.ExtendSchema("product", []registry.SchemaField{{Column: "b"}})
+		// An embedding extender replaces the entry — the extensions must stay.
+		if err := registry.Register[productExtended](registry.WithTableName("product")); err != nil {
+			t.Fatal(err)
+		}
+		m, _ := registry.Get("product")
+		for _, col := range []string{"a", "b", "sku", "name"} {
+			if !m.HasField(col) {
+				t.Errorf("missing %q after re-register", col)
+			}
+		}
+	})
+}

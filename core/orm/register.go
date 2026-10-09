@@ -23,7 +23,14 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 
 // ExtendSchema appends extra columns to an already-registered table's ORM entry.
 // Call this from an inheriting module's Register() to add fields to another
-// module's entity without modifying that module's code.
+// module's entity without modifying that module's code. Composable (several
+// modules may extend one table) and remembered across a later Register of the
+// table; columns are always nullable, typed by SchemaField.Type (nil = TEXT):
+//
+//	orm.ExtendSchema("crm", []orm.SchemaField{
+//	    {Column: "loyalty_points", Type: reflect.TypeFor[int]()},
+//	    {Column: "loyalty_note"}, // TEXT
+//	})
 func ExtendSchema(tableName string, extra []SchemaField) error {
 	return registry.ExtendSchema(tableName, extra)
 }

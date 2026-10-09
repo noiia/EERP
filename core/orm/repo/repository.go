@@ -192,6 +192,19 @@ func (r *Repository[T]) Query() query.SelectBuilder[T] {
 	return query.Select[T](r.meta)
 }
 
+// SelectForUpdate returns a SelectBuilder for T that locks the rows it reads
+// (SELECT … FOR UPDATE) until the transaction ends — the locking twin of
+// Query(). Soft-deleted rows are excluded, as in FindByID. Run it on the
+// transaction (WithTx, or pass the *Tx to All/One); outside one, All/One
+// return ErrLockOutsideTx. Chain SkipLocked()/NoWait()/Of() as needed.
+func (r *Repository[T]) SelectForUpdate() query.SelectBuilder[T] {
+	b := query.Select[T](r.meta).ForUpdate()
+	if _, hasSoftDel := r.meta.SoftDeleteField(); hasSoftDel {
+		b = b.Where(query.NewCondition("deleted_at IS NULL"))
+	}
+	return b
+}
+
 // UpdateQuery returns an UpdateBuilder pre-configured for T — the WRITE-side
 // counterpart to Query() — for a partial or conditionally-scoped update
 // Update()'s full-row-replace-by-PK contract doesn't fit: bumping only SOME

@@ -164,6 +164,17 @@ n, _ := orders.UpdateQuery().
     Where(orm.Cond("id = $1", orderID)).
     Exec(ctx, db)
 
+// Row locking — read rows and keep them locked until the transaction ends
+// (SELECT … FOR UPDATE). Must run on a *Tx (ErrLockOutsideTx otherwise);
+// SkipLocked() for work queues, NoWait() to fail instead of waiting,
+// Of(tables…) with joins. Repository.SelectForUpdate() also excludes
+// soft-deleted rows. See core/orm/README.md "Row locking".
+orm.Transact(ctx, db, func(tx *orm.Tx) error {
+    due, err := jobs.SelectForUpdate().SkipLocked().
+        Where(orm.Cond("status = $1", "pending")).Limit(20).All(ctx, tx)
+    …
+})
+
 // Complex queries via builders
 results, _ := query.Select[Order](orders.Meta()).
     Where(orm.Cond("status = $1", "open")).
@@ -189,6 +200,8 @@ The generic list endpoint (`GET /api/v1/{table}`) accepts, besides `page`/`page_
 
 **Optional Redis read cache** (`core/orm/qcache`, `docs/adr/ADR-022-optional-redis-query-cache.md`): set `redis_url` (plus optional `redis_ttl_seconds`, default 60) and the generic CRUD reads — list pages with their total, `?distinct=`, `/:id` — are served from Redis when warm. Leave it empty (or let Redis be down) and nothing changes: a `nil` `*orm.QueryCache` is a no-op and Redis errors fail open to Postgres. Invalidation needs no caller cooperation: `db.DB`/`tx.Tx` classify every statement they execute (`qcache.WriteTarget`) and, once the write is committed (after `COMMIT` for a transaction), `INCR` the written table's generation (the whole database's for DDL or anything unrecognised); keys embed those generations, so stale entries become unreachable. Reads inside a transaction and typed `Repository[T]` reads are never cached. Pitfall: writes that bypass `*orm.DB` (`psql`, `DB.Pool()` directly) are only caught by the TTL.
 
+**Extending another module's table:** `orm.ExtendSchema(table, []orm.SchemaField{{Column, Type}})` adds columns from a module's `Register()` without touching the owner's code — composable (several modules may extend one table), always nullable, typed by `Type` (nil = TEXT), and kept when the table is registered again later. The alternative, embedding the owner's struct and re-registering it under the same table name (`crminheritdemo`), gives typed Go access but doesn't compose: the last `Register` wins. See `core/orm/README.md` "Extending another module's table".
+
 **Struct tags have no unique-constraint support** — only `,index`/`,index=<method>` (plain, non-unique). A table needing a unique constraint hand-writes it as SQL in its module's `Migrate()` hook, like any other DDL the auto-migration system can't derive (composite PKs, junction tables). `roles(tenant_id, technical_name)` is the first example; `user_presence(tenant_id, user_id)` (`internal/presence`) is the first to also drive `Repository.Upsert` off that same hand-written unique index — Postgres's `ON CONFLICT` target must resolve to a real unique index/constraint, a plain non-unique `,index` column won't do.
 
 ## Configuration
@@ -199,6 +212,8 @@ go run main.go -config="../../eerp-config.json"
 ```
 
 **Path resolution:** relative path fields (`module_root`, `api_config_path`) are anchored to the **config file's directory**, not the process CWD (`main.go` resolves them right after decoding; absolute paths pass through untouched). This keeps a single committed config portable — the app (run from `core/cmd/app`), tests (run from `core`), and the frontend build (run from `core-front`) all resolve `core/modules` to the same place. Prefer repo-relative paths in the committed config so it is relocatable across machines.
+
+**Request body limits:** `request_body_limit` (default `1M`) caps every request body; the file upload routes `/api/v1/pictures` and `/api/v1/attachments` are exempt (`ormserver.Config.BodyLimitExempt`) and capped by `upload_body_limit` instead (default `20M`, applied per group with `ormserver.BodyLimit`), so raising the upload size never loosens the JSON routes. A body over its limit gets Echo's `413 Request Entity Too Large`. The other hops: nginx allows 50 MB (`client_max_body_size`), and `core-front`'s `proxy.ts` skips the upload BFF routes, since Next buffers proxied bodies only up to 10 MB. Pitfall: a new upload route must be added to `BodyLimitExempt` and given `uploadLimit`, or it stays at 1 MB.
 
 **Website config:** `website_tenant_id` (optional; empty = the database's single tenant, ambiguous with several → the public group is not mounted), `site_url` (the public site origin, e.g. `https://www.example.com` — booking and verification emails link to it) and `public_rate_limit_per_minute` (default 300, applied to `/api/v1/public` and the `/api/v1/website` groups; signup/login use the auth limit). The limiter keys on the client IP as Echo sees it — behind the gateway make sure the real IP is forwarded, or all visitors share one bucket.
 
@@ -213,8 +228,6 @@ flowchart LR
     Browser -->|"HTTPS :443"| Gateway["api-gateway (nginx)"]
     Gateway -->|"/ (everything else)"| Front["core-front (Next.js :3000)"]
     Gateway -->|"/api/v1/*, /health"| Back["core-back (Go :8080)"]
-**Request body limits:** `request_body_limit` (default `1M`) caps every request body; the file upload routes `/api/v1/pictures` and `/api/v1/attachments` are exempt (`ormserver.Config.BodyLimitExempt`) and capped by `upload_body_limit` instead (default `20M`, applied per group with `ormserver.BodyLimit`), so raising the upload size never loosens the JSON routes. A body over its limit gets Echo's `413 Request Entity Too Large`. The other hops: nginx allows 50 MB (`client_max_body_size`), and `core-front`'s `proxy.ts` skips the upload BFF routes, since Next buffers proxied bodies only up to 10 MB. Pitfall: a new upload route must be added to `BodyLimitExempt` and given `uploadLimit`, or it stays at 1 MB.
-
     Front -->|"BFF: server-side fetch"| Back
     Back --> DB[("PostgreSQL")]
     Back --> Garage[("Garage / S3")]
