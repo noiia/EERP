@@ -63,7 +63,7 @@ describe('ViewsSettings', () => {
 
     expect(await screen.findByText('Forbidden: settings:views:write')).toBeInTheDocument()
     // Reverted: the select goes back to "None".
-    expect(screen.getByLabelText('Status field')).toHaveTextContent('None')
+    expect(screen.getByRole('combobox', { name: 'Status field' })).toHaveTextContent('None')
   })
 
   it('renders read-only without the write permission', () => {
@@ -99,7 +99,7 @@ describe('ViewsSettings — module-declared defaults', () => {
 
   it("pre-selects the module's default with no override yet, and no revert button", () => {
     render(<ViewsSettings rows={defaultedRows} canEdit />)
-    expect(screen.getByLabelText('Status field')).toHaveTextContent('Status')
+    expect(screen.getByRole('combobox', { name: 'Status field' })).toHaveTextContent('Status')
     expect(screen.getByRole('switch', { name: 'Enable Graphs' })).toBeChecked()
     expect(screen.queryByRole('button', { name: 'Revert to module settings' })).not.toBeInTheDocument()
   })
@@ -115,7 +115,7 @@ describe('ViewsSettings — module-declared defaults', () => {
     await waitFor(() => expect(screen.queryByText('Override the module default?')).not.toBeInTheDocument())
     expect(saveMock).not.toHaveBeenCalled()
     // Cancelled: the select is still showing the module's own default.
-    expect(screen.getByLabelText('Status field')).toHaveTextContent('Status')
+    expect(screen.getByRole('combobox', { name: 'Status field' })).toHaveTextContent('Status')
   })
 
   it('confirming the override saves the new value and reveals the revert button', async () => {

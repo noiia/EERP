@@ -3,6 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HtmlEditor } from './html-editor'
 import { resolveWidget, type FieldDescriptor } from './descriptor'
 
+// jsdom has no layout, and its Range lacks the rect methods ProseMirror's
+// scrollIntoView measures with — an insert's deferred scroll otherwise throws
+// an unhandled error after the test, failing the run at random.
+Range.prototype.getClientRects ??= () => document.body.getClientRects()
+Range.prototype.getBoundingClientRect ??= () => document.body.getBoundingClientRect()
+
 describe('HtmlEditor', () => {
   it('renders the given HTML', async () => {
     render(<HtmlEditor value="<p>Hello <strong>Ann</strong></p>" onChange={() => {}} />)
