@@ -381,11 +381,13 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// without s3_* the feature is absent, not broken. The permission middleware
 	// derives pictures:pictures:read|write|delete from the routes.
 	var publicPictures ormserver.PictureServer
+	var seedPictures devseed.SampleStore // the dev seed's sample pictures; nil without s3_*
 	if pictures.S3Configured(configContent) {
 		objects, err := pictures.NewS3Store(configContent)
 		if err != nil {
 			return fmt.Errorf("Error building S3 object store: %w", err)
 		}
+		seedPictures = objects
 		picRepo := pictures.NewRepository(app.DB)
 		publicPictures = func(c *echo.Context, table string, recordID uuid.UUID, field string) error {
 			ctx := c.Request().Context()
@@ -545,7 +547,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// Settings → Developer's "full" volume (~100k rows per business table, set-
 	// based SQL). Refuses outside environment "development" and runs once per
 	// tenant; permission dev_seed:dev_seed:write derives from the route.
-	devSeedHandler := devseed.NewHandler(app.DB, a.cfg.Environment)
+	devSeedHandler := devseed.NewHandler(app.DB, seedPictures, a.cfg.Environment)
 	srv.Echo().POST("/api/v1/dev_seed", devSeedHandler.Seed, jwtMw, permMw)
 	srv.Echo().GET("/api/v1/dev_seed", devSeedHandler.Groups, jwtMw, permMw)
 
@@ -757,7 +759,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		siteSettings := settings.NewRepository(app.DB)
 		for table, sel := range map[string]website.Selection{
 			"website_page": {
-				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout"},
+				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout", "background", "background_parallax"},
 				Filter: map[string]string{"published": "true"},
 			},
 			"event": {

@@ -227,19 +227,18 @@ function buildProductVariants(products: { id: string; reference?: unknown }[]): 
   })
 }
 
-/** A 96×96 PNG: the product's color with a lighter diagonal band — enough for the
- * website's picture blocks to show something recognizable per product. */
-function productPng([r, g, b]: readonly number[], shade: number): Buffer {
-  const size = 96
-  const raw = Buffer.alloc((size * 3 + 1) * size)
-  for (let y = 0; y < size; y += 1) {
-    const row = y * (size * 3 + 1)
-    for (let x = 0; x < size; x += 1) {
-      const band = Math.abs(x - y) < 16 ? 60 : 0
-      const k = Math.min(1, 0.75 + shade * 0.15)
-      raw[row + 1 + x * 3] = Math.min(255, r * k + band)
-      raw[row + 2 + x * 3] = Math.min(255, g * k + band)
-      raw[row + 3 + x * 3] = Math.min(255, b * k + band)
+type Rgb = readonly [number, number, number] | readonly number[]
+
+/** An RGB PNG of w×h, each pixel from `paint`. */
+function png(w: number, h: number, paint: (x: number, y: number) => Rgb): Buffer {
+  const raw = Buffer.alloc((w * 3 + 1) * h)
+  for (let y = 0; y < h; y += 1) {
+    const row = y * (w * 3 + 1)
+    for (let x = 0; x < w; x += 1) {
+      const [r, g, b] = paint(x, y)
+      raw[row + 1 + x * 3] = Math.min(255, r)
+      raw[row + 2 + x * 3] = Math.min(255, g)
+      raw[row + 3 + x * 3] = Math.min(255, b)
     }
   }
   const chunk = (type: string, data: Buffer) => {
@@ -251,8 +250,8 @@ function productPng([r, g, b]: readonly number[], shade: number): Buffer {
     return Buffer.concat([head, data, crc])
   }
   const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(size, 0)
-  ihdr.writeUInt32BE(size, 4)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
   ihdr.set([8, 2, 0, 0, 0], 8) // 8-bit RGB
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -260,23 +259,59 @@ function productPng([r, g, b]: readonly number[], shade: number): Buffer {
   ])
 }
 
-/** A picture on every product and variant (the `picture` anchor; Go sets the flag). */
-async function seedPictures(
+/** 96×96: the color with a lighter diagonal band — a product, a lead, an event. */
+function photoPng([r, g, b]: Rgb, shade: number): Buffer {
+  const k = Math.min(1, 0.75 + shade * 0.15)
+  return png(96, 96, (x, y) => {
+    const band = Math.abs(x - y) < 16 ? 60 : 0
+    return [r * k + band, g * k + band, b * k + band]
+  })
+}
+
+/** 128×128: a white ring on the color — a company logo. */
+function logoPng([r, g, b]: Rgb): Buffer {
+  return png(128, 128, (x, y) => {
+    const d = Math.hypot(x - 64, y - 64)
+    return d > 30 && d < 42 ? [255, 255, 255] : [r, g, b]
+  })
+}
+
+/** 240×80: a dark-blue handwriting-like stroke on white — a signature. */
+function signaturePng(seed: number): Buffer {
+  const a = 2 + seed, b = 5 + seed * 1.3
+  return png(240, 80, (x, y) => {
+    const t = (x - 12) / 216
+    const curve = 40 + 18 * Math.sin(t * a * Math.PI) * Math.cos(t * b)
+    return t >= 0 && t <= 1 && Math.abs(y - curve) < 2 ? [20, 40, 110] : [255, 255, 255]
+  })
+}
+
+const PALETTE: Rgb[] = PRODUCTS.map((p) => p.color)
+
+/** One picture to upload on a record's (table, field) anchor; Go sets the field's flag. */
+interface PictureTarget { table: string; id: string; field: string; png: () => Buffer }
+
+/** Picture targets for every product and variant (variants in their product's color). */
+function productPictures(
   products: { id: string; reference?: unknown }[],
   variants: { id: string; product_id?: unknown }[],
-): Promise<SeedEntityResult> {
-  const result: SeedEntityResult = { entity: 'picture', created: 0, failed: 0, errors: [] }
+): PictureTarget[] {
   const colorOf = new Map(products.map((p) => [p.id, PRODUCTS.find((d) => d.reference === p.reference)?.color ?? [80, 80, 80]]))
-  const targets = [
-    ...products.map((p) => ({ table: 'product', id: p.id, color: colorOf.get(p.id)!, shade: 1 })),
-    ...variants.map((v, i) => ({ table: 'product_variant', id: v.id, color: colorOf.get(String(v.product_id)) ?? [80, 80, 80], shade: i % 3 })),
+  return [
+    ...products.map((p) => ({ table: 'product', id: p.id, field: 'picture', png: () => photoPng(colorOf.get(p.id)!, 1) })),
+    ...variants.map((v, i) => ({ table: 'product_variant', id: v.id, field: 'picture', png: () => photoPng(colorOf.get(String(v.product_id)) ?? [80, 80, 80], i % 3) })),
   ]
+}
+
+/** Uploads every target through the picture service, reported as one `picture` row. */
+async function seedPictures(targets: PictureTarget[]): Promise<SeedEntityResult> {
+  const result: SeedEntityResult = { entity: 'picture', created: 0, failed: 0, errors: [] }
   for (const t of targets) {
     const form = new FormData()
     form.set('table_name', t.table)
     form.set('record_id', t.id)
-    form.set('field', 'picture')
-    form.set('file', new Blob([new Uint8Array(productPng(t.color, t.shade))], { type: 'image/png' }), `${t.table}.png`)
+    form.set('field', t.field)
+    form.set('file', new Blob([new Uint8Array(t.png())], { type: 'image/png' }), `${t.table}-${t.field}.png`)
     try {
       await uploadPicture(form)
       result.created += 1
@@ -432,7 +467,7 @@ function session(eventId: string, start: string, hours: number, capacity: number
  * Bookings can't be made in the past (Go refuses), so history comes from the
  * full volume.
  */
-async function seedEvents(people: Person[], variantId: string | undefined): Promise<SeedEntityResult[]> {
+async function seedEvents(people: Person[], variantId: string | undefined, pictures: PictureTarget[]): Promise<SeedEntityResult[]> {
   const results: SeedEntityResult[] = []
   const eventsOutcome = await createMany<{ id: string; kind?: unknown }>('event', [
     {
@@ -448,6 +483,7 @@ async function seedEvents(people: Person[], variantId: string | undefined): Prom
   ])
   results.push(eventsOutcome.result)
   const [pottery, yoga, demo, offsite] = eventsOutcome.records
+  pictures.push(...eventsOutcome.records.map((ev, i) => ({ table: 'event', id: ev.id, field: 'picture', png: () => photoPng(PALETTE[(i + 2) % PALETTE.length], 1) })))
   if (!pottery || !yoga || !demo || !offsite) return results
 
   const dropIn = new Date(Date.now() + 30 * 60_000)
@@ -554,15 +590,22 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
     buildProductVariants(productsOutcome.records),
   )
   results.push(variantsOutcome.result)
-  // Pictures need the S3-backed picture service; without it every upload fails,
-  // reported like any other entity instead of aborting the seed.
-  results.push(await seedPictures(productsOutcome.records, variantsOutcome.records))
+  // A generated picture on every picture field of the records seeded here,
+  // uploaded at the end (seedPictures).
+  const pictures: PictureTarget[] = [
+    ...productPictures(productsOutcome.records, variantsOutcome.records),
+    ...crmOutcome.records.flatMap((r, i) => [
+      { table: 'crm', id: r.id, field: 'picture', png: () => photoPng(PALETTE[i % PALETTE.length], i % 3) },
+      { table: 'crm', id: r.id, field: 'signature', png: () => signaturePng(i % 4) },
+    ]),
+  ]
 
   const invoicesOutcome = await createMany<{ id: string }>(
     'invoice',
     buildDocuments(contactsOutcome.records, INVOICE_COUNT, 'INV', INVOICE_STATUSES),
   )
   results.push(invoicesOutcome.result)
+  pictures.push(...invoicesOutcome.records.map((r, i) => ({ table: 'invoice', id: r.id, field: 'logo', png: () => logoPng(PALETTE[i % PALETTE.length]) })))
 
   const saleLinesOutcome = await createMany(
     'sale_line',
@@ -575,6 +618,7 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
     buildDocuments(contactsOutcome.records, QUOTE_COUNT, 'QUO', QUOTE_STATUSES),
   )
   results.push(quotesOutcome.result)
+  pictures.push(...quotesOutcome.records.map((r, i) => ({ table: 'quote', id: r.id, field: 'logo', png: () => logoPng(PALETTE[i % PALETTE.length]) })))
 
   const quoteLinesOutcome = await createMany(
     'quote_line',
@@ -592,7 +636,21 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
   const people = (contactsOutcome.records as unknown as { name?: unknown; email?: unknown }[])
     .filter((c) => typeof c.name === 'string' && typeof c.email === 'string')
     .map((c) => ({ name: c.name as string, email: c.email as string }))
-  results.push(...(await seedEvents(people, variantsOutcome.records[0]?.id)))
+  results.push(...(await seedEvents(people, variantsOutcome.records[0]?.id, pictures)))
+
+  // The active company's logo, only if it has none (never replace a real one).
+  const companyId = preferences?.active_company?.id
+  if (companyId) {
+    try {
+      const company = await createServerApiClient().get<{ logo?: boolean | null }>('company', companyId)
+      if (!company.logo) pictures.push({ table: 'company', id: companyId, field: 'logo', png: () => logoPng(PALETTE[0]) })
+    } catch {
+      // unreadable company: no logo
+    }
+  }
+  // Pictures need the S3-backed picture service; without it every upload fails,
+  // reported like any other entity instead of aborting the seed.
+  results.push(await seedPictures(pictures))
 
   return { ok: true, results }
 }

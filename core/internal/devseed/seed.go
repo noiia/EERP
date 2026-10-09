@@ -70,9 +70,10 @@ func analyze(temp string, tables ...string) []step {
 // selected groups (nil = all) and their dependencies, skipping groups this
 // tenant already seeded (groups.go). Then Graph views and calculated fields
 // for every list-view entity that ends up over GraphThreshold rows
-// (graphs.go). One transaction: all or nothing. ErrAlreadySeeded when every
-// selected group was already seeded.
-func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int, groups []string) ([]Result, error) {
+// (graphs.go), and — with a store (nil = none) — a sample picture on every
+// picture field of the rows seeded now (pictures.go). One transaction: all or
+// nothing. ErrAlreadySeeded when every selected group was already seeded.
+func Seed(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID, n int, groups []string) ([]Result, error) {
 	byGroup, err := groupSteps()
 	if err != nil {
 		return nil, err
@@ -121,6 +122,13 @@ func Seed(ctx context.Context, db *orm.DB, tenantID uuid.UUID, n int, groups []s
 					return err
 				}
 			}
+		}
+		if store != nil {
+			pictureResults, err := seedPictures(ctx, tx, store, tenantID, seed)
+			if err != nil {
+				return err
+			}
+			results = append(results, pictureResults...)
 		}
 		graphResults, err := seedGraphs(ctx, tx, tenantID)
 		if err != nil {

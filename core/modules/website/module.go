@@ -33,6 +33,11 @@ type WebsitePage struct {
 	InMenu         *bool             `db:"in_menu" json:"in_menu"`
 	MenuSequence   *int              `db:"menu_sequence" json:"menu_sequence"`
 	Layout         *[]map[string]any `db:"layout" json:"layout"`
+	// Background is the flag column of the page's background picture anchor
+	// (website_page, id, background): true ⇔ the picture service holds one.
+	Background *bool `db:"background" json:"background"`
+	// BackgroundParallax keeps the background picture fixed while the page scrolls.
+	BackgroundParallax *bool `db:"background_parallax" json:"background_parallax"`
 }
 
 type websiteModule struct{}

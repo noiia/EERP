@@ -194,7 +194,6 @@ describe('seedDemoData', () => {
       'crm_tag',
       'product',
       'product_variant',
-      'picture',
       'invoice',
       'sale_line',
       'quote',
@@ -205,6 +204,7 @@ describe('seedDemoData', () => {
       'event_availability',
       'event_booking',
       'event_booking (status changes)',
+      'picture',
     ])
     expect(outcome.results.every((r) => r.failed === 0)).toBe(true)
   })
@@ -222,13 +222,19 @@ describe('seedDemoData', () => {
     expect(variantBodies.length).toBe(15) // one default per product + 9 named variants
     expect(variantBodies[1]).toEqual({ product_id: variantBodies[0].product_id, name: 'Standard consulting hour — On site', unit_price: 110 })
 
-    // A generated PNG on every product and variant, on the `picture` anchor.
-    expect(uploadPictureMock).toHaveBeenCalledTimes(6 + 15)
+    // A generated PNG on every picture field of the seeded records.
+    const anchors = uploadPictureMock.mock.calls.map(([f]) => `${f.get('table_name')}.${f.get('field')}`)
+    const per = (a: string) => anchors.filter((x) => x === a).length
+    const crm = callsFor('crm').length
+    expect(per('product.picture')).toBe(6)
+    expect(per('product_variant.picture')).toBe(15)
+    expect([per('crm.picture'), per('crm.signature')]).toEqual([crm, crm])
+    expect([per('invoice.logo'), per('quote.logo'), per('event.picture')]).toEqual([6, 6, 4])
     const form = uploadPictureMock.mock.calls[0][0]
     expect([form.get('table_name'), form.get('field')]).toEqual(['product', 'picture'])
     const png = new Uint8Array(await (form.get('file') as Blob).arrayBuffer())
     expect(Array.from(png.slice(1, 4))).toEqual([0x50, 0x4e, 0x47]) // "PNG"
-    expect(outcome.results.find((r) => r.entity === 'picture')).toMatchObject({ created: 21, failed: 0 })
+    expect(outcome.results.find((r) => r.entity === 'picture')).toMatchObject({ created: anchors.length, failed: 0 })
 
     expect(callsFor('invoice')).toHaveLength(6)
     expect(callsFor('quote')).toHaveLength(6)

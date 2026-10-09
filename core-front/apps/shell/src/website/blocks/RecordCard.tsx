@@ -7,6 +7,14 @@ import { pictureUrl } from '../urls'
 import type { RecordCarouselConfig, RecordListConfig } from '../types'
 import { FieldLines, hasPicture } from './fields'
 
+/** The site's card look (record and event cards): soft border, rounded, lifts on hover. */
+export const CARD_SX = {
+  height: '100%', borderRadius: 3, border: 1, borderColor: 'divider', boxShadow: 'none', transition: 'box-shadow .2s, transform .2s',
+  '&:hover': { boxShadow: 6, transform: 'translateY(-2px)' },
+} as const
+/** A picture on top of a card: 4:3, cropped to fill. */
+export const CARD_PICTURE_SX = { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block' } as const
+
 type CardConfig = Pick<RecordListConfig, 'table' | 'fields' | 'title_field' | 'picture_field' | 'detail_slug'> &
   Pick<RecordCarouselConfig, 'picture_position' | 'picture_width'>
 
@@ -19,7 +27,7 @@ export function RecordCard({ config, rec }: { config: CardConfig; rec: Record<st
   const width = Math.min(Math.max(config.picture_width ?? 40, 10), 90)
   const picture = hasPicture(rec, config.picture_field) && (
     <Box component="img" src={pictureUrl(config.table, id, config.picture_field)} alt="" loading="lazy"
-      sx={side ? { width: `${width}%`, flexShrink: 0, objectFit: 'cover', alignSelf: 'stretch' } : { width: '100%', height: 'auto', display: 'block' }} />
+      sx={side ? { width: `${width}%`, flexShrink: 0, objectFit: 'cover', alignSelf: 'stretch' } : CARD_PICTURE_SX} />
   )
   // A side picture: picture and text side by side (row-reverse puts it right); on
   // top: stacked. The text never shrinks below its content (minWidth: 0 + wrap).
@@ -27,13 +35,13 @@ export function RecordCard({ config, rec }: { config: CardConfig; rec: Record<st
     <Box sx={{ display: 'flex', flexDirection: side ? (pos === 'right' ? 'row-reverse' : 'row') : 'column', height: '100%' }}>
       {picture}
       <CardContent sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
-        <Typography variant="h6" component="h3">{String(rec[config.title_field] ?? '')}</Typography>
+        <Typography variant="h6" component="h3" sx={{ fontWeight: 600, lineHeight: 1.3, mb: 0.5 }}>{String(rec[config.title_field] ?? '')}</Typography>
         <FieldLines record={rec} fields={config.fields} skip={config.title_field} />
       </CardContent>
     </Box>
   )
   return (
-    <Card sx={{ height: '100%' }}>
+    <Card sx={CARD_SX}>
       {config.detail_slug ? <CardActionArea sx={{ height: '100%' }} href={`/${encodeURIComponent(config.detail_slug)}/${encodeURIComponent(id)}`}>{body}</CardActionArea> : body}
     </Card>
   )

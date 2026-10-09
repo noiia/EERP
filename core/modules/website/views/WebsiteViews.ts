@@ -20,6 +20,9 @@ export interface WebsitePage {
   published?: boolean | null
   in_menu?: boolean | null
   menu_sequence?: number | null
+  /** true ⇔ a background picture exists on the (website_page, id, background) anchor. */
+  background?: boolean | null
+  background_parallax?: boolean | null
 }
 
 const listFields: ViewDescriptor['fields'] = [
@@ -33,6 +36,9 @@ const formFields: ViewDescriptor['fields'] = [
   ...listFields,
   { name: 'menu_sequence', label: 'Menu order', type: 'number', widget: 'int' },
   { name: 'seo_description', label: 'SEO description', type: 'text', widget: 'long' },
+  // The site draws it behind the page's blocks; parallax keeps it fixed while scrolling.
+  { name: 'background', label: 'Background picture', type: 'boolean', widget: 'picture' },
+  { name: 'background_parallax', label: 'Parallax background', type: 'boolean', widget: 'switch' },
 ]
 
 registerHeaderButtonAction({

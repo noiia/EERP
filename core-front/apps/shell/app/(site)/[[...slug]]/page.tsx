@@ -1,9 +1,11 @@
 import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { erpPath } from '@eerp/core-front'
+import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
 import { getSitePage, serverPublicSource } from '@/website/public-api'
 import { BlockView } from '@/website/blocks/BlockView'
+import { pictureUrl } from '@/website/urls'
 import { StackedGrid } from '@/website/blocks/StackedGrid'
 
 type Props = { params: Promise<{ slug?: string[] }> }
@@ -35,9 +37,16 @@ export default async function SitePage({ params }: Props) {
       ),
     ),
   )
+  const p = r.page
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <StackedGrid blocks={r.page.layout} render={(b) => rendered.get(b.id)} />
-    </Container>
+    // The page's background picture, if any; parallax keeps it fixed while the page scrolls.
+    <Box sx={p.background ? {
+      minHeight: '100%', backgroundImage: `url("${pictureUrl('website_page', p.id, 'background')}")`,
+      backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: p.background_parallax ? 'fixed' : 'scroll',
+    } : undefined}>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <StackedGrid blocks={p.layout} render={(b) => rendered.get(b.id)} />
+      </Container>
+    </Box>
   )
 }

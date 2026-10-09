@@ -18,7 +18,7 @@ import (
 // core-front/apps/shell/src/website/types.ts BLOCK_TYPES.
 var BlockTypes = map[string]bool{
 	"text": true, "image": true, "hero": true, "record_list": true, "record_detail": true, "record_carousel": true, "image_carousel": true,
-	"event_booking": true, "appointment_booking": true, "event_list": true,
+	"event_booking": true, "appointment_booking": true, "event_list": true, "section": true,
 }
 
 // ReservedSlugs are first path segments the site can never own.

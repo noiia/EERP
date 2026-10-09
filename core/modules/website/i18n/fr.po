@@ -28,3 +28,9 @@ msgstr "Description SEO"
 
 msgid "Design"
 msgstr "Concevoir"
+
+msgid "Background picture"
+msgstr "Image d'arrière-plan"
+
+msgid "Parallax background"
+msgstr "Arrière-plan en parallaxe"

@@ -122,9 +122,7 @@ func (h *Handler) Upload(c *echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("pictures: replace metadata: %w", err)
 		}
-		if err := h.objects.Delete(c.Request().Context(), oldKey); err != nil {
-			common.Logger.Warn("pictures: orphaned object after replace", zap.String("key", oldKey), zap.Error(err))
-		}
+		h.deleteObject(c.Request().Context(), oldKey, "replace")
 		h.syncFlag(c.Request().Context(), identity.TenantID, table, recordID, field, true)
 		return c.JSON(http.StatusCreated, toResponse(updated))
 	case errors.Is(err, orm.ErrNotFound):
@@ -217,11 +215,20 @@ func (h *Handler) Delete(c *echo.Context) error {
 	if err := h.store.Delete(c.Request().Context(), identity.TenantID, id); err != nil {
 		return fmt.Errorf("pictures: delete metadata: %w", err)
 	}
-	if err := h.objects.Delete(c.Request().Context(), picture.ObjectKey); err != nil {
-		common.Logger.Warn("pictures: orphaned object after delete", zap.String("key", picture.ObjectKey), zap.Error(err))
-	}
+	h.deleteObject(c.Request().Context(), picture.ObjectKey, "delete")
 	h.syncFlag(c.Request().Context(), identity.TenantID, picture.TableName, picture.RecordID, picture.Field, false)
 	return c.NoContent(http.StatusNoContent)
+}
+
+// deleteObject removes a picture's bytes best-effort (an orphaned object is a
+// leak, logged) — except a shared sample (SampleDir), which other rows still use.
+func (h *Handler) deleteObject(ctx context.Context, key, after string) {
+	if IsSampleKey(key) {
+		return
+	}
+	if err := h.objects.Delete(ctx, key); err != nil {
+		common.Logger.Warn("pictures: orphaned object after "+after, zap.String("key", key), zap.Error(err))
+	}
 }
 
 // syncFlag keeps the anchor's boolean flag column (a picture field's "true ⇔ a

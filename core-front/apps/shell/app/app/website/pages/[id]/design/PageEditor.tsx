@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, type ReactNode } from 'react'
-import ReactGridLayout, { useContainerWidth, verticalCompactor } from 'react-grid-layout'
+import ReactGridLayout, { getCompactor, useContainerWidth, verticalCompactor } from 'react-grid-layout'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -11,15 +11,31 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import type { Theme } from '@mui/material/styles'
-import { erpPath, useT } from '@eerp/core-front'
+import { createPictureClient, erpPath, useT } from '@eerp/core-front'
 import type { PublishedTable } from '@/lib/website-settings'
 import { previewBlock } from '@/website/editor-actions'
 import { addBlock, applyGeometry, GRID, removeBlock, rowsPx, updateConfig } from '@/website/layout-ops'
 import { stackOrder, type Block } from '@/website/types'
 import { BlockPalette } from './BlockPalette'
-import { BlockSettings } from './BlockSettings'
+import { BlockSettings, PublishFields } from './BlockSettings'
 
 const PANEL_WIDTH = 340
+// With a background section on the page, blocks must be able to sit over it: free
+// placement (no packing, overlap allowed) instead of the default vertical packing.
+const OVERLAP = getCompactor(null, true)
+const pictures = createPictureClient()
+
+/** The page's background picture through the staff BFF (the public route would 404
+ * on an unpublished page), or null. */
+function useBackgroundUrl(pageId: string, on: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    if (on) pictures.find({ table: 'website_page', recordId: pageId, field: 'background' }).then((m) => live && setUrl(m ? pictures.url(m.id) : null), () => {})
+    return () => { live = false }
+  }, [pageId, on])
+  return on ? url : null
+}
 
 /** Live preview: the public site's own BlockView, rendered server-side by a
  * Server Action (300 ms debounce, keyed by the block's type + config: moving or
@@ -45,11 +61,13 @@ function BlockPreview({ block, version }: { block: Block; version: number }) {
   )
 }
 
-export function PageEditor({ pageId, slug, title, layout: initial, published, save }: {
+export function PageEditor({ pageId, slug, title, layout: initial, background, published, save }: {
   pageId: string
   slug: string
   title: string
   layout: Block[]
+  /** The page's background picture flag and parallax (set in the page form). */
+  background?: { on: boolean; parallax: boolean }
   published: PublishedTable[]
   save: (layout: Block[]) => Promise<string | null>
 }) {
@@ -64,6 +82,10 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
   const [pub, setPub] = useState(published) // updated in place when a block publishes fields
   const [pubVersion, setPubVersion] = useState(0)
   const dirty = JSON.stringify(layout) !== savedJSON
+  const bgUrl = useBackgroundUrl(pageId, !!background?.on)
+  const pagePub = pub.find((p) => p.table === 'website_page')
+  // Sections first: later children paint on top, so blocks over a section stay clickable.
+  const painted = [...layout.filter((b) => b.type === 'section'), ...layout.filter((b) => b.type !== 'section')]
 
   useEffect(() => {
     if (!dirty) return
@@ -94,7 +116,18 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
           onDelete={() => { setLayout((l) => removeBlock(l, block.id)); setSelected(null) }}
         />
       ) : (
-        <Typography color="text.secondary">{t('Select a block to configure it.')}</Typography>
+        <Stack spacing={2}>
+          <Typography color="text.secondary">{t('Select a block to configure it.')}</Typography>
+          <Typography variant="subtitle2">{t('Page background')}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t('Set a background picture (and parallax) in the page form; add a Background section block for a colored band.')}
+          </Typography>
+          <Button size="small" href={erpPath(`/website/pages/${pageId}`)} sx={{ alignSelf: 'flex-start' }}>{t('Open the page form')}</Button>
+          {background?.on && pagePub && (
+            <PublishFields table={pagePub} used={['background', 'background_parallax']}
+              onPublished={(tb) => setPub((p) => p.map((x) => (x.table === tb.table ? tb : x)))} />
+          )}
+        </Stack>
       )}
     </Box>
   )
@@ -120,7 +153,10 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
           </Stack>
           {status && <Alert severity={status.ok ? 'success' : 'error'} sx={{ mx: 2 }} onClose={() => setStatus(null)}>{status.text}</Alert>}
           {/* Same width as the public site's Container, so blocks wrap as they will there. */}
-          <Container maxWidth="lg" sx={{ py: 2, flex: 1, minWidth: 0 }}>
+          <Container maxWidth="lg" sx={{
+            py: 2, flex: 1, minWidth: 0,
+            ...(bgUrl && { backgroundImage: `url("${bgUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: background?.parallax ? 'fixed' : 'scroll' }),
+          }}>
             <Box ref={containerRef}>
               {phone ? (
                 // Phones: the public site's stacked projection, (y, x) order, no drag.
@@ -137,10 +173,10 @@ export function PageEditor({ pageId, slug, title, layout: initial, published, sa
                   gridConfig={{ cols: GRID.cols, rowHeight: GRID.rowHeight, margin: [GRID.gap, GRID.gap], containerPadding: [0, 0] }}
                   dragConfig={{ enabled: true }}
                   resizeConfig={{ enabled: true, handles: ['se', 'e', 's'] }}
-                  compactor={verticalCompactor}
+                  compactor={layout.some((b) => b.type === 'section') ? OVERLAP : verticalCompactor}
                   onLayoutChange={(rgl) => setLayout((l) => applyGeometry(l, rgl))}
                 >
-                  {layout.map((b) => (
+                  {painted.map((b) => (
                     <Box key={b.id} {...frame(b)}><BlockPreview block={b} version={pubVersion} /></Box>
                   ))}
                 </ReactGridLayout>

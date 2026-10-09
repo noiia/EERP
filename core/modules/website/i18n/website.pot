@@ -28,3 +28,9 @@ msgstr ""
 
 msgid "Design"
 msgstr ""
+
+msgid "Background picture"
+msgstr ""
+
+msgid "Parallax background"
+msgstr ""

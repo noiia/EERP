@@ -1,4 +1,4 @@
-import type { Block, BookingConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, TextConfig } from '../types'
+import type { Block, BookingConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, SectionConfig, TextConfig } from '../types'
 import { AppointmentBookingBlock } from './AppointmentBookingBlock'
 import { EventBookingBlock } from './EventBookingBlock'
 import { EventListBlock } from './EventListBlock'
@@ -8,6 +8,7 @@ import { ImageCarouselBlock } from './ImageCarouselBlock'
 import { RecordCarouselBlock } from './RecordCarouselBlock'
 import { RecordDetailBlock } from './RecordDetailBlock'
 import { RecordListBlock } from './RecordListBlock'
+import { SectionBlock } from './SectionBlock'
 import { TextBlock } from './TextBlock'
 
 // Async children are awaited as plain functions so the result renders in vitest too (RTL cannot render async elements).
@@ -16,7 +17,8 @@ export async function BlockView({ block, source, params }: { block: Block; sourc
   const c = block.config
   switch (block.type) {
     case 'text': return <TextBlock config={c as unknown as TextConfig} />
-    case 'image': return <ImageBlock config={c as unknown as ImageConfig} />
+    case 'image': return ImageBlock({ config: c as unknown as ImageConfig, source })
+    case 'section': return SectionBlock({ config: c as unknown as SectionConfig, source })
     case 'hero': return <HeroBlock config={c as unknown as HeroConfig} />
     case 'record_list': return RecordListBlock({ config: c as unknown as RecordListConfig, source, h: block.h })
     case 'record_detail': {

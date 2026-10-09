@@ -1396,3 +1396,57 @@ msgstr "Événements et réservations"
 
 msgid "About 100,000 rows each of contacts, CRM leads, products, variants, quotes, invoices, rent receipts and event bookings, with lines, several taxes and companies, plus graph views with calculated fields on every list over 10,000 rows. Pick the groups below; each is seeded once per workspace, and all of them take about half a minute."
 msgstr "Environ 100 000 lignes de contacts, pistes CRM, produits, variantes, devis, factures, quittances et réservations d'événements, avec leurs lignes, plusieurs taxes et sociétés, plus des vues graphiques avec champs calculés sur chaque liste de plus de 10 000 lignes. Choisissez les groupes ci-dessous ; chacun n'est généré qu'une fois par espace de travail, et l'ensemble prend environ une demi-minute."
+
+msgid "Background section"
+msgstr "Section d'arrière-plan"
+
+msgid "Picture from table"
+msgstr "Image depuis la table"
+
+msgid "Record (empty = the first one with a picture)"
+msgstr "Enregistrement (vide = le premier ayant une image)"
+
+msgid "Text and button"
+msgstr "Texte et bouton"
+
+msgid "Picture fit"
+msgstr "Ajustement de l'image"
+
+msgid "Fill the block (crop)"
+msgstr "Remplir le bloc (recadrer)"
+
+msgid "Whole picture"
+msgstr "Image entière"
+
+msgid "Link (without a button)"
+msgstr "Lien (sans bouton)"
+
+msgid "Optional: shown over the picture."
+msgstr "Facultatif : affiché par-dessus l'image."
+
+msgid "Background color"
+msgstr "Couleur de fond"
+
+msgid "No color"
+msgstr "Aucune couleur"
+
+msgid "Parallax (picture stays fixed while scrolling)"
+msgstr "Parallaxe (l'image reste fixe au défilement)"
+
+msgid "Darken the picture (%)"
+msgstr "Assombrir l'image (%)"
+
+msgid "Blocks placed over this section are drawn on top of it."
+msgstr "Les blocs placés sur cette section s'affichent par-dessus."
+
+msgid "Optional: shown on the section itself."
+msgstr "Facultatif : affiché sur la section elle-même."
+
+msgid "Page background"
+msgstr "Arrière-plan de la page"
+
+msgid "Set a background picture (and parallax) in the page form; add a Background section block for a colored band."
+msgstr "Définissez une image d'arrière-plan (et la parallaxe) dans le formulaire de la page ; ajoutez un bloc Section d'arrière-plan pour une bande colorée."
+
+msgid "Open the page form"
+msgstr "Ouvrir le formulaire de la page"

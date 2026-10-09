@@ -82,11 +82,37 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   )
   // Changing table resets everything picked from the previous one.
   const tableSelect = (
-    <TextField key="table" id={id('table')} select size="small" label={t('Table')} value={str('table')}
+    <TextField key="table" id={id('table')} select size="small" label={t(block.type === 'section' ? 'Picture from table' : 'Table')} value={str('table')}
       onChange={(e) => set({ table: e.target.value, fields: [], title_field: '', picture_field: '', field: '', filter: {}, record: '', records: [], related: undefined })}>
+      {block.type === 'section' && <MenuItem value="">{t('None')}</MenuItem>}
       {tables.map((p) => <MenuItem key={p.table} value={p.table}>{p.table}</MenuItem>)}
     </TextField>
   )
+  const num = (k: string, label: string, min: number, max: number) => (
+    <TextField key={k} id={id(k)} size="small" type="number" label={t(label)}
+      value={typeof c[k] === 'number' ? c[k] : ''} slotProps={{ htmlInput: { min, max } }}
+      onChange={(e) => set({ [k]: e.target.value === '' ? undefined : Number(e.target.value) })} />
+  )
+  const check = (k: string, label: string) => (
+    <FormControlLabel key={k} label={t(label)} control={<Checkbox size="small" checked={c[k] === true} onChange={(e) => set({ [k]: e.target.checked })} />} />
+  )
+  // A record's picture (image, section): field, then the record (empty = the first one holding a picture).
+  const pictureSource = str('table') ? [
+    select('field', 'Picture field', pictures),
+    <RecordPicker key="record" table={str('table')} labelField={fields.find((f) => ['name', 'title', 'display_name'].includes(f)) ?? ''} label="Record (empty = the first one with a picture)"
+      value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />,
+  ] : []
+  // Hero content: the hero's own form, and what an image or a section lays over itself.
+  const heroFields = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), text('cta_href', 'Button link'),
+    select('align', 'Horizontal alignment', ['left', 'center', 'right'], { labels: { left: 'Left', center: 'Center', right: 'Right' } }),
+    select('valign', 'Vertical alignment', ['top', 'center', 'bottom'], { labels: { top: 'Top', center: 'Center', bottom: 'Bottom' } }),
+    select('button_size', 'Button size', ['small', 'medium', 'large'], { labels: { small: 'Small', medium: 'Medium', large: 'Large' } }),
+    select('button_width', 'Button width', ['auto', 'full'], { labels: { auto: 'Fit its text', full: 'Full width' } }),
+    select('padding', 'Padding', ['none', 'compact', 'normal', 'spacious'], { labels: { none: 'None', compact: 'Compact', normal: 'Normal', spacious: 'Spacious' } })]
+  const overlayTitle = (hint: string) => [
+    <Typography key="overlay" variant="subtitle2" sx={{ pt: 1 }}>{t('Text and button')}</Typography>,
+    <Typography key="overlay-hint" variant="caption" color="text.secondary">{t(hint)}</Typography>,
+  ]
   const fieldBoxes = (
     <FormGroup key="fields">
       <Typography variant="subtitle2">{t('Fields')}</Typography>
@@ -177,15 +203,28 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         select('align', 'Alignment', ['left', 'center', 'right'], { none: true, labels: { left: 'Left', center: 'Center', right: 'Right' } })]
       break
     case 'hero':
-      form = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), text('cta_href', 'Button link'),
-        select('align', 'Horizontal alignment', ['left', 'center', 'right'], { labels: { left: 'Left', center: 'Center', right: 'Right' } }),
-        select('valign', 'Vertical alignment', ['top', 'center', 'bottom'], { labels: { top: 'Top', center: 'Center', bottom: 'Bottom' } }),
-        select('button_size', 'Button size', ['small', 'medium', 'large'], { labels: { small: 'Small', medium: 'Medium', large: 'Large' } }),
-        select('button_width', 'Button width', ['auto', 'full'], { labels: { auto: 'Fit its text', full: 'Full width' } }),
-        select('padding', 'Padding', ['none', 'compact', 'normal', 'spacious'], { labels: { none: 'None', compact: 'Compact', normal: 'Normal', spacious: 'Spacious' } })]
+      form = heroFields
       break
     case 'image':
-      form = [tableSelect, text('record', 'Record id'), select('field', 'Picture field', pictures), text('alt', 'Alternative text'), text('href', 'Link')]
+      form = [tableSelect, ...pictureSource, text('alt', 'Alternative text'),
+        select('fit', 'Picture fit', ['cover', 'contain'], { labels: { cover: 'Fill the block (crop)', contain: 'Whole picture' } }),
+        text('href', 'Link (without a button)'),
+        ...overlayTitle('Optional: shown over the picture.'), ...heroFields]
+      break
+    case 'section':
+      form = [
+        <Stack key="color" direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <TextField id={id('color')} size="small" type="color" label={t('Background color')} value={str('color') || '#ffffff'}
+            onChange={(e) => set({ color: e.target.value })} sx={{ width: 140 }} />
+          {str('color') && <Button size="small" onClick={() => set({ color: '' })}>{t('No color')}</Button>}
+        </Stack>,
+        tableSelect, ...pictureSource,
+        str('table') && check('parallax', 'Parallax (picture stays fixed while scrolling)'),
+        str('table') && num('dim', 'Darken the picture (%)', 0, 80),
+        <Typography key="hint" variant="body2" color="text.secondary">
+          {t('Blocks placed over this section are drawn on top of it.')}
+        </Typography>,
+        ...overlayTitle('Optional: shown on the section itself.'), ...heroFields]
       break
     case 'record_list':
       form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields),
@@ -276,7 +315,7 @@ function usedFields(c: Config): string[] {
 /** Warns about fields the site can't read yet and publishes them on click (keeps
  * the table's existing published fields and forced filter). Go re-checks the
  * caller's settings:website:write and the module's declared ceiling. */
-function PublishFields({ table, used, onPublished }: {
+export function PublishFields({ table, used, onPublished }: {
   table: PublishedTable
   used: string[]
   onPublished?: (table: PublishedTable) => void

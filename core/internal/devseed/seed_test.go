@@ -49,7 +49,7 @@ func TestSeed(t *testing.T) {
 	}
 
 	n := devseed.GraphThreshold + 1
-	results, err := devseed.Seed(ctx, app.DB, tenant, n, nil)
+	results, err := devseed.Seed(ctx, app.DB, nil, tenant, n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestSeed(t *testing.T) {
 		t.Error("no appointment bookings seeded")
 	}
 
-	if _, err := devseed.Seed(ctx, app.DB, tenant, n, nil); !errors.Is(err, devseed.ErrAlreadySeeded) {
+	if _, err := devseed.Seed(ctx, app.DB, nil, tenant, n, nil); !errors.Is(err, devseed.ErrAlreadySeeded) {
 		t.Fatalf("second run: %v, want ErrAlreadySeeded", err)
 	}
 }
@@ -160,14 +160,14 @@ func TestSeed_Groups(t *testing.T) {
 		return c
 	}
 
-	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"crm"}); err != nil {
+	if _, err := devseed.Seed(ctx, app.DB, nil, tenant, n, []string{"crm"}); err != nil {
 		t.Fatal(err)
 	}
 	if count("crm") != n || count("contact") != n || count("invoice") != 0 || count("product") != 0 {
 		t.Fatalf("crm only: crm %d contact %d invoice %d product %d", count("crm"), count("contact"), count("invoice"), count("product"))
 	}
 
-	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"invoices"}); err != nil {
+	if _, err := devseed.Seed(ctx, app.DB, nil, tenant, n, []string{"invoices"}); err != nil {
 		t.Fatal(err)
 	}
 	if count("invoice") != n || count("product") != n || count("contact") != n || count("quote") != 0 {
@@ -195,16 +195,16 @@ func TestSeed_Groups(t *testing.T) {
 	}
 
 	// All groups: only the remaining ones are written.
-	if _, err := devseed.Seed(ctx, app.DB, tenant, n, nil); err != nil {
+	if _, err := devseed.Seed(ctx, app.DB, nil, tenant, n, nil); err != nil {
 		t.Fatal(err)
 	}
 	if count("quote") != n || count("event_booking") != n || count("invoice") != n || count("crm") != n {
 		t.Errorf("rest: quote %d booking %d invoice %d crm %d", count("quote"), count("event_booking"), count("invoice"), count("crm"))
 	}
-	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"crm"}); !errors.Is(err, devseed.ErrAlreadySeeded) {
+	if _, err := devseed.Seed(ctx, app.DB, nil, tenant, n, []string{"crm"}); !errors.Is(err, devseed.ErrAlreadySeeded) {
 		t.Errorf("re-seeding a seeded group: %v, want ErrAlreadySeeded", err)
 	}
-	if _, err := devseed.Seed(ctx, app.DB, tenant, n, []string{"nope"}); !errors.Is(err, devseed.ErrUnknownGroup) {
+	if _, err := devseed.Seed(ctx, app.DB, nil, tenant, n, []string{"nope"}); !errors.Is(err, devseed.ErrUnknownGroup) {
 		t.Errorf("unknown group: %v, want ErrUnknownGroup", err)
 	}
 }

@@ -10,7 +10,7 @@ describe('website views', () => {
     expect(form.entity).toBe('website_page')
     expect(form.headerButtons?.map((b) => b.name)).toContain('website.design')
     expect(form.fields.map((f) => f.name)).toEqual(
-      expect.arrayContaining(['title', 'slug', 'published', 'in_menu', 'menu_sequence', 'seo_description']),
+      expect.arrayContaining(['title', 'slug', 'published', 'in_menu', 'menu_sequence', 'seo_description', 'background', 'background_parallax']),
     )
   })
 })

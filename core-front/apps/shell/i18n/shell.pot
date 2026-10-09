@@ -1187,3 +1187,57 @@ msgstr ""
 
 msgid "About 100,000 rows each of contacts, CRM leads, products, variants, quotes, invoices, rent receipts and event bookings, with lines, several taxes and companies, plus graph views with calculated fields on every list over 10,000 rows. Pick the groups below; each is seeded once per workspace, and all of them take about half a minute."
 msgstr ""
+
+msgid "Background section"
+msgstr ""
+
+msgid "Picture from table"
+msgstr ""
+
+msgid "Record (empty = the first one with a picture)"
+msgstr ""
+
+msgid "Text and button"
+msgstr ""
+
+msgid "Picture fit"
+msgstr ""
+
+msgid "Fill the block (crop)"
+msgstr ""
+
+msgid "Whole picture"
+msgstr ""
+
+msgid "Link (without a button)"
+msgstr ""
+
+msgid "Optional: shown over the picture."
+msgstr ""
+
+msgid "Background color"
+msgstr ""
+
+msgid "No color"
+msgstr ""
+
+msgid "Parallax (picture stays fixed while scrolling)"
+msgstr ""
+
+msgid "Darken the picture (%)"
+msgstr ""
+
+msgid "Blocks placed over this section are drawn on top of it."
+msgstr ""
+
+msgid "Optional: shown on the section itself."
+msgstr ""
+
+msgid "Page background"
+msgstr ""
+
+msgid "Set a background picture (and parallax) in the page form; add a Background section block for a colored band."
+msgstr ""
+
+msgid "Open the page form"
+msgstr ""

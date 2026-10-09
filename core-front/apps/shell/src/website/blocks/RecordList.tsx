@@ -45,7 +45,7 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
       </Stack>
       {view === 'grid' ? (
         // The block's height in px, minus ~128px for the toolbar and pager.
-        <Box sx={{ display: 'grid', gap: 2, overflowY: 'auto', maxHeight: Math.max(rowsPx(h) - 128, 240), p: 0.5,
+        <Box sx={{ display: 'grid', gap: 2, overflowY: 'auto', maxHeight: Math.max(rowsPx(h) - 128, 240), p: 1,
           // Columns follow the block's own width, not the viewport: as many 220px+ cards as fit.
           gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))' }}>
           {shown.map((rec) => <RecordCard key={String(rec.id)} config={config} rec={rec} />)}
@@ -54,7 +54,9 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
         // The table follows the block's own width: field columns drop off right to left as it narrows.
         <Box sx={{ containerType: 'inline-size', overflowX: 'auto',
           ...Object.fromEntries(cols.map((_, i) => [`@container (max-width: ${(i + 2) * 160}px)`, { [`& .col-${i}`]: { display: 'none' } }])) }}>
-          <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', '& th, & td': { p: 1, textAlign: 'left', borderBottom: 1, borderColor: 'divider', verticalAlign: 'middle' } }}>
+          <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', '& th, & td': { p: 1.25, textAlign: 'left', borderBottom: 1, borderColor: 'divider', verticalAlign: 'middle' },
+            '& th': { typography: 'caption', fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' },
+            '& tbody tr:hover': { bgcolor: 'action.hover' } }}>
             <thead>
               <tr>
                 {pic && <th />}

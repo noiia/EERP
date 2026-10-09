@@ -20,14 +20,16 @@ const FullVolume = 100_000
 // dev_seed:dev_seed:read|write, derived from the route).
 type Handler struct {
 	db          *orm.DB
+	store       SampleStore
 	environment string
 	n           int
 }
 
 // NewHandler seeds FullVolume rows; environment is Config.Environment — the
-// endpoint refuses anything but "development".
-func NewHandler(db *orm.DB, environment string) *Handler {
-	return &Handler{db: db, environment: environment, n: FullVolume}
+// endpoint refuses anything but "development". store is the picture service's
+// object store, nil without s3_* (the seed then writes no pictures).
+func NewHandler(db *orm.DB, store SampleStore, environment string) *Handler {
+	return &Handler{db: db, store: store, environment: environment, n: FullVolume}
 }
 
 type seedResponse struct {
@@ -59,7 +61,7 @@ func (h *Handler) Seed(c *echo.Context) error {
 	}
 	id := auth.MustIdentity(c.Request().Context())
 	start := time.Now()
-	results, err := Seed(c.Request().Context(), h.db, id.TenantID, h.n, req.Groups)
+	results, err := Seed(c.Request().Context(), h.db, h.store, id.TenantID, h.n, req.Groups)
 	switch {
 	case errors.Is(err, ErrAlreadySeeded):
 		return errorJSON(c, http.StatusConflict, "CONFLICT", err.Error())

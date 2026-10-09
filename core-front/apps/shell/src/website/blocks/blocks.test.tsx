@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { BlockView } from './BlockView'
-import { stackOrder, type Block, type PublicDataSource } from '../types'
+import { sectionOf, stackOrder, type Block, type PublicDataSource } from '../types'
 
 const source = (records: Record<string, unknown>[] | null): PublicDataSource => ({
   list: async () => (records ? { records, total: records.length } : null),
@@ -37,7 +37,7 @@ describe('blocks', () => {
   it('hero and image drop unsafe links', async () => {
     await renderBlock(block('hero', { title: 'W', cta_label: 'Go', cta_href: 'javascript:alert(1)' }), source([]))
     expect(screen.queryByRole('link', { name: 'Go' })).toBeNull()
-    await renderBlock(block('image', { table: 't', record: 'r', field: 'f', alt: 'Pic', href: '//evil.com' }), source([]))
+    await renderBlock(block('image', { table: 't', record: 'r', field: 'f', alt: 'Pic', href: '//evil.com' }), source([{ id: 'r' }]))
     expect(screen.getByAltText('Pic').closest('a')).toBeNull()
   })
 
@@ -47,8 +47,48 @@ describe('blocks', () => {
   })
 
   it('image: points at the public picture route', async () => {
-    await renderBlock(block('image', { table: 'product', record: 'r1', field: 'photo', alt: 'A chair' }), source([]))
+    await renderBlock(block('image', { table: 'product', record: 'r1', field: 'photo', alt: 'A chair' }), source([{ id: 'r1', photo: true }]))
     expect(screen.getByAltText('A chair').getAttribute('src')).toBe('/api/v1/public/product/r1/picture/photo')
+  })
+
+  it('image: no record picked = the first record holding a picture (flag rows listed via filter)', async () => {
+    const calls: Record<string, string>[] = []
+    const rows = [{ id: 'a', logo: null }, { id: 'b', logo: true }]
+    const s: PublicDataSource = {
+      list: async (_t, q) => {
+        calls.push(q.filter ?? {})
+        const recs = q.filter?.logo === 'true' ? rows.filter((r) => r.logo) : rows
+        return { records: recs, total: recs.length }
+      },
+      get: async () => null,
+    }
+    await renderBlock(block('image', { table: 'company', record: '', field: 'logo', alt: 'Logo' }), s)
+    expect(screen.getByAltText('Logo').getAttribute('src')).toBe('/api/v1/public/company/b/picture/logo')
+    expect(calls).toEqual([{}, { logo: 'true' }])
+  })
+
+  it('image: title and button laid over the picture; the button carries the link', async () => {
+    await renderBlock(block('image', { table: 't', record: 'r', field: 'f', alt: 'Pic', title: 'Summer', cta_label: 'Shop', cta_href: '/shop', href: '/other' }), source([{ id: 'r' }]))
+    expect(screen.getByRole('heading', { name: 'Summer' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Shop' }).getAttribute('href')).toBe('/shop')
+    expect(screen.getByAltText('Pic').closest('a')).toBeNull()
+  })
+
+  it('image_carousel: skips the rows without a picture', async () => {
+    await renderBlock(block('image_carousel', { table: 'product', picture_field: 'picture', title_field: 'name' }),
+      source([{ id: '1', name: 'No pic', picture: null }, { id: '2', name: 'Pic', picture: true }]))
+    expect(screen.getByAltText('Pic')).toBeTruthy()
+    expect(screen.queryByAltText('No pic')).toBeNull()
+  })
+
+  it('section: color band with its own content, readable on a dark color; parallax picture', async () => {
+    const { container } = await renderBlock(block('section', { color: '#102030', title: 'Dark band' }), source([]))
+    expect(screen.getByRole('heading', { name: 'Dark band' })).toBeTruthy()
+    expect(getComputedStyle(container.firstElementChild!).backgroundColor).toBe('rgb(16, 32, 48)')
+    const again = await renderBlock(block('section', { table: 'company', field: 'logo', record: 'c', parallax: true }), source([{ id: 'c', logo: true }]))
+    const bg = getComputedStyle(again.container.firstElementChild!)
+    expect(bg.backgroundImage).toContain('/api/v1/public/company/c/picture/logo')
+    expect(bg.backgroundAttachment).toBe('fixed')
   })
 
   it('record_list renders only the fields present (unpublished field is absent, no crash)', async () => {
@@ -163,5 +203,14 @@ describe('stackOrder', () => {
   it('orders by row then column', () => {
     const b = (id: string, x: number, y: number): Block => ({ id, type: 'text', x, y, w: 6, h: 1, config: {} })
     expect(stackOrder([b('c', 0, 2), b('b', 6, 0), b('a', 0, 0)]).map((x) => x.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('puts a section before the blocks starting on its row; sectionOf finds the one under a block', () => {
+    const sec: Block = { id: 's', type: 'section', x: 6, y: 0, w: 30, h: 20, config: {} }
+    const txt: Block = { id: 't', type: 'text', x: 0, y: 0, w: 36, h: 4, config: {} }
+    const inside: Block = { id: 'i', type: 'text', x: 10, y: 5, w: 10, h: 4, config: {} }
+    expect(stackOrder([txt, sec]).map((x) => x.id)).toEqual(['s', 't'])
+    expect(sectionOf(inside, [sec])?.id).toBe('s')
+    expect(sectionOf({ ...inside, y: 30 }, [sec])).toBeUndefined()
   })
 })

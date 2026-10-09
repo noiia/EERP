@@ -58,7 +58,11 @@ export const serverPublicSource: PublicDataSource = {
   get: (table, id) => getJSON<Record<string, unknown>>(`/${encodeURIComponent(table)}/${encodeURIComponent(id)}`, ['website_page', table]),
 }
 
-export interface SitePage { id: string; slug: string; title: string; seo_description?: string | null; layout: Block[] }
+export interface SitePage {
+  id: string; slug: string; title: string; seo_description?: string | null; layout: Block[]
+  /** Flag of the page's background picture anchor (website_page, id, background); absent if unpublished. */
+  background?: boolean | null; background_parallax?: boolean | null
+}
 
 // Go serializes unset optional columns as JSON null.
 const normalize = (p: SitePage): SitePage => ({ ...p, layout: p.layout ?? [] })

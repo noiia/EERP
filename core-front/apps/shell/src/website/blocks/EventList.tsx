@@ -12,6 +12,7 @@ import { useI18nStore, useT } from '@eerp/core-front'
 import { pictureUrl } from '../urls'
 import type { EventListConfig } from '../types'
 import { formatChoice } from './BookingForm'
+import { CARD_PICTURE_SX, CARD_SX } from './RecordCard'
 
 /** One row of Go's /public/events/upcoming: only published columns are present. */
 export interface UpcomingEvent {
@@ -62,16 +63,16 @@ export function EventList({ config, events }: { config: EventListConfig; events:
         const link = href(ev.id)
         const body = (
           <>
-            {ev.picture && <Box component="img" src={pictureUrl('event', ev.id, 'picture')} alt="" loading="lazy" sx={{ width: '100%', height: 'auto', display: 'block' }} />}
+            {ev.picture && <Box component="img" src={pictureUrl('event', ev.id, 'picture')} alt="" loading="lazy" sx={CARD_PICTURE_SX} />}
             <CardContent>
-              <Typography variant="h6" component="h3">{ev.name}</Typography>
+              <Typography variant="h6" component="h3" sx={{ fontWeight: 600, lineHeight: 1.3, mb: 0.5 }}>{ev.name}</Typography>
               {ev.location && <Typography color="text.secondary">{ev.location}</Typography>}
               <Typography variant="body2">{when(ev)}</Typography>
             </CardContent>
           </>
         )
         return (
-          <Card key={ev.id} sx={{ height: '100%' }}>
+          <Card key={ev.id} sx={CARD_SX}>
             {link ? <CardActionArea sx={{ height: '100%' }} href={link}>{body}</CardActionArea> : body}
           </Card>
         )
