@@ -29,7 +29,7 @@ import { useOptimisticFieldMove } from './use-optimistic-field-move'
 const NO_STATUS = '__no_status__'
 
 /** Cards loaded per column; the header still shows the column's full count. */
-export const KANBAN_COLUMN_LIMIT = 50
+const KANBAN_COLUMN_LIMIT = 50
 
 export interface KanbanRendererProps<T extends HasId> {
   descriptor: ViewDescriptor<T>

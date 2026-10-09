@@ -33,9 +33,9 @@ import { useOptimisticFieldMove } from './use-optimistic-field-move'
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /** Records loaded for one month; past it, a caption says how many aren't shown. */
-export const CALENDAR_MONTH_LIMIT = 1000
+const CALENDAR_MONTH_LIMIT = 1000
 /** Unscheduled records loaded; the panel header still shows the full count. */
-export const CALENDAR_UNSCHEDULED_LIMIT = 50
+const CALENDAR_UNSCHEDULED_LIMIT = 50
 
 /** Local-time grid math throughout — never `new Date('YYYY-MM-DD')`, which
  * jsdom/browsers parse as UTC midnight and can land on the wrong local day. */

@@ -213,7 +213,7 @@ export function pieSlices<T>(records: T[], config: { groupByField: string; value
 /** Sort slices by count (largest first) and fold everything past
  * MAX_PIE_SLICES-1 into one OTHER_LABEL slice — shared by the client-side
  * pieSlices and the server-aggregated path. */
-export function foldPieSlices(input: PieSlice[]): PieSlice[] {
+function foldPieSlices(input: PieSlice[]): PieSlice[] {
   const slices = [...input].sort((a, b) => b.count - a.count)
   if (slices.length <= MAX_PIE_SLICES) return slices
   const kept = slices.slice(0, MAX_PIE_SLICES - 1)

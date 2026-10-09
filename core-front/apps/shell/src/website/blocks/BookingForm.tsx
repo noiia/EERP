@@ -15,7 +15,7 @@ import { useI18nStore, useT } from '@eerp/core-front'
 export interface BookingChoice { id: string; start: string; seatsLeft: number; price?: number | null }
 
 /** A paid session's price, tax included, in the workspace currency (bare when unknown). */
-export function formatPrice(price: number, currency: string | undefined, locale: string | null): string {
+function formatPrice(price: number, currency: string | undefined, locale: string | null): string {
   const tag = locale && locale !== 'source' ? locale : undefined
   try {
     if (currency) return new Intl.NumberFormat(tag, { style: 'currency', currency }).format(price)

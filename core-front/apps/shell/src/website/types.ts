@@ -57,7 +57,7 @@ export interface RecordDetailConfig {
 }
 /** A table whose rows point at the detail's record (`link_field` holds its id), shown
  * as a picker on the detail — e.g. product_variant by product_id. */
-export interface RelatedConfig { table: string; link_field: string; fields: string[]; title_field: string; picture_field?: string }
+interface RelatedConfig { table: string; link_field: string; fields: string[]; title_field: string; picture_field?: string }
 /** Pictures of hand-picked records (in order) or the table's first ones, capped at `limit`. */
 export interface ImageCarouselConfig {
   table: string; picture_field: string; title_field?: string; detail_slug?: string

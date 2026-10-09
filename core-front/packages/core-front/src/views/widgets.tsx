@@ -284,7 +284,7 @@ function TextHtmlWidget({ field, value, onChange, disabled }: WidgetProps) {
 
 /** widgetOptions.columns entry — declared, not inferred, like every other
  * descriptor-driven presentation choice. */
-export interface TableWidgetColumn {
+interface TableWidgetColumn {
   key: string
   label: string
 }
@@ -392,7 +392,7 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
 /** widgetOptions.presets entry for SelectionLinkedWidget — a plain field-name
  * -> value patch applied to SIBLING fields (never this field's own value,
  * which onChange already handles) when that option is picked. */
-export type LinkedSelectionPresets = Record<string, Record<string, JsonValue>>
+type LinkedSelectionPresets = Record<string, Record<string, JsonValue>>
 
 /**
  * Same closed-list dropdown as SelectionWidget, but picking an option ALSO

@@ -19,7 +19,7 @@ export interface NumberFormatPreference {
 /** The caller's current company (multi-company) — the minimal shape a
  * switcher needs, not the full profile (address/phone/email, only the
  * Company settings form itself needs those). */
-export interface ActiveCompanyRef {
+interface ActiveCompanyRef {
   id: string
   name: string
   /** e.g. "USD" — what `number/monetary` fields (core-front's widgets.tsx)
