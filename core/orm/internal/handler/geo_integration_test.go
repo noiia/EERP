@@ -179,3 +179,79 @@ func TestGeo_InvalidUpdateIs422AndWritesNothing(t *testing.T) {
 		t.Errorf("record changed: %v", got)
 	}
 }
+
+func createGeo(t *testing.T, e *echo.Echo, tenant uuid.UUID, path, body string) string {
+	t.Helper()
+	rec := doAs(e, tenant, nil, http.MethodPost, path, body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create %s: %d %s", path, rec.Code, rec.Body.String())
+	}
+	return decodeObj(t, rec)["id"].(string)
+}
+
+func names(t *testing.T, rec *httptest.ResponseRecorder) []string {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct{ Data []map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	out := []string{}
+	for _, row := range body.Data {
+		out = append(out, row["name"].(string))
+	}
+	return out
+}
+
+func TestGeo_NearWithinCovers(t *testing.T) {
+	_, e := setupGeo(t)
+	tenant := uuid.New()
+	pt := func(lon, lat string) string { return `{"type":"Point","coordinates":[` + lon + `,` + lat + `]}` }
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":`+pt("2.35", "48.85")+`}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Lyon","geo_location":`+pt("4.83", "45.76")+`}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Versailles","geo_location":`+pt("2.13", "48.80")+`}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Nowhere"}`) // no location (Review Focus 2)
+	createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":{"type":"Polygon","coordinates":[[[1.4,48.1],[3.6,48.1],[3.6,49.3],[1.4,49.3],[1.4,48.1]]]}}`)
+
+	// Nearest to Paris first; the unlocated row last with a null distance.
+	rec := doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places?near[geo_location]=2.35,48.85", "")
+	if got := names(t, rec); len(got) != 4 || got[0] != "Paris" || got[1] != "Versailles" || got[2] != "Lyon" || got[3] != "Nowhere" {
+		t.Errorf("near order = %v", got)
+	}
+	var body struct{ Data []map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if d, _ := body.Data[1]["_distance_m"].(float64); d < 16000 || d > 18000 {
+		t.Errorf("Paris→Versailles = %v m, want ~17 km", body.Data[1]["_distance_m"])
+	}
+	if body.Data[3]["_distance_m"] != nil {
+		t.Errorf("unlocated distance = %v, want null", body.Data[3]["_distance_m"])
+	}
+	if _, ok := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places", ""))["data"].([]any)[0].(map[string]any)["_distance_m"]; ok {
+		t.Error("_distance_m present without near")
+	}
+
+	// 50 km radius around Paris.
+	if got := names(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places?within[geo_location]=2.35,48.85,50000&near[geo_location]=2.35,48.85", "")); len(got) != 2 {
+		t.Errorf("within = %v, want Paris+Versailles", got)
+	}
+	// Which zone covers Paris / Lyon.
+	if got := names(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_zones?covers[area]=2.35,48.85", "")); len(got) != 1 {
+		t.Errorf("covers Paris = %v", got)
+	}
+	if got := names(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_zones?covers[area]=4.83,45.76", "")); len(got) != 0 {
+		t.Errorf("covers Lyon = %v", got)
+	}
+
+	for _, bad := range []string{
+		"/api/v1/geo_places?near[geo_location]=200,0",
+		"/api/v1/geo_places?near[name]=2,48",
+		"/api/v1/geo_places?within[geo_location]=2,48",
+		"/api/v1/geo_places?within[geo_location]=2,48,-5",
+		"/api/v1/geo_zones?covers[geo_location]=2,48",
+		"/api/v1/geo_places?covers[geo_location]=2,48",
+	} {
+		if rec := doAs(e, tenant, nil, http.MethodGet, bad, ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", bad, rec.Code)
+		}
+	}
+}

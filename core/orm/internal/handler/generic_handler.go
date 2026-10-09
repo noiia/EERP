@@ -115,6 +115,12 @@ func (h *GenericHandler) listFilter(c *echo.Context) (crud.ListFilter, error) {
 			continue
 		}
 
+		if handled, err := h.geoParam(&f, key, vals[0]); err != nil {
+			return f, err
+		} else if handled {
+			continue
+		}
+
 		for _, sv := range singleValueMaps {
 			col, ok := bracketColumn(key, sv.prefix)
 			if !ok {
@@ -131,6 +137,40 @@ func (h *GenericHandler) listFilter(c *echo.Context) (crud.ListFilter, error) {
 		}
 	}
 	return f, nil
+}
+
+// geoParam files a near[]/within[]/covers[]/inside[] param into f.Geo
+// (columns re-checked, with their geo kind, by the repository).
+func (h *GenericHandler) geoParam(f *crud.ListFilter, key, val string) (bool, error) {
+	for _, g := range []struct {
+		prefix string
+		into   *map[string]string
+	}{{"near", &f.Geo.Near}, {"within", &f.Geo.Within}, {"covers", &f.Geo.Covers}, {"inside", &f.Geo.Inside}} {
+		col, ok := bracketColumn(key, g.prefix)
+		if !ok {
+			continue
+		}
+		if !h.meta.HasField(col) {
+			return true, echo.NewHTTPError(http.StatusBadRequest, "unknown filter column: "+col)
+		}
+		if *g.into == nil {
+			*g.into = map[string]string{}
+		}
+		(*g.into)[col] = val
+		return true, nil
+	}
+	return false, nil
+}
+
+// listErr maps the list/distinct/aggregate errors callers can cause.
+func listErr(err error) error {
+	switch {
+	case errors.Is(err, crud.ErrUnknownColumn), errors.Is(err, crud.ErrBadAggregate), errors.Is(err, crud.ErrGeoParam):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	case errors.Is(err, crud.ErrGeoRef):
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	return err
 }
 
 // List handles GET /api/v1/{table}?page=&page_size=&filter[col]=&search[col]=&in[col]=&gt[col]=...
@@ -154,10 +194,7 @@ func (h *GenericHandler) List(c *echo.Context) error {
 	if col := c.QueryParam("distinct"); col != "" {
 		values, err := h.svc.DistinctValues(ctx, col, f)
 		if err != nil {
-			if errors.Is(err, crud.ErrUnknownColumn) {
-				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-			}
-			return err
+			return listErr(err)
 		}
 		return c.JSON(http.StatusOK, crud.DistinctResponse{Values: values})
 	}
@@ -174,20 +211,14 @@ func (h *GenericHandler) List(c *echo.Context) error {
 			Group:  c.QueryParam("group"),
 		}, f)
 		if err != nil {
-			if errors.Is(err, crud.ErrUnknownColumn) || errors.Is(err, crud.ErrBadAggregate) {
-				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-			}
-			return err
+			return listErr(err)
 		}
 		return c.JSON(http.StatusOK, crud.AggregateResponse{Groups: groups})
 	}
 
 	rows, total, err := h.svc.List(ctx, f)
 	if err != nil {
-		if errors.Is(err, crud.ErrUnknownColumn) {
-			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-		}
-		return err
+		return listErr(err)
 	}
 
 	resp := make([]map[string]any, len(rows))

@@ -39,6 +39,8 @@ type ListFilter struct {
 	// Equals can't express (an empty filter value means "no filter"): a
 	// Kanban "No status" column, a Calendar's unscheduled records.
 	Empty []string
+	// Geo holds the geo params (near/within/covers/inside) — see GeoFilter.
+	Geo GeoFilter
 }
 
 // DistinctValue is one bucket from DistinctValues: a distinct value of the

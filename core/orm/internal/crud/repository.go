@@ -201,6 +201,11 @@ func (r *Repository) filterConditions(ctx context.Context, f ListFilter) ([]quer
 			return nil, err
 		}
 	}
+	geoConds, err := r.geoConditions(ctx, f.Geo)
+	if err != nil {
+		return nil, err
+	}
+	conds = append(conds, geoConds...)
 	return conds, nil
 }
 
@@ -252,6 +257,13 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 	}
 	for _, cond := range filters {
 		b = b.Where(cond)
+	}
+	distanceExpr, orderExpr, err := r.nearClause(ctx, f.Geo)
+	if err != nil {
+		return nil, 0, err
+	}
+	if distanceExpr != "" {
+		b = b.Columns(append(r.meta.StructMeta.Columns(), distanceExpr)...).OrderBy(orderExpr)
 	}
 
 	page, pageSize := f.Page, f.PageSize
