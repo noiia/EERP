@@ -49,6 +49,7 @@ import (
 	"core/orm/qcache"
 
 	"core/orm/internal/cache"
+	"core/orm/internal/crud"
 	"core/orm/log"
 	"core/orm/model"
 	"core/orm/pool/config"
@@ -222,3 +223,17 @@ func In[V any](col string, values []V) query.Condition {
 func Transact(ctx context.Context, db *db.DB, fn func(*tx.Tx) error) error {
 	return db.Transaction(ctx, fn)
 }
+
+// GeoDistance returns the distance in meters between two "table:id:column"
+// references (nil when either side is empty), checking the caller may read
+// both (ADR-029).
+func GeoDistance(ctx context.Context, db Executor, from, to string) (*float64, error) {
+	return crud.Distance(ctx, db, from, to)
+}
+
+// ErrGeoParam (malformed geo parameter, 400) and ErrGeoRef (unusable
+// reference, 404), returned by GeoDistance and the generic list.
+var (
+	ErrGeoParam = crud.ErrGeoParam
+	ErrGeoRef   = crud.ErrGeoRef
+)

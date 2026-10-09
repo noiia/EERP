@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"core/internal/auth"
+	"core/orm/access"
 
 	"github.com/labstack/echo/v5"
 )
@@ -52,6 +53,21 @@ func PermissionMiddleware(perms permissionChecker) echo.MiddlewareFunc {
 			if !ok {
 				return forbidden(c)
 			}
+
+			// Stamp the per-request read check the generic CRUD layer uses to
+			// authorize references to OTHER tables (geo inside[], distance):
+			// <table>:<table>:read for the caller's roles, memoized per request.
+			ctx := c.Request().Context()
+			seen := map[string]bool{}
+			canRead := func(table string) bool {
+				if v, ok := seen[table]; ok {
+					return v
+				}
+				ok, err := perms.Has(ctx, identity.Roles, table+":"+table+":read")
+				seen[table] = err == nil && ok
+				return seen[table]
+			}
+			c.SetRequest(c.Request().WithContext(access.WithReadCheck(ctx, canRead)))
 			return next(c)
 		}
 	}

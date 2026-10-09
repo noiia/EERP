@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -253,5 +254,65 @@ func TestGeo_NearWithinCovers(t *testing.T) {
 		if rec := doAs(e, tenant, nil, http.MethodGet, bad, ""); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s = %d, want 400", bad, rec.Code)
 		}
+	}
+}
+
+func TestGeo_Inside(t *testing.T) {
+	_, e := setupGeo(t)
+	tenant := uuid.New()
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Lyon","geo_location":{"type":"Point","coordinates":[4.83,45.76]}}`)
+	zone := createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":{"type":"Polygon","coordinates":[[[1.4,48.1],[3.6,48.1],[3.6,49.3],[1.4,49.3],[1.4,48.1]]]}}`)
+	path := "/api/v1/geo_places?inside[geo_location]=geo_zones:" + zone + ":area"
+	readable := []string{"geo_places", "geo_zones"}
+
+	if got := names(t, doAs(e, tenant, readable, http.MethodGet, path, "")); len(got) != 1 || got[0] != "Paris" {
+		t.Errorf("inside = %v, want [Paris]", got)
+	}
+	// Another tenant's zone matches nothing, without revealing it exists.
+	if got := names(t, doAs(e, uuid.New(), readable, http.MethodGet, path, "")); len(got) != 0 {
+		t.Errorf("other tenant = %v", got)
+	}
+	// Unreadable zone table, non-shape column, unknown table -> 404.
+	for _, tc := range []struct {
+		path     string
+		readable []string
+	}{
+		{path, []string{"geo_places"}},
+		{path, nil},
+		{"/api/v1/geo_places?inside[geo_location]=geo_zones:" + zone + ":name", readable},
+		{"/api/v1/geo_places?inside[geo_location]=nope:" + zone + ":area", readable},
+	} {
+		if rec := doAs(e, tenant, tc.readable, http.MethodGet, tc.path, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s (readable %v) = %d, want 404", tc.path, tc.readable, rec.Code)
+		}
+	}
+	if rec := doAs(e, tenant, readable, http.MethodGet, "/api/v1/geo_places?inside[geo_location]=garbage", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("malformed ref = %d, want 400", rec.Code)
+	}
+}
+
+func TestGeo_Distance(t *testing.T) {
+	app, e := setupGeo(t)
+	tenant := uuid.New()
+	paris := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	lyon := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Lyon","geo_location":{"type":"Point","coordinates":[4.83,45.76]}}`)
+	none := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Nowhere"}`)
+	zone := createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":{"type":"Polygon","coordinates":[[[1.4,48.1],[3.6,48.1],[3.6,49.3],[1.4,49.3],[1.4,48.1]]]}}`)
+
+	ctx := access.WithReadCheck(access.WithTenant(context.Background(), tenant), func(string) bool { return true })
+	d, err := crud.Distance(ctx, app.DB, "geo_places:"+paris+":geo_location", "geo_places:"+lyon+":geo_location")
+	if err != nil || d == nil || *d < 390000 || *d > 395000 {
+		t.Fatalf("Paris->Lyon = %v, %v; want ~392 km", d, err)
+	}
+	if d, _ := crud.Distance(ctx, app.DB, "geo_places:"+paris+":geo_location", "geo_zones:"+zone+":area"); d == nil || *d != 0 {
+		t.Errorf("Paris->IDF = %v, want 0 (inside)", d)
+	}
+	if d, err := crud.Distance(ctx, app.DB, "geo_places:"+none+":geo_location", "geo_places:"+lyon+":geo_location"); err != nil || d != nil {
+		t.Errorf("unlocated = %v, %v; want nil", d, err)
+	}
+	noRead := access.WithTenant(context.Background(), tenant)
+	if _, err := crud.Distance(noRead, app.DB, "geo_places:"+paris+":geo_location", "geo_places:"+lyon+":geo_location"); !errors.Is(err, crud.ErrGeoRef) {
+		t.Errorf("unreadable = %v, want ErrGeoRef", err)
 	}
 }

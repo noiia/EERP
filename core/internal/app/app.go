@@ -22,6 +22,7 @@ import (
 	"core/internal/cron"
 	"core/internal/dbmanage"
 	"core/internal/devseed"
+	geoapi "core/internal/geo"
 	"core/internal/graphfield"
 	"core/internal/mail"
 	authmw "core/internal/middleware"
@@ -845,6 +846,11 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	websiteAdminGroup := srv.Echo().Group("/api/v1/website_admin", jwtMw, permMw)
 	websiteAdminGroup.GET("/users", websiteAdmin.List)
 	websiteAdminGroup.PUT("/users/:id", websiteAdmin.Update)
+
+	// Distance between two records' geo values (ADR-029): geo:distance:read,
+	// route-derived, plus read access to both referenced tables (the ORM checks).
+	geoGroup := srv.Echo().Group("/api/v1/geo", jwtMw, permMw)
+	geoGroup.GET("/distance", geoapi.NewHandler(app.DB).Distance)
 
 	// ── crminheritdemo: Create() override reference example ─────────────────
 	// Mounted AFTER the generic block above so Echo's router keeps THIS

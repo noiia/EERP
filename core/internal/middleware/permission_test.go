@@ -9,6 +9,7 @@ import (
 
 	"core/internal/auth"
 	authmw "core/internal/middleware"
+	"core/orm/access"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -247,4 +248,31 @@ func TestDerivePermission_FailsClosed(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPermissionMiddleware_StampsReadCheck(t *testing.T) {
+	e := testEcho()
+	var canContact, canSecret bool
+	stub := &stubReadPerms{granted: map[string]bool{"crm:crm:read": true, "contact:contact:read": true}}
+	g := e.Group("/api/v1", injectIdentity([]string{"r"}), authmw.PermissionMiddleware(stub))
+	g.GET("/crm", func(c *echo.Context) error {
+		canContact = access.CanRead(c.Request().Context(), "contact")
+		canSecret = access.CanRead(c.Request().Context(), "secret")
+		return c.String(http.StatusOK, "ok")
+	})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/crm", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !canContact || canSecret {
+		t.Errorf("contact=%v secret=%v, want true/false", canContact, canSecret)
+	}
+}
+
+// stubReadPerms grants exactly the listed permissions.
+type stubReadPerms struct{ granted map[string]bool }
+
+func (s *stubReadPerms) Has(_ context.Context, _ []string, required string) (bool, error) {
+	return s.granted[required], nil
 }
