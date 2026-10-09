@@ -2,10 +2,12 @@ package crud
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"core/orm/access"
+	"core/orm/geo"
 	"core/orm/internal/registry"
 )
 
@@ -64,6 +66,13 @@ func ValidateRequest(meta registry.TableMeta, body map[string]any, isCreate bool
 		}
 
 		if ok {
+			if kind := geo.KindOfGoType(f.GoType); kind != geo.KindNone {
+				converted, err := geoWriteValue(kind, val)
+				if err != nil {
+					return nil, &GeoValidationError{Field: f.Name, Err: err}
+				}
+				val = converted
+			}
 			result[f.Column] = val
 		} else if isCreate && !f.Nullable && !serverGenerated[f.Column] {
 			missing = append(missing, f.Name)
@@ -95,8 +104,19 @@ func BuildResponse(ctx context.Context, meta registry.TableMeta, row map[string]
 			continue
 		}
 		if val, ok := row[f.Column]; ok {
+			if geo.KindOfGoType(f.GoType) != geo.KindNone && val != nil {
+				gj, err := geo.GeoJSONFromDB(val)
+				if err != nil {
+					val = nil // undecodable: never leak raw EWKB
+				} else {
+					val = gj
+				}
+			}
 			out[f.Name] = val
 		}
+	}
+	if d, ok := row[DistanceKey]; ok {
+		out[DistanceKey] = d
 	}
 	return out
 }
@@ -111,4 +131,30 @@ func intersects(need, have []string) bool {
 		}
 	}
 	return false
+}
+
+// DistanceKey is the computed, read-only key a `near` list adds to each row.
+const DistanceKey = "_distance_m"
+
+// GeoValidationError reports an invalid geometry in a write body; the handler
+// answers 422 VALIDATION_ERROR naming the field, like a missing field.
+type GeoValidationError struct {
+	Field string
+	Err   error
+}
+
+func (e *GeoValidationError) Error() string { return e.Field + ": " + e.Err.Error() }
+func (e *GeoValidationError) Unwrap() error { return e.Err }
+
+// geoWriteValue turns a body's GeoJSON value into the EWKT text a geography
+// column accepts; nil (clearing the field) passes through.
+func geoWriteValue(kind geo.Kind, val any) (any, error) {
+	if val == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(val)
+	if err != nil {
+		return nil, fmt.Errorf("%w: not JSON", geo.ErrInvalid)
+	}
+	return geo.EWKTFromGeoJSON(kind, raw)
 }

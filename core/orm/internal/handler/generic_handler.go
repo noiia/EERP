@@ -233,14 +233,11 @@ func (h *GenericHandler) Create(c *echo.Context) error {
 	if err != nil {
 		var ve *crud.ValidationError
 		if errors.As(err, &ve) {
-			return c.JSON(http.StatusUnprocessableEntity, map[string]any{
-				"error": map[string]any{
-					"code":       "VALIDATION_ERROR",
-					"message":    err.Error(),
-					"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
-					"fields":     ve.Missing,
-				},
-			})
+			return validationJSON(c, err.Error(), ve.Missing)
+		}
+		var ge *crud.GeoValidationError
+		if errors.As(err, &ge) {
+			return validationJSON(c, err.Error(), []string{ge.Field})
 		}
 		return err
 	}
@@ -270,14 +267,11 @@ func (h *GenericHandler) Update(c *echo.Context) error {
 	if err != nil {
 		var ve *crud.ValidationError
 		if errors.As(err, &ve) {
-			return c.JSON(http.StatusUnprocessableEntity, map[string]any{
-				"error": map[string]any{
-					"code":       "VALIDATION_ERROR",
-					"message":    err.Error(),
-					"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
-					"fields":     ve.Missing,
-				},
-			})
+			return validationJSON(c, err.Error(), ve.Missing)
+		}
+		var ge *crud.GeoValidationError
+		if errors.As(err, &ge) {
+			return validationJSON(c, err.Error(), []string{ge.Field})
 		}
 		return err
 	}
@@ -357,4 +351,17 @@ func (h *GenericHandler) Visible(ctx context.Context, id uuid.UUID) (bool, error
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// validationJSON is the 422 VALIDATION_ERROR envelope, `fields` naming the
+// offending fields.
+func validationJSON(c *echo.Context, message string, fields []string) error {
+	return c.JSON(http.StatusUnprocessableEntity, map[string]any{
+		"error": map[string]any{
+			"code":       "VALIDATION_ERROR",
+			"message":    message,
+			"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
+			"fields":     fields,
+		},
+	})
 }
