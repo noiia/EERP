@@ -58,14 +58,31 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
   const addressPrefix =
     typeof field.widgetOptions?.address === 'string' ? field.widgetOptions.address : null
 
-  const set = (ll: LonLat | null) => onChange(ll ? { type: 'Point', coordinates: ll } : null)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const set = (ll: LonLat | null) =>
+    onChangeRef.current(ll ? { type: 'Point', coordinates: ll } : null)
+  const setRef = useRef(set)
+  setRef.current = set
 
   // Map clicks place the point (editable maps only).
   useEffect(() => {
     if (!map || disabled) return
-    map.on('click', (e: Leaflet.LeafletMouseEvent) => set([e.latlng.lng, e.latlng.lat]))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const onClick = (e: Leaflet.LeafletMouseEvent) => setRef.current([e.latlng.lng, e.latlng.lat])
+    map.on('click', onClick)
+    return () => {
+      map.off('click', onClick)
+    }
   }, [map, disabled])
+
+  // A new map (disabled toggled, remount) starts without our old marker.
+  useEffect(
+    () => () => {
+      marker.current?.remove()
+      marker.current = null
+    },
+    [map],
+  )
 
   // Keep the marker in sync with the value.
   useEffect(() => {
@@ -81,7 +98,7 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
       marker.current = L.marker(latlng, { icon: pinIcon(L), draggable: !disabled }).addTo(map)
       marker.current.on('dragend', () => {
         const ll = marker.current?.getLatLng()
-        if (ll) set([ll.lng, ll.lat])
+        if (ll) setRef.current([ll.lng, ll.lat])
       })
     }
     map.setView(latlng, Math.max(map.getZoom?.() ?? 13, 13))
@@ -156,26 +173,56 @@ export function GeoShapeWidget({ value, onChange, disabled }: WidgetProps) {
   const container = useRef<HTMLDivElement | null>(null)
   const { L, map } = useLeafletMap(container, !disabled)
   const [vertices, setVertices] = useState<LonLat[]>(() => ringOf(value))
+  const verticesRef = useRef<LonLat[]>(vertices)
+  const lastEmitted = useRef<string>(JSON.stringify(value ?? null))
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
   const layers = useRef<{ remove: () => void }[]>([])
   const editable = !disabled && (value == null || (value as GeoJSONGeometry).type === 'Polygon')
 
   const emit = (next: LonLat[]) => {
+    verticesRef.current = next
     setVertices(next)
-    if (next.length >= 3) onChange({ type: 'Polygon', coordinates: [[...next, next[0]]] })
-    else if (next.length === 0) onChange(null)
+    // Fewer than 3 vertices is no polygon: clear a previously emitted one.
+    // In-progress 1-2 vertices stay local.
+    const out: GeoJSONGeometry | null =
+      next.length >= 3 ? { type: 'Polygon', coordinates: [[...next, next[0]]] } : null
+    const key = JSON.stringify(out)
+    if (out === null && lastEmitted.current === key) return
+    lastEmitted.current = key
+    onChangeRef.current(out)
   }
+  const emitRef = useRef(emit)
+  emitRef.current = emit
+
+  // External change (cancel, revert, reload): adopt the new value's ring.
+  useEffect(() => {
+    const key = JSON.stringify(value ?? null)
+    if (key === lastEmitted.current) return
+    lastEmitted.current = key
+    const ring = ringOf(value)
+    verticesRef.current = ring
+    setVertices(ring)
+  }, [value])
 
   useEffect(() => {
     if (!map || !editable) return
-    map.on('click', (e: Leaflet.LeafletMouseEvent) => {
-      setVertices((prev) => {
-        const next: LonLat[] = [...prev, [e.latlng.lng, e.latlng.lat]]
-        if (next.length >= 3) onChange({ type: 'Polygon', coordinates: [[...next, next[0]]] })
-        return next
-      })
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const onClick = (e: Leaflet.LeafletMouseEvent) =>
+      emitRef.current([...verticesRef.current, [e.latlng.lng, e.latlng.lat]])
+    map.on('click', onClick)
+    return () => {
+      map.off('click', onClick)
+    }
   }, [map, editable])
+
+  // A new map starts without our old layers.
+  useEffect(
+    () => () => {
+      for (const layer of layers.current) layer.remove()
+      layers.current = []
+    },
+    [map],
+  )
 
   // Redraw the polygon and its vertex handles.
   useEffect(() => {
@@ -211,9 +258,9 @@ export function GeoShapeWidget({ value, onChange, disabled }: WidgetProps) {
         const handle = L.marker([lat, lon], { icon: pinIcon(L), draggable: true }).addTo(map)
         handle.on('dragend', () => {
           const ll = handle.getLatLng()
-          emit(vertices.map((p, j) => (j === i ? [ll.lng, ll.lat] : p)))
+          emitRef.current(verticesRef.current.map((p, j) => (j === i ? [ll.lng, ll.lat] : p)))
         })
-        handle.on('click', () => emit(vertices.filter((_, j) => j !== i)))
+        handle.on('click', () => emitRef.current(verticesRef.current.filter((_, j) => j !== i)))
         layers.current.push(handle)
       })
     }

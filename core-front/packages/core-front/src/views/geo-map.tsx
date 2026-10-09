@@ -51,6 +51,7 @@ export function useLeafletMap(container: RefObject<HTMLDivElement | null>, inter
     return () => {
       cancelled = true
       map?.remove()
+      setState({ L: null, map: null })
     }
   }, [container, interactive])
   return state

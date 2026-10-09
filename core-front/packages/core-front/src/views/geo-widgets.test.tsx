@@ -7,26 +7,31 @@ const markers: {
   latlng: { lat: number; lng: number }
   on: Record<string, () => void>
   removed: boolean
+  draggable: boolean
 }[] = []
 const polygons: { latlngs: unknown; removed: boolean }[] = []
 vi.mock('leaflet', () => {
-  const map = {
+  const makeMap = () => ({
     setView: vi.fn().mockReturnThis(),
     fitBounds: vi.fn(),
     on: (evt: string, fn: (e: { latlng: { lat: number; lng: number } }) => void) => {
       handlers[evt] = fn
     },
+    off: (evt: string, fn: unknown) => {
+      if (handlers[evt] === fn) delete handlers[evt]
+    },
     remove: vi.fn(),
-  }
+  })
   const L = {
-    map: vi.fn(() => map),
+    map: vi.fn((_el: unknown, _opts?: Record<string, unknown>) => makeMap()),
     tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
     divIcon: vi.fn(() => ({})),
-    marker: vi.fn((latlng: [number, number]) => {
+    marker: vi.fn((latlng: [number, number], opts?: { draggable?: boolean }) => {
       const m = {
         latlng: { lat: latlng[0], lng: latlng[1] },
         on: {} as Record<string, () => void>,
         removed: false,
+        draggable: !!opts?.draggable,
       }
       markers.push(m)
       return {
@@ -65,6 +70,7 @@ vi.mock('leaflet', () => {
 })
 
 import { GeoPointWidget, GeoShapeWidget } from './geo-widgets'
+import * as Leaflet from 'leaflet'
 
 beforeEach(() => {
   for (const k of Object.keys(handlers)) delete handlers[k]
@@ -144,6 +150,35 @@ describe('GeoPointWidget', () => {
     vi.unstubAllGlobals()
   })
 
+  it('creates a marker for the initial value and recreates it after disabled -> enabled', async () => {
+    const field = { name: 'geo_location', type: 'geo' as const }
+    const value = { type: 'Point' as const, coordinates: [2.35, 48.85] as [number, number] }
+    const { rerender } = render(
+      <GeoPointWidget field={field} value={value} onChange={vi.fn()} disabled />,
+    )
+    await waitFor(() => expect(markers).toHaveLength(1))
+    expect(markers[0].draggable).toBe(false)
+    rerender(<GeoPointWidget field={field} value={value} onChange={vi.fn()} />)
+    await waitFor(() => expect(markers).toHaveLength(2))
+    expect(markers[1].draggable).toBe(true)
+    expect(markers[1].removed).toBe(false)
+  })
+
+  it('emits the new coordinates when the marker is dragged', async () => {
+    const onChange = vi.fn()
+    render(
+      <GeoPointWidget
+        field={{ name: 'geo_location', type: 'geo' }}
+        value={{ type: 'Point', coordinates: [2.35, 48.85] }}
+        onChange={onChange}
+      />,
+    )
+    await waitFor(() => expect(markers).toHaveLength(1))
+    markers[0].latlng = { lat: 10, lng: 20 }
+    act(() => markers[0].on.dragend())
+    expect(onChange).toHaveBeenLastCalledWith({ type: 'Point', coordinates: [20, 10] })
+  })
+
   it('is inert when disabled', async () => {
     const onChange = vi.fn()
     render(
@@ -154,7 +189,9 @@ describe('GeoPointWidget', () => {
         disabled
       />,
     )
-    await waitFor(() => expect(markers).toHaveLength(0))
+    await waitFor(() => expect(Leaflet.map).toHaveBeenCalled())
+    expect(vi.mocked(Leaflet.map).mock.calls.at(-1)?.[1]).toMatchObject({ dragging: false })
+    expect(markers).toHaveLength(0)
     expect(handlers.click).toBeUndefined()
   })
 })
@@ -185,5 +222,87 @@ describe('GeoShapeWidget', () => {
         ],
       ],
     })
+  })
+
+  const shapeField = { name: 'service_zone', type: 'geo' as const, widget: 'shape' }
+  const tri = (pts: [number, number][]) => ({
+    type: 'Polygon' as const,
+    coordinates: [[...pts, pts[0]]],
+  })
+
+  it('resyncs vertices on an external value change', async () => {
+    const onChange = vi.fn()
+    const a = tri([
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ])
+    const b = tri([
+      [5, 5],
+      [6, 5],
+      [6, 6],
+    ])
+    const { rerender } = render(<GeoShapeWidget field={shapeField} value={a} onChange={onChange} />)
+    await waitFor(() => expect(markers).toHaveLength(3))
+    rerender(<GeoShapeWidget field={shapeField} value={b} onChange={onChange} />)
+    await waitFor(() =>
+      expect(markers.filter((m) => !m.removed).map((m) => [m.latlng.lng, m.latlng.lat])).toEqual([
+        [5, 5],
+        [6, 5],
+        [6, 6],
+      ]),
+    )
+    act(() => handlers.click({ latlng: { lat: 7, lng: 7 } }))
+    expect(onChange).toHaveBeenLastCalledWith(
+      tri([
+        [5, 5],
+        [6, 5],
+        [6, 6],
+        [7, 7],
+      ]),
+    )
+  })
+
+  it('emits null when a vertex removal leaves fewer than 3', async () => {
+    const onChange = vi.fn()
+    render(
+      <GeoShapeWidget
+        field={shapeField}
+        value={tri([
+          [0, 0],
+          [1, 0],
+          [1, 1],
+        ])}
+        onChange={onChange}
+      />,
+    )
+    await waitFor(() => expect(markers).toHaveLength(3))
+    act(() => markers[0].on.click())
+    expect(onChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('emits the moved polygon when a vertex is dragged', async () => {
+    const onChange = vi.fn()
+    render(
+      <GeoShapeWidget
+        field={shapeField}
+        value={tri([
+          [0, 0],
+          [1, 0],
+          [1, 1],
+        ])}
+        onChange={onChange}
+      />,
+    )
+    await waitFor(() => expect(markers).toHaveLength(3))
+    markers[1].latlng = { lat: 3, lng: 4 }
+    act(() => markers[1].on.dragend())
+    expect(onChange).toHaveBeenLastCalledWith(
+      tri([
+        [0, 0],
+        [4, 3],
+        [1, 1],
+      ]),
+    )
   })
 })
