@@ -241,3 +241,10 @@ var (
 // SetTableActiveCheck wires the live module state (module.Registry.IsTableActive)
 // at boot so geo references to a deactivated module's table are refused.
 func SetTableActiveCheck(fn func(table string) bool) { crud.SetTableActiveCheck(fn) }
+
+// ParseLonLat parses "lon,lat" and GeoPointSQL renders a geography literal
+// from parsed numbers — for hand-written geo SQL (e.g. event's public list).
+var (
+	ParseLonLat = geo.ParseLonLat
+	GeoPointSQL = geo.PointSQL
+)

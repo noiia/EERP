@@ -114,6 +114,8 @@ type PublicResolver func(ctx context.Context, table string) (access.PublicScope,
 // are listed after them (they book slots, not sessions). The event table's
 // own published scope applies: 404 when unpublished, only published columns
 // returned, its forced filter enforced. The site's event_list block reads it.
+// ?near=<lon>,<lat> orders by distance of geo_location (when published; else
+// ignored) and adds distance_m (null when unlocated); a malformed value is 400.
 func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		ctx := c.Request().Context()
@@ -133,6 +135,18 @@ func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 		if !ok {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
+		distanceSQL, orderSQL := "NULL::float8", ""
+		if raw := c.QueryParam("near"); raw != "" {
+			lon, lat, err := orm.ParseLonLat(raw)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, "near must be <longitude>,<latitude>")
+			}
+			if scope.Allows("geo_location") { // an unpublished location must not even order the list
+				p := orm.GeoPointSQL(lon, lat)
+				distanceSQL = "ST_Distance(e.geo_location, " + p + ")"
+				orderSQL = "e.geo_location <-> " + p + " NULLS LAST, "
+			}
+		}
 		args := []any{tenant, limit}
 		where := ""
 		for col, val := range scope.Equals {
@@ -143,7 +157,7 @@ func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 			where += fmt.Sprintf(" AND e.%s::text = $%d", col, len(args))
 		}
 		rows, err := h.db.Query(ctx, `
-			SELECT e.id, e.name, e.description, e.location, e.kind, e.timezone, e.picture, n.starts_at, n.seats_left
+			SELECT e.id, e.name, e.description, e.location, e.kind, e.timezone, e.picture, n.starts_at, n.seats_left, `+distanceSQL+` AS distance_m
 			FROM event e
 			LEFT JOIN LATERAL (
 				SELECT s.starts_at, s.capacity - s.seats_taken AS seats_left FROM event_session s
@@ -151,7 +165,7 @@ func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 				ORDER BY s.starts_at LIMIT 1) n ON true
 			WHERE e.tenant_id = $1 AND e.deleted_at IS NULL AND e.published IS TRUE
 			  AND (e.kind = 'appointment' OR n.starts_at IS NOT NULL)`+where+`
-			ORDER BY n.starts_at NULLS LAST, e.name LIMIT $2`, args...)
+			ORDER BY `+orderSQL+`n.starts_at NULLS LAST, e.name LIMIT $2`, args...)
 		if err != nil {
 			return err
 		}
@@ -164,10 +178,14 @@ func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 			var picture *bool
 			var next *time.Time
 			var left *int
-			if err := rows.Scan(&id, &name, &desc, &loc, &kind, &tz, &picture, &next, &left); err != nil {
+			var dist *float64
+			if err := rows.Scan(&id, &name, &desc, &loc, &kind, &tz, &picture, &next, &left, &dist); err != nil {
 				return err
 			}
 			row := map[string]any{"id": id, "next_session_at": next, "seats_left": left}
+			if orderSQL != "" {
+				row["distance_m"] = dist
+			}
 			for col, v := range map[string]any{"name": name, "description": desc, "location": loc, "kind": kind, "timezone": tz, "picture": picture} {
 				if scope.Allows(col) {
 					row[col] = v
