@@ -273,6 +273,13 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	jwtMw := authmw.JWTMiddleware(tokenSvc)
 	permMw := authmw.PermissionMiddleware(permRepo)
 
+	// The database restore upload (internal/dbmanage) gets its own cap, matching
+	// infra/nginx/nginx.conf's client_max_body_size on /api/v1/database-management/.
+	const (
+		dbRestorePath      = "/api/v1/database-management/databases/restore"
+		dbRestoreBodyLimit = "2G"
+	)
+
 	// ── Build server ──────────────────────────────────────────────────────────
 	// Bind on PublicAddress (e.g. 0.0.0.0); clients reach the API at BackendBaseURL
 	// (BackendHost[:BackendPort]/api/BackendVersion) — that's what the frontend uses.
@@ -282,7 +289,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		BodyLimit:    configContent.RequestBodyLimit,
 		// File uploads get their own, larger cap (uploadLimit below) instead of
 		// raising request_body_limit for every JSON route.
-		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments"},
+		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", dbRestorePath},
 	}
 	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {
@@ -638,7 +645,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	dbManageGroup.DELETE("/databases/:name/prepare", dbManageHandler.DiscardPrepared)
 	dbManageGroup.DELETE("/databases/:name", dbManageHandler.Delete)
 	dbManageGroup.GET("/databases/:name/extract", dbManageHandler.Extract)
-	dbManageGroup.POST("/databases/restore", dbManageHandler.Restore)
+	// A restore uploads a whole dump zip: exempt from request_body_limit
+	// (BodyLimitExempt above), capped like nginx's 2g on this location.
+	dbManageGroup.POST("/databases/restore", dbManageHandler.Restore, ormserver.BodyLimit(dbRestoreBodyLimit))
 
 	// ── Cron ──────────────────────────────────────────────────────────────────
 	// Background scheduled actions (docs/adr/ADR-016-cron-scheduler.md). Unlike
