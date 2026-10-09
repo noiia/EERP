@@ -124,3 +124,73 @@ func TestParseLonLatAndPointSQL(t *testing.T) {
 		t.Errorf("PointSQL = %q", got)
 	}
 }
+
+const polyHex = "0103000020E6100000010000000400000000000000000000000000000000000000000000000000F03F0000000000000000000000000000F03F000000000000F03F00000000000000000000000000000000"
+const polyJSON = `{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}`
+
+func TestShapeRoundTrip(t *testing.T) {
+	s := geo.Shape{GeoJSON: json.RawMessage(polyJSON)}
+	v, err := s.Value()
+	if err != nil || v != "SRID=4326;POLYGON ((0 0, 1 0, 1 1, 0 0))" {
+		t.Fatalf("value = %v, %v", v, err)
+	}
+	var back geo.Shape
+	if err := back.Scan(polyHex); err != nil || string(back.GeoJSON) != polyJSON {
+		t.Fatalf("scan = %s, %v", back.GeoJSON, err)
+	}
+	got, err := geo.GeoJSONFromDB([]byte(polyHex))
+	if err != nil || string(got) != polyJSON {
+		t.Fatalf("GeoJSONFromDB = %s, %v", got, err)
+	}
+	var p geo.Point
+	if err := p.Scan(polyHex); err == nil {
+		t.Error("Point.Scan of a polygon must fail")
+	}
+}
+
+func TestShapeJSON(t *testing.T) {
+	b, err := json.Marshal(geo.Shape{GeoJSON: json.RawMessage(polyJSON)})
+	if err != nil || string(b) != polyJSON {
+		t.Fatalf("marshal = %s, %v", b, err)
+	}
+	if b, _ := json.Marshal(geo.Shape{}); string(b) != "null" {
+		t.Errorf("zero shape = %s", b)
+	}
+	var s geo.Shape
+	if err := json.Unmarshal([]byte(polyJSON), &s); err != nil || string(s.GeoJSON) != polyJSON {
+		t.Fatalf("unmarshal = %s, %v", s.GeoJSON, err)
+	}
+	for _, bad := range []string{
+		`{"type":"Point","coordinates":[0,0]}`,
+		`{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1]]]}`,
+	} {
+		if err := json.Unmarshal([]byte(bad), &s); !errors.Is(err, geo.ErrInvalid) {
+			t.Errorf("%s: err = %v", bad, err)
+		}
+	}
+}
+
+func TestEWKTFromGeoJSON_Edges(t *testing.T) {
+	hole := `{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,10],[0,10],[0,0]],[[2,2],[3,2],[3,3],[2,2]]]}`
+	if _, err := geo.EWKTFromGeoJSON(geo.KindShape, []byte(hole)); err != nil {
+		t.Errorf("polygon with hole: %v", err)
+	}
+	for _, bad := range []string{`{"type":"Polygon","coordinates":[]}`, `null`} {
+		if _, err := geo.EWKTFromGeoJSON(geo.KindShape, []byte(bad)); !errors.Is(err, geo.ErrInvalid) {
+			t.Errorf("%s: err = %v", bad, err)
+		}
+	}
+}
+
+func TestParseRadius(t *testing.T) {
+	for _, ok := range []string{"1", "20000000"} {
+		if _, err := geo.ParseRadius(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"0", "-5", "20000001", "abc", "NaN"} {
+		if _, err := geo.ParseRadius(bad); !errors.Is(err, geo.ErrInvalid) {
+			t.Errorf("%q: err = %v", bad, err)
+		}
+	}
+}
