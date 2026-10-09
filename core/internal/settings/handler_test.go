@@ -1820,3 +1820,28 @@ func TestGetViewCatalog_SearchAndPageSize(t *testing.T) {
 		}
 	})
 }
+
+func TestGetMyPreferences_UnitSystem(t *testing.T) {
+	for _, tc := range []struct{ stored, want string }{
+		{"", UnitSystemMetric},
+		{UnitSystemImperial, UnitSystemImperial},
+	} {
+		t.Run("stored="+tc.stored, func(t *testing.T) {
+			identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+			h := NewHandler(&stubUsers{}, &stubStore{values: map[string]string{UnitSystemKey: tc.stored}}, &stubCompanies{}, "development")
+			rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+			}
+			var body struct {
+				UnitSystem string `json:"unit_system"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.UnitSystem != tc.want {
+				t.Errorf("unit_system = %q, want %q", body.UnitSystem, tc.want)
+			}
+		})
+	}
+}

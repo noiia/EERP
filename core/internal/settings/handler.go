@@ -127,6 +127,10 @@ type preferencesResponse struct {
 	// Environment: this deployment's types.Config.Environment
 	// ("development"/"production") — see NewHandler's own doc comment.
 	Environment string `json:"environment"`
+	// UnitSystem: the active company's unit system (Settings → Units), so
+	// distances (geo widgets, list Distance column) display in km or mi
+	// without a settings:units:read grant.
+	UnitSystem string `json:"unit_system"`
 }
 
 // activeCompanyRef is the minimal company shape callers need to render a
@@ -217,6 +221,12 @@ func (h *Handler) GetMyPreferences(c *echo.Context) error {
 			resp.UsernameAtFormat = accounts.UsernameAtFormat
 		}
 	}
+
+	unitSystem, err := resolveUnitSystem(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("preferences: unit system: %w", err)
+	}
+	resp.UnitSystem = unitSystem
 	return c.JSON(http.StatusOK, resp)
 }
 
