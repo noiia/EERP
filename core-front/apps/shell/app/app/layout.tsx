@@ -7,6 +7,7 @@ import '@/generated/generated-modules'
 import { AppTopBar } from '../../src/components/AppTopBar'
 import { ModulesInit } from '../../src/components/ModulesInit'
 import { PresenceInit } from '../../src/components/PresenceInit'
+import { ErpUiStyle } from '../../src/components/ErpUiStyle'
 import { SettingsUsersRegistryInit } from '../../src/components/SettingsUsersRegistryInit'
 import { SessionHydrator } from '../../src/components/SessionHydrator'
 import {
@@ -81,6 +82,7 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <ModulesInit />
+      <ErpUiStyle />
       <SettingsUsersRegistryInit />
       <SessionHydrator identity={identity} />
       <PresenceInit />
@@ -166,6 +168,7 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
                   provides — overflowX: 'auto' remains a defensive fallback for any
                   other wide inner surface, never a per-view width hack. */}
                 <Box
+                  className="erp-page"
                   sx={{
                     px: layout.pageInsetX,
                     py: layout.pageInsetY,

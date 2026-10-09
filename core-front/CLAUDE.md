@@ -118,7 +118,7 @@ Settings live under `apps/shell/app/app/settings/*` and are listed in `SETTINGS_
 ## State model (server vs client)
 
 - **Server owns:** data fetching, the Next Data Cache, the session (httpOnly cookie → identity resolved server-side), and authorization.
-- **Client (Zustand) owns:** per-view interaction stores seeded from server `initialData` (records, selected, draft, dirty, expanded); a `useSessionStore` (`persist`) mirroring identity/permissions for UI gating; a `useUiStore` (`persist`) for theme/sidebar/last-route.
+- **Client (Zustand) owns:** per-view interaction stores seeded from server `initialData` (records, selected, draft, dirty, expanded); a `useSessionStore` (`persist`) mirroring identity/permissions for UI gating; a `useUiStore` (`persist`) for theme/sidebar/last-route and the ERP `uiStyle` (`pretty` | `performance`, Settings → Global settings → Colors): `apps/shell/src/components/ErpUiStyle.tsx`, mounted only by the `/app` layout, injects global rules — pretty adds page-enter animation, shadows and hover transitions; performance collapses every transition/animation/shadow and the ripple. Global rather than a wrapper `sx` because menus/dialogs portal to `<body>`; ERP-only because it unmounts on the public site. Per-device like the palette (a performance need is a device trait).
 - **Mutations:** Server Actions → Go → `revalidateTag` → server re-render. The client store updates optimistically, then reconciles with the revalidated server data.
 
 ## Testing

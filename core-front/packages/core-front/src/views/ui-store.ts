@@ -12,8 +12,13 @@ import { layout } from './tokens'
 
 export type ThemeMode = 'light' | 'dark'
 
+/** ERP rendering style: 'pretty' adds animations and shadows, 'performance'
+ * strips every transition/animation/shadow. ERP-only — the public site ignores it. */
+export type UiStyle = 'pretty' | 'performance'
+
 export interface UiState {
   theme: ThemeMode
+  uiStyle: UiStyle
   /** Brand colors driving the MUI theme; user-editable in Settings → Appearance. */
   palette: ThemePalette
   sidebarOpen: boolean
@@ -26,6 +31,7 @@ export interface UiState {
    * entity — a per-user layout preference, not per-entity like viewMode. */
   chatterWidth: number
   setTheme: (theme: ThemeMode) => void
+  setUiStyle: (uiStyle: UiStyle) => void
   /** Override a single brand color (live theming). */
   setPaletteColor: (key: BrandColorKey, value: string) => void
   /** Replace the whole palette at once. */
@@ -43,12 +49,14 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       theme: 'light',
+      uiStyle: 'pretty',
       palette: DEFAULT_PALETTE,
       sidebarOpen: true,
       lastRoute: null,
       viewMode: {},
       chatterWidth: layout.chatterWidthDefault,
       setTheme: (theme) => set({ theme }),
+      setUiStyle: (uiStyle) => set({ uiStyle }),
       setPaletteColor: (key, value) =>
         set((state) => ({ palette: { ...state.palette, [key]: value } })),
       setPalette: (palette) => set({ palette }),

@@ -83,6 +83,8 @@ export default function AppearanceSettings({
   const setPaletteColor = useUiStore((s) => s.setPaletteColor)
   const resetPalette = useUiStore((s) => s.resetPalette)
   const setTheme = useUiStore((s) => s.setTheme)
+  const uiStyle = useUiStore((s) => s.uiStyle)
+  const setUiStyle = useUiStore((s) => s.setUiStyle)
 
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
@@ -120,6 +122,24 @@ export default function AppearanceSettings({
                 }
                 label={t('Dark mode')}
               />
+
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={uiStyle === 'performance'}
+                      onChange={(e) => setUiStyle(e.target.checked ? 'performance' : 'pretty')}
+                      slotProps={{ input: { 'aria-label': 'Performance mode' } }}
+                    />
+                  }
+                  label={t('Performance mode')}
+                />
+                <Typography variant="body2" color="text.secondary">
+                  {t(
+                    'Turns off the ERP animations and shadows for a faster interface on slow devices. The public website is not affected.',
+                  )}
+                </Typography>
+              </Box>
 
               <Stack spacing={2}>
                 {BRAND_COLORS.map((color) => {

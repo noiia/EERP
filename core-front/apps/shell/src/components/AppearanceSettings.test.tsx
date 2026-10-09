@@ -7,6 +7,7 @@ describe('AppearanceSettings', () => {
   beforeEach(() => {
     useUiStore.getState().resetPalette()
     useUiStore.getState().setTheme('light')
+    useUiStore.getState().setUiStyle('pretty')
   })
 
   it('renders an editor for each color labeled by its software role, seeded from the store', () => {
@@ -35,6 +36,12 @@ describe('AppearanceSettings', () => {
     render(<AppearanceSettings />)
     fireEvent.click(screen.getByLabelText('Dark mode'))
     expect(useUiStore.getState().theme).toBe('dark')
+  })
+
+  it('toggles performance mode', () => {
+    render(<AppearanceSettings />)
+    fireEvent.click(screen.getByLabelText('Performance mode'))
+    expect(useUiStore.getState().uiStyle).toBe('performance')
   })
 
   it('resets the palette to defaults', () => {
