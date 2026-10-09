@@ -17,6 +17,15 @@ export type FieldType =
   | 'selection'
   | 'totals'
   | 'address'
+  | 'geo'
+  | 'distance'
+
+/** A GeoJSON geometry object as the API speaks it ([lon, lat] order). */
+export type GeoJSONGeometry =
+  | { type: 'Point'; coordinates: [number, number] }
+  | { type: 'LineString'; coordinates: [number, number][] }
+  | { type: 'Polygon'; coordinates: [number, number][][] }
+  | { type: 'MultiPolygon'; coordinates: [number, number][][][] }
 
 /**
  * Descriptors cross the RSC boundary as props, so everything in them — widget
@@ -79,6 +88,12 @@ export type JsonValue =
  * (`buildBehaviorPlan`'s `unstored` computation, `behaviors.ts`) — the field
  * itself has no column of its own to write, same "computes/writes through
  * something else" posture `type: 'totals'` already has.
+ * type/geo is a PostGIS geography column, GeoJSON in the draft (ADR-029):
+ * 'point' a draggable marker on a map (+ address search, "Locate from
+ * address" via widgetOptions.address), 'shape' a polygon editor. type/distance
+ * (widget 'meters', always store:false) asks Go for the distance between two
+ * geo values — widgetOptions {from, to}, each {entity, id?, field}, id naming
+ * the draft field holding the record id (omitted = this record).
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username', 'user-presence', 'html'],
@@ -89,6 +104,8 @@ export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   address: ['form'],
   selection: ['select', 'linked'],
   totals: ['recap'],
+  geo: ['point', 'shape'],
+  distance: ['meters'],
 }
 
 export type RelationKind = 'many2one' | 'one2many' | 'many2many'
@@ -131,6 +148,12 @@ export interface RelationDescriptor {
   labelField?: string
   /** one2many: the FK column ON THE RELATED entity that points back at this record. */
   inverseField?: string
+  /**
+   * one2many by zone, instead of `inverseField`: rows of `entity` whose
+   * `field` point lies inside THIS record's `zone` shape (Go `inside[]`).
+   * Read-only by nature — no FK to preset on a create.
+   */
+  inside?: { field: string; zone: string }
   /** many2many: the junction entity holding one row per link. */
   via?: string
   /**
@@ -379,8 +402,8 @@ function resolveRelationWidget(field: FieldDescriptor): string {
         `"${rel.kind}" (allowed: "${allowed}")`,
     )
   }
-  if (rel.kind === 'one2many' && !rel.inverseField) {
-    throw new Error(`field "${field.name}": one2many relations require inverseField`)
+  if (rel.kind === 'one2many' && !rel.inverseField && !rel.inside) {
+    throw new Error(`field "${field.name}": one2many relations require inverseField or inside`)
   }
   if (rel.kind === 'many2many' && !rel.via) {
     throw new Error(`field "${field.name}": many2many relations require via (junction entity)`)
@@ -507,6 +530,8 @@ export function fieldZeroDefault(field: FieldDescriptor): JsonValue {
     case 'relation':
     case 'totals':
     case 'address':
+    case 'geo':
+    case 'distance':
       return null
   }
 }
@@ -1036,13 +1061,13 @@ export interface CatalogDescriptor {
  * ranges -> gt[col]/gte[col]/lt[col]/lte[col]. A "between" is just a gte
  * condition and an lte condition on the same field — no separate operator.
  */
-export type FilterOperator = 'eq' | 'contains' | 'in' | 'gt' | 'gte' | 'lt' | 'lte'
+export type FilterOperator = 'eq' | 'contains' | 'in' | 'gt' | 'gte' | 'lt' | 'lte' | 'near' | 'inside' | 'covers'
 
 /** One structured filter row in the search bar's Filters section. */
 export interface FilterCondition {
   field: string
   op: FilterOperator
-  /** eq/contains/gt/gte/lt/lte. */
+  /** eq/contains/gt/gte/lt/lte; near: "lon,lat" or "lon,lat,meters"; inside: "table:id:column"; covers: "lon,lat". */
   value?: string
   /** in only. */
   values?: string[]

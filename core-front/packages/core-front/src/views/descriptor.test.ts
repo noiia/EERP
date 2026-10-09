@@ -1075,3 +1075,16 @@ describe('evaluateCondition — date ops', () => {
     }
   })
 })
+
+describe('geo field types', () => {
+  it('resolves geo/point by default, geo/shape and distance/meters', () => {
+    expect(resolveWidget({ name: 'loc', type: 'geo' })).toBe('point')
+    expect(resolveWidget({ name: 'zone', type: 'geo', widget: 'shape' })).toBe('shape')
+    expect(resolveWidget({ name: 'd', type: 'distance' })).toBe('meters')
+    expect(() => resolveWidget({ name: 'loc', type: 'geo', widget: 'stars' })).toThrow(/not allowed/)
+  })
+  it('zero-defaults both to null', () => {
+    expect(fieldZeroDefault({ name: 'loc', type: 'geo' })).toBeNull()
+    expect(fieldZeroDefault({ name: 'd', type: 'distance' })).toBeNull()
+  })
+})

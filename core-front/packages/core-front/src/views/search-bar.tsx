@@ -138,8 +138,11 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
     case 'relation':
     case 'boolean':
       return ['eq', 'in']
+    case 'geo':
+      return field.widget === 'shape' ? ['covers'] : ['near', 'inside']
     case 'totals':
     case 'address':
+    case 'distance':
       // Never filterable/groupable in practice through THIS field — a
       // computed recap or composite field only ever appears on a form, never
       // a tree view's fields, and address's real filterable data lives on
@@ -161,6 +164,9 @@ const OPERATOR_LABEL: Record<FilterOperator, string> = {
   lte: '≤',
   contains: 'contains',
   in: 'in',
+  near: 'near',
+  inside: 'inside zone of',
+  covers: 'covers',
 }
 
 function toListOptions(filters: FilterCondition[], pageSize: number): EntityListOptions {

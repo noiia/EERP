@@ -6,6 +6,7 @@ import {
   useCompanyStore,
   useFormatStore,
   useI18nStore,
+  useUnitStore,
 } from '@eerp/core-front'
 import { resolveEffectiveLocale, type LocalePreferences } from '@/lib/locale'
 // Catalogs register as an import side effect; importing here guarantees the pool is
@@ -43,6 +44,8 @@ export function LocaleSync({ preferences }: { preferences: LocalePreferences | n
     if (preferences.active_company) {
       useCompanyStore.getState().setCurrency(preferences.active_company.currency)
     }
+
+    if (preferences.unit_system) useUnitStore.getState().setSystem(preferences.unit_system)
 
     useAccountsStore.getState().setUsernameAtFormat(Boolean(preferences.username_at_format))
   }, [preferences])

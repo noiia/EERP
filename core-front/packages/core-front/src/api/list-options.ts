@@ -22,6 +22,13 @@ export interface EntityListOptions {
   gte?: Record<string, string>
   lt?: Record<string, string>
   lte?: Record<string, string>
+  /** Geo params (ADR-029), keyed by column: near "lon,lat" (nearest first,
+   * adds `_distance_m`), within "lon,lat,meters", covers "lon,lat" (shape
+   * column), inside "table:id:shape_column" (point column). */
+  near?: Record<string, string>
+  within?: Record<string, string>
+  covers?: Record<string, string>
+  inside?: Record<string, string>
   /** Columns that must be NULL or '' (`empty[col]=1`) — an empty `filter`
    * value means "no filter", so this is the only way to ask for "unset". */
   empty?: string[]
@@ -29,7 +36,7 @@ export interface EntityListOptions {
   pageSize?: number
 }
 
-const MAP_KEYS = ['filter', 'search', 'in', 'gt', 'gte', 'lt', 'lte'] as const
+const MAP_KEYS = ['filter', 'search', 'in', 'gt', 'gte', 'lt', 'lte', 'near', 'within', 'covers', 'inside'] as const
 
 /**
  * Layer `extra` over `base` (e.g. the search bar's filters over a route's

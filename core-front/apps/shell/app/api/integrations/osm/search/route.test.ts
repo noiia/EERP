@@ -65,6 +65,8 @@ describe('GET /api/integrations/osm/search', () => {
       return jsonResponse([
         {
           display_name: '12 Main Street, Springfield, USA',
+          lat: '48.85',
+          lon: '2.35',
           address: {
             house_number: '12',
             road: 'Main Street',
@@ -74,6 +76,7 @@ describe('GET /api/integrations/osm/search', () => {
             country: 'USA',
           },
         },
+        { display_name: 'Nowhere' },
       ])
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -91,6 +94,20 @@ describe('GET /api/integrations/osm/search', () => {
         city: 'Springfield',
         state: 'Someplace',
         country: 'USA',
+        lat: 48.85,
+        lon: 2.35,
+      },
+      {
+        label: 'Nowhere',
+        number: null,
+        street: '',
+        complement: '',
+        zip_code: '',
+        city: '',
+        state: '',
+        country: '',
+        lat: null,
+        lon: null,
       },
     ])
 

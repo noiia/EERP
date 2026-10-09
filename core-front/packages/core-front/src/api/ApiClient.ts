@@ -231,6 +231,10 @@ function appendListParams(params: URLSearchParams, options?: EntityListOptions):
     ['gte', options.gte],
     ['lt', options.lt],
     ['lte', options.lte],
+    ['near', options.near],
+    ['within', options.within],
+    ['covers', options.covers],
+    ['inside', options.inside],
   ] as const) {
     for (const [col, value] of Object.entries(m ?? {})) {
       params.set(`${prefix}[${col}]`, value)

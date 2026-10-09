@@ -24,6 +24,8 @@ interface NominatimAddress {
 interface NominatimResult {
   display_name: string
   address?: NominatimAddress
+  lat?: string
+  lon?: string
 }
 
 export interface OSMSuggestion {
@@ -35,6 +37,8 @@ export interface OSMSuggestion {
   city: string
   state: string
   country: string
+  lat: number | null
+  lon: number | null
 }
 
 function toSuggestion(result: NominatimResult): OSMSuggestion {
@@ -49,6 +53,8 @@ function toSuggestion(result: NominatimResult): OSMSuggestion {
     city: address.city ?? address.town ?? address.village ?? '',
     state: address.state ?? '',
     country: address.country ?? '',
+    lat: result.lat != null && Number.isFinite(Number(result.lat)) ? Number(result.lat) : null,
+    lon: result.lon != null && Number.isFinite(Number(result.lon)) ? Number(result.lon) : null,
   }
 }
 
