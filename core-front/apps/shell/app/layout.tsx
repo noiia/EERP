@@ -4,6 +4,7 @@ import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter'
 // Phase 4.6) — among the first raw CSS imports in this codebase (everything else
 // styles via MUI's sx prop/Emotion). Global CSS is kept in the root layout so every
 // route segment (the ERP under /app, the report print targets) gets it.
+import 'leaflet/dist/leaflet.css'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 // PDF report styling (docs/roadmaps/pdf-reports.md Phase 4) — ReportRenderer renders
