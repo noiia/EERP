@@ -191,6 +191,9 @@ const OPERATOR_LABEL: Record<FilterOperator, string> = {
   covers: 'covers',
 }
 
+const isLonLat = (p: string[]) =>
+  p.length >= 2 && p[0] !== '' && p[1] !== '' && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1]))
+
 export function toListOptions(filters: FilterCondition[], pageSize: number): EntityListOptions {
   const options: EntityListOptions = { pageSize }
   for (const f of filters) {
@@ -218,17 +221,21 @@ export function toListOptions(filters: FilterCondition[], pageSize: number): Ent
         break
       case 'near': {
         const parts = (f.value ?? '').split(',')
-        if (parts.length < 2) break
+        if (!isLonLat(parts)) break
         ;(options.near ??= {})[f.field] = `${parts[0]},${parts[1]}`
-        if (parts.length === 3 && parts[2] !== '') (options.within ??= {})[f.field] = f.value as string
+        if (parts.length === 3 && Number.isFinite(Number(parts[2])) && parts[2] !== '' && Number(parts[2]) > 0)
+          (options.within ??= {})[f.field] = f.value as string
         break
       }
       case 'inside':
-        ;(options.inside ??= {})[f.field] = f.value ?? ''
+        if (f.value) (options.inside ??= {})[f.field] = f.value
         break
-      case 'covers':
-        ;(options.covers ??= {})[f.field] = f.value ?? ''
+      case 'covers': {
+        const parts = (f.value ?? '').split(',')
+        if (!isLonLat(parts)) break
+        ;(options.covers ??= {})[f.field] = `${parts[0]},${parts[1]}`
         break
+      }
     }
   }
   return options

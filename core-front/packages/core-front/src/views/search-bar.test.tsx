@@ -387,3 +387,20 @@ describe('geo filters → list options', () => {
     })
   })
 })
+
+describe('geo filter value validation', () => {
+  const run = (op: 'near' | 'covers' | 'inside', value: string) =>
+    toListOptions([{ field: 'g', op, value }], 1)
+  it('drops malformed values', () => {
+    expect(run('near', ',,5000')).toEqual({ pageSize: 1 })
+    expect(run('near', 'a,b')).toEqual({ pageSize: 1 })
+    expect(run('covers', '')).toEqual({ pageSize: 1 })
+    expect(run('inside', '')).toEqual({ pageSize: 1 })
+  })
+  it('near with a bad radius only orders', () => {
+    expect(run('near', '2.35,48.85,abc')).toEqual({ pageSize: 1, near: { g: '2.35,48.85' } })
+  })
+  it('covers drops a radius', () => {
+    expect(run('covers', '2.35,48.85,1000')).toEqual({ pageSize: 1, covers: { g: '2.35,48.85' } })
+  })
+})

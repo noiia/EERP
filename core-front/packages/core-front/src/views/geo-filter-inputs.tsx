@@ -86,10 +86,12 @@ export function ZoneRecordInput({
   const zone = zones.find((z) => z.entity === entity)
   const [records, setRecords] = useState<{ id: string; name?: string }[]>([])
   const find = (q: string) =>
-    ops
-      ?.list(entity, { search: { name: q }, pageSize: 20 })
-      .then((rows) => setRecords(rows as unknown as { id: string; name?: string }[]))
-      .catch(() => setRecords([]))
+    !entity
+      ? undefined
+      : ops
+          ?.list(entity, { search: { name: q }, pageSize: 20 })
+          .then((rows) => setRecords(rows as unknown as { id: string; name?: string }[]))
+          .catch(() => setRecords([]))
   return (
     <Stack spacing={1} onKeyDown={keepKeys}>
       {zones.length > 1 && (
@@ -98,7 +100,10 @@ export function ZoneRecordInput({
           size="small"
           label={t('Zone of')}
           value={entity}
-          onChange={(e) => setEntity(e.target.value)}
+          onChange={(e) => {
+            setEntity(e.target.value)
+            setRecords([])
+          }}
         >
           {zones.map((z) => (
             <MenuItem key={z.entity} value={z.entity}>
