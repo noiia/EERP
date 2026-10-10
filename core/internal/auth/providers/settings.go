@@ -95,12 +95,15 @@ func (m Methods) CallbackURL() string {
 // Allows reports whether the login screen offers method id (the default or
 // an enabled alternative). Local is always allowed (?method=local fallback).
 func (m Methods) Allows(id string) bool {
-	if id == "local" || id == m.defaultID() {
+	if id == "local" {
 		return true
+	}
+	if id == m.defaultID() {
+		return m.configured(id)
 	}
 	for _, e := range m.Enabled {
 		if e == id {
-			return true
+			return m.configured(id)
 		}
 	}
 	return false
@@ -155,7 +158,9 @@ func (m Methods) Validate(roleExists func(uuid.UUID) bool) error {
 	}
 	if len(m.OIDC) > 0 {
 		u, err := url.Parse(m.ERPURL)
-		if err != nil || (u.Scheme != "https" && !(u.Scheme == "http" && isLoopback(u.Hostname()))) || u.Host == "" {
+		if err != nil || (u.Scheme != "https" && !(u.Scheme == "http" && isLoopback(u.Hostname()))) ||
+			u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" ||
+			(u.Path != "" && u.Path != "/") {
 			return invalid("erp_url must be the ERP's public https origin")
 		}
 	}
