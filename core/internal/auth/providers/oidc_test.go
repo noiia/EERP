@@ -248,6 +248,12 @@ func TestOIDCRefusalsAreLogged(t *testing.T) {
 	if logs.Len() != 2 || logs.All()[1].Level != zap.InfoLevel {
 		t.Fatalf("refusal entries = %v", logs.All())
 	}
+	if got := logs.All()[0].ContextMap()["provider"]; got != "oidc:corp" {
+		t.Errorf("warn provider = %v", got)
+	}
+	if cm := logs.All()[1].ContextMap(); cm["provider"] != "oidc:corp" || cm["subject"] != "u-1" {
+		t.Errorf("refusal fields = %v", cm)
+	}
 	for _, e := range logs.All() {
 		s := e.Message + " " + fmt.Sprint(e.ContextMap())
 		if strings.Contains(s, "secret-auth-code") || strings.Contains(s, `"s"`) {

@@ -182,7 +182,7 @@ func (h *Handler) LDAPLogin(c *echo.Context) error {
 	userID, err := h.provision(ctx, h.deps.Tenant, id, m)
 	if err != nil {
 		if errors.Is(err, ErrRefused) {
-			h.deps.Logger.Info("external sign-in refused", zap.String("provider", id.Provider), zap.String("subject", id.Subject))
+			h.deps.Logger.Info("external sign-in refused", zap.String("provider", "ldap"), zap.String("subject", id.Subject))
 			return unauthorized(c, msg)
 		}
 		return err
@@ -292,7 +292,7 @@ func (h *Handler) OIDCExchange(c *echo.Context) error {
 	userID, err := h.provision(ctx, h.deps.Tenant, id, m)
 	if err != nil {
 		if errors.Is(err, ErrRefused) {
-			h.deps.Logger.Info("external sign-in refused", zap.String("provider", "ldap"), zap.String("subject", id.Subject))
+			h.deps.Logger.Info("external sign-in refused", zap.String("provider", id.Provider), zap.String("subject", id.Subject))
 			return unauthorized(c, msg)
 		}
 		return err
