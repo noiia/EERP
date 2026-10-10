@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	_ "core/modules/auth"
@@ -121,6 +122,9 @@ func TestProvision(t *testing.T) {
 		if err != nil || id != existing {
 			t.Fatalf("got %v, %v; want existing %v", id, err, existing)
 		}
+		if got := f.roles(id); len(got) != 1 || !got[f.staff] {
+			t.Errorf("roles = %v, want staff", got)
+		}
 	})
 
 	t.Run("an unverified email never links nor creates (Review Focus 2)", func(t *testing.T) {
@@ -192,6 +196,109 @@ func TestProvision(t *testing.T) {
 		}, m)
 		if !errors.Is(err, providers.ErrRefused) {
 			t.Fatalf("err = %v, want ErrRefused", err)
+		}
+	})
+
+	prov := func(e, sub string, verified bool, groups []string, mm providers.Methods) (uuid.UUID, error) {
+		return providers.NewProvisioner(f.db).Provision(ctx, f.tenant, providers.ExternalIdentity{
+			Provider: "ldap", Subject: sub, Email: e, EmailVerified: verified, Groups: groups,
+		}, mm)
+	}
+	count := func(q string, args ...any) int {
+		var n int
+		if err := f.db.QueryRow(ctx, q, args...).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	t.Run("unverified email with no account is refused and creates nothing", func(t *testing.T) {
+		e := email()
+		if _, err := prov(e, "uid=u,"+e, false, []string{"erp-staff"}, m); !errors.Is(err, providers.ErrRefused) {
+			t.Fatalf("err = %v", err)
+		}
+		if n := count(`SELECT count(*) FROM users WHERE tenant_id=$1 AND lower(email)=$2`, f.tenant, e); n != 0 {
+			t.Errorf("%d users created", n)
+		}
+	})
+
+	t.Run("an email held by a website user is refused", func(t *testing.T) {
+		e := email()
+		if _, err := f.db.Exec(ctx, `INSERT INTO users (id, tenant_id, email, password_hash, kind) VALUES ($1,$2,$3,'x','website')`, uuid.New(), f.tenant, e); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := prov(e, "uid=w,"+e, true, []string{"erp-staff"}, m); !errors.Is(err, providers.ErrRefused) {
+			t.Fatalf("err = %v", err)
+		}
+		if n := count(`SELECT count(*) FROM users WHERE tenant_id=$1 AND lower(email)=$2 AND kind=''`, f.tenant, e); n != 0 {
+			t.Errorf("%d ERP users created", n)
+		}
+	})
+
+	t.Run("concurrent first logins never error", func(t *testing.T) {
+		e := email()
+		var wg sync.WaitGroup
+		ids := make([]uuid.UUID, 2)
+		errs := make([]error, 2)
+		for i := range ids {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ids[i], errs[i] = prov(e, "uid=c,"+e, true, []string{"erp-staff"}, m)
+			}()
+		}
+		wg.Wait()
+		ok := 0
+		for i := range ids {
+			switch {
+			case errs[i] == nil:
+				ok++
+			case !errors.Is(errs[i], providers.ErrRefused):
+				t.Fatalf("err = %v", errs[i])
+			}
+		}
+		if ok == 0 {
+			t.Fatal("no login succeeded")
+		}
+		if n := count(`SELECT count(*) FROM users WHERE tenant_id=$1 AND lower(email)=$2`, f.tenant, e); n != 1 {
+			t.Errorf("%d users", n)
+		}
+	})
+
+	t.Run("a role of another tenant or a deleted role grants nothing", func(t *testing.T) {
+		foreign, gone := uuid.New(), uuid.New()
+		other := uuid.New()
+		t.Cleanup(func() { _, _ = f.db.Exec(ctx, `DELETE FROM roles WHERE tenant_id = $1`, other) })
+		if _, err := f.db.Exec(ctx, `INSERT INTO roles (id, tenant_id, name, description) VALUES ($1,$2,$3,'')`, foreign, other, "ext-foreign-"+other.String()[:8]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.db.Exec(ctx, `INSERT INTO roles (id, tenant_id, name, description, deleted_at) VALUES ($1,$2,$3,'',now())`, gone, f.tenant, "ext-gone-"+f.tenant.String()[:8]); err != nil {
+			t.Fatal(err)
+		}
+		for _, rid := range []uuid.UUID{foreign, gone} {
+			e := email()
+			mm := providers.Methods{RoleMapping: []providers.RoleMapping{{Group: "g", RoleID: rid}}}
+			if _, err := prov(e, "uid=r,"+e, true, []string{"g"}, mm); !errors.Is(err, providers.ErrRefused) {
+				t.Fatalf("role %v: err = %v", rid, err)
+			}
+			if n := count(`SELECT count(*) FROM user_roles WHERE role_id = $1`, rid); n != 0 {
+				t.Errorf("role %v granted", rid)
+			}
+		}
+	})
+
+	t.Run("a soft-deleted identity relinks through the email rules", func(t *testing.T) {
+		e := email()
+		id, err := prov(e, "uid=s,"+e, true, []string{"erp-staff"}, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.db.Exec(ctx, `UPDATE auth_identity SET deleted_at = now() WHERE user_id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+		again, err := prov(e, "uid=s,"+e, true, []string{"erp-staff"}, m)
+		if err != nil || again != id {
+			t.Fatalf("got %v, %v; want %v", again, err, id)
 		}
 	})
 }

@@ -227,6 +227,13 @@ func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
 		return fmt.Errorf("auth: create auth_identity unique index: %w", err)
 	}
 
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_identity_user
+		ON auth_identity (tenant_id, provider, user_id) WHERE deleted_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("auth: create auth_identity user index: %w", err)
+	}
+
 	// UserRoles.TenantID used to be a *uuid.UUID (nullable) specifically so
 	// this table's pre-BaseModel rows could keep existing without a NOT NULL
 	// failure — see that field's old doc comment (removed now that it's

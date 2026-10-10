@@ -9,6 +9,8 @@ import (
 
 	"core/orm"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -107,6 +109,9 @@ func resolveUser(ctx context.Context, tx *orm.Tx, tenant uuid.UUID, id ExternalI
 		return uuid.Nil, fmt.Errorf("provision: find by email: %w", err)
 	}
 
+	if !id.EmailVerified {
+		return uuid.Nil, ErrRefused
+	}
 	// 3. Create (locked local password: random, discarded).
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -120,16 +125,26 @@ func resolveUser(ctx context.Context, tx *orm.Tx, tenant uuid.UUID, id ExternalI
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO users (id, tenant_id, email, password_hash, display_name, kind)
 		VALUES ($1, $2, $3, $4, $5, '')`, created, tenant, email, string(hash), id.DisplayName); err != nil {
-		return uuid.Nil, fmt.Errorf("provision: create user: %w", err)
+		return uuid.Nil, uniqueOr(err, "provision: create user")
 	}
 	return created, link(ctx, tx, tenant, created, id)
+}
+
+// uniqueOr maps a unique violation (concurrent first login, email held by a
+// website user or another tenant) to ErrRefused; anything else is wrapped.
+func uniqueOr(err error, what string) error {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) && pe.Code == "23505" {
+		return ErrRefused
+	}
+	return fmt.Errorf("%s: %w", what, err)
 }
 
 func link(ctx context.Context, tx *orm.Tx, tenant, user uuid.UUID, id ExternalIdentity) error {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO auth_identity (id, tenant_id, user_id, provider, subject) VALUES ($1, $2, $3, $4, $5)`,
 		uuid.New(), tenant, user, id.Provider, id.Subject); err != nil {
-		return fmt.Errorf("provision: link: %w", err)
+		return uniqueOr(err, "provision: link")
 	}
 	return nil
 }
@@ -137,15 +152,26 @@ func link(ctx context.Context, tx *orm.Tx, tenant, user uuid.UUID, id ExternalId
 func syncRoles(ctx context.Context, tx *orm.Tx, tenant, user uuid.UUID, roles []uuid.UUID) error {
 	if _, err := tx.Exec(ctx, `
 		UPDATE user_roles SET deleted_at = now(), updated_at = now()
-		WHERE user_id = $1 AND deleted_at IS NULL AND NOT (role_id = ANY($2))`, user, roles); err != nil {
+		WHERE tenant_id = $3 AND user_id = $1 AND deleted_at IS NULL AND NOT (role_id = ANY($2))`, user, roles, tenant); err != nil {
 		return fmt.Errorf("provision: drop roles: %w", err)
 	}
 	for _, r := range roles {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO user_roles (id, tenant_id, user_id, role_id) VALUES ($1, $2, $3, $4)
+			INSERT INTO user_roles (id, tenant_id, user_id, role_id)
+			SELECT $1, $2, $3, r.id FROM roles r WHERE r.id = $4 AND r.tenant_id = $2 AND r.deleted_at IS NULL
 			ON CONFLICT (user_id, role_id) WHERE deleted_at IS NULL DO NOTHING`, uuid.New(), tenant, user, r); err != nil {
 			return fmt.Errorf("provision: add role: %w", err)
 		}
+	}
+	var n int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM user_roles ur JOIN roles r ON r.id = ur.role_id AND r.tenant_id = $1 AND r.deleted_at IS NULL
+		WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND ur.deleted_at IS NULL AND ur.role_id = ANY($3)`,
+		tenant, user, roles).Scan(&n); err != nil {
+		return fmt.Errorf("provision: verify roles: %w", err)
+	}
+	if n == 0 {
+		return ErrRefused
 	}
 	return nil
 }
