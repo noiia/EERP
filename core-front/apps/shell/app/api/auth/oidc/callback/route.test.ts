@@ -2,10 +2,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const jar = new Map<string, string>()
+const deletes: { name: string; path?: string }[] = []
 vi.mock('next/headers', () => ({
   cookies: async () => ({
     get: (n: string) => (jar.has(n) ? { name: n, value: jar.get(n) } : undefined),
-    delete: (n: string) => void jar.delete(n),
+    delete: (arg: string | { name: string; path?: string }) => {
+      const o = typeof arg === 'string' ? { name: arg } : arg
+      deletes.push(o)
+      jar.delete(o.name)
+    },
   }),
 }))
 const { goAuthExchange, setSessionCookies } = vi.hoisted(() => ({
@@ -33,6 +38,7 @@ const isFail = (res: Response) => {
 
 beforeEach(() => {
   jar.clear()
+  deletes.length = 0
   vi.clearAllMocks()
 })
 
@@ -51,6 +57,7 @@ describe('GET /api/auth/oidc/callback', () => {
     expect(goAuthExchange).not.toHaveBeenCalled()
     expect(setSessionCookies).not.toHaveBeenCalled()
     expect(jar.has('eerp_oidc')).toBe(false)
+    expect(deletes).toEqual([{ name: 'eerp_oidc', path: '/api/auth/oidc' }])
   })
 
   it('exchanges the code, sets cookies, redirects to next and clears the cookie', async () => {
@@ -65,6 +72,7 @@ describe('GET /api/auth/oidc/callback', () => {
     expect(setSessionCookies).toHaveBeenCalledWith({ accessToken: 'a' })
     expect(new URL(res.headers.get('location')!).pathname).toBe('/app/contacts')
     expect(jar.has('eerp_oidc')).toBe(false)
+    expect(deletes).toEqual([{ name: 'eerp_oidc', path: '/api/auth/oidc' }])
   })
 
   it('redirects to the login error when the exchange fails', async () => {
@@ -73,6 +81,7 @@ describe('GET /api/auth/oidc/callback', () => {
     expect(isFail(await call('?code=abc&state=S'))).toBe(true)
     expect(setSessionCookies).not.toHaveBeenCalled()
     expect(jar.has('eerp_oidc')).toBe(false)
+    expect(deletes).toEqual([{ name: 'eerp_oidc', path: '/api/auth/oidc' }])
   })
 
   it.each(['//evil.example', 'https://evil.example', '/\\evil.example'])(
@@ -81,6 +90,7 @@ describe('GET /api/auth/oidc/callback', () => {
       jar.set('eerp_oidc', saved({ next }))
       goAuthExchange.mockResolvedValue({ accessToken: 'a' })
       const loc = new URL((await call('?code=abc&state=S')).headers.get('location')!)
+      expect(deletes).toEqual([{ name: 'eerp_oidc', path: '/api/auth/oidc' }])
       expect(loc.origin).toBe('http://localhost')
       expect(loc.pathname.startsWith('/app/')).toBe(true)
     },

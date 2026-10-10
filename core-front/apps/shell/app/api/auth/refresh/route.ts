@@ -21,7 +21,10 @@ export async function POST() {
   } catch (e) {
     await clearSessionCookies()
     if (e instanceof ApiError) {
-      return NextResponse.json({ error: { code: e.code, message: e.message } }, { status: e.status })
+      return NextResponse.json(
+        { error: { code: e.code, message: e.message } },
+        { status: e.status },
+      )
     }
     throw e
   }

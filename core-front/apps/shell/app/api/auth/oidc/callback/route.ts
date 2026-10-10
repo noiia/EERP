@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { erpPath } from '@eerp/core-front'
 import { goAuthExchange, setSessionCookies } from '@/lib/bff'
-import { OIDC_COOKIE } from '@/lib/oidc'
+import { OIDC_COOKIE, OIDC_COOKIE_PATH } from '@/lib/oidc'
 
 // GET /api/auth/oidc/callback?code=&state= — the provider returns here. The
 // state must match the cookie set by /start (CSRF); the cookie is always
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams
   const jar = await cookies()
   const raw = jar.get(OIDC_COOKIE)?.value
-  jar.delete(OIDC_COOKIE)
+  jar.delete({ name: OIDC_COOKIE, path: OIDC_COOKIE_PATH })
   const fail = NextResponse.redirect(new URL(erpPath('/login?error=sso'), request.url))
 
   let saved: {

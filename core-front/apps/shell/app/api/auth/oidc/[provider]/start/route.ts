@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { erpPath } from '@eerp/core-front'
 import { forwardedFor } from '@/lib/bff'
-import { OIDC_COOKIE } from '@/lib/oidc'
+import { OIDC_COOKIE, OIDC_COOKIE_PATH } from '@/lib/oidc'
 
 function b64url(bytes: ArrayBuffer | Uint8Array): string {
   return Buffer.from(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)).toString(
@@ -17,6 +17,7 @@ const random = () => b64url(crypto.getRandomValues(new Uint8Array(32)))
 export async function GET(request: Request, ctx: { params: Promise<{ provider: string }> }) {
   const { provider } = await ctx.params
   const next = new URL(request.url).searchParams.get('next') ?? '/'
+  const safeNext = next.length > 512 ? '/' : next
   const state = random()
   const nonce = random()
   const verifier = random()
@@ -33,12 +34,16 @@ export async function GET(request: Request, ctx: { params: Promise<{ provider: s
   if (!res?.ok) return fail
   const body = (await res.json().catch(() => null)) as { url?: string } | null
   if (!body?.url) return fail
-  ;(await cookies()).set(OIDC_COOKIE, JSON.stringify({ provider, state, nonce, verifier, next }), {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/api/auth/oidc',
-    maxAge: 600,
-  })
+  ;(await cookies()).set(
+    OIDC_COOKIE,
+    JSON.stringify({ provider, state, nonce, verifier, next: safeNext }),
+    {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: OIDC_COOKIE_PATH,
+      maxAge: 600,
+    },
+  )
   return NextResponse.redirect(body.url)
 }

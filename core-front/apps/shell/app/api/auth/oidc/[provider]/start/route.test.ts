@@ -60,4 +60,13 @@ describe('GET /api/auth/oidc/[provider]/start', () => {
     expect(res.headers.get('location')).toContain('error=sso')
     expect(set).not.toHaveBeenCalled()
   })
+
+  it('stores / when next is longer than 512 characters', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ url: 'https://idp.example/a' }))),
+    )
+    await call('?next=/' + 'a'.repeat(600))
+    expect(JSON.parse(set.mock.calls[0][1]).next).toBe('/')
+  })
 })

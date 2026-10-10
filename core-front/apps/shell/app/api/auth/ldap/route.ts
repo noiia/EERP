@@ -6,7 +6,10 @@ import { identityFromAccessToken } from '@/lib/jwt'
 // POST /api/auth/ldap {username, password} — directory sign-in, same cookie
 // handling as /api/auth/login.
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as { username?: string; password?: string }
+  const body = ((await request.json().catch(() => null)) ?? {}) as {
+    username?: string
+    password?: string
+  }
   try {
     const tokens = await goAuthExchange('ldap/login', {
       username: body.username,

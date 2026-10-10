@@ -53,4 +53,22 @@ describe('POST /api/auth/ldap', () => {
     expect((await res.json()).error.message).toBe('Invalid username or password.')
     expect(setSessionCookies).not.toHaveBeenCalled()
   })
+
+  it('does not throw on a JSON null body', async () => {
+    goAuthExchange.mockRejectedValue(
+      new ApiError({
+        status: 401,
+        code: 'UNAUTHENTICATED',
+        message: 'Invalid username or password.',
+      }),
+    )
+    const res = await POST(
+      new Request('http://localhost/api/auth/ldap', { method: 'POST', body: 'null' }),
+    )
+    expect(goAuthExchange).toHaveBeenCalledWith('ldap/login', {
+      username: undefined,
+      password: undefined,
+    })
+    expect(res.status).toBe(401)
+  })
 })
