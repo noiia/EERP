@@ -3,7 +3,9 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"core/orm/access"
 	"github.com/google/uuid"
@@ -15,11 +17,31 @@ type Deps struct {
 	Tenant uuid.UUID // auth tenant; uuid.Nil = only local login exists
 	// Roles lists the tenant's role ids (validation of the mapping).
 	Roles func(ctx context.Context, tenant uuid.UUID) (map[uuid.UUID]bool, error)
+
+	Directory   Directory
+	Provisioner *Provisioner
+	Sessions    SessionIssuer
 }
 
-type Handler struct{ deps Deps }
+// SessionIssuer opens the ERP session for an already-authenticated user
+// (implemented by *auth.Handler).
+type SessionIssuer interface {
+	IssueSessionForUser(c *echo.Context, userID uuid.UUID) error
+}
 
-func NewHandler(deps Deps) *Handler { return &Handler{deps: deps} }
+type Handler struct {
+	deps Deps
+	// provision is deps.Provisioner.Provision; a field so handler tests need no DB.
+	provision func(ctx context.Context, tenant uuid.UUID, id ExternalIdentity, m Methods) (uuid.UUID, error)
+}
+
+func NewHandler(deps Deps) *Handler {
+	h := &Handler{deps: deps}
+	if deps.Provisioner != nil {
+		h.provision = deps.Provisioner.Provision
+	}
+	return h
+}
 
 // settingsView is the GET shape: secrets replaced by has_* flags.
 type settingsView struct {
@@ -111,4 +133,80 @@ func (h *Handler) PublicMethods(c *echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, m.Public())
+}
+
+func unauthorized(c *echo.Context, message string) error {
+	return c.JSON(http.StatusUnauthorized, map[string]any{"error": map[string]string{
+		"code": "UNAUTHENTICATED", "message": message, "request_id": c.Response().Header().Get(echo.HeaderXRequestID),
+	}})
+}
+
+// LDAPLogin handles POST /api/v1/auth/ldap/login {username, password} (anonymous).
+// Unknown user, several matches, wrong password and refused provisioning all
+// answer the same 401; a directory outage is a logged 500.
+func (h *Handler) LDAPLogin(c *echo.Context) error {
+	const msg = "Invalid username or password."
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return unauthorized(c, msg)
+	}
+	username := strings.TrimSpace(req.Username)
+	if username == "" || req.Password == "" || h.deps.Tenant == uuid.Nil {
+		return unauthorized(c, msg) // never reaches the directory (empty password = anonymous bind)
+	}
+	ctx := c.Request().Context()
+	m, err := h.deps.Store.Load(ctx, h.deps.Tenant)
+	if err != nil {
+		return err
+	}
+	if m.LDAP == nil || !m.Allows("ldap") || h.deps.Directory == nil || h.provision == nil || h.deps.Sessions == nil {
+		return unauthorized(c, msg)
+	}
+	id, err := h.deps.Directory.Authenticate(ctx, *m.LDAP, username, req.Password)
+	if err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			return unauthorized(c, msg)
+		}
+		return fmt.Errorf("ldap login: %w", err) // directory down: a 500, logged
+	}
+	userID, err := h.provision(ctx, h.deps.Tenant, id, m)
+	if err != nil {
+		if errors.Is(err, ErrRefused) {
+			return unauthorized(c, msg)
+		}
+		return err
+	}
+	return h.deps.Sessions.IssueSessionForUser(c, userID)
+}
+
+// TestSettings handles POST /api/v1/settings/auth/test {method} (settings:auth:write).
+func (h *Handler) TestSettings(c *echo.Context) error {
+	if err := h.guard(c); err != nil {
+		return err
+	}
+	var req struct {
+		Method string `json:"method"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
+	}
+	ctx := c.Request().Context()
+	m, err := h.deps.Store.Load(ctx, h.deps.Tenant)
+	if err != nil {
+		return err
+	}
+	var testErr error
+	switch {
+	case req.Method == "ldap" && m.LDAP != nil && h.deps.Directory != nil:
+		testErr = h.deps.Directory.Check(ctx, *m.LDAP)
+	default:
+		return echo.NewHTTPError(http.StatusBadRequest, "unknown or unconfigured method")
+	}
+	if testErr != nil {
+		return c.JSON(http.StatusOK, map[string]any{"ok": false, "message": testErr.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"ok": true, "message": "Connection succeeded."})
 }
