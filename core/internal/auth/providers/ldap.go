@@ -89,6 +89,9 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 	res, err := conn.Search(ldap.NewSearchRequest(cfg.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 2, 10, false,
 		userFilter(cfg.UserFilter, username), attrs, nil))
 	if err != nil {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultSizeLimitExceeded) {
+			return ExternalIdentity{}, ErrInvalidCredentials // 3+ matches: ambiguous
+		}
 		return ExternalIdentity{}, fmt.Errorf("ldap: search: %w", err)
 	}
 	if len(res.Entries) != 1 {
@@ -96,7 +99,7 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 	}
 	entry := res.Entries[0]
 	if err := conn.Bind(entry.DN, password); err != nil {
-		if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
+		if isAccountStateError(err) {
 			return ExternalIdentity{}, ErrInvalidCredentials
 		}
 		return ExternalIdentity{}, fmt.Errorf("ldap: user bind: %w", err)
@@ -107,14 +110,16 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 	}
 	groups := groupNames(entry.GetAttributeValues(cfg.GroupsAttr))
 	if cfg.GroupSearchBase != "" && cfg.GroupFilter != "" {
-		if err := conn.Bind(cfg.BindDN, cfg.BindPassword); err == nil {
-			gr, err := conn.Search(ldap.NewSearchRequest(cfg.GroupSearchBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 10, false,
-				strings.ReplaceAll(cfg.GroupFilter, "{dn}", ldap.EscapeFilter(entry.DN)), []string{"cn"}, nil))
-			if err == nil {
-				for _, g := range gr.Entries {
-					groups = append(groups, g.GetAttributeValue("cn"))
-				}
-			}
+		if err := conn.Bind(cfg.BindDN, cfg.BindPassword); err != nil {
+			return ExternalIdentity{}, fmt.Errorf("ldap: service re-bind: %w", err)
+		}
+		gr, err := conn.Search(ldap.NewSearchRequest(cfg.GroupSearchBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 10, false,
+			strings.ReplaceAll(cfg.GroupFilter, "{dn}", ldap.EscapeFilter(entry.DN)), []string{"cn"}, nil))
+		if err != nil {
+			return ExternalIdentity{}, fmt.Errorf("ldap: group search: %w", err)
+		}
+		for _, g := range gr.Entries {
+			groups = append(groups, g.GetAttributeValue("cn"))
 		}
 	}
 	return ExternalIdentity{
@@ -135,4 +140,19 @@ func groupNames(values []string) []string {
 		out = append(out, dn.RDNs[0].Attributes[0].Value)
 	}
 	return out
+}
+
+// isAccountStateError: user-bind failures that describe the account or the
+// credentials (wrong password, locked, bad DN syntax...) — a 401, not an outage.
+func isAccountStateError(err error) bool {
+	for _, code := range []uint16{
+		ldap.LDAPResultInvalidCredentials, ldap.LDAPResultConstraintViolation,
+		ldap.LDAPResultUnwillingToPerform, ldap.LDAPResultInsufficientAccessRights,
+		ldap.LDAPResultInvalidDNSyntax,
+	} {
+		if ldap.IsErrorWithCode(err, code) {
+			return true
+		}
+	}
+	return false
 }

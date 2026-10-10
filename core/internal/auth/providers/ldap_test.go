@@ -4,6 +4,7 @@ import (
 	"context"
 	"core/orm/access"
 	"errors"
+	"github.com/go-ldap/ldap/v3"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -143,4 +144,24 @@ func requestFor(h *Handler, body string) *http.Request {
 	req = req.WithContext(access.WithTenant(req.Context(), h.deps.Tenant))
 	req.Header.Set("Content-Type", "application/json")
 	return req
+}
+
+func TestLDAPErrorClassification(t *testing.T) {
+	for code, want := range map[uint16]bool{
+		ldap.LDAPResultInvalidCredentials:       true,
+		ldap.LDAPResultConstraintViolation:      true,
+		ldap.LDAPResultUnwillingToPerform:       true,
+		ldap.LDAPResultInsufficientAccessRights: true,
+		ldap.LDAPResultInvalidDNSyntax:          true,
+		ldap.LDAPResultBusy:                     false,
+		ldap.LDAPResultUnavailable:              false,
+		ldap.LDAPResultSizeLimitExceeded:        false, // handled on the search, not the bind
+	} {
+		if got := isAccountStateError(ldap.NewError(code, errors.New("x"))); got != want {
+			t.Errorf("code %d: got %v want %v", code, got, want)
+		}
+	}
+	if isAccountStateError(errors.New("network")) {
+		t.Error("plain error classified as account state")
+	}
 }
