@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"core/orm/access"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
@@ -40,8 +41,23 @@ type oidcView struct {
 	HasClientSecret bool   `json:"has_client_secret"`
 }
 
+// guard resolves the auth tenant for an admin settings route: 409 when none is
+// configured, 403 when the caller belongs to another tenant.
+func (h *Handler) guard(c *echo.Context) error {
+	if h.deps.Tenant == uuid.Nil {
+		return echo.NewHTTPError(http.StatusConflict, "external sign-in needs a single workspace tenant (website_tenant_id)")
+	}
+	if t, ok := access.TenantFromContext(c.Request().Context()); !ok || t != h.deps.Tenant {
+		return echo.NewHTTPError(http.StatusForbidden, "not the authentication tenant")
+	}
+	return nil
+}
+
 // GetSettings handles GET /api/v1/settings/auth (settings:auth:read).
 func (h *Handler) GetSettings(c *echo.Context) error {
+	if err := h.guard(c); err != nil {
+		return err
+	}
 	m, err := h.deps.Store.Load(c.Request().Context(), h.deps.Tenant)
 	if err != nil {
 		return err
@@ -58,8 +74,8 @@ func (h *Handler) GetSettings(c *echo.Context) error {
 
 // PutSettings handles PUT /api/v1/settings/auth (settings:auth:write).
 func (h *Handler) PutSettings(c *echo.Context) error {
-	if h.deps.Tenant == uuid.Nil {
-		return echo.NewHTTPError(http.StatusConflict, "external sign-in needs a single workspace tenant (website_tenant_id)")
+	if err := h.guard(c); err != nil {
+		return err
 	}
 	var m Methods
 	if err := c.Bind(&m); err != nil {
@@ -77,6 +93,9 @@ func (h *Handler) PutSettings(c *echo.Context) error {
 		return err
 	}
 	if err := h.deps.Store.Save(ctx, h.deps.Tenant, m); err != nil {
+		if errors.Is(err, ErrInvalidSettings) {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
