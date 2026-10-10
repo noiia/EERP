@@ -352,7 +352,8 @@ Malformed values are 400; an unusable reference (unregistered, inactive module, 
 gated, wrong kind) is 404; `inside` is refused on public routes. `orm.GeoDistance(ctx, db,
 "table:id:col", "table:id:col")` returns the distance in meters (`nil` when a side is empty) with
 the same checks. Pitfalls: coordinates are `[lon, lat]`; boundary points are covered; at most one
-`near`; without a GiST index `near` scans the table.
+`near` (ties — e.g. unlocated rows — ordered by primary key); without a GiST index `near` scans
+the table; a read with `inside` bypasses the Redis read cache, since it depends on another table.
 
 ### Query builders (advanced)
 

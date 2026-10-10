@@ -50,14 +50,20 @@ func TestGeo_FirstUsers(t *testing.T) {
 	}
 	company := decode(t, resp)["data"].([]any)[0].(map[string]any)
 	companyID := company["id"].(string)
+	// Shared dev DB: keep the company's existing zone (EWKT, which geography
+	// parses back as is) and put it back afterwards.
 	var oldZone *string
-	_ = c.a.db.DB.QueryRow(ctx, `SELECT ST_AsGeoJSON(service_zone) FROM company WHERE id = $1`, companyID).Scan(&oldZone)
+	if err := c.a.db.DB.QueryRow(ctx, `SELECT ST_AsEWKT(service_zone) FROM company WHERE id = $1`, companyID).Scan(&oldZone); err != nil {
+		t.Fatalf("read old zone: %v", err)
+	}
 	company["service_zone"] = idf
 	if code, resp := c.do(http.MethodPut, "/api/v1/company/"+companyID, company); code != http.StatusOK {
 		t.Fatalf("company zone: %d %s", code, resp)
 	}
 	t.Cleanup(func() {
-		_, _ = c.a.db.DB.Exec(ctx, `UPDATE company SET service_zone = $2::geography WHERE id = $1`, companyID, oldZone)
+		if _, err := c.a.db.DB.Exec(ctx, `UPDATE company SET service_zone = $2::geography WHERE id = $1`, companyID, oldZone); err != nil {
+			t.Errorf("restore old zone: %v", err)
+		}
 	})
 
 	code, resp = c.do(http.MethodGet, "/api/v1/contact?search[name]="+tag+"&inside[geo_location]=company:"+companyID+":service_zone", nil)

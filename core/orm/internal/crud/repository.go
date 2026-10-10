@@ -263,7 +263,9 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 		return nil, 0, err
 	}
 	if distanceExpr != "" {
-		b = b.Columns(append(r.meta.StructMeta.Columns(), distanceExpr)...).OrderBy(orderExpr)
+		// PK tiebreak: equal distances (all unlocated rows are NULL) must page stably.
+		b = b.Columns(append(r.meta.StructMeta.Columns(), distanceExpr)...).
+			OrderBy(orderExpr).OrderBy(r.meta.PKField.Column)
 	}
 
 	page, pageSize := f.Page, f.PageSize
@@ -278,7 +280,7 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 
 	// The page SQL's WHERE fully determines the total too, so one entry holds both.
 	var cached pageEntry
-	key, hit := r.lookup(ctx, sql, args, &cached)
+	key, hit := r.lookup(ctx, f.cacheable(), sql, args, &cached)
 	if hit {
 		return cached.Rows, cached.Total, nil
 	}
@@ -319,19 +321,50 @@ type cachingDB interface {
 // Rows come back from a hit with JSON types (json.Number, strings for
 // uuid/time): they only ever feed BuildResponse → the JSON response, which
 // encodes them byte-identically.
-func (r *Repository) lookup(ctx context.Context, sql string, args []any, dst any) (string, bool) {
-	cdb, ok := r.db.(cachingDB)
-	if !ok {
+//
+// cacheable=false skips the cache entirely (no lookup, so no store either):
+// entries are invalidated by THIS table's generation only, so a read whose
+// result depends on another table can't be cached — see ListFilter.cacheable.
+func (r *Repository) lookup(ctx context.Context, cacheable bool, sql string, args []any, dst any) (string, bool) {
+	if !cacheable {
 		return "", false
 	}
-	return cdb.QueryCache().Lookup(ctx, cdb.Name(), r.meta.TableName, sql, args, dst)
+	c, name := cacheFor(r.db)
+	if c == nil {
+		return "", false
+	}
+	return c.Lookup(ctx, name, r.meta.TableName, sql, args, dst)
 }
 
 func (r *Repository) store(ctx context.Context, key string, v any) {
-	if cdb, ok := r.db.(cachingDB); ok {
-		cdb.QueryCache().Store(ctx, key, v)
+	if key == "" {
+		return
+	}
+	if c, _ := cacheFor(r.db); c != nil {
+		c.Store(ctx, key, v)
 	}
 }
+
+// readCache is what lookup/store use of *qcache.Cache.
+type readCache interface {
+	Lookup(ctx context.Context, database, table, sql string, args []any, dst any) (string, bool)
+	Store(ctx context.Context, key string, v any)
+}
+
+// cacheFor returns the executor's read cache and database name (nil when the
+// executor doesn't cache). A var so tests can stub the cache.
+var cacheFor = func(ex executor.Executor) (readCache, string) {
+	cdb, ok := ex.(cachingDB)
+	if !ok {
+		return nil, ""
+	}
+	return cdb.QueryCache(), cdb.Name()
+}
+
+// cacheable reports whether a read under f may use the read cache. An inside[]
+// filter reads another table's zone (a subquery), which that table's writes
+// don't invalidate here — so those reads always go to Postgres.
+func (f ListFilter) cacheable() bool { return len(f.Geo.Inside) == 0 }
 
 // distinctCap ceilings how many distinct buckets a single DistinctValues call
 // returns — a real column with more than this many distinct values needs
@@ -377,7 +410,7 @@ func (r *Repository) DistinctValues(ctx context.Context, column string, f ListFi
 
 	sql, args := b.GroupBy(column).OrderBy(column).Limit(distinctCap).ToSQL()
 	var cached []DistinctValue
-	key, hit := r.lookup(ctx, sql, args, &cached)
+	key, hit := r.lookup(ctx, f.cacheable(), sql, args, &cached)
 	if hit {
 		return cached, nil
 	}
@@ -438,7 +471,7 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 
 	sql, args := b.Limit(1).ToSQL()
 	var results []map[string]any
-	key, hit := r.lookup(ctx, sql, args, &results)
+	key, hit := r.lookup(ctx, true, sql, args, &results)
 	if !hit {
 		rows, err := r.db.Query(ctx, sql, args...)
 		if err != nil {

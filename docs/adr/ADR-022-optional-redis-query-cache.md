@@ -32,7 +32,9 @@ flowchart LR
   only when its executor is the pool-level `*orm.DB` — never inside a transaction (a transaction
   must see its own writes). Typed `Repository[T]` reads and dedicated handlers stay uncached:
   they are write-adjacent business logic (totals, workflows) where a stale read costs more than a
-  round trip saves.
+  round trip saves. A list/distinct/aggregate read with a geo `inside[]` filter is never cached
+  either: it reads another table's zone, and only the queried table's generation guards its key
+  ([ADR-029](ADR-029-geographic-fields.md)).
 - **Invalidation by generation counters, not key tracking.** A cache key embeds the current
   generation of its table *and* of the whole database:
   `eerp:<db>:q:<table>:<tableGen>:<dbGen>:<sha256(sql, args)>`. Writers never find or delete

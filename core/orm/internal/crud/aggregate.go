@@ -158,7 +158,7 @@ func (r *Repository) Aggregate(ctx context.Context, req AggregateRequest, f List
 	sql, args := b.Limit(aggregateCap).ToSQL()
 
 	var cached []AggregateRow
-	key, hit := r.lookup(ctx, sql, args, &cached)
+	key, hit := r.lookup(ctx, f.cacheable(), sql, args, &cached)
 	if hit {
 		return cached, nil
 	}

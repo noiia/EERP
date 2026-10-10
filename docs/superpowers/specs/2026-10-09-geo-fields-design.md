@@ -82,7 +82,7 @@ not drawn), clustering many markers on a list map view, reverse geocoding.
   caller, the record in the caller's tenant and not soft-deleted, and the shape column not
   gated for the caller; any of these failing → 404. A record that doesn't exist or belongs to
   another tenant simply matches nothing (the subquery yields NULL) — existence is not leaked.
-- The Redis read cache keys on SQL + args: geo queries cache with no change.
+- The Redis read cache keys on SQL + args: `near`/`within`/`covers` queries cache with no change; a read with `inside` is never cached (it depends on another table, whose writes don't invalidate this one).
 - `?distinct=` and `?aggregate=` ignore `near` (they don't page/order); filters still apply.
 
 ### Distance between two records

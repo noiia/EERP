@@ -70,8 +70,12 @@ sequenceDiagram
   Postgres, `CREATE EXTENSION` needs a privileged role (or the extension pre-created).
 - **OSM tile policy:** the default tile server is for light use; a heavy deployment must point
   at its own tile provider.
-- Group gating, the public scope, tenant pinning and the Redis read cache apply to geo columns
-  and params unchanged (cache keys include the SQL and args).
+- Group gating, the public scope and tenant pinning apply to geo columns and params unchanged.
+  The Redis read cache ([ADR-022](ADR-022-optional-redis-query-cache.md)) serves `near`/`within`/
+  `covers` reads like any other (keys include the SQL and args), but **never caches a read with
+  `inside`**: its result depends on the referenced record's table, whose writes only bump that
+  table's generation, so a cached entry would outlive an edited zone. `near` orders by distance
+  then primary key, so equal distances (unlocated rows) page stably.
 - Not in v1: routing/travel time, drawing lines (stored and shown only), marker clustering,
   reverse geocoding.
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"core/internal/testdb"
@@ -229,6 +230,22 @@ func TestGeo_NearWithinCovers(t *testing.T) {
 	}
 	if _, ok := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places", ""))["data"].([]any)[0].(map[string]any)["_distance_m"]; ok {
 		t.Error("_distance_m present without near")
+	}
+
+	// Equal distances (here all NULL) still page stably: no row repeats or
+	// goes missing across pages.
+	unlocated := uuid.New()
+	for i := 0; i < 6; i++ {
+		createGeo(t, e, unlocated, "/api/v1/geo_places", `{"name":"U`+strconv.Itoa(i)+`"}`)
+	}
+	seen := map[string]bool{}
+	for _, page := range []string{"1", "2"} {
+		for _, n := range names(t, doAs(e, unlocated, nil, http.MethodGet, "/api/v1/geo_places?near[geo_location]=2.35,48.85&page_size=3&page="+page, "")) {
+			seen[n] = true
+		}
+	}
+	if len(seen) != 6 {
+		t.Errorf("near pages over unlocated rows = %v, want 6 distinct", seen)
 	}
 
 	// 50 km radius around Paris.
