@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"core/internal/auth"
+	"core/internal/auth/providers"
 	"core/internal/common"
 	"core/internal/module"
 	"core/orm"
@@ -36,6 +37,9 @@ func (m *authModule) Register() error {
 		orm.WithExcludeFields("password_hash"),
 		orm.WithExcluded(),
 	); err != nil {
+		return err
+	}
+	if err := orm.Register[providers.AuthIdentity](orm.WithTableName("auth_identity"), orm.WithExcluded()); err != nil {
 		return err
 	}
 	if err := orm.Register[auth.Roles](orm.WithExcluded()); err != nil {
@@ -213,6 +217,14 @@ func (m *authModule) Migrate(ctx context.Context, db *orm.DB) error {
 		WHERE deleted_at IS NULL
 	`); err != nil {
 		return fmt.Errorf("auth: create user_roles unique index: %w", err)
+	}
+
+	// External sign-in link: one live (provider, subject) per tenant.
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_identity_subject
+		ON auth_identity (tenant_id, provider, subject) WHERE deleted_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("auth: create auth_identity unique index: %w", err)
 	}
 
 	// UserRoles.TenantID used to be a *uuid.UUID (nullable) specifically so
