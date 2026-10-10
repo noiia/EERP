@@ -60,14 +60,21 @@ func TestExternalAuth_LDAPEndToEnd(t *testing.T) {
 	}
 	email := "ext-" + uuid.NewString() + "@example.test"
 	t.Cleanup(func() {
-		_, _ = db.Exec(ctx, `DELETE FROM auth_identity WHERE user_id IN (SELECT id FROM users WHERE email=$1)`, email)
-		_, _ = db.Exec(ctx, `DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email=$1)`, email)
-		_, _ = db.Exec(ctx, `DELETE FROM users WHERE email=$1`, email)
+		exec := func(q string, args ...any) {
+			if _, err := db.Exec(ctx, q, args...); err != nil {
+				t.Errorf("cleanup %q: %v", q, err)
+			}
+		}
+		sub := `(SELECT id FROM users WHERE email=$1)`
+		exec(`DELETE FROM refresh_tokens WHERE user_id IN `+sub, email)
+		exec(`DELETE FROM auth_identity WHERE user_id IN `+sub, email)
+		exec(`DELETE FROM user_roles WHERE user_id IN `+sub, email)
+		exec(`DELETE FROM users WHERE email=$1`, email)
 		if prev != nil {
-			_, _ = db.Exec(ctx, `UPDATE app_settings SET value=$4 WHERE tenant_id=$1 AND company_id=$2 AND key=$3`,
+			exec(`UPDATE app_settings SET value=$4 WHERE tenant_id=$1 AND company_id=$2 AND key=$3`,
 				auth.DevTenantID, uuid.Nil, providers.SettingsKey, *prev)
 		} else {
-			_, _ = db.Exec(ctx, `DELETE FROM app_settings WHERE tenant_id=$1 AND company_id=$2 AND key=$3`,
+			exec(`DELETE FROM app_settings WHERE tenant_id=$1 AND company_id=$2 AND key=$3`,
 				auth.DevTenantID, uuid.Nil, providers.SettingsKey)
 		}
 	})
@@ -111,5 +118,26 @@ func TestExternalAuth_LDAPEndToEnd(t *testing.T) {
 	}
 	if tok, _ := decode(t, body)["access_token"].(string); tok == "" {
 		t.Fatalf("no access_token: %s", body)
+	}
+
+	// Review Focus 1: whatever the external config (here: LDAP as default,
+	// pointing at an unreachable server), local sign-in keeps working.
+	code, body = c.do(http.MethodPut, "/api/v1/settings/auth", map[string]any{
+		"default": "ldap", "enabled": []string{"local", "ldap"},
+		"ldap": map[string]any{
+			"label": "Down", "url": "ldaps://127.0.0.1:1", "bind_dn": "cn=x", "bind_password": "p",
+			"base_dn": "ou=people,dc=x", "user_filter": "(uid={username})",
+			"email_attr": "mail", "name_attr": "cn", "groups_attr": "memberOf",
+		},
+		"oidc": []any{}, "role_mapping": []any{},
+	})
+	if code != http.StatusNoContent {
+		t.Fatalf("put unreachable settings = %d %s", code, body)
+	}
+	if code, body := anon.do(http.MethodGet, "/api/v1/auth/methods", nil); code != http.StatusOK || !strings.Contains(string(body), `"local"`) {
+		t.Errorf("methods with unreachable ldap = %d %s", code, body)
+	}
+	if code, body := anon.do(http.MethodPost, "/api/v1/auth/login", map[string]string{"email": auth.DevAdminEmail, "password": auth.DevAdminPassword}); code != http.StatusOK {
+		t.Errorf("local login with unreachable ldap = %d %s", code, body)
 	}
 }
