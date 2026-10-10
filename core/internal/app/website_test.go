@@ -996,7 +996,7 @@ func TestPublicUpcomingEvents(t *testing.T) {
 	// filter on a per-run marker scopes the endpoint to this test's events.
 	marker := "upcoming-test-" + uuid.NewString()
 	if err := store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"),
-		`{"fields":["name","kind","location","timezone","picture"],"filter":{"description":"`+marker+`"}}`); err != nil {
+		`{"fields":["name","kind","location","timezone","picture","geo_location"],"filter":{"description":"`+marker+`"}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1026,7 +1026,10 @@ func TestPublicUpcomingEvents(t *testing.T) {
 		}
 		return id
 	}
-	sessions := newEvent(map[string]any{"kind": "sessions", "published": true, "location": "Hall"}, 48*time.Hour)
+	lyon := map[string]any{"type": "Point", "coordinates": []float64{4.83, 45.76}}
+	paris := map[string]any{"type": "Point", "coordinates": []float64{2.35, 48.85}}
+	sessions := newEvent(map[string]any{"kind": "sessions", "published": true, "location": "Hall", "geo_location": lyon}, 48*time.Hour)
+	nearest := newEvent(map[string]any{"kind": "sessions", "published": true, "geo_location": paris}, 72*time.Hour)
 	appointment := newEvent(map[string]any{"kind": "appointment", "published": true}, 0)
 	noFuture := newEvent(map[string]any{"kind": "sessions", "published": true}, 0)
 	draft := newEvent(map[string]any{"kind": "sessions"}, 48*time.Hour)
@@ -1063,6 +1066,27 @@ func TestPublicUpcomingEvents(t *testing.T) {
 	}
 	if code, _ := anon.do(http.MethodGet, "/api/v1/public/events/upcoming?limit=500", nil); code != http.StatusBadRequest {
 		t.Errorf("limit 500 = %d, want 400", code)
+	}
+
+	// ?near orders by the published geo_location: Paris (at the point) first,
+	// Lyon (~392 km) next, unlocated events after them.
+	code, body := anon.do(http.MethodGet, "/api/v1/public/events/upcoming?near=2.35,48.85&limit=50", nil)
+	if code != http.StatusOK {
+		t.Fatalf("upcoming near: %d %s", code, body)
+	}
+	near, _ := decode(t, body)["data"].([]any)
+	if len(near) < 2 {
+		t.Fatalf("upcoming near = %v, want at least 2 rows", near)
+	}
+	first, second := near[0].(map[string]any), near[1].(map[string]any)
+	if d, _ := first["distance_m"].(float64); first["id"] != nearest || d >= 1000 {
+		t.Errorf("nearest = %v, want %s within 1 km", first, nearest)
+	}
+	if second["id"] != sessions {
+		t.Errorf("second nearest = %v, want %s (Lyon)", second, sessions)
+	}
+	if code, _ := anon.do(http.MethodGet, "/api/v1/public/events/upcoming?near=999,0", nil); code != http.StatusBadRequest {
+		t.Errorf("near=999,0 = %d, want 400", code)
 	}
 	if err := store.Set(ctx, auth.DevTenantID, uuid.Nil, website.PublicKey("event"), `{"fields":[]}`); err != nil {
 		t.Fatal(err)

@@ -5,6 +5,7 @@ import {
   registerMenuAction,
   useEntityRefreshStore,
   type FrontRoute,
+  type GeoJSONGeometry,
   type MenuNode,
   type Operation,
   type RelationOps,
@@ -28,6 +29,9 @@ export interface PropertyManagement {
   address_city?: string
   address_state?: string
   address_country?: string
+  /** The building's position (GeoJSON Point) and its land (Polygon). */
+  geo_location?: GeoJSONGeometry | null
+  parcel?: GeoJSONGeometry | null
   floor_area?: number
   uom_id?: string
   /** The mortgage/loan this property carries — a plain editable figure, not
@@ -311,6 +315,9 @@ export const fields: ViewDescriptor['fields'] = [
   // same rendering path "Pricing" uses, so the two headings actually match
   // instead of one being AddressWidget's ad-hoc variant="caption" line.
   { name: 'address', label: 'Address', type: 'address', widget: 'form', hideLabel: true },
+  // The building on a map (geocodable from the address above) and its land.
+  { name: 'geo_location', label: 'Location', type: 'geo', widget: 'point', widgetOptions: { address: 'address' } },
+  { name: 'parcel', label: 'Parcel', type: 'geo', widget: 'shape' },
   { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float' },
   { name: 'loan_amount', label: 'Loan amount', type: 'number', widget: 'monetary' },
   { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary' },
@@ -533,7 +540,12 @@ export const propertyExtendOperations: Operation[] = [
       // field name, which would insert Pricing INSIDE this group instead.
       id: 'property-address-group',
       title: 'Address',
-      children: [{ kind: 'field', name: 'address' }],
+      // The map point (geocoded from the address) and parcel sit with it.
+      children: [
+        { kind: 'field', name: 'address' },
+        { kind: 'field', name: 'geo_location' },
+        { kind: 'field', name: 'parcel' },
+      ],
     },
     target: 'floor_area',
     position: 'before',

@@ -43,6 +43,9 @@ type PropertyManagement struct {
 	AddressCity       string `db:"address_city" json:"address_city"`
 	AddressState      string `db:"address_state" json:"address_state"`
 	AddressCountry    string `db:"address_country" json:"address_country"`
+	// GeoLocation (the building) and Parcel (its land) — ADR-029.
+	GeoLocation *orm.GeoPoint `db:"geo_location,index=gist" json:"geo_location"`
+	Parcel      *orm.GeoShape `db:"parcel,index=gist" json:"parcel"`
 	// FloorArea is in the workspace's own unit (m²/sqft — free-form like
 	// warehouse.Product.Unit, this module has no opinion).
 	FloorArea float64 `db:"floor_area" json:"floor_area"`

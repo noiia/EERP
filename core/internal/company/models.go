@@ -6,6 +6,7 @@
 package company
 
 import (
+	"core/orm"
 	"core/orm/model"
 )
 
@@ -47,4 +48,8 @@ type Company struct {
 	// bytes. Pointer = nullable, so a company created before this field
 	// existed (or via the generic API with no logo) stays a valid row.
 	Logo *bool `db:"logo"`
+	// GeoLocation and ServiceZone (ADR-029): where the company is, and the
+	// area it serves ("contacts inside our zone").
+	GeoLocation *orm.GeoPoint `db:"geo_location,index=gist"`
+	ServiceZone *orm.GeoShape `db:"service_zone,index=gist"`
 }

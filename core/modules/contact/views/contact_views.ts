@@ -1,4 +1,4 @@
-import type { FrontModule, ViewDescriptor } from '@eerp/core-front'
+import type { FrontModule, GeoJSONGeometry, ViewDescriptor } from '@eerp/core-front'
 
 // contacts frontend — DESCRIPTORS ONLY. The engine derives the server loader, the Zustand
 // store, and the renderer from these; this module ships no controllers or renderers.
@@ -18,6 +18,8 @@ export interface Contact {
   status?: string
   /** Created by a website signup (set by Go, never edited). */
   website?: boolean | null
+  /** Where the contact is — a GeoJSON Point (map pick or geocoded). */
+  geo_location?: GeoJSONGeometry | null
 }
 
 const fields: ViewDescriptor['fields'] = [
@@ -26,6 +28,15 @@ const fields: ViewDescriptor['fields'] = [
   { name: 'company', label: 'Company', type: 'text' },
   { name: 'status', label: 'Status', type: 'text' },
   { name: 'website', label: 'Website', type: 'boolean', widget: 'switch', readOnly: true },
+  // A map point. Kept in the tree's fields too: the grid never renders a geo
+  // column, but the search bar offers it as near / inside-zone filters.
+  {
+    name: 'geo_location',
+    label: 'Location',
+    type: 'geo',
+    widget: 'point',
+    widgetOptions: { zones: [{ entity: 'company', field: 'service_zone', label: 'Company service zone' }] },
+  },
 ]
 
 // Form-only: the inverse side of crm.contact_id — every CRM record pointing at

@@ -1056,7 +1056,9 @@ function TreeRenderer<T extends HasId>({
       const fieldsByName = new Map(descriptor.fields.map((f) => [f.name, f]))
       const columns: GridColDef[] = layoutFieldOrder(normalizeLayout(descriptor))
         .map((name) => fieldsByName.get(name))
-        .filter((f) => f != null)
+        // A geo field is a map, not a cell: it stays in a tree's fields for
+        // the search bar's near/inside/covers filters but never becomes a column.
+        .filter((f): f is FieldDescriptor => f != null && f.type !== 'geo')
         .map((f) => {
           const col: GridColDef = { field: f.name, headerName: t(fieldLabel(f)), flex: 1 }
           // 'user-presence' is display-only: the row IS a user record (its

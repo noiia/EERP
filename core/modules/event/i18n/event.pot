@@ -181,3 +181,9 @@ msgstr ""
 
 msgid "Mark paid"
 msgstr ""
+
+msgid "Map position"
+msgstr ""
+
+msgid "Distance attendee → event"
+msgstr ""

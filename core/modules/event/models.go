@@ -3,6 +3,7 @@ package event
 import (
 	"time"
 
+	"core/orm"
 	"core/orm/model"
 
 	"github.com/google/uuid"
@@ -56,6 +57,9 @@ type Event struct {
 	// taxes a booking's invoice carries (a session's price overrides the unit
 	// price). Unset: bookings are free and a session price is display only.
 	ProductVariantID *uuid.UUID `db:"product_variant_id" json:"product_variant_id"`
+	// GeoLocation: the event's position, beside the free-text Location; lets
+	// the website list events nearest to the visitor.
+	GeoLocation *orm.GeoPoint `db:"geo_location,index=gist" json:"geo_location"`
 }
 
 // EventSession's window is starts_at/ends_at: the ORM does not quote

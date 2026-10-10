@@ -25,3 +25,9 @@ msgstr "Fiches CRM"
 
 msgid "Website"
 msgstr "Site web"
+
+msgid "Location"
+msgstr "Emplacement"
+
+msgid "Company service zone"
+msgstr "Zone de service de l'entreprise"

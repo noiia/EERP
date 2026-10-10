@@ -1349,4 +1349,12 @@ describe('tree Distance column', () => {
     render(<EntityView descriptor={treeDescriptor} initialData={[{ id: '1', name: 'A' }]} actions={noopActions} />)
     expect(screen.queryByText('Distance')).not.toBeInTheDocument()
   })
+  it('never renders a geo field as a grid column (it stays a search-bar filter)', () => {
+    const withGeo: ViewDescriptor<Contact> = {
+      ...treeDescriptor,
+      fields: [...treeDescriptor.fields, { name: 'geo_location', label: 'Map spot', type: 'geo', widget: 'point' }],
+    }
+    render(<EntityView descriptor={withGeo} initialData={[{ id: '1', name: 'A' }]} actions={noopActions} />)
+    expect(screen.queryByText('Map spot')).not.toBeInTheDocument()
+  })
 })

@@ -192,3 +192,9 @@ msgstr "Bien :"
 
 msgid "Description"
 msgstr "Description"
+
+msgid "Location"
+msgstr "Emplacement"
+
+msgid "Parcel"
+msgstr "Parcelle"

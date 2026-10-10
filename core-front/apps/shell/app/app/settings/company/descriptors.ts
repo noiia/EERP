@@ -34,6 +34,23 @@ export const companyFormDescriptor: ViewDescriptor<CompanyRecord> = {
     { name: 'logo', hideLabel: true, label: 'Company logo', type: 'boolean', widget: 'picture' },
     { name: 'name', label: 'Name', type: 'text', required: true },
     { name: 'address', label: 'Address', type: 'address', widget: 'form' },
+    // Where the company is (geocodable from the address) and the area it
+    // serves; the contacts located inside that area are listed read-only.
+    { name: 'geo_location', label: 'Location', type: 'geo', widget: 'point', widgetOptions: { address: 'address' } },
+    { name: 'service_zone', label: 'Service zone', type: 'geo', widget: 'shape' },
+    {
+      name: 'zone_contacts',
+      label: 'Contacts in this zone',
+      type: 'relation',
+      readOnly: true,
+      relation: {
+        entity: 'contact',
+        kind: 'one2many',
+        inside: { field: 'geo_location', zone: 'service_zone' },
+        labelField: 'name',
+        formPath: '/contacts/:id',
+      },
+    },
     { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
     { name: 'email', label: 'Email', type: 'text' },
     // This company's own global currency — sale documents (invoice/quote)

@@ -1,3 +1,4 @@
+import { resolveWidget } from '@eerp/core-front'
 import { describe, expect, it } from 'vitest'
 import { companyFormDescriptor, companyListDescriptor } from './descriptors'
 
@@ -31,10 +32,28 @@ describe('Settings → Company descriptors', () => {
       'logo',
       'name',
       'address',
+      'geo_location',
+      'service_zone',
+      'zone_contacts',
       'phone',
       'email',
       'currency',
     ])
+  })
+
+  it('locates the company, draws its service zone and lists the contacts inside it', () => {
+    const field = (name: string) => companyFormDescriptor.fields.find((f) => f.name === name)!
+    expect(field('geo_location')).toMatchObject({ type: 'geo', widget: 'point', widgetOptions: { address: 'address' } })
+    expect(field('service_zone')).toMatchObject({ type: 'geo', widget: 'shape' })
+    const zone = field('zone_contacts')
+    expect(zone.readOnly).toBe(true)
+    expect(zone.relation).toMatchObject({
+      entity: 'contact',
+      kind: 'one2many',
+      inside: { field: 'geo_location', zone: 'service_zone' },
+      formPath: '/contacts/:id',
+    })
+    for (const name of ['geo_location', 'service_zone', 'zone_contacts']) expect(() => resolveWidget(field(name))).not.toThrow()
   })
 
   it('the logo is the FIRST field — the default form anatomy places it top-left with no explicit layout', () => {

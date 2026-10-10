@@ -1,3 +1,4 @@
+import { resolveWidget } from '@eerp/core-front'
 import { describe, expect, it } from 'vitest'
 import contacts from './contact_views'
 
@@ -50,6 +51,7 @@ describe('contacts FrontModule', () => {
       'company',
       'status',
       'website',
+      'geo_location',
     ])
   })
 
@@ -64,5 +66,16 @@ describe('contacts FrontModule', () => {
     })
     const list = contacts.routes.find((r) => r.path === '/contacts/list')
     expect(list?.descriptor.fields.some((f) => f.name === 'crm_records')).toBe(false)
+  })
+
+  it('carries a map point with the company service zone as a zone filter', () => {
+    const form = contacts.routes.find((r) => r.path === '/contacts/:id')!.descriptor
+    const geo = form.fields.find((f) => f.name === 'geo_location')!
+    expect(geo).toMatchObject({ type: 'geo', widget: 'point' })
+    expect(geo.widgetOptions?.zones).toEqual([{ entity: 'company', field: 'service_zone', label: 'Company service zone' }])
+    expect(resolveWidget(geo)).toBe('point')
+    // The tree keeps it for the near/inside search filters (the grid skips geo columns).
+    const list = contacts.routes.find((r) => r.path === '/contacts/list')!.descriptor
+    expect(list.fields.some((f) => f.name === 'geo_location')).toBe(true)
   })
 })

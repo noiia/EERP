@@ -54,6 +54,8 @@ const eventFormFields: ViewDescriptor['fields'] = [
   // The form header's picture; the site's event_list cards show it once published.
   { name: 'picture', label: 'Picture', type: 'boolean', widget: 'picture', hideLabel: true },
   ...eventListFields,
+  // Beside the free-text location: lets the site list events nearest to the visitor.
+  { name: 'geo_location', label: 'Map position', type: 'geo', widget: 'point' },
   { name: 'timezone', label: 'Time zone (IANA, e.g. Europe/Paris)', type: 'text', required: true, default: 'Europe/Paris' },
   // Set: bookings are invoiced at this product's price and taxes (a session's
   // own price overrides the unit price). Empty: bookings are free.
@@ -251,6 +253,16 @@ const bookingFormFields: ViewDescriptor['fields'] = [
   { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
   bookingStatus,
   { name: 'contact_id', label: 'Contact', type: 'relation', readOnly: true, relation: { entity: 'contact', kind: 'many2one', labelField: 'name' } },
+  // Computed, never stored: the contact's location to the event's.
+  {
+    name: 'distance_to_event',
+    label: 'Distance attendee → event',
+    type: 'distance',
+    widgetOptions: {
+      from: { entity: 'contact', id: 'contact_id', field: 'geo_location' },
+      to: { entity: 'event', id: 'event_id', field: 'geo_location' },
+    },
+  },
   { name: 'cancelled_at', label: 'Cancelled on', type: 'date', widget: 'datetime', readOnly: true },
   // A paid event's invoice, shown live (its status stays the Sale app's truth).
   {

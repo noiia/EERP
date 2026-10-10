@@ -182,3 +182,9 @@ msgstr "Payée le"
 
 msgid "Mark paid"
 msgstr "Marquer payée"
+
+msgid "Map position"
+msgstr "Position sur la carte"
+
+msgid "Distance attendee → event"
+msgstr "Distance participant → événement"

@@ -1172,8 +1172,6 @@ msgstr "Cartes"
 msgid "Maximum number of events"
 msgstr "Nombre maximum d'événements"
 
-msgid "Lists published events with a future session (appointment events too), soonest first."
-msgstr "Liste les événements publiés ayant une session à venir (et les événements sur rendez-vous), du plus proche au plus lointain."
 
 msgid "Event page"
 msgstr "Page d'événement"
@@ -1552,3 +1550,66 @@ msgstr "Ajoutées après les règles intégrées, qui tiennent les robots à l'�
 
 msgid "Served file (for this address)"
 msgstr "Fichier servi (pour cette adresse)"
+
+msgid "Location"
+msgstr "Emplacement"
+
+msgid "Service zone"
+msgstr "Zone de service"
+
+msgid "Contacts in this zone"
+msgstr "Contacts dans cette zone"
+
+msgid "Search an address"
+msgstr "Rechercher une adresse"
+
+msgid "Locate from address"
+msgstr "Localiser depuis l'adresse"
+
+msgid "Clear"
+msgstr "Effacer"
+
+msgid "Click the map to add points; click a point to remove it."
+msgstr "Cliquez sur la carte pour ajouter des points ; cliquez sur un point pour le retirer."
+
+msgid "Near an address"
+msgstr "Près d'une adresse"
+
+msgid "Use my location"
+msgstr "Utiliser ma position"
+
+msgid "Within (km, optional)"
+msgstr "Dans un rayon de (km, facultatif)"
+
+msgid "Zone of"
+msgstr "Zone de"
+
+msgid "Zone"
+msgstr "Zone"
+
+msgid "Distance"
+msgstr "Distance"
+
+msgid "near"
+msgstr "près de"
+
+msgid "inside zone of"
+msgstr "dans la zone de"
+
+msgid "covers"
+msgstr "contient"
+
+msgid "Near"
+msgstr "Près de"
+
+msgid "Inside zone"
+msgstr "Dans la zone"
+
+msgid "Covers point"
+msgstr "Contient le point"
+
+msgid "Nearest to me (asks the visitor's location)"
+msgstr "Les plus proches (demande la position du visiteur)"
+
+msgid "Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location."
+msgstr "Liste les événements publiés ayant une session à venir (et les événements sur rendez-vous), du plus proche au plus lointain dans le temps — ou du plus proche géographiquement quand le visiteur partage sa position."

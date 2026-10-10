@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { headerButtonRegistry, headerMenuRegistry, ModuleRegistry, useEntityRefreshStore } from '@eerp/core-front'
+import { headerButtonRegistry, resolveWidget, headerMenuRegistry, ModuleRegistry, useEntityRefreshStore } from '@eerp/core-front'
 import contacts from '../../contact/views/contact_views'
 import mod from './EventViews'
 
@@ -26,6 +26,21 @@ describe('event views', () => {
     const form = mod.routes.find((r) => r.path === '/event/:id')!.descriptor
     const paths = form.fields.filter((f) => f.relation?.kind === 'one2many').map((f) => f.relation!.formPath)
     expect(paths).toEqual(['/event/sessions/:id', '/event/availability/:id', '/event/bookings/:id'])
+  })
+
+  it('places the event on a map and shows a booking its attendee distance', () => {
+    const form = mod.routes.find((r) => r.path === '/event/:id')!.descriptor
+    const geo = form.fields.find((f) => f.name === 'geo_location')!
+    expect(geo).toMatchObject({ type: 'geo', widget: 'point' })
+    expect(resolveWidget(geo)).toBe('point')
+    const booking = mod.routes.find((r) => r.path === '/event/bookings/:id')!.descriptor
+    const dist = booking.fields.find((f) => f.name === 'distance_to_event')!
+    expect(dist.type).toBe('distance')
+    expect(dist.widgetOptions).toEqual({
+      from: { entity: 'contact', id: 'contact_id', field: 'geo_location' },
+      to: { entity: 'event', id: 'event_id', field: 'geo_location' },
+    })
+    expect(resolveWidget(dist)).toBe('meters')
   })
 
   it('shows sessions or availability depending on kind', () => {

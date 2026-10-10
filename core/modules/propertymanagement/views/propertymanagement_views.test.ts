@@ -7,6 +7,7 @@ import {
   headerButtonRegistry,
   menuActionRegistry,
   normalizeLayout,
+  resolveWidget,
   type HeaderButtonContext,
   type MenuActionContext,
   type RelationOps,
@@ -45,6 +46,18 @@ describe("propertymanagement FrontModule", () => {
     expect(dashboard.descriptor.viewType).toBe("dashboard");
     expect(list.descriptor.viewType).toBe("tree");
     expect(form.descriptor.viewType).toBe("form");
+  });
+
+  it("locates the property on a map (geocoded from its address) and draws its parcel", () => {
+    const form = propertymanagement.routes.find(
+      (r) => r.path === "/propertymanagement/:id",
+    )!.descriptor;
+    const geo = form.fields.find((f) => f.name === "geo_location")!;
+    expect(geo).toMatchObject({ type: "geo", widget: "point", widgetOptions: { address: "address" } });
+    expect(resolveWidget(geo)).toBe("point");
+    const parcel = form.fields.find((f) => f.name === "parcel")!;
+    expect(parcel).toMatchObject({ type: "geo", widget: "shape" });
+    expect(resolveWidget(parcel)).toBe("shape");
   });
 
   it("makes list rows open the property form", () => {
@@ -449,7 +462,11 @@ describe("propertymanagement — self-extended notebook pages (registry-level)",
     // so AddressWidget's own hand-rolled caption (hideLabel: true on the
     // field) is no longer what's rendered here.
     expect(addressGroup.title).toBe("Address");
-    expect(addressGroup.children).toEqual([{ kind: "field", name: "address" }]);
+    expect(addressGroup.children).toEqual([
+      { kind: "field", name: "address" },
+      { kind: "field", name: "geo_location" },
+      { kind: "field", name: "parcel" },
+    ]);
 
     const amountsGroup = columns.children[1];
     expect(amountsGroup.kind).not.toBe("field");
