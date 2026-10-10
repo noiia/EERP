@@ -91,6 +91,15 @@ describe('nearest to me', () => {
     vi.unstubAllGlobals()
   })
 
+  it('shows the distance on appointment events too', async () => {
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition: (ok: (p: unknown) => void) => ok({ coords: { longitude: 2.35, latitude: 48.85 } }) } })
+    const appt = { id: 'c', name: 'Consult', kind: 'appointment', next_session_at: null, seats_left: null, distance_m: 1200 }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: [appt] }))))
+    render(<EventList config={{ nearest: true }} events={events} />)
+    await waitFor(() => expect(screen.getByText(/Book a slot · 1[.,]2 km/i)).toBeTruthy())
+    vi.unstubAllGlobals()
+  })
+
   it('keeps the soonest-first order when the visitor refuses', async () => {
     vi.stubGlobal('navigator', { geolocation: { getCurrentPosition: (_ok: unknown, err: (e: unknown) => void) => err({ code: 1 }) } })
     const fetchMock = vi.fn()

@@ -57,10 +57,10 @@ export function EventList({ config, events: initial }: { config: EventListConfig
   const href = (id: string) => (config.detail_slug ? `/${encodeURIComponent(config.detail_slug)}/${encodeURIComponent(id)}` : undefined)
   // When, and how much room is left: an appointment event books slots, not sessions.
   const when = (ev: UpcomingEvent) => {
-    if (ev.kind === 'appointment' || !ev.next_session_at) return t('Book a slot')
+    const away = ev.distance_m != null ? ` · ${formatDistance(ev.distance_m, system, locale)}` : ''
+    if (ev.kind === 'appointment' || !ev.next_session_at) return `${t('Book a slot')}${away}`
     const date = formatChoice(ev.next_session_at, ev.timezone ?? 'Europe/Paris', locale)
     const seats = ev.seats_left ?? 0
-    const away = ev.distance_m != null ? ` · ${formatDistance(ev.distance_m, system, locale)}` : ''
     return `${date} — ${seats > 0 ? `${seats} ${t('seats left')}` : t('Full')}${away}`
   }
 
