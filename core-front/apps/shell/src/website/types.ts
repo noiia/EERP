@@ -48,8 +48,9 @@ export interface RecordListConfig {
  * (/<slug>/<id>, what an event_list's `detail_slug` links to). */
 export interface BookingConfig { event_id?: string }
 /** event_list: upcoming published events (Go's /public/events/upcoming), as cards or a
- * list, each linking to `/<detail_slug>/<id>` when set. `limit` caps it (1–50, default 12). */
-export interface EventListConfig { display?: 'cards' | 'list'; limit?: number; detail_slug?: string }
+ * list, each linking to `/<detail_slug>/<id>` when set. `limit` caps it (1–50, default 12).
+ * `nearest`: ask the visitor's position and list nearest first; refused → soonest first. */
+export interface EventListConfig { display?: 'cards' | 'list'; limit?: number; detail_slug?: string; nearest?: boolean }
 /** `record`: a fixed record to show; unset = the id from the URL (/<slug>/<id>). */
 export interface RecordDetailConfig {
   table: string; fields: string[]; title_field: string; picture_field?: string; record?: string

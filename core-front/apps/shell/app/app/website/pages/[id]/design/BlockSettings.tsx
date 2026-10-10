@@ -287,9 +287,10 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         <TextField key="limit" id={id('limit')} size="small" type="number" label={t('Maximum number of events')}
           value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 50 } }}
           onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
+        check('nearest', "Nearest to me (asks the visitor's location)"),
         detailSelect,
         <Typography key="hint" variant="body2" color="text.secondary">
-          {t('Lists published events with a future session (appointment events too), soonest first.')}
+          {t('Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location.')}
         </Typography>,
       ]
   }

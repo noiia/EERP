@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => undefined }), headers: async () => new Headers() }))
 vi.mock('next/cache', () => ({ unstable_cache: (fn: () => Promise<unknown>) => fn, revalidateTag: vi.fn() }))
 
 import { BlockView } from './BlockView'
+import { EventList } from './EventList'
 import type { Block, PublicDataSource } from '../types'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -70,5 +71,34 @@ describe('booking blocks on a generic event page', () => {
     const get = async (_t: string, id: string) => ({ id, name: 'Sessions event', kind: 'sessions' })
     const { container } = render(<>{await BlockView({ block: { id: 'b', type: 'appointment_booking', x: 0, y: 0, w: 36, h: 18, config: {} }, source: { list: async () => null, get }, params: { id: 'e9' } })}</>)
     expect(container.textContent).toBe('')
+  })
+})
+
+describe('nearest to me', () => {
+  const events = [
+    { id: 'a', name: 'Far', kind: 'sessions', next_session_at: '2026-11-01T10:00:00Z', seats_left: 3 },
+    { id: 'b', name: 'Close', kind: 'sessions', next_session_at: '2026-12-01T10:00:00Z', seats_left: 3 },
+  ]
+
+  it('re-fetches by distance when the visitor shares a position', async () => {
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition: (ok: (p: unknown) => void) => ok({ coords: { longitude: 2.35, latitude: 48.85 } }) } })
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ ...events[1], distance_m: 1200 }, { ...events[0], distance_m: 90000 }] })))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EventList config={{ nearest: true, limit: 12 }} events={events} />)
+    await waitFor(() => expect(screen.getAllByRole('heading')[0].textContent).toContain('Close'))
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe('/api/site-events/upcoming?limit=12&near=2.35%2C48.85')
+    expect(screen.getByText(/1[.,]2 km/)).toBeTruthy()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps the soonest-first order when the visitor refuses', async () => {
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition: (_ok: unknown, err: (e: unknown) => void) => err({ code: 1 }) } })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EventList config={{ nearest: true }} events={events} />)
+    await waitFor(() => expect(screen.getAllByRole('heading')[0].textContent).toContain('Far'))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+    vi.unstubAllGlobals()
   })
 })

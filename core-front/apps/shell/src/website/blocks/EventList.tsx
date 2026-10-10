@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -8,7 +9,7 @@ import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Typography from '@mui/material/Typography'
-import { useI18nStore, useT } from '@eerp/core-front'
+import { formatDistance, useI18nStore, useT, useUnitStore } from '@eerp/core-front'
 import { pictureUrl } from '../urls'
 import type { EventListConfig } from '../types'
 import { formatChoice } from './BookingForm'
@@ -24,12 +25,34 @@ export interface UpcomingEvent {
   picture?: boolean | null
   next_session_at: string | null
   seats_left: number | null
+  distance_m?: number | null
 }
 
 /** Visitor-facing list of upcoming events, linking each to the generic event page. */
-export function EventList({ config, events }: { config: EventListConfig; events: UpcomingEvent[] }) {
+export function EventList({ config, events: initial }: { config: EventListConfig; events: UpcomingEvent[] }) {
   const t = useT()
   const locale = useI18nStore((s) => s.locale)
+  const system = useUnitStore((s) => s.system)
+  const [events, setEvents] = useState(initial)
+  useEffect(() => {
+    setEvents(initial)
+    if (!config.nearest || !navigator.geolocation) return
+    let cancelled = false
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const qs = new URLSearchParams({ limit: String(config.limit ?? 12), near: `${pos.coords.longitude},${pos.coords.latitude}` })
+        fetch(`/api/site-events/upcoming?${qs}`)
+          .then((res) => (res.ok ? (res.json() as Promise<{ data: UpcomingEvent[] }>) : null))
+          .then((body) => !cancelled && body && setEvents(body.data))
+          .catch(() => undefined)
+      },
+      () => undefined, // refused/unavailable: keep soonest-first, no message
+      { maximumAge: 600_000, timeout: 10_000 },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [initial, config.nearest, config.limit])
   if (events.length === 0) return <Typography color="text.secondary">{t('No upcoming events.')}</Typography>
   const href = (id: string) => (config.detail_slug ? `/${encodeURIComponent(config.detail_slug)}/${encodeURIComponent(id)}` : undefined)
   // When, and how much room is left: an appointment event books slots, not sessions.
@@ -37,7 +60,8 @@ export function EventList({ config, events }: { config: EventListConfig; events:
     if (ev.kind === 'appointment' || !ev.next_session_at) return t('Book a slot')
     const date = formatChoice(ev.next_session_at, ev.timezone ?? 'Europe/Paris', locale)
     const seats = ev.seats_left ?? 0
-    return `${date} — ${seats > 0 ? `${seats} ${t('seats left')}` : t('Full')}`
+    const away = ev.distance_m != null ? ` · ${formatDistance(ev.distance_m, system, locale)}` : ''
+    return `${date} — ${seats > 0 ? `${seats} ${t('seats left')}` : t('Full')}${away}`
   }
 
   if (config.display === 'list') {
