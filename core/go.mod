@@ -4,7 +4,9 @@ go 1.26.3
 
 require (
 	github.com/bytecodealliance/wasmtime-go/v15 v15.0.0
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dgraph-io/ristretto v0.2.0
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -21,6 +23,7 @@ require (
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
+	golang.org/x/oauth2 v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

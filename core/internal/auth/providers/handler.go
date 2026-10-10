@@ -21,6 +21,7 @@ type Deps struct {
 	Directory   Directory
 	Provisioner *Provisioner
 	Sessions    SessionIssuer
+	OIDC        *OIDCClient
 }
 
 // SessionIssuer opens the ERP session for an already-authenticated user
@@ -202,6 +203,12 @@ func (h *Handler) TestSettings(c *echo.Context) error {
 	switch {
 	case req.Method == "ldap" && m.LDAP != nil && h.deps.Directory != nil:
 		testErr = h.deps.Directory.Check(ctx, *m.LDAP)
+	case strings.HasPrefix(req.Method, "oidc:") && h.deps.OIDC != nil:
+		p, ok := m.Provider(strings.TrimPrefix(req.Method, "oidc:"))
+		if !ok {
+			return echo.NewHTTPError(http.StatusBadRequest, "unknown or unconfigured method")
+		}
+		testErr = h.deps.OIDC.Check(ctx, p)
 	default:
 		return echo.NewHTTPError(http.StatusBadRequest, "unknown or unconfigured method")
 	}
@@ -209,4 +216,77 @@ func (h *Handler) TestSettings(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"ok": false, "message": testErr.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]any{"ok": true, "message": "Connection succeeded."})
+}
+
+// OIDCAuthorize handles GET /api/v1/auth/oidc/providers/:id/authorize.
+func (h *Handler) OIDCAuthorize(c *echo.Context) error {
+	state, nonce, challenge := c.QueryParam("state"), c.QueryParam("nonce"), c.QueryParam("code_challenge")
+	if state == "" || nonce == "" || challenge == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "state, nonce and code_challenge are required")
+	}
+	if h.deps.OIDC == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	p, m, err := h.enabledProvider(c)
+	if err != nil {
+		return err
+	}
+	url, err := h.deps.OIDC.AuthorizeURL(c.Request().Context(), p, m.CallbackURL(), state, nonce, challenge)
+	if err != nil {
+		return fmt.Errorf("oidc authorize: %w", err)
+	}
+	return c.JSON(http.StatusOK, map[string]string{"url": url})
+}
+
+func (h *Handler) enabledProvider(c *echo.Context) (OIDCProvider, Methods, error) {
+	notFound := echo.NewHTTPError(http.StatusNotFound, "not found")
+	if h.deps.Tenant == uuid.Nil {
+		return OIDCProvider{}, Methods{}, notFound
+	}
+	m, err := h.deps.Store.Load(c.Request().Context(), h.deps.Tenant)
+	if err != nil {
+		return OIDCProvider{}, Methods{}, err
+	}
+	id := c.Param("id")
+	p, ok := m.Provider(id)
+	if !ok || !m.Allows("oidc:"+id) {
+		return OIDCProvider{}, Methods{}, notFound
+	}
+	return p, m, nil
+}
+
+// OIDCExchange handles POST /api/v1/auth/oidc/providers/:id/exchange.
+func (h *Handler) OIDCExchange(c *echo.Context) error {
+	const msg = "Sign-in failed."
+	var req struct {
+		Code         string `json:"code"`
+		CodeVerifier string `json:"code_verifier"`
+		Nonce        string `json:"nonce"`
+	}
+	if err := c.Bind(&req); err != nil || req.Code == "" || req.CodeVerifier == "" || req.Nonce == "" {
+		return unauthorized(c, msg)
+	}
+	if h.deps.OIDC == nil || h.provision == nil || h.deps.Sessions == nil {
+		return unauthorized(c, msg)
+	}
+	p, m, err := h.enabledProvider(c)
+	if err != nil {
+		return unauthorized(c, msg)
+	}
+	ctx := c.Request().Context()
+	id, err := h.deps.OIDC.Exchange(ctx, p, req.Code, req.CodeVerifier, m.CallbackURL(), req.Nonce)
+	if err != nil {
+		if errors.Is(err, ErrOIDC) {
+			return unauthorized(c, msg)
+		}
+		return fmt.Errorf("oidc exchange: %w", err)
+	}
+	userID, err := h.provision(ctx, h.deps.Tenant, id, m)
+	if err != nil {
+		if errors.Is(err, ErrRefused) {
+			return unauthorized(c, msg)
+		}
+		return err
+	}
+	return h.deps.Sessions.IssueSessionForUser(c, userID)
 }
