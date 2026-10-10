@@ -323,6 +323,37 @@ doesn't. Pitfalls: `All`/`One` return `orm.ErrLockOutsideTx` on anything but a `
 the lock. Lock rows in a consistent order (e.g. `OrderBy("id")`) when a transaction locks
 several, or two transactions can deadlock.
 
+### Geographic fields
+
+Spatial columns ([ADR-029](../../docs/adr/ADR-029-geographic-fields.md)) need PostGIS (boot runs
+`CREATE EXTENSION IF NOT EXISTS postgis`). Declare nullable pointers; add `index=gist` so
+`near`/`within` use an index:
+
+```go
+type Company struct {
+    model.BaseModel
+    Location    *orm.GeoPoint `db:"geo_location,index=gist"`  // geography(Point,4326)
+    ServiceZone *orm.GeoShape `db:"service_zone,index=gist"`  // Polygon | MultiPolygon | LineString
+}
+```
+
+Typed repositories scan/write them transparently (EWKB hex in, EWKT out). Over HTTP the value is a
+GeoJSON geometry (`{"type":"Point","coordinates":[lon,lat]}`); invalid geometry is a 422
+`VALIDATION_ERROR` naming the field. List params:
+
+| Param | Effect |
+|-------|--------|
+| `near[col]=lon,lat` | nearest first; rows carry read-only `_distance_m` |
+| `within[col]=lon,lat,meters` | radius filter |
+| `covers[col]=lon,lat` | zones containing the point |
+| `inside[col]=table:id:shape_col` | points inside another record's zone |
+
+Malformed values are 400; an unusable reference (unregistered, inactive module, unreadable,
+gated, wrong kind) is 404; `inside` is refused on public routes. `orm.GeoDistance(ctx, db,
+"table:id:col", "table:id:col")` returns the distance in meters (`nil` when a side is empty) with
+the same checks. Pitfalls: coordinates are `[lon, lat]`; boundary points are covered; at most one
+`near`; without a GiST index `near` scans the table.
+
 ### Query builders (advanced)
 
 Use builders directly when the repository layer isn't expressive enough.
