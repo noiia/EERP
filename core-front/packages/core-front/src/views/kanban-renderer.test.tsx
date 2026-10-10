@@ -68,6 +68,21 @@ describe('KanbanRenderer', () => {
     expect(groups).toEqual(['open', 'won', 'lost', 'No status'])
   })
 
+  it('never prints a geo or distance field on a card', () => {
+    const geoDescriptor: ViewDescriptor<Deal> = {
+      ...descriptor,
+      fields: [
+        { name: 'geo_location', label: 'Map position', type: 'geo' },
+        ...descriptor.fields,
+        { name: 'distance', label: 'Distance', type: 'distance' },
+      ],
+    }
+    const located = records.map((r) => ({ ...r, geo_location: { type: 'Point', coordinates: [2.35, 48.85] } }))
+    render(<KanbanRenderer descriptor={geoDescriptor} initialData={located} actions={actions} statusField="status" />)
+    expect(screen.getByTestId('kanban-card-1')).toHaveTextContent('Acme')
+    expect(screen.queryByText('[object Object]')).toBeNull()
+  })
+
   it('centers the column board when it is narrower than the screen, safely (never past an overflow)', () => {
     render(
       <KanbanRenderer

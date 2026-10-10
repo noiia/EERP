@@ -1613,3 +1613,12 @@ msgstr "Les plus proches (demande la position du visiteur)"
 
 msgid "Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location."
 msgstr "Liste les événements publiés ayant une session à venir (et les événements sur rendez-vous), du plus proche au plus lointain dans le temps — ou du plus proche géographiquement quand le visiteur partage sa position."
+
+msgid "changed"
+msgstr "modifié"
+
+msgid "Address not found"
+msgstr "Adresse introuvable"
+
+msgid "Distances need the event table's map position (geo_location) published under Settings → Website → Published data."
+msgstr "Les distances nécessitent que la position sur la carte de la table des événements (geo_location) soit publiée dans Paramètres → Site web → Données publiées."

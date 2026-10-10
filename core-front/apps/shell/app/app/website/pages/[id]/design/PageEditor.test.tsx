@@ -72,6 +72,16 @@ describe('PageEditor', () => {
     expect(savePublished).toHaveBeenCalledWith('product', { fields: ['name', 'unit_price', 'reference'], filter: {} })
   })
 
+  it('event_list: checking "nearest" tells where to publish the map position', () => {
+    const list: Block = { id: 'b-1', type: 'event_list', x: 0, y: 0, w: 36, h: 18, config: {} }
+    render(<PageEditor pageId="p1" slug="home" title="Home" layout={[list]} published={published} save={vi.fn(async () => null)} />)
+    fireEvent.click(screen.getByTestId('editor-block-b-1'))
+    const panel = screen.getByTestId('block-settings')
+    expect(within(panel).queryByText(/geo_location/)).toBeNull()
+    fireEvent.click(within(panel).getByRole('checkbox', { name: /nearest to me/i }))
+    expect(within(panel).getByText(/geo_location/).textContent).toContain('Published data')
+  })
+
   it('saves the current layout', async () => {
     const save = setup()
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))

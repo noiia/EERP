@@ -288,6 +288,11 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
           value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 50 } }}
           onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
         check('nearest', "Nearest to me (asks the visitor's location)"),
+        ...(c.nearest === true ? [
+          <Typography key="nearest-hint" variant="caption" color="text.secondary">
+            {t("Distances need the event table's map position (geo_location) published under Settings → Website → Published data.")}
+          </Typography>,
+        ] : []),
         detailSelect,
         <Typography key="hint" variant="body2" color="text.secondary">
           {t('Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location.')}

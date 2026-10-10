@@ -119,12 +119,61 @@ describe('GeoPointWidget', () => {
     expect(onChange).toHaveBeenCalledWith(null)
   })
 
-  it('locates from the sibling address through the geocoder', async () => {
-    const fetchMock = vi.fn(
-      async (_url: string) =>
-        new Response(JSON.stringify({ results: [{ label: 'x', lat: 45.76, lon: 4.83 }] })),
+  // The OSM connector status route says on/off; every other call is the geocoder.
+  function stubOSM(enabled: boolean, search: () => Response) {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/osm/status') ? new Response(JSON.stringify({ enabled })) : search(),
     )
     vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+  const addressField = {
+    name: 'geo_location',
+    type: 'geo' as const,
+    widgetOptions: { address: 'address' },
+  }
+
+  it('hides the address search and "Locate from address" while the OSM connector is off', async () => {
+    stubOSM(false, () => new Response('{}'))
+    render(
+      <GeoPointWidget
+        field={addressField}
+        value={{ type: 'Point', coordinates: [2.35, 48.85] }}
+        onChange={vi.fn()}
+      />,
+    )
+    await screen.findByRole('button', { name: /clear/i })
+    await act(async () => {})
+    expect(screen.queryByLabelText(/search an address/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /locate from address/i })).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+  it('says "Address not found" when the geocoder finds nothing', async () => {
+    stubOSM(true, () => new Response(JSON.stringify({ results: [] })))
+    const onChange = vi.fn()
+    render(<GeoPointWidget field={addressField} value={null} onChange={onChange} />)
+    fireEvent.click(await screen.findByRole('button', { name: /locate from address/i }))
+    expect(await screen.findByText('Address not found')).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('re-enables "Locate from address" when the geocoder answers garbage', async () => {
+    stubOSM(true, () => new Response('not json'))
+    render(<GeoPointWidget field={addressField} value={null} onChange={vi.fn()} />)
+    const button = await screen.findByRole('button', { name: /locate from address/i })
+    fireEvent.click(button)
+    expect(await screen.findByText('Address not found')).toBeInTheDocument()
+    expect(button).not.toBeDisabled()
+    vi.unstubAllGlobals()
+  })
+
+  it('locates from the sibling address through the geocoder', async () => {
+    const fetchMock = stubOSM(
+      true,
+      () => new Response(JSON.stringify({ results: [{ label: 'x', lat: 45.76, lon: 4.83 }] })),
+    )
     const onChange = vi.fn()
     render(
       <GeoPointWidget
@@ -144,7 +193,7 @@ describe('GeoPointWidget', () => {
     await waitFor(() =>
       expect(onChange).toHaveBeenCalledWith({ type: 'Point', coordinates: [4.83, 45.76] }),
     )
-    expect(String(fetchMock.mock.calls[0][0])).toContain(
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
       encodeURIComponent('1 Rue X, 69001 Lyon, France'),
     )
     vi.unstubAllGlobals()

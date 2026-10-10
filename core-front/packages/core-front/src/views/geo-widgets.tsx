@@ -41,9 +41,27 @@ async function geocode(q: string): Promise<LonLat | null> {
     () => null,
   )
   if (!res?.ok) return null
-  const body = (await res.json()) as { results?: OSMSuggestion[] }
+  const body = (await res.json().catch(() => ({}))) as { results?: OSMSuggestion[] }
   const hit = body.results?.find((r) => r.lat != null && r.lon != null)
   return hit ? [hit.lon as number, hit.lat as number] : null
+}
+
+/** Whether the workspace's OSM connector is on (BFF status route) — address
+ * search and "Locate from address" can't work without it. False until known
+ * and on any error. */
+function useOSMEnabled(): boolean {
+  const [enabled, setEnabled] = useState(false)
+  useEffect(() => {
+    let live = true
+    fetch('/api/integrations/osm/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { enabled?: boolean } | null) => live && setEnabled(body?.enabled === true))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
+  return enabled
 }
 
 /** geo/point — a draggable marker; click to place; address search; locate. */
@@ -55,6 +73,8 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
   const point = asPoint(value)
   const { options, search } = useOSMSuggestions()
   const [locating, setLocating] = useState(false)
+  const [notFound, setNotFound] = useState(false)
+  const osmEnabled = useOSMEnabled()
   const addressPrefix =
     typeof field.widgetOptions?.address === 'string' ? field.widgetOptions.address : null
 
@@ -108,30 +128,37 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
   const locate = async () => {
     if (!addressPrefix) return
     setLocating(true)
-    const found = await geocode(
-      addressLine(draft as Record<string, unknown> | undefined, addressPrefix),
-    )
-    setLocating(false)
-    if (found) set(found)
+    setNotFound(false)
+    try {
+      const found = await geocode(
+        addressLine(draft as Record<string, unknown> | undefined, addressPrefix),
+      )
+      if (found) set(found)
+      else setNotFound(true)
+    } finally {
+      setLocating(false)
+    }
   }
 
   return (
     <Stack spacing={1}>
       {!disabled && (
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-          <Autocomplete
-            sx={{ flex: 1 }}
-            size="small"
-            options={options}
-            filterOptions={(o) => o}
-            getOptionLabel={(o) => (typeof o === 'string' ? o : o.label)}
-            onInputChange={(_, q, reason) => reason === 'input' && search(q)}
-            onChange={(_, o) =>
-              o && typeof o !== 'string' && o.lat != null && o.lon != null && set([o.lon, o.lat])
-            }
-            renderInput={(params) => <TextField {...params} label={t('Search an address')} />}
-          />
-          {addressPrefix && (
+          {osmEnabled && (
+            <Autocomplete
+              sx={{ flex: 1 }}
+              size="small"
+              options={options}
+              filterOptions={(o) => o}
+              getOptionLabel={(o) => (typeof o === 'string' ? o : o.label)}
+              onInputChange={(_, q, reason) => reason === 'input' && search(q)}
+              onChange={(_, o) =>
+                o && typeof o !== 'string' && o.lat != null && o.lon != null && set([o.lon, o.lat])
+              }
+              renderInput={(params) => <TextField {...params} label={t('Search an address')} />}
+            />
+          )}
+          {osmEnabled && addressPrefix && (
             <Button
               variant="outlined"
               size="small"
@@ -147,6 +174,11 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
             </Button>
           )}
         </Stack>
+      )}
+      {notFound && (
+        <Typography variant="caption" color="error">
+          {t('Address not found')}
+        </Typography>
       )}
       <Box ref={container} sx={MAP_SX} data-testid="geo-map" />
       {point && (

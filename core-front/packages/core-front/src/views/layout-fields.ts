@@ -15,6 +15,8 @@ export function orderedFields<T extends HasId>(
   const ordered = layoutFieldOrder(normalizeLayout(descriptor))
     .filter((name) => !exclude.includes(name))
     .map((name) => fieldsByName.get(name))
-    .filter((f): f is FieldDescriptor => f != null)
+    // Geo (a map) and distance (a computed widget) values have no text form:
+    // they'd print as "[object Object]"/blank on a card or label.
+    .filter((f): f is FieldDescriptor => f != null && f.type !== 'geo' && f.type !== 'distance')
   return limit != null ? ordered.slice(0, limit) : ordered
 }

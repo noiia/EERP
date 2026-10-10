@@ -209,10 +209,11 @@ function displayValue(value: unknown): string {
  * (the stored body stays plain text; only the arrow's PRESENTATION is an
  * icon). Joined with newlines, not "; ", so each field lands on its own line.
  */
-function summarizeFieldChanges(
+export function summarizeFieldChanges(
   fields: FieldDescriptor[],
   before: Record<string, unknown>,
   after: Record<string, unknown>,
+  t: (text: string) => string = (text) => text,
 ): string | null {
   const changes: string[] = []
   for (const field of fields) {
@@ -221,6 +222,16 @@ function summarizeFieldChanges(
     const next = after[field.name]
     if (prev === next) continue
     if ((prev ?? '') === (next ?? '')) continue
+    // Objects (a geo field's GeoJSON) arrive as fresh instances on every
+    // save: compare their content, not their identity.
+    if (typeof prev === 'object' && typeof next === 'object' && JSON.stringify(prev) === JSON.stringify(next)) {
+      continue
+    }
+    // A geometry has no readable one-line value: say that it changed.
+    if (field.type === 'geo') {
+      changes.push(`${fieldLabel(field)} : ${t('changed')}`)
+      continue
+    }
     changes.push(`${fieldLabel(field)} : ${displayValue(prev)} → ${displayValue(next)}`)
   }
   return changes.length > 0 ? changes.join('\n') : null
@@ -465,6 +476,7 @@ function FormRenderer<T extends HasId>({
             descriptor.fields,
             before as Record<string, unknown>,
             saved as Record<string, unknown>,
+            t,
           )
           if (summary) {
             chatterOps.create(descriptor.entity, saved.id, 'log', summary).catch(() => {

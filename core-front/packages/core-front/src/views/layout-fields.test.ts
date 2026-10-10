@@ -34,6 +34,19 @@ describe('orderedFields', () => {
     ])
   })
 
+  it('skips geo and distance fields, which have no text form', () => {
+    const d: ViewDescriptor<{ id: string }> = {
+      entity: 'x',
+      viewType: 'tree',
+      fields: [
+        { name: 'geo_location', type: 'geo' },
+        { name: 'name', type: 'text' },
+        { name: 'distance', type: 'distance' },
+      ],
+    }
+    expect(orderedFields(d).map((f) => f.name)).toEqual(['name'])
+  })
+
   it('caps the result at limit', () => {
     expect(orderedFields(descriptor, { exclude: ['status'], limit: 2 }).map((f) => f.name)).toEqual([
       'name',

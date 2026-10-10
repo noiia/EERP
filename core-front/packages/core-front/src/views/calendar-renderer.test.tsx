@@ -69,6 +69,17 @@ describe('CalendarRenderer', () => {
     expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Beta')
   })
 
+  it('labels a record with its first text field, never a geo field', () => {
+    const geoDescriptor: ViewDescriptor<Task> = {
+      ...descriptor,
+      fields: [{ name: 'geo_location', label: 'Map position', type: 'geo' }, ...descriptor.fields],
+    }
+    const located = records.map((r) => ({ ...r, geo_location: { type: 'Point', coordinates: [2.35, 48.85] } }))
+    render(<CalendarRenderer descriptor={geoDescriptor} initialData={located} actions={actions} dateField="due_date" />)
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+    expect(screen.queryByText('[object Object]')).toBeNull()
+  })
+
   it('positions a record whose date field is a full RFC3339 timestamp (a real Go time.Time column), not just a bare date string', () => {
     // A `time.Time` column round-trips as "2026-07-10T00:00:00Z", never a bare
     // 'YYYY-MM-DD' — bucketing by the raw value would never match an
