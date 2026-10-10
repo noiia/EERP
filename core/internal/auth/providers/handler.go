@@ -49,6 +49,10 @@ func NewHandler(deps Deps) *Handler {
 	return h
 }
 
+// SetDirectory swaps the LDAP directory. Test-only: production wiring passes
+// the directory through Deps.
+func (h *Handler) SetDirectory(d Directory) { h.deps.Directory = d }
+
 // settingsView is the GET shape: secrets replaced by has_* flags.
 type settingsView struct {
 	Methods

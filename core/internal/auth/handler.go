@@ -360,3 +360,20 @@ func (h *Handler) Signup(c *echo.Context) error {
 	}
 	return h.issueSession(c, user)
 }
+
+// IssueSessionForUser issues the normal ERP session for an already
+// externally-authenticated user (LDAP/OIDC, internal/auth/providers).
+// A deleted or website user gets the same generic 401 as a bad password.
+func (h *Handler) IssueSessionForUser(c *echo.Context, userID uuid.UUID) error {
+	user, err := h.users.FindByID(c.Request().Context(), userID)
+	if err != nil {
+		if errors.Is(err, orm.ErrNotFound) || errors.Is(err, ErrUserNotFound) {
+			return h.unauthMsg(c, "Invalid username or password.")
+		}
+		return fmt.Errorf("external login: %w", err)
+	}
+	if user.DeletedAt != nil || !h.kindMatches(user) {
+		return h.unauthMsg(c, "Invalid username or password.")
+	}
+	return h.issueSession(c, user)
+}

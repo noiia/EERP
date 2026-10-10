@@ -16,6 +16,7 @@ import (
 
 	"core/internal/attachments"
 	"core/internal/auth"
+	"core/internal/auth/providers"
 	"core/internal/chatter"
 	"core/internal/common"
 	"core/internal/company"
@@ -70,6 +71,7 @@ type App struct {
 	permRepo    *auth.PermissionRepository
 	presenceHub *presence.Hub
 	cache       *orm.QueryCache // nil when redis_url is unset/unreachable
+	extAuth     *providers.Handler
 }
 
 // Build validates cfg (relative paths already resolved — types.Config.ResolvePaths),
@@ -371,6 +373,40 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	if err != nil {
 		common.Logger.Warn("public website routes disabled", zap.Error(err))
 	}
+
+	// External ERP sign-in (ADR-030): LDAP / OIDC + the login screen's methods.
+	secretBox, err := providers.NewSecretBox(configContent.MasterPassword)
+	if err != nil {
+		return fmt.Errorf("auth secrets: %w", err)
+	}
+	roleRepo := auth.NewRoleRepository(app.DB)
+	a.extAuth = providers.NewHandler(providers.Deps{
+		Store:  providers.NewStore(settings.NewRepository(app.DB), secretBox),
+		Tenant: siteTenant,
+		Roles: func(ctx context.Context, tenant uuid.UUID) (map[uuid.UUID]bool, error) {
+			list, err := roleRepo.ListByTenant(ctx, tenant)
+			if err != nil {
+				return nil, err
+			}
+			out := make(map[uuid.UUID]bool, len(list))
+			for _, r := range list {
+				out[r.ID] = true
+			}
+			return out, nil
+		},
+		Directory:   providers.LDAPDirectory{},
+		OIDC:        providers.NewOIDCClient(nil),
+		Provisioner: providers.NewProvisioner(app.DB),
+		Sessions:    authHandler,
+		Logger:      common.Logger,
+	})
+	authGroup.GET("/methods", a.extAuth.PublicMethods)
+	authGroup.POST("/ldap/login", a.extAuth.LDAPLogin)
+	authGroup.GET("/oidc/providers/:id/authorize", a.extAuth.OIDCAuthorize)
+	authGroup.POST("/oidc/providers/:id/exchange", a.extAuth.OIDCExchange)
+	settingsGroup.GET("/auth", a.extAuth.GetSettings)
+	settingsGroup.PUT("/auth", a.extAuth.PutSettings)
+	settingsGroup.POST("/auth/test", a.extAuth.TestSettings)
 	siteStore := settings.NewRepository(app.DB)
 	publisher := website.NewPublisher(siteStore, siteTenant)
 	routing := website.NewRoutingHandler(siteStore, siteTenant)
