@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // fakeIdP is a minimal OIDC provider: discovery, JWKS, token endpoint.
@@ -217,5 +220,46 @@ func TestTestSettingsOIDC(t *testing.T) {
 	}
 	if rec := call(t, h, h.TestSettings, http.MethodPost, `{"method":"oidc:nope"}`); rec.Code != http.StatusBadRequest {
 		t.Errorf("unknown = %d", rec.Code)
+	}
+}
+
+func TestOIDCRefusalsAreLogged(t *testing.T) {
+	idp := newFakeIdP(t)
+	h, _, _ := oidcHandlerSetup(t, idp)
+	core, logs := observer.New(zap.DebugLevel)
+	h.deps.Logger = zap.New(core)
+	verifier, challenge := pkce()
+	idp.verifier = challenge
+	body := `{"code":"secret-auth-code","code_verifier":"` + verifier + `","nonce":"n1"}`
+	claims := func(nonce string) map[string]any {
+		return map[string]any{"iss": idp.srv.URL, "aud": "erp", "sub": "u-1", "exp": time.Now().Add(time.Hour).Unix(),
+			"iat": time.Now().Unix(), "nonce": nonce, "email": "a@x", "email_verified": true}
+	}
+	idp.claims = claims("n2")
+	callOIDC(t, h, h.OIDCExchange, "corp", http.MethodPost, "/", body)
+	if logs.Len() != 1 || logs.All()[0].Level != zap.WarnLevel {
+		t.Fatalf("rejection entries = %v", logs.All())
+	}
+	idp.claims = claims("n1")
+	h.provision = func(context.Context, uuid.UUID, ExternalIdentity, Methods) (uuid.UUID, error) {
+		return uuid.Nil, ErrRefused
+	}
+	callOIDC(t, h, h.OIDCExchange, "corp", http.MethodPost, "/", body)
+	if logs.Len() != 2 || logs.All()[1].Level != zap.InfoLevel {
+		t.Fatalf("refusal entries = %v", logs.All())
+	}
+	for _, e := range logs.All() {
+		s := e.Message + " " + fmt.Sprint(e.ContextMap())
+		if strings.Contains(s, "secret-auth-code") || strings.Contains(s, `"s"`) {
+			t.Errorf("log leaks secret: %s", s)
+		}
+	}
+}
+
+func TestOIDCExchangeRefusesEmptyNonce(t *testing.T) {
+	idp := newFakeIdP(t)
+	p := OIDCProvider{ID: "corp", Issuer: idp.srv.URL, ClientID: "erp", ClientSecret: "s"}
+	if _, err := NewOIDCClient(idp.srv.Client()).Exchange(context.Background(), p, "c", "v", "https://erp/cb", ""); !errors.Is(err, ErrOIDC) {
+		t.Errorf("empty nonce err = %v", err)
 	}
 }

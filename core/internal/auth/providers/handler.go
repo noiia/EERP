@@ -10,6 +10,7 @@ import (
 	"core/orm/access"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
 )
 
 type Deps struct {
@@ -22,6 +23,7 @@ type Deps struct {
 	Provisioner *Provisioner
 	Sessions    SessionIssuer
 	OIDC        *OIDCClient
+	Logger      *zap.Logger // nil = silent
 }
 
 // SessionIssuer opens the ERP session for an already-authenticated user
@@ -37,6 +39,9 @@ type Handler struct {
 }
 
 func NewHandler(deps Deps) *Handler {
+	if deps.Logger == nil {
+		deps.Logger = zap.NewNop()
+	}
 	h := &Handler{deps: deps}
 	if deps.Provisioner != nil {
 		h.provision = deps.Provisioner.Provision
@@ -169,6 +174,7 @@ func (h *Handler) LDAPLogin(c *echo.Context) error {
 	id, err := h.deps.Directory.Authenticate(ctx, *m.LDAP, username, req.Password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
+			h.deps.Logger.Debug("ldap sign-in: invalid credentials")
 			return unauthorized(c, msg)
 		}
 		return fmt.Errorf("ldap login: %w", err) // directory down: a 500, logged
@@ -176,6 +182,7 @@ func (h *Handler) LDAPLogin(c *echo.Context) error {
 	userID, err := h.provision(ctx, h.deps.Tenant, id, m)
 	if err != nil {
 		if errors.Is(err, ErrRefused) {
+			h.deps.Logger.Info("external sign-in refused", zap.String("provider", id.Provider), zap.String("subject", id.Subject))
 			return unauthorized(c, msg)
 		}
 		return err
@@ -277,6 +284,7 @@ func (h *Handler) OIDCExchange(c *echo.Context) error {
 	id, err := h.deps.OIDC.Exchange(ctx, p, req.Code, req.CodeVerifier, m.CallbackURL(), req.Nonce)
 	if err != nil {
 		if errors.Is(err, ErrOIDC) {
+			h.deps.Logger.Warn("oidc sign-in rejected", zap.String("provider", "oidc:"+p.ID), zap.Error(err))
 			return unauthorized(c, msg)
 		}
 		return fmt.Errorf("oidc exchange: %w", err)
@@ -284,6 +292,7 @@ func (h *Handler) OIDCExchange(c *echo.Context) error {
 	userID, err := h.provision(ctx, h.deps.Tenant, id, m)
 	if err != nil {
 		if errors.Is(err, ErrRefused) {
+			h.deps.Logger.Info("external sign-in refused", zap.String("provider", "ldap"), zap.String("subject", id.Subject))
 			return unauthorized(c, msg)
 		}
 		return err

@@ -31,13 +31,19 @@ func NewOIDCClient(httpClient *http.Client) *OIDCClient {
 
 func (o *OIDCClient) provider(ctx context.Context, issuer string) (*oidc.Provider, error) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
-	if p, ok := o.cache[issuer]; ok {
+	p, ok := o.cache[issuer]
+	o.mu.Unlock()
+	if ok {
 		return p, nil
 	}
-	p, err := oidc.NewProvider(oidc.ClientContext(ctx, o.http), issuer)
+	p, err := oidc.NewProvider(oidc.ClientContext(ctx, o.http), issuer) // network call: no lock held
 	if err != nil {
 		return nil, fmt.Errorf("oidc: discovery %s: %w", issuer, err)
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if first, ok := o.cache[issuer]; ok {
+		return first, nil
 	}
 	o.cache[issuer] = p
 	return p, nil
@@ -76,6 +82,9 @@ func (o *OIDCClient) AuthorizeURL(ctx context.Context, p OIDCProvider, redirectU
 }
 
 func (o *OIDCClient) Exchange(ctx context.Context, p OIDCProvider, code, verifier, redirectURI, nonce string) (ExternalIdentity, error) {
+	if nonce == "" {
+		return ExternalIdentity{}, fmt.Errorf("%w: missing nonce", ErrOIDC)
+	}
 	ctx = oidc.ClientContext(ctx, o.http)
 	cfg, prov, err := o.config(ctx, p, redirectURI)
 	if err != nil {
