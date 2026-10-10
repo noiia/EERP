@@ -1331,3 +1331,22 @@ describe('EntityView', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 })
+
+describe('tree Distance column', () => {
+  const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+  it('shows a formatted Distance column when rows carry _distance_m', () => {
+    render(
+      <EntityView
+        descriptor={treeDescriptor}
+        initialData={[{ id: '1', name: 'A', _distance_m: 1500 } as Contact]}
+        actions={noopActions}
+      />,
+    )
+    expect(screen.getByText('Distance')).toBeInTheDocument()
+    expect(screen.getByText(/^1[.,]5 km$/)).toBeInTheDocument()
+  })
+  it('has no Distance column otherwise', () => {
+    render(<EntityView descriptor={treeDescriptor} initialData={[{ id: '1', name: 'A' }]} actions={noopActions} />)
+    expect(screen.queryByText('Distance')).not.toBeInTheDocument()
+  })
+})

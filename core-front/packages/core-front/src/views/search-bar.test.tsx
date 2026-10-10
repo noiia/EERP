@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { ViewDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps } from './relation-ops'
 import { SavedFilterOpsProvider, type SavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
-import { SearchBar } from './search-bar'
+import { SearchBar, toListOptions } from './search-bar'
 import { useSessionStore, type Identity } from './session-store'
 import { useUndoToastStore } from './undo-toast'
 
@@ -358,5 +358,32 @@ describe('SearchBar', () => {
     expect(screen.getByText('Saved filters')).toBeInTheDocument()
     // "Save current as…" stays present but disabled with no filters/no ops.
     expect(screen.getByText('Save current as…')).toBeDisabled()
+  })
+})
+
+describe('geo filters → list options', () => {
+  it('near with a radius adds within; inside and covers pass through', () => {
+    expect(
+      toListOptions(
+        [
+          { field: 'geo_location', op: 'near', value: '2.35,48.85,10000' },
+          { field: 'geo_location', op: 'inside', value: 'company:co1:service_zone' },
+          { field: 'service_zone', op: 'covers', value: '2.35,48.85' },
+        ],
+        200,
+      ),
+    ).toEqual({
+      pageSize: 200,
+      near: { geo_location: '2.35,48.85' },
+      within: { geo_location: '2.35,48.85,10000' },
+      inside: { geo_location: 'company:co1:service_zone' },
+      covers: { service_zone: '2.35,48.85' },
+    })
+  })
+  it('near without a radius only orders', () => {
+    expect(toListOptions([{ field: 'geo_location', op: 'near', value: '2.35,48.85' }], 200)).toEqual({
+      pageSize: 200,
+      near: { geo_location: '2.35,48.85' },
+    })
   })
 })

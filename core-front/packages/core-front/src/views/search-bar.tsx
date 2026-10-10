@@ -25,6 +25,7 @@ import {
   type FilterOperator,
   type ViewDescriptor,
 } from './descriptor'
+import { GeoCenterInput, ZoneRecordInput } from './geo-filter-inputs'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { useRelationOps } from './relation-ops'
 import { useSavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
@@ -123,6 +124,25 @@ function groupableFields<T>(descriptor: ViewDescriptor<T>, callerGroups: string[
   return candidates.filter((f) => isFieldVisible(f, {}, callerGroups))
 }
 
+type Zone = { entity: string; field: string; label: string }
+
+/** The zone entities a point field declares via widgetOptions.zones. */
+function zonesOf(field: FieldDescriptor): Zone[] {
+  const z = field.widgetOptions?.zones
+  return Array.isArray(z) ? (z as unknown as Zone[]) : []
+}
+
+/** Chip text for a geo filter ("Near (≤ 10 km)"), or null for the other operators. */
+function geoChipLabel(f: FilterCondition, t: (s: string) => string): string | null {
+  if (f.op === 'near') {
+    const meters = Number((f.value ?? '').split(',')[2])
+    return meters > 0 ? `${t('Near')} (≤ ${meters / 1000} km)` : t('Near')
+  }
+  if (f.op === 'inside') return t('Inside zone')
+  if (f.op === 'covers') return t('Covers point')
+  return null
+}
+
 /** Operators offered for a field, by type — text gets contains (+ eq for an
  * exact match); number/date get eq plus the four range comparisons ("between"
  * is just a gte row and an lte row on the same field); selection/relation/
@@ -139,7 +159,9 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
     case 'boolean':
       return ['eq', 'in']
     case 'geo':
-      return field.widget === 'shape' ? ['covers'] : ['near', 'inside']
+      if (field.widget === 'shape') return ['covers']
+      // 'inside' needs zone entities to pick from; without them it can't be built.
+      return zonesOf(field).length ? ['near', 'inside'] : ['near']
     case 'totals':
     case 'address':
     case 'distance':
@@ -169,7 +191,7 @@ const OPERATOR_LABEL: Record<FilterOperator, string> = {
   covers: 'covers',
 }
 
-function toListOptions(filters: FilterCondition[], pageSize: number): EntityListOptions {
+export function toListOptions(filters: FilterCondition[], pageSize: number): EntityListOptions {
   const options: EntityListOptions = { pageSize }
   for (const f of filters) {
     switch (f.op) {
@@ -193,6 +215,19 @@ function toListOptions(filters: FilterCondition[], pageSize: number): EntityList
         break
       case 'lte':
         ;(options.lte ??= {})[f.field] = f.value ?? ''
+        break
+      case 'near': {
+        const parts = (f.value ?? '').split(',')
+        if (parts.length < 2) break
+        ;(options.near ??= {})[f.field] = `${parts[0]},${parts[1]}`
+        if (parts.length === 3 && parts[2] !== '') (options.within ??= {})[f.field] = f.value as string
+        break
+      }
+      case 'inside':
+        ;(options.inside ??= {})[f.field] = f.value ?? ''
+        break
+      case 'covers':
+        ;(options.covers ??= {})[f.field] = f.value ?? ''
         break
     }
   }
@@ -514,7 +549,11 @@ export function SearchBar<T extends HasId>({
               <Chip
                 key={`${f.field}-${f.op}-${i}`}
                 size="small"
-                label={`${fieldLabelOf(descriptor, f.field)} ${t(OPERATOR_LABEL[f.op])} ${f.op === 'in' ? (f.values ?? []).join(', ') : f.value}`}
+                label={
+                  geoChipLabel(f, t)
+                    ? `${fieldLabelOf(descriptor, f.field)}: ${geoChipLabel(f, t)}`
+                    : `${fieldLabelOf(descriptor, f.field)} ${t(OPERATOR_LABEL[f.op])} ${f.op === 'in' ? (f.values ?? []).join(', ') : f.value}`
+                }
                 onDelete={() => removeFilter(i)}
               />
             ))
@@ -578,13 +617,23 @@ export function SearchBar<T extends HasId>({
                 </MenuItem>
               ))}
             </Select>
-            <TextField
-              size="small"
-              placeholder={draftOp === 'in' ? t('a, b, c') : t('Value')}
-              value={draftValue}
-              onKeyDown={stopKeyPropagation}
-              onChange={(e) => setDraftValue(e.target.value)}
-            />
+            {draftOp === 'near' || draftOp === 'covers' ? (
+              <GeoCenterInput value={draftValue} onChange={setDraftValue} radius={draftOp === 'near'} />
+            ) : draftOp === 'inside' ? (
+              <ZoneRecordInput
+                zones={zonesOf(filterFields.find((f) => f.name === draftField)!)}
+                value={draftValue}
+                onChange={setDraftValue}
+              />
+            ) : (
+              <TextField
+                size="small"
+                placeholder={draftOp === 'in' ? t('a, b, c') : t('Value')}
+                value={draftValue}
+                onKeyDown={stopKeyPropagation}
+                onChange={(e) => setDraftValue(e.target.value)}
+              />
+            )}
             <IconButton
               size="small"
               aria-label={t('Add filter')}

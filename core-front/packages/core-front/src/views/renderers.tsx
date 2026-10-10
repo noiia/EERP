@@ -46,6 +46,9 @@ import {
 } from './descriptor'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { ErrorAlert } from './error-alert'
+import { formatDistance } from './distance-format'
+import { useUnitStore } from './unit-store'
+import { useI18nStore } from '../i18n/i18n-store'
 import { FormActionsMenu } from './form-actions-menu'
 import { GraphRenderer } from './graph-renderer'
 import { HeaderButtonContainer } from './header-button-container'
@@ -823,6 +826,8 @@ function TreeRenderer<T extends HasId>({
   title,
 }: EntityViewProps<T>) {
   const t = useT()
+  const unitSystem = useUnitStore((s) => s.system)
+  const i18nLocale = useI18nStore((s) => s.locale)
   const router = useRouter()
   const mode = useUiStore((s) => s.viewMode[descriptor.entity] ?? 'list')
   const setViewMode = useUiStore((s) => s.setViewMode)
@@ -1071,6 +1076,15 @@ function TreeRenderer<T extends HasId>({
           }
           return col
         })
+      // Rows from a `near` search carry `_distance_m` (meters from the center).
+      if (liveRecords.length > 0 && '_distance_m' in liveRecords[0]) {
+        columns.push({
+          field: '_distance_m',
+          headerName: t('Distance'),
+          sortable: false,
+          valueFormatter: (v: unknown) => formatDistance(v as number | null, unitSystem, i18nLocale),
+        })
+      }
       // A formPath makes rows navigable: clicking one opens that record's form.
       const { formPath } = descriptor
       content = (
