@@ -24,10 +24,18 @@ SAML, no password change from the ERP, no background directory sync (roles are s
    a new user (locked local password, as for an admin-created user without one). **Creation also
    requires a verified email** — an unverified address must never create an account under someone
    else's email. A user already linked to another subject of the same provider is refused.
-3. **Roles follow the directory.** At every login the user's roles become exactly the roles mapped
-   from their groups (`role_mapping`), or the `default_role` when none match. Only *live* roles of
-   the auth workspace are granted. A user left with no role, or a soft-deleted/disabled one, is
-   refused. Roles assigned by hand to a provider-managed user are replaced at the next login.
+3. **Roles follow the directory — for the roles it manages.** Each method has its own rules: the
+   `role_mapping` rows whose `method` is empty (every method) or names it (`ldap`, `oidc:<id>`),
+   plus its own `default_role_id` (`ldap.default_role_id`, `oidc[].default_role_id`). The roles
+   those rows and that default name are the method's **managed roles**. At every login the user is
+   granted the mapped roles of their groups (or the method's default role when no group matches),
+   and loses the managed roles they no longer qualify for. **Roles outside that set — assigned by
+   hand — are never touched**, so an administrator testing SSO on their own account keeps their
+   admin role. Only *live* roles of the auth workspace are granted. The sign-in is refused (and
+   rolled back) only when the user ends with no live role at all, or is soft-deleted/disabled.
+   Example: mappings `erp-staff → Staff` and `erp-admins → Admin`; a user with a manual
+   `Accounting` role who is in `erp-staff` only ends with `Staff` + `Accounting` (Admin removed if
+   they had it).
 4. **LDAP** (`POST /api/v1/auth/ldap/login {username, password}`): service-account bind, search
    with the configured filter (`{username}` escaped per RFC 4515), exactly one entry required, then
    bind as that entry; the entry DN is the subject. `ldaps://`, or `ldap://` + StartTLS; plain
@@ -35,10 +43,16 @@ SAML, no password change from the ERP, no background directory sync (roles are s
 5. **OIDC** — authorization code + PKCE (S256) + nonce, bouncing through the Next BFF; the ID
    token is verified by `go-oidc` (signature, `iss`, `aud`, `exp`, nonce). Several providers can be
    configured. The redirect URI is built **server-side** from the setting `erp_url` (a bare https
-   origin), never from a request header: register `<erp_url>/api/auth/oidc/callback` at the IdP.
+   origin — plain `http://` is accepted for a loopback host only, for dev), never from a request
+   header: register `<erp_url>/api/auth/oidc/callback` at the IdP. A provider's optional
+   `allowed_domains` admits only identities whose **verified** email domain (after the last `@`,
+   case-insensitive) is listed; anything else gets the generic 401 and a server-side log line.
 6. **Settings** under `app_settings` key `auth.methods` (site-wide slot of the auth workspace):
-   `default` method, `enabled` alternatives, `ldap`, `oidc[]`, `role_mapping`, `default_role`,
-   `erp_url`. Secrets (LDAP bind password, OIDC client secrets) are AES-GCM encrypted under a key
+   `default` method, `enabled` alternatives, `ldap` (with its `default_role_id`), `oidc[]` (each
+   with its `default_role_id` and `allowed_domains`), `role_mapping` (`group`, `role_id`, optional
+   `method`), `erp_url`. A value stored before per-method defaults existed, with a top-level
+   `default_role_id`, is read as the LDAP default only — never an OIDC provider's — and dropped
+   at the next save. LDAP needs a service account: `bind_dn` and a bind password are required. Secrets (LDAP bind password, OIDC client secrets) are AES-GCM encrypted under a key
    derived (HKDF) from `master_key` and are write-only: the API only reports `has_*` flags.
    `GET|PUT /api/v1/settings/auth` (`settings:auth:read|write`) and `POST …/auth/test` (LDAP
    service bind, OIDC discovery). The **auth workspace** is the website tenant
@@ -72,8 +86,17 @@ sequenceDiagram
 
 ## Consequences
 - The directory/IdP is the source of truth for who belongs where; the ERP only caches it per login.
-- A user removed from a directory group loses the role at the next login; their already-issued
-  access token lives until its short TTL.
+- **Removing someone from the directory does not end their ERP access.** Roles sync only at
+  sign-in, and the refresh token slides for 7 days, so an open session keeps working (and keeps
+  its roles) as long as it is refreshed at least once a week. To cut someone off, **also disable
+  their ERP user** (soft delete): the next refresh is refused, and the current access token
+  lives only until its short TTL. Known gap: external
+  sessions have no absolute lifetime (forcing a fresh IdP sign-in every N hours) — a recommended
+  follow-up.
+- A user removed from a directory group loses the mapped role at their next sign-in.
+- **`settings:auth:write` is super-admin-equivalent.** Whoever holds it can configure an IdP they
+  control and a mapping to any role, then sign in as anyone (or as an admin). Grant it only to
+  roles that already have full control.
 - Refused sign-ins are logged server-side (provider and subject, never secrets); clients only see
   the generic 401 "Invalid username or password.".
 - Changing `master_key` makes stored secrets undecryptable: re-enter them.
@@ -89,12 +112,24 @@ sequenceDiagram
   while its destination is unchanged (LDAP `url` and `bind_dn`; OIDC `issuer` for the same id).
   Otherwise the save is refused until the secret is re-entered — this stops an admin-level edit from
   exfiltrating a credential by pointing the config at another server.
+- **A default role on a public IdP admits the whole internet.** Google, Microsoft and similar
+  providers sign in *any* account holder: a `default_role_id` (or a mapping on a group name the
+  user controls) on such a provider without `allowed_domains` lets every account of that IdP into
+  the ERP. Set `allowed_domains` on every public provider, and scope mappings with `method` when
+  group names could collide across providers.
 - The settings routes need the caller's workspace to equal the auth workspace (403) and answer 409
   when there is none (several tenants and no `website_tenant_id`).
 - LDAP: an empty password is refused before any bind (an anonymous bind must never succeed); 3+
   matches and account-state bind errors give the same generic 401; a failing group search fails
-  the login (500) instead of silently dropping roles. The subject is the entry DN: renaming a DN
-  leaves a stale link that refuses the login until an admin removes it.
+  the login (500) instead of silently dropping roles. An unknown username (0 entries), 2+ matches
+  or a size-limit result still costs one bind — the given password against the never-existing
+  `cn=eerp-nonexistent-user,<base DN>` — so response time does not reveal which usernames exist.
+- **Stale links.** Changing a saved OIDC provider's `issuer` soft-deletes every `auth_identity`
+  link of `oidc:<id>` on save (the same `sub` at another issuer is another person); users relink
+  by verified email at their next sign-in. The LDAP subject is the entry DN: a **renamed DN**
+  leaves a stale link that refuses the login (the user's email is already linked to the old
+  subject) until an admin removes it by hand:
+  `UPDATE auth_identity SET deleted_at = now() WHERE provider = 'ldap' AND subject = '<old DN>';`
 - Provisioning unique-violation races (two simultaneous first logins) end in the generic refusal;
   the user simply retries.
 - Register the exact callback URL at each provider; in host mode (ADR-025) `erp_url` is the ERP host.
