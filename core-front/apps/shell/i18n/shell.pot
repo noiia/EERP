@@ -1413,3 +1413,33 @@ msgstr ""
 
 msgid "Distances need the event table's map position (geo_location) published under Settings → Website → Published data."
 msgstr ""
+
+msgid "Username"
+msgstr ""
+
+msgid "Sign in"
+msgstr ""
+
+msgid "Signing in…"
+msgstr ""
+
+msgid "Login failed"
+msgstr ""
+
+msgid "Continue with"
+msgstr ""
+
+msgid "or"
+msgstr ""
+
+msgid "Sign in with email and password"
+msgstr ""
+
+msgid "Sign in with"
+msgstr ""
+
+msgid "the company directory"
+msgstr ""
+
+msgid "Single sign-on failed. Try again or use another method."
+msgstr ""

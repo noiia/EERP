@@ -1622,3 +1622,33 @@ msgstr "Adresse introuvable"
 
 msgid "Distances need the event table's map position (geo_location) published under Settings → Website → Published data."
 msgstr "Les distances nécessitent que la position sur la carte de la table des événements (geo_location) soit publiée dans Paramètres → Site web → Données publiées."
+
+msgid "Username"
+msgstr "Nom d'utilisateur"
+
+msgid "Sign in"
+msgstr "Se connecter"
+
+msgid "Signing in…"
+msgstr "Connexion…"
+
+msgid "Login failed"
+msgstr "Échec de la connexion"
+
+msgid "Continue with"
+msgstr "Continuer avec"
+
+msgid "or"
+msgstr "ou"
+
+msgid "Sign in with email and password"
+msgstr "Se connecter avec e-mail et mot de passe"
+
+msgid "Sign in with"
+msgstr "Se connecter avec"
+
+msgid "the company directory"
+msgstr "l'annuaire de l'entreprise"
+
+msgid "Single sign-on failed. Try again or use another method."
+msgstr "La connexion unique a échoué. Réessayez ou utilisez une autre méthode."
