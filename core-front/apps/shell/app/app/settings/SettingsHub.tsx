@@ -52,6 +52,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'User accounts and roles of the workspace.',
   },
   {
+    path: '/settings/authentication',
+    title: 'Authentication',
+    description: 'Sign-in methods: password, company directory (LDAP), single sign-on (OIDC).',
+  },
+  {
     path: '/settings/website',
     title: 'Website',
     description: 'Published data, routing and website accounts.',

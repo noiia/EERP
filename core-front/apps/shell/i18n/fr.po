@@ -1652,3 +1652,132 @@ msgstr "l'annuaire de l'entreprise"
 
 msgid "Single sign-on failed. Try again or use another method."
 msgstr "La connexion unique a échoué. Réessayez ou utilisez une autre méthode."
+
+msgid "Authentication"
+msgstr "Authentification"
+
+msgid "Default method"
+msgstr "Méthode par défaut"
+
+msgid "Alternatives"
+msgstr "Alternatives"
+
+msgid "Company directory (LDAP)"
+msgstr "Annuaire de l'entreprise (LDAP)"
+
+msgid "LLDAP defaults"
+msgstr "Valeurs par défaut LLDAP"
+
+msgid "Test connection"
+msgstr "Tester la connexion"
+
+msgid "Test discovery"
+msgstr "Tester la découverte"
+
+msgid "Stored — leave empty to keep"
+msgstr "Enregistré — laisser vide pour conserver"
+
+msgid "Callback URL"
+msgstr "URL de rappel"
+
+msgid "Group"
+msgstr "Groupe"
+
+msgid "Role"
+msgstr "Rôle"
+
+msgid "Default role"
+msgstr "Rôle par défaut"
+
+msgid "— none (refuse) —"
+msgstr "— aucun (refuser) —"
+
+msgid "Add provider"
+msgstr "Ajouter un fournisseur"
+
+msgid "ERP public URL"
+msgstr "URL publique de l'ERP"
+
+msgid "Local"
+msgstr "Local"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Test failed."
+msgstr "Le test a échoué."
+
+msgid "Configure LDAP"
+msgstr "Configurer LDAP"
+
+msgid "Label"
+msgstr "Libellé"
+
+msgid "Server URL"
+msgstr "URL du serveur"
+
+msgid "Use StartTLS"
+msgstr "Utiliser StartTLS"
+
+msgid "Bind DN"
+msgstr "DN de liaison"
+
+msgid "Bind password"
+msgstr "Mot de passe de liaison"
+
+msgid "Base DN"
+msgstr "DN de base"
+
+msgid "User filter"
+msgstr "Filtre utilisateur"
+
+msgid "Email attribute"
+msgstr "Attribut e-mail"
+
+msgid "Name attribute"
+msgstr "Attribut nom"
+
+msgid "Groups attribute"
+msgstr "Attribut groupes"
+
+msgid "Group search base"
+msgstr "Base de recherche des groupes"
+
+msgid "Group filter"
+msgstr "Filtre de groupes"
+
+msgid "Single sign-on (OIDC)"
+msgstr "Authentification unique (OIDC)"
+
+msgid "Identifier"
+msgstr "Identifiant"
+
+msgid "Issuer URL"
+msgstr "URL de l'émetteur"
+
+msgid "Client ID"
+msgstr "ID client"
+
+msgid "Client secret"
+msgstr "Secret client"
+
+msgid "Scopes"
+msgstr "Portées"
+
+msgid "Groups claim"
+msgstr "Claim des groupes"
+
+msgid "Trust the provider’s email"
+msgstr "Faire confiance à l'e-mail du fournisseur"
+
+msgid "<ERP URL>"
+msgstr "<URL de l'ERP>"
+
+msgid "Role mapping"
+msgstr "Correspondance des rôles"
+
+msgid "Add mapping"
+msgstr "Ajouter une correspondance"
+
+msgid "Sign-in methods: password, company directory (LDAP), single sign-on (OIDC)."
+msgstr "Méthodes de connexion : mot de passe, annuaire de l'entreprise (LDAP), authentification unique (OIDC)."

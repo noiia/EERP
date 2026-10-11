@@ -1443,3 +1443,175 @@ msgstr ""
 
 msgid "Single sign-on failed. Try again or use another method."
 msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Authentication"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Default method"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Alternatives"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Company directory (LDAP)"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "LLDAP defaults"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Test connection"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Test discovery"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Stored — leave empty to keep"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Callback URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Group"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Role"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Default role"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "— none (refuse) —"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Add provider"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "ERP public URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Local"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "OK"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Test failed."
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Configure LDAP"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Label"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Server URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Use StartTLS"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Bind DN"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Bind password"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Base DN"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "User filter"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Email attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Name attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Groups attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Group search base"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Group filter"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Single sign-on (OIDC)"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Identifier"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Issuer URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Client ID"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Client secret"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Scopes"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Groups claim"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Trust the provider’s email"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "<ERP URL>"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Role mapping"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Add mapping"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Sign-in methods: password, company directory (LDAP), single sign-on (OIDC)."
+msgstr ""
