@@ -68,7 +68,7 @@ func ldapTestHandler(t *testing.T) (*Handler, *fakeDirectory, *fakeSessions, uui
 		return user, nil
 	}
 	ldap := LLDAPDefaults("dc=x")
-	ldap.URL = "ldaps://ldap.example.com"
+	ldap.URL, ldap.BindDN, ldap.BindPassword = "ldaps://ldap.example.com", "uid=admin", "svc"
 	if err := h.deps.Store.Save(context.Background(), h.deps.Tenant, Methods{Default: "ldap", LDAP: &ldap}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,5 +163,23 @@ func TestLDAPErrorClassification(t *testing.T) {
 	}
 	if isAccountStateError(errors.New("network")) {
 		t.Error("plain error classified as account state")
+	}
+}
+
+func TestDecoyBind(t *testing.T) {
+	var dns, pws []string
+	bind := func(dn, pw string) error {
+		dns, pws = append(dns, dn), append(pws, pw)
+		return ldap.NewError(ldap.LDAPResultInvalidCredentials, errors.New("no such entry"))
+	}
+	if err := decoyBind(bind, "ou=people,dc=x", "s3cret"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
+	}
+	if len(dns) != 1 || dns[0] != "cn=eerp-nonexistent-user,ou=people,dc=x" || pws[0] != "s3cret" {
+		t.Errorf("binds = %v %v, want one bind on the decoy DN with the given password", dns, pws)
+	}
+	// A bind that unexpectedly succeeds still never authenticates.
+	if err := decoyBind(func(string, string) error { return nil }, "dc=x", "p"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("successful decoy bind = %v", err)
 	}
 }

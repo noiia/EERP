@@ -36,6 +36,7 @@ func (s *Store) Load(ctx context.Context, tenant uuid.UUID) (Methods, error) {
 		if err := json.Unmarshal([]byte(raw), &m); err != nil {
 			return Methods{}, fmt.Errorf("%w: %s: %v", errUnreadable, SettingsKey, err)
 		}
+		migrateLegacyDefaultRole(raw, &m)
 	}
 	if m.LDAP != nil {
 		m.LDAP.BindPassword = s.open(m.LDAP.BindPassword)
@@ -44,6 +45,21 @@ func (s *Store) Load(ctx context.Context, tenant uuid.UUID) (Methods, error) {
 		m.OIDC[i].ClientSecret = s.open(m.OIDC[i].ClientSecret)
 	}
 	return m, nil
+}
+
+// migrateLegacyDefaultRole moves a pre-ADR-030-fix global default_role_id
+// to the LDAP config only — never to OIDC providers, where a default role
+// would admit every account of a public IdP. The next Save drops the key.
+func migrateLegacyDefaultRole(raw string, m *Methods) {
+	var legacy struct {
+		DefaultRoleID *uuid.UUID `json:"default_role_id"`
+	}
+	if json.Unmarshal([]byte(raw), &legacy) != nil || legacy.DefaultRoleID == nil {
+		return
+	}
+	if m.LDAP != nil && m.LDAP.DefaultRoleID == nil {
+		m.LDAP.DefaultRoleID = legacy.DefaultRoleID
+	}
 }
 
 func (s *Store) open(sealed string) string {
@@ -75,6 +91,9 @@ func (s *Store) Save(ctx context.Context, tenant uuid.UUID, m Methods) error {
 				return invalid("re-enter the bind password when changing the LDAP server or bind DN")
 			}
 			m.LDAP.BindPassword = prev.LDAP.BindPassword
+		}
+		if m.LDAP.BindPassword == "" {
+			return invalid("ldap needs the service account's bind password")
 		}
 		if m.LDAP.BindPassword, err = s.seal(m.LDAP.BindPassword); err != nil {
 			return err

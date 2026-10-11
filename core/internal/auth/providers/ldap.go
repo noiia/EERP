@@ -90,12 +90,12 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 		userFilter(cfg.UserFilter, username), attrs, nil))
 	if err != nil {
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultSizeLimitExceeded) {
-			return ExternalIdentity{}, ErrInvalidCredentials // 3+ matches: ambiguous
+			return ExternalIdentity{}, decoyBind(conn.Bind, cfg.BaseDN, password) // 3+ matches: ambiguous
 		}
 		return ExternalIdentity{}, fmt.Errorf("ldap: search: %w", err)
 	}
 	if len(res.Entries) != 1 {
-		return ExternalIdentity{}, ErrInvalidCredentials
+		return ExternalIdentity{}, decoyBind(conn.Bind, cfg.BaseDN, password)
 	}
 	entry := res.Entries[0]
 	if err := conn.Bind(entry.DN, password); err != nil {
@@ -126,6 +126,18 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 		Provider: "ldap", Subject: entry.DN, Email: entry.GetAttributeValue(cfg.EmailAttr),
 		EmailVerified: true, DisplayName: name, Groups: groups,
 	}, nil
+}
+
+// decoyDNPrefix names an entry that never exists under the base DN.
+const decoyDNPrefix = "cn=eerp-nonexistent-user,"
+
+// decoyBind spends one bind with the given password against a non-existent
+// DN, so an unknown or ambiguous username costs the same round trip as a
+// wrong password (no user enumeration by timing). Its result is ignored; it
+// always returns ErrInvalidCredentials.
+func decoyBind(bind func(dn, password string) error, baseDN, password string) error {
+	_ = bind(decoyDNPrefix+baseDN, password)
+	return ErrInvalidCredentials
 }
 
 // groupNames turns memberOf DNs ("cn=erp-admins,ou=groups,dc=x") into CNs.

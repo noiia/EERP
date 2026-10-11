@@ -158,7 +158,7 @@ func TestProvision(t *testing.T) {
 			t.Fatalf("err = %v, want ErrRefused", err)
 		}
 		withDefault := m
-		withDefault.DefaultRoleID = &f.staff
+		withDefault.LDAP = &providers.LDAPConfig{DefaultRoleID: &f.staff}
 		id, err := providers.NewProvisioner(f.db).Provision(ctx, f.tenant, providers.ExternalIdentity{
 			Provider: "ldap", Subject: "uid=n," + e, Email: e, EmailVerified: true, Groups: []string{"other"},
 		}, withDefault)
@@ -284,6 +284,159 @@ func TestProvision(t *testing.T) {
 			if n := count(`SELECT count(*) FROM user_roles WHERE role_id = $1`, rid); n != 0 {
 				t.Errorf("role %v granted", rid)
 			}
+		}
+	})
+
+	t.Run("manual roles survive; only managed roles are synced", func(t *testing.T) {
+		e := email()
+		existing := f.user(e, false)
+		if _, err := f.db.Exec(ctx, `INSERT INTO user_roles (id, tenant_id, user_id, role_id) VALUES ($1,$2,$3,$4)`, uuid.New(), f.tenant, existing, f.admin); err != nil {
+			t.Fatal(err)
+		}
+		staffOnly := providers.Methods{RoleMapping: []providers.RoleMapping{{Group: "erp-staff", RoleID: f.staff}}}
+		id, err := prov(e, "uid=m,"+e, true, []string{"erp-staff"}, staffOnly)
+		if err != nil || id != existing {
+			t.Fatalf("got %v, %v; want %v", id, err, existing)
+		}
+		if got := f.roles(id); len(got) != 2 || !got[f.admin] || !got[f.staff] {
+			t.Errorf("roles = %v, want manual admin kept + staff granted", got)
+		}
+		// Leaving the group drops the managed staff role, never the manual admin.
+		if _, err := prov(e, "uid=m,"+e, true, nil, staffOnly); err != nil {
+			t.Fatalf("sign-in with a manual role left = %v", err)
+		}
+		if got := f.roles(id); len(got) != 1 || !got[f.admin] {
+			t.Errorf("roles = %v, want only the manual admin", got)
+		}
+	})
+
+	t.Run("a managed role the user no longer qualifies for is removed", func(t *testing.T) {
+		e := email()
+		id, err := prov(e, "uid=l,"+e, true, []string{"erp-admins", "erp-staff"}, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := prov(e, "uid=l,"+e, true, []string{"erp-staff"}, m); err != nil {
+			t.Fatal(err)
+		}
+		if got := f.roles(id); len(got) != 1 || !got[f.staff] {
+			t.Errorf("roles = %v, want staff only", got)
+		}
+		// Losing every managed role with no manual one left is refused, rolled back.
+		if _, err := prov(e, "uid=l,"+e, true, nil, m); !errors.Is(err, providers.ErrRefused) {
+			t.Fatalf("err = %v, want ErrRefused", err)
+		}
+		if got := f.roles(id); len(got) != 1 || !got[f.staff] {
+			t.Errorf("roles after refused sign-in = %v, want unchanged", got)
+		}
+	})
+
+	oidc := func(provider, e string, groups []string, mm providers.Methods) (uuid.UUID, error) {
+		return providers.NewProvisioner(f.db).Provision(ctx, f.tenant, providers.ExternalIdentity{
+			Provider: provider, Subject: "sub-" + e, Email: e, EmailVerified: true, Groups: groups,
+		}, mm)
+	}
+
+	t.Run("a default role applies only to its own method", func(t *testing.T) {
+		mm := providers.Methods{
+			LDAP: &providers.LDAPConfig{DefaultRoleID: &f.staff},
+			OIDC: []providers.OIDCProvider{{ID: "x"}, {ID: "y", DefaultRoleID: &f.admin}},
+		}
+		if _, err := oidc("oidc:x", email(), nil, mm); !errors.Is(err, providers.ErrRefused) {
+			t.Fatalf("ldap default applied to oidc:x: err = %v", err)
+		}
+		id, err := oidc("oidc:y", email(), nil, mm)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.roles(id); len(got) != 1 || !got[f.admin] {
+			t.Errorf("oidc:y roles = %v, want its own default (admin)", got)
+		}
+		e := email()
+		id, err = prov(e, "uid=dd,"+e, true, nil, mm)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.roles(id); len(got) != 1 || !got[f.staff] {
+			t.Errorf("ldap roles = %v, want its default (staff)", got)
+		}
+	})
+
+	t.Run("a mapping scoped to a method applies to that method only", func(t *testing.T) {
+		mm := providers.Methods{
+			OIDC: []providers.OIDCProvider{{ID: "x"}},
+			RoleMapping: []providers.RoleMapping{
+				{Group: "g-ldap", RoleID: f.admin, Method: "ldap"},
+				{Group: "g-x", RoleID: f.staff, Method: "oidc:x"},
+			},
+		}
+		if _, err := oidc("oidc:x", email(), []string{"g-ldap"}, mm); !errors.Is(err, providers.ErrRefused) {
+			t.Errorf("ldap-scoped mapping applied to oidc:x: err = %v", err)
+		}
+		e := email()
+		if _, err := prov(e, "uid=sc,"+e, true, []string{"g-x"}, mm); !errors.Is(err, providers.ErrRefused) {
+			t.Errorf("oidc:x-scoped mapping applied to ldap: err = %v", err)
+		}
+		id, err := oidc("oidc:x", email(), []string{"g-x"}, mm)
+		if err != nil || !f.roles(id)[f.staff] {
+			t.Errorf("oidc:x own mapping: %v, %v", id, err)
+		}
+		e = email()
+		id, err = prov(e, "uid=sc2,"+e, true, []string{"g-ldap"}, mm)
+		if err != nil || !f.roles(id)[f.admin] {
+			t.Errorf("ldap own mapping: %v, %v", id, err)
+		}
+	})
+
+	t.Run("allowed_domains admits only listed verified domains", func(t *testing.T) {
+		mm := providers.Methods{
+			OIDC:        []providers.OIDCProvider{{ID: "g", AllowedDomains: []string{"corp.test"}}},
+			RoleMapping: []providers.RoleMapping{{Group: "erp-staff", RoleID: f.staff}},
+		}
+		other := uuid.NewString()[:8] + "@gmail.test"
+		if _, err := oidc("oidc:g", other, []string{"erp-staff"}, mm); !errors.Is(err, providers.ErrRefused) {
+			t.Errorf("other domain: err = %v, want ErrRefused", err)
+		}
+		if n := count(`SELECT count(*) FROM users WHERE tenant_id=$1 AND lower(email)=$2`, f.tenant, other); n != 0 {
+			t.Errorf("%d users created for a refused domain", n)
+		}
+		if _, err := oidc("oidc:g", uuid.NewString()[:8]+"@corp.test", []string{"erp-staff"}, mm); err != nil {
+			t.Errorf("listed domain: err = %v", err)
+		}
+	})
+
+	t.Run("UnlinkProvider removes only that provider's links in that tenant", func(t *testing.T) {
+		e1, e2 := email(), email()
+		u1, err := oidc("oidc:unl", e1, []string{"erp-staff"}, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := prov(e2, "uid=keep,"+e2, true, []string{"erp-staff"}, m); err != nil {
+			t.Fatal(err)
+		}
+		other := uuid.New()
+		t.Cleanup(func() { _, _ = f.db.Exec(ctx, `DELETE FROM auth_identity WHERE tenant_id = $1`, other) })
+		if _, err := f.db.Exec(ctx, `INSERT INTO auth_identity (id, tenant_id, user_id, provider, subject) VALUES ($1,$2,$3,'oidc:unl','foreign')`, uuid.New(), other, u1); err != nil {
+			t.Fatal(err)
+		}
+		if err := providers.NewProvisioner(f.db).UnlinkProvider(ctx, f.tenant, "oidc:unl"); err != nil {
+			t.Fatal(err)
+		}
+		live := func(tenant uuid.UUID, provider string) int {
+			return count(`SELECT count(*) FROM auth_identity WHERE tenant_id=$1 AND provider=$2 AND deleted_at IS NULL`, tenant, provider)
+		}
+		if n := live(f.tenant, "oidc:unl"); n != 0 {
+			t.Errorf("%d oidc:unl links left", n)
+		}
+		if n := live(f.tenant, "ldap"); n == 0 {
+			t.Error("ldap links were removed too")
+		}
+		if n := live(other, "oidc:unl"); n != 1 {
+			t.Errorf("another tenant's link removed (%d left)", n)
+		}
+		// The next sign-in of the same subject relinks through the verified email.
+		if again, err := oidc("oidc:unl", e1, []string{"erp-staff"}, m); err != nil || again != u1 {
+			t.Errorf("relink = %v, %v; want %v", again, err, u1)
 		}
 	})
 

@@ -16,18 +16,18 @@ const SettingsKey = "auth.methods"
 var (
 	ErrInvalidSettings = errors.New("providers: invalid auth settings")
 	providerIDPattern  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	hostnamePattern    = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`)
 )
 
 // Methods is the whole auth.methods setting. Secrets travel in plain text
 // in memory only; storage holds them sealed (see Store).
 type Methods struct {
-	Default       string         `json:"default"`
-	Enabled       []string       `json:"enabled"`
-	LDAP          *LDAPConfig    `json:"ldap,omitempty"`
-	OIDC          []OIDCProvider `json:"oidc"`
-	RoleMapping   []RoleMapping  `json:"role_mapping"`
-	DefaultRoleID *uuid.UUID     `json:"default_role_id"`
-	ERPURL        string         `json:"erp_url"`
+	Default     string         `json:"default"`
+	Enabled     []string       `json:"enabled"`
+	LDAP        *LDAPConfig    `json:"ldap,omitempty"`
+	OIDC        []OIDCProvider `json:"oidc"`
+	RoleMapping []RoleMapping  `json:"role_mapping"`
+	ERPURL      string         `json:"erp_url"`
 }
 
 type LDAPConfig struct {
@@ -43,6 +43,9 @@ type LDAPConfig struct {
 	GroupsAttr      string `json:"groups_attr"`
 	GroupSearchBase string `json:"group_search_base"`
 	GroupFilter     string `json:"group_filter"`
+	// DefaultRoleID is granted to an LDAP user none of whose groups is mapped
+	// (nil = refuse such users unless they hold a manual role).
+	DefaultRoleID *uuid.UUID `json:"default_role_id"`
 }
 
 type OIDCProvider struct {
@@ -54,11 +57,21 @@ type OIDCProvider struct {
 	Scopes       string `json:"scopes"`
 	GroupsClaim  string `json:"groups_claim"`
 	TrustEmail   bool   `json:"trust_email"`
+	// DefaultRoleID is granted to a user of this provider none of whose
+	// groups is mapped. Never inherited from another method: on a public IdP
+	// (Google, Microsoft) a default role admits every account of that IdP.
+	DefaultRoleID *uuid.UUID `json:"default_role_id"`
+	// AllowedDomains, when non-empty, admits only identities whose verified
+	// email domain is listed.
+	AllowedDomains []string `json:"allowed_domains"`
 }
 
+// RoleMapping grants RoleID to a user holding Group. Method scopes the row:
+// "" applies to every external method, else "ldap" or "oidc:<id>".
 type RoleMapping struct {
 	Group  string    `json:"group"`
 	RoleID uuid.UUID `json:"role_id"`
+	Method string    `json:"method"`
 }
 
 // LLDAPDefaults are LLDAP's schema defaults (ou=people, uid, mail, memberOf).
@@ -155,6 +168,14 @@ func (m Methods) Validate(roleExists func(uuid.UUID) bool) error {
 		if p.ClientID == "" {
 			return invalid("provider %q needs a client id", p.ID)
 		}
+		if p.DefaultRoleID != nil && !roleExists(*p.DefaultRoleID) {
+			return invalid("provider %q default role is unknown", p.ID)
+		}
+		for _, d := range p.AllowedDomains {
+			if !hostnamePattern.MatchString(strings.TrimSpace(d)) {
+				return invalid("provider %q allowed domain %q is not a domain name", p.ID, d)
+			}
+		}
 	}
 	if len(m.OIDC) > 0 {
 		u, err := url.Parse(m.ERPURL)
@@ -175,16 +196,59 @@ func (m Methods) Validate(roleExists func(uuid.UUID) bool) error {
 		if l.BaseDN == "" || !strings.Contains(l.UserFilter, "{username}") {
 			return invalid("ldap needs a base DN and a user filter containing {username}")
 		}
+		if strings.TrimSpace(l.BindDN) == "" {
+			return invalid("ldap needs a service account (bind DN)")
+		}
+		if l.DefaultRoleID != nil && !roleExists(*l.DefaultRoleID) {
+			return invalid("ldap default role is unknown")
+		}
 	}
 	for _, rm := range m.RoleMapping {
 		if strings.TrimSpace(rm.Group) == "" || !roleExists(rm.RoleID) {
 			return invalid("role mapping %q points at an unknown role", rm.Group)
 		}
-	}
-	if m.DefaultRoleID != nil && !roleExists(*m.DefaultRoleID) {
-		return invalid("default role is unknown")
+		if rm.Method != "" && (rm.Method == "local" || !m.configured(rm.Method)) {
+			return invalid("role mapping %q is scoped to unconfigured method %q", rm.Group, rm.Method)
+		}
 	}
 	return nil
+}
+
+// DefaultRole is method's own default role ("ldap" or "oidc:<id>"), if any.
+func (m Methods) DefaultRole(method string) *uuid.UUID {
+	switch {
+	case method == "ldap" && m.LDAP != nil:
+		return m.LDAP.DefaultRoleID
+	case strings.HasPrefix(method, "oidc:"):
+		if p, ok := m.Provider(strings.TrimPrefix(method, "oidc:")); ok {
+			return p.DefaultRoleID
+		}
+	}
+	return nil
+}
+
+// DomainAllowed reports whether id passes its OIDC provider's
+// allowed_domains (always true for LDAP or an empty list): a verified email
+// whose domain, after the last "@", is listed.
+func (m Methods) DomainAllowed(id ExternalIdentity) bool {
+	if !strings.HasPrefix(id.Provider, "oidc:") {
+		return true
+	}
+	p, _ := m.Provider(strings.TrimPrefix(id.Provider, "oidc:"))
+	if len(p.AllowedDomains) == 0 {
+		return true
+	}
+	at := strings.LastIndex(id.Email, "@")
+	if !id.EmailVerified || at < 0 {
+		return false
+	}
+	domain := strings.ToLower(strings.TrimSpace(id.Email[at+1:]))
+	for _, d := range p.AllowedDomains {
+		if domain != "" && domain == strings.ToLower(strings.TrimSpace(d)) {
+			return true
+		}
+	}
+	return false
 }
 
 type PublicMethod struct {

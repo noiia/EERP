@@ -214,3 +214,71 @@ func TestPublicMethodsExposeOnlyLabels(t *testing.T) {
 		}
 	}
 }
+
+func TestLDAPBindPasswordRequired(t *testing.T) {
+	h, _ := newTestHandler(t, uuid.New())
+	if rec := call(t, h, h.PutSettings, http.MethodPut, fmt.Sprintf(ldapBody, "")); rec.Code != http.StatusBadRequest {
+		t.Errorf("ldap without any bind password = %d, want 400", rec.Code)
+	}
+	noDN := strings.Replace(fmt.Sprintf(ldapBody, "p4ss"), `"bind_dn":"uid=admin",`, "", 1)
+	if rec := call(t, h, h.PutSettings, http.MethodPut, noDN); rec.Code != http.StatusBadRequest {
+		t.Errorf("ldap without bind_dn = %d, want 400", rec.Code)
+	}
+	if rec := call(t, h, h.PutSettings, http.MethodPut, fmt.Sprintf(ldapBody, "p4ss")); rec.Code != http.StatusNoContent {
+		t.Fatalf("ldap with password = %d %s", rec.Code, rec.Body.String())
+	}
+	// The kept password satisfies the requirement.
+	if rec := call(t, h, h.PutSettings, http.MethodPut, fmt.Sprintf(ldapBody, "")); rec.Code != http.StatusNoContent {
+		t.Errorf("ldap keeping the stored password = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLegacyDefaultRoleMovesToLDAPOnly(t *testing.T) {
+	h, mem := newTestHandler(t, uuid.New())
+	role := uuid.New()
+	mem[SettingsKey] = `{"default":"local","ldap":{"url":"ldaps://x","bind_dn":"cn=svc","base_dn":"dc=x","user_filter":"(uid={username})"},
+	  "oidc":[{"id":"google","issuer":"https://accounts.google.com","client_id":"c"}],"default_role_id":"` + role.String() + `"}`
+	m, err := h.deps.Store.Load(context.Background(), h.deps.Tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.LDAP.DefaultRoleID == nil || *m.LDAP.DefaultRoleID != role {
+		t.Errorf("ldap default = %v, want the legacy global %v", m.LDAP.DefaultRoleID, role)
+	}
+	if m.OIDC[0].DefaultRoleID != nil {
+		t.Errorf("oidc default = %v, want none", *m.OIDC[0].DefaultRoleID)
+	}
+	// Without LDAP the legacy value goes nowhere.
+	mem[SettingsKey] = `{"oidc":[{"id":"google","issuer":"https://accounts.google.com","client_id":"c"}],"default_role_id":"` + role.String() + `"}`
+	if m, _ := h.deps.Store.Load(context.Background(), h.deps.Tenant); m.OIDC[0].DefaultRoleID != nil {
+		t.Error("legacy default reached an OIDC provider")
+	}
+}
+
+func TestIssuerChangeUnlinksProvider(t *testing.T) {
+	h, _ := newTestHandler(t, uuid.New())
+	var unlinked []string
+	h.unlink = func(_ context.Context, tenant uuid.UUID, provider string) error {
+		if tenant != h.deps.Tenant {
+			t.Errorf("unlink tenant = %v", tenant)
+		}
+		unlinked = append(unlinked, provider)
+		return nil
+	}
+	if rec := call(t, h, h.PutSettings, http.MethodPut, fmt.Sprintf(oidcBody, "https://id.example.com", "s")); rec.Code != http.StatusNoContent {
+		t.Fatalf("seed = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call(t, h, h.PutSettings, http.MethodPut, fmt.Sprintf(oidcBody, "https://id.example.com", "")); rec.Code != http.StatusNoContent || len(unlinked) != 0 {
+		t.Fatalf("same issuer = %d, unlinked %v", rec.Code, unlinked)
+	}
+	// A refused save (secret not re-entered) unlinks nothing.
+	if rec := call(t, h, h.PutSettings, http.MethodPut, fmt.Sprintf(oidcBody, "https://new.example.com", "")); rec.Code != http.StatusBadRequest || len(unlinked) != 0 {
+		t.Fatalf("refused change = %d, unlinked %v", rec.Code, unlinked)
+	}
+	if rec := call(t, h, h.PutSettings, http.MethodPut, fmt.Sprintf(oidcBody, "https://new.example.com", "s2")); rec.Code != http.StatusNoContent {
+		t.Fatalf("issuer change = %d %s", rec.Code, rec.Body.String())
+	}
+	if len(unlinked) != 1 || unlinked[0] != "oidc:corp" {
+		t.Errorf("unlinked = %v, want [oidc:corp]", unlinked)
+	}
+}

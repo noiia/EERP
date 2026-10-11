@@ -36,6 +36,8 @@ type Handler struct {
 	deps Deps
 	// provision is deps.Provisioner.Provision; a field so handler tests need no DB.
 	provision func(ctx context.Context, tenant uuid.UUID, id ExternalIdentity, m Methods) (uuid.UUID, error)
+	// unlink is deps.Provisioner.UnlinkProvider; nil = no links to drop.
+	unlink func(ctx context.Context, tenant uuid.UUID, provider string) error
 }
 
 func NewHandler(deps Deps) *Handler {
@@ -45,6 +47,7 @@ func NewHandler(deps Deps) *Handler {
 	h := &Handler{deps: deps}
 	if deps.Provisioner != nil {
 		h.provision = deps.Provisioner.Provision
+		h.unlink = deps.Provisioner.UnlinkProvider
 	}
 	return h
 }
@@ -124,11 +127,30 @@ func (h *Handler) PutSettings(c *echo.Context) error {
 		}
 		return err
 	}
+	prev, err := h.deps.Store.Load(ctx, h.deps.Tenant)
+	if err != nil && !errors.Is(err, errUnreadable) {
+		return err
+	}
+	var reissued []string // providers whose issuer changed: their subjects are other people now
+	for _, p := range m.OIDC {
+		if old, ok := prev.Provider(p.ID); ok && old.Issuer != p.Issuer {
+			reissued = append(reissued, "oidc:"+p.ID)
+		}
+	}
 	if err := h.deps.Store.Save(ctx, h.deps.Tenant, m); err != nil {
 		if errors.Is(err, ErrInvalidSettings) {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 		return err
+	}
+	for _, provider := range reissued {
+		if h.unlink == nil {
+			break
+		}
+		if err := h.unlink(ctx, h.deps.Tenant, provider); err != nil {
+			return err
+		}
+		h.deps.Logger.Info("issuer changed: provider links removed", zap.String("provider", provider))
 	}
 	return c.NoContent(http.StatusNoContent)
 }

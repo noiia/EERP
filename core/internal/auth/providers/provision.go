@@ -26,12 +26,14 @@ func NewProvisioner(db *orm.DB) *Provisioner { return &Provisioner{db: db} }
 
 // Provision resolves the ERP user for id in tenant — linked identity, else
 // (verified email only) the live ERP user with that email, else a new one —
-// then makes its roles exactly the mapped roles. All in one transaction.
+// then syncs the roles id.Provider manages (see syncRoles). All in one
+// transaction. id.Provider ("ldap" / "oidc:<id>") selects the method's own
+// mappings, default role and allowed_domains.
 func (p *Provisioner) Provision(ctx context.Context, tenant uuid.UUID, id ExternalIdentity, m Methods) (uuid.UUID, error) {
-	roles := mappedRoles(id.Groups, m)
-	if len(roles) == 0 || id.Subject == "" {
+	if id.Subject == "" || !m.DomainAllowed(id) {
 		return uuid.Nil, ErrRefused
 	}
+	granted, managed := methodRoles(id.Provider, id.Groups, m)
 	var userID uuid.UUID
 	err := orm.Transact(ctx, p.db, func(tx *orm.Tx) error {
 		var err error
@@ -39,28 +41,54 @@ func (p *Provisioner) Provision(ctx context.Context, tenant uuid.UUID, id Extern
 		if err != nil {
 			return err
 		}
-		return syncRoles(ctx, tx, tenant, userID, roles)
+		return syncRoles(ctx, tx, tenant, userID, granted, managed)
 	})
 	return userID, err
 }
 
-func mappedRoles(groups []string, m Methods) []uuid.UUID {
-	set := map[uuid.UUID]bool{}
-	for _, g := range groups {
-		for _, rm := range m.RoleMapping {
+// UnlinkProvider soft-deletes every link of provider ("oidc:<id>") in
+// tenant — called when a provider's issuer changes, since the same subject
+// at another issuer is another person.
+func (p *Provisioner) UnlinkProvider(ctx context.Context, tenant uuid.UUID, provider string) error {
+	if _, err := p.db.Exec(ctx, `
+		UPDATE auth_identity SET deleted_at = now(), updated_at = now()
+		WHERE tenant_id = $1 AND provider = $2 AND deleted_at IS NULL`, tenant, provider); err != nil {
+		return fmt.Errorf("provision: unlink %s: %w", provider, err)
+	}
+	return nil
+}
+
+// methodRoles returns the roles a sign-in through method grants (the mapped
+// roles of the user's groups, else the method's default role) and the roles
+// the method manages (every role its applicable mapping rows or default
+// name). Mapping rows apply when unscoped or scoped to method.
+func methodRoles(method string, groups []string, m Methods) (granted, managed []uuid.UUID) {
+	grant, manage := map[uuid.UUID]bool{}, map[uuid.UUID]bool{}
+	for _, rm := range m.RoleMapping {
+		if rm.Method != "" && rm.Method != method {
+			continue
+		}
+		manage[rm.RoleID] = true
+		for _, g := range groups {
 			if strings.EqualFold(strings.TrimSpace(g), strings.TrimSpace(rm.Group)) {
-				set[rm.RoleID] = true
+				grant[rm.RoleID] = true
 			}
 		}
 	}
-	if len(set) == 0 && m.DefaultRoleID != nil {
-		set[*m.DefaultRoleID] = true
+	if def := m.DefaultRole(method); def != nil {
+		manage[*def] = true
+		if len(grant) == 0 {
+			grant[*def] = true
+		}
 	}
-	out := make([]uuid.UUID, 0, len(set))
-	for r := range set {
-		out = append(out, r)
+	keys := func(set map[uuid.UUID]bool) []uuid.UUID {
+		out := make([]uuid.UUID, 0, len(set)) // never nil: a nil array binds as NULL
+		for r := range set {
+			out = append(out, r)
+		}
+		return out
 	}
-	return out
+	return keys(grant), keys(manage)
 }
 
 func resolveUser(ctx context.Context, tx *orm.Tx, tenant uuid.UUID, id ExternalIdentity) (uuid.UUID, error) {
@@ -149,13 +177,17 @@ func link(ctx context.Context, tx *orm.Tx, tenant, user uuid.UUID, id ExternalId
 	return nil
 }
 
-func syncRoles(ctx context.Context, tx *orm.Tx, tenant, user uuid.UUID, roles []uuid.UUID) error {
+// syncRoles grants the granted roles and removes the managed roles the user
+// no longer qualifies for; roles outside managed (assigned by hand) are never
+// touched. The sign-in is refused when the user ends with no live role.
+func syncRoles(ctx context.Context, tx *orm.Tx, tenant, user uuid.UUID, granted, managed []uuid.UUID) error {
 	if _, err := tx.Exec(ctx, `
 		UPDATE user_roles SET deleted_at = now(), updated_at = now()
-		WHERE tenant_id = $3 AND user_id = $1 AND deleted_at IS NULL AND NOT (role_id = ANY($2))`, user, roles, tenant); err != nil {
+		WHERE tenant_id = $1 AND user_id = $2 AND deleted_at IS NULL
+		  AND role_id = ANY($3) AND NOT (role_id = ANY($4))`, tenant, user, managed, granted); err != nil {
 		return fmt.Errorf("provision: drop roles: %w", err)
 	}
-	for _, r := range roles {
+	for _, r := range granted {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO user_roles (id, tenant_id, user_id, role_id)
 			SELECT $1, $2, $3, r.id FROM roles r WHERE r.id = $4 AND r.tenant_id = $2 AND r.deleted_at IS NULL
@@ -166,8 +198,8 @@ func syncRoles(ctx context.Context, tx *orm.Tx, tenant, user uuid.UUID, roles []
 	var n int
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM user_roles ur JOIN roles r ON r.id = ur.role_id AND r.tenant_id = $1 AND r.deleted_at IS NULL
-		WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND ur.deleted_at IS NULL AND ur.role_id = ANY($3)`,
-		tenant, user, roles).Scan(&n); err != nil {
+		WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND ur.deleted_at IS NULL`,
+		tenant, user).Scan(&n); err != nil {
 		return fmt.Errorf("provision: verify roles: %w", err)
 	}
 	if n == 0 {

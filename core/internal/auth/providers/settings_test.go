@@ -36,12 +36,24 @@ func TestMethodsValidate(t *testing.T) {
 		{"bad provider id", Methods{OIDC: []OIDCProvider{{ID: "Bad_Id", Issuer: "https://x", ClientID: "c"}}, ERPURL: "https://erp"}, false},
 		{"duplicate provider id", Methods{OIDC: []OIDCProvider{okOIDC, okOIDC}, ERPURL: "https://erp"}, false},
 		{"issuer must be https", Methods{OIDC: []OIDCProvider{{ID: "a", Issuer: "http://x", ClientID: "c"}}, ERPURL: "https://erp"}, false},
-		{"plain ldap remote", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldap://ldap.example.com", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, false},
-		{"plain ldap loopback", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldap://127.0.0.1:3890", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, true},
-		{"filter needs placeholder", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldaps://x", BaseDN: "dc=x", UserFilter: "(uid=bob)"}}, false},
+		{"plain ldap remote", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldap://ldap.example.com", BindDN: "cn=svc", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, false},
+		{"plain ldap loopback", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldap://127.0.0.1:3890", BindDN: "cn=svc", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, true},
+		{"filter needs placeholder", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldaps://x", BindDN: "cn=svc", BaseDN: "dc=x", UserFilter: "(uid=bob)"}}, false},
 		{"mapped role exists", Methods{RoleMapping: []RoleMapping{{Group: "erp-admins", RoleID: admin}}}, true},
 		{"mapped role unknown", Methods{RoleMapping: []RoleMapping{{Group: "erp-admins", RoleID: uuid.New()}}}, false},
-		{"default role unknown", Methods{DefaultRoleID: ptr(uuid.New())}, false},
+		{"ldap needs a bind DN", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldaps://x", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, false},
+		{"ldap default role known", Methods{LDAP: withLDAP(ldap, func(l *LDAPConfig) { l.DefaultRoleID = &admin })}, true},
+		{"ldap default role unknown", Methods{LDAP: withLDAP(ldap, func(l *LDAPConfig) { l.DefaultRoleID = ptr(uuid.New()) })}, false},
+		{"provider default role known", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.DefaultRoleID = &admin })}, ERPURL: "https://erp"}, true},
+		{"provider default role unknown", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.DefaultRoleID = ptr(uuid.New()) })}, ERPURL: "https://erp"}, false},
+		{"allowed domains ok", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.AllowedDomains = []string{"example.com", "Corp.Example.org"} })}, ERPURL: "https://erp"}, true},
+		{"allowed domain with @", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.AllowedDomains = []string{"@example.com"} })}, ERPURL: "https://erp"}, false},
+		{"allowed domain empty", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.AllowedDomains = []string{""} })}, ERPURL: "https://erp"}, false},
+		{"mapping scoped to ldap", Methods{LDAP: &ldap, RoleMapping: []RoleMapping{{Group: "g", RoleID: admin, Method: "ldap"}}}, true},
+		{"mapping scoped to a provider", Methods{OIDC: []OIDCProvider{okOIDC}, ERPURL: "https://erp", RoleMapping: []RoleMapping{{Group: "g", RoleID: admin, Method: "oidc:authentik"}}}, true},
+		{"mapping scoped to unconfigured ldap", Methods{RoleMapping: []RoleMapping{{Group: "g", RoleID: admin, Method: "ldap"}}}, false},
+		{"mapping scoped to unknown provider", Methods{RoleMapping: []RoleMapping{{Group: "g", RoleID: admin, Method: "oidc:nope"}}}, false},
+		{"mapping scoped to local", Methods{RoleMapping: []RoleMapping{{Group: "g", RoleID: admin, Method: "local"}}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,6 +95,52 @@ func TestMethodsPublic(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func withLDAP(l LDAPConfig, f func(*LDAPConfig)) *LDAPConfig { f(&l); return &l }
+
+func withOIDC(p OIDCProvider, f func(*OIDCProvider)) OIDCProvider { f(&p); return p }
+
+func TestMethodsDefaultRolePerMethod(t *testing.T) {
+	l, o := uuid.New(), uuid.New()
+	m := Methods{
+		LDAP: &LDAPConfig{DefaultRoleID: &l},
+		OIDC: []OIDCProvider{{ID: "corp", DefaultRoleID: &o}, {ID: "google"}},
+	}
+	if got := m.DefaultRole("ldap"); got == nil || *got != l {
+		t.Errorf("ldap default = %v", got)
+	}
+	if got := m.DefaultRole("oidc:corp"); got == nil || *got != o {
+		t.Errorf("corp default = %v", got)
+	}
+	if got := m.DefaultRole("oidc:google"); got != nil {
+		t.Errorf("google default = %v, want none (never inherited from LDAP)", *got)
+	}
+}
+
+func TestMethodsDomainAllowed(t *testing.T) {
+	m := Methods{OIDC: []OIDCProvider{{ID: "google", AllowedDomains: []string{"Example.com"}}, {ID: "open"}}}
+	tests := []struct {
+		name string
+		id   ExternalIdentity
+		want bool
+	}{
+		{"listed domain", ExternalIdentity{Provider: "oidc:google", Email: "a@EXAMPLE.com", EmailVerified: true}, true},
+		{"other domain", ExternalIdentity{Provider: "oidc:google", Email: "a@gmail.com", EmailVerified: true}, false},
+		{"suffix trick", ExternalIdentity{Provider: "oidc:google", Email: "a@evil-example.com", EmailVerified: true}, false},
+		{"last @ wins", ExternalIdentity{Provider: "oidc:google", Email: "a@example.com@gmail.com", EmailVerified: true}, false},
+		{"unverified", ExternalIdentity{Provider: "oidc:google", Email: "a@example.com"}, false},
+		{"no email", ExternalIdentity{Provider: "oidc:google", EmailVerified: true}, false},
+		{"empty list allows any", ExternalIdentity{Provider: "oidc:open", Email: "a@gmail.com"}, true},
+		{"ldap never filtered", ExternalIdentity{Provider: "ldap", Email: "a@gmail.com", EmailVerified: true}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := m.DomainAllowed(tt.id); got != tt.want {
+				t.Errorf("DomainAllowed = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestMethodsAllows(t *testing.T) {
 	m := Methods{Default: "ldap"}
