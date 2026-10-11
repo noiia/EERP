@@ -129,3 +129,63 @@ it('Test connection calls testAuthMethod(ldap) and shows the message', async () 
   expect(await screen.findByText('bind ok')).toBeTruthy()
   expect(testAuthMethod).toHaveBeenCalledWith('ldap')
 })
+
+it('shows a provider discovery result under that provider, without LDAP', async () => {
+  testAuthMethod.mockResolvedValue({ ok: true, message: 'discovery ok' })
+  render(<AuthSettingsForm initial={{ ...base, ldap: null, enabled: [] }} roles={roles} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Test discovery' }))
+  expect(await screen.findByText('discovery ok')).toBeTruthy()
+  expect(testAuthMethod).toHaveBeenCalledWith('oidc:google')
+})
+
+it('shows a read-only callback URL for a newly added provider', () => {
+  render(<AuthSettingsForm initial={base} roles={roles} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+  const cbs = screen.getAllByLabelText('Callback URL') as HTMLInputElement[]
+  expect(cbs).toHaveLength(2)
+  expect(cbs[1].readOnly).toBe(true)
+  expect(cbs[1].value).toBe(base.callback_url)
+})
+
+it('remaps enabled and default when a provider id is renamed', async () => {
+  render(
+    <AuthSettingsForm
+      initial={{ ...base, default: 'oidc:google', enabled: ['oidc:google'] }}
+      roles={roles}
+    />,
+  )
+  fireEvent.change(screen.getByLabelText('Identifier'), { target: { value: 'gg' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
+  const body = saveAuthSettings.mock.calls[0][0]
+  expect(body.default).toBe('oidc:gg')
+  expect(body.enabled).toEqual(['oidc:gg'])
+})
+
+it('never duplicates a provider id after a removal', async () => {
+  const two = { ...base, oidc: [base.oidc[0], { ...base.oidc[0], id: 'oidc2' }] }
+  render(<AuthSettingsForm initial={two} roles={roles} />)
+  fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1])
+  fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
+  const ids = saveAuthSettings.mock.calls[0][0].oidc.map((o: { id: string }) => o.id)
+  expect(new Set(ids).size).toBe(ids.length)
+  expect(ids).toEqual(['oidc2', 'oidc3'])
+})
+
+it('clears typed secrets after a successful save and flags them stored', async () => {
+  const fresh = {
+    ...base,
+    ldap: { ...ldap, has_bind_password: false },
+    oidc: [{ ...base.oidc[0], has_client_secret: false }],
+  }
+  render(<AuthSettingsForm initial={fresh} roles={roles} />)
+  fireEvent.change(screen.getByLabelText('Bind password'), { target: { value: 'pw' } })
+  fireEvent.change(screen.getByLabelText('Client secret'), { target: { value: 'sec' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await screen.findByText('Saved.')
+  expect((screen.getByLabelText('Bind password') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Client secret') as HTMLInputElement).value).toBe('')
+  expect(screen.getAllByText('Stored — leave empty to keep')).toHaveLength(2)
+})

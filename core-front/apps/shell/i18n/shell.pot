@@ -1615,3 +1615,7 @@ msgstr ""
 #: app/settings/authentication/AuthSettingsForm.tsx
 msgid "Sign-in methods: password, company directory (LDAP), single sign-on (OIDC)."
 msgstr ""
+
+#: app/settings/authentication/page.tsx
+msgid "Could not load the authentication settings."
+msgstr ""

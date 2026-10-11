@@ -1781,3 +1781,6 @@ msgstr "Ajouter une correspondance"
 
 msgid "Sign-in methods: password, company directory (LDAP), single sign-on (OIDC)."
 msgstr "Méthodes de connexion : mot de passe, annuaire de l'entreprise (LDAP), authentification unique (OIDC)."
+
+msgid "Could not load the authentication settings."
+msgstr "Impossible de charger les paramètres d'authentification."

@@ -39,7 +39,10 @@ const EMPTY_LDAP: LDAPSettings = {
   group_filter: '',
 }
 
-function newProvider(n: number): OIDCSettings {
+function newProvider(existing: OIDCSettings[]): OIDCSettings {
+  const used = new Set(existing.map((o) => o.id))
+  let n = Math.max(0, ...existing.map((o) => Number(/^oidc(\d+)$/.exec(o.id)?.[1] ?? 0))) + 1
+  while (used.has(`oidc${n}`)) n++
   return {
     id: `oidc${n}`,
     label: '',
@@ -79,13 +82,22 @@ export default function AuthSettingsForm({
   const t = useT()
   const [s, setS] = useState<AuthSettingsView>(initial)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [testMsgs, setTestMsgs] = useState<Record<string, { ok: boolean; text: string }>>({})
 
   const ldap = s.ldap
   const setLdap = (patch: Partial<LDAPSettings>) =>
     setS({ ...s, ldap: { ...(s.ldap ?? EMPTY_LDAP), ...patch } })
-  const setOidc = (i: number, patch: Partial<OIDCSettings>) =>
-    setS({ ...s, oidc: s.oidc.map((o, j) => (j === i ? { ...o, ...patch } : o)) })
+  const setOidc = (i: number, patch: Partial<OIDCSettings>) => {
+    const oldId = s.oidc[i].id
+    const next = { ...s, oidc: s.oidc.map((o, j) => (j === i ? { ...o, ...patch } : o)) }
+    if (patch.id !== undefined && patch.id !== oldId) {
+      const from = `oidc:${oldId}`
+      const to = `oidc:${patch.id}`
+      next.enabled = s.enabled.map((e) => (e === from ? to : e))
+      if (s.default === from) next.default = to
+    }
+    setS(next)
+  }
 
   const methods = [
     { id: 'local', label: t('Local') },
@@ -99,6 +111,21 @@ export default function AuthSettingsForm({
 
   async function save() {
     const res = await saveAuthSettings(toInput(s))
+    if (res.ok) {
+      setS((cur) => ({
+        ...cur,
+        ldap: cur.ldap && {
+          ...cur.ldap,
+          has_bind_password: cur.ldap.has_bind_password || !!cur.ldap.bind_password,
+          bind_password: '',
+        },
+        oidc: cur.oidc.map((o) => ({
+          ...o,
+          has_client_secret: o.has_client_secret || !!o.client_secret,
+          client_secret: '',
+        })),
+      }))
+    }
     setMsg(
       res.ok
         ? { ok: true, text: t('Saved.') }
@@ -108,7 +135,10 @@ export default function AuthSettingsForm({
 
   async function test(method: string) {
     const res = await testAuthMethod(method)
-    setTestMsg({ ok: res.ok, text: res.message || (res.ok ? t('OK') : t('Test failed.')) })
+    setTestMsgs((m) => ({
+      ...m,
+      [method]: { ok: res.ok, text: res.message || (res.ok ? t('OK') : t('Test failed.')) },
+    }))
   }
 
   const stored = t('Stored — leave empty to keep')
@@ -182,7 +212,9 @@ export default function AuthSettingsForm({
                 {t('Remove')}
               </Button>
             </Stack>
-            {testMsg && <Alert severity={testMsg.ok ? 'success' : 'error'}>{testMsg.text}</Alert>}
+            {testMsgs.ldap && (
+              <Alert severity={testMsgs.ldap.ok ? 'success' : 'error'}>{testMsgs.ldap.text}</Alert>
+            )}
             <TextField
               label={t('Label')}
               value={ldap.label}
@@ -333,11 +365,16 @@ export default function AuthSettingsForm({
                 {t('Remove')}
               </Button>
             </Stack>
+            {testMsgs[`oidc:${o.id}`] && (
+              <Alert severity={testMsgs[`oidc:${o.id}`].ok ? 'success' : 'error'}>
+                {testMsgs[`oidc:${o.id}`].text}
+              </Alert>
+            )}
           </Stack>
         ))}
         <Button
           variant="outlined"
-          onClick={() => setS({ ...s, oidc: [...s.oidc, newProvider(s.oidc.length + 1)] })}
+          onClick={() => setS({ ...s, oidc: [...s.oidc, newProvider(s.oidc)] })}
           sx={{ alignSelf: 'flex-start' }}
         >
           {t('Add provider')}

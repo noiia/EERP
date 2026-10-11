@@ -57,18 +57,24 @@ const EMPTY: AuthSettingsView = {
   callback_url: '',
 }
 
-export async function getAuthSettings(): Promise<AuthSettingsView> {
+export type LoadResult = { ok: true; settings: AuthSettingsView } | { ok: false; message: string }
+
+/** A failed load must not look like an empty config: saving it would wipe the stored one. */
+export async function getAuthSettings(): Promise<LoadResult> {
   try {
     const s = await apiRequest<AuthSettingsView>('GET', '/settings/auth')
     return {
-      ...EMPTY,
-      ...s,
-      oidc: s.oidc ?? [],
-      role_mapping: s.role_mapping ?? [],
-      enabled: s.enabled ?? [],
+      ok: true,
+      settings: {
+        ...EMPTY,
+        ...s,
+        oidc: s.oidc ?? [],
+        role_mapping: s.role_mapping ?? [],
+        enabled: s.enabled ?? [],
+      },
     }
-  } catch {
-    return EMPTY
+  } catch (e) {
+    return { ok: false, message: e instanceof ApiError ? e.message : '' }
   }
 }
 
