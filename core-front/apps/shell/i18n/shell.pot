@@ -1619,3 +1619,19 @@ msgstr ""
 #: app/settings/authentication/page.tsx
 msgid "Could not load the authentication settings."
 msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Allowed email domains"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Comma-separated. Empty admits every account of this provider — restrict a public provider (Google, Microsoft)."
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Method"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "All methods"
+msgstr ""

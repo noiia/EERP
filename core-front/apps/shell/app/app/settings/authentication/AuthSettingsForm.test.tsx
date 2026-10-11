@@ -42,7 +42,6 @@ const base: AuthSettingsView = {
     },
   ],
   role_mapping: [],
-  default_role_id: null,
   erp_url: 'https://erp.example.com',
   callback_url: 'https://erp.example.com/api/auth/oidc/callback',
 }
@@ -107,8 +106,54 @@ it('maps a group to a role id', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
   expect(saveAuthSettings.mock.calls[0][0].role_mapping).toEqual([
-    { group: 'staff', role_id: 'r2' },
+    { group: 'staff', role_id: 'r2', method: '' },
   ])
+})
+
+it('scopes a mapping to one method', async () => {
+  render(<AuthSettingsForm initial={base} roles={roles} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Add mapping' }))
+  fireEvent.change(screen.getByLabelText('Group'), { target: { value: 'staff' } })
+  fireEvent.mouseDown(screen.getByLabelText('Method'))
+  const opts = screen.getAllByRole('option').map((o) => o.textContent)
+  expect(opts).toEqual(['All methods', 'Company directory', 'Google'])
+  fireEvent.click(screen.getByRole('option', { name: 'Google' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
+  expect(saveAuthSettings.mock.calls[0][0].role_mapping).toEqual([
+    { group: 'staff', role_id: '', method: 'oidc:google' },
+  ])
+})
+
+it('submits a default role per method and allowed domains per provider, no global default', async () => {
+  render(<AuthSettingsForm initial={base} roles={roles} />)
+  const selects = screen.getAllByLabelText('Default role')
+  expect(selects).toHaveLength(2) // LDAP + Google
+  fireEvent.mouseDown(selects[1])
+  fireEvent.click(screen.getByRole('option', { name: 'Sales' }))
+  fireEvent.change(screen.getByLabelText('Allowed email domains'), {
+    target: { value: 'example.com, Example.org,' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
+  const body = saveAuthSettings.mock.calls[0][0]
+  expect(body).not.toHaveProperty('default_role_id')
+  expect(body.ldap.default_role_id).toBeNull()
+  expect(body.oidc[0].default_role_id).toBe('r2')
+  expect(body.oidc[0].allowed_domains).toEqual(['example.com', 'Example.org'])
+})
+
+it('carries a mapping scope through a provider rename and drops it with the provider', async () => {
+  const scoped = { ...base, role_mapping: [{ group: 'g', role_id: 'r1', method: 'oidc:google' }] }
+  render(<AuthSettingsForm initial={scoped} roles={roles} />)
+  fireEvent.change(screen.getByLabelText('Identifier'), { target: { value: 'gg' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
+  expect(saveAuthSettings.mock.calls[0][0].role_mapping[0].method).toBe('oidc:gg')
+  fireEvent.click(screen.getByRole('button', { name: 'Test discovery' }).nextElementSibling!)
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalledTimes(2))
+  expect(saveAuthSettings.mock.calls[1][0].role_mapping).toEqual([])
 })
 
 it('shows the Go 400 message in an error alert', async () => {

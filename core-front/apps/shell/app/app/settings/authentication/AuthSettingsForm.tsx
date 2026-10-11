@@ -16,6 +16,7 @@ import {
   type AuthSettingsView,
   type LDAPSettings,
   type OIDCSettings,
+  type RoleMappingRow,
 } from '@/lib/auth-settings'
 
 const LLDAP = {
@@ -62,14 +63,24 @@ function toInput(s: AuthSettingsView): AuthSettingsInput {
     ? (() => {
         const { has_bind_password: _h, ...l } = s.ldap
         void _h
-        return { ...l, bind_password: l.bind_password ?? '' }
+        return {
+          ...l,
+          bind_password: l.bind_password ?? '',
+          default_role_id: l.default_role_id || null,
+        }
       })()
     : null
   const oidc = s.oidc.map(({ has_client_secret: _h, ...o }) => {
     void _h
-    return { ...o, client_secret: o.client_secret ?? '' }
+    return {
+      ...o,
+      client_secret: o.client_secret ?? '',
+      default_role_id: o.default_role_id || null,
+      allowed_domains: (o.allowed_domains ?? []).map((d) => d.trim()).filter(Boolean),
+    }
   })
-  return { ...rest, ldap, oidc }
+  const role_mapping = s.role_mapping.map((r) => ({ ...r, method: r.method ?? '' }))
+  return { ...rest, ldap, oidc, role_mapping }
 }
 
 export default function AuthSettingsForm({
@@ -94,6 +105,7 @@ export default function AuthSettingsForm({
       const from = `oidc:${oldId}`
       const to = `oidc:${patch.id}`
       next.enabled = s.enabled.map((e) => (e === from ? to : e))
+      next.role_mapping = s.role_mapping.map((r) => (r.method === from ? { ...r, method: to } : r))
       if (s.default === from) next.default = to
     }
     setS(next)
@@ -142,6 +154,31 @@ export default function AuthSettingsForm({
   }
 
   const stored = t('Stored — leave empty to keep')
+
+  const defaultRoleSelect = (
+    value: string | null | undefined,
+    onChange: (v: string | null) => void,
+  ) => (
+    <TextField
+      select
+      label={t('Default role')}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value || null)}
+      slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+    >
+      <MenuItem value="">{t('— none (refuse) —')}</MenuItem>
+      {roles.map((r) => (
+        <MenuItem key={r.id} value={r.id}>
+          {r.name}
+        </MenuItem>
+      ))}
+    </TextField>
+  )
+  const setMapping = (i: number, patch: Partial<RoleMappingRow>) =>
+    setS({
+      ...s,
+      role_mapping: s.role_mapping.map((r, j) => (j === i ? { ...r, ...patch } : r)),
+    })
 
   return (
     <Stack spacing={3} sx={{ maxWidth: 720 }}>
@@ -205,6 +242,7 @@ export default function AuthSettingsForm({
                     ...s,
                     ldap: null,
                     enabled: s.enabled.filter((e) => e !== 'ldap'),
+                    role_mapping: s.role_mapping.filter((r) => r.method !== 'ldap'),
                     default: s.default === 'ldap' ? 'local' : s.default,
                   })
                 }
@@ -283,6 +321,7 @@ export default function AuthSettingsForm({
               value={ldap.group_filter}
               onChange={(e) => setLdap({ group_filter: e.target.value })}
             />
+            {defaultRoleSelect(ldap.default_role_id, (v) => setLdap({ default_role_id: v }))}
           </>
         )}
       </Stack>
@@ -343,6 +382,18 @@ export default function AuthSettingsForm({
               }
             />
             <TextField
+              label={t('Allowed email domains')}
+              placeholder="example.com, example.org"
+              value={(o.allowed_domains ?? []).join(',')}
+              onChange={(e) =>
+                setOidc(i, { allowed_domains: e.target.value ? e.target.value.split(',') : [] })
+              }
+              helperText={t(
+                'Comma-separated. Empty admits every account of this provider — restrict a public provider (Google, Microsoft).',
+              )}
+            />
+            {defaultRoleSelect(o.default_role_id, (v) => setOidc(i, { default_role_id: v }))}
+            <TextField
               label={t('Callback URL')}
               value={s.callback_url || `${s.erp_url || t('<ERP URL>')}/api/auth/oidc/callback`}
               slotProps={{ input: { readOnly: true } }}
@@ -358,6 +409,7 @@ export default function AuthSettingsForm({
                     ...s,
                     oidc: s.oidc.filter((_, j) => j !== i),
                     enabled: s.enabled.filter((e) => e !== `oidc:${o.id}`),
+                    role_mapping: s.role_mapping.filter((r) => r.method !== `oidc:${o.id}`),
                     default: s.default === `oidc:${o.id}` ? 'local' : s.default,
                   })
                 }
@@ -388,34 +440,37 @@ export default function AuthSettingsForm({
             <TextField
               label={t('Group')}
               value={m.group}
-              onChange={(e) =>
-                setS({
-                  ...s,
-                  role_mapping: s.role_mapping.map((r, j) =>
-                    j === i ? { ...r, group: e.target.value } : r,
-                  ),
-                })
-              }
+              onChange={(e) => setMapping(i, { group: e.target.value })}
             />
             <TextField
               select
               label={t('Role')}
               value={m.role_id}
               sx={{ minWidth: 200 }}
-              onChange={(e) =>
-                setS({
-                  ...s,
-                  role_mapping: s.role_mapping.map((r, j) =>
-                    j === i ? { ...r, role_id: e.target.value } : r,
-                  ),
-                })
-              }
+              onChange={(e) => setMapping(i, { role_id: e.target.value })}
             >
               {roles.map((r) => (
                 <MenuItem key={r.id} value={r.id}>
                   {r.name}
                 </MenuItem>
               ))}
+            </TextField>
+            <TextField
+              select
+              label={t('Method')}
+              value={m.method ?? ''}
+              sx={{ minWidth: 180 }}
+              onChange={(e) => setMapping(i, { method: e.target.value })}
+              slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+            >
+              <MenuItem value="">{t('All methods')}</MenuItem>
+              {methods
+                .filter((x) => x.id !== 'local')
+                .map((x) => (
+                  <MenuItem key={x.id} value={x.id}>
+                    {x.label}
+                  </MenuItem>
+                ))}
             </TextField>
             <Button
               color="error"
@@ -428,25 +483,15 @@ export default function AuthSettingsForm({
         <Button
           variant="outlined"
           onClick={() =>
-            setS({ ...s, role_mapping: [...s.role_mapping, { group: '', role_id: '' }] })
+            setS({
+              ...s,
+              role_mapping: [...s.role_mapping, { group: '', role_id: '', method: '' }],
+            })
           }
           sx={{ alignSelf: 'flex-start' }}
         >
           {t('Add mapping')}
         </Button>
-        <TextField
-          select
-          label={t('Default role')}
-          value={s.default_role_id ?? ''}
-          onChange={(e) => setS({ ...s, default_role_id: e.target.value || null })}
-        >
-          <MenuItem value="">{t('— none (refuse) —')}</MenuItem>
-          {roles.map((r) => (
-            <MenuItem key={r.id} value={r.id}>
-              {r.name}
-            </MenuItem>
-          ))}
-        </TextField>
       </Stack>
 
       <Button variant="contained" onClick={() => void save()} sx={{ alignSelf: 'flex-start' }}>

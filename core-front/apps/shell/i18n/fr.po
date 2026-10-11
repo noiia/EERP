@@ -1784,3 +1784,15 @@ msgstr "Méthodes de connexion : mot de passe, annuaire de l'entreprise (LDAP), 
 
 msgid "Could not load the authentication settings."
 msgstr "Impossible de charger les paramètres d'authentification."
+
+msgid "Allowed email domains"
+msgstr "Domaines e-mail autorisés"
+
+msgid "Comma-separated. Empty admits every account of this provider — restrict a public provider (Google, Microsoft)."
+msgstr "Séparés par des virgules. Vide : tout compte de ce fournisseur est admis — restreignez un fournisseur public (Google, Microsoft)."
+
+msgid "Method"
+msgstr "Méthode"
+
+msgid "All methods"
+msgstr "Toutes les méthodes"

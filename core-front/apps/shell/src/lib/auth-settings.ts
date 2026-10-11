@@ -21,6 +21,8 @@ export interface LDAPSettings {
   groups_attr: string
   group_search_base: string
   group_filter: string
+  /** Granted to an LDAP user none of whose groups is mapped; null = refuse. */
+  default_role_id?: string | null
   has_bind_password?: boolean
 }
 export interface OIDCSettings {
@@ -32,15 +34,24 @@ export interface OIDCSettings {
   scopes: string
   groups_claim: string
   trust_email: boolean
+  /** This provider's own default role — never inherited from another method. */
+  default_role_id?: string | null
+  /** Verified email domains admitted; empty = any account of the provider. */
+  allowed_domains?: string[]
   has_client_secret?: boolean
+}
+/** `method` scopes the row: '' = every method, else 'ldap' or 'oidc:<id>'. */
+export interface RoleMappingRow {
+  group: string
+  role_id: string
+  method?: string
 }
 export interface AuthSettingsView {
   default: string
   enabled: string[]
   ldap?: LDAPSettings | null
   oidc: OIDCSettings[]
-  role_mapping: { group: string; role_id: string }[]
-  default_role_id: string | null
+  role_mapping: RoleMappingRow[]
   erp_url: string
   callback_url: string
 }
@@ -52,7 +63,6 @@ const EMPTY: AuthSettingsView = {
   ldap: null,
   oidc: [],
   role_mapping: [],
-  default_role_id: null,
   erp_url: '',
   callback_url: '',
 }
