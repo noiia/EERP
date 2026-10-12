@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-back-tests run-front-dev garage-init logs run-docker-prod bootstrap
+.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests test run-front-dev garage-init logs run-docker-prod bootstrap
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -40,6 +40,27 @@ BACKTESTPATH ?= ./...
 run-back-tests:
 	$(COMPOSE) up -d --wait db garage
 	cd $(root)/core && CONFIG="$(CONFIG)" go test $(BACKTESTPATH) $(ARGS)
+
+run-pdf-tests:
+	cd $(root)/tools/pdf-service && go test ./... $(ARGS)
+
+# pnpm pinned to the workspace's packageManager version through npx (a broken
+# corepack shim can't get in the way); override with PNPM=pnpm. The engine is
+# built first: the shell and the modules import its dist/, as in CI.
+PNPM ?= npx -y pnpm@12.4.2
+run-front-tests:
+	cd $(root)/core-front && $(PNPM) install --frozen-lockfile && \
+		$(PNPM) --filter @eerp/core-front build && \
+		$(PNPM) lint && $(PNPM) typecheck && $(PNPM) test
+
+# Every test suite the CI runs: Go backend (+ the Redis-backed cache tests),
+# pdf-service, then the frontend's lint, typecheck and tests. Stops at the first
+# failing suite.
+test:
+	$(COMPOSE) up -d --wait redis
+	REDIS_URL=redis://127.0.0.1:6379/0 $(MAKE) --no-print-directory run-back-tests ARGS="-timeout 30m $(ARGS)"
+	$(MAKE) --no-print-directory run-pdf-tests
+	$(MAKE) --no-print-directory run-front-tests
 
 run-front-dev:
 	cd $(root)/core-front && npm run dev -- --host 0.0.0.0
