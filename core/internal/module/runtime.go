@@ -193,7 +193,7 @@ func (r *Registry) bootLocked(ctx context.Context, onProgress func(done, total i
 	goMods := make([]GoModule, len(goModules))
 	copy(goMods, goModules)
 	goMu.Unlock()
-	ensuredThisBoot := map[string]bool{}
+	ensuredThisBoot := map[string]int{}
 	for i, m := range goMods {
 		newTables, err := loadGoModule(ctx, r.db, m, ensuredThisBoot)
 		if err != nil {
@@ -357,7 +357,7 @@ func (r *Registry) Reload(ctx context.Context, name string) (map[string]any, err
 		}
 		opLog.Log("backend", "info", "go-type module: re-validating schema registration "+
 			"(a code change needs a backend rebuild + restart, not a reload)")
-		newTables, err := loadGoModule(ctx, r.db, target, map[string]bool{})
+		newTables, err := loadGoModule(ctx, r.db, target, map[string]int{})
 		if err != nil {
 			opLog.Log("backend", "error", err.Error())
 			return nil, err

@@ -55,7 +55,7 @@ func IsGoModule(name string) bool {
 // for the runtime active-gate (runtime.go) — a table's owner is whichever
 // module's Register() call is what created it, not every module that ever
 // added a column to it.
-func loadGoModule(ctx context.Context, db *orm.DB, m GoModule, ensuredThisBoot map[string]bool) ([]string, error) {
+func loadGoModule(ctx context.Context, db *orm.DB, m GoModule, ensuredThisBoot map[string]int) ([]string, error) {
 	// Column-level snapshot before Register() so we detect both new tables
 	// AND new columns added to existing tables by ExtendSchema.
 	before := columnSnapshot()
@@ -91,21 +91,27 @@ func loadGoModule(ctx context.Context, db *orm.DB, m GoModule, ensuredThisBoot m
 		// same Boot() already ensured — a real, measured cost: on an otherwise
 		// empty target database (core/internal/dbmanage's SwitchTo), that's
 		// purely redundant round trips, not a no-op skipped by IF NOT EXISTS
-		// (the statement still has to be sent and answered). Ensuring a table
-		// once per Boot() call is sufficient — a table is either handled in
-		// its own module's turn (this branch) or was already handled by an
-		// earlier module's turn in the SAME call, and IF NOT EXISTS still
-		// makes each individual ensure idempotent within that one guaranteed
-		// pass, same as before.
-		if ensuredThisBoot[tableName] {
+		// (the statement still has to be sent and answered).
+		//
+		// It records how many columns were ensured, not just "seen": a later
+		// module in the same Boot() may EXTEND an already-ensured table
+		// (crminheritdemo re-registering crm with date/comment, or
+		// orm.ExtendSchema), and those added columns must still reach the
+		// database — skipping the table outright left them missing, so every
+		// generic INSERT naming them failed with SQLSTATE 42703. Registrations
+		// only ever add columns, so a grown count is exactly "something new".
+		allFields, _ := orm.MigrationFieldsForTable(tableName)
+		ensured, seen := ensuredThisBoot[tableName]
+		if seen && len(allFields) <= ensured {
 			continue
 		}
-		ensuredThisBoot[tableName] = true
+		ensuredThisBoot[tableName] = len(allFields)
 
-		if err := ensureTable(ctx, db, tableName); err != nil {
-			return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
+		if !seen {
+			if err := ensureTable(ctx, db, tableName); err != nil {
+				return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
+			}
 		}
-		allFields, _ := orm.MigrationFieldsForTable(tableName)
 		if err := ensureColumns(ctx, db, tableName, allFields); err != nil {
 			return newTables, fmt.Errorf("module %s: ensure columns %s: %w", m.Name(), tableName, err)
 		}
