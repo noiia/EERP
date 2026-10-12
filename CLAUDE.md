@@ -22,6 +22,10 @@ make run-back
 # Frontend only
 make run-front
 
+# Run every test suite the CI runs: Go backend (with Redis), pdf-service, then
+# frontend lint + typecheck + tests. Stops at the first failing suite.
+make test
+
 # Run backend tests (starts Docker DB automatically)
 make run-back-tests
 
@@ -216,6 +220,8 @@ go run main.go -config="../../eerp-config.json"
 ```
 
 **Path resolution:** relative path fields (`module_root`, `api_config_path`) are anchored to the **config file's directory**, not the process CWD (`main.go` resolves them right after decoding; absolute paths pass through untouched). This keeps a single committed config portable — the app (run from `core/cmd/app`), tests (run from `core`), and the frontend build (run from `core-front`) all resolve `core/modules` to the same place. Prefer repo-relative paths in the committed config so it is relocatable across machines.
+
+**Session duration:** `access_ttl_seconds` is how long an ERP/website sign-in stays valid without a refresh (the access JWT's lifetime, returned as `expires_in`, which the Next BFF also uses as the access cookie's `maxAge`) — 21600 (6 h) in every shipped config; `refresh_ttl_seconds` (default 7 days) bounds how long the session can be silently renewed. Unset falls back to 1 h. Pitfall: a long access TTL also delays role/permission changes and user disabling, which only take effect at the next refresh.
 
 **Request body limits:** `request_body_limit` (default `1M`) caps every request body; the file upload routes `/api/v1/pictures` and `/api/v1/attachments` are exempt (`ormserver.Config.BodyLimitExempt`) and capped by `upload_body_limit` instead (default `20M`, applied per group with `ormserver.BodyLimit`), so raising the upload size never loosens the JSON routes. The database restore upload (`POST /api/v1/database-management/databases/restore`, a whole dump zip) is exempt too, with a fixed `2G` cap matching nginx's `client_max_body_size` on that location. A body over its limit gets Echo's `413 Request Entity Too Large`. The other hops: nginx allows 50 MB (`client_max_body_size`), and `core-front`'s `proxy.ts` skips the upload BFF routes, since Next buffers proxied bodies only up to 10 MB. Pitfall: a new upload route must be added to `BodyLimitExempt` and given `uploadLimit`, or it stays at 1 MB.
 

@@ -19,7 +19,7 @@ import { SITE_ACCESS_COOKIE, SITE_REFRESH_COOKIE } from '@/lib/site-session'
 // upstream of RSC render that both runs on every request and can legally write
 // cookies (Next forbids `cookies().set()` during a Server Component render — see
 // ApiClient.ts). It also restores "stay logged in for the refresh token's 7-day
-// lifetime" — without it, the access cookie's 1h expiry silently drops a live
+// lifetime" — without it, the access cookie's expiry silently drops a live
 // session to anonymous until something reactively refreshes it.
 //
 // The access cookie's maxAge is set to match the access token's own TTL

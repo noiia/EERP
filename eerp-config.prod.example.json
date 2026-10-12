@@ -4,7 +4,7 @@
     ],
     "environment": "production",
     "master_key": "change-me-in-production",
-    "access_ttl_seconds": 3600,
+    "access_ttl_seconds": 21600,
     "refresh_ttl_seconds": 604800,
     "db_name": "poc",
     "db_port": 5432,

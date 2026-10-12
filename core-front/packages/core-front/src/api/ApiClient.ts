@@ -91,10 +91,15 @@ function refreshSession(): Promise<boolean> {
       if (!res.ok) return false
 
       const data: unknown = await res.json().catch(() => null)
-      const accessToken = (data as { access_token?: unknown } | null)?.access_token
+      const { access_token: accessToken, expires_in: expiresIn } =
+        (data as { access_token?: unknown; expires_in?: unknown } | null) ?? {}
       if (typeof accessToken !== 'string') return false
 
-      store.set(ACCESS_COOKIE, accessToken, sessionCookieOptions(ACCESS_TTL_SECONDS))
+      store.set(
+        ACCESS_COOKIE,
+        accessToken,
+        sessionCookieOptions(typeof expiresIn === 'number' ? expiresIn : ACCESS_TTL_SECONDS),
+      )
       // Go rotates the refresh token via a Set-Cookie header, not the JSON body.
       const rotated = parseSetCookie(res.headers, GO_REFRESH_COOKIE)
       if (rotated) {
