@@ -243,13 +243,65 @@ export function statValue<T>(records: T[], config: { field: string; aggregate: F
  */
 export function niceTicks(max: number, targetCount = 4): number[] {
   if (max <= 0) return [0]
-  const roughStep = max / targetCount
+  return niceRange(0, max, targetCount)
+}
+
+/**
+ * "Nice" ticks covering the whole of [min, max] — zero always included, the
+ * last tick never below `max` nor the first above `min`, so every value inside
+ * the range lands inside the drawn axis (rounding the end down used to leave
+ * the highest points above the chart).
+ */
+export function niceRange(min: number, max: number, targetCount = 4): number[] {
+  const lo = Math.min(0, min)
+  const hi = Math.max(0, max)
+  if (hi - lo <= 0) return [0]
+  const roughStep = (hi - lo) / targetCount
   const magnitude = 10 ** Math.floor(Math.log10(roughStep))
   const residual = roughStep / magnitude
   const step = (residual > 5 ? 10 : residual > 2 ? 5 : residual > 1 ? 2 : 1) * magnitude
+  const first = Math.floor(lo / step + 1e-9)
+  const last = Math.ceil(hi / step - 1e-9)
   const ticks: number[] = []
-  for (let v = 0; v <= max + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6)
+  for (let i = first; i <= last; i++) ticks.push(Math.round(i * step * 1e6) / 1e6 || 0)
   return ticks
+}
+
+/** Tukey fence multiplier: 3 × IQR is the conventional "far out" threshold. */
+const OUTLIER_FENCE = 3
+
+/**
+ * The range a chart's axis should cover so that a few values far from the
+ * rest don't squash every other value against one edge: values outside
+ * [low, high] are outliers (Tukey's far-out fences, 3 × IQR beyond the
+ * quartiles). Under 4 values there is no meaningful spread, so nothing is an
+ * outlier. With a zero IQR (most values equal) the fence falls back to the
+ * quartile's own magnitude, so a small wobble around a flat line stays inside.
+ * A value must also lie more than one axis span beyond the others (below).
+ */
+export function outlierFences(values: number[]): { low: number; high: number } {
+  const none = { low: -Infinity, high: Infinity }
+  if (values.length < 4) return none
+  const sorted = [...values].sort((a, b) => a - b)
+  const q = (p: number) => {
+    const i = (sorted.length - 1) * p
+    const lo = Math.floor(i)
+    return sorted[lo]! + (sorted[Math.ceil(i)]! - sorted[lo]!) * (i - lo)
+  }
+  const q1 = q(0.25)
+  const q3 = q(0.75)
+  const spread = q3 - q1 || Math.max(Math.abs(q1), Math.abs(q3))
+  if (spread === 0) return none
+  const tukeyLow = q1 - OUTLIER_FENCE * spread
+  const tukeyHigh = q3 + OUTLIER_FENCE * spread
+  // Far in the statistical sense isn't enough: a value is only worth cropping
+  // when showing it would at least double the (zero-inclusive) axis the other
+  // values need — 40 below a 0–120 axis just extends it a little.
+  const inliers = sorted.filter((v) => v >= tukeyLow && v <= tukeyHigh)
+  const lo = Math.min(0, inliers[0]!)
+  const hi = Math.max(0, inliers[inliers.length - 1]!)
+  const span = hi - lo
+  return { low: Math.min(tukeyLow, lo - span), high: Math.max(tukeyHigh, hi + span) }
 }
 
 // ── Calculated (chart-only) fields ───────────────────────────────────────

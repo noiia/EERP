@@ -11,7 +11,9 @@ import type { Tile } from '../api/graph'
 import { useRelationOps, type RelationRecord } from './relation-ops'
 import {
   OTHER_LABEL,
+  niceRange,
   niceTicks,
+  outlierFences,
   pieSlices,
   statValue,
   xySeries,
@@ -249,6 +251,46 @@ function smoothPath(coords: { x: number; y: number }[]): string {
 
 const AXIS_PADDING = { top: 10, right: 12, bottom: 22, left: 34 }
 
+/** Height of the band beyond a plot edge holding cropped points' value labels. */
+const CROP_LABEL_BAND = 14
+
+/** A point whose value lies far outside the axis: an arrowhead on the plot
+ * edge, pointing the way the real value lies, with that value written beyond
+ * the edge — the point stays visible without stretching the axis. */
+function CroppedPoint({
+  x,
+  y,
+  direction,
+  color,
+  label,
+}: {
+  x: number
+  y: number
+  direction: 'high' | 'low'
+  color: string
+  label: string
+}) {
+  const s = direction === 'high' ? -1 : 1
+  return (
+    <g className="graph-point graph-point-cropped" data-direction={direction}>
+      <path d={`M ${x - 4.5},${y - s} L ${x},${y + 6 * s} L ${x + 4.5},${y - s} Z`} fill={color} />
+      <text x={x} y={direction === 'high' ? y - 8 : y + 16} textAnchor="middle" fontSize={10} fontWeight={600} fill={color}>
+        {label}
+      </text>
+    </g>
+  )
+}
+
+/** The usual "broken axis" double slash, marking an edge the axis was cut at. */
+function AxisBreak({ x, y, color }: { x: number; y: number; color: string }) {
+  return (
+    <g stroke={color} strokeWidth={1}>
+      <line x1={x - 4} y1={y + 1} x2={x + 4} y2={y - 3} />
+      <line x1={x - 4} y1={y + 4} x2={x + 4} y2={y} />
+    </g>
+  )
+}
+
 function XyChart({
   series,
   bucket,
@@ -269,17 +311,35 @@ function XyChart({
   // Shared X domain: every bucket that appears in ANY series, chronologically
   // (bucket keys are 'YYYY-MM[-DD]', which sorts correctly as plain text).
   const buckets = Array.from(new Set(series.flatMap((s) => s.points.map((p) => p.bucket)))).sort()
+  // The axis covers every value except the ones far from all the others
+  // (outlierFences), which would otherwise squash the rest against one edge;
+  // those are drawn cropped on the plot's edge instead (CroppedPoint).
   const allValues = series.flatMap((s) => s.points.map((p) => p.value))
-  const maxValue = Math.max(0, ...allValues)
-  const ticks = niceTicks(maxValue)
-  const domainMax = ticks[ticks.length - 1] || 1
+  const { low, high } = outlierFences(allValues)
+  const inliers = allValues.filter((v) => v >= low && v <= high)
+  const ticks = niceRange(Math.min(0, ...inliers), Math.max(0, ...inliers))
+  const domainMin = ticks[0]!
+  const domainMax = ticks.length > 1 ? ticks[ticks.length - 1]! : domainMin + 1
+  const cropOf = (v: number): 'high' | 'low' | null => (v > domainMax ? 'high' : v < domainMin ? 'low' : null)
+  const hasHigh = allValues.some((v) => cropOf(v) === 'high')
+  const hasLow = allValues.some((v) => cropOf(v) === 'low')
 
   const legendHeight = showLegend ? 22 : 0
   const innerW = Math.max(1, width - AXIS_PADDING.left - AXIS_PADDING.right)
-  const innerH = Math.max(1, height - legendHeight - AXIS_PADDING.top - AXIS_PADDING.bottom)
+  // A cropped point's value label sits in a band reserved beyond the edge.
+  const plotTop = AXIS_PADDING.top + (hasHigh ? CROP_LABEL_BAND : 0)
+  const plotBottom = Math.max(
+    plotTop + 1,
+    height - legendHeight - AXIS_PADDING.bottom - (hasLow ? CROP_LABEL_BAND : 0),
+  )
+  const innerH = plotBottom - plotTop
   const xForIndex = (i: number) =>
     AXIS_PADDING.left + (buckets.length > 1 ? (i * innerW) / (buckets.length - 1) : innerW / 2)
-  const yForValue = (v: number) => AXIS_PADDING.top + innerH - (v / domainMax) * innerH
+  const yForValue = (v: number) => {
+    const crop = cropOf(v)
+    if (crop) return crop === 'high' ? plotTop : plotBottom
+    return plotBottom - ((v - domainMin) / (domainMax - domainMin)) * innerH
+  }
 
   const bucketIndex = new Map(buckets.map((b, i) => [b, i]))
 
@@ -310,6 +370,9 @@ function XyChart({
                 </g>
               )
             })}
+            {/* Axis-break marks: the axis is cut on the side holding cropped points. */}
+            {hasHigh ? <AxisBreak x={AXIS_PADDING.left} y={plotTop} color={palette.chrome.mutedInk} /> : null}
+            {hasLow ? <AxisBreak x={AXIS_PADDING.left} y={plotBottom} color={palette.chrome.mutedInk} /> : null}
             {/* X-axis bucket labels. */}
             {buckets.map((bucketKeyValue, i) => (
               <text
@@ -332,21 +395,41 @@ function XyChart({
                 y: yForValue(p.value),
                 point: p,
               }))
+              // The line runs only between points inside the axis: a segment
+              // toward a cropped point would point at a value it can't reach.
+              const runs: (typeof coords)[] = []
+              let run: typeof coords = []
+              for (const c of coords) {
+                if (cropOf(c.point.value)) {
+                  if (run.length) runs.push(run)
+                  run = []
+                } else run.push(c)
+              }
+              if (run.length) runs.push(run)
               return (
                 <g key={s.label || seriesIndex}>
-                  <path d={smoothPath(coords)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" />
-                  {coords.map((c) => (
-                    <ChartTip
-                      key={c.point.bucket}
-                      title={`${s.label ? `${s.label} — ` : ''}${formatBucketLabel(c.point.bucket, bucket, locale)}: ${format(c.point.value)}`}
-                    >
-                      {/* A wider transparent hit area around the small visible point. */}
-                      <Box component="g" sx={{ cursor: 'pointer', '&:hover .graph-point': { r: 5.5 } }}>
-                        <circle cx={c.x} cy={c.y} r={10} fill="transparent" />
-                        <circle className="graph-point" cx={c.x} cy={c.y} r={3.5} fill={color} />
-                      </Box>
-                    </ChartTip>
+                  {runs.map((r) => (
+                    <path key={r[0]!.point.bucket} d={smoothPath(r)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" />
                   ))}
+                  {coords.map((c) => {
+                    const crop = cropOf(c.point.value)
+                    return (
+                      <ChartTip
+                        key={c.point.bucket}
+                        title={`${s.label ? `${s.label} — ` : ''}${formatBucketLabel(c.point.bucket, bucket, locale)}: ${format(c.point.value)}`}
+                      >
+                        {/* A wider transparent hit area around the small visible point. */}
+                        <Box component="g" sx={{ cursor: 'pointer', '&:hover .graph-point': { r: 5.5 } }}>
+                          <circle cx={c.x} cy={c.y} r={10} fill="transparent" />
+                          {crop ? (
+                            <CroppedPoint x={c.x} y={c.y} direction={crop} color={color} label={format(c.point.value)} />
+                          ) : (
+                            <circle className="graph-point" cx={c.x} cy={c.y} r={3.5} fill={color} />
+                          )}
+                        </Box>
+                      </ChartTip>
+                    )
+                  })}
                 </g>
               )
             })}

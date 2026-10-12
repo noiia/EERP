@@ -144,6 +144,62 @@ describe('GraphWidgetBody: xy', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(/150\.0/) // Jan: 100 + 50
   })
 
+  // One deal per month: 6 ordinary months around 100, plus `extra` months.
+  function monthlyDeals(extra: { month: string; amount: number }[]): Deal[] {
+    const base = [100, 120, 90, 110, 105, 95].map((amount, i) => ({
+      id: `m${i}`,
+      name: `m${i}`,
+      status: 'open',
+      amount,
+      closed_at: `2024-0${i + 1}-10`,
+    }))
+    return [...base, ...extra.map((e, i) => ({ id: `x${i}`, name: `x${i}`, status: 'open', amount: e.amount, closed_at: `${e.month}-10` }))]
+  }
+  const renderXy = (recs: Deal[]) =>
+    render(
+      <GraphWidgetBody
+        tile={tile({ type: 'xy', config: { xField: 'closed_at', yField: 'amount', aggregate: 'sum', bucket: 'month' } })}
+        descriptor={descriptor}
+        records={recs}
+        recordTotal={recs.length}
+      />,
+    )
+  const ys = (chart: Element, selector: string) =>
+    Array.from(chart.querySelectorAll(selector)).map((el) => Number(el.getAttribute('cy')))
+
+  it('crops a value far from the rest on the top edge, with its value and no line toward it', () => {
+    renderXy(monthlyDeals([{ month: '2024-07', amount: 100000 }, { month: '2024-08', amount: 100 }]))
+    const chart = screen.getByRole('img', { name: 'Line chart' })
+    const cropped = chart.querySelectorAll('.graph-point-cropped')
+    expect(cropped).toHaveLength(1)
+    expect(cropped[0]!.getAttribute('data-direction')).toBe('high')
+    expect(cropped[0]!.textContent).toMatch(/100[\s,.\u202f]?000/)
+    // The 6 ordinary months form one line, Aug stands alone: no segment reaches the outlier.
+    expect(chart.querySelectorAll('path[fill="none"]')).toHaveLength(2)
+    // The axis follows the ordinary values, not the outlier.
+    expect(screen.queryByText(/100[\s,.\u202f]?000\.0$/, { selector: 'text[text-anchor="end"]' })).toBeNull()
+  })
+
+  it('crops a far negative value on the bottom edge', () => {
+    renderXy(monthlyDeals([{ month: '2024-07', amount: -90000 }]))
+    const cropped = screen.getByRole('img', { name: 'Line chart' }).querySelectorAll('.graph-point-cropped')
+    expect(cropped).toHaveLength(1)
+    expect(cropped[0]!.getAttribute('data-direction')).toBe('low')
+  })
+
+  it('keeps every point, negatives included, inside the drawn axis', () => {
+    renderXy(monthlyDeals([{ month: '2024-07', amount: -40 }, { month: '2024-08', amount: 144 }]))
+    const chart = screen.getByRole('img', { name: 'Line chart' })
+    expect(chart.querySelectorAll('.graph-point-cropped')).toHaveLength(0)
+    const gridYs = Array.from(chart.querySelectorAll('line')).map((l) => Number(l.getAttribute('y1')))
+    const top = Math.min(...gridYs)
+    const bottom = Math.max(...gridYs)
+    for (const y of ys(chart, 'circle.graph-point')) {
+      expect(y).toBeGreaterThanOrEqual(top)
+      expect(y).toBeLessThanOrEqual(bottom)
+    }
+  })
+
   it('shows a placeholder with no data points', () => {
     render(
       <GraphWidgetBody

@@ -10,7 +10,9 @@ import {
   aggregate,
   bucketKey,
   MAX_PIE_SLICES,
+  niceRange,
   niceTicks,
+  outlierFences,
   OTHER_LABEL,
   pieSlices,
   statValue,
@@ -204,6 +206,46 @@ describe('niceTicks', () => {
     const ticks = niceTicks(9500)
     expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(9500)
     expect(ticks.length).toBeLessThanOrEqual(6)
+  })
+})
+
+describe('niceRange', () => {
+  it('never ends below the max (4.4 used to stop at 4, drawing the top point off the chart)', () => {
+    const ticks = niceRange(0, 4.4)
+    expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(4.4)
+    expect(niceTicks(4.4)[niceTicks(4.4).length - 1]).toBeGreaterThanOrEqual(4.4)
+  })
+
+  it('covers negative values and always includes zero', () => {
+    const ticks = niceRange(-35, 120)
+    expect(ticks[0]).toBeLessThanOrEqual(-35)
+    expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(120)
+    expect(ticks).toContain(0)
+    expect(niceRange(50, 80)[0]).toBe(0)
+  })
+
+  it('returns [0] for an all-zero range', () => {
+    expect(niceRange(0, 0)).toEqual([0])
+  })
+})
+
+describe('outlierFences', () => {
+  it('flags only values far from the rest', () => {
+    const { low, high } = outlierFences([100, 120, 90, 110, 105, 95, 100000])
+    expect(high).toBeLessThan(100000)
+    expect(high).toBeGreaterThan(120)
+    expect(low).toBeLessThan(90)
+  })
+
+  it('flags nothing under 4 values, or when every value is equal', () => {
+    expect(outlierFences([1, 2, 1000])).toEqual({ low: -Infinity, high: Infinity })
+    expect(outlierFences([0, 0, 0, 0, 1000])).toEqual({ low: -Infinity, high: Infinity })
+  })
+
+  it('keeps a small wobble around a flat line inside the fences', () => {
+    const { low, high } = outlierFences([50, 50, 50, 50, 51, 49])
+    expect(low).toBeLessThan(49)
+    expect(high).toBeGreaterThan(51)
   })
 })
 
