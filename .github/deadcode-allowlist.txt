@@ -5,6 +5,7 @@
 # code, or add it here if it is deliberate public API. Regenerate with:
 #   cd core && deadcode -f '{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}' ./... | sort
 core/internal/app.App.Handler
+core/internal/auth/providers.Handler.SetDirectory
 core/internal/module.ensureSchema
 core/internal/module.EnsureSchema
 core/internal/module.MigrateModules
@@ -18,6 +19,7 @@ core/orm.ExposedTableNames
 core/orm.ExtendSchema
 core/orm.In
 core/orm/internal/registry.ExtendSchema
+core/orm/internal/registry.mergeExtensions
 core/orm/internal/registry.WithFieldGroups
 core/orm/internal/registry.WithReadOnlyFields
 core/orm.NewNoopLogger
@@ -29,5 +31,6 @@ core/orm/query.InsertBuilder.Exec
 core/orm/query.InsertBuilder.OnConflictDoNothing
 core/orm.Repo
 core/orm.Select
+core/orm.SelectForUpdate
 core/orm.WithFieldGroups
 core/orm.WithReadOnlyFields

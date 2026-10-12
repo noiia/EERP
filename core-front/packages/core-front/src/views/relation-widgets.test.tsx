@@ -1187,7 +1187,7 @@ describe('totals/recap', () => {
 
 describe('relation/list by zone (inside)', () => {
   it('lists rows inside the record zone for an inside relation', async () => {
-    const list = vi.fn(async (_entity: string, _options?: unknown) => [] as RelationRecord[])
+    const list = vi.fn<(entity: string, options?: unknown) => Promise<RelationRecord[]>>(async () => [])
     const field: FieldDescriptor = {
       name: 'zone_contacts',
       type: 'relation',

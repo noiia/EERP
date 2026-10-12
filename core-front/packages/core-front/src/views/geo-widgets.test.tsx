@@ -23,7 +23,7 @@ vi.mock('leaflet', () => {
     remove: vi.fn(),
   })
   const L = {
-    map: vi.fn((_el: unknown, _opts?: Record<string, unknown>) => makeMap()),
+    map: vi.fn<(el: unknown, opts?: Record<string, unknown>) => ReturnType<typeof makeMap>>(() => makeMap()),
     tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
     divIcon: vi.fn(() => ({})),
     marker: vi.fn((latlng: [number, number], opts?: { draggable?: boolean }) => {

@@ -122,7 +122,6 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
       })
     }
     map.setView(latlng, Math.max(map.getZoom?.() ?? 13, 13))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [L, map, point?.[0], point?.[1], disabled])
 
   const locate = async () => {
@@ -296,7 +295,6 @@ export function GeoShapeWidget({ value, onChange, disabled }: WidgetProps) {
         layers.current.push(handle)
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [L, map, vertices, editable, value])
 
   return (

@@ -74,15 +74,6 @@ type RoleMapping struct {
 	Method string    `json:"method"`
 }
 
-// LLDAPDefaults are LLDAP's schema defaults (ou=people, uid, mail, memberOf).
-func LLDAPDefaults(baseDN string) LDAPConfig {
-	return LDAPConfig{
-		Label: "LLDAP", BaseDN: "ou=people," + baseDN,
-		UserFilter: "(&(objectClass=person)(uid={username}))",
-		EmailAttr:  "mail", NameAttr: "cn", GroupsAttr: "memberOf",
-	}
-}
-
 func (m Methods) defaultID() string {
 	if m.Default == "" {
 		return "local"

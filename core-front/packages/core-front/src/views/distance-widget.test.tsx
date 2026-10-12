@@ -19,7 +19,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('DistanceWidget', () => {
   it('asks the BFF for the two references and shows km', async () => {
-    const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify({ meters: 12400 })))
+    const fetchMock = vi.fn<(url: string) => Promise<Response>>(async () => new Response(JSON.stringify({ meters: 12400 })))
     vi.stubGlobal('fetch', fetchMock)
     useUnitStore.getState().setSystem('metric')
     render(

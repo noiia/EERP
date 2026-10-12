@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     nonce?: string
     verifier?: string
     next?: string
-  } | null = null
+  } | null
   try {
     saved = raw ? JSON.parse(raw) : null
   } catch {

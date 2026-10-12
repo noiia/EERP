@@ -73,7 +73,6 @@ export function GeoCenterInput({
 /** A zone record ("table:id:column") among the zone entities a point field declares. */
 export function ZoneRecordInput({
   zones,
-  value: _value,
   onChange,
 }: {
   zones: { entity: string; field: string; label: string }[]
