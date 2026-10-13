@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"core/internal/notify"
 	"core/internal/testdb"
 	_ "core/modules/notify"
+	"core/orm"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -36,6 +38,8 @@ func TestHandler_SeedRunsInBackground(t *testing.T) {
 	}
 	svc := notify.NewService(notify.NewRepository(app.DB), nil)
 	h := devseed.NewHandlerN(app.DB, nil, "development", svc, 20) // 20 rows per table: fast
+	var indexed atomic.Int32
+	h.SetIndexer(func(context.Context, *orm.DB) ([]string, error) { indexed.Add(1); return nil, nil })
 
 	post := func(body string) *httptest.ResponseRecorder {
 		e := echo.New()
@@ -74,6 +78,9 @@ func TestHandler_SeedRunsInBackground(t *testing.T) {
 	}
 	if status != "done" {
 		t.Fatalf("status = %q, want done", status)
+	}
+	if n := indexed.Load(); n != 1 {
+		t.Errorf("search indexer called %d times after a successful seed, want 1", n)
 	}
 	var data string
 	_ = app.DB.QueryRow(ctx, `SELECT data FROM notification WHERE id = $1`, body.NotificationID).Scan(&data)

@@ -29,6 +29,8 @@ type Handler struct {
 	environment string
 	n           int
 	notifier    Notifier
+	// index runs after a successful seed (searchindex.Ensure in production).
+	index func(context.Context, *orm.DB) ([]string, error)
 	// mu serializes POST's "none running → start" so two concurrent requests
 	// can't both start a seed for one tenant.
 	mu sync.Mutex
@@ -43,8 +45,13 @@ func NewHandler(db *orm.DB, store SampleStore, environment string, notifier Noti
 
 // NewHandlerN is NewHandler writing n rows per table (tests use a small n).
 func NewHandlerN(db *orm.DB, store SampleStore, environment string, notifier Notifier, n int) *Handler {
-	return &Handler{db: db, store: store, environment: environment, n: n, notifier: notifier}
+	return &Handler{db: db, store: store, environment: environment, n: n, notifier: notifier, index: searchindex.Ensure}
 }
+
+// SetIndexer replaces the post-seed search indexer. Test-only: a handler test
+// must not build trigram indexes on whatever tables the shared test database
+// holds.
+func (h *Handler) SetIndexer(f func(context.Context, *orm.DB) ([]string, error)) { h.index = f }
 
 func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{"error": map[string]string{"code": code, "message": msg}})
@@ -94,7 +101,7 @@ func (h *Handler) Seed(c *echo.Context) error {
 		// (seeding ANALYZEs them): index them now rather than at the next hourly
 		// pass, so searching the demo volume is fast as soon as the seed ends.
 		// Never a seed failure: the maintainer retries on its own.
-		if _, ierr := searchindex.Ensure(jobCtx, h.db); ierr != nil {
+		if _, ierr := h.index(jobCtx, h.db); ierr != nil {
 			common.Logger.Warn("devseed: search indexes", zap.Error(ierr))
 		}
 		return results, nil
