@@ -1,0 +1,14 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "notify",
+    "display_name": "Notifications",
+    "version": "0.0.1",
+    "author": "Edwin Lecomte",
+    "description": "Core notifications: global activities and personal notifications.",
+    "depends": ["auth"],
+    "app_mode": false,
+    "static_files": {},
+    "is_service": false,
+    "auto_install": true
+}
