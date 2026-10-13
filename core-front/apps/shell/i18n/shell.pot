@@ -1691,3 +1691,6 @@ msgstr ""
 
 msgid "more than"
 msgstr ""
+
+msgid "Close"
+msgstr ""

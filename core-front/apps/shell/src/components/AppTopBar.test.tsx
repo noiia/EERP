@@ -248,6 +248,12 @@ describe('AppTopBar', () => {
       expect(current).not.toHaveAttribute('href')
     })
 
+    it('grows the building icon by 3px per side on a phone', () => {
+      pathnameMock.mockReturnValue('/app/crm/contacts')
+      render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
+      expect(screen.getByTestId('company-building-icon')).toHaveStyle({ fontSize: '20px' })
+    })
+
     it('drops the company-name text, keeping the building icon accessible via aria-label', () => {
       pathnameMock.mockReturnValue('/app/crm/contacts')
       render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
@@ -388,6 +394,24 @@ describe('AppTopBar', () => {
     pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
     expect(screen.getByRole('button', { name: /acme corp/i })).toBeInTheDocument()
+  })
+
+  it('puts the notification bell just left of the company switcher', () => {
+    pathnameMock.mockReturnValue('/app/crm/contacts')
+    render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
+    const bell = screen.getByRole('button', { name: 'Notifications' })
+    const company = screen.getByRole('button', { name: /acme corp/i })
+    const crumbs = screen.getByRole('navigation', { name: 'breadcrumb' })
+    // After the breadcrumbs (the right-hand side of the bar), right before the switcher.
+    expect(crumbs.compareDocumentPosition(bell) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(bell.nextElementSibling).toBe(company)
+  })
+
+  it('keeps the same wide gap between the company switcher and the account menu, building 14px', () => {
+    pathnameMock.mockReturnValue('/app/crm/contacts')
+    render(<AppTopBar identity={identity} activeCompany={acme} companies={[acme]} />)
+    expect(screen.getByRole('button', { name: /acme corp/i })).toHaveStyle({ marginRight: '24px' })
+    expect(screen.getByTestId('company-building-icon')).toHaveStyle({ fontSize: '14px' })
   })
 
   it('renders no company switcher when the active company is unknown', () => {

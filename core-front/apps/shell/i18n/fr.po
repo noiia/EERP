@@ -1850,3 +1850,6 @@ msgstr "sur"
 
 msgid "more than"
 msgstr "plus de"
+
+msgid "Close"
+msgstr "Fermer"

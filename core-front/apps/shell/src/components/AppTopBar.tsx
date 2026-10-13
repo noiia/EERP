@@ -431,6 +431,8 @@ function CompanySwitcher({
   // labels at this width, so the building icon alone (real aria-label below,
   // since the visible text it used to double as is gone) is what's left.
   const compact = useMediaQuery(`(max-width:${layout.topBarCompactWidth}px)`)
+  // On a phone the building icon grows 3px per side, like the notification bell.
+  const phone = useMediaQuery(`(max-width:${layout.phoneMaxWidth - 0.05}px)`)
 
   function close() {
     setAnchorEl(null)
@@ -458,7 +460,8 @@ function CompanySwitcher({
           display: 'flex',
           alignItems: 'center',
           gap: 0.5,
-          mr: 2,
+          // The same gap the notification bell keeps before this switcher.
+          mr: 3,
           color: 'inherit',
           background: 'none',
           border: 'none',
@@ -467,7 +470,11 @@ function CompanySwitcher({
           p: 0,
         }}
       >
-        <FontAwesomeIcon icon={byPrefixAndName.fas['building']} size="sm" />
+        <FontAwesomeIcon
+          icon={byPrefixAndName.fas['building']}
+          data-testid="company-building-icon"
+          style={{ fontSize: phone ? 20 : 14 }}
+        />
         {!compact && activeCompany.name}
       </Box>
       <Menu
@@ -542,10 +549,10 @@ export function AppTopBar({
           zIndex.drawer, over MUI's AppBar default) — only modals/popovers go higher. */}
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar variant="dense">
-          <NotificationBell />
           {activeCompany && <CompanyLogo companyId={activeCompany.id} />}
           <PathBreadcrumbs pathname={pathname} />
           <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />
+          <NotificationBell />
           {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
           <UserMenu identity={identity} email={email} />
         </Toolbar>
