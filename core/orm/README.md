@@ -574,7 +574,9 @@ Soft-deleted rows are always excluded from list results.
 it is the planner's estimate and the response adds `"total_estimated": true`
 (the key is absent when exact). Why: an exact `COUNT(*)` scans every matching
 row, so its cost grows with the table while the page itself stays fast. Never
-use an estimated total as a loop bound — page until an empty page
+use an estimated total as a loop bound or a last-page number — for a filter the
+planner can't estimate it can undercount by orders of magnitude (floored at
+10 001) — page until an empty page
 ([ADR-032](../../docs/adr/ADR-032-list-read-performance.md)).
 
 The same two primitives are available on any query builder:

@@ -24,7 +24,10 @@ a capped `count(*)` over a `LIMIT n+1` subquery). Beyond it the total is the pla
 (`SelectBuilder.EstimateRows`, from `EXPLAIN`), raised to the counted lower bound when the estimate
 comes in below it, and the envelope carries `"total_estimated": true`. Redis cache entries written
 before this change (no flag) decode as exact. The frontend's `formatTotal` renders such a total as
-an estimate ("~82,700"). Tables under the cap behave exactly as before.
+an estimate ("≈ 82718") in the list, Kanban, Calendar and record navigator. An estimate is displayed,
+never trusted as a bound: the list grid pages with an unknown row count and offers a next page while
+the current one is full, and the record navigator never disables "next" on it. Tables under the cap
+behave exactly as before.
 
 ### 2. Automatic trigram indexes
 `internal/searchindex` makes the framework index the columns the search bar queries, so a module
@@ -55,12 +58,20 @@ flowchart LR
   per table/column even when truncated.
 - **Never auto-drop:** a column that stops qualifying keeps its index; dropping is a manual decision.
 - **Own advisory lock** (`7311990002`, distinct from the schema lock `7311990001`) so a long build does
-  not stall schema migration, and several processes do not build the same index.
+  not stall schema migration, and several processes do not build the same index. The lock is only
+  tried (`pg_try_advisory_lock`): when another pass holds it, the pass is skipped and the next hourly
+  one catches up. Waiting would deadlock: a session blocked on the lock holds a snapshot that the
+  holder's `CREATE INDEX CONCURRENTLY` waits out, and Postgres can't detect the cycle.
 - **No DDL when idle:** the pass reads extension and index state first and issues no `Exec` when
   nothing is to do, because any DDL bumps the whole database's Redis cache generation (ADR-022).
+  `pg_trgm` is checked (and installed if absent) at most once per pass, only when an index must be
+  built, so a role refused `CREATE EXTENSION` yields one error, not one per column.
 - **Cadence:** `searchindex.Run` runs right after boot (off the boot path: a first build can take
   minutes) and hourly, from `App.Run`. Dev seeding calls `Ensure` itself once the seed succeeds, inside
-  the background job (a failure is logged, never a seed failure).
+  the background job, under a "Building search indexes" progress step (a failure is logged, never a
+  seed failure; it is skipped if the maintainer is mid-pass). Only tables with fresh statistics
+  qualify then: the seed ANALYZEs some of the tables it loads, the rest wait for autovacuum and the
+  hourly pass.
 
 ## Consequences and pitfalls
 - A new table is indexed within an hour of crossing 10 000 rows and being analyzed by autovacuum (or
@@ -68,7 +79,10 @@ flowchart LR
 - Searches shorter than 3 characters can't use trigrams and still scan, but are bounded by `LIMIT`
   plus the bounded count.
 - Estimated totals can be off by the statistics' error (82 718 estimated for 100 019 live rows
-  before an ANALYZE), so page until an empty page instead of trusting the last page number.
+  before an ANALYZE), and by far more for a filter the planner can't estimate (a text-cast
+  `filter[]` estimated 376 rows where 100 020 matched, so the total is the 10 001 floor): page until
+  an empty page instead of trusting the last page number.
+- A pass skipped because another holds the lock is not retried until the next tick (an hour later).
 - `CREATE EXTENSION pg_trgm` needs privileges; on a managed database an admin must run it once.
 - Indexes are not dropped automatically. Don't hand-write a trigram index in a module's `Migrate()`.
 
