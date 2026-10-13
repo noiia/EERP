@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { handleNotificationFrame, notifyLiveReconnect } from './notification-store'
 
 // Live user presence — online/absent/offline/busy/do_not_disturb — pushed
 // over a WebSocket the browser opens DIRECTLY against core-back, the one
@@ -66,6 +67,8 @@ export function connectPresenceSocket(): void {
       return
     }
     if (!msg || typeof msg !== 'object') return
+    // The same socket carries notification frames (internal/notify).
+    if (handleNotificationFrame(msg as Parameters<typeof handleNotificationFrame>[0])) return
     const m = msg as { type?: string; users?: { user_id: string; status: PresenceStatus }[]; user_id?: string; status?: PresenceStatus }
     if (m.type === 'snapshot' && m.users) {
       usePresenceStore.getState().setSnapshot(m.users)
@@ -73,6 +76,8 @@ export function connectPresenceSocket(): void {
       usePresenceStore.getState().setOne(m.user_id, m.status)
     }
   }
+  // Frames sent while the socket was down aren't replayed: re-read the feed.
+  ws.onopen = () => notifyLiveReconnect()
   ws.onclose = scheduleReconnect
   ws.onerror = () => ws.close()
 }

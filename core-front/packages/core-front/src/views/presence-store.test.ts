@@ -5,12 +5,14 @@ import {
   presenceStatusOf,
   usePresenceStore,
 } from './presence-store'
+import { onLiveReconnect, useNotificationStore } from './notification-store'
 
 class MockWebSocket {
   static instances: MockWebSocket[] = []
   onmessage: ((e: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
   onerror: (() => void) | null = null
+  onopen: (() => void) | null = null
   readyState = 0 // CONNECTING
   closed = false
   constructor(public url: string) {
@@ -73,6 +75,29 @@ describe('connectPresenceSocket', () => {
     const ws = MockWebSocket.instances[0]!
     ws.onmessage?.({ data: JSON.stringify({ type: 'update', user_id: 'u2', status: 'do_not_disturb' }) })
     expect(usePresenceStore.getState().statuses.u2).toBe('do_not_disturb')
+  })
+
+  it('routes notification frames to the notification store, not presence', () => {
+    useNotificationStore.setState({ items: [], unread: 0, hasNew: false, loaded: true })
+    connectPresenceSocket()
+    MockWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'notification',
+        notification: { id: 'n1', category: 'cron', kind: 'activity', title: 'Nightly', body: '', link: '/cron/1',
+          status: 'running', progress: null, progress_label: null, finished_at: null, created_at: '2026-10-13T10:00:00Z', data: null },
+      }),
+    })
+    expect(useNotificationStore.getState()).toMatchObject({ unread: 1, hasNew: true })
+    expect(usePresenceStore.getState().statuses).toEqual({})
+  })
+
+  it('tells listeners when the socket (re)opens, so the feed is re-read', () => {
+    const listener = vi.fn()
+    const stop = onLiveReconnect(listener)
+    connectPresenceSocket()
+    MockWebSocket.instances[0]!.onopen?.()
+    expect(listener).toHaveBeenCalledTimes(1)
+    stop()
   })
 
   it('ignores malformed frames instead of throwing', () => {

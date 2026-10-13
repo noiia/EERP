@@ -7,6 +7,7 @@ import '@/generated/generated-modules'
 import { AppTopBar } from '../../src/components/AppTopBar'
 import { ModulesInit } from '../../src/components/ModulesInit'
 import { PresenceInit } from '../../src/components/PresenceInit'
+import { NotificationsInit } from '../../src/components/NotificationsInit'
 import { ErpUiStyle } from '../../src/components/ErpUiStyle'
 import { SettingsUsersRegistryInit } from '../../src/components/SettingsUsersRegistryInit'
 import { SessionHydrator } from '../../src/components/SessionHydrator'
@@ -86,6 +87,7 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
       <SettingsUsersRegistryInit />
       <SessionHydrator identity={identity} />
       <PresenceInit />
+      <NotificationsInit />
       {/* The generic "undo a hard delete" toast (search-bar.tsx's saved-
           filter delete, calendar-renderer.tsx's drag-to-unschedule) —
           one instance app-wide, a plain Zustand store underneath so any
