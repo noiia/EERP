@@ -48,7 +48,7 @@ func TestSeedPictures(t *testing.T) {
 	}
 	store := &memStore{objs: map[string][]byte{}}
 	const n = 200
-	if _, err := devseed.Seed(ctx, app.DB, store, tenant, n, []string{"crm", "property"}); err != nil {
+	if _, err := devseed.SeedWithProgress(ctx, app.DB, store, tenant, n, []string{"crm", "property"}, nil); err != nil {
 		t.Fatal(err)
 	}
 

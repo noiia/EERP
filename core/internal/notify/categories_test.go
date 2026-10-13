@@ -3,6 +3,14 @@ package notify
 import "testing"
 
 func TestRegisterCategory(t *testing.T) {
+	// The registry is process-global and this binary's DB tests sync it into
+	// every tenant: restore it, so the fake category never reaches a database.
+	saved := Categories()
+	t.Cleanup(func() {
+		catMu.Lock()
+		categories = saved
+		catMu.Unlock()
+	})
 	RegisterCategory(Category{Key: "test_cat", Label: "Test category"})
 	RegisterCategory(Category{Key: "test_cat", Label: "Renamed"}) // re-registering updates, never duplicates
 

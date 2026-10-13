@@ -62,25 +62,10 @@ func analyze(temp string, tables ...string) []step {
 	return out
 }
 
-// Seed writes the full volume for tenantID: n rows each of contacts, CRM
-// leads, products, variants, quotes, invoices, rent receipts and event
-// bookings (quote and invoice lines at 2 per document, sale-line tax tags on
-// a share of them), plus extra companies, the tax catalog, tags, 1 property
-// per 100 receipts, and n/100 events with n/10 sessions — restricted to the
-// selected groups (nil = all) and their dependencies, skipping groups this
-// tenant already seeded (groups.go). Then Graph views and calculated fields
-// for every list-view entity that ends up over GraphThreshold rows
-// (graphs.go), and — with a store (nil = none) — a sample picture on every
-// picture field of the rows seeded now (pictures.go). One transaction: all or
-// nothing. ErrAlreadySeeded when every selected group was already seeded.
-func Seed(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID, n int, groups []string) ([]Result, error) {
-	return SeedWithProgress(ctx, db, store, tenantID, n, groups, nil)
-}
-
 // Progress receives the seed's completion (0–100) and current step label.
 type Progress func(pct int, label string)
 
-// Validate runs the checks Seed would fail on before writing anything:
+// Validate runs the checks SeedWithProgress would fail on before writing anything:
 // ErrUnknownGroup, or ErrAlreadySeeded when nothing selected is left to seed.
 func Validate(ctx context.Context, db *orm.DB, tenantID uuid.UUID, groups []string) error {
 	seeded, err := seededGroups(ctx, db, tenantID)
@@ -97,9 +82,20 @@ func Validate(ctx context.Context, db *orm.DB, tenantID uuid.UUID, groups []stri
 	return nil
 }
 
-// SeedWithProgress is Seed reporting its progress (nil = silent) after every
-// statement: one step per statement of the selected groups (and the prepare
-// steps of the ones they use), then the pictures and graph passes.
+// SeedWithProgress writes the full volume for tenantID: n rows each of contacts, CRM
+// leads, products, variants, quotes, invoices, rent receipts and event
+// bookings (quote and invoice lines at 2 per document, sale-line tax tags on
+// a share of them), plus extra companies, the tax catalog, tags, 1 property
+// per 100 receipts, and n/100 events with n/10 sessions — restricted to the
+// selected groups (nil = all) and their dependencies, skipping groups this
+// tenant already seeded (groups.go). Then Graph views and calculated fields
+// for every list-view entity that ends up over GraphThreshold rows
+// (graphs.go), and — with a store (nil = none) — a sample picture on every
+// picture field of the rows seeded now (pictures.go). One transaction: all or
+// nothing. ErrAlreadySeeded when every selected group was already seeded.
+// progress (nil = silent) is told after every statement: one step per
+// statement of the selected groups (and the prepare steps of the ones they
+// use), then the pictures and graph passes.
 func SeedWithProgress(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID, n int, groups []string, progress Progress) ([]Result, error) {
 	if progress == nil {
 		progress = func(int, string) {}

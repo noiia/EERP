@@ -35,9 +35,21 @@ func TestMigrate_SyncsCatalogAndAdminDefaults(t *testing.T) {
 
 	testdb.MigrateModules(t, app, "notify")
 
-	var cats, granted int
-	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM notification_category WHERE tenant_id = $1 AND deleted_at IS NULL`, tenant).Scan(&cats)
-	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM role_notification_category WHERE role_id = $1 AND deleted_at IS NULL`, adminRole).Scan(&granted)
+	// Only this binary's registered categories are counted: package tests run
+	// in parallel against one database, and another binary may sync more.
+	keys := []string{}
+	for _, c := range notify.Categories() {
+		keys = append(keys, c.Key)
+	}
+	countAdmin := func() (granted int) {
+		_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM role_notification_category rnc
+			JOIN notification_category c ON c.id = rnc.notification_category_id
+			WHERE rnc.role_id = $1 AND rnc.deleted_at IS NULL AND c.key = ANY($2)`, adminRole, keys).Scan(&granted)
+		return granted
+	}
+	var cats int
+	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM notification_category WHERE tenant_id = $1 AND deleted_at IS NULL AND key = ANY($2)`, tenant, keys).Scan(&cats)
+	granted := countAdmin()
 	if want := len(notify.Categories()); cats != want || granted != want {
 		t.Fatalf("catalog = %d, admin grants = %d, want %d each", cats, granted, want)
 	}
@@ -48,7 +60,7 @@ func TestMigrate_SyncsCatalogAndAdminDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	testdb.MigrateModules(t, app, "notify")
-	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM role_notification_category WHERE role_id = $1 AND deleted_at IS NULL`, adminRole).Scan(&granted)
+	granted = countAdmin()
 	if granted != len(notify.Categories())-1 {
 		t.Errorf("admin grants after reboot = %d, want %d (cron stays removed)", granted, len(notify.Categories())-1)
 	}
