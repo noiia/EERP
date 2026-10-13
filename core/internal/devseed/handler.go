@@ -1,15 +1,17 @@
 package devseed
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"time"
+	"sync"
 
 	"core/internal/auth"
 	"core/orm"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
 
@@ -23,18 +25,22 @@ type Handler struct {
 	store       SampleStore
 	environment string
 	n           int
+	notifier    Notifier
+	// mu serializes POST's "none running → start" so two concurrent requests
+	// can't both start a seed for one tenant.
+	mu sync.Mutex
 }
 
 // NewHandler seeds FullVolume rows; environment is Config.Environment — the
 // endpoint refuses anything but "development". store is the picture service's
 // object store, nil without s3_* (the seed then writes no pictures).
-func NewHandler(db *orm.DB, store SampleStore, environment string) *Handler {
-	return &Handler{db: db, store: store, environment: environment, n: FullVolume}
+func NewHandler(db *orm.DB, store SampleStore, environment string, notifier Notifier) *Handler {
+	return NewHandlerN(db, store, environment, notifier, FullVolume)
 }
 
-type seedResponse struct {
-	Results []Result `json:"results"`
-	Seconds float64  `json:"seconds"`
+// NewHandlerN is NewHandler writing n rows per table (tests use a small n).
+func NewHandlerN(db *orm.DB, store SampleStore, environment string, notifier Notifier, n int) *Handler {
+	return &Handler{db: db, store: store, environment: environment, n: n, notifier: notifier}
 }
 
 func errorJSON(c *echo.Context, status int, code, msg string) error {
@@ -60,9 +66,8 @@ func (h *Handler) Seed(c *echo.Context) error {
 		}
 	}
 	id := auth.MustIdentity(c.Request().Context())
-	start := time.Now()
-	results, err := Seed(c.Request().Context(), h.db, h.store, id.TenantID, h.n, req.Groups)
-	switch {
+	ctx := c.Request().Context()
+	switch err := Validate(ctx, h.db, id.TenantID, req.Groups); {
 	case errors.Is(err, ErrAlreadySeeded):
 		return errorJSON(c, http.StatusConflict, "CONFLICT", err.Error())
 	case errors.Is(err, ErrUnknownGroup):
@@ -70,7 +75,20 @@ func (h *Handler) Seed(c *echo.Context) error {
 	case err != nil:
 		return err
 	}
-	return c.JSON(http.StatusOK, seedResponse{Results: results, Seconds: time.Since(start).Seconds()})
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if running, err := h.notifier.Repo().RunningActivity(ctx, id.TenantID, "dev_seed"); err != nil {
+		return err
+	} else if running != nil {
+		return errorJSON(c, http.StatusConflict, "CONFLICT", "A demo data seed is already running for this workspace.")
+	}
+	notificationID, err := RunJob(ctx, h.notifier, id.TenantID, id.UserID, func(jobCtx context.Context, p Progress) ([]Result, error) {
+		return SeedWithProgress(jobCtx, h.db, h.store, id.TenantID, h.n, req.Groups, p)
+	}, false)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusAccepted, map[string]any{"notification_id": notificationID})
 }
 
 // Groups handles GET /api/v1/dev_seed (dev_seed:dev_seed:read): the seed
@@ -81,5 +99,11 @@ func (h *Handler) Groups(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]any{"data": groups})
+	var running *uuid.UUID
+	if n, err := h.notifier.Repo().RunningActivity(c.Request().Context(), id.TenantID, "dev_seed"); err != nil {
+		return err
+	} else if n != nil {
+		running = &n.ID
+	}
+	return c.JSON(http.StatusOK, map[string]any{"data": groups, "running": running})
 }

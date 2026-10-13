@@ -642,7 +642,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// Settings → Developer's "full" volume (~100k rows per business table, set-
 	// based SQL). Refuses outside environment "development" and runs once per
 	// tenant; permission dev_seed:dev_seed:write derives from the route.
-	devSeedHandler := devseed.NewHandler(app.DB, seedPictures, a.cfg.Environment)
+	devSeedHandler := devseed.NewHandler(app.DB, seedPictures, a.cfg.Environment, notifySvc)
 	srv.Echo().POST("/api/v1/dev_seed", devSeedHandler.Seed, jwtMw, permMw)
 	srv.Echo().GET("/api/v1/dev_seed", devSeedHandler.Groups, jwtMw, permMw)
 

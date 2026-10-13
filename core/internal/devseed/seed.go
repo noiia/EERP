@@ -74,6 +74,36 @@ func analyze(temp string, tables ...string) []step {
 // picture field of the rows seeded now (pictures.go). One transaction: all or
 // nothing. ErrAlreadySeeded when every selected group was already seeded.
 func Seed(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID, n int, groups []string) ([]Result, error) {
+	return SeedWithProgress(ctx, db, store, tenantID, n, groups, nil)
+}
+
+// Progress receives the seed's completion (0–100) and current step label.
+type Progress func(pct int, label string)
+
+// Validate runs the checks Seed would fail on before writing anything:
+// ErrUnknownGroup, or ErrAlreadySeeded when nothing selected is left to seed.
+func Validate(ctx context.Context, db *orm.DB, tenantID uuid.UUID, groups []string) error {
+	seeded, err := seededGroups(ctx, db, tenantID)
+	if err != nil {
+		return err
+	}
+	seed, _, err := plan(groups, seeded)
+	if err != nil {
+		return err
+	}
+	if len(seed) == 0 {
+		return ErrAlreadySeeded
+	}
+	return nil
+}
+
+// SeedWithProgress is Seed reporting its progress (nil = silent) after every
+// statement: one step per statement of the selected groups (and the prepare
+// steps of the ones they use), then the pictures and graph passes.
+func SeedWithProgress(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID, n int, groups []string, progress Progress) ([]Result, error) {
+	if progress == nil {
+		progress = func(int, string) {}
+	}
 	byGroup, err := groupSteps()
 	if err != nil {
 		return nil, err
@@ -95,14 +125,33 @@ func Seed(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID
 		if _, err := tx.Exec(ctx, `SELECT setseed(0.42)`); err != nil {
 			return fmt.Errorf("devseed: setseed: %w", err)
 		}
+		total, groupCount := 2, 0 // pictures + graphs
+		for _, g := range AllGroups {
+			if seed[g.Key] {
+				groupCount++
+			}
+			for _, s := range byGroup[g.Key] {
+				if seed[g.Key] || (prepare[g.Key] && s.prepare()) {
+					total++
+				}
+			}
+		}
+		done, groupIndex := 0, 0
 		for _, g := range AllGroups {
 			if !seed[g.Key] && !prepare[g.Key] {
 				continue
+			}
+			label := "Preparing " + g.Label
+			if seed[g.Key] {
+				groupIndex++
+				label = fmt.Sprintf("Seeding %s (%d/%d)", g.Label, groupIndex, groupCount)
 			}
 			for _, s := range byGroup[g.Key] {
 				if !seed[g.Key] && !s.prepare() {
 					continue
 				}
+				progress(done*100/total, label)
+				done++
 				args := []any{tenantID, n}
 				if !strings.Contains(s.sql, "$1") { // ANALYZE / CREATE INDEX take no parameters
 					args = nil
@@ -123,6 +172,8 @@ func Seed(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID
 				}
 			}
 		}
+		progress(done*100/total, "Adding pictures")
+		done++
 		if store != nil {
 			pictureResults, err := seedPictures(ctx, tx, store, tenantID, seed)
 			if err != nil {
@@ -130,6 +181,7 @@ func Seed(ctx context.Context, db *orm.DB, store SampleStore, tenantID uuid.UUID
 			}
 			results = append(results, pictureResults...)
 		}
+		progress(done*100/total, "Building graph views")
 		graphResults, err := seedGraphs(ctx, tx, tenantID)
 		if err != nil {
 			return err
