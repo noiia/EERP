@@ -137,3 +137,26 @@ func updatePayload(userID uuid.UUID, status string) []byte {
 	}
 	return payload
 }
+
+// SendToUsers delivers payload to every open connection of the given users in
+// tenantID — the targeted path notifications use (a personal one to its owner,
+// a global one to its audience). Visibility is decided by the caller
+// (internal/notify); the hub only routes, and never crosses tenants.
+func (h *Hub) SendToUsers(tenantID uuid.UUID, userIDs []uuid.UUID, payload []byte) {
+	h.mu.Lock()
+	var targets []*client
+	for _, u := range userIDs {
+		for c := range h.byUser[u] {
+			if c.tenantID == tenantID {
+				targets = append(targets, c)
+			}
+		}
+	}
+	h.mu.Unlock()
+	for _, c := range targets {
+		select {
+		case c.send <- payload:
+		default:
+		}
+	}
+}
