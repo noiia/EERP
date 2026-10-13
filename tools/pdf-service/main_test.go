@@ -143,3 +143,11 @@ func TestRender_TimeoutSecondsPassedThrough(t *testing.T) {
 		t.Errorf("Timeout = %v, want 5s", fake.lastReq.Timeout)
 	}
 }
+
+func TestVersion(t *testing.T) {
+	rec := httptest.NewRecorder()
+	newMux(&fakeRenderer{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/version", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"version":"`+version+`"`) {
+		t.Fatalf("GET /version = %d %s", rec.Code, rec.Body.String())
+	}
+}

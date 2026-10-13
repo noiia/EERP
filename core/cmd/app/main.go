@@ -15,13 +15,10 @@ import (
 	"core/internal/app"
 	"core/internal/common"
 	"core/internal/types"
+	"core/internal/version"
 
 	"go.uber.org/zap"
 )
-
-// version is the build's version, stamped by CI through the image build
-// (-ldflags "-X main.version=…", see core/Dockerfile); "dev" for local builds.
-var version = "dev"
 
 func main() {
 	configFilePtr := flag.String("config", "", "MUST TO HAVE -- config file path")
@@ -39,7 +36,7 @@ func main() {
 	if err := common.InitLogger(*debugPtr); err != nil {
 		panic(err)
 	}
-	common.Logger.Info("EERP backend", zap.String("version", version))
+	common.Logger.Info("EERP backend", zap.String("version", version.Version))
 
 	cfg, err := common.DecodeJSON[*types.Config](*configFilePtr)
 	if err != nil {

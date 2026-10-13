@@ -36,6 +36,7 @@ import (
 	"core/internal/savedfilter"
 	"core/internal/settings"
 	"core/internal/types"
+	"core/internal/version"
 	"core/internal/website"
 	_ "core/modules/all"
 	authmodule "core/modules/auth"
@@ -508,6 +509,38 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// either, the feature is simply not mounted, same posture as pictures'
 	// own s3_* gate. GeneratePDF is deliberately NOT behind permMw (see its
 	// own doc comment); DownloadPDF is, since it's a flat route.
+	// One NATS connection for everything core asks other services over the bus
+	// (report renders, version probes). RetryOnFailedConnect: a transient NATS
+	// outage at boot (e.g. the nats container is still starting) must not crash
+	// the whole API server for features that degrade gracefully — Connect returns
+	// immediately, reconnecting in the background; a request attempted before
+	// the first successful connect just fails that one request.
+	var nc *nats.Conn
+	if configContent.NatsURL != "" {
+		nc, err = nats.Connect(configContent.NatsURL,
+			nats.RetryOnFailedConnect(true),
+			nats.MaxReconnects(-1),
+		)
+		if err != nil {
+			return fmt.Errorf("Error connecting to NATS: %w", err)
+		}
+	}
+
+	// ── Versions ──────────────────────────────────────────────────────────────
+	// Which build of each service is running, for the Settings dashboard
+	// (internal/version). Register a new service here with its probe.
+	versions := version.NewRegistry()
+	switch {
+	case nc != nil:
+		versions.Register(version.Service{Name: "pdf-service", Label: "PDF worker", Probe: version.NATSProbe(nc, "pdf-service")})
+	case configContent.PDFServiceURL != "":
+		versions.Register(version.Service{
+			Name: "pdf-service", Label: "PDF worker",
+			Probe: version.HTTPProbe(&http.Client{}, configContent.PDFServiceURL),
+		})
+	}
+	srv.Echo().GET("/api/v1/versions", versions.Handler, jwtMw)
+
 	if pictures.S3Configured(configContent) && reports.Configured(configContent) {
 		reportsObjects, err := pictures.NewS3Store(configContent)
 		if err != nil {
@@ -518,20 +551,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		// (to actually get multi-worker scaling), so it names real intent;
 		// pdf_service_url stays the zero-extra-infra default otherwise.
 		var pdfRenderer reports.PDFRenderer
-		if configContent.NatsURL != "" {
-			// RetryOnFailedConnect: a transient NATS outage at boot (e.g. the
-			// nats container is still starting) must not crash the whole API
-			// server for a feature that's supposed to degrade gracefully like
-			// every other reports dependency — Connect returns immediately,
-			// reconnecting in the background; a render attempted before the
-			// first successful connect just fails that one request (502).
-			nc, err := nats.Connect(configContent.NatsURL,
-				nats.RetryOnFailedConnect(true),
-				nats.MaxReconnects(-1),
-			)
-			if err != nil {
-				return fmt.Errorf("Error connecting to NATS for reports: %w", err)
-			}
+		if nc != nil {
 			pdfRenderer = reports.NewNATSPDFRenderer(nc, 25*time.Second)
 			common.Logger.Info("reports: rendering via NATS", zap.String("nats_url", configContent.NatsURL))
 		} else {

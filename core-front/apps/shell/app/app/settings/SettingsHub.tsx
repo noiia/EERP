@@ -78,13 +78,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
 ] as const
 
+/** One deployed service's build version; `version` null = it didn't answer. */
+export interface ServiceVersion {
+  name: string
+  /** English msgid, translated here. */
+  label: string
+  version: string | null
+}
+
 export default function SettingsHub({
   sections = SETTINGS_SECTIONS,
-  version,
+  versions = [],
 }: {
   sections?: readonly SettingsSection[]
-  /** The running build's version (CI-stamped), shown centered under the sections. */
-  version?: string
+  /** Which build of each service is running, shown centered under the sections. */
+  versions?: readonly ServiceVersion[]
 }) {
   // Section titles/descriptions are gettext msgids — the shell ships their catalogs
   // in apps/shell/i18n/*.po, so the hub localizes without touching SETTINGS_SECTIONS.
@@ -120,16 +128,18 @@ export default function SettingsHub({
           </Card>
         ))}
       </Box>
-      {version ? (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          component="p"
-          data-testid="app-version"
-          sx={{ mt: 6, textAlign: 'center' }}
+      {versions.length ? (
+        <Stack
+          direction="row"
+          data-testid="app-versions"
+          sx={{ mt: 6, justifyContent: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 0.5 }}
         >
-          {t('Version')} {version}
-        </Typography>
+          {versions.map((s) => (
+            <Typography key={s.name} variant="caption" color="text.secondary" data-testid={`version-${s.name}`}>
+              {t(s.label)} {s.version ?? t('unavailable')}
+            </Typography>
+          ))}
+        </Stack>
       ) : null}
     </Container>
   )

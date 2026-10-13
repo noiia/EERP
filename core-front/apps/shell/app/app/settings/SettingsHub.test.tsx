@@ -14,11 +14,21 @@ describe('SettingsHub', () => {
     expect(link).toHaveAttribute('href', '/app/settings/appearance')
   })
 
-  it('shows the build version centered under the sections, only when known', () => {
-    const { rerender } = render(<SettingsHub version="0.101.0" />)
-    expect(screen.getByTestId('app-version')).toHaveTextContent('Version 0.101.0')
+  it('shows each service\'s build version under the sections, unanswered ones as unavailable', () => {
+    const { rerender } = render(
+      <SettingsHub
+        versions={[
+          { name: 'core-front', label: 'Frontend', version: '0.103.0' },
+          { name: 'core', label: 'Core', version: '0.102.0' },
+          { name: 'pdf-service', label: 'PDF worker', version: null },
+        ]}
+      />,
+    )
+    expect(screen.getByTestId('version-core-front')).toHaveTextContent('Frontend 0.103.0')
+    expect(screen.getByTestId('version-core')).toHaveTextContent('Core 0.102.0')
+    expect(screen.getByTestId('version-pdf-service')).toHaveTextContent('PDF worker unavailable')
     rerender(<SettingsHub />)
-    expect(screen.queryByTestId('app-version')).toBeNull()
+    expect(screen.queryByTestId('app-versions')).toBeNull()
   })
 
   it('ships Global settings (Colors + Reports, at the stable /settings/appearance path) as a default section', () => {

@@ -26,6 +26,18 @@ msgstr "Liste"
 msgid "Manage your workspace preferences."
 msgstr "Gérez les préférences de votre espace de travail."
 
+msgid "Frontend"
+msgstr "Interface"
+
+msgid "Core"
+msgstr "Serveur"
+
+msgid "PDF worker"
+msgstr "Générateur PDF"
+
+msgid "unavailable"
+msgstr "indisponible"
+
 msgid "Appearance"
 msgstr "Apparence"
 

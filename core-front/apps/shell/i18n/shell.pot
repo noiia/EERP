@@ -35,6 +35,18 @@ msgstr ""
 msgid "Manage your workspace preferences."
 msgstr ""
 
+msgid "Frontend"
+msgstr ""
+
+msgid "Core"
+msgstr ""
+
+msgid "PDF worker"
+msgstr ""
+
+msgid "unavailable"
+msgstr ""
+
 #: app/settings/SettingsHub.tsx src/components/AppearanceSettings.tsx
 msgid "Appearance"
 msgstr ""

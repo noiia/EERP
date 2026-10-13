@@ -216,3 +216,20 @@ func (c *countingRenderer) Render(_ context.Context, _ renderer.RenderRequest) (
 	}
 	return []byte("%PDF-ok"), nil
 }
+
+func TestAnswerVersion_RepliesWithTheBuildVersion(t *testing.T) {
+	url := startEmbeddedNATS(t)
+	sub, err := answerVersion(connect(t, url))
+	if err != nil {
+		t.Fatalf("answerVersion: %v", err)
+	}
+	defer func() { _ = sub.Unsubscribe() }()
+
+	msg, err := connect(t, url).Request(versionSubject, nil, 2*time.Second)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if string(msg.Data) != version {
+		t.Errorf("reply = %q, want %q", msg.Data, version)
+	}
+}

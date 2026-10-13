@@ -1,16 +1,30 @@
-name: Build core (backend)
+name: Build service image
 
-# Reusable workflow ONLY — it never runs on its own, it is invoked via
-# `uses: ./.github/workflows/build-core.yml` (see test-build.yml).
+# Reusable workflow ONLY — test-build.yml calls it once per service listed in
+# .github/services.json whose code changed (a matrix). It builds that service's
+# Docker image and publishes it to the GitHub Container Registry (ghcr.io).
 #
-# It builds the Go backend Docker image (core/Dockerfile) and publishes it to the
-# GitHub Container Registry (ghcr.io).
+# Every image is built from the repo root (context `.`), so a Dockerfile can COPY
+# anything it needs (the frontend reads module views under core/modules), and gets
+# two build args — EERP_VERSION (the build's version, stamped into the service so
+# Settings can show it) and API_BASE (the frontend's BFF -> Go origin). A
+# Dockerfile ignores the args it doesn't declare.
 on:
   workflow_call:
     inputs:
-      # Variable handed in through the call: the tag applied to the published image.
+      # The image name under ghcr.io/<owner>/ (services.json `image`).
+      image:
+        description: "Image name, e.g. eerp-core"
+        required: true
+        type: string
+      # Path of the service's Dockerfile from the repo root (services.json `dockerfile`).
+      dockerfile:
+        description: "Dockerfile path, e.g. core/Dockerfile"
+        required: true
+        type: string
+      # Extra tag applied to the published image.
       image_tag:
-        description: "Tag applied to the published image (e.g. a version, sha, or 'latest')"
+        description: "Tag applied to the published image (e.g. 'latest')"
         required: false
         type: string
         default: latest
@@ -22,8 +36,7 @@ on:
         type: string
         default: ""
       # Selects the GitHub deployment Environment whose variables/secrets back the
-      # build (configured under Settings -> Environments). Lets the caller target
-      # e.g. a 'staging' vs 'production' build context.
+      # build (configured under Settings -> Environments).
       environment:
         description: "GitHub Environment whose variables/secrets to use for the build"
         required: false
@@ -63,7 +76,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           # ghcr requires a lowercase path; repository_owner is already lowercase here.
-          images: ghcr.io/${{ github.repository_owner }}/eerp-core
+          images: ghcr.io/${{ github.repository_owner }}/${{ inputs.image }}
           tags: |
             type=raw,value=${{ inputs.image_tag }}
             type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
@@ -73,11 +86,15 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: core/Dockerfile
+          file: ${{ inputs.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # API_BASE comes from the selected GitHub Environment's variables, with a
+          # sane in-cluster default mirroring compose.yml.
           build-args: |
             EERP_VERSION=${{ inputs.version || 'dev' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            API_BASE=${{ vars.API_BASE || 'http://backend:8080' }}
+          # One cache scope per image, so services don't evict each other's layers.
+          cache-from: type=gha,scope=${{ inputs.image }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.image }}

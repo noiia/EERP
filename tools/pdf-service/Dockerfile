@@ -8,8 +8,10 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY tools/pdf-service/ ./
 
 # Static, stripped binary: no libc dependency on the runtime image, no debug info.
+# Stamped with the version CI computed for this build (.github/scripts/next-version.sh).
+ARG EERP_VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /app/pdf-service .
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${EERP_VERSION}" -o /app/pdf-service .
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 # chromedp's headless-only Chrome build: no GUI stack, far smaller than

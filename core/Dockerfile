@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # computed for this build (.github/workflows/test-build.yml); "dev" otherwise.
 ARG EERP_VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go build -C /app/core -ldflags "-X main.version=${EERP_VERSION}" -o /app/eerp ./cmd/app
+    go build -C /app/core -ldflags "-X core/internal/version.Version=${EERP_VERSION}" -o /app/eerp ./cmd/app
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 # Same Debian release as the golang builder (trixie) so the cgo binary's glibc

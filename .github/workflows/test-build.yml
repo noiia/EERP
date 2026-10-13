@@ -1,19 +1,21 @@
 name: Test & Build
 
 # Top-level pipeline: run the test + coverage checks, then (only if they pass)
-# build and publish whichever Docker image(s) actually changed to ghcr.io —
-# each image only rebuilds when the code it's actually built FROM changed
-# since the last push (the `changes` job below), so an unrelated change
-# (e.g. only core-front/ touched) never produces a redundant, identical
-# core/pdf-service image.
+# build and publish whichever service image(s) actually changed to ghcr.io —
+# each image only rebuilds when the code it's built FROM changed since the last
+# push (the `changes` job below), so an unrelated change never produces a
+# redundant, identical image.
 #
-# It is the "summary" workflow wiring the reusable pieces together:
-#   - test-check.yml         (Go + frontend tests and coverage — always runs)
-#   - build-core.yml         (backend image -> ghcr, only if `core` changed)
-#   - build-core-front.yml   (frontend image -> ghcr, only if `core_front` changed)
-#   - build-pdf-service.yml  (PDF worker image -> ghcr, only if `pdf_service` changed)
-#   - the `version` job below numbers each build (0.101.0, 0.102.0, …) for all three
-# `workflow_dispatch` always builds all three regardless of what changed —
+# The services are listed in .github/services.json — adding a service (and its
+# image, and its version in Settings) is one entry there:
+#   {"name": "...", "image": "eerp-...", "dockerfile": "path/Dockerfile", "paths": ["path/**"]}
+# `paths` are the files the image is built from (dorny/paths-filter globs).
+#
+# Pieces:
+#   - test-check.yml   (Go + frontend tests and coverage — always runs)
+#   - `version` below  (numbers the build: 0.101.0, 0.102.0, … — see its comment)
+#   - build-image.yml  (one image -> ghcr, called once per changed service)
+# `workflow_dispatch` always builds every service regardless of what changed —
 # an explicit manual trigger is itself the "I want an image" signal.
 on:
   push:
@@ -38,61 +40,59 @@ permissions:
   packages: write
 
 jobs:
-  # 0. Which image(s) actually need rebuilding — compares against the base of
-  # the push/PR. dorny/paths-filter resolves that via the GitHub API (no
-  # checkout needed) only for `pull_request` events; a `push` event needs a
-  # real local git history to diff against the base commit, so this job
-  # checks out first (fetch-depth: 0 — cheap for this repo's size, and avoids
-  # paths-filter failing to find the base commit in a shallow clone). Filter/
-  # output names are kept hyphen-free (`core_front`/`pdf_service`) since
-  # GitHub Actions expression dot-notation can't address a hyphenated
-  # property name. `core_front` also reacts to `core/modules/**` and the root
-  # `eerp-config.json`: the frontend image's own build (core-front/
-  # Dockerfile's "modules" stage) copies each module's views/reports/i18n
-  # files and reads eerp-config.json to discover them — a module's frontend
-  # contribution is genuinely part of that image even though it lives under
-  # core/.
+  # 0. Which service image(s) need rebuilding — compares against the base of the
+  # push/PR. The paths-filter filters are generated from services.json (one per
+  # service, named after it), and `services` is the matching services.json
+  # entries as a JSON array — the build matrix. dorny/paths-filter resolves the
+  # base via the GitHub API only for `pull_request` events; a `push` needs real
+  # local history, hence the full checkout (fetch-depth: 0).
   changes:
     runs-on: ubuntu-latest
     outputs:
-      core: ${{ steps.filter.outputs.core }}
-      core_front: ${{ steps.filter.outputs.core_front }}
-      pdf_service: ${{ steps.filter.outputs.pdf_service }}
+      services: ${{ steps.select.outputs.services }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: filters from services.json
+        id: gen
+        run: |
+          {
+            echo 'filters<<EOF'
+            jq -r '.[] | "\(.name):", (.paths[] | "  - \u0027\(.)\u0027")' .github/services.json
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@v3
         id: filter
         with:
-          filters: |
-            core:
-              - 'core/**'
-            core_front:
-              - 'core-front/**'
-              - 'core/modules/**'
-              - 'eerp-config.json'
-            pdf_service:
-              - 'tools/pdf-service/**'
+          filters: ${{ steps.gen.outputs.filters }}
+      - name: changed services
+        id: select
+        env:
+          CHANGED: ${{ steps.filter.outputs.changes }}
+          ALL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          services="$(jq -c --argjson changed "${CHANGED:-[]}" --arg all "$ALL" \
+            '[.[] | select($all == "true" or (.name as $n | $changed | index($n)))]' .github/services.json)"
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "Services to build: $services" >> "$GITHUB_STEP_SUMMARY"
 
   # 1. Gate: reuse the exact same checks PRs run.
   test:
     uses: ./.github/workflows/test-check.yml
 
-  # 1b. Version of this build (.github/scripts/next-version.sh): the latest vX.Y.Z
+  # 2. Version of this build (.github/scripts/next-version.sh): the latest vX.Y.Z
   # tag with its minor bumped, 0.101.0 at the earliest. Only when an image will be
   # built — a run that builds nothing consumes no version. On a push / manual run
   # the tag is pushed right away, which reserves the number (a concurrent run that
   # computed the same one fails its push instead of publishing a duplicate); a PR
-  # build gets `<next>-pr.<number>` and tags nothing. The version rides into every
-  # image built below, as an image tag and baked into the build (shown at the
-  # bottom of the Settings dashboard). Releases are declared by hand: push a tag
-  # such as v1.0.0 and the following builds continue from it.
+  # build gets `<next>-pr.<number>` and tags nothing. Every image built below
+  # carries it, as an image tag and stamped inside (each service reports it, and
+  # Settings lists them all). Releases are declared by hand: push a tag such as
+  # v1.0.0 and the following builds continue from it.
   version:
     needs: [test, changes]
-    if: >-
-      needs.changes.outputs.core == 'true' || needs.changes.outputs.core_front == 'true' ||
-      needs.changes.outputs.pdf_service == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.services != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -123,34 +123,19 @@ jobs:
           git tag "v${{ steps.next.outputs.version }}" "$GITHUB_SHA"
           git push origin "v${{ steps.next.outputs.version }}"
 
-  # 2a. Backend image — only when core/ changed (or a manual dispatch).
-  build-core:
+  # 3. One image per changed service, all stamped with the same version.
+  build:
     needs: [test, changes, version]
-    if: needs.changes.outputs.core == 'true' || github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/build-core.yml
+    if: needs.changes.outputs.services != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    name: build (${{ matrix.service.name }})
+    uses: ./.github/workflows/build-image.yml
     with:
-      image_tag: ${{ inputs.image_tag || 'latest' }}
-      environment: ${{ inputs.environment || 'build' }}
-      version: ${{ needs.version.outputs.version }}
-    secrets: inherit
-
-  # 2b. Frontend image — only when core-front (or a module it bundles) changed.
-  build-core-front:
-    needs: [test, changes, version]
-    if: needs.changes.outputs.core_front == 'true' || github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/build-core-front.yml
-    with:
-      image_tag: ${{ inputs.image_tag || 'latest' }}
-      environment: ${{ inputs.environment || 'build' }}
-      version: ${{ needs.version.outputs.version }}
-    secrets: inherit
-
-  # 2c. PDF worker image — only when tools/pdf-service/ changed.
-  build-pdf-service:
-    needs: [test, changes, version]
-    if: needs.changes.outputs.pdf_service == 'true' || github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/build-pdf-service.yml
-    with:
+      image: ${{ matrix.service.image }}
+      dockerfile: ${{ matrix.service.dockerfile }}
       image_tag: ${{ inputs.image_tag || 'latest' }}
       environment: ${{ inputs.environment || 'build' }}
       version: ${{ needs.version.outputs.version }}

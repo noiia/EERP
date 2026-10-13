@@ -21,6 +21,11 @@ import (
 	"pdf-service/renderer"
 )
 
+// version is this build's version, stamped by CI through the image build
+// (-ldflags "-X main.version=…", tools/pdf-service/Dockerfile); "dev" otherwise.
+// Core shows it in Settings, asking over GET /version or NATS (versionSubject).
+var version = "dev"
+
 func main() {
 	execPath := os.Getenv("CHROME_PATH")
 	if execPath == "" {
@@ -65,16 +70,20 @@ func main() {
 		if _, err := runNATSWorker(nc, r); err != nil {
 			log.Fatalf("pdf-service: nats subscribe: %v", err)
 		}
+		if _, err := answerVersion(nc); err != nil {
+			log.Fatalf("pdf-service: nats subscribe: %v", err)
+		}
 		log.Printf("pdf-service subscribed to %q (queue %q) at %s", renderSubject, workerQueueGroup, natsURL)
 	}
 
-	log.Printf("pdf-service listening on %s (chrome: %s)", addr, execPath)
+	log.Printf("pdf-service %s listening on %s (chrome: %s)", version, addr, execPath)
 	log.Fatal(http.ListenAndServe(addr, newMux(r)))
 }
 
 func newMux(r renderer.Renderer) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
+	mux.HandleFunc("GET /version", handleVersion)
 	mux.HandleFunc("POST /render", handleRender(r))
 	return mux
 }
@@ -143,4 +152,10 @@ func handleRender(r renderer.Renderer) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/pdf")
 		_, _ = w.Write(pdf)
 	}
+}
+
+// handleVersion answers core's version probe (core/internal/version.HTTPProbe).
+func handleVersion(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": version})
 }
