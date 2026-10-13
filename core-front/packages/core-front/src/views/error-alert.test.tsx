@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { ErrorAlert, errorDetails, splitMissingFields } from './error-alert'
 import type { FieldDescriptor } from './descriptor'
 
@@ -37,6 +37,19 @@ describe('ErrorAlert', () => {
     render(<ErrorAlert error={{ code: 'FORBIDDEN', message: 'Missing permission' }} />)
     expect(screen.getByText('FORBIDDEN')).toBeInTheDocument()
     expect(screen.getByText('Missing permission')).toBeInTheDocument()
+  })
+
+  it('renders nothing without an error, and keeps the last one while collapsing away', async () => {
+    const { rerender } = render(<ErrorAlert error={null} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    rerender(<ErrorAlert error={{ code: 'CONFLICT', message: 'Already taken' }} />)
+    expect(screen.getByText('Already taken')).toBeInTheDocument()
+
+    rerender(<ErrorAlert error={null} />)
+    // Still there while the exit animation runs, then gone.
+    expect(screen.getByText('Already taken')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Already taken')).toBeNull())
   })
 
   it('copy details carries everything an administrator needs', () => {

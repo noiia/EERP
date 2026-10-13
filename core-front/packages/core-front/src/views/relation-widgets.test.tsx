@@ -1205,3 +1205,63 @@ describe('relation/list by zone (inside)', () => {
     expect(screen.queryByRole('button', { name: /create a new/i })).toBeNull()
   })
 })
+
+describe('relation/list server paging', () => {
+  const field: FieldDescriptor = {
+    name: 'receipts',
+    type: 'relation',
+    relation: { entity: 'receipt', kind: 'one2many', inverseField: 'property_id', labelField: 'name' },
+  }
+  const rowsOf = (from: number, n: number): RelationRecord[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `r${from + i}`, name: `Receipt ${from + i}` }))
+
+  function renderPaged(listPage: RelationOps['listPage'], f: FieldDescriptor = field) {
+    const Widget = fieldWidget(f)
+    render(
+      <RelationOpsProvider ops={stubOps({ listPage })}>
+        <Widget field={f} value={null} onChange={vi.fn()} entity="property" recordId="p1" />
+      </RelationOpsProvider>,
+    )
+  }
+
+  it('loads one short sorted page, then the next one on demand', async () => {
+    const listPage = vi.fn(async (_e: string, o?: { page?: number }) => ({
+      records: rowsOf(((o?.page ?? 1) - 1) * 10, 10),
+      total: 35,
+    }))
+    renderPaged(listPage)
+    expect(await screen.findByText('Receipt 0')).toBeInTheDocument()
+    expect(listPage).toHaveBeenCalledWith('receipt', {
+      filter: { property_id: 'p1' },
+      page: 1,
+      pageSize: 10,
+      order: 'created_at',
+    })
+    expect(screen.getByText(/1–10 of 35/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }))
+    expect(await screen.findByText('Receipt 10')).toBeInTheDocument()
+    expect(listPage).toHaveBeenLastCalledWith('receipt', expect.objectContaining({ page: 2, pageSize: 10 }))
+  })
+
+  it('sorts newest first on the server under widgetOptions.reverse, without flipping the page', async () => {
+    const listPage = vi.fn(async () => ({ records: rowsOf(0, 2), total: 2 }))
+    renderPaged(listPage, { ...field, widgetOptions: { reverse: true } })
+    expect(await screen.findByText('Receipt 0')).toBeInTheDocument()
+    expect(listPage).toHaveBeenCalledWith('receipt', expect.objectContaining({ order: '-created_at' }))
+    const names = screen.getAllByText(/^Receipt \d$/).map((el) => el.textContent)
+    expect(names).toEqual(['Receipt 0', 'Receipt 1'])
+    // Fits the smallest page: no pagination footer.
+    expect(screen.queryByRole('button', { name: /next page/i })).toBeNull()
+  })
+
+  it('falls back to an unsorted page when the entity refuses the sort', async () => {
+    const listPage = vi.fn(async (_e: string, o?: { order?: string }) => {
+      if (o?.order) throw new Error('unknown order column: created_at')
+      return { records: rowsOf(0, 1), total: 1 }
+    })
+    renderPaged(listPage)
+    expect(await screen.findByText('Receipt 0')).toBeInTheDocument()
+    expect(listPage).toHaveBeenLastCalledWith('receipt', { filter: { property_id: 'p1' }, page: 1, pageSize: 10 })
+  })
+})

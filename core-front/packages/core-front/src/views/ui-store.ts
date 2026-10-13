@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DisplayMode } from '../api/view-fields'
-import { DEFAULT_PALETTE, type BrandColorKey, type ThemePalette } from './palette'
+import { DEFAULT_PALETTE, LEGACY_DEFAULT_PALETTE, type BrandColorKey, type ThemePalette } from './palette'
 import { layout } from './tokens'
 
 // Cross-cutting UI state, persisted to localStorage so preferences survive reloads.
@@ -72,13 +72,20 @@ export const useUiStore = create<UiState>()(
       name: 'eerp-ui',
       version: 1,
       // Older persisted state (pre-palette) merges with no `palette` key; fall back to
-      // the default so the theme always has a complete palette.
+      // the default so the theme always has a complete palette. A browser still holding
+      // the previous default palette verbatim never picked it (it was only ever the
+      // default), so it moves to the current one; any customized palette is kept.
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<UiState>
+        const keepsLegacyDefault =
+          saved.palette != null &&
+          (Object.keys(LEGACY_DEFAULT_PALETTE) as BrandColorKey[]).every(
+            (k) => saved.palette?.[k]?.toUpperCase() === LEGACY_DEFAULT_PALETTE[k],
+          )
         return {
           ...current,
           ...saved,
-          palette: { ...DEFAULT_PALETTE, ...(saved.palette ?? {}) },
+          palette: keepsLegacyDefault ? DEFAULT_PALETTE : { ...DEFAULT_PALETTE, ...(saved.palette ?? {}) },
         }
       },
     },

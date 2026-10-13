@@ -9,21 +9,21 @@
 // flow through. Treat the named token groups below as additive, stable surface.
 
 /**
- * Neutral ramp (Slate). The 50 / 500 / 800 stops are exactly the brand's Soft White,
- * Steel Grey, and Deep Ocean — so the neutrals are a superset of the palette, not a
- * second, competing grey. Everything structural (text, borders, surfaces) comes from here.
+ * Neutral ramp (Slate) — the cool greys the default palette's off-white, blue-grey and
+ * navy sit on, so the neutrals extend the palette rather than compete with it. Everything
+ * structural the palette doesn't name (dark-mode surfaces, disabled text) comes from here.
  */
 export const neutral = {
   0: '#FFFFFF',
-  50: '#F8FAFC', // == palette.softWhite
+  50: '#F8FAFC',
   100: '#F1F5F9',
   200: '#E2E8F0',
   300: '#CBD5E1',
   400: '#94A3B8',
-  500: '#64748B', // == palette.steelGrey
+  500: '#64748B',
   600: '#475569',
   700: '#334155',
-  800: '#1E293B', // == palette.deepOcean
+  800: '#1E293B',
   900: '#0F172A',
 } as const
 
@@ -32,10 +32,10 @@ export const neutral = {
  * (contrastThreshold raised to 4.5 in the theme) picks an AA-compliant text color.
  */
 export const status = {
-  success: '#10B981', // == palette.successGreen
-  warning: '#D97706', // amber-600
+  success: '#0A7F5A', // == the default palette's successGreen
+  warning: '#B45309', // amber-700 — AA under white text, unlike amber-600
   error: '#DC2626', // red-600
-  info: '#0E7490', // cyan-700 (matches the AA-safe action shade)
+  info: '#0369A1', // sky-700
 } as const
 
 /** Corner radii. md (8) is the default surface radius for direction B. */
@@ -191,10 +191,17 @@ export const layout = {
   chatterWidthMax: 640,
 } as const
 
-/** Motion. Short, restrained; the theme also disables it under prefers-reduced-motion. */
+/**
+ * Motion. Short and restrained; the theme also disables it under prefers-reduced-motion
+ * and the "performance" UI style collapses it entirely. Things ENTER a little slower than
+ * they LEAVE (the eye follows an arrival, not a departure), on a decelerating curve; exits
+ * accelerate away. `easing` stays the general-purpose curve for state changes.
+ */
 export const motion = {
-  duration: { short: 120, standard: 200 },
+  duration: { short: 120, standard: 200, enter: 240, exit: 160, page: 320 },
   easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+  easingEnter: 'cubic-bezier(0.2, 0, 0, 1)',
+  easingExit: 'cubic-bezier(0.4, 0, 1, 1)',
 } as const
 
 /** Convert a hex color to an rgba() string (used for focus rings / tints). */

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useTheme } from '@mui/material/styles'
-import { useUiStore } from '@eerp/core-front'
+import { DEFAULT_PALETTE, useUiStore } from '@eerp/core-front'
 import { AppThemeProvider } from './AppThemeProvider'
 
 // Probe child: surfaces the active MUI theme's primary color so we can assert the
@@ -23,7 +23,7 @@ describe('AppThemeProvider', () => {
         <ThemeProbe />
       </AppThemeProvider>,
     )
-    expect(screen.getByTestId('primary')).toHaveTextContent('#00ADD8')
+    expect(screen.getByTestId('primary')).toHaveTextContent(DEFAULT_PALETTE.goBlue)
   })
 
   it('reflects a palette edit', () => {

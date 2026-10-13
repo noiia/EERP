@@ -126,6 +126,25 @@ describe('GraphRenderer', () => {
     expect(rgl().resizeConfig!.enabled).toBe(false)
   })
 
+  it('centers the tiles in read mode, and gives the editor the full canvas', async () => {
+    useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
+    const ops = fakeOps({ get: vi.fn(async () => ({ tiles: [savedTile, { ...savedTile, id: 't2', x: 6 }] })) })
+    render(
+      <GraphOpsProvider ops={ops}>
+        <GraphRenderer descriptor={descriptor} records={[]} />
+      </GraphOpsProvider>,
+    )
+    await screen.findByTestId('graph-tile-t2')
+    // Two 6-column tiles = 12 × 30px, centered in the 900px container.
+    expect(rgl().width).toBe(360)
+    expect(rgl().gridConfig!.cols).toBe(12)
+    expect(screen.getByTestId('graph-grid')).toHaveStyle({ width: '360px', marginLeft: 'auto', marginRight: 'auto' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(rgl().width).toBe(900)
+    expect(rgl().gridConfig!.cols).toBe(30)
+  })
+
   it('shows Edit only for a session granted settings:views:write', async () => {
     useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
     render(
@@ -136,7 +155,7 @@ describe('GraphRenderer', () => {
     expect(await screen.findByRole('button', { name: 'Edit' })).toBeInTheDocument()
   })
 
-  it('the grid uses a fixed GRID_UNIT row height and a container-width-derived column count', async () => {
+  it('the editing grid uses a fixed GRID_UNIT row height and a container-width-derived column count', async () => {
     useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
     render(
       <GraphOpsProvider ops={fakeOps({ get: vi.fn(async () => ({ tiles: [savedTile] })) })}>
@@ -144,6 +163,7 @@ describe('GraphRenderer', () => {
       </GraphOpsProvider>,
     )
     await screen.findByTestId('graph-tile-t1')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     // useContainerWidth is mocked to 900px; cols = round(900/30) = 30.
     expect(rgl().gridConfig).toMatchObject({ cols: 30, rowHeight: 30 })
   })

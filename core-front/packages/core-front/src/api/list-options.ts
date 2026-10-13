@@ -32,6 +32,9 @@ export interface EntityListOptions {
   /** Columns that must be NULL or '' (`empty[col]=1`) — an empty `filter`
    * value means "no filter", so this is the only way to ask for "unset". */
   empty?: string[]
+  /** Sort by one column (`'-col'` = descending), id as tiebreak — needed to page
+   * through a list reliably: without it Go returns rows in no defined order. */
+  order?: string
   page?: number
   pageSize?: number
 }

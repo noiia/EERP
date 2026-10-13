@@ -43,7 +43,7 @@ export function ReloadButton({ name, type }: { name: string; type?: string }) {
           </Button>
         </span>
       </Tooltip>
-      {error ? <ErrorAlert error={error} /> : null}
+      <ErrorAlert error={error} />
     </Stack>
   )
 }

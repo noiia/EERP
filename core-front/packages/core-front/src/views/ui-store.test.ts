@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_PALETTE } from './palette'
+import { DEFAULT_PALETTE, LEGACY_DEFAULT_PALETTE } from './palette'
 import { useUiStore } from './ui-store'
 
 describe('useUiStore palette', () => {
@@ -23,6 +23,20 @@ describe('useUiStore palette', () => {
     useUiStore.getState().setPaletteColor('goBlue', '#123456')
     useUiStore.getState().resetPalette()
     expect(useUiStore.getState().palette).toEqual(DEFAULT_PALETTE)
+  })
+
+  it('upgrades a browser still on the previous default palette, keeps a customized one', async () => {
+    const stored = (palette: object) =>
+      localStorage.setItem('eerp-ui', JSON.stringify({ state: { palette }, version: 1 }))
+
+    stored({ ...LEGACY_DEFAULT_PALETTE, goBlue: LEGACY_DEFAULT_PALETTE.goBlue.toLowerCase() })
+    await useUiStore.persist.rehydrate()
+    expect(useUiStore.getState().palette).toEqual(DEFAULT_PALETTE)
+
+    stored({ ...LEGACY_DEFAULT_PALETTE, goBlue: '#123456' })
+    await useUiStore.persist.rehydrate()
+    expect(useUiStore.getState().palette).toEqual({ ...LEGACY_DEFAULT_PALETTE, goBlue: '#123456' })
+    localStorage.removeItem('eerp-ui')
   })
 
   it('toggles theme mode', () => {

@@ -222,6 +222,7 @@ export function CalendarRenderer<T extends HasId>({
       <Card
         key={record.id}
         data-testid={`calendar-card-${record.id}`}
+        className="erp-appear"
         variant="outlined"
         draggable
         onDragStart={() => {
@@ -271,8 +272,8 @@ export function CalendarRenderer<T extends HasId>({
 
   return (
     <Box>
-      {error ? <ErrorAlert error={error} /> : null}
-      {loadError ? <ErrorAlert error={loadError} /> : null}
+      <ErrorAlert error={error} />
+      <ErrorAlert error={loadError} />
       <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>

@@ -24,14 +24,27 @@ export interface BrandColorInfo {
 }
 
 /**
- * Default palette. Chosen for a professional, long-session ERP:
- * - Deep Ocean grounds the UI with solid, professional structure.
- * - Go Blue is the dynamic CTA anchor, echoing the Go ecosystem.
- * - Soft White is the comfortable, low-fatigue reading surface.
- * - Steel Grey structures data without visual overload.
- * - Success Green signals success states and positive financial indicators.
+ * Default palette — a calm indigo-on-navy system for long ERP sessions. The slot
+ * keys are historical (they're persisted and edited by name); what matters is the
+ * role each drives (see BRAND_COLORS). Every text-bearing color clears WCAG AA:
+ * - goBlue (primary action) — indigo, 6.3:1 under white button text.
+ * - deepOcean (headings, top bar) — near-black navy, 15.8:1 on white.
+ * - softWhite (page background) — a faintly cool off-white, easier than pure white.
+ * - steelGrey (secondary text, borders) — blue-grey, 5.0:1 on the page background.
+ * - successGreen (success, positive figures) — a deep emerald, 5.0:1 under white text.
+ * In dark mode the theme lightens the primary until it reads on the dark surfaces.
  */
 export const DEFAULT_PALETTE: ThemePalette = {
+  deepOcean: '#1A2238',
+  goBlue: '#4F46E5',
+  softWhite: '#F5F6FA',
+  steelGrey: '#5E6B85',
+  successGreen: '#0A7F5A',
+}
+
+/** The previous default (slate + Go cyan). A browser that still holds exactly this
+ * palette never chose it, so the UI store upgrades it to DEFAULT_PALETTE. */
+export const LEGACY_DEFAULT_PALETTE: ThemePalette = {
   deepOcean: '#1E293B',
   goBlue: '#00ADD8',
   softWhite: '#F8FAFC',

@@ -188,7 +188,7 @@ function StoredPageEditor({
   return (
     <Box hidden={hidden}>
       <Stack spacing={2}>
-        {error ? <ErrorAlert error={error} /> : null}
+        <ErrorAlert error={error} />
         <TextField
           label={t('Title')}
           value={title}
@@ -365,7 +365,7 @@ function NotebookNode({
           )
         ) : null}
       </Stack>
-      {opsError ? <ErrorAlert error={opsError} /> : null}
+      <ErrorAlert error={opsError} />
       {pages.map((page, i) => (
         <Box key={`d:${page.id ?? i}`} hidden={active !== i}>
           <Stack spacing={2.5}>

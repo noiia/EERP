@@ -630,7 +630,7 @@ function FormRenderer<T extends HasId>({
               {error ? (
                 <ErrorAlert error={serializeError(error)} fields={descriptor.fields} />
               ) : null}
-              {deleteError ? <ErrorAlert error={deleteError} /> : null}
+              <ErrorAlert error={deleteError} />
               <PictureSizeProvider size={pictureSize}>
                 <LayoutForm
                   descriptor={descriptor}
@@ -1199,7 +1199,7 @@ function TreeRenderer<T extends HasId>({
           {bulkDeleteError}
         </Typography>
       ) : null}
-      {pageError ? <ErrorAlert error={pageError} /> : null}
+      <ErrorAlert error={pageError} />
       <DisplayModeSwitcher
         entity={descriptor.entity}
         mode={mode}

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Alert from '@mui/material/Alert'
 import AlertTitle from '@mui/material/AlertTitle'
 import Button from '@mui/material/Button'
+import Collapse from '@mui/material/Collapse'
 import Typography from '@mui/material/Typography'
 import type { SerializedError } from '../api/errors'
 import { useT } from '../i18n/translate'
@@ -54,14 +55,30 @@ export function errorDetails(error: SerializedError): string {
     .join('\n')
 }
 
+/**
+ * Render it unconditionally with the current error (or null): the alert collapses
+ * open when an error arrives and collapses shut — still showing the last error —
+ * when it clears, instead of popping in and out and shifting the page abruptly.
+ */
 export function ErrorAlert({
   error,
   fields,
 }: {
-  error: SerializedError
+  error: SerializedError | null | undefined
   /** The form's field descriptors — lets a VALIDATION_ERROR name fields by label. */
   fields?: FieldDescriptor[]
 }) {
+  // The last error stays rendered while the Collapse animates shut.
+  const [shown, setShown] = useState<SerializedError | null>(error ?? null)
+  if (error && error !== shown) setShown(error)
+  return (
+    <Collapse in={Boolean(error)} unmountOnExit onExited={() => setShown(null)}>
+      {shown ? <ErrorAlertBody error={shown} fields={fields} /> : null}
+    </Collapse>
+  )
+}
+
+function ErrorAlertBody({ error, fields }: { error: SerializedError; fields?: FieldDescriptor[] }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
   const missing = error.code === 'VALIDATION_ERROR' ? (error.fields ?? []) : []

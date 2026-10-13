@@ -377,6 +377,12 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
   }
 
   const canvasCols = Math.max(4, Math.round(containerWidth / GRID_UNIT))
+  // Read mode centers the tiles: the grid shrinks to the columns they actually
+  // use instead of spanning the page from its left edge. Edit mode keeps the
+  // full canvas, so there's room to drag a tile into the empty space.
+  const usedCols = Math.max(1, ...visibleTiles.map((tl) => tl.x + tl.w))
+  const gridCols = editing ? canvasCols : Math.min(canvasCols, usedCols)
+  const gridWidth = editing ? containerWidth : Math.min(containerWidth, gridCols * GRID_UNIT)
   const rglLayout: Layout = visibleTiles.map((tl) => ({
     i: tl.id,
     x: tl.x,
@@ -423,7 +429,7 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
       ) : null}
       {ready ? (
         <>
-          {error ? <ErrorAlert error={error} /> : null}
+          <ErrorAlert error={error} />
           {/* No toolbar in the phone projection: it is read-only by contract. */}
           {!phone ? (
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
@@ -512,43 +518,45 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
           </Stack>
         ) : null}
         {ready && mounted && !phone ? (
-          <ReactGridLayout
-            layout={rglLayout}
-            width={containerWidth}
-            gridConfig={{ cols: canvasCols, rowHeight: GRID_UNIT, margin: [0, 0], containerPadding: [0, 0] }}
-            // No dragConfig.handle: the whole tile is the drag surface (there's no
-            // dedicated header bar anymore) — dragConfig.cancel still excludes the
-            // floating configure/hide buttons, and RGL itself always excludes its
-            // own resize handles regardless.
-            dragConfig={{ enabled: editing, cancel: '.graph-tile-no-drag' }}
-            resizeConfig={{ enabled: editing, handles: ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] }}
-            compactor={verticalCompactor}
-            onLayoutChange={handleLayoutChange}
-          >
-            {visibleTiles.map((tile) => (
-              // This OUTER element is the one RGL clones its computed position/size
-              // onto (the full occupied grid cell, positioned absolute by RGL itself
-              // — that alone already makes it a valid containing block, nothing extra
-              // needed here) — kept bare (no border/radius/background) so the VISIBLE
-              // Card inside GraphTileCard can be inset 5px from it on every side,
-              // leaving a real empty gap between adjacent tiles that the grid math
-              // itself never sees (drag/resize/compaction still operate on the full,
-              // un-inset cell).
-              <Box key={tile.id} data-testid={`graph-tile-${tile.id}`}>
-                <GraphTileCard
-                  tile={tile}
-                  editing={editing}
-                  descriptor={calcDescriptor}
-                  records={recordsFor(tile)}
-                  recordTotal={recordTotal}
-                  calcFields={calcFields}
-                  listOptions={aggregateOptions}
-                  onConfigure={() => setDialogTarget(tile)}
-                  onHide={() => hideTile(tile.id)}
-                />
-              </Box>
-            ))}
-          </ReactGridLayout>
+          <Box data-testid="graph-grid" sx={{ width: gridWidth, mx: 'auto' }}>
+            <ReactGridLayout
+              layout={rglLayout}
+              width={gridWidth}
+              gridConfig={{ cols: gridCols, rowHeight: GRID_UNIT, margin: [0, 0], containerPadding: [0, 0] }}
+              // No dragConfig.handle: the whole tile is the drag surface (there's no
+              // dedicated header bar anymore) — dragConfig.cancel still excludes the
+              // floating configure/hide buttons, and RGL itself always excludes its
+              // own resize handles regardless.
+              dragConfig={{ enabled: editing, cancel: '.graph-tile-no-drag' }}
+              resizeConfig={{ enabled: editing, handles: ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] }}
+              compactor={verticalCompactor}
+              onLayoutChange={handleLayoutChange}
+            >
+              {visibleTiles.map((tile) => (
+                // This OUTER element is the one RGL clones its computed position/size
+                // onto (the full occupied grid cell, positioned absolute by RGL itself
+                // — that alone already makes it a valid containing block, nothing extra
+                // needed here) — kept bare (no border/radius/background) so the VISIBLE
+                // Card inside GraphTileCard can be inset 5px from it on every side,
+                // leaving a real empty gap between adjacent tiles that the grid math
+                // itself never sees (drag/resize/compaction still operate on the full,
+                // un-inset cell).
+                <Box key={tile.id} data-testid={`graph-tile-${tile.id}`}>
+                  <GraphTileCard
+                    tile={tile}
+                    editing={editing}
+                    descriptor={calcDescriptor}
+                    records={recordsFor(tile)}
+                    recordTotal={recordTotal}
+                    calcFields={calcFields}
+                    listOptions={aggregateOptions}
+                    onConfigure={() => setDialogTarget(tile)}
+                    onHide={() => hideTile(tile.id)}
+                  />
+                </Box>
+              ))}
+            </ReactGridLayout>
+          </Box>
         ) : null}
       </Box>
       </Box>

@@ -131,8 +131,8 @@ export function KanbanRenderer<T extends HasId>({
 
   return (
     <Box>
-      {error ? <ErrorAlert error={error} /> : null}
-      {loadError ? <ErrorAlert error={loadError} /> : null}
+      <ErrorAlert error={error} />
+      <ErrorAlert error={loadError} />
       <Box
         sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1, alignItems: 'flex-start' }}
         // `justifyContent: 'safe center'` as an sx value gets silently dropped by
@@ -175,6 +175,7 @@ export function KanbanRenderer<T extends HasId>({
                   <Card
                     key={record.id}
                     data-testid={`kanban-card-${record.id}`}
+                    className="erp-appear"
                     variant="outlined"
                     draggable
                     onDragStart={() => setDraggingId(record.id)}

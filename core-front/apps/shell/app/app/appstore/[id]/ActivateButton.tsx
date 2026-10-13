@@ -80,7 +80,7 @@ export function ActivateButton({ name, active }: { name: string; active: boolean
       ) : (
         button
       )}
-      {error ? <ErrorAlert error={error} /> : null}
+      <ErrorAlert error={error} />
     </Stack>
   )
 }

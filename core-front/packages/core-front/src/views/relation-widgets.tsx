@@ -76,6 +76,10 @@ const SEARCH_DEBOUNCE_MS = 250
 // 6 result rows; the create-from-search line below them is the 7th.
 const SEARCH_PAGE_SIZE = 6
 const EMBED_PAGE_SIZE = 100
+// The one2many grid pages through the server: a short first page, larger ones
+// only when the user picks them in the grid's footer.
+const EMBED_DEFAULT_PAGE_SIZE = 10
+const EMBED_PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
 /**
  * The synthetic 7th dropdown option: "Create a new <entity>". A reserved id no
@@ -408,7 +412,7 @@ function RelationCreateWizard({
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
-            {error ? <ErrorAlert error={serializeError(error)} fields={descriptor.fields} /> : null}
+            <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
             {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
                 walks the target descriptor's normalized layout tree, so a
                 registered form's grouping/rows render here too, not just a
@@ -1268,10 +1272,9 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   const refreshSignal = useEntityRefreshStore((s) => s.bumps[rel.entity])
 
   // widgetOptions.reverse (opt-in, e.g. propertymanagement's rent_receipts):
-  // flips the fetched page so the LAST row (most recently created — Go's
-  // list endpoint has no explicit ORDER BY, so this is insertion order)
-  // renders first. Every other one2many field keeps the original fetch
-  // order, unchanged.
+  // newest first — sorted server-side (`order=-created_at`) when the grid is
+  // paged, else the loaded rows are flipped. Every other one2many field is
+  // listed oldest first.
   const reverse = field.widgetOptions?.reverse === true
 
   // widgetOptions.relatedRelationField (opt-in, e.g. the Role form's "Views"
@@ -1316,41 +1319,72 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
     ops
       .remove(rel.entity, id)
       .then(() => {
-        setRows((prev) => prev.filter((r) => r.id !== id))
+        // Paged: reload the page so it refills from the next one and the total follows.
+        if (paged) setReloadKey((k) => k + 1)
+        else setRows((prev) => prev.filter((r) => r.id !== id))
         setDeleteError(null)
       })
       .catch((e: unknown) => setDeleteError(e instanceof Error ? e.message : String(e)))
       .finally(() => setDeletingId(null))
   }
 
-  // Rows past EMBED_PAGE_SIZE aren't loaded; the total (when listPage is
-  // bound) lets the grid say so instead of truncating silently.
+  // With RelationOps.listPage bound, the grid is server-paged: each page is ONE
+  // request (page + page_size, sorted by created_at — newest first under
+  // `reverse` — so pages are stable and every linked row is reachable), and
+  // the footer appears once the rows don't fit the smallest page. Without
+  // it, the first EMBED_PAGE_SIZE rows load once, as before.
+  const paged = Boolean(ops?.listPage)
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: EMBED_DEFAULT_PAGE_SIZE })
   const [rowTotal, setRowTotal] = useState<number | null>(null)
+  const [loadingRows, setLoadingRows] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+  // A different record (or an outside change to the rows) starts over at page 1.
+  useEffect(() => {
+    setPaginationModel((m) => (m.page === 0 ? m : { ...m, page: 0 }))
+  }, [recordId, insideRef, refreshSignal])
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
-    const options = rel.inside
+    const scope = rel.inside
       ? insideRef
-        ? { inside: { [rel.inside.field]: insideRef }, pageSize: EMBED_PAGE_SIZE }
+        ? { inside: { [rel.inside.field]: insideRef } }
         : null
-      : { filter: { [inverseField as string]: recordId }, pageSize: EMBED_PAGE_SIZE }
-    if (!options) return
-    const load = ops.listPage
-      ? ops.listPage(rel.entity, options)
-      : ops.list(rel.entity, options).then((records) => ({ records, total: null }))
+      : { filter: { [inverseField as string]: recordId } }
+    if (!scope) return
+    const listPage = ops.listPage
+    const load = listPage
+      ? (() => {
+          const page = { ...scope, page: paginationModel.page + 1, pageSize: paginationModel.pageSize }
+          // An entity without created_at answers 400 to the sort: page it unsorted.
+          return listPage(rel.entity, { ...page, order: reverse ? '-created_at' : 'created_at' }).catch(() =>
+            listPage(rel.entity, page),
+          )
+        })()
+      : ops
+          .list(rel.entity, { ...scope, pageSize: EMBED_PAGE_SIZE })
+          .then((records) => ({ records: reverse ? [...records].reverse() : records, total: null }))
+    setLoadingRows(true)
     load
       .then(({ records: found, total }) => {
         if (cancelled) return
-        setRows(reverse ? [...found].reverse() : found)
+        // A delete emptied the last page: step back to the new last one.
+        if (listPage && found.length === 0 && paginationModel.page > 0 && total != null) {
+          setPaginationModel((m) => ({ ...m, page: Math.max(0, Math.ceil(total / m.pageSize) - 1) }))
+          return
+        }
+        setRows(found)
         setRowTotal(total)
       })
       .catch(() => {
         if (!cancelled) setRows([])
       })
+      .finally(() => {
+        if (!cancelled) setLoadingRows(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, rel.inside, insideRef, inverseField, recordId, refreshSignal, reverse])
+  }, [ops, rel.entity, rel.inside, insideRef, inverseField, recordId, refreshSignal, reverse, paginationModel, reloadKey])
 
   useEffect(() => {
     if (!ops || !expandField || rows.length === 0) {
@@ -1400,7 +1434,9 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
           ...Object.fromEntries((explicitColumns ?? []).filter((c) => c.value !== undefined).map((c) => [c.key, c.value])),
         }
       : null
-  const displayRows = previewRow ? [previewRow, ...literalRows] : literalRows
+  // The preview line leads the table, so only the first page carries it.
+  const displayRows = previewRow && paginationModel.page === 0 ? [previewRow, ...literalRows] : literalRows
+  const showFooter = paged && rowTotal != null && rowTotal > EMBED_PAGE_SIZE_OPTIONS[0]!
   const columns = explicitColumns
     ? explicitRelationColumns(explicitColumns, labelField, t)
     : relatedColumns(displayRows, labelField, t, inverseField ? [inverseField] : [])
@@ -1429,7 +1465,17 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
               : columns
           }
           autoHeight
-          hideFooter
+          hideFooter={!showFooter}
+          {...(paged
+            ? {
+                paginationMode: 'server' as const,
+                rowCount: rowTotal ?? 0,
+                paginationModel,
+                onPaginationModelChange: setPaginationModel,
+                pageSizeOptions: EMBED_PAGE_SIZE_OPTIONS,
+                loading: loadingRows,
+              }
+            : {})}
           disableRowSelectionOnClick
           onRowClick={
             rel.formPath
@@ -1447,11 +1493,6 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
           {deleteError}
         </Typography>
       )}
-      {rowTotal != null && rowTotal > EMBED_PAGE_SIZE ? (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-          {EMBED_PAGE_SIZE} / {rowTotal} {t('shown')}
-        </Typography>
-      ) : null}
       {inverseField ? (
         <>
       {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row

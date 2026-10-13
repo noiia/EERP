@@ -105,7 +105,7 @@ function ChatterEntry({ message }: { message: ChatterMessageRecord }) {
   // muted summary of an edit, not really "from" someone the way a posted
   // comment is, so it keeps its plain text-only look.
   const body = (
-    <Box sx={{ opacity: isLog ? 0.72 : 1, minWidth: 0, overflowWrap: 'anywhere', flex: 1 }}>
+    <Box className="erp-appear" sx={{ opacity: isLog ? 0.72 : 1, minWidth: 0, overflowWrap: 'anywhere', flex: 1 }}>
       {isLog ? (
         <Stack spacing={0.25}>
           {message.body.split('\n').map((line, i) => (

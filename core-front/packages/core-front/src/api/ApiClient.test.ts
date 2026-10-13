@@ -116,6 +116,16 @@ describe('ServerApiClient', () => {
     })
   })
 
+  it('sends the sort column and the page with a paged list', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { data: [], total: 0, page: 2, page_size: 10 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await createServerApiClient().listWithTotal('receipt', { order: '-created_at', page: 2, pageSize: 10 })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api.test/api/v1/receipt?order=-created_at&page=2&page_size=10',
+      expect.anything(),
+    )
+  })
+
   it('listWithTotal falls back to records.length when the response is a bare array (no total)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [{ id: '1' }, { id: '2' }])))
     await expect(createServerApiClient().listWithTotal('crm')).resolves.toEqual({

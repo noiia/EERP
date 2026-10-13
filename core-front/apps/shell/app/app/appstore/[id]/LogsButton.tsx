@@ -103,7 +103,7 @@ export function LogsButton({ name }: { name: string }) {
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{t('Operation logs')}</DialogTitle>
         <DialogContent>
-          {error ? <ErrorAlert error={error} /> : null}
+          <ErrorAlert error={error} />
           {!error && pending ? <Typography color="text.secondary">{t('Loading…')}</Typography> : null}
           {!error && !pending && groups?.length === 0 ? (
             <Typography color="text.secondary">{t('No operations recorded yet.')}</Typography>
