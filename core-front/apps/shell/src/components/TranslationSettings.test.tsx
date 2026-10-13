@@ -90,6 +90,8 @@ describe('TranslationSettings', () => {
       fireEvent.click(within(screen.getByRole('listbox')).getByText('français'))
 
       expect(await screen.findByText('Missing permission')).toBeInTheDocument()
+      // The menu (labelled like the select) animates out: wait until it's gone.
+      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
       expect(screen.getByLabelText('Default language')).toHaveTextContent('Deutsch')
       expect(useI18nStore.getState().locale).toBeNull()
     })
