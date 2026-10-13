@@ -66,6 +66,7 @@ describe('Settings → Users descriptors', () => {
       'technical_name',
       'belongs',
       'view_permissions',
+      'notifications',
     ])
     expect(roleViewPermissionFormDescriptor.fields.map((f) => f.name)).toEqual([
       'role_id',
@@ -92,7 +93,24 @@ describe('Settings → Users descriptors', () => {
       'Views',
       'Settings',
       'Belongs',
+      'Notifications',
     ])
+  })
+
+  it('role form manages notification categories on its own Notifications tab', () => {
+    const field = roleFormDescriptor.fields.find((f) => f.name === 'notifications')
+    expect(field?.relation).toMatchObject({
+      entity: 'notification_category',
+      kind: 'many2many',
+      via: 'role_notification_category',
+      viaFields: { own: 'role_id', related: 'notification_category_id' },
+      labelField: 'name',
+    })
+    const notebook = roleFormDescriptor.layout!.find((n) => n.kind === 'notebook') as {
+      children: { title?: string; children: { name?: string }[] }[]
+    }
+    const page = notebook.children.find((p) => p.title === 'Notifications')
+    expect(page?.children.map((c) => c.name)).toEqual(['notifications'])
   })
 
   it("opens a view's rights on its own dedicated form, and shows them in the table", () => {

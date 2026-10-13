@@ -190,6 +190,23 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
         deletable: true,
       },
     },
+    {
+      // Which global activities (scheduled actions, demo-data seeding, …) members
+      // of this role — and of every role belonging to it — see under the bell.
+      // Personal notifications always reach their owner and aren't set here.
+      // Generic-CRUD junction over the per-tenant category catalog Go syncs
+      // from its registry (core/internal/notify), like `belongs` above.
+      name: 'notifications',
+      label: 'Notifications',
+      type: 'relation',
+      relation: {
+        entity: 'notification_category',
+        kind: 'many2many',
+        via: 'role_notification_category',
+        viaFields: { own: 'role_id', related: 'notification_category_id' },
+        labelField: 'name',
+      },
+    },
   ],
   // Explicit layout so `view_permissions`/`belongs` get their own tabs
   // instead of landing in the synthesized default anatomy's two-column
@@ -215,6 +232,7 @@ export const roleFormDescriptor: ViewDescriptor<AdminRecord> = {
         { kind: 'page', title: 'Views', children: [{ kind: 'field', name: 'view_permissions' }] },
         { kind: 'page', id: PAGE_SETTINGS_ID, title: 'Settings', children: [] },
         { kind: 'page', title: 'Belongs', children: [{ kind: 'field', name: 'belongs' }] },
+        { kind: 'page', title: 'Notifications', children: [{ kind: 'field', name: 'notifications' }] },
       ],
     },
   ],
