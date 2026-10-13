@@ -39,6 +39,7 @@ import {
 import { authBffUrl } from '@/lib/auth-url'
 import { setActiveCompany, type CompanyRecord } from '@/lib/company'
 import { CompanyLogo } from './CompanyLogo'
+import { NotificationBell } from './NotificationBell'
 
 // The persistent application top bar (shell chrome). Shown on every authenticated route:
 // left = the module breadcrumb (fil d'Ariane) derived from the path, rooted at the menu;
@@ -541,6 +542,7 @@ export function AppTopBar({
           zIndex.drawer, over MUI's AppBar default) — only modals/popovers go higher. */}
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar variant="dense">
+          <NotificationBell />
           {activeCompany && <CompanyLogo companyId={activeCompany.id} />}
           <PathBreadcrumbs pathname={pathname} />
           <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />

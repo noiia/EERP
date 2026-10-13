@@ -37,6 +37,12 @@ const pretty = {
   // The route loading screen (app/app/loading.tsx) only shows up once a navigation
   // has taken a moment, so a fast one never flashes it.
   '.erp-loading': { animation: `erp-fade ${motion.duration.standard}ms ${enter} 180ms backwards` },
+  // The bell's "something new" dot (NotificationBell): a slow pulse until opened.
+  '@keyframes erp-breathe': {
+    '0%, 100%': { transform: 'scale(1)', opacity: 1 },
+    '50%': { transform: 'scale(1.6)', opacity: 0.45 },
+  },
+  '.erp-breathe': { animation: `erp-breathe 1.8s ${ease} infinite` },
   '.MuiAppBar-root': { boxShadow: soft },
   '.MuiCard-root, .MuiPaper-outlined': {
     boxShadow: soft,

@@ -1647,3 +1647,33 @@ msgstr ""
 #: app/settings/authentication/AuthSettingsForm.tsx
 msgid "All methods"
 msgstr ""
+
+msgid "Notifications"
+msgstr ""
+
+msgid "Running now"
+msgstr ""
+
+msgid "Mark all as read"
+msgstr ""
+
+msgid "No notifications"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Scheduled actions"
+msgstr ""
+
+msgid "Demo data seeding"
+msgstr ""
+
+msgid "Seeding demo data"
+msgstr ""
+
+msgid "Demo data seeding failed"
+msgstr ""
+
+msgid "New notifications"
+msgstr ""

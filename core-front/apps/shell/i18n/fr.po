@@ -1808,3 +1808,33 @@ msgstr "Méthode"
 
 msgid "All methods"
 msgstr "Toutes les méthodes"
+
+msgid "Notifications"
+msgstr "Notifications"
+
+msgid "Running now"
+msgstr "En cours"
+
+msgid "Mark all as read"
+msgstr "Tout marquer comme lu"
+
+msgid "No notifications"
+msgstr "Aucune notification"
+
+msgid "Failed"
+msgstr "Échec"
+
+msgid "Scheduled actions"
+msgstr "Actions planifiées"
+
+msgid "Demo data seeding"
+msgstr "Génération de données de démonstration"
+
+msgid "Seeding demo data"
+msgstr "Génération des données de démonstration"
+
+msgid "Demo data seeding failed"
+msgstr "Échec de la génération des données de démonstration"
+
+msgid "New notifications"
+msgstr "Nouvelles notifications"
