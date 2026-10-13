@@ -8,9 +8,11 @@ import (
 
 	"core/internal/auth"
 	"core/internal/chatter"
+	"core/internal/notify"
 	"core/internal/testdb"
 	_ "core/modules/auth"    // registers the auth module for testdb.MigrateModules
 	_ "core/modules/chatter" // registers the chatter module
+	_ "core/modules/notify"
 	"core/orm"
 	"core/orm/model"
 
@@ -23,7 +25,7 @@ import (
 // cron_history row and clears execution_date.
 func TestScheduler_Tick(t *testing.T) {
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "auth", "chatter")
+	testdb.MigrateModules(t, app, "auth", "chatter", "notify")
 	if err := orm.Register[Cron](); err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +78,7 @@ func TestScheduler_Tick(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		for _, q := range []string{
+			`DELETE FROM notification WHERE tenant_id = $1`,
 			`DELETE FROM cron_history WHERE tenant_id = $1`,
 			`DELETE FROM chatter_message WHERE tenant_id = $1`,
 			`DELETE FROM cron WHERE tenant_id = $1`,
@@ -119,6 +122,7 @@ func TestScheduler_Tick(t *testing.T) {
 	}
 
 	s := NewScheduler(db, auth.NewUserRepository(db), auth.NewPermissionRepository(db), chatter.NewRepository(db), t.TempDir())
+	s.SetNotifier(notify.NewService(notify.NewRepository(db), nil))
 	s.tick(ctx)
 
 	for i, tt := range tests {
@@ -142,6 +146,21 @@ func TestScheduler_Tick(t *testing.T) {
 			}
 			if (chatterRows > 0) != tt.wantChatter {
 				t.Errorf("chatter rows = %d, want chatter %v", chatterRows, tt.wantChatter)
+			}
+			var activities int
+			var status string
+			_ = db.QueryRow(ctx, `SELECT count(*), coalesce(max(status), '') FROM notification
+				WHERE tenant_id = $1 AND category = 'cron' AND user_id IS NULL AND link = $2`,
+				tenant, "/cron/"+ids[i].String()).Scan(&activities, &status)
+			wantStatus := map[bool]string{true: "failed", false: "done"}[tt.wantFailed]
+			if activities != tt.wantRuns || (tt.wantRuns == 1 && status != wantStatus) {
+				t.Errorf("activities = %d (%s), want %d (%s)", activities, status, tt.wantRuns, wantStatus)
+			}
+			var personal int
+			_ = db.QueryRow(ctx, `SELECT count(*) FROM notification WHERE user_id IS NOT NULL AND link = $1`,
+				"/cron/"+ids[i].String()).Scan(&personal)
+			if wantPersonal := tt.wantRuns == 1 && tt.wantFailed; (personal == 1) != wantPersonal {
+				t.Errorf("personal failure notifications = %d, want %v", personal, wantPersonal)
 			}
 		})
 	}

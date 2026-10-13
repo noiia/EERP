@@ -1079,6 +1079,7 @@ func (a *App) Run(ctx context.Context) error {
 	// canceled (see internal/cron/scheduler.go) — started here, alongside
 	// the server, so it stops on the same SIGINT/SIGTERM.
 	cronScheduler := cron.NewScheduler(app.DB, a.userRepo, a.permRepo, chatter.NewRepository(app.DB), a.cfg.CronLogDir)
+	cronScheduler.SetNotifier(a.notify)
 	go cronScheduler.Run(ctx)
 
 	// Quote expiry sweep (modules/sale/expiry.go): "if the valid until date

@@ -8,6 +8,7 @@ import (
 	"core/internal/auth"
 	"core/internal/chatter"
 	"core/internal/common"
+	"core/internal/notify"
 	"core/orm"
 	"core/orm/model"
 
@@ -36,7 +37,17 @@ type Scheduler struct {
 	perms     *auth.PermissionRepository
 	chatter   *chatter.Repository
 	logDir    string
+	notifier  Notifier
 }
+
+// Notifier is what the scheduler needs from internal/notify.
+type Notifier interface {
+	Start(ctx context.Context, tenant uuid.UUID, a notify.Activity) (*notify.Run, error)
+	Personal(ctx context.Context, tenant, user uuid.UUID, m notify.Message) (notify.Notification, error)
+}
+
+// SetNotifier makes every run a "cron" activity (nil = none, the default).
+func (s *Scheduler) SetNotifier(n Notifier) { s.notifier = n }
 
 // NewScheduler builds a Scheduler bound to db. logDir is Config.CronLogDir,
 // already resolved to an absolute path by main.go.
@@ -117,7 +128,31 @@ func (s *Scheduler) runOne(ctx context.Context, c Cron) {
 		logLines = append(logLines, fmt.Sprintf("[%s] ", time.Now().Format(time.RFC3339))+fmt.Sprintf(format, args...))
 	}
 
+	var run *notify.Run
+	if s.notifier != nil {
+		var err error
+		run, err = s.notifier.Start(ctx, c.TenantID, notify.Activity{
+			Category: "cron", Title: c.Name, Link: "/cron/" + c.ID.String(), Indeterminate: true,
+		})
+		if err != nil {
+			common.Logger.Warn("cron: start activity", zap.Error(err))
+		}
+	}
+
 	failed := s.attempt(ctx, c, logf)
+
+	if run != nil {
+		var runErr error
+		if failed {
+			runErr = fmt.Errorf("the run failed — see its log")
+		}
+		run.Finish(runErr, "", nil)
+		if failed && c.RunAsUserID != nil {
+			_, _ = s.notifier.Personal(ctx, c.TenantID, *c.RunAsUserID, notify.Message{
+				Category: "cron", Title: "Scheduled action failed: " + c.Name, Link: "/cron/" + c.ID.String(),
+			})
+		}
+	}
 
 	// runID only names the log file uniquely — it is NOT the CronHistory
 	// row's own PK (that's DB-generated on Create below, same as every
