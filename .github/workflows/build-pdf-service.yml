@@ -15,6 +15,13 @@ on:
         required: false
         type: string
         default: latest
+      # The build's version, computed by test-build.yml's `version` job and pushed as
+      # an image tag. Empty = untagged build.
+      version:
+        description: "Build version (e.g. 0.101.0)"
+        required: false
+        type: string
+        default: ""
       # Selects the GitHub deployment Environment whose variables/secrets back the
       # build (configured under Settings -> Environments).
       environment:
@@ -59,6 +66,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/eerp-pdf-service
           tags: |
             type=raw,value=${{ inputs.image_tag }}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - name: Build and push

@@ -6,5 +6,6 @@ import SettingsHub from './SettingsHub'
 // Server Component only enforces authentication and renders the section catalog.
 export default async function SettingsPage() {
   await requireAuth('/settings')
-  return <SettingsHub />
+  // Baked into the image by CI (core-front/Dockerfile); unset outside a CI build.
+  return <SettingsHub version={process.env.EERP_VERSION || 'dev'} />
 }

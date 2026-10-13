@@ -12,6 +12,7 @@ name: Test & Build
 #   - build-core.yml         (backend image -> ghcr, only if `core` changed)
 #   - build-core-front.yml   (frontend image -> ghcr, only if `core_front` changed)
 #   - build-pdf-service.yml  (PDF worker image -> ghcr, only if `pdf_service` changed)
+#   - the `version` job below numbers each build (0.101.0, 0.102.0, …) for all three
 # `workflow_dispatch` always builds all three regardless of what changed —
 # an explicit manual trigger is itself the "I want an image" signal.
 on:
@@ -78,32 +79,79 @@ jobs:
   test:
     uses: ./.github/workflows/test-check.yml
 
+  # 1b. Version of this build (.github/scripts/next-version.sh): the latest vX.Y.Z
+  # tag with its minor bumped, 0.101.0 at the earliest. Only when an image will be
+  # built — a run that builds nothing consumes no version. On a push / manual run
+  # the tag is pushed right away, which reserves the number (a concurrent run that
+  # computed the same one fails its push instead of publishing a duplicate); a PR
+  # build gets `<next>-pr.<number>` and tags nothing. The version rides into every
+  # image built below, as an image tag and baked into the build (shown at the
+  # bottom of the Settings dashboard). Releases are declared by hand: push a tag
+  # such as v1.0.0 and the following builds continue from it.
+  version:
+    needs: [test, changes]
+    if: >-
+      needs.changes.outputs.core == 'true' || needs.changes.outputs.core_front == 'true' ||
+      needs.changes.outputs.pdf_service == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: eerp-version
+      cancel-in-progress: false
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: compute the version
+        id: next
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --tags --force
+          version="$(.github/scripts/next-version.sh)"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            version="$version-pr.$PR_NUMBER"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Build version: $version" >> "$GITHUB_STEP_SUMMARY"
+      - name: tag the commit
+        if: github.event_name != 'pull_request'
+        run: |
+          git tag "v${{ steps.next.outputs.version }}" "$GITHUB_SHA"
+          git push origin "v${{ steps.next.outputs.version }}"
+
   # 2a. Backend image — only when core/ changed (or a manual dispatch).
   build-core:
-    needs: [test, changes]
+    needs: [test, changes, version]
     if: needs.changes.outputs.core == 'true' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/build-core.yml
     with:
       image_tag: ${{ inputs.image_tag || 'latest' }}
       environment: ${{ inputs.environment || 'build' }}
+      version: ${{ needs.version.outputs.version }}
     secrets: inherit
 
   # 2b. Frontend image — only when core-front (or a module it bundles) changed.
   build-core-front:
-    needs: [test, changes]
+    needs: [test, changes, version]
     if: needs.changes.outputs.core_front == 'true' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/build-core-front.yml
     with:
       image_tag: ${{ inputs.image_tag || 'latest' }}
       environment: ${{ inputs.environment || 'build' }}
+      version: ${{ needs.version.outputs.version }}
     secrets: inherit
 
   # 2c. PDF worker image — only when tools/pdf-service/ changed.
   build-pdf-service:
-    needs: [test, changes]
+    needs: [test, changes, version]
     if: needs.changes.outputs.pdf_service == 'true' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/build-pdf-service.yml
     with:
       image_tag: ${{ inputs.image_tag || 'latest' }}
       environment: ${{ inputs.environment || 'build' }}
+      version: ${{ needs.version.outputs.version }}
     secrets: inherit

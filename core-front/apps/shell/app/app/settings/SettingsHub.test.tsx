@@ -14,6 +14,13 @@ describe('SettingsHub', () => {
     expect(link).toHaveAttribute('href', '/app/settings/appearance')
   })
 
+  it('shows the build version centered under the sections, only when known', () => {
+    const { rerender } = render(<SettingsHub version="0.101.0" />)
+    expect(screen.getByTestId('app-version')).toHaveTextContent('Version 0.101.0')
+    rerender(<SettingsHub />)
+    expect(screen.queryByTestId('app-version')).toBeNull()
+  })
+
   it('ships Global settings (Colors + Reports, at the stable /settings/appearance path) as a default section', () => {
     expect(SETTINGS_SECTIONS.some((s) => s.path === '/settings/appearance')).toBe(true)
   })

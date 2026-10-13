@@ -80,8 +80,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 
 export default function SettingsHub({
   sections = SETTINGS_SECTIONS,
+  version,
 }: {
   sections?: readonly SettingsSection[]
+  /** The running build's version (CI-stamped), shown centered under the sections. */
+  version?: string
 }) {
   // Section titles/descriptions are gettext msgids — the shell ships their catalogs
   // in apps/shell/i18n/*.po, so the hub localizes without touching SETTINGS_SECTIONS.
@@ -117,6 +120,17 @@ export default function SettingsHub({
           </Card>
         ))}
       </Box>
+      {version ? (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          component="p"
+          data-testid="app-version"
+          sx={{ mt: 6, textAlign: 'center' }}
+        >
+          {t('Version')} {version}
+        </Typography>
+      ) : null}
     </Container>
   )
 }

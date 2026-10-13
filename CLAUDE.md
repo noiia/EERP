@@ -259,6 +259,8 @@ what local, non-Compose dev (`eerp-config.json`, `make run-back`) uses instead, 
 set, since setting it names real intent (see `internal/reports/` above and
 `docs/adr/ADR-010-pdf-report-generation.md`).
 
+**Versioning (CI only):** every CI build that publishes an image gets a version — `0.101.0`, then `0.102.0`, `0.103.0`… one minor bump per build, never computed or committed locally. `test-build.yml`'s `version` job runs `.github/scripts/next-version.sh` (latest `vX.Y.Z` tag, minor + 1, floor `0.101.0` — older tags like `v0.0.3` predate the scheme) and, on a push or manual run, pushes the `v<version>` tag on the built commit before any image builds (reserving the number: two concurrent runs can't both publish it); a PR build is `<next>-pr.<number>` and tags nothing; a run that builds no image consumes no version. Each image built in that run is tagged `<version>` (beside `latest` and the sha) and carries it inside: `core` is stamped with `-ldflags -X main.version` (logged at boot), `core-front` gets `EERP_VERSION`, shown centered at the bottom of the Settings dashboard. Outside CI everything reads `dev`. An image skipped because its code didn't change keeps its previous version, so the backend and frontend versions can differ. **Releases are declared by hand**: push a tag such as `v1.0.0` and the following builds continue from it (`1.1.0`, …). Pitfall: a failed build after the tag push still consumes its number — the next build takes the following one.
+
 ## Conventions
 
 - Commit format: `<type>(scope): <description>` — types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`

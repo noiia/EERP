@@ -20,9 +20,11 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     GOOS=wasip1 GOARCH=wasm go build -C /app/core -o "$dir/build/$name.wasm" "./modules/$name"; \
     done
 
-# Build the backend binary (CGO on for wasmtime-go)
+# Build the backend binary (CGO on for wasmtime-go), stamped with the version CI
+# computed for this build (.github/workflows/test-build.yml); "dev" otherwise.
+ARG EERP_VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go build -C /app/core -o /app/eerp ./cmd/app
+    go build -C /app/core -ldflags "-X main.version=${EERP_VERSION}" -o /app/eerp ./cmd/app
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 # Same Debian release as the golang builder (trixie) so the cgo binary's glibc

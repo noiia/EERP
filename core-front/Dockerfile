@@ -71,6 +71,10 @@ ARG API_BASE
 ENV API_BASE=$API_BASE
 ARG API_VERSION
 ENV API_VERSION=$API_VERSION
+# The build's version, computed by CI (.github/workflows/test-build.yml) and shown
+# at the bottom of the Settings dashboard; "dev" for builds outside CI.
+ARG EERP_VERSION=dev
+ENV EERP_VERSION=$EERP_VERSION
 # Same module_root list the `modules` stage used, plus the absolute anchor to resolve
 # it against (there's no eerp-config.json in this build to walk up to find that anchor
 # from — see the top-of-file comment and module-discovery.mjs's resolveRepoConfig).
@@ -90,6 +94,8 @@ RUN --mount=type=cache,id=next-cache,target=/app/core-front/apps/shell/.next/cac
 # The standalone trace is rooted at the monorepo, so the entry lives at
 # core-front/apps/shell/server.js inside the bundle.
 FROM base AS runner
+ARG EERP_VERSION=dev
+ENV EERP_VERSION=$EERP_VERSION
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
