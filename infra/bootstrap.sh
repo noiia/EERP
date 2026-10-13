@@ -65,6 +65,20 @@ echo "==> starting infra (db, nats, garage, redis, mailpit)"
 docker compose up -d --wait db nats garage redis mailpit
 docker compose exec -T db psql -qU postgres -v ON_ERROR_STOP=1 \
   -c "ALTER USER postgres PASSWORD '$POSTGRES_PASSWORD'"
+# pg_trgm backs the search indexes (core/internal/searchindex). The postgis image
+# ships postgis itself (core-back creates that extension at boot); pg_trgm is
+# installed here, into template1 so every database created later (core-back's own
+# first boot, Settings → database management) has it, and into the app database
+# when it already exists.
+echo "==> installing pg_trgm"
+app_db=$(sed -nE 's/.*"db_name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' eerp-config.docker.json)
+for target in template1 "$app_db"; do
+  [ -n "$target" ] || continue
+  exists=$(docker compose exec -T db psql -qtAU postgres -c "SELECT 1 FROM pg_database WHERE datname = '$target'")
+  [ "$exists" = 1 ] || continue
+  docker compose exec -T db psql -qU postgres -d "$target" -v ON_ERROR_STOP=1 \
+    -c "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+done
 bash infra/garage/init.sh
 
 echo "==> building and starting the app"
