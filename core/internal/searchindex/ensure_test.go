@@ -3,6 +3,7 @@ package searchindex_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -55,11 +56,57 @@ func indexValid(t *testing.T, db *orm.DB, name string) (exists, valid bool) {
 	return err == nil, valid
 }
 
+// indexIdentity is name's pg_class oid and row version.
+func indexIdentity(t *testing.T, db *orm.DB, name string) string {
+	t.Helper()
+	var id string
+	if err := db.QueryRow(context.Background(),
+		`SELECT oid::text || '/' || xmin::text FROM pg_class
+		 WHERE relname = $1 AND relnamespace = current_schema()::regnamespace`, name).Scan(&id); err != nil {
+		t.Fatalf("identity of %s: %v", name, err)
+	}
+	return id
+}
+
 func TestEnsure(t *testing.T) {
 	db, table := setupProbe(t)
 	ctx := context.Background()
 	label := searchindex.IndexName(searchindex.Candidate{Table: table, Column: "label"})
 	status := searchindex.IndexName(searchindex.Candidate{Table: table, Column: "status"})
+
+	t.Run("skips the pass while another holds the lock", func(t *testing.T) {
+		// A pass blocked waiting on the lock would hold a snapshot the holder's
+		// CREATE INDEX CONCURRENTLY waits for: an undetectable deadlock. So a
+		// pass that finds the lock taken returns at once instead of waiting.
+		holder, err := db.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock($1)", int64(7311990002)); err != nil {
+			holder.Release()
+			t.Fatal(err)
+		}
+		defer func() {
+			_, _ = holder.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", int64(7311990002))
+			holder.Release()
+		}()
+		passCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		start := time.Now()
+		created, err := searchindex.Ensure(passCtx, db)
+		if err != nil {
+			t.Fatalf("Ensure while locked: %v (after %s)", err, time.Since(start))
+		}
+		if took := time.Since(start); took > 2*time.Second {
+			t.Errorf("Ensure waited %s for the lock, want an immediate skip", took)
+		}
+		if len(created) != 0 {
+			t.Errorf("created %v while another pass holds the lock, want nothing", created)
+		}
+		if exists, _ := indexValid(t, db, label); exists {
+			t.Errorf("%s built while another pass holds the lock", label)
+		}
+	})
 
 	t.Run("indexes the compliant column only", func(t *testing.T) {
 		created, err := searchindex.Ensure(ctx, db)
@@ -97,12 +144,41 @@ func TestEnsure(t *testing.T) {
 	})
 
 	t.Run("a pass with nothing to do executes no DDL", func(t *testing.T) {
+		// A rebuilt index would get a new pg_class row (oid and xmin change).
+		before := indexIdentity(t, db, label)
+		// Any db.Exec (CREATE EXTENSION IF NOT EXISTS included, which leaves
+		// the catalog untouched) bumps the read cache's database generation,
+		// so an entry cached before the pass must still be served after it.
+		var cache *orm.QueryCache
+		if url := os.Getenv("REDIS_URL"); url != "" {
+			c, err := orm.NewQueryCache(ctx, url, 0)
+			if err != nil {
+				t.Fatalf("redis: %v", err)
+			}
+			cache = c
+			db.SetQueryCache(cache)
+			t.Cleanup(func() { db.SetQueryCache(nil); _ = cache.Close() })
+		} else {
+			t.Log("REDIS_URL not set: checking the index catalog only, not the cache generation")
+		}
+		var dst any
+		key, _ := cache.Lookup(ctx, db.Name(), table, "SELECT probe", nil, &dst)
+		cache.Store(ctx, key, 1)
+
 		created, err := searchindex.Ensure(ctx, db)
 		if err != nil {
 			t.Fatalf("Ensure: %v", err)
 		}
 		if len(created) != 0 {
 			t.Errorf("second pass created %v, want nothing", created)
+		}
+		if after := indexIdentity(t, db, label); after != before {
+			t.Errorf("%s was rebuilt by an idle pass: %s -> %s", label, before, after)
+		}
+		if cache != nil {
+			if _, hit := cache.Lookup(ctx, db.Name(), table, "SELECT probe", nil, &dst); !hit {
+				t.Error("an idle pass invalidated the read cache: it executed DDL")
+			}
 		}
 	})
 

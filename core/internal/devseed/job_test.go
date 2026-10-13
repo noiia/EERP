@@ -39,7 +39,15 @@ func TestHandler_SeedRunsInBackground(t *testing.T) {
 	svc := notify.NewService(notify.NewRepository(app.DB), nil)
 	h := devseed.NewHandlerN(app.DB, nil, "development", svc, 20) // 20 rows per table: fast
 	var indexed atomic.Int32
-	h.SetIndexer(func(context.Context, *orm.DB) ([]string, error) { indexed.Add(1); return nil, nil })
+	var indexLabel atomic.Value // the activity's progress label while indexing
+	h.SetIndexer(func(context.Context, *orm.DB) ([]string, error) {
+		indexed.Add(1)
+		var label string
+		_ = app.DB.QueryRow(ctx, `SELECT coalesce(progress_label, '') FROM notification
+			WHERE tenant_id = $1 AND kind = 'activity' AND status = 'running'`, tenant).Scan(&label)
+		indexLabel.Store(label)
+		return nil, nil
+	})
 
 	post := func(body string) *httptest.ResponseRecorder {
 		e := echo.New()
@@ -81,6 +89,9 @@ func TestHandler_SeedRunsInBackground(t *testing.T) {
 	}
 	if n := indexed.Load(); n != 1 {
 		t.Errorf("search indexer called %d times after a successful seed, want 1", n)
+	}
+	if label, _ := indexLabel.Load().(string); label != "Building search indexes" {
+		t.Errorf("progress label while indexing = %q, want %q", label, "Building search indexes")
 	}
 	var data string
 	_ = app.DB.QueryRow(ctx, `SELECT data FROM notification WHERE id = $1`, body.NotificationID).Scan(&data)

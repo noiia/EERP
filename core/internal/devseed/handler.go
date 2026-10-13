@@ -97,10 +97,15 @@ func (h *Handler) Seed(c *echo.Context) error {
 		if err != nil {
 			return results, err
 		}
-		// The seeded tables just crossed the search index policy's size floor
-		// (seeding ANALYZEs them): index them now rather than at the next hourly
-		// pass, so searching the demo volume is fast as soon as the seed ends.
-		// Never a seed failure: the maintainer retries on its own.
+		// The seeded tables just crossed the search index policy's size floor:
+		// index them now rather than at the next hourly pass, so searching the
+		// demo volume is fast as soon as the seed ends. The policy reads planner
+		// statistics, so only tables that already have fresh ones qualify here
+		// (the seed ANALYZEs some of the tables it loads, not all); the rest
+		// are indexed by the hourly pass once autovacuum has analyzed them. The
+		// pass is skipped when the maintainer is already running one. Never a
+		// seed failure: the maintainer retries on its own.
+		p(99, "Building search indexes")
 		if _, ierr := h.index(jobCtx, h.db); ierr != nil {
 			common.Logger.Warn("devseed: search indexes", zap.Error(ierr))
 		}
