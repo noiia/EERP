@@ -35,6 +35,7 @@ import (
 	"core/internal/presence"
 	"core/internal/reports"
 	"core/internal/savedfilter"
+	"core/internal/searchindex"
 	"core/internal/settings"
 	"core/internal/types"
 	"core/internal/version"
@@ -1141,6 +1142,14 @@ func (a *App) Run(ctx context.Context) error {
 			}
 		}
 	}()
+
+	// Search index maintainer (internal/searchindex, ADR-032): the last step
+	// of the schema workflow — trigram indexes for every searchable text
+	// column the statistics say is worth one, built CONCURRENTLY right after
+	// boot and re-checked hourly (tables grow, modules activate, dbmanage
+	// switches databases). Off the boot path on purpose: a first build on a
+	// large table can take minutes, and the server must not wait for it.
+	go searchindex.Run(ctx, app.DB, time.Hour)
 
 	// Event sweep (modules/event): every 5 minutes, queue the reminder of
 	// bookings entering their tenant's reminder window (events.settings

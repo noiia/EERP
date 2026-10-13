@@ -9,10 +9,13 @@ import (
 	"sync"
 
 	"core/internal/auth"
+	"core/internal/common"
+	"core/internal/searchindex"
 	"core/orm"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
 )
 
 // FullVolume is how many rows the full volume writes per business table.
@@ -83,7 +86,18 @@ func (h *Handler) Seed(c *echo.Context) error {
 		return errorJSON(c, http.StatusConflict, "CONFLICT", "A demo data seed is already running for this workspace.")
 	}
 	notificationID, err := RunJob(ctx, h.notifier, id.TenantID, id.UserID, func(jobCtx context.Context, p Progress) ([]Result, error) {
-		return SeedWithProgress(jobCtx, h.db, h.store, id.TenantID, h.n, req.Groups, p)
+		results, err := SeedWithProgress(jobCtx, h.db, h.store, id.TenantID, h.n, req.Groups, p)
+		if err != nil {
+			return results, err
+		}
+		// The seeded tables just crossed the search index policy's size floor
+		// (seeding ANALYZEs them): index them now rather than at the next hourly
+		// pass, so searching the demo volume is fast as soon as the seed ends.
+		// Never a seed failure: the maintainer retries on its own.
+		if _, ierr := searchindex.Ensure(jobCtx, h.db); ierr != nil {
+			common.Logger.Warn("devseed: search indexes", zap.Error(ierr))
+		}
+		return results, nil
 	}, false)
 	if err != nil {
 		return err
