@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests test run-front-dev garage-init logs run-docker-prod bootstrap
+.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode test run-front-dev garage-init logs run-docker-prod bootstrap
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -44,6 +44,25 @@ run-back-tests:
 run-pdf-tests:
 	cd $(root)/tools/pdf-service && go test ./... $(ARGS)
 
+# The CI's dead code gate (.github/workflows/test-check.yml): fails on any Go
+# function unreachable from core's main that isn't deliberate public API listed
+# in .github/deadcode-allowlist.txt. Same tool version and C-locale sort as CI;
+# installs deadcode into $(go env GOPATH)/bin when missing.
+DEADCODE_VERSION ?= v0.50.0
+run-deadcode:
+	@cd $(root)/core && bin="$$(go env GOPATH)/bin/deadcode" && \
+		{ [ -x "$$bin" ] || go install golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION); } && \
+		out=$$(mktemp) && allow=$$(mktemp) && \
+		"$$bin" -f '{{range .Funcs}}{{$$.Path}}.{{.Name}}{{"\n"}}{{end}}' ./... > "$$out" || { rm -f "$$out" "$$allow"; exit 1; }; \
+		sed '/^#/d' ../.github/deadcode-allowlist.txt | LC_ALL=C sort > "$$allow"; \
+		new=$$(LC_ALL=C sort "$$out" | LC_ALL=C comm -23 - "$$allow"); \
+		rm -f "$$out" "$$allow"; \
+		if [ -n "$$new" ]; then \
+			echo "Dead code not in .github/deadcode-allowlist.txt (delete it, or allowlist deliberate public API):"; \
+			echo "$$new"; exit 1; \
+		fi; \
+		echo "dead code gate: ok"
+
 # pnpm pinned to the workspace's packageManager version through npx (a broken
 # corepack shim can't get in the way); override with PNPM=pnpm. The engine is
 # built first: the shell and the modules import its dist/, as in CI.
@@ -53,12 +72,13 @@ run-front-tests:
 		$(PNPM) --filter @eerp/core-front build && \
 		$(PNPM) lint && $(PNPM) typecheck && $(PNPM) test
 
-# Every test suite the CI runs: Go backend (+ the Redis-backed cache tests),
-# pdf-service, then the frontend's lint, typecheck and tests. Stops at the first
-# failing suite.
+# Every check the CI runs: Go backend (+ the Redis-backed cache tests), the dead
+# code gate, pdf-service, then the frontend's lint, typecheck and tests. Stops at
+# the first failing suite.
 test:
 	$(COMPOSE) up -d --wait redis
 	REDIS_URL=redis://127.0.0.1:6379/0 $(MAKE) --no-print-directory run-back-tests ARGS="-timeout 30m $(ARGS)"
+	$(MAKE) --no-print-directory run-deadcode
 	$(MAKE) --no-print-directory run-pdf-tests
 	$(MAKE) --no-print-directory run-front-tests
 

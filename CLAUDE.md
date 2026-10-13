@@ -22,9 +22,14 @@ make run-back
 # Frontend only
 make run-front
 
-# Run every test suite the CI runs: Go backend (with Redis), pdf-service, then
-# frontend lint + typecheck + tests. Stops at the first failing suite.
+# Run every check the CI runs: Go backend (with Redis), the dead code gate,
+# pdf-service, then frontend lint + typecheck + tests. Stops at the first failure.
 make test
+
+# The CI's dead code gate alone: any Go function unreachable from main that isn't
+# listed in .github/deadcode-allowlist.txt fails it. A test-only helper belongs in
+# a _test.go file (export_test.go to expose it to the package's external tests).
+make run-deadcode
 
 # Run backend tests (starts Docker DB automatically)
 make run-back-tests
