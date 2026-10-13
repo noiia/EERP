@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { cookies } from 'next/headers'
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter'
 // Graph mode's drag/resize engine (react-grid-layout, docs/roadmaps/list-view-modes.md
 // Phase 4.6) — among the first raw CSS imports in this codebase (everything else
@@ -16,6 +17,7 @@ import { I18nInit } from '../src/components/I18nInit'
 import { LocaleSync } from '../src/components/LocaleSync'
 import { getIdentity } from '../src/lib/session'
 import { getMyLocalePreferences } from '../src/lib/preferences'
+import { parseThemeCookie, THEME_COOKIE } from '../src/lib/theme-cookie'
 
 export const metadata = {
   title: 'EERP',
@@ -32,11 +34,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // Server-owned language preferences (user choice + workspace default) → LocaleSync
   // applies them to the client i18n store. Anonymous visitors keep the local state.
   const preferences = (await getIdentity()) ? await getMyLocalePreferences() : null
+  // The theme the browser last used (its UI store mirrors it into this cookie), so
+  // the page is rendered in it server-side instead of flashing light first.
+  const initialTheme = parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value)
   return (
     <html lang="en">
       <body>
         <AppRouterCacheProvider>
-          <AppThemeProvider>
+          <AppThemeProvider initial={initialTheme}>
             <I18nInit />
             <LocaleSync preferences={preferences} />
             {children}
