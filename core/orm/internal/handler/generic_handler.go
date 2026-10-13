@@ -63,6 +63,7 @@ func bracketColumn(key, prefix string) (string, bool) {
 //	?in[<column>]=<v1>,<v2>        one of several values — the search bar's multi-select
 //	?gt[<column>]=/gte[]=/lt[]=/lte[]=  range comparison — the search bar's number/date ranges
 //	?empty[<column>]=1             NULL or '' — Kanban's "No status", Calendar's unscheduled
+//	?order=<column> | -<column>    sort (descending with "-"), id tiebreak — stable paging
 //
 // Filter columns are validated against the table meta here (friendly 400) and
 // again in the repository (the actual security boundary, including group gating).
@@ -76,6 +77,12 @@ func (h *GenericHandler) listFilter(c *echo.Context) (crud.ListFilter, error) {
 		pageSize = 20
 	}
 	f := crud.ListFilter{Page: page, PageSize: pageSize}
+	if order := c.QueryParam("order"); order != "" {
+		if !h.meta.HasField(strings.TrimPrefix(order, "-")) {
+			return f, echo.NewHTTPError(http.StatusBadRequest, "unknown order column: "+strings.TrimPrefix(order, "-"))
+		}
+		f.Order = order
+	}
 
 	// Single-value operators share one parsing shape; `in` is handled
 	// separately below since it's multi-value (comma-split).

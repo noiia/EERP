@@ -266,6 +266,17 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 		// PK tiebreak: equal distances (all unlocated rows are NULL) must page stably.
 		b = b.Columns(append(r.meta.StructMeta.Columns(), distanceExpr)...).
 			OrderBy(orderExpr).OrderBy(r.meta.PKField.Column)
+	} else if f.Order != "" {
+		col, dir := strings.TrimPrefix(f.Order, "-"), "ASC"
+		if col != f.Order {
+			dir = "DESC"
+		}
+		// Same gate as every filter column: unknown, unpublished or group-gated
+		// columns can't be sorted on (sorting would leak their order).
+		if err := r.checkColumn(ctx, col); err != nil {
+			return nil, 0, err
+		}
+		b = b.OrderBy(col + " " + dir).OrderBy(r.meta.PKField.Column + " " + dir)
 	}
 
 	page, pageSize := f.Page, f.PageSize

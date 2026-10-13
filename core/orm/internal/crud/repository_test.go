@@ -655,3 +655,46 @@ func TestRepository_PublicScope_UnknownForcedColumnFailsClosed(t *testing.T) {
 		t.Fatalf("err = %v, want ErrPublicScopeMisconfigured only", err)
 	}
 }
+
+func TestRepository_FindAll_OrderSortsWithPKTiebreak(t *testing.T) {
+	tests := []struct {
+		name  string
+		order string
+		want  string
+	}{
+		{"ascending", "created_at", "ORDER BY created_at ASC, id ASC"},
+		{"descending", "-created_at", "ORDER BY created_at DESC, id DESC"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ex := &captureExec{}
+			repo := crud.NewRepository(ex, rangeMeta(t))
+			if _, _, err := repo.FindAll(context.Background(), crud.ListFilter{Order: tc.order}); err != nil {
+				t.Fatalf("FindAll: %v", err)
+			}
+			found := false
+			for _, q := range ex.queries {
+				found = found || strings.Contains(q, tc.want)
+			}
+			if !found {
+				t.Errorf("no query carries %q: %v", tc.want, ex.queries)
+			}
+		})
+	}
+}
+
+func TestRepository_FindAll_RejectsUnknownOrGatedOrderColumn(t *testing.T) {
+	if _, _, err := crud.NewRepository(&captureExec{}, rangeMeta(t)).
+		FindAll(context.Background(), crud.ListFilter{Order: "-nope"}); !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Errorf("unknown column: err = %v, want ErrUnknownColumn", err)
+	}
+	// Sorting on a gated column would leak its values' order.
+	ex := &captureExec{}
+	if _, _, err := crud.NewRepository(ex, gatedMeta(t)).
+		FindAll(context.Background(), crud.ListFilter{Order: "secret"}); !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Errorf("gated column: err = %v, want ErrUnknownColumn", err)
+	}
+	if len(ex.queries) != 0 {
+		t.Errorf("no SQL must run for a gated order column, got %v", ex.queries)
+	}
+}

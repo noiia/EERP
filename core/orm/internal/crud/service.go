@@ -41,6 +41,11 @@ type ListFilter struct {
 	Empty []string
 	// Geo holds the geo params (near/within/covers/inside) — see GeoFilter.
 	Geo GeoFilter
+	// Order sorts the page by one column, "-" prefixed for descending, with the
+	// primary key as tiebreak so consecutive pages never repeat or skip a row.
+	// Empty = no ORDER BY (heap order — fine for one page, unstable to page
+	// through). A near[] ordering, when present, takes precedence.
+	Order string
 }
 
 // DistinctValue is one bucket from DistinctValues: a distinct value of the

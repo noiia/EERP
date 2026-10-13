@@ -537,3 +537,28 @@ func (m *mockSvc) Aggregate(ctx context.Context, req crud.AggregateRequest, f cr
 	}
 	return nil, nil
 }
+
+func TestList_OrderParam(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+			gotFilter = f
+			return nil, 0, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items?order=-name", "")
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if gotFilter.Order != "-name" {
+		t.Errorf("Order = %q, want -name", gotFilter.Order)
+	}
+
+	_, c, _ = newEchoRequest(http.MethodGet, "/api/v1/items?order=-nope", "")
+	var he *echo.HTTPError
+	if err := h.List(c); !errors.As(err, &he) || he.Code != http.StatusBadRequest {
+		t.Errorf("unknown order column: err = %v, want 400 HTTPError", err)
+	}
+}
