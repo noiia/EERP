@@ -6,6 +6,7 @@ import (
 
 	"core/internal/auth"
 	"core/internal/module"
+	"core/internal/notify"
 	"core/orm"
 
 	"github.com/bytecodealliance/wasmtime-go/v15"
@@ -39,6 +40,11 @@ func (p Provisioner) Provision(ctx context.Context, db *orm.DB, onProgress func(
 	}
 	if err := auth.SeedDevAdmin(ctx, db, p.Environment); err != nil {
 		return fmt.Errorf("dbmanage: seed default admin: %w", err)
+	}
+	// Same as at boot (internal/app): the admin is the database's first user,
+	// seeded after the modules migrated, so the notification catalog syncs again.
+	if err := notify.NewRepository(db).SyncCatalog(ctx); err != nil {
+		return fmt.Errorf("dbmanage: sync notification catalog: %w", err)
 	}
 	return nil
 }

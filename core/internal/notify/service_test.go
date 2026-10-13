@@ -122,3 +122,46 @@ func TestService_ActivityLifecycle(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 }
+
+func TestService_InitiatorAlwaysReceivesTheirActivity(t *testing.T) {
+	f := setup(t)
+	pub := &fakePub{}
+	svc := notify.NewService(f.repo, pub)
+	run, err := svc.Start(context.Background(), f.tenant, notify.Activity{Category: "dev_seed", Title: "Seeding", Link: "/settings/developer", ActorID: &f.bob})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Finish(nil, "", nil)
+	for _, s := range pub.all() {
+		if len(s.users) != 1 || s.users[0] != f.bob {
+			t.Errorf("sent to %v, want [bob] (the initiator; nobody holds dev_seed)", s.users)
+		}
+	}
+	if len(pub.all()) != 2 {
+		t.Errorf("frames = %d, want start + finish", len(pub.all()))
+	}
+}
+
+// When the final write can't land, the browsers must still learn the run
+// ended — otherwise its progress bar spins until the next restart.
+func TestRun_FinishPublishesEvenWhenTheWriteFails(t *testing.T) {
+	f := setup(t)
+	pub := &fakePub{}
+	svc := notify.NewService(f.repo, pub)
+	ctx := context.Background()
+	run, err := svc.Start(ctx, f.tenant, notify.Activity{Category: "dev_seed", Title: "Seeding", Link: "/settings/developer", ActorID: &f.bob})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.DB().Exec(ctx, `DELETE FROM notification WHERE id = $1`, run.ID()); err != nil {
+		t.Fatal(err)
+	}
+
+	run.Finish(errors.New("boom"), "", nil)
+
+	frames := pub.all()
+	last, _ := frames[len(frames)-1].frame["notification"].(map[string]any)
+	if len(frames) != 2 || last["status"] != "failed" || last["body"] != "boom" || last["finished_at"] == nil {
+		t.Fatalf("frames = %d, last = %v; want the final failed state published", len(frames), last)
+	}
+}

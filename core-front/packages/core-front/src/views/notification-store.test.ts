@@ -34,6 +34,17 @@ describe('useNotificationStore', () => {
     expect(useNotificationStore.getState().unread).toBe(0)
   })
 
+  it('stops the new-item dot once everything is read, even from another tab', () => {
+    useNotificationStore.getState().setFeed([n({ id: 'a' })], 1)
+    const live: Omit<AppNotification, 'read'> = (({ read, ...rest }) => (void read, rest))(n({ id: 'b' }))
+    handleNotificationFrame({ type: 'notification', notification: live })
+    expect(useNotificationStore.getState().hasNew).toBe(true)
+    handleNotificationFrame({ type: 'notification_read', ids: ['a'] })
+    expect(useNotificationStore.getState().hasNew).toBe(true) // 'b' is still unseen
+    handleNotificationFrame({ type: 'notification_read', all: true })
+    expect(useNotificationStore.getState()).toMatchObject({ unread: 0, hasNew: false })
+  })
+
   it('ignores presence frames and garbage', () => {
     expect(handleNotificationFrame({ type: 'update' })).toBe(false)
     expect(handleNotificationFrame({ type: 'notification', notification: { nope: 1 } })).toBe(true)

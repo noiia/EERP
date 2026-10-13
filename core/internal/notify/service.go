@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -161,18 +162,46 @@ func (r *Run) Finish(err error, body string, data *string) {
 		full := 100
 		u.Progress = &full
 	}
-	n, werr := r.svc.repo.UpdateActivity(context.Background(), r.n.ID, u)
+	// A few attempts: a lost final write leaves the row "running" until the
+	// next restart (and blocks a new seed of the tenant).
+	var werr error
+	for attempt := 0; attempt < finishAttempts; attempt++ {
+		var n Notification
+		if n, werr = r.svc.repo.UpdateActivity(context.Background(), r.n.ID, u); werr == nil {
+			r.n = n
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * finishRetryDelay)
+	}
 	if werr != nil {
 		common.Logger.Error("notify: finish write", zap.Error(werr))
-		return
+		// Still tell the browsers the run ended, from the in-memory state.
+		now := time.Now()
+		r.n.Status, r.n.FinishedAt = &status, &now
+		if u.Body != nil {
+			r.n.Body = *u.Body
+		}
+		if u.Progress != nil {
+			r.n.Progress = u.Progress
+		}
+		if data != nil {
+			r.n.Data = data
+		}
 	}
-	r.n = n
-	r.svc.publishGlobal(n)
+	r.svc.publishGlobal(r.n)
 }
 
-// FailInterrupted marks activities left running by a previous process failed.
-func (s *Service) FailInterrupted(ctx context.Context) error {
-	_, err := s.repo.FailInterrupted(ctx)
+// finishAttempts/finishRetryDelay bound Finish's retries of its final write.
+const (
+	finishAttempts   = 3
+	finishRetryDelay = 100 * time.Millisecond
+)
+
+// FailInterrupted marks activities a previous process left running (created
+// before startedAt) failed. Call it from a real server start, never from a
+// build that may share the database with a running server (tests).
+func (s *Service) FailInterrupted(ctx context.Context, startedAt time.Time) error {
+	_, err := s.repo.FailInterrupted(ctx, startedAt)
 	return err
 }
 
@@ -184,6 +213,10 @@ func (s *Service) publishGlobal(n Notification) {
 	if err != nil {
 		common.Logger.Warn("notify: audience", zap.Error(err))
 		return
+	}
+	// The initiator always follows what they started (the feed's visible filter agrees).
+	if n.ActorID != nil && !slices.Contains(users, *n.ActorID) {
+		users = append(users, *n.ActorID)
 	}
 	s.send(n, users)
 }

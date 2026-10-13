@@ -192,8 +192,10 @@ func (r *Repository) Audience(ctx context.Context, tenant uuid.UUID, category st
 }
 
 // visible is THE privacy filter: $1 tenant, $2 caller, $3 caller's categories.
+// The initiator of a global activity always sees it, whatever their roles —
+// they must be able to follow what they started.
 const visible = `n.tenant_id = $1 AND n.deleted_at IS NULL
-	AND (n.user_id = $2 OR (n.user_id IS NULL AND n.category = ANY($3)))`
+	AND (n.user_id = $2 OR (n.user_id IS NULL AND (n.category = ANY($3) OR n.actor_id = $2)))`
 
 // FeedItem is one feed row with the caller's read state. Notification is
 // excluded from JSON; handlers serialize WireItem.
@@ -293,12 +295,14 @@ func (r *Repository) Sweep(ctx context.Context, now time.Time) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
-// FailInterrupted marks every running activity failed — at boot, the process
-// that ran them is gone (and their transactions were rolled back).
-func (r *Repository) FailInterrupted(ctx context.Context) (int64, error) {
+// FailInterrupted marks running activities created before startedAt failed —
+// at a server start, the process that ran them is gone (and their
+// transactions were rolled back). Rows from after startedAt belong to a live
+// process and are left alone.
+func (r *Repository) FailInterrupted(ctx context.Context, startedAt time.Time) (int64, error) {
 	tag, err := r.db.Exec(ctx, `
 		UPDATE notification SET status = 'failed', body = 'Interrupted by a restart', finished_at = now(), updated_at = now()
-		WHERE status = 'running'`)
+		WHERE status = 'running' AND created_at < $1`, startedAt)
 	if err != nil {
 		return 0, fmt.Errorf("notify: fail interrupted: %w", err)
 	}

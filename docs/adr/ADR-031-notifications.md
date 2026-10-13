@@ -41,7 +41,11 @@ sequenceDiagram
 - **API.** `notify.RegisterCategory` at `init()`; `Personal(...)` for one-off messages;
   `Start(...)` → `Run.Progress(pct, label)` → `Run.Finish(err, body, data)` for activities.
   Progress is throttled (one live frame per 500 ms per activity, a row write only when the step
-  label changes). At boot, activities left `running` by a previous process are marked failed.
+  label changes). At a real server start (`App.Run`, not `Build` — tests build against shared databases),
+  activities a previous process left `running` (created before the start) are marked failed; the
+  catalog syncs again after the default admin is seeded (boot and `dbmanage` provisioning), since on
+  a fresh database that admin is the first user. A final write that fails is retried and the end
+  state is published anyway.
 - **Visibility is decided once, server-side, per publish.** A personal notification goes to its
   owner; a global one to `Audience(tenant, category)` — every user whose role closure (direct roles
   plus every role they transitively belong to) holds the category. The hub gets an explicit list of
@@ -61,10 +65,11 @@ sequenceDiagram
 Every read and write path filters on
 
 ```
-tenant_id = caller.tenant AND (user_id = caller.user OR (user_id IS NULL AND category = ANY(caller.categories)))
+tenant_id = caller.tenant AND (user_id = caller.user OR (user_id IS NULL AND (category = ANY(caller.categories) OR actor_id = caller.user)))
 ```
 
-No route takes another user's id; mark-read silently ignores ids outside the filter (no existence
+The initiator of an activity always sees it (and is always in its audience), so whoever starts a
+seed can follow it whatever their roles. No route takes another user's id; mark-read silently ignores ids outside the filter (no existence
 oracle); the wire shape never carries user, actor or tenant ids; live frames are only ever sent to
 the computed audience.
 

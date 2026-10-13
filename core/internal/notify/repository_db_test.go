@@ -208,12 +208,37 @@ func TestSweepAndFailInterrupted(t *testing.T) {
 	if !exists(oldRunning) || !exists(recentPersonal) {
 		t.Error("running and recent rows must stay")
 	}
-	if n, err := f.repo.FailInterrupted(ctx); err != nil || n < 1 {
+	// Scoped to rows older than its own (40 days back): never another test's or a live server's.
+	if n, err := f.repo.FailInterrupted(ctx, old.Add(time.Minute)); err != nil || n < 1 {
 		t.Fatalf("FailInterrupted = %d, %v", n, err)
 	}
 	var status string
 	_ = f.repo.DB().QueryRow(ctx, `SELECT status FROM notification WHERE id = $1`, oldRunning).Scan(&status)
 	if status != "failed" {
 		t.Errorf("interrupted status = %q, want failed", status)
+	}
+}
+
+// The person who started an activity always follows it — even without its
+// category (seeding needs dev_seed:dev_seed:write, not the category) — or
+// their own seed's progress page would spin forever.
+func TestFeed_InitiatorSeesOwnActivity(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	running := "running"
+	n, err := f.repo.Create(ctx, notify.Notification{BaseModel: model.BaseModel{TenantID: f.tenant},
+		Category: "dev_seed", Kind: "activity", Title: "Seeding", Link: "/settings/developer", Status: &running, ActorID: &f.bob})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _, _ := f.repo.Feed(ctx, f.tenant, f.bob)
+	if !ids(items)[n.ID] {
+		t.Error("bob started the activity but can't see it")
+	}
+	if marked, _ := f.repo.MarkRead(ctx, f.tenant, f.bob, []uuid.UUID{n.ID}, false); len(marked) != 1 {
+		t.Errorf("bob can't mark his own activity read: %v", marked)
+	}
+	if items, _, _ := f.repo.Feed(ctx, f.tenant, f.alice); ids(items)[n.ID] {
+		t.Error("alice (no dev_seed category, not the actor) must not see it")
 	}
 }

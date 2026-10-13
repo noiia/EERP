@@ -59,7 +59,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
   markRead: (ids) => {
     const items = get().items.map((i) => (ids === 'all' || ids.includes(i.id) ? { ...i, read: true } : i))
-    set({ items, unread: countUnread(items) })
+    const unread = countUnread(items)
+    // Nothing left unread (here or read in another tab): nothing new to flag.
+    set({ items, unread, hasNew: get().hasNew && unread > 0 })
   },
   acknowledge: () => set({ hasNew: false }),
 }))

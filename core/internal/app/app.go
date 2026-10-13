@@ -73,6 +73,7 @@ type App struct {
 	permRepo    *auth.PermissionRepository
 	presenceHub *presence.Hub
 	notify      *notify.Service
+	startedAt   time.Time       // when Build began: activities created before it are from a previous process
 	cache       *orm.QueryCache // nil when redis_url is unset/unreachable
 	extAuth     *providers.Handler
 }
@@ -82,6 +83,7 @@ type App struct {
 // seeds the default admin (and, in development, demo data) and mounts every route.
 // It does not listen yet: call Run. configPath is the config file's own path.
 func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool) (*App, error) {
+	buildStart := time.Now()
 	configContent := cfg
 
 	// Refuse to start with an insecure signing key. Named literals below are
@@ -197,6 +199,12 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 	} else {
 		common.Logger.Warn("⚠️  default admin available — change its password immediately", zap.String("email", auth.DevAdminEmail))
 	}
+	// The notification catalog syncs per tenant with a user — on a fresh
+	// database the admin above is the first one, seeded after the modules
+	// migrated, so sync again to give its tenant (and admin role) the catalog.
+	if err := notify.NewRepository(app.DB).SyncCatalog(ctx); err != nil {
+		common.Logger.Warn("notify: sync catalog after admin seed", zap.Error(err))
+	}
 
 	// DEV ONLY: demo Property Management data (a property, its equipment/history,
 	// a tenant, a generated rent receipt) so the module isn't empty out of the box.
@@ -215,7 +223,7 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 	qc := openQueryCache(ctx, configContent)
 	app.DB.SetQueryCache(qc)
 
-	a := &App{cfg: configContent, configPath: configPath, db: app, engine: engine, linker: linker, cache: qc}
+	a := &App{cfg: configContent, configPath: configPath, db: app, engine: engine, linker: linker, cache: qc, startedAt: buildStart}
 	if err := a.mountRoutes(moduleRuntime); err != nil {
 		_ = app.Close()
 		return nil, err
@@ -631,9 +639,6 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	presenceHub := presence.NewHub()
 	notifySvc := notify.NewService(notify.NewRepository(app.DB), presenceHub)
 	a.notify = notifySvc
-	if err := notifySvc.FailInterrupted(ctx); err != nil {
-		common.Logger.Warn("notify: fail interrupted activities", zap.Error(err))
-	}
 	notifyHandler := notify.NewHandler(notifySvc)
 	srv.Echo().GET("/api/v1/notifications", notifyHandler.List, jwtMw)
 	srv.Echo().POST("/api/v1/notifications/read", notifyHandler.MarkRead, jwtMw)
@@ -1112,6 +1117,12 @@ func (a *App) Run(ctx context.Context) error {
 	// happens at the exact moment the 30 minutes elapse. Same inline-ticker
 	// shape as the quote-expiry sweep above, since it's a single fixed job
 	// too (unlike the cron scheduler, which manages many user-defined rows).
+	// Activities a previous process left running can't finish any more: fail
+	// them. Only here, at a real server start — a test's Build may share the
+	// database with a live server whose runs are in flight.
+	if err := a.notify.FailInterrupted(ctx, a.startedAt); err != nil {
+		common.Logger.Warn("notify: fail interrupted activities", zap.Error(err))
+	}
 	// Notification retention (7 days for finished activities, 30 for personal).
 	go notify.RunSweeper(ctx, a.notify.Repo())
 
