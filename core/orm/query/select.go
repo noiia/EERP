@@ -2,8 +2,10 @@ package query
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"core/orm/internal/cache"
@@ -294,4 +296,47 @@ func (b SelectBuilder[T]) Count(ctx context.Context, ex executor.Executor) (int6
 		return 0, fmt.Errorf("select: count: %w", err)
 	}
 	return n, nil
+}
+
+// CountUpTo counts the matching rows like Count but stops after limit+1 of
+// them: n is exact when capped is false, and limit+1 (a lower bound) when
+// capped is true. Its cost is bounded by limit instead of growing with the
+// table — what a paginated list's total needs (crud.Repository.FindAll pairs
+// it with EstimateRows past the limit).
+func (b SelectBuilder[T]) CountUpTo(ctx context.Context, ex executor.Executor, limit int) (n int64, capped bool, err error) {
+	sub, args := b.matchingRows().Limit(limit + 1).ToSQL()
+	if err := ex.QueryRow(ctx, "SELECT COUNT(*) FROM ("+sub+") AS bounded", args...).Scan(&n); err != nil {
+		return 0, false, fmt.Errorf("select: count up to: %w", err)
+	}
+	return n, n > int64(limit), nil
+}
+
+// EstimateRows returns the planner's estimate of the matching rows (EXPLAIN:
+// nothing is scanned). As accurate as the table's statistics — cheap at any
+// size, but approximate; use it where an exact count would cost too much.
+func (b SelectBuilder[T]) EstimateRows(ctx context.Context, ex executor.Executor) (int64, error) {
+	sub, args := b.matchingRows().ToSQL()
+	var raw []byte
+	if err := ex.QueryRow(ctx, "EXPLAIN (FORMAT JSON) "+sub, args...).Scan(&raw); err != nil {
+		return 0, fmt.Errorf("select: estimate rows: %w", err)
+	}
+	var plans []struct {
+		Plan struct {
+			Rows float64 `json:"Plan Rows"`
+		} `json:"Plan"`
+	}
+	if err := json.Unmarshal(raw, &plans); err != nil || len(plans) == 0 {
+		return 0, fmt.Errorf("select: estimate rows: unreadable plan %q", raw)
+	}
+	return int64(math.Round(plans[0].Plan.Rows)), nil
+}
+
+// matchingRows keeps only what decides WHICH rows match (FROM, JOIN, WHERE,
+// GROUP BY, HAVING), selecting a constant: no order, paging or row lock.
+func (b SelectBuilder[T]) matchingRows() SelectBuilder[T] {
+	b.cols = []string{"1"}
+	b.orderBy = nil
+	b.limit, b.offset = 0, 0
+	b.lock = rowLock{}
+	return b
 }
