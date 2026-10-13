@@ -569,6 +569,37 @@ describe('EntityView', () => {
     })
   })
 
+  describe('estimated totals (total_estimated, ADR-032) in the server-paged grid', () => {
+    const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+    const page = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ id: `r${from + i}`, name: `Row ${from + i}` }))
+
+    it('labels the estimate with ≈', () => {
+      const listPage = vi.fn(async () => ({ records: [], total: 0 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={treeDescriptor} initialData={page(1, 20)} recordTotal={10001} recordTotalEstimated actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      expect(screen.getByText('1–20 of ≈ 10001')).toBeInTheDocument()
+    })
+
+    it('never stops paging at an estimate: a full page always offers the next one', async () => {
+      // The planner undercounted: 20 estimated, but 25 rows really match.
+      const listPage = vi.fn(async () => ({ records: page(21, 5), total: 25 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={treeDescriptor} initialData={page(1, 20)} recordTotal={20} recordTotalEstimated actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      const next = screen.getByRole('button', { name: /next page/i })
+      expect(next).toBeEnabled()
+      fireEvent.click(next)
+      await waitFor(() => expect(listPage).toHaveBeenCalledWith('crm', expect.objectContaining({ page: 2, pageSize: 20 })))
+      await waitFor(() => expect(screen.getByText('Row 25')).toBeInTheDocument())
+      expect(screen.getByText('21–25 of 25')).toBeInTheDocument()
+    })
+  })
+
   describe('built-in form Delete (docs/adr/ADR-015-undo-toast.md)', () => {
     it('hidden with no crm:crm:delete permission, even with remove bound', () => {
       const remove = vi.fn(async () => {})
@@ -790,6 +821,41 @@ describe('EntityView', () => {
       await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm/r21'))
       expect(listPage).toHaveBeenCalledWith('crm', { ...options, page: 2, pageSize: 20 })
       expect(useListNavStore.getState().nav.crm).toMatchObject({ offset: 20, total: 45 })
+    })
+
+    it('an estimated total never disables Next: it steps past the estimated last record', async () => {
+      // Planner estimate 20, but more rows really match (ADR-032).
+      useListNavStore.getState().setNav('crm', {
+        ids: Array.from({ length: 20 }, (_, i) => `r${i + 1}`), offset: 0, total: 20, totalEstimated: true, paging: { pageSize: 20 },
+      })
+      const listPage = vi.fn(async () => ({ records: [{ id: 'r21' }], total: 21 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={formDescriptor} initialData={[{ id: 'r20', name: 'Ada' }]} actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      expect(screen.getByText('20 / ≈ 20')).toBeInTheDocument()
+      const next = screen.getByRole('button', { name: 'Next record' })
+      expect(next).toBeEnabled()
+      fireEvent.click(next)
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm/r21'))
+    })
+
+    it('stays on the record, navigator intact, when the page past an estimate is empty', async () => {
+      useListNavStore.getState().setNav('crm', {
+        ids: Array.from({ length: 20 }, (_, i) => `r${i + 1}`), offset: 0, total: 20, totalEstimated: true, paging: { pageSize: 20 },
+      })
+      const listPage = vi.fn(async () => ({ records: [], total: 20 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={formDescriptor} initialData={[{ id: 'r20', name: 'Ada' }]} actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Next record' }))
+      await waitFor(() => expect(listPage).toHaveBeenCalled())
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Next record' })).toBeEnabled())
+      expect(pushMock).not.toHaveBeenCalled()
+      expect(screen.getByText(/^20 \//)).toBeInTheDocument()
     })
   })
 

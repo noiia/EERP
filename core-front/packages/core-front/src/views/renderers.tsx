@@ -16,7 +16,7 @@ import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
-import { DataGrid, type GridColDef, type GridRowSelectionModel } from '@mui/x-data-grid'
+import { DataGrid, useGridApiRef, type GridColDef, type GridRowSelectionModel } from '@mui/x-data-grid'
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
@@ -313,8 +313,11 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
       const res = await relationOps.listPage(entity, { ...paging.options, page: page + 1, pageSize: paging.pageSize })
       const ids = res.records.map((r) => r.id)
       const id = ids[target - page * paging.pageSize]
+      // Past the real end (only reachable over an estimated total): keep the
+      // loaded page, so this record — and the navigator — stay where they are.
+      if (!id) return
       useListNavStore.getState().setNav(entity, { ...nav, ids, offset: page * paging.pageSize, total: res.total, totalEstimated: res.totalEstimated })
-      if (id) open(id)
+      open(id)
     } catch {
       // The page couldn't load; stay on this record.
     } finally {
@@ -338,7 +341,9 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
       <IconButton
         size="small"
         aria-label={t('Next record')}
-        disabled={busy || position >= nav.total - 1}
+        // An estimated total (ADR-032) may undercount: never stop on it — a
+        // step past the real end just finds an empty page and stays put.
+        disabled={busy || (!nav.totalEstimated && position >= nav.total - 1)}
         onClick={() => void goTo(position + 1)}
       >
         <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} size="xs" />
@@ -955,6 +960,21 @@ function TreeRenderer<T extends HasId>({
       : { ids, offset: 0, total: ids.length })
   }, [liveRecords, descriptor.entity, serverPaged, mode, paginationModel, total, totalEstimated, baseOptions])
 
+  // An estimated total (ADR-032) can undercount by a lot, so it must never
+  // bound paging: the grid runs with an unknown row count (-1), shows the
+  // estimate, and offers a next page while the current one is full. On the
+  // first short page the grid fixes the count itself; a filter change starts
+  // over from unknown (the grid only re-reads `rowCount` when the prop changes).
+  const gridApiRef = useGridApiRef()
+  const estimatedPaging = serverPaged && totalEstimated
+  const paginationMeta = useMemo(
+    () => ({ hasNextPage: liveRecords.length >= paginationModel.pageSize }),
+    [liveRecords.length, paginationModel.pageSize],
+  )
+  useEffect(() => {
+    if (estimatedPaging) gridApiRef.current?.setRowCount(-1)
+  }, [estimatedPaging, baseOptions, gridApiRef])
+
   // Flat data (no parent links) renders as a grid, with row checkboxes; hierarchical
   // data as a read-only tree (RichTreeView has no selection UI here — out of scope).
   const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
@@ -1125,12 +1145,25 @@ function TreeRenderer<T extends HasId>({
             }
             sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
             // Server-paged: rowCount is Go's total over every matching row and
-            // each page change fetches that page (the effect above).
+            // each page change fetches that page (the effect above). An
+            // estimated total is shown, never trusted (gridApiRef's effect).
+            apiRef={gridApiRef}
             paginationMode={serverPaged ? 'server' : 'client'}
-            rowCount={serverPaged ? total : undefined}
+            rowCount={serverPaged ? (estimatedPaging ? -1 : total) : undefined}
+            estimatedRowCount={estimatedPaging ? total : undefined}
+            paginationMeta={estimatedPaging ? paginationMeta : undefined}
             localeText={
-              serverPaged && totalEstimated
-                ? { paginationDisplayedRows: ({ from, to, count }) => `${from}–${to} of ${formatTotal(count, true)}` }
+              estimatedPaging
+                ? {
+                    paginationDisplayedRows: ({ from, to, count, estimated }) =>
+                      `${from}–${to} ${t('of')} ${
+                        count !== -1
+                          ? count
+                          : estimated != null && estimated > to
+                            ? formatTotal(estimated, true)
+                            : `${t('more than')} ${to}`
+                      }`,
+                  }
                 : undefined
             }
             loading={pageLoading}

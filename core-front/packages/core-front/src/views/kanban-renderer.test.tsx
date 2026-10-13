@@ -247,4 +247,30 @@ describe('KanbanRenderer with serverOptions', () => {
     expect(listPage).toHaveBeenCalledWith('deals', expect.objectContaining({ search: { name: 'ac' }, filter: { status: 'open' } }))
     expect(listPage).toHaveBeenCalledWith('deals', expect.objectContaining({ empty: ['status'] }))
   })
+
+  it('marks a column count Go estimated (total_estimated) as approximate', async () => {
+    const { RelationOpsProvider } = await import('./relation-ops')
+    const listPage = vi.fn(async (_entity: string, options?: import('../api/list-options').EntityListOptions) => {
+      if (options?.filter?.status === 'open') {
+        return { records: [{ id: '1', name: 'Acme', status: 'open' }], total: 40_000, totalEstimated: true as const }
+      }
+      if (options?.empty?.includes('status')) return { records: [], total: 7 }
+      return { records: [], total: 0 }
+    })
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <KanbanRenderer
+          descriptor={descriptor}
+          initialData={[]}
+          actions={{ create: vi.fn(), update: vi.fn() }}
+          statusField="status"
+          serverOptions={{}}
+        />
+      </RelationOpsProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('open (≈ 40000)')).toBeInTheDocument())
+    expect(screen.getByText('+≈ 39999 more')).toBeInTheDocument()
+    expect(screen.getByText('No status (7)')).toBeInTheDocument()
+  })
 })

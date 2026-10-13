@@ -1844,3 +1844,9 @@ msgstr "Démarrage…"
 
 msgid "The full demo seed failed."
 msgstr "La génération complète des données de démonstration a échoué."
+
+msgid "of"
+msgstr "sur"
+
+msgid "more than"
+msgstr "plus de"

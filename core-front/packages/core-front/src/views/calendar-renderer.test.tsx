@@ -304,4 +304,22 @@ describe('CalendarRenderer', () => {
     // "colored" from "not colored" here.
     expect(badCard.className).not.toBe(okCard.className)
   })
+
+  it('server-loaded: marks month and unscheduled totals Go estimated as approximate', async () => {
+    const { RelationOpsProvider } = await import('./relation-ops')
+    const listPage = vi.fn(async (_entity: string, options?: import('../api/list-options').EntityListOptions) => {
+      if (options?.empty?.includes('due_date')) {
+        return { records: [{ id: '2', name: 'Beta', due_date: null }], total: 15_000, totalEstimated: true as const }
+      }
+      return { records: [{ id: '1', name: 'Alpha', due_date: day15 }], total: 20_000, totalEstimated: true as const }
+    })
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <CalendarRenderer descriptor={descriptor} initialData={[]} actions={actions} dateField="due_date" serverOptions={{}} />
+      </RelationOpsProvider>,
+    )
+    await waitFor(() => expect(screen.getByText(/1 \/ ≈ 20000/)).toBeInTheDocument())
+    expect(screen.getByText('Unscheduled (≈ 15000)')).toBeInTheDocument()
+  })
 })

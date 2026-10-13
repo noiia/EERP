@@ -15,6 +15,7 @@ import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { orderedFields } from './layout-fields'
+import { formatTotal } from './total-format'
 import { useRelationOps } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
 import { useUndoToastStore } from './undo-toast'
@@ -99,8 +100,11 @@ export function CalendarRenderer<T extends HasId>({
   const [server, setServer] = useState<{
     records: T[]
     monthTotal: number
+    /** Go estimated the total (past 10 000 matching rows, ADR-032). */
+    monthEstimated: boolean
     monthLoaded: number
     unscheduledTotal: number
+    unscheduledEstimated: boolean
     unscheduledLoaded: number
   } | null>(null)
   const [loadError, setLoadError] = useState<SerializedError | null>(null)
@@ -135,8 +139,10 @@ export function CalendarRenderer<T extends HasId>({
         setServer({
           records: [...month.records, ...unscheduled.records] as unknown as T[],
           monthTotal: month.total,
+          monthEstimated: month.totalEstimated === true,
           monthLoaded: month.records.length,
           unscheduledTotal: unscheduled.total,
+          unscheduledEstimated: unscheduled.totalEstimated === true,
           unscheduledLoaded: unscheduled.records.length,
         })
       })
@@ -284,7 +290,7 @@ export function CalendarRenderer<T extends HasId>({
               <Typography variant="subtitle1">{monthLabel(cursor.year, cursor.month)}</Typography>
               {monthHidden > 0 ? (
                 <Typography variant="caption" color="text.secondary">
-                  {server!.monthLoaded} / {server!.monthTotal} {t('shown this month')}
+                  {server!.monthLoaded} / {formatTotal(server!.monthTotal, server!.monthEstimated)} {t('shown this month')}
                 </Typography>
               ) : null}
             </Box>
@@ -347,7 +353,7 @@ export function CalendarRenderer<T extends HasId>({
             sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
           >
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              {t('Unscheduled')} ({unscheduledCount})
+              {t('Unscheduled')} ({formatTotal(unscheduledCount, server?.unscheduledEstimated)})
             </Typography>
             <Stack spacing={0.5}>{unscheduled.map(dayCard)}</Stack>
           </Box>

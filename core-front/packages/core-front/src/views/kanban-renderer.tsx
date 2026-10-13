@@ -13,6 +13,7 @@ import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { orderedFields } from './layout-fields'
+import { formatTotal } from './total-format'
 import { useRelationOps } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
@@ -70,7 +71,7 @@ export function KanbanRenderer<T extends HasId>({
   const columns = [...options, NO_STATUS]
 
   // One request per column: its first KANBAN_COLUMN_LIMIT cards + its total.
-  const [server, setServer] = useState<{ records: T[]; counts: Record<string, number> } | null>(null)
+  const [server, setServer] = useState<{ records: T[]; counts: Record<string, number>; estimated: Record<string, boolean> } | null>(null)
   const [loadError, setLoadError] = useState<SerializedError | null>(null)
   const serverKey = serverOptions && relationOps?.listPage ? JSON.stringify(serverOptions) : null
   const columnsKey = columns.join('\u0000')
@@ -87,7 +88,7 @@ export function KanbanRenderer<T extends HasId>({
       columns.map((column) => {
         // A search-bar filter on the status field itself empties every other column.
         if (pinned != null && column !== NO_STATUS && column !== pinned) {
-          return Promise.resolve({ records: [], total: 0 })
+          return Promise.resolve({ records: [], total: 0, totalEstimated: undefined })
         }
         const scope: EntityListOptions =
           column === NO_STATUS ? { empty: [statusField] } : { filter: { [statusField]: column } }
@@ -100,6 +101,8 @@ export function KanbanRenderer<T extends HasId>({
         setServer({
           records: pages.flatMap((p) => p.records) as unknown as T[],
           counts: Object.fromEntries(columns.map((c, i) => [c, pages[i].total])),
+          // Go estimates past 10 000 matching rows (ADR-032): shown with "≈".
+          estimated: Object.fromEntries(columns.map((c, i) => [c, pages[i].totalEstimated === true])),
         })
       })
       .catch((e: unknown) => {
@@ -149,6 +152,7 @@ export function KanbanRenderer<T extends HasId>({
           const label = column === NO_STATUS ? t('No status') : column
           const cards = records.filter((r) => statusOf(r) === column)
           const count = countOf(column, cards.length)
+          const estimated = server?.estimated[column] === true
           return (
             <Box
               key={column}
@@ -168,7 +172,7 @@ export function KanbanRenderer<T extends HasId>({
               }}
             >
               <Typography variant="subtitle2" sx={{ mb: 1, px: 0.5 }}>
-                {label} ({count})
+                {label} ({formatTotal(count, estimated)})
               </Typography>
               <Stack spacing={1}>
                 {cards.map((record) => (
@@ -202,7 +206,7 @@ export function KanbanRenderer<T extends HasId>({
               </Stack>
               {count > cards.length ? (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, px: 0.5 }}>
-                  +{count - cards.length} {t('more')}
+                  +{formatTotal(count - cards.length, estimated)} {t('more')}
                 </Typography>
               ) : null}
             </Box>

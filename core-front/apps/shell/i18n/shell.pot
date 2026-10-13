@@ -1683,3 +1683,11 @@ msgstr ""
 
 msgid "The full demo seed failed."
 msgstr ""
+
+#. List pagination: "1–20 of ≈ 10001", "1–20 of more than 20".
+#: packages/core-front/src/views/renderers.tsx
+msgid "of"
+msgstr ""
+
+msgid "more than"
+msgstr ""
