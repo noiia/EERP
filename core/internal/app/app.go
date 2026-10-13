@@ -29,6 +29,7 @@ import (
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
+	"core/internal/notify"
 	"core/internal/payment"
 	"core/internal/pictures"
 	"core/internal/presence"
@@ -71,6 +72,7 @@ type App struct {
 	userRepo    *auth.UserRepository
 	permRepo    *auth.PermissionRepository
 	presenceHub *presence.Hub
+	notify      *notify.Service
 	cache       *orm.QueryCache // nil when redis_url is unset/unreachable
 	extAuth     *providers.Handler
 }
@@ -620,6 +622,22 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	graphFieldGroup.PUT("/:id", graphFieldHandler.Update)
 	graphFieldGroup.DELETE("/:id", graphFieldHandler.Delete)
 
+	// ── Notifications ─────────────────────────────────────────────────────────
+	// Global activities + personal notifications (docs/adr/ADR-031-notifications.md),
+	// delivered live over the presence socket (its hub is created here, before
+	// any producer) to exactly the users allowed to see each one: notify
+	// computes the audience, the hub only routes. JWT only — both routes act
+	// on the caller's own feed, never another user's.
+	presenceHub := presence.NewHub()
+	notifySvc := notify.NewService(notify.NewRepository(app.DB), presenceHub)
+	a.notify = notifySvc
+	if err := notifySvc.FailInterrupted(ctx); err != nil {
+		common.Logger.Warn("notify: fail interrupted activities", zap.Error(err))
+	}
+	notifyHandler := notify.NewHandler(notifySvc)
+	srv.Echo().GET("/api/v1/notifications", notifyHandler.List, jwtMw)
+	srv.Echo().POST("/api/v1/notifications/read", notifyHandler.MarkRead, jwtMw)
+
 	// ── Developer demo data ──────────────────────────────────────────────────
 	// Settings → Developer's "full" volume (~100k rows per business table, set-
 	// based SQL). Refuses outside environment "development" and runs once per
@@ -660,7 +678,6 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// here the way modules' PUT/reload are. A role with zero role_permissions
 	// grants (any freshly created custom role, admin_handler.go's CreateRole)
 	// must still get this like every other identity.
-	presenceHub := presence.NewHub()
 	presenceHandler := presence.NewHandler(presence.NewRepository(app.DB), presenceHub)
 	presenceAuthMw := authmw.JWTOrCookieMiddleware(tokenSvc, "eerp_access")
 	presenceGroup := srv.Echo().Group("/api/v1/presence", presenceAuthMw)
@@ -1094,6 +1111,9 @@ func (a *App) Run(ctx context.Context) error {
 	// happens at the exact moment the 30 minutes elapse. Same inline-ticker
 	// shape as the quote-expiry sweep above, since it's a single fixed job
 	// too (unlike the cron scheduler, which manages many user-defined rows).
+	// Notification retention (7 days for finished activities, 30 for personal).
+	go notify.RunSweeper(ctx, a.notify.Repo())
+
 	presenceRepo := presence.NewRepository(app.DB)
 	go func() {
 		ticker := time.NewTicker(time.Minute)
