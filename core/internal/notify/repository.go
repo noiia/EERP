@@ -21,8 +21,10 @@ func NewRepository(db *orm.DB) *Repository { return &Repository{db: db} }
 
 // SyncCatalog copies every registered category into each known tenant's
 // catalog (a tenant = one with a live user). A category new to a tenant is
-// also granted to that tenant's "admin" role — only then, so an admin who
-// later removes it doesn't see it come back on the next boot.
+// also granted to that tenant's admin roles — the "admin" technical name, or
+// any role holding the "*:*:*" full-access permission (the dev admin's own
+// role has no technical name) — only then, so an admin who later removes it
+// doesn't see it come back on the next boot.
 func (r *Repository) SyncCatalog(ctx context.Context) error {
 	for _, c := range Categories() {
 		rows, err := r.db.Query(ctx, `
@@ -50,7 +52,10 @@ func (r *Repository) SyncCatalog(ctx context.Context) error {
 			if _, err := r.db.Exec(ctx, `
 				INSERT INTO role_notification_category (tenant_id, role_id, notification_category_id)
 				SELECT $1, r.id, $2 FROM roles r
-				WHERE r.tenant_id = $1 AND r.technical_name = 'admin' AND r.deleted_at IS NULL`, a.tenant, a.id); err != nil {
+				WHERE r.tenant_id = $1 AND r.deleted_at IS NULL
+				  AND (r.technical_name = 'admin' OR EXISTS (
+					SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+					WHERE rp.role_id = r.id AND p.code = '*:*:*'))`, a.tenant, a.id); err != nil {
 				return fmt.Errorf("notify: admin default %s: %w", c.Key, err)
 			}
 		}

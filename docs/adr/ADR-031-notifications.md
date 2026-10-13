@@ -52,8 +52,9 @@ sequenceDiagram
   additive and ignored by older clients. On every (re)connect the browser re-reads
   `GET /api/v1/notifications`, since frames sent while it was down are not replayed.
 - **Roles** pick categories on the role form's *Notifications* tab, a stock many2many over the
-  generic-CRUD junction — the same pattern as role rights. The seeded `admin` role receives each
-  category the first time it appears in a tenant's catalog (never again, so removing one sticks).
+  generic-CRUD junction — the same pattern as role rights. Admin roles — technical name `admin`, or any role holding the `*:*:*` full-access permission —
+  receive each category the first time it appears in a tenant's catalog (never again, so removing
+  one sticks).
 
 ### Privacy invariant
 
