@@ -1838,3 +1838,9 @@ msgstr "Échec de la génération des données de démonstration"
 
 msgid "New notifications"
 msgstr "Nouvelles notifications"
+
+msgid "Starting…"
+msgstr "Démarrage…"
+
+msgid "The full demo seed failed."
+msgstr "La génération complète des données de démonstration a échoué."

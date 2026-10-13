@@ -1677,3 +1677,9 @@ msgstr ""
 
 msgid "New notifications"
 msgstr ""
+
+msgid "Starting…"
+msgstr ""
+
+msgid "The full demo seed failed."
+msgstr ""

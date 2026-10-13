@@ -1,7 +1,6 @@
 'use server'
 import { deflateSync, crc32 } from 'node:zlib'
 import { ApiError, apiRequest, createServerApiClient, uploadPicture } from '@eerp/core-front/server'
-import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
 import { getMyLocalePreferences } from './preferences'
 import { PAPER_SIZE_PRESETS } from '../../app/app/settings/appearance/page-formats/descriptors'
@@ -22,7 +21,11 @@ export interface SeedEntityResult {
   errors: string[]
 }
 
-export type SeedResult = { ok: true; results: SeedEntityResult[] } | { ok: false; message: string }
+export type SeedResult =
+  | { ok: true; results: SeedEntityResult[] }
+  /** The full volume runs in the background on Go: follow it through its notification. */
+  | { ok: true; started: string }
+  | { ok: false; message: string }
 
 /** "light" = the handful of records below, through the generic entity API;
  * "full" = ~100 000 rows per business table, written by Go with set-based SQL
@@ -664,33 +667,27 @@ export interface SeedGroup {
   seeded: boolean
 }
 
-/** The full volume's groups; null when Go can't be reached. */
-export async function getSeedGroups(): Promise<SeedGroup[] | null> {
+/** The full volume's groups, and the notification id of a seed already
+ * running in this workspace (null if none); null when Go can't be reached. */
+export async function getSeedGroups(): Promise<{ groups: SeedGroup[]; running: string | null } | null> {
   try {
-    return (await apiRequest<{ data: SeedGroup[] }>('GET', '/dev_seed')).data ?? []
+    const res = await apiRequest<{ data?: SeedGroup[]; running?: string | null }>('GET', '/dev_seed')
+    return { groups: res.data ?? [], running: res.running ?? null }
   } catch {
     return null
   }
 }
 
-/** The full volume: one Go call for the selected groups ([] = all; Go adds
- * their dependencies and skips groups already seeded — it refuses outside
- * development and when everything selected was seeded, both surfaced as the
- * error message). An entity Go reports twice (bookings come in two steps)
- * is summed into one row. */
+/** The full volume: one Go call starting the selected groups ([] = all; Go
+ * adds their dependencies and skips groups already seeded — it refuses outside
+ * development, while another seed runs, and when everything selected was
+ * seeded, all surfaced as the error message). Go seeds in the background and
+ * answers with the run's notification id; the Developer page follows it live
+ * and revalidates what Go wrote once it is done. */
 async function seedFullVolume(groups: string[]): Promise<SeedResult> {
   try {
-    const res = await apiRequest<{ results: { entity: string; created: number }[] }>('POST', '/dev_seed', { groups })
-    // Go wrote straight to the tables: drop every cached list page it touched.
-    const merged = new Map<string, number>()
-    for (const r of res.results) merged.set(r.entity, (merged.get(r.entity) ?? 0) + r.created)
-    for (const entity of merged.keys()) {
-      if (!entity.includes(' ')) revalidateTag(entity, 'max')
-    }
-    return {
-      ok: true,
-      results: [...merged].map(([entity, created]) => ({ entity, created, failed: 0, errors: [] })),
-    }
+    const res = await apiRequest<{ notification_id: string }>('POST', '/dev_seed', { groups })
+    return { ok: true, started: res.notification_id }
   } catch (e) {
     return { ok: false, message: e instanceof ApiError ? e.message : 'The full demo seed failed.' }
   }

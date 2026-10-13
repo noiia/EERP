@@ -8,6 +8,7 @@ import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
+import LinearProgress from '@mui/material/LinearProgress'
 import Container from '@mui/material/Container'
 import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -19,8 +20,9 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { byPrefixAndName, erpPath, FontAwesomeIcon, useT } from '@eerp/core-front'
+import { byPrefixAndName, erpPath, FontAwesomeIcon, useNotificationStore, useT } from '@eerp/core-front'
 import { getSeedGroups, seedDemoData, type SeedEntityResult, type SeedGroup, type SeedVolume } from '@/lib/dev-seed'
+import { revalidateSeededEntities } from '@/lib/notification-actions'
 
 // Settings → Developer: dev-only tools for testing the software. Two
 // collapsible sections (the same Accordion component Settings -> Global
@@ -41,14 +43,50 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
   const [groups, setGroups] = useState<SeedGroup[] | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
 
+  // The full volume runs in the background on Go: runId is its notification,
+  // followed live through the bell's store (the presence socket feeds it).
+  const [runId, setRunId] = useState<string | null>(null)
+  const run = useNotificationStore((s) => (runId ? s.items.find((i) => i.id === runId) : undefined))
+
   async function loadGroups() {
     const list = await getSeedGroups()
-    setGroups(list ?? [])
-    setPicked(new Set((list ?? []).filter((g) => !g.seeded).map((g) => g.key)))
+    setGroups(list?.groups ?? [])
+    setPicked(new Set((list?.groups ?? []).filter((g) => !g.seeded).map((g) => g.key)))
+    // A seed already running (started before a reload, or by a colleague):
+    // pick its progress back up.
+    if (list?.running) {
+      setVolume('full')
+      setRunId(list.running)
+      setSeeding(true)
+    }
   }
   useEffect(() => {
-    if (volume === 'full' && groups === null) void loadGroups()
-  }, [volume, groups])
+    if (isDev && groups === null) void loadGroups()
+  }, [isDev, groups])
+
+  // The run finished: show its results (or error) and drop the cached list
+  // pages of everything Go wrote.
+  useEffect(() => {
+    if (!run || run.status === 'running') return
+    if (run.status === 'done') {
+      let rows: { entity: string; created: number }[] = []
+      try {
+        rows = run.data ? (JSON.parse(run.data) as typeof rows) : []
+      } catch {
+        rows = []
+      }
+      // An entity Go reports twice (bookings come in two steps) is one row.
+      const merged = new Map<string, number>()
+      for (const r of rows) merged.set(r.entity, (merged.get(r.entity) ?? 0) + r.created)
+      setResults([...merged].map(([entity, created]) => ({ entity, created, failed: 0, errors: [] })))
+      void revalidateSeededEntities([...merged.keys()])
+      setGroups(null) // reload: the seeded groups are now done
+    } else {
+      setError(run.body || t('The full demo seed failed.'))
+    }
+    setSeeding(false)
+    setRunId(null)
+  }, [run, t])
 
   // What a run would seed: the ticked groups plus everything they depend on
   // (transitively), minus groups already seeded. A dependency stays ticked and
@@ -78,13 +116,16 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
     setError(null)
     setResults(null)
     const outcome = volume === 'full' ? await seedDemoData('full', toSeed) : await seedDemoData(volume)
+    if (outcome.ok && 'started' in outcome) {
+      setRunId(outcome.started) // seeding stays on until the run's notification finishes
+      return
+    }
     setSeeding(false)
     if (!outcome.ok) {
       setError(outcome.message)
       return
     }
     setResults(outcome.results)
-    if (volume === 'full') void loadGroups() // the seeded groups are now done
   }
 
   return (
@@ -209,6 +250,16 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
                   </Button>
                   {seeding && <CircularProgress size={20} />}
                 </Stack>
+                {runId ? (
+                  <Stack spacing={0.5} data-testid="seed-progress">
+                    <Typography variant="body2" color="text.secondary">
+                      {run?.progress_label ?? t('Starting…')}
+                    </Typography>
+                    <LinearProgress
+                      {...(run?.progress == null ? {} : { variant: 'determinate' as const, value: run.progress })}
+                    />
+                  </Stack>
+                ) : null}
                 {!isDev && (
                   <Typography variant="body2" color="text.secondary">
                     {t('Seeding demo data is only available outside production.')}

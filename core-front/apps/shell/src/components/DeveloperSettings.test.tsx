@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useNotificationStore, type AppNotification } from '@eerp/core-front'
 import type { SeedResult } from '@/lib/dev-seed'
 
 const seedMock = vi.fn()
@@ -8,6 +9,17 @@ vi.mock('@/lib/dev-seed', () => ({
   seedDemoData: (...args: unknown[]) => seedMock(...args),
   getSeedGroups: () => groupsMock(),
 }))
+const revalidateMock = vi.fn(async () => {})
+vi.mock('@/lib/notification-actions', () => ({
+  revalidateSeededEntities: (...args: unknown[]) => revalidateMock(...(args as [])),
+}))
+
+/** A live dev_seed activity frame, as the presence socket delivers it. */
+const activity = (over: Partial<AppNotification>): Omit<AppNotification, 'read'> => ({
+  id: 'run-1', category: 'dev_seed', kind: 'activity', title: 'Seeding demo data', body: '', link: '/settings/developer',
+  status: 'running', progress: 0, progress_label: null, finished_at: null, created_at: new Date().toISOString(),
+  data: null, ...over,
+})
 
 const groups = [
   { key: 'contacts', label: 'Contacts', deps: [], seeded: false },
@@ -21,7 +33,9 @@ import DeveloperSettings from './DeveloperSettings'
 
 beforeEach(() => {
   seedMock.mockReset()
-  groupsMock.mockReset().mockResolvedValue(groups)
+  groupsMock.mockReset().mockResolvedValue({ groups, running: null })
+  revalidateMock.mockClear()
+  useNotificationStore.setState({ items: [], unread: 0, hasNew: false, loaded: true })
 })
 
 describe('DeveloperSettings', () => {
@@ -45,16 +59,42 @@ describe('DeveloperSettings', () => {
     expect(seedMock).toHaveBeenCalledWith('light')
   })
 
-  it('runs the full volume when chosen', async () => {
-    seedMock.mockResolvedValue({ ok: true, results: [{ entity: 'invoice', created: 100000, failed: 0, errors: [] }] })
+  it('runs the full volume in the background and follows its live progress to the results', async () => {
+    seedMock.mockResolvedValue({ ok: true, started: 'run-1' })
 
     render(<DeveloperSettings isDev />)
     fireEvent.click(screen.getByRole('radio', { name: /^Full/ }))
     await screen.findByRole('checkbox', { name: /^Contacts/ }) // the button waits for the group list
     fireEvent.click(screen.getByRole('button', { name: 'Seed demo data' }))
-
-    expect(await screen.findByText('invoice: 100000 created')).toBeInTheDocument()
     expect(seedMock).toHaveBeenCalledWith('full', ['contacts', 'crm', 'events'])
+
+    act(() => useNotificationStore.getState().upsert(activity({ progress: 40, progress_label: 'Seeding contacts (1/3)' })))
+    expect(await screen.findByText('Seeding contacts (1/3)')).toBeInTheDocument()
+    expect(within(screen.getByTestId('seed-progress')).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
+
+    act(() => useNotificationStore.getState().upsert(activity({
+      status: 'done', progress: 100, finished_at: new Date().toISOString(),
+      data: JSON.stringify([{ entity: 'invoice', created: 100000 }, { entity: 'event_booking', created: 2 }, { entity: 'event_booking', created: 3 }]),
+    })))
+    expect(await screen.findByText('invoice: 100000 created')).toBeInTheDocument()
+    expect(screen.getByText('event_booking: 5 created')).toBeInTheDocument()
+    expect(screen.queryByTestId('seed-progress')).toBeNull()
+    expect(revalidateMock).toHaveBeenCalledWith(['invoice', 'event_booking'])
+  })
+
+  it('resumes tracking a full seed already running after a reload', async () => {
+    groupsMock.mockResolvedValue({ groups, running: 'run-9' })
+    render(<DeveloperSettings isDev />)
+    act(() => useNotificationStore.getState().upsert(activity({ id: 'run-9', progress: 10, progress_label: 'Seeding products (1/3)' })))
+    expect(await screen.findByText('Seeding products (1/3)')).toBeInTheDocument()
+  })
+
+  it('shows the error when the background seed fails', async () => {
+    groupsMock.mockResolvedValue({ groups, running: 'run-2' })
+    render(<DeveloperSettings isDev />)
+    act(() => useNotificationStore.getState().upsert(activity({ id: 'run-2', status: 'failed', body: 'boom', finished_at: new Date().toISOString() })))
+    expect(await screen.findByText('boom')).toBeInTheDocument()
+    expect(screen.queryByTestId('seed-progress')).toBeNull()
   })
 
   it('lists the full-volume groups: all unseeded ticked, seeded ones locked, dependencies locked while needed', async () => {

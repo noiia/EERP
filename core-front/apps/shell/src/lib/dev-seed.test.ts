@@ -83,49 +83,35 @@ describe('seedingAllowed', () => {
 })
 
 describe('seedDemoData full volume', () => {
-  it('sends the selected groups and merges entities Go reports twice', async () => {
-    apiRequestMock.mockReset().mockResolvedValue({
-      results: [
-        { entity: 'event_booking', created: 90 },
-        { entity: 'event_booking', created: 10 },
-      ],
-    })
-    await expect(seedDemoData('full', ['events', 'crm'])).resolves.toEqual({
-      ok: true,
-      results: [{ entity: 'event_booking', created: 100, failed: 0, errors: [] }],
-    })
+  it('starts the full volume on Go and hands back the run to follow', async () => {
+    apiRequestMock.mockReset().mockResolvedValue({ notification_id: 'run-1' })
+    revalidateTagMock.mockReset()
+    await expect(seedDemoData('full', ['events', 'crm'])).resolves.toEqual({ ok: true, started: 'run-1' })
     expect(apiRequestMock).toHaveBeenCalledWith('POST', '/dev_seed', { groups: ['events', 'crm'] })
+    // Go hasn't written anything yet: the Developer page revalidates once the run is done.
+    expect(revalidateTagMock).not.toHaveBeenCalled()
+    expect(createMock).not.toHaveBeenCalled()
   })
 
-  it('lists the seed groups, null when Go is unreachable', async () => {
+  it("surfaces Go's refusal (a seed already running) as the error message", async () => {
+    apiRequestMock.mockReset().mockRejectedValue(
+      new ApiError({ code: 'CONFLICT', message: 'A demo data seed is already running for this workspace.', status: 409 }),
+    )
+    await expect(seedDemoData('full')).resolves.toEqual({
+      ok: false,
+      message: 'A demo data seed is already running for this workspace.',
+    })
+  })
+
+  it('lists the seed groups with the running seed, null when Go is unreachable', async () => {
     const data = [{ key: 'contacts', label: 'Contacts', deps: [], seeded: false }]
-    apiRequestMock.mockReset().mockResolvedValueOnce({ data })
-    await expect(getSeedGroups()).resolves.toEqual(data)
+    apiRequestMock.mockReset().mockResolvedValueOnce({ data, running: 'run-7' })
+    await expect(getSeedGroups()).resolves.toEqual({ groups: data, running: 'run-7' })
     expect(apiRequestMock).toHaveBeenCalledWith('GET', '/dev_seed')
+    apiRequestMock.mockResolvedValueOnce({ data })
+    await expect(getSeedGroups()).resolves.toEqual({ groups: data, running: null })
     apiRequestMock.mockRejectedValueOnce(new Error('down'))
     await expect(getSeedGroups()).resolves.toBeNull()
-  })
-
-  it('asks Go for the full volume, revalidates the seeded entities, and reports per table', async () => {
-    apiRequestMock.mockReset().mockResolvedValue({
-      results: [
-        { entity: 'invoice', created: 100000 },
-        { entity: 'graph view: invoice', created: 8 },
-      ],
-    })
-    revalidateTagMock.mockReset()
-
-    await expect(seedDemoData('full')).resolves.toEqual({
-      ok: true,
-      results: [
-        { entity: 'invoice', created: 100000, failed: 0, errors: [] },
-        { entity: 'graph view: invoice', created: 8, failed: 0, errors: [] },
-      ],
-    })
-    expect(apiRequestMock).toHaveBeenCalledWith('POST', '/dev_seed', { groups: [] })
-    expect(revalidateTagMock).toHaveBeenCalledTimes(1)
-    expect(revalidateTagMock).toHaveBeenCalledWith('invoice', 'max')
-    expect(createMock).not.toHaveBeenCalled()
   })
 
   it("surfaces Go's refusal (already seeded) as the error message", async () => {
@@ -155,7 +141,7 @@ describe('seedDemoData', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     // contacts and tags are created before crm/crm_tag reference them.
     expect(callsFor('contact')).toHaveLength(10)
@@ -213,7 +199,7 @@ describe('seedDemoData', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     expect(callsFor('product')).toHaveLength(6)
     expect((callsFor('product')[0] as [string, Record<string, unknown>])[1].description).toEqual(expect.any(String))
@@ -292,7 +278,7 @@ describe('seedDemoData', () => {
     })
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const pageFormatCalls = callsFor('report_page_format')
     expect(pageFormatCalls.map(([, body]) => (body as Record<string, unknown>).name)).toEqual([
@@ -318,7 +304,7 @@ describe('seedDemoData', () => {
     })
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const pageFormatCalls = callsFor('report_page_format')
     expect(pageFormatCalls).toHaveLength(4)
@@ -333,7 +319,7 @@ describe('seedDemoData', () => {
     })
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const crmResult = outcome.results.find((r) => r.entity === 'crm')
     expect(crmResult).toMatchObject({ created: 0, failed: 15 })
@@ -350,7 +336,7 @@ describe('seedDemoData', () => {
     createMock.mockRejectedValue(new Error('boom'))
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const contactResult = outcome.results.find((r) => r.entity === 'contact')
     expect(contactResult).toMatchObject({ created: 0, failed: 10 })
@@ -385,6 +371,7 @@ describe('seedDemoData events', () => {
 
     const statuses = updateMock.mock.calls.map(([, , body]) => (body as Record<string, unknown>).status)
     expect(statuses).toEqual(expect.arrayContaining(['attended', 'no_show', 'cancelled']))
+    if (!('results' in outcome)) throw new Error('expected a light seed result')
     expect(outcome.results.find((r) => r.entity === 'event_booking')).toMatchObject({ failed: 0 })
   })
 })
