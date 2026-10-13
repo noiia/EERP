@@ -79,17 +79,22 @@ func Candidates() []Candidate {
 	return out
 }
 
-// maxIdentifier is Postgres's identifier length (NAMEDATALEN-1): longer names
-// are silently truncated, which would make two columns' indexes collide.
+// maxIdentifier is Postgres's identifier length (NAMEDATALEN-1): a longer
+// name is silently truncated by the server, so IndexName keeps it within this.
 const maxIdentifier = 63
 
 // IndexName is the deterministic name of c's trigram index:
-// idx_<table>_<column>_trgm, or a hash of both when that exceeds 63 bytes.
+// trgm_<8 hex of sha256(table.column)>_<table>_<column>, truncated to 63 bytes.
+// The hash leads, so it survives truncation, and the joined "table.column"
+// input keeps names collision-free: (sale_line, tax) and (sale, line_tax) hash
+// differently even though their readable tails are identical. A plain
+// idx_<table>_<column> name would not be — CREATE INDEX IF NOT EXISTS would
+// then silently skip the second column.
 func IndexName(c Candidate) string {
-	name := "idx_" + c.Table + "_" + c.Column + "_trgm"
-	if len(name) <= maxIdentifier {
-		return name
-	}
 	sum := sha256.Sum256([]byte(c.Table + "." + c.Column))
-	return "idx_" + hex.EncodeToString(sum[:8]) + "_trgm"
+	name := "trgm_" + hex.EncodeToString(sum[:4]) + "_" + c.Table + "_" + c.Column
+	if len(name) > maxIdentifier {
+		name = name[:maxIdentifier]
+	}
+	return name
 }

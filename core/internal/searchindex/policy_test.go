@@ -1,6 +1,7 @@
 package searchindex_test
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -76,19 +77,33 @@ func TestCandidates_TextColumnsOfExposedTablesOnly(t *testing.T) {
 }
 
 func TestIndexName(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		c    searchindex.Candidate
-		want string
-	}{
-		{"short names read naturally", searchindex.Candidate{Table: "contact", Column: "name"}, "idx_contact_name_trgm"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := searchindex.IndexName(tc.c); got != tc.want {
-				t.Errorf("IndexName = %q, want %q", got, tc.want)
-			}
-		})
-	}
+	t.Run("short names have the readable shape trgm_<8 hex>_<table>_<column>", func(t *testing.T) {
+		got := searchindex.IndexName(searchindex.Candidate{Table: "contact", Column: "name"})
+		const tail = "contact_name"
+		if !strings.HasPrefix(got, "trgm_") || !strings.HasSuffix(got, "_"+tail) {
+			t.Fatalf("IndexName = %q, want trgm_<hash>_%s", got, tail)
+		}
+		if want := 5 + 8 + 1 + len(tail); len(got) != want {
+			t.Errorf("len(IndexName) = %d, want %d (%q)", len(got), want, got)
+		}
+		hash := got[len("trgm_") : len("trgm_")+8]
+		if _, err := hex.DecodeString(hash); err != nil {
+			t.Errorf("hash segment %q is not hex: %v", hash, err)
+		}
+	})
+	t.Run("underscore-ambiguous pairs get different names", func(t *testing.T) {
+		a := searchindex.IndexName(searchindex.Candidate{Table: "sale_line", Column: "tax"})
+		b := searchindex.IndexName(searchindex.Candidate{Table: "sale", Column: "line_tax"})
+		if a == b {
+			t.Errorf("(sale_line, tax) and (sale, line_tax) both named %q", a)
+		}
+	})
+	t.Run("the same candidate always gets the same name", func(t *testing.T) {
+		c := searchindex.Candidate{Table: "contact", Column: "name"}
+		if a, b := searchindex.IndexName(c), searchindex.IndexName(c); a != b {
+			t.Errorf("IndexName not deterministic: %q then %q", a, b)
+		}
+	})
 	t.Run("long names fit Postgres's 63-byte identifier limit and stay distinct", func(t *testing.T) {
 		long := strings.Repeat("t", 40)
 		a := searchindex.IndexName(searchindex.Candidate{Table: long, Column: strings.Repeat("c", 30) + "_a"})
