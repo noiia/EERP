@@ -48,11 +48,6 @@ func NewHandlerN(db *orm.DB, store SampleStore, environment string, notifier Not
 	return &Handler{db: db, store: store, environment: environment, n: n, notifier: notifier, index: searchindex.Ensure}
 }
 
-// SetIndexer replaces the post-seed search indexer. Test-only: a handler test
-// must not build trigram indexes on whatever tables the shared test database
-// holds.
-func (h *Handler) SetIndexer(f func(context.Context, *orm.DB) ([]string, error)) { h.index = f }
-
 func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{"error": map[string]string{"code": code, "message": msg}})
 }
