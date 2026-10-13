@@ -77,3 +77,27 @@ services:
   pdf-service:
     build: !reset null
     image: ghcr.io/noiia/eerp-pdf-service:${EERP_IMAGE_TAG:-latest}
+
+  # Real HTTPS for the gateway (infra/bootstrap-prod.sh). Never started by `up`
+  # (profile): the bootstrap runs it once to obtain the certificate over the HTTP-01
+  # challenge (webroot = acme-webroot, served by the gateway's port 80), and
+  # `make renew-certs-prod` (cron, twice a day) renews it. install-cert.sh copies
+  # the result into the gateway-certs volume nginx serves.
+  certbot:
+    image: certbot/certbot:v2.11.0
+    profiles: ["certbot"]
+    environment:
+      CERT_NAME: ${ERP_HOST:-}
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - acme-webroot:/var/www/acme
+      - gateway-certs:/gateway-certs
+      - ./infra/certbot/install-cert.sh:/install-cert.sh:ro
+
+  api-gateway:
+    volumes:
+      - acme-webroot:/var/www/acme:ro
+
+volumes:
+  letsencrypt:
+  acme-webroot:

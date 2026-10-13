@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode test run-front-dev garage-init logs run-docker-prod bootstrap
+.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode test run-front-dev garage-init logs run-docker-prod bootstrap bootstrap-prod renew-certs-prod
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -102,6 +102,19 @@ logs:
 # regenerates the secrets. See infra/bootstrap.sh.
 bootstrap:
 	bash $(root)/infra/bootstrap.sh
+
+# Production launch on a single Docker host, in one idempotent command: settings
+# (ERP_HOST, ACME_EMAIL, … from the environment, .env or prompts), secrets, the
+# prod config, the CI images, Let's Encrypt HTTPS and its renewal cron. Re-run it to
+# upgrade. See infra/bootstrap-prod.sh.
+bootstrap-prod:
+	bash $(root)/infra/bootstrap-prod.sh
+
+# Renews the Let's Encrypt certificate when due (certbot skips it otherwise), installs
+# it for the gateway and reloads nginx. Scheduled twice a day by bootstrap-prod.
+renew-certs-prod:
+	$(PROD_COMPOSE) run --rm certbot renew --non-interactive --deploy-hook "sh /install-cert.sh"
+	$(PROD_COMPOSE) exec -T api-gateway nginx -s reload
 
 # One-time (idempotent) bootstrap of the dev Garage node: layout, dev S3 key, eerp bucket.
 garage-init:
