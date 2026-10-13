@@ -27,7 +27,9 @@ before this change (no flag) decode as exact. The frontend's `formatTotal` rende
 an estimate ("≈ 82718") in the list, Kanban, Calendar and record navigator. An estimate is displayed,
 never trusted as a bound: the list grid pages with an unknown row count and offers a next page while
 the current one is full, and the record navigator never disables "next" on it. Tables under the cap
-behave exactly as before.
+behave exactly as before. The rule lives once, in `SelectBuilder.BoundedTotal`, which hand-written
+list endpoints call too (`orm.ExactCountLimit`). The `mail_outbox` admin list does, since the outbox
+keeps every email ever sent.
 
 ### 2. Automatic trigram indexes
 `internal/searchindex` makes the framework index the columns the search bar queries, so a module

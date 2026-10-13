@@ -579,15 +579,17 @@ planner can't estimate it can undercount by orders of magnitude (floored at
 10 001) — page until an empty page
 ([ADR-032](../../docs/adr/ADR-032-list-read-performance.md)).
 
-The same two primitives are available on any query builder:
+A hand-written list endpoint reports its total the same way with one call on
+its query builder (the `mail_outbox` admin list does):
 
 ```go
-n, capped, err := b.CountUpTo(ctx, db, 10_000) // exact count, scanning at most limit+1 rows
-if err == nil && capped {
-    est, _ := b.EstimateRows(ctx, db) // planner estimate via EXPLAIN, nothing scanned
-    n = max(est, n)                   // stale stats must not undercut the proven lower bound
-}
+total, estimated, err := repo.Query().Where(cond).BoundedTotal(ctx, db, orm.ExactCountLimit)
 ```
+
+`BoundedTotal` is built on two primitives you can also call directly:
+`CountUpTo` (an exact count scanning at most limit+1 rows) and `EstimateRows`
+(the planner's estimate via `EXPLAIN`, nothing scanned). Never add a bare
+`count(*)` to a list endpoint over a table that grows.
 
 ### Get by ID
 

@@ -331,6 +331,23 @@ func (b SelectBuilder[T]) EstimateRows(ctx context.Context, ex executor.Executor
 	return int64(math.Round(plans[0].Plan.Rows)), nil
 }
 
+// BoundedTotal is a paginated list's total: exact up to limit matching rows,
+// past it the planner's estimate (estimated true) — never below the limit+1
+// rows the bounded count proved exist, since stale statistics on a filtered
+// query can estimate fewer. Its cost stays bounded at any table size. Never
+// use an estimated total as a loop bound.
+func (b SelectBuilder[T]) BoundedTotal(ctx context.Context, ex executor.Executor, limit int) (n int64, estimated bool, err error) {
+	n, capped, err := b.CountUpTo(ctx, ex, limit)
+	if err != nil || !capped {
+		return n, false, err
+	}
+	est, err := b.EstimateRows(ctx, ex)
+	if err != nil {
+		return 0, false, err
+	}
+	return max(est, n), true, nil
+}
+
 // matchingRows keeps only what decides WHICH rows match (FROM, JOIN, WHERE,
 // GROUP BY, HAVING), selecting a constant: no order, paging or row lock.
 func (b SelectBuilder[T]) matchingRows() SelectBuilder[T] {

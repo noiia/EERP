@@ -45,6 +45,12 @@ func TestHandler(t *testing.T) {
 		if rec.Code != http.StatusOK || body.Total != 1 || body.Data[0]["to_address"] != "a@x.io" {
 			t.Fatalf("%d %s", rec.Code, rec.Body)
 		}
+		sent := call(t, h.List, http.MethodGet, "/mail_outbox?status=sent", "/mail_outbox", tenant)
+		body.Total = -1
+		_ = json.Unmarshal(sent.Body.Bytes(), &body)
+		if sent.Code != http.StatusOK || body.Total != 0 {
+			t.Errorf("status=sent total %d %s", sent.Code, sent.Body)
+		}
 		other := call(t, h.List, http.MethodGet, "/mail_outbox", "/mail_outbox", uuid.New())
 		body.Total = -1
 		_ = json.Unmarshal(other.Body.Bytes(), &body)

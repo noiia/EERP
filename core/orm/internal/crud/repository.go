@@ -238,19 +238,10 @@ func sortedKeys[V any](m map[string]V) []string {
 // contacts, ~2 s at 10M) while the page itself stays a few milliseconds.
 const ExactCountLimit = 10_000
 
-// countRows is FindAll's total: exact up to ExactCountLimit, else the
-// planner's estimate — never below the limit+1 rows the bounded count proved
-// exist (stale statistics on a filtered query can estimate fewer).
+// countRows is FindAll's total (SelectBuilder.BoundedTotal at ExactCountLimit).
 func (r *Repository) countRows(ctx context.Context, b query.SelectBuilder[struct{}]) (Total, error) {
-	n, capped, err := b.CountUpTo(ctx, r.db, ExactCountLimit)
-	if err != nil || !capped {
-		return Total{Rows: int(n)}, err
-	}
-	est, err := b.EstimateRows(ctx, r.db)
-	if err != nil {
-		return Total{}, err
-	}
-	return Total{Rows: int(max(est, n)), Estimated: true}, nil
+	n, estimated, err := b.BoundedTotal(ctx, r.db, ExactCountLimit)
+	return Total{Rows: int(n), Estimated: estimated}, err
 }
 
 // FindAll returns a paginated slice of rows and the total count of rows that

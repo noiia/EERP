@@ -48,8 +48,15 @@ func (h *Handler) List(c *echo.Context) error {
 		size = 50
 	}
 	const where = `WHERE tenant_id = $1 AND deleted_at IS NULL AND ($2 = '' OR status = $2)`
-	var total int
-	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM mail_outbox `+where, tenant, status).Scan(&total); err != nil {
+	// The outbox keeps every email ever sent: bound the total like the
+	// generic list does instead of counting the whole table on each page.
+	matching := orm.MustRepo[Outbox](h.db).Query().
+		Where(orm.Cond("tenant_id = $1 AND deleted_at IS NULL", tenant))
+	if status != "" {
+		matching = matching.Where(orm.Cond("status = $1", status))
+	}
+	total, estimated, err := matching.BoundedTotal(ctx, h.db, orm.ExactCountLimit)
+	if err != nil {
 		return err
 	}
 	rows, err := h.db.Query(ctx, `
@@ -71,7 +78,11 @@ func (h *Handler) List(c *echo.Context) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]any{"data": data, "total": total})
+	resp := map[string]any{"data": data, "total": total}
+	if estimated {
+		resp["total_estimated"] = true
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // Retry handles POST /api/v1/mail_outbox/:id/retry — a failed row goes back

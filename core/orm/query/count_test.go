@@ -86,3 +86,40 @@ func TestSelect_EstimateRows(t *testing.T) {
 		}
 	})
 }
+
+func TestSelect_BoundedTotal(t *testing.T) {
+	t.Parallel()
+	meta := mustMeta[order](t)
+	b := query.Select[order](meta).Where(query.NewCondition("status = $1", "open"))
+
+	for _, tc := range []struct {
+		name          string
+		count         int64
+		planRows      string
+		wantN         int64
+		wantEstimated bool
+	}{
+		{"under the limit is exact", 7, "999", 7, false},
+		{"past the limit is the estimate", 11, "5000.4", 5000, true},
+		{"estimate below the bound is raised to it", 11, "3", 11, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ex := &mockExecutor{row: funcRow(func(dest ...any) error {
+				switch d := dest[0].(type) {
+				case *int64:
+					*d = tc.count
+				case *[]byte:
+					*d = []byte(`[{"Plan":{"Plan Rows":` + tc.planRows + `}}]`)
+				}
+				return nil
+			})}
+			n, estimated, err := b.BoundedTotal(context.Background(), ex, 10)
+			if err != nil {
+				t.Fatalf("BoundedTotal: %v", err)
+			}
+			if n != tc.wantN || estimated != tc.wantEstimated {
+				t.Errorf("got (%d, %v), want (%d, %v)", n, estimated, tc.wantN, tc.wantEstimated)
+			}
+		})
+	}
+}

@@ -187,6 +187,11 @@ var ErrLockOutsideTx = query.ErrLockOutsideTx
 // ErrLockWithAggregate: a SelectForUpdate query has GROUP BY or HAVING.
 var ErrLockWithAggregate = query.ErrLockWithAggregate
 
+// ExactCountLimit is how many matching rows a list total counts exactly —
+// pass it to SelectBuilder.BoundedTotal so hand-written list endpoints report
+// totals exactly like the generic one (ADR-032).
+const ExactCountLimit = crud.ExactCountLimit
+
 // Cond is a shorthand for query.NewCondition.
 // Lets ERP code stay readable without importing the query sub-package.
 //
