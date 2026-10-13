@@ -23,7 +23,7 @@ export async function listRecords(
 export async function listRecordsPage(
   entity: string,
   options?: EntityListOptions,
-): Promise<{ records: RelationRecord[]; total: number } | ActionError> {
+): Promise<{ records: RelationRecord[]; total: number; totalEstimated?: true } | ActionError> {
   return settleAction(() => createServerApiClient().listWithTotal<RelationRecord>(entity, options))
 }
 

@@ -116,6 +116,20 @@ describe('ServerApiClient', () => {
     })
   })
 
+  it('listWithTotal flags a planner-estimated total', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(200, { data: [{ id: '1' }], total: 100048, total_estimated: true, page: 1, page_size: 20 }),
+      ),
+    )
+    await expect(createServerApiClient().listWithTotal('crm')).resolves.toEqual({
+      records: [{ id: '1' }],
+      total: 100048,
+      totalEstimated: true,
+    })
+  })
+
   it('sends the sort column and the page with a paged list', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { data: [], total: 0, page: 2, page_size: 10 }))
     vi.stubGlobal('fetch', fetchMock)

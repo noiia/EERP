@@ -1,4 +1,5 @@
 'use client'
+import { formatTotal } from './total-format'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { erpPath } from '../navigation'
@@ -110,6 +111,8 @@ export interface EntityViewProps<T extends HasId> {
    * page_size-truncated `initialData` instead of silently aggregating a
    * partial set. Undefined is treated as "unknown", not "complete". */
   recordTotal?: number
+  /** `recordTotal` is Go's planner estimate, not an exact count. */
+  recordTotalEstimated?: boolean
   /** The boolean/picture widget's admin-configured box size (Settings ->
    * Apps, form views only), already resolved through the Base cascade by
    * loader.tsx's loadPictureSize. `null`/undefined means no admin setting at
@@ -270,7 +273,7 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
     // Server-paged when it can be, so the total counts every row, not one page.
     const load = relationOps.listPage
       ? relationOps.listPage(entity, { page: 1, pageSize: DEFAULT_DISPLAY_PAGE_SIZE }).then((res): ListNav => ({
-          ids: res.records.map((r) => r.id), offset: 0, total: res.total, paging: { pageSize: DEFAULT_DISPLAY_PAGE_SIZE },
+          ids: res.records.map((r) => r.id), offset: 0, total: res.total, totalEstimated: res.totalEstimated, paging: { pageSize: DEFAULT_DISPLAY_PAGE_SIZE },
         }))
       : relationOps.list(entity).then((records): ListNav => ({ ids: records.map((r) => r.id), offset: 0, total: records.length }))
     load
@@ -310,7 +313,7 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
       const res = await relationOps.listPage(entity, { ...paging.options, page: page + 1, pageSize: paging.pageSize })
       const ids = res.records.map((r) => r.id)
       const id = ids[target - page * paging.pageSize]
-      useListNavStore.getState().setNav(entity, { ...nav, ids, offset: page * paging.pageSize, total: res.total })
+      useListNavStore.getState().setNav(entity, { ...nav, ids, offset: page * paging.pageSize, total: res.total, totalEstimated: res.totalEstimated })
       if (id) open(id)
     } catch {
       // The page couldn't load; stay on this record.
@@ -330,7 +333,7 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
         <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} size="xs" />
       </IconButton>
       <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums, whiteSpace: 'nowrap' }}>
-        {position + 1} / {nav.total}
+        {position + 1} / {formatTotal(nav.total, nav.totalEstimated)}
       </Typography>
       <IconButton
         size="small"
@@ -835,6 +838,7 @@ function TreeRenderer<T extends HasId>({
   actions,
   viewFields = EMPTY_VIEW_FIELDS,
   recordTotal,
+  recordTotalEstimated,
   title,
 }: EntityViewProps<T>) {
   const t = useT()
@@ -882,6 +886,7 @@ function TreeRenderer<T extends HasId>({
   const paged = relationOps?.listPage != null
   const [liveResults, setLiveResults] = useState<T[] | null>(null)
   const [total, setTotal] = useState(recordTotal ?? initialData.length)
+  const [totalEstimated, setTotalEstimated] = useState(recordTotalEstimated === true)
   const [pageLoading, setPageLoading] = useState(false)
   const [pageError, setPageError] = useState<SerializedError | null>(null)
   const baseOptions = useMemo(
@@ -899,6 +904,7 @@ function TreeRenderer<T extends HasId>({
     if (!activeFilters && page === 0 && pageSize === DEFAULT_DISPLAY_PAGE_SIZE) {
       setLiveRecords(initialData)
       setTotal(recordTotal ?? initialData.length)
+      setTotalEstimated(recordTotalEstimated === true)
       return
     }
     let cancelled = false
@@ -910,6 +916,7 @@ function TreeRenderer<T extends HasId>({
         if (cancelled) return
         setLiveRecords(res.records as unknown as T[])
         setTotal(res.total)
+        setTotalEstimated(res.totalEstimated === true)
       })
       .catch((e: unknown) => {
         if (!cancelled) setPageError(serializeError(toApiError(e)))
@@ -920,7 +927,7 @@ function TreeRenderer<T extends HasId>({
     return () => {
       cancelled = true
     }
-  }, [paged, mode, liveResults, paginationModel, baseOptions, activeFilters, initialData, recordTotal, descriptor.entity])
+  }, [paged, mode, liveResults, paginationModel, baseOptions, activeFilters, initialData, recordTotal, recordTotalEstimated, descriptor.entity])
   const serverPaged = paged && liveResults == null
   // Quick-find results (or the cleared-query fallback, SearchBar's `fallback`
   // — initialData by identity) feed every mode exactly as before.
@@ -944,9 +951,9 @@ function TreeRenderer<T extends HasId>({
   useEffect(() => {
     const ids = liveRecords.map((r) => r.id)
     useListNavStore.getState().setNav(descriptor.entity, serverPaged && mode === 'list'
-      ? { ids, offset: paginationModel.page * paginationModel.pageSize, total, paging: { options: baseOptions, pageSize: paginationModel.pageSize } }
+      ? { ids, offset: paginationModel.page * paginationModel.pageSize, total, totalEstimated, paging: { options: baseOptions, pageSize: paginationModel.pageSize } }
       : { ids, offset: 0, total: ids.length })
-  }, [liveRecords, descriptor.entity, serverPaged, mode, paginationModel, total, baseOptions])
+  }, [liveRecords, descriptor.entity, serverPaged, mode, paginationModel, total, totalEstimated, baseOptions])
 
   // Flat data (no parent links) renders as a grid, with row checkboxes; hierarchical
   // data as a read-only tree (RichTreeView has no selection UI here — out of scope).
@@ -1121,6 +1128,11 @@ function TreeRenderer<T extends HasId>({
             // each page change fetches that page (the effect above).
             paginationMode={serverPaged ? 'server' : 'client'}
             rowCount={serverPaged ? total : undefined}
+            localeText={
+              serverPaged && totalEstimated
+                ? { paginationDisplayedRows: ({ from, to, count }) => `${from}–${to} of ${formatTotal(count, true)}` }
+                : undefined
+            }
             loading={pageLoading}
             paginationModel={paginationModel}
             onPaginationModelChange={setPaginationModel}
@@ -1268,7 +1280,7 @@ function DashboardRenderer<T extends HasId>({
               component="div"
               sx={{ mt: 0.5, fontVariantNumeric: tabularNums }}
             >
-              {typeof count === 'number' ? count : '—'}
+              {typeof count === 'number' ? formatTotal(count, widget.countEstimated === true) : '—'}
             </Typography>
           </CardContent>
         )

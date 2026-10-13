@@ -679,6 +679,14 @@ describe('EntityView', () => {
       })
     })
 
+    it('marks an estimated total in the record navigator', () => {
+      useListNavStore.getState().setNav(formDescriptor.entity, {
+        ids: ['1', '2'], offset: 0, total: 100048, totalEstimated: true,
+      })
+      render(<EntityView descriptor={formDescriptor} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />)
+      expect(screen.getByText('1 / ≈ 100048')).toBeInTheDocument()
+    })
+
     it('shows position/total and steps to the next record after browsing a filtered list', () => {
       const treeDescriptor: ViewDescriptor<Contact> = {
         ...formDescriptor,

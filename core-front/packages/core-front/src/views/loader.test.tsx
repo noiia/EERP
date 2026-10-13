@@ -299,8 +299,8 @@ describe('loadDashboardWidgets', () => {
       api,
     )
     expect(widgets).toEqual([
-      { id: '/crm/list', title: 'Crm', href: '/crm/list', count: 100_000 },
-      { id: '/sales/list', title: 'Orders', href: '/sales/list', count: 1 },
+      { id: '/crm/list', title: 'Crm', href: '/crm/list', count: 100_000, countEstimated: false },
+      { id: '/sales/list', title: 'Orders', href: '/sales/list', count: 1, countEstimated: false },
     ])
     expect(listWithTotal).toHaveBeenCalledWith('crm', { pageSize: 1 })
   })

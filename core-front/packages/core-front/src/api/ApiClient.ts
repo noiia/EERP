@@ -338,7 +338,7 @@ export interface ServerApiClient {
    * docs/roadmaps/list-view-modes.md) can tell a full fetch from a
    * page_size-truncated one, without a second request.
    */
-  listWithTotal<T>(entity: string, options?: EntityListOptions): Promise<{ records: T[]; total: number }>
+  listWithTotal<T>(entity: string, options?: EntityListOptions): Promise<{ records: T[]; total: number; totalEstimated?: true }>
   /**
    * The search bar's group-by section (docs/adr/ADR-014-search-filter-bar.md):
    * every distinct value of column (+ row count) among rows matching options'
@@ -373,7 +373,7 @@ class ServerApiClientImpl implements ServerApiClient {
   async listWithTotal<T>(
     entity: string,
     options?: EntityListOptions,
-  ): Promise<{ records: T[]; total: number }> {
+  ): Promise<{ records: T[]; total: number; totalEstimated?: true }> {
     // Filtered variants cache under their own URL key but share the entity tag,
     // so every mutation of the entity revalidates them too.
     const body = await request<unknown>(
@@ -384,14 +384,14 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     if (Array.isArray(body)) return { records: body as T[], total: body.length }
-    const envelope = body as { data?: unknown; total?: unknown } | null
+    const envelope = body as { data?: unknown; total?: unknown; total_estimated?: unknown } | null
     const data = envelope?.data
     const records = Array.isArray(data) ? (data as T[]) : []
     // A bare-array response (no envelope) has no `total` — records.length is
     // the only honest answer, same as the paginated envelope's own total
     // being exactly what Go counted server-side.
     const total = typeof envelope?.total === 'number' ? envelope.total : records.length
-    return { records, total }
+    return envelope?.total_estimated === true ? { records, total, totalEstimated: true } : { records, total }
   }
 
   async distinctValues(

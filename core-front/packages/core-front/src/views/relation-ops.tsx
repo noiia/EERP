@@ -38,7 +38,7 @@ export interface RelationOps {
    * Optional, same fail-open posture as distinctValues: without it, views
    * fall back to the records the page was seeded with.
    */
-  listPage?: (entity: string, options?: EntityListOptions) => Promise<{ records: RelationRecord[]; total: number }>
+  listPage?: (entity: string, options?: EntityListOptions) => Promise<{ records: RelationRecord[]; total: number; totalEstimated?: true }>
 }
 
 const relationOpsContext = createOpsContext<RelationOps>()

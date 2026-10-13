@@ -13,6 +13,8 @@ export interface ListNav {
   offset: number
   /** Rows matching the active filter — Go's count when server-paged, else ids.length. */
   total: number
+  /** Set when `total` is Go's planner estimate (> 10 000 matching rows, ADR-032). */
+  totalEstimated?: boolean
   /** Set when server-paged: the filter and page size to fetch the neighboring pages with. */
   paging?: { options?: EntityListOptions; pageSize: number }
 }

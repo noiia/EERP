@@ -24,6 +24,8 @@ export interface LoadedView<T> {
    * silently aggregating a partial set.
    */
   total?: number
+  /** Set when `total` is Go's planner estimate rather than an exact count. */
+  totalEstimated?: boolean
 }
 
 export interface LoadViewOptions {
@@ -57,8 +59,8 @@ export async function loadView<T extends HasId>(
     // of whatever the caller passed — a host page's own listOptions can add
     // to it (e.g. more filter/search keys) but never has to know it exists.
     const mergedOptions = mergeListOptions(descriptor.listFilter, options.listOptions)
-    const { records, total } = await api.listWithTotal<T>(descriptor.entity, mergedOptions)
-    return { initialData: records, error: null, total }
+    const { records, total, totalEstimated } = await api.listWithTotal<T>(descriptor.entity, mergedOptions)
+    return { initialData: records, error: null, total, totalEstimated }
   } catch (e) {
     if (e instanceof ApiError) return { initialData: [], error: serializeError(e) }
     throw e
@@ -150,8 +152,8 @@ export async function loadDashboardWidgets(
       try {
         // One row is enough: the count is the envelope's total over every
         // row, never the length of a (default 20-row) page.
-        const { total } = await api.listWithTotal(view.entity, { pageSize: 1 })
-        return { id: view.href, title: view.title, href: view.href, count: total }
+        const { total, totalEstimated } = await api.listWithTotal(view.entity, { pageSize: 1 })
+        return { id: view.href, title: view.title, href: view.href, count: total, countEstimated: totalEstimated === true }
       } catch (e) {
         if (e instanceof ApiError) return { id: view.href, title: view.title, href: view.href, count: null }
         throw e
@@ -195,7 +197,7 @@ export async function EntityViewServer<T extends HasId>({
   title,
 }: EntityViewServerProps<T>) {
   const client = api ?? createServerApiClient()
-  const { initialData, error, total } = await loadView(descriptor, client, { recordId, listOptions })
+  const { initialData, error, total, totalEstimated } = await loadView(descriptor, client, { recordId, listOptions })
   // A dashboard rolls the module's list views up into count blocks; other views ignore it.
   const widgets =
     descriptor.viewType === 'dashboard' && listViews?.length
@@ -228,6 +230,7 @@ export async function EntityViewServer<T extends HasId>({
       widgets={widgets}
       viewFields={viewFields}
       recordTotal={total}
+      recordTotalEstimated={totalEstimated}
       pictureSize={pictureSize}
       chatterVisible={chatterVisible}
       title={title}
