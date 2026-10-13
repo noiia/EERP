@@ -58,7 +58,7 @@ type DistinctValue struct {
 // repoLayer is the interface Service requires from the repository layer.
 // Defined at the call-site (here) per Go convention — not in the repository.
 type repoLayer interface {
-	FindAll(ctx context.Context, f ListFilter) ([]map[string]any, int, error)
+	FindAll(ctx context.Context, f ListFilter) ([]map[string]any, Total, error)
 	FindByID(ctx context.Context, id any) (map[string]any, error)
 	Create(ctx context.Context, data map[string]any) (map[string]any, error)
 	Update(ctx context.Context, id any, data map[string]any) (map[string]any, error)
@@ -83,7 +83,7 @@ func NewService(repo *Repository, meta registry.TableMeta) *Service {
 }
 
 // List returns a paginated list and total count.
-func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, int, error) {
+func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, Total, error) {
 	return s.repo.FindAll(ctx, f)
 }
 
@@ -142,4 +142,11 @@ func (s *Service) Restore(ctx context.Context, id any) (map[string]any, error) {
 		return nil, fmt.Errorf("service: restore: table %s does not support soft delete", s.meta.TableName)
 	}
 	return s.repo.Restore(ctx, id)
+}
+
+// Total is a list's row count: exact up to ExactCountLimit, beyond it the
+// planner's estimate (Estimated) — see Repository.FindAll.
+type Total struct {
+	Rows      int
+	Estimated bool
 }

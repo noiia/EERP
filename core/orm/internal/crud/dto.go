@@ -34,10 +34,13 @@ func (e *ValidationError) Error() string {
 
 // PaginatedResponse is the uniform envelope for list endpoints.
 type PaginatedResponse struct {
-	Data     []map[string]any `json:"data"`
-	Total    int              `json:"total"`
-	Page     int              `json:"page"`
-	PageSize int              `json:"page_size"`
+	Data  []map[string]any `json:"data"`
+	Total int              `json:"total"`
+	// TotalEstimated marks Total as the planner's estimate (more than
+	// ExactCountLimit rows match); absent means Total is exact.
+	TotalEstimated bool `json:"total_estimated,omitempty"`
+	Page           int  `json:"page"`
+	PageSize       int  `json:"page_size"`
 }
 
 // DistinctResponse is the envelope for GET /api/v1/{table}?distinct=<column>

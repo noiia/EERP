@@ -570,6 +570,23 @@ Response `200 OK`:
 
 Soft-deleted rows are always excluded from list results.
 
+`total` is exact up to 10 000 matching rows (`crud.ExactCountLimit`). Beyond that
+it is the planner's estimate and the response adds `"total_estimated": true`
+(the key is absent when exact). Why: an exact `COUNT(*)` scans every matching
+row, so its cost grows with the table while the page itself stays fast. Never
+use an estimated total as a loop bound — page until an empty page
+([ADR-032](../../docs/adr/ADR-032-list-read-performance.md)).
+
+The same two primitives are available on any query builder:
+
+```go
+n, capped, err := b.CountUpTo(ctx, db, 10_000) // exact count, scanning at most limit+1 rows
+if err == nil && capped {
+    est, _ := b.EstimateRows(ctx, db) // planner estimate via EXPLAIN, nothing scanned
+    n = max(est, n)                   // stale stats must not undercut the proven lower bound
+}
+```
+
 ### Get by ID
 
 ```

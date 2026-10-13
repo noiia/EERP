@@ -41,7 +41,7 @@ func hardMeta() registry.TableMeta {
 // ── mock repository ───────────────────────────────────────────────────────────
 
 type mockRepo struct {
-	findAll   func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
+	findAll   func(ctx context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error)
 	findByID  func(ctx context.Context, id any) (map[string]any, error)
 	create    func(ctx context.Context, data map[string]any) (map[string]any, error)
 	update    func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
@@ -51,11 +51,11 @@ type mockRepo struct {
 	aggregate func(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error)
 }
 
-func (m *mockRepo) FindAll(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+func (m *mockRepo) FindAll(ctx context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 	if m.findAll != nil {
 		return m.findAll(ctx, f)
 	}
-	return nil, 0, nil
+	return nil, crud.Total{}, nil
 }
 func (m *mockRepo) FindByID(ctx context.Context, id any) (map[string]any, error) {
 	if m.findByID != nil {
@@ -99,9 +99,9 @@ func (m *mockRepo) DistinctValues(ctx context.Context, column string, f crud.Lis
 func TestService_List_FilterPassedThrough(t *testing.T) {
 	var got crud.ListFilter
 	repo := &mockRepo{
-		findAll: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+		findAll: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			got = f
-			return nil, 0, nil
+			return nil, crud.Total{}, nil
 		},
 	}
 	svc := crud.NewServiceFromRepo(repo, softMeta())

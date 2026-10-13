@@ -19,7 +19,7 @@ import (
 // svcLayer is the service interface the handler depends on.
 // Defined here (call-site) per Go convention.
 type svcLayer interface {
-	List(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
+	List(ctx context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error)
 	GetByID(ctx context.Context, id any) (map[string]any, error)
 	Create(ctx context.Context, data map[string]any) (map[string]any, error)
 	Update(ctx context.Context, id any, data map[string]any) (map[string]any, error)
@@ -234,10 +234,11 @@ func (h *GenericHandler) List(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, crud.PaginatedResponse{
-		Data:     resp,
-		Total:    total,
-		Page:     f.Page,
-		PageSize: f.PageSize,
+		Data:           resp,
+		Total:          total.Rows,
+		TotalEstimated: total.Estimated,
+		Page:           f.Page,
+		PageSize:       f.PageSize,
 	})
 }
 

@@ -232,35 +232,56 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
+// ExactCountLimit is how many matching rows a list's total counts exactly.
+// Past it the total is the planner's estimate (Total.Estimated): an exact
+// count scans every matching row, so it grows with the table (22 ms at 100k
+// contacts, ~2 s at 10M) while the page itself stays a few milliseconds.
+const ExactCountLimit = 10_000
+
+// countRows is FindAll's total: exact up to ExactCountLimit, else the
+// planner's estimate — never below the limit+1 rows the bounded count proved
+// exist (stale statistics on a filtered query can estimate fewer).
+func (r *Repository) countRows(ctx context.Context, b query.SelectBuilder[struct{}]) (Total, error) {
+	n, capped, err := b.CountUpTo(ctx, r.db, ExactCountLimit)
+	if err != nil || !capped {
+		return Total{Rows: int(n)}, err
+	}
+	est, err := b.EstimateRows(ctx, r.db)
+	if err != nil {
+		return Total{}, err
+	}
+	return Total{Rows: int(max(est, n)), Estimated: true}, nil
+}
+
 // FindAll returns a paginated slice of rows and the total count of rows that
 // match the filter (non-deleted, tenant-scoped).
-func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]any, int, error) {
+func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]any, Total, error) {
 	b := query.Select[struct{}](r.meta.StructMeta)
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
 	if cond, ok, err := r.tenantCondition(ctx); err != nil {
-		return nil, 0, err
+		return nil, Total{}, err
 	} else if ok {
 		b = b.Where(cond)
 	}
 	pubConds, err := r.publicConditions(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, Total{}, err
 	}
 	for _, cond := range pubConds {
 		b = b.Where(cond)
 	}
 	filters, err := r.filterConditions(ctx, f)
 	if err != nil {
-		return nil, 0, err
+		return nil, Total{}, err
 	}
 	for _, cond := range filters {
 		b = b.Where(cond)
 	}
 	distanceExpr, orderExpr, err := r.nearClause(ctx, f.Geo)
 	if err != nil {
-		return nil, 0, err
+		return nil, Total{}, err
 	}
 	if distanceExpr != "" {
 		// PK tiebreak: equal distances (all unlocated rows are NULL) must page stably.
@@ -274,7 +295,7 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 		// Same gate as every filter column: unknown, unpublished or group-gated
 		// columns can't be sorted on (sorting would leak their order).
 		if err := r.checkColumn(ctx, col); err != nil {
-			return nil, 0, err
+			return nil, Total{}, err
 		}
 		b = b.OrderBy(col + " " + dir).OrderBy(r.meta.PKField.Column + " " + dir)
 	}
@@ -293,31 +314,33 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 	var cached pageEntry
 	key, hit := r.lookup(ctx, f.cacheable(), sql, args, &cached)
 	if hit {
-		return cached.Rows, cached.Total, nil
+		return cached.Rows, Total{Rows: cached.Total, Estimated: cached.Estimated}, nil
 	}
 
-	total, err := b.Count(ctx, r.db)
+	total, err := r.countRows(ctx, b)
 	if err != nil {
-		return nil, 0, fmt.Errorf("crud: count %s: %w", r.meta.TableName, err)
+		return nil, Total{}, fmt.Errorf("crud: count %s: %w", r.meta.TableName, err)
 	}
 
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("crud: find all %s: %w", r.meta.TableName, err)
+		return nil, Total{}, fmt.Errorf("crud: find all %s: %w", r.meta.TableName, err)
 	}
 
 	results, err := scanToMaps(rows)
 	if err != nil {
-		return nil, 0, err
+		return nil, Total{}, err
 	}
-	r.store(ctx, key, pageEntry{Rows: results, Total: int(total)})
-	return results, int(total), nil
+	r.store(ctx, key, pageEntry{Rows: results, Total: total.Rows, Estimated: total.Estimated})
+	return results, total, nil
 }
 
-// pageEntry is FindAll's cached value.
+// pageEntry is FindAll's cached value. Estimated is omitempty so entries
+// cached before it existed still decode as exact.
 type pageEntry struct {
-	Rows  []map[string]any `json:"rows"`
-	Total int              `json:"total"`
+	Rows      []map[string]any `json:"rows"`
+	Total     int              `json:"total"`
+	Estimated bool             `json:"estimated,omitempty"`
 }
 
 // cachingDB is what the executor offers when the optional read cache is wired

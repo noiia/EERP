@@ -1,6 +1,8 @@
 package crud
 
 import (
+	"encoding/json"
+
 	"core/orm/internal/registry"
 	"core/orm/pool/executor"
 )
@@ -20,4 +22,11 @@ func StubCache(c ReadCache) (restore func()) {
 	prev := cacheFor
 	cacheFor = func(executor.Executor) (readCache, string) { return c, "testdb" }
 	return func() { cacheFor = prev }
+}
+
+// DecodePageEntry exposes FindAll's cache value decoding to tests.
+func DecodePageEntry(raw []byte) (Total, error) {
+	var e pageEntry
+	err := json.Unmarshal(raw, &e)
+	return Total{Rows: e.Total, Estimated: e.Estimated}, err
 }
