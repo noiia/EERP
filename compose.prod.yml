@@ -97,6 +97,12 @@ services:
   api-gateway:
     volumes:
       - acme-webroot:/var/www/acme:ro
+      # Real-IP trust for a reverse proxy in front (CERT_MODE=proxy); empty otherwise.
+      - ./infra/nginx/realip:/etc/nginx/realip:ro
+    # Movable when a reverse proxy on the same host already holds 80/443.
+    ports: !override
+      - "${GATEWAY_HTTP_PORT:-80}:80"
+      - "${GATEWAY_HTTPS_PORT:-443}:443"
 
 volumes:
   letsencrypt:

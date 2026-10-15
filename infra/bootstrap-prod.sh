@@ -11,7 +11,7 @@
 #    and that Docker is running — listing everything missing at once.
 # 1. Collects the settings — ERP_HOST (required), ACME_EMAIL, SITE_HOST (the public
 #    website's own host, optional), EERP_IMAGE_TAG (default latest; a CI build number
-#    such as 0.101.0 pins a release), CERT_MODE (letsencrypt | self-signed), optional
+#    such as 0.101.0 pins a release), CERT_MODE (letsencrypt | proxy), optional
 #    SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM/SMTP_TLS — from the
 #    environment, else the .env of a previous run, else a prompt, and saves them in
 #    .env so a re-run needs nothing.
@@ -22,7 +22,15 @@
 #    ones; PULL=1 refreshes them all), starts the infrastructure, sets the database
 #    password, installs pg_trgm, initializes Garage, starts the app and waits until
 #    healthy.
-# 5. CERT_MODE=letsencrypt: obtains a real certificate for ERP_HOST (+ SITE_HOST)
+# 5. HTTPS, two ways (CERT_MODE):
+#    - proxy: a reverse proxy in front of EERP (Traefik, Caddy, nginx, a CDN…) holds
+#      the real certificate and forwards to the gateway over HTTPS (its internal
+#      self-signed certificate). TRUSTED_PROXIES (the proxy's IPs/CIDRs) lets the
+#      gateway take each visitor's real IP from X-Forwarded-For — otherwise every
+#      visitor would be the proxy, sharing one rate-limit bucket. GATEWAY_HTTP_PORT /
+#      GATEWAY_HTTPS_PORT (default 80/443) move the gateway off ports a proxy on the
+#      same host already holds. No certbot, no cron.
+#    - letsencrypt (default): obtains a real certificate for ERP_HOST (+ SITE_HOST)
 #    over the HTTP-01 challenge (port 80 must reach this server) and installs it for
 #    the gateway; ACME_STAGING=1 rehearses against Let's Encrypt's staging servers.
 #    Renewal: `make renew-certs-prod`, added to this user's crontab twice a day
@@ -84,11 +92,34 @@ setting() {
 }
 
 setting ERP_HOST "Domain of the ERP (e.g. erp.example.com)"
-setting CERT_MODE "Certificate: letsencrypt or self-signed" letsencrypt
-case "$CERT_MODE" in letsencrypt | self-signed) ;; *) die "CERT_MODE must be letsencrypt or self-signed." ;; esac
+setting CERT_MODE "HTTPS certificate: letsencrypt (EERP gets its own) or proxy (a reverse proxy in front holds it)" letsencrypt
+# `self-signed` was this mode's earlier name.
+if [ "$CERT_MODE" = self-signed ]; then
+  CERT_MODE=proxy
+  sed -i -E "s/^CERT_MODE=.*/CERT_MODE=proxy/" .env
+fi
+case "$CERT_MODE" in letsencrypt | proxy) ;; *) die "CERT_MODE must be letsencrypt or proxy." ;; esac
 if [ "$CERT_MODE" = letsencrypt ]; then
   setting ACME_EMAIL "Email for Let's Encrypt (expiry warnings)"
+  GATEWAY_HTTP_PORT=80 GATEWAY_HTTPS_PORT=443 # the HTTP-01 challenge comes in on 80
+  sed -i -E "/^GATEWAY_HTTPS?_PORT=/d" .env
+else
+  setting TRUSTED_PROXIES "IPs/CIDRs of the reverse proxy, comma-separated (e.g. 10.0.0.5 or 172.16.0.0/12)"
+  # Stored as one token (comma-separated, no spaces).
+  TRUSTED_PROXIES=$(printf '%s' "$TRUSTED_PROXIES" | tr -s ' ,' ',' | sed -e 's/^,//' -e 's/,$//')
+  sed -i -E "s|^TRUSTED_PROXIES=.*|TRUSTED_PROXIES=$TRUSTED_PROXIES|" .env
+  setting GATEWAY_HTTP_PORT "Port the gateway publishes plain HTTP on" 80
+  setting GATEWAY_HTTPS_PORT "Port the gateway publishes HTTPS on (what the proxy forwards to)" 443
+  # Each entry becomes an nginx directive: only plain IPv4/IPv6 addresses or CIDRs.
+  for cidr in ${TRUSTED_PROXIES//,/ }; do
+    printf '%s' "$cidr" | rg -q '^(([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?|[0-9A-Fa-f:]+(/[0-9]{1,3})?)$' ||
+      die "TRUSTED_PROXIES: \"$cidr\" is not an IP address or CIDR."
+  done
+  for port in "$GATEWAY_HTTP_PORT" "$GATEWAY_HTTPS_PORT"; do
+    printf '%s' "$port" | rg -q '^[0-9]{1,5}$' || die "gateway port \"$port\" is not a number."
+  done
 fi
+export GATEWAY_HTTP_PORT GATEWAY_HTTPS_PORT
 setting SITE_HOST "Public website domain, if different from the ERP (empty = none)" "" optional
 setting EERP_IMAGE_TAG "Image tag to run (latest, or a build number such as 0.101.0)" latest
 setting SMTP_HOST "SMTP relay host for outgoing email (empty = no email)" "" optional
@@ -100,14 +131,16 @@ if [ -n "${SMTP_HOST:-}" ]; then
   setting SMTP_FROM "Sender address" "no-reply@$ERP_HOST"
 fi
 
-for host in "$ERP_HOST" ${SITE_HOST:+"$SITE_HOST"}; do
-  if ! getent hosts "$host" >/dev/null 2>&1; then
-    echo "warning: $host doesn't resolve yet — Let's Encrypt needs its DNS pointing at this server." >&2
-  fi
-done
-# Ports 80/443 must be free — unless our own gateway already holds them (a re-run).
+if [ "$CERT_MODE" = letsencrypt ]; then
+  for host in "$ERP_HOST" ${SITE_HOST:+"$SITE_HOST"}; do
+    if ! getent hosts "$host" >/dev/null 2>&1; then
+      echo "warning: $host doesn't resolve yet — Let's Encrypt needs its DNS pointing at this server." >&2
+    fi
+  done
+fi
+# The gateway's ports must be free — unless our own gateway already holds them (a re-run).
 if ! "${COMPOSE[@]}" ps --status running --services 2>/dev/null | rg -qx api-gateway; then
-  for port in 80 443; do
+  for port in "$GATEWAY_HTTP_PORT" "$GATEWAY_HTTPS_PORT"; do
     if ss -ltnH "sport = :$port" 2>/dev/null | rg -q .; then
       die "port $port is already in use on this host."
     fi
@@ -129,15 +162,29 @@ ensure EERP_MASTER_KEY "$(hex 32)"
 ensure EERP_S3_ACCESS_KEY "GK$(hex 12)"
 ensure EERP_S3_SECRET_KEY "$(hex 32)"
 ensure GARAGE_RPC_SECRET "$(hex 32)"
-set -a
-# shellcheck disable=SC1091
-. ./.env
-set +a
+# Read .env back literally (KEY=value per line), never executing it: values may hold
+# spaces, quotes or $ (an SMTP password), which sourcing the file would mangle.
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in '' | '#'*) continue ;; esac
+  key=${line%%=*}
+  printf '%s' "$key" | rg -q '^[A-Za-z_][A-Za-z0-9_]*$' || continue
+  export "$key=${line#*=}"
+done < .env
 
 # ── Config ──────────────────────────────────────────────────────────────────
 CONFIG=eerp-config.prod.json
 # set_json KEY VALUE (string fields, one `"key": "value"` per line in the template).
-set_json() { sed -i -E "s|(\"$1\"[[:space:]]*:[[:space:]]*\")[^\"]*\"|\1$2\"|" "$CONFIG"; }
+# The value is JSON-escaped (\\ and "), then escaped for sed's replacement (\\ and &);
+# the delimiter is a control character no value can hold, so a password with any
+# printable character — quotes, |, &, $, # — lands in the file as written. The old
+# value is matched as a whole JSON string, escapes included, so re-runs are safe.
+set_json() {
+  local v=$2 d=$'\001'
+  v=${v//\\/\\\\}
+  v=${v//\"/\\\"}
+  v=$(printf '%s' "$v" | sed -e 's/[\\&]/\\&/g')
+  sed -i -E "s${d}(\"$1\"[[:space:]]*:[[:space:]]*\")([^\"\\\\]|\\\\.)*\"${d}\\1$v\"${d}" "$CONFIG"
+}
 set_json_number() { sed -i -E "s|(\"$1\"[[:space:]]*:[[:space:]]*)[0-9]+|\1$2|" "$CONFIG"; }
 # A bind mount whose source is missing makes Docker create an empty DIRECTORY there.
 [ -d "$CONFIG" ] && rmdir "$CONFIG"
@@ -161,6 +208,23 @@ if [ -n "${SMTP_HOST:-}" ]; then
   set_json smtp_from "$SMTP_FROM"
 fi
 chmod 600 "$CONFIG"
+
+# Real visitor IPs behind a reverse proxy: nginx (infra/nginx/nginx.conf includes
+# infra/nginx/realip/*.conf, mounted by compose.prod.yml) replaces the proxy's
+# address with the X-Forwarded-For client — only when the request comes from a
+# trusted proxy. Removed again in letsencrypt mode, where nothing sits in front.
+REALIP=infra/nginx/realip/proxy.conf
+if [ "$CERT_MODE" = proxy ]; then
+  say "trusting X-Forwarded-For from: $TRUSTED_PROXIES"
+  {
+    echo "# Generated by infra/bootstrap-prod.sh (CERT_MODE=proxy) — don't edit; re-run it."
+    for cidr in ${TRUSTED_PROXIES//,/ }; do echo "set_real_ip_from $cidr;"; done
+    echo "real_ip_header X-Forwarded-For;"
+    echo "real_ip_recursive on;"
+  } > "$REALIP"
+else
+  rm -f "$REALIP"
+fi
 
 # ── Images: reuse what the host has, pull only what's missing ───────────────
 # Every image the stack runs, certbot included, as compose resolves them (tags
@@ -238,7 +302,12 @@ if [ "$CERT_MODE" = letsencrypt ]; then
     fi
   fi
 else
-  echo "note: CERT_MODE=self-signed — browsers will warn unless a proxy/CDN in front serves a real certificate." >&2
+  say "behind your reverse proxy — set it up to:"
+  echo "    - serve https://$ERP_HOST${SITE_HOST:+ and https://$SITE_HOST} with its own certificate,"
+  echo "    - forward to https://<this server>:$GATEWAY_HTTPS_PORT (the gateway's self-signed"
+  echo "      certificate: turn upstream certificate verification off, or trust it),"
+  echo "    - pass the Host header and set X-Forwarded-For (from ${TRUSTED_PROXIES}),"
+  echo "    - not forward to port $GATEWAY_HTTP_PORT: the gateway redirects plain HTTP to HTTPS (a loop)."
 fi
 
 say "up: https://$ERP_HOST/app"
