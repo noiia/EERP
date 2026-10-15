@@ -105,8 +105,9 @@ bootstrap:
 
 # Production launch on a single Docker host, in one idempotent command: settings
 # (ERP_HOST, ACME_EMAIL, … from the environment, .env or prompts), secrets, the
-# prod config, the CI images, Let's Encrypt HTTPS and its renewal cron. Re-run it to
-# upgrade. See infra/bootstrap-prod.sh.
+# prod config, the CI images (only those missing; PULL=1 re-pulls), Let's Encrypt
+# HTTPS and its renewal cron, after checking every tool and file it needs is there.
+# See infra/bootstrap-prod.sh.
 bootstrap-prod:
 	bash $(root)/infra/bootstrap-prod.sh
 

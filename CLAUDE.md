@@ -16,9 +16,12 @@ make bootstrap   # = infra/bootstrap.sh
 
 # Production on one Docker host, one command (run on the server, in a checkout):
 # prompts for (or reads) ERP_HOST, ACME_EMAIL, optional SITE_HOST / EERP_IMAGE_TAG /
-# SMTP_*, generates secrets into .env, writes eerp-config.prod.json, pulls the CI
-# images, starts everything, gets a Let's Encrypt certificate and schedules its
-# renewal. Idempotent — re-run to upgrade. CERT_MODE=self-signed behind a CDN;
+# SMTP_*, checks up front that every tool/file it needs is there (and lists all
+# that's missing), generates secrets into .env, writes eerp-config.prod.json, pulls
+# only the images this host lacks, starts everything, gets a Let's Encrypt
+# certificate and schedules its renewal. Idempotent. Upgrade with a new
+# EERP_IMAGE_TAG (pulled because it's missing) or PULL=1 (re-pull the current tags —
+# `latest` is never re-pulled silently). CERT_MODE=self-signed behind a CDN;
 # ACME_STAGING=1 to rehearse; INSTALL_CRON=0 to skip the renewal cron.
 make bootstrap-prod   # = infra/bootstrap-prod.sh
 make renew-certs-prod # what the cron runs

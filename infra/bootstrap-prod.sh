@@ -3,9 +3,12 @@
 #
 #   make bootstrap-prod                                   # prompts for what's missing
 #   ERP_HOST=erp.example.com ACME_EMAIL=ops@example.com make bootstrap-prod
-#   make bootstrap-prod                                   # later: upgrade to the tagged images
+#   EERP_IMAGE_TAG=0.102.0 make bootstrap-prod            # upgrade: a new tag is pulled
+#   PULL=1 make bootstrap-prod                            # re-pull the current tags (e.g. latest)
 #
 # Run it on the server, in a checkout of this repository. It:
+# 0. Checks, before touching anything, that every tool and file it needs is there
+#    and that Docker is running — listing everything missing at once.
 # 1. Collects the settings — ERP_HOST (required), ACME_EMAIL, SITE_HOST (the public
 #    website's own host, optional), EERP_IMAGE_TAG (default latest; a CI build number
 #    such as 0.101.0 pins a release), CERT_MODE (letsencrypt | self-signed), optional
@@ -15,8 +18,10 @@
 # 2. Generates the secrets (database password, master key, S3 key pair, Garage RPC
 #    secret) into .env when missing — never rotated by a re-run (ROTATE=1 does).
 # 3. Writes eerp-config.prod.json from its template (secrets, site_url, SMTP).
-# 4. Pulls the CI images, starts the infrastructure, sets the database password,
-#    installs pg_trgm, initializes Garage, starts the app and waits until healthy.
+# 4. Pulls only the images this host doesn't have yet (every run reuses the local
+#    ones; PULL=1 refreshes them all), starts the infrastructure, sets the database
+#    password, installs pg_trgm, initializes Garage, starts the app and waits until
+#    healthy.
 # 5. CERT_MODE=letsencrypt: obtains a real certificate for ERP_HOST (+ SITE_HOST)
 #    over the HTTP-01 challenge (port 80 must reach this server) and installs it for
 #    the gateway; ACME_STAGING=1 rehearses against Let's Encrypt's staging servers.
@@ -32,9 +37,27 @@ COMPOSE=(docker compose -f compose.yml -f compose.prod.yml)
 say() { echo "==> $*"; }
 die() { echo "error: $*" >&2; exit 1; }
 
-# ── Pre-flight ──────────────────────────────────────────────────────────────
-docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required (docker compose …)."
-[ -f compose.prod.yml ] || die "run this from the repository checkout."
+# ── Pre-flight: everything this needs, checked before anything changes ──────
+missing=()
+need_tool() { command -v "$1" >/dev/null 2>&1 || missing+=("tool: $1 ($2)"); }
+need_tool docker "Docker Engine"
+need_tool rg "ripgrep"
+need_tool od "coreutils"
+need_tool sed "sed"
+if command -v docker >/dev/null 2>&1; then
+  docker compose version >/dev/null 2>&1 || missing+=("tool: docker compose v2 (the Compose plugin)")
+  docker info >/dev/null 2>&1 || missing+=("Docker daemon: not running, or this user can't reach it (docker group?)")
+fi
+for f in compose.yml compose.prod.yml eerp-config.prod.example.json \
+  infra/garage/init.sh infra/garage/garage.toml infra/nginx/nginx.conf \
+  infra/nginx/gen-certs.sh infra/certbot/install-cert.sh; do
+  [ -f "$f" ] || missing+=("file: $f")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  echo "error: can't bootstrap, missing:" >&2
+  printf '  - %s\n' "${missing[@]}" >&2
+  exit 1
+fi
 
 touch .env
 chmod 600 .env
@@ -139,9 +162,30 @@ if [ -n "${SMTP_HOST:-}" ]; then
 fi
 chmod 600 "$CONFIG"
 
+# ── Images: reuse what the host has, pull only what's missing ───────────────
+# Every image the stack runs, certbot included, as compose resolves them (tags
+# from .env). A missing one — first run, or a new EERP_IMAGE_TAG — is pulled;
+# present ones are reused as they are, so a re-run never silently moves `latest`.
+# PULL=1 refreshes them all (an explicit upgrade of the current tags).
+mapfile -t images < <("${COMPOSE[@]}" --profile certbot config --images | sort -u)
+[ ${#images[@]} -gt 0 ] || die "compose resolved no images."
+to_pull=()
+for image in "${images[@]}"; do
+  if [ "${PULL:-0}" = 1 ] || ! docker image inspect "$image" >/dev/null 2>&1; then
+    to_pull+=("$image")
+  fi
+done
+if [ ${#to_pull[@]} -eq 0 ]; then
+  say "all ${#images[@]} images already on this host"
+else
+  say "pulling ${#to_pull[@]} of ${#images[@]} images"
+  for image in "${to_pull[@]}"; do
+    echo "    $image"
+    docker pull --quiet "$image" >/dev/null || die "could not pull $image (registry login? tag published by CI?)"
+  done
+fi
+
 # ── Services ────────────────────────────────────────────────────────────────
-say "pulling images (tag $EERP_IMAGE_TAG)"
-"${COMPOSE[@]}" pull --quiet
 
 say "starting infrastructure (db, nats, garage, redis)"
 "${COMPOSE[@]}" up -d --wait db nats garage redis
@@ -199,4 +243,4 @@ fi
 
 say "up: https://$ERP_HOST/app"
 echo "    first sign-in: admin@eerp.local / admin — you'll be asked to change the password at once."
-echo "    upgrade later: set EERP_IMAGE_TAG in .env (or keep latest) and run make bootstrap-prod again."
+echo "    upgrade later: EERP_IMAGE_TAG=<new build> make bootstrap-prod (or PULL=1 to refresh the current tag)."
