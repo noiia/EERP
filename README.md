@@ -65,10 +65,51 @@ It generates any missing secret into the gitignored `.env` (`POSTGRES_PASSWORD`,
 `master_key` / `db_password` / `s3_*` fields, starts the stack waiting on each service's
 healthcheck, and provisions Garage (layout, key, bucket) — no second `docker compose up`.
 
-**Production** never shares dev secrets, so the script leaves `eerp-config.prod.json`
-alone: copy `eerp-config.prod.example.json`, fill every `change-me-in-production` field
-with a fresh secret (e.g. `openssl rand -hex 32`), and give the server a `.env` with
-`POSTGRES_PASSWORD` (same value as `db_password`) and `GARAGE_RPC_SECRET`.
+### Production (one command, on the server)
+
+`make bootstrap-prod` runs on the production server, in a checkout of this repository. It
+never shares dev secrets: it generates the server's own into `.env`, writes
+`eerp-config.prod.json`, runs the CI-built images and sets up HTTPS. It first checks that
+every tool and file it needs is there (listing anything missing), and is safe to re-run.
+
+**Requirements:** Docker Engine with the Compose v2 plugin, `ripgrep` (`rg`), and
+`docker login ghcr.io` if the images are private.
+
+**Pick how HTTPS is handled** (`CERT_MODE`):
+
+```bash
+# 1. EERP gets its own Let's Encrypt certificate — the domain points at this server,
+#    ports 80 and 443 reachable from the internet; renewal is added to your crontab.
+ERP_HOST=erp.example.com ACME_EMAIL=ops@example.com make bootstrap-prod
+
+# 2. A reverse proxy in front holds the certificate (Caddy, Traefik, nginx…) and forwards
+#    to the gateway over HTTPS (self-signed: turn upstream verification off).
+CERT_MODE=proxy ERP_HOST=erp.example.com TRUSTED_PROXIES=127.0.0.1 \
+  GATEWAY_HTTPS_PORT=8081 GATEWAY_HTTP_PORT=8080 make bootstrap-prod
+```
+
+| Setting | Required | Meaning |
+|---|---|---|
+| `ERP_HOST` | yes | the ERP's domain |
+| `ACME_EMAIL` | Let's Encrypt | contact for certificate expiry warnings |
+| `TRUSTED_PROXIES` | proxy mode | the proxy's IP(s)/CIDR(s) as EERP sees them (`127.0.0.1` same host, `172.16.0.0/12` proxy in Docker), so visitors' real IPs are used |
+| `GATEWAY_HTTPS_PORT` / `GATEWAY_HTTP_PORT` | no (443/80) | move the gateway off a same-host proxy's ports; only the HTTPS one must be reachable by the proxy |
+| `SITE_HOST` | no | the public website's own domain |
+| `EERP_IMAGE_TAG` | no (`latest`) | the CI build to run, e.g. `0.105.0` |
+| `SMTP_HOST`, `SMTP_*` | no | outgoing email relay |
+
+Settings come from the environment, else the `.env` of a previous run, else a prompt, and
+are saved — a re-run needs no arguments. First sign-in: `admin@eerp.local` / `admin`
+(a password change is forced).
+
+**Day to day:** `EERP_IMAGE_TAG=<build> make bootstrap-prod` upgrades or rolls back,
+`PULL=1 make bootstrap-prod` refreshes `latest` (never re-pulled silently),
+`ROTATE=1` regenerates the secrets. Behind a proxy, forward to the gateway's **HTTPS** port
+(its plain-HTTP port only redirects, so it loops) and keep WebSocket upgrades on.
+
+Every use case, with proxy examples and troubleshooting, is in the developer documentation
+([EERP-Documentation-Wiki](https://github.com/noiia/EERP-Documentation-Wiki), *Developer
+Guide → Deployment*).
 
 Configs start with `"environment": "development"` — `"production"` disables demo-data
 seeding and forces the seeded default admin (`admin@eerp.local`) to change its password
@@ -80,7 +121,7 @@ before it can do anything else.
 make run              # docker (db, garage, nats, redis, pdf-service, api-gateway) + backend + frontend, dev mode
 make rebuild-and-run   # clean WASM module builds, rebuild, then run
 make run-back-tests    # brings the docker stack up, then `go test` against it
-make run-docker-prod    # full stack from ghcr.io images, compose.prod.yml layered on top
+make bootstrap-prod     # production: CI images, HTTPS, renewal (see Production above)
 ```
 
 The gateway serves the app at `https://localhost` (self-signed dev cert, provisioned
