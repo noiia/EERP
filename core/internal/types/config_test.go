@@ -1,8 +1,12 @@
 package types
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
+
+	"core/orm"
 )
 
 func TestConfig_BackendBaseURL(t *testing.T) {
@@ -80,6 +84,38 @@ func TestConfig_ResolvePaths(t *testing.T) {
 			tt.cfg.ResolvePaths("/repo")
 			if !reflect.DeepEqual(tt.cfg, tt.want) {
 				t.Errorf("got %+v, want %+v", tt.cfg, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_PoolConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want orm.Config
+	}{
+		{
+			name: "timings are seconds, as every shipped config writes them",
+			json: `{"max_connection": 10, "min_connection": 4, "max_conn_idle_time": 1800,
+				"max_conn_life_time": 3600, "health_check_period": 60, "connect_timeout": 10}`,
+			want: orm.Config{DSN: "dsn", MaxConns: 10, MinConns: 4, MaxConnIdleTime: 30 * time.Minute,
+				MaxConnLifeTime: time.Hour, HealthCheckPeriod: time.Minute, ConnectTimeout: 10 * time.Second},
+		},
+		{
+			name: "absent keys stay zero so the pool applies its defaults",
+			json: `{}`,
+			want: orm.Config{DSN: "dsn"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg Config
+			if err := json.Unmarshal([]byte(tt.json), &cfg); err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.PoolConfig("dsn"); got != tt.want {
+				t.Errorf("PoolConfig() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

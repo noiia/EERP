@@ -1,6 +1,8 @@
 package types
 
 import (
+	"core/orm"
+
 	"net"
 	"net/url"
 	"path/filepath"
@@ -42,6 +44,23 @@ func (c *Config) DSN() string {
 	return u.String()
 }
 
+// PoolConfig is the database pool configuration for dsn: the pool size and
+// timings from this config (seconds converted to durations; 0 leaves the
+// pool's own default). Every pool core-back opens — the boot pool and a
+// database-management standby — goes through it, so they behave the same.
+func (c Config) PoolConfig(dsn string) orm.Config {
+	sec := func(n int) time.Duration { return time.Duration(n) * time.Second }
+	return orm.Config{
+		DSN:               dsn,
+		MaxConns:          c.MaxConns,
+		MinConns:          c.MinConns,
+		MaxConnIdleTime:   sec(c.MaxConnIdleSeconds),
+		MaxConnLifeTime:   sec(c.MaxConnLifeSeconds),
+		HealthCheckPeriod: sec(c.HealthCheckSeconds),
+		ConnectTimeout:    sec(c.ConnectTimeoutSeconds),
+	}
+}
+
 // DefaultConfig returns a *Config with every optional field pre-filled with a
 // sensible development default.  Required fields (db credentials, module_root,
 // passwords) are intentionally left as zero values — the caller must supply them.
@@ -49,23 +68,23 @@ func (c *Config) DSN() string {
 // the required fields, and pass the result via -config.
 func DefaultConfig() *Config {
 	return &Config{
-		DbPort:            5432,
-		DbHost:            "localhost",
-		DbUser:            "postgres",
-		DbName:            "eerp",
-		MaxConns:          10,
-		MinConns:          2,
-		PublicAddress:     "0.0.0.0",
-		BackendPort:       8080,
-		BackendHost:       "127.0.0.1",
-		BackendVersion:    "v1",
-		MaxConnIdleTime:   5 * time.Minute,
-		MaxConnLifeTime:   30 * time.Minute,
-		HealthCheckPeriod: time.Minute,
-		ConnectTimeout:    10 * time.Second,
-		ApiConfigPath:     "api.yaml",
-		ModuleRoot:        []string{"modules"},
-		CronLogDir:        "cron_logs",
+		DbPort:                5432,
+		DbHost:                "localhost",
+		DbUser:                "postgres",
+		DbName:                "eerp",
+		MaxConns:              10,
+		MinConns:              2,
+		PublicAddress:         "0.0.0.0",
+		BackendPort:           8080,
+		BackendHost:           "127.0.0.1",
+		BackendVersion:        "v1",
+		MaxConnIdleSeconds:    300,
+		MaxConnLifeSeconds:    1800,
+		HealthCheckSeconds:    60,
+		ConnectTimeoutSeconds: 10,
+		ApiConfigPath:         "api.yaml",
+		ModuleRoot:            []string{"modules"},
+		CronLogDir:            "cron_logs",
 	}
 }
 
@@ -79,24 +98,28 @@ type Config struct {
 	// ever run when this is "development" (regardless of their own flags/env
 	// vars), and a freshly-seeded default admin (auth.SeedDevAdmin) is forced
 	// to change its password on first login only when this is "production".
-	Environment       string        `json:"environment" needed:"true"`
-	MasterPassword    string        `json:"master_key" needed:"false"`
-	AccessTTLSeconds  int           `json:"access_ttl_seconds" needed:"false"`
-	RefreshTTLSeconds int           `json:"refresh_ttl_seconds" needed:"false"`
-	DbName            string        `json:"db_name" needed:"false"`
-	DbPort            int           `json:"db_port" needed:"true"`
-	DbHost            string        `json:"db_host" needed:"true"`
-	DbUser            string        `json:"db_user" needed:"true"`
-	DbPassword        string        `json:"db_password" needed:"true"`
-	MaxConns          int32         `json:"max_connection" needed:"false"`
-	MinConns          int32         `json:"min_connection" needed:"false"`
-	MaxConnIdleTime   time.Duration `json:"max_conn_idle_time" needed:"false"`
-	MaxConnLifeTime   time.Duration `json:"max_conn_life_time" needed:"false"`
-	HealthCheckPeriod time.Duration `json:"health_check_period" needed:"false"`
-	ConnectTimeout    time.Duration `json:"connect_timeout" needed:"false"`
-	ApiConfigPath     string        `json:"api_config_path" needed:"false"`
-	PublicAddress     string        `json:"public_address" needed:"true"`
-	BackendPort       int           `json:"backend_port" needed:"true"`
+	Environment       string `json:"environment" needed:"true"`
+	MasterPassword    string `json:"master_key" needed:"false"`
+	AccessTTLSeconds  int    `json:"access_ttl_seconds" needed:"false"`
+	RefreshTTLSeconds int    `json:"refresh_ttl_seconds" needed:"false"`
+	DbName            string `json:"db_name" needed:"false"`
+	DbPort            int    `json:"db_port" needed:"true"`
+	DbHost            string `json:"db_host" needed:"true"`
+	DbUser            string `json:"db_user" needed:"true"`
+	DbPassword        string `json:"db_password" needed:"true"`
+	MaxConns          int32  `json:"max_connection" needed:"false"`
+	MinConns          int32  `json:"min_connection" needed:"false"`
+	// Pool timings, in whole SECONDS (the unit every shipped config writes —
+	// never time.Duration fields, which a JSON number would decode as
+	// nanoseconds). 0 = the pool's default (30 min idle, 1 h lifetime,
+	// 1 min health check, 10 s connect timeout). Applied via PoolConfig.
+	MaxConnIdleSeconds    int    `json:"max_conn_idle_time" needed:"false"`
+	MaxConnLifeSeconds    int    `json:"max_conn_life_time" needed:"false"`
+	HealthCheckSeconds    int    `json:"health_check_period" needed:"false"`
+	ConnectTimeoutSeconds int    `json:"connect_timeout" needed:"false"`
+	ApiConfigPath         string `json:"api_config_path" needed:"false"`
+	PublicAddress         string `json:"public_address" needed:"true"`
+	BackendPort           int    `json:"backend_port" needed:"true"`
 	// BackendHost / BackendVersion describe how clients (e.g. the frontend BFF) reach
 	// the API — distinct from PublicAddress, which is the bind address. The frontend
 	// derives its API_BASE from BackendHost[:BackendPort] and API version from

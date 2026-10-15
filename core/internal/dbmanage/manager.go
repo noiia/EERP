@@ -30,8 +30,7 @@ type Manager struct {
 	conn        connInfo
 	masterKey   string
 	configPath  string
-	maxConns    int32
-	minConns    int32
+	pool        func(dsn string) orm.Config // cfg.PoolConfig: size + timings for a standby pool
 
 	mu       sync.RWMutex
 	active   string                     // currently active database name — see ActiveName's doc comment
@@ -70,8 +69,7 @@ func NewManager(
 		conn:       conn,
 		masterKey:  cfg.MasterPassword,
 		configPath: configPath,
-		maxConns:   cfg.MaxConns,
-		minConns:   cfg.MinConns,
+		pool:       cfg.PoolConfig,
 		active:     cfg.DbName,
 		prepared:   map[string]*preparedTarget{},
 	}

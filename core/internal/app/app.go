@@ -149,12 +149,8 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 		return nil, fmt.Errorf("Error ensuring configured database exists: %w", err)
 	}
 
-	dbConf := orm.Config{
-		DSN:      configContent.DSN(),
-		MaxConns: configContent.MaxConns,
-		MinConns: configContent.MinConns,
-		Debug:    debug,
-	}
+	dbConf := configContent.PoolConfig(configContent.DSN())
+	dbConf.Debug = debug
 	if err := dbConf.Validate(); err != nil {
 		return nil, fmt.Errorf("validate db config: %w", err)
 	}
