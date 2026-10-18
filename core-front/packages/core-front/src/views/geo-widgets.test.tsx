@@ -69,7 +69,7 @@ vi.mock('leaflet', () => {
   return { default: L, ...L }
 })
 
-import { GeoPointWidget, GeoShapeWidget } from './geo-widgets'
+import { AUTO_LOCATE_DEBOUNCE_MS, GeoPointWidget, GeoShapeWidget } from './geo-widgets'
 import * as Leaflet from 'leaflet'
 
 beforeEach(() => {
@@ -197,6 +197,90 @@ describe('GeoPointWidget', () => {
       encodeURIComponent('1 Rue X, 69001 Lyon, France'),
     )
     vi.unstubAllGlobals()
+  })
+
+  it('hides the place search when widgetOptions.search is false', async () => {
+    stubOSM(true, () => new Response('{}'))
+    render(
+      <GeoPointWidget
+        field={{ ...addressField, widgetOptions: { address: 'address', search: false } }}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    await screen.findByRole('button', { name: /locate from address/i })
+    expect(screen.queryByLabelText(/search an address/i)).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+  describe('autoLocate', () => {
+    const autoField = {
+      name: 'geo_location',
+      type: 'geo' as const,
+      widgetOptions: { address: 'address', autoLocate: true },
+    }
+    const lyon = {
+      id: 'p1',
+      address_number: 1,
+      address_street: 'Rue X',
+      address_zip_code: '69001',
+      address_city: 'Lyon',
+      address_country: 'France',
+    }
+    const geocodeCalls = (fetchMock: ReturnType<typeof stubOSM>) =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('/osm/search'))
+
+    it('geocodes the address once it is edited and moves the point there', async () => {
+      const fetchMock = stubOSM(
+        true,
+        () => new Response(JSON.stringify({ results: [{ label: 'x', lat: 45.75, lon: 4.85 }] })),
+      )
+      const onChange = vi.fn()
+      const { rerender } = render(
+        <GeoPointWidget field={autoField} value={null} onChange={onChange} draft={lyon} />,
+      )
+      await act(async () => {})
+      rerender(
+        <GeoPointWidget
+          field={autoField}
+          value={null}
+          onChange={onChange}
+          draft={{ ...lyon, address_number: 2 }}
+        />,
+      )
+      await waitFor(
+        () => expect(onChange).toHaveBeenCalledWith({ type: 'Point', coordinates: [4.85, 45.75] }),
+        { timeout: 2000 },
+      )
+      expect(geocodeCalls(fetchMock)).toHaveLength(1)
+      expect(String(geocodeCalls(fetchMock)[0][0])).toContain(
+        encodeURIComponent('2 Rue X, 69001 Lyon, France'),
+      )
+      vi.unstubAllGlobals()
+    })
+
+    it('never geocodes on load or when switching records', async () => {
+      const fetchMock = stubOSM(true, () => new Response(JSON.stringify({ results: [] })))
+      const onChange = vi.fn()
+      const { rerender } = render(
+        <GeoPointWidget field={autoField} value={null} onChange={onChange} draft={lyon} />,
+      )
+      await act(async () => {})
+      rerender(
+        <GeoPointWidget
+          field={autoField}
+          value={null}
+          onChange={onChange}
+          draft={{ ...lyon, id: 'p2', address_city: 'Paris' }}
+        />,
+      )
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, AUTO_LOCATE_DEBOUNCE_MS + 100))
+      })
+      expect(geocodeCalls(fetchMock)).toHaveLength(0)
+      expect(onChange).not.toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    })
   })
 
   it('creates a marker for the initial value and recreates it after disabled -> enabled', async () => {

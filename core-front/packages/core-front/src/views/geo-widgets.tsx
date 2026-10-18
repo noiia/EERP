@@ -64,7 +64,22 @@ function useOSMEnabled(): boolean {
   return enabled
 }
 
-/** geo/point — a draggable marker; click to place; address search; locate. */
+/** How long the sibling address must stay unchanged before `autoLocate`
+ * geocodes it — one OSM call per settled edit, not one per keystroke. */
+export const AUTO_LOCATE_DEBOUNCE_MS = 800
+
+/**
+ * geo/point — a draggable marker; click to place; address search; locate.
+ *
+ * widgetOptions:
+ * - `search` (default true): show the "Search an address" place finder above
+ *   the map; `false` hides it (e.g. when the point follows a sibling address).
+ * - `address`: the prefix of a sibling `type: 'address'` field — enables
+ *   "Locate from address".
+ * - `autoLocate` (with `address`): geocode the sibling address through the
+ *   workspace's OSM connector whenever it is edited, and move the point there.
+ *   Loading or switching records never geocodes — only a genuine edit does.
+ */
 export function GeoPointWidget({ field, value, onChange, disabled, draft }: WidgetProps) {
   const t = useT()
   const container = useRef<HTMLDivElement | null>(null)
@@ -77,6 +92,11 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
   const osmEnabled = useOSMEnabled()
   const addressPrefix =
     typeof field.widgetOptions?.address === 'string' ? field.widgetOptions.address : null
+  const showSearch = field.widgetOptions?.search !== false
+  const autoLocate = addressPrefix !== null && field.widgetOptions?.autoLocate === true
+  const draftRecord = draft as Record<string, unknown> | undefined
+  const currentAddress = addressPrefix ? addressLine(draftRecord, addressPrefix) : ''
+  const recordId = draftRecord?.id
 
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -129,9 +149,7 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
     setLocating(true)
     setNotFound(false)
     try {
-      const found = await geocode(
-        addressLine(draft as Record<string, unknown> | undefined, addressPrefix),
-      )
+      const found = await geocode(currentAddress)
       if (found) set(found)
       else setNotFound(true)
     } finally {
@@ -139,11 +157,38 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
     }
   }
 
+  // autoLocate: follow the sibling address. The baseline is the address as
+  // loaded (re-taken when the record changes), so only an edit geocodes.
+  const located = useRef({ recordId, address: currentAddress })
+  useEffect(() => {
+    if (located.current.recordId !== recordId) {
+      located.current = { recordId, address: currentAddress }
+      return
+    }
+    if (!autoLocate || disabled || !osmEnabled) return
+    if (currentAddress === located.current.address) return
+    let live = true
+    const timer = setTimeout(() => {
+      located.current = { recordId, address: currentAddress }
+      if (!currentAddress) return
+      setNotFound(false)
+      void geocode(currentAddress).then((found) => {
+        if (!live) return
+        if (found) setRef.current(found)
+        else setNotFound(true)
+      })
+    }, AUTO_LOCATE_DEBOUNCE_MS)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [autoLocate, disabled, osmEnabled, currentAddress, recordId])
+
   return (
     <Stack spacing={1}>
       {!disabled && (
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-          {osmEnabled && (
+          {osmEnabled && showSearch && (
             <Autocomplete
               sx={{ flex: 1 }}
               size="small"

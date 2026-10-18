@@ -48,14 +48,24 @@ describe("propertymanagement FrontModule", () => {
     expect(form.descriptor.viewType).toBe("form");
   });
 
-  it("locates the property on a map (geocoded from its address) and draws its parcel", () => {
+  it("locates the property automatically from its address, with no free place search", () => {
     const form = propertymanagement.routes.find(
       (r) => r.path === "/propertymanagement/:id",
     )!.descriptor;
     const geo = form.fields.find((f) => f.name === "geo_location")!;
-    expect(geo).toMatchObject({ type: "geo", widget: "point", widgetOptions: { address: "address" } });
+    expect(geo).toMatchObject({
+      type: "geo",
+      widget: "point",
+      widgetOptions: { address: "address", autoLocate: true, search: false },
+    });
     expect(resolveWidget(geo)).toBe("point");
-    const parcel = form.fields.find((f) => f.name === "parcel")!;
+  });
+
+  it("keeps the parcel for the list's geo filters but leaves it off the form", () => {
+    const form = propertymanagement.routes.find((r) => r.path === "/propertymanagement/:id")!.descriptor;
+    const list = propertymanagement.routes.find((r) => r.path === "/propertymanagement/list")!.descriptor;
+    expect(form.fields.map((f) => f.name)).not.toContain("parcel");
+    const parcel = list.fields.find((f) => f.name === "parcel")!;
     expect(parcel).toMatchObject({ type: "geo", widget: "shape" });
     expect(resolveWidget(parcel)).toBe("shape");
   });
@@ -437,7 +447,7 @@ describe("propertymanagement — self-extended notebook pages (registry-level)",
     ).not.toContain("equipment");
   });
 
-  it("__form_columns lays out a 2x2 grid: row 1 address|loan+rent, row 2 current_tenant|floor_area+uom", () => {
+  it("__form_columns lays out address + map on the left, every other field on the right", () => {
     const registry = register();
     const resolved = registry.buildRegistry().get("/propertymanagement/:id")!;
     const nodes = normalizeLayout(resolved.descriptor);
@@ -447,53 +457,42 @@ describe("propertymanagement — self-extended notebook pages (registry-level)",
     expect(columns).toBeDefined();
     if (!columns || columns.kind === "field") return;
     // 'name' lands in the synthesized header instead (the first plain text
-    // field), not here — see normalizeLayout's own default anatomy. Four
-    // top-level items, two per row (the outer grid's own columns: 2): row 1
-    // is [address-group, loan/rent-group], row 2 is [current_tenant, floor/uom-group].
-    // generated_at (when the last receipt was generated) follows as a plain field.
+    // field), not here. Two grid items share row 1 (the outer grid's own
+    // columns: 2): [address-group, details-group]; generated_at follows.
     expect(
-      columns.children.map((c) => (c.kind === "field" ? c.name : c.kind)),
-    ).toEqual(["group", "group", "current_tenant", "group", "generated_at"]);
+      columns.children.map((c) => (c.kind === "field" ? c.name : c.id)),
+    ).toEqual(["property-address-group", "property-details-group", "generated_at"]);
 
     const addressGroup = columns.children[0];
-    expect(addressGroup.kind).not.toBe("field");
-    if (addressGroup.kind === "field") return;
-    // Titled "Address" — the same plain-group-with-title shape as Pricing,
-    // so AddressWidget's own hand-rolled caption (hideLabel: true on the
-    // field) is no longer what's rendered here.
+    if (addressGroup.kind === "field") throw new Error("expected a group");
     expect(addressGroup.title).toBe("Address");
     expect(addressGroup.children).toEqual([
       { kind: "field", name: "address" },
       { kind: "field", name: "geo_location" },
-      { kind: "field", name: "parcel" },
     ]);
 
-    const amountsGroup = columns.children[1];
-    expect(amountsGroup.kind).not.toBe("field");
-    if (amountsGroup.kind === "field") return;
-    expect(amountsGroup.columns).toBeUndefined(); // a plain vertical stack, not another 2-col split
-    // Titled "Pricing" — same native group-title rendering as Address.
-    expect(amountsGroup.title).toBe("Pricing");
-    expect(amountsGroup.offsetTop).toBeUndefined();
-    expect(amountsGroup.children).toEqual([
+    const details = columns.children[1];
+    if (details.kind === "field") throw new Error("expected a group");
+    expect(details.columns).toBeUndefined(); // a plain vertical stack
+    expect(
+      details.children.map((c) => (c.kind === "field" ? c.name : c.title ?? c.kind)),
+    ).toEqual(["Pricing", "current_tenant", "group"]);
+
+    const pricing = details.children[0];
+    if (pricing.kind === "field") throw new Error("expected a group");
+    expect(pricing.children).toEqual([
       { kind: "field", name: "loan_amount" },
       { kind: "field", name: "rent_price" },
     ]);
 
-    const floorGroup = columns.children[3];
-    expect(floorGroup.kind).not.toBe("field");
-    if (floorGroup.kind === "field") return;
-    // A REAL side-by-side split in equal halves (uom_id's relation field
-    // matches floor_area's height since the relation-widget rework).
+    const floorGroup = details.children[2];
+    if (floorGroup.kind === "field") throw new Error("expected a group");
+    // A REAL side-by-side split in equal halves; minWidth overrides the
+    // 640px default container-query breakpoint, since this pair is nested
+    // inside __form_columns' own right column.
     expect(floorGroup.columns).toBe(2);
     expect(floorGroup.columnWidths).toEqual([1, 1]);
-    // minWidth overrides the 640px default container-query breakpoint —
-    // this pair is nested inside __form_columns' OWN right column, already
-    // halved, so 640px would need a 1300px+ wide form before it ever
-    // activated (why it rendered stacked instead of side by side before).
     expect(floorGroup.minWidth).toBe(280);
-    // Matches current_tenant's own field caption, same reasoning as row 1.
-    expect(floorGroup.offsetTop).toBe(1);
     expect(floorGroup.children).toEqual([
       { kind: "field", name: "floor_area" },
       { kind: "field", name: "uom_id" },

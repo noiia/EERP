@@ -315,8 +315,18 @@ export const fields: ViewDescriptor['fields'] = [
   // same rendering path "Pricing" uses, so the two headings actually match
   // instead of one being AddressWidget's ad-hoc variant="caption" line.
   { name: 'address', label: 'Address', type: 'address', widget: 'form', hideLabel: true },
-  // The building on a map (geocodable from the address above) and its land.
-  { name: 'geo_location', label: 'Location', type: 'geo', widget: 'point', widgetOptions: { address: 'address' } },
+  // The building on a map, placed automatically from the address above
+  // (autoLocate, through the workspace's OSM connector) — the free place
+  // search is hidden (search: false): the address is the one input.
+  {
+    name: 'geo_location',
+    label: 'Location',
+    type: 'geo',
+    widget: 'point',
+    widgetOptions: { address: 'address', autoLocate: true, search: false },
+  },
+  // The land. Kept for the list's search bar (inside-zone / covers filters),
+  // but not on the form — formFields leaves it out.
   { name: 'parcel', label: 'Parcel', type: 'geo', widget: 'shape' },
   { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float' },
   { name: 'loan_amount', label: 'Loan amount', type: 'number', widget: 'monetary' },
@@ -343,7 +353,7 @@ export const fields: ViewDescriptor['fields'] = [
 // other field, and "did I save?" has one answer: the Save button's own
 // dirty state.
 const formFields: ViewDescriptor['fields'] = [
-  ...fields,
+  ...fields.filter((f) => f.name !== 'parcel'),
   {
     name: 'current_tenant',
     label: 'Current tenant(s)',
@@ -523,74 +533,66 @@ const formView: ViewDescriptor = {
 // their own notebook pages — same self-extension shape
 // core/modules/sale/views/invoice_views.ts's orderLinesPageOperations uses.
 export const propertyExtendOperations: Operation[] = [
-  // Row 1, left: wrap the bare address field into its own titled "Address"
-  // group — the SAME plain-group-with-title shape "Pricing" (right, below)
-  // uses, so both headings render through layout-renderer.tsx's one native
-  // title branch instead of address's own hand-rolled AddressWidget caption
-  // (now suppressed via the field's `hideLabel: true`, above). Targets
-  // floor_area (address's own next sibling in the base two-column layout)
-  // rather than 'address' itself, since addNode extracts every field it
-  // wraps BEFORE resolving `target` — 'address' wouldn't be found anymore.
+  // Left column: wrap the bare address field into its own titled "Address"
+  // group with the map point it locates — the SAME plain-group-with-title
+  // shape "Pricing" (right, below) uses, so both headings render through
+  // layout-renderer.tsx's one native title branch instead of address's own
+  // hand-rolled AddressWidget caption (suppressed via the field's
+  // `hideLabel: true`, above). Targets floor_area (address's own next
+  // sibling in the base two-column layout) rather than 'address' itself,
+  // since addNode extracts every field it wraps BEFORE resolving `target` —
+  // 'address' wouldn't be found anymore.
   {
     op: 'addNode',
     node: {
       kind: 'group',
-      // Needs an id: the Pricing group (below) targets it by id to land
+      // Needs an id: the right column (below) targets it by id to land
       // immediately after it as a SIBLING, not 'after' the nested 'address'
-      // field name, which would insert Pricing INSIDE this group instead.
+      // field name, which would insert it INSIDE this group instead.
       id: 'property-address-group',
       title: 'Address',
-      // The map point (geocoded from the address) and parcel sit with it.
       children: [
         { kind: 'field', name: 'address' },
         { kind: 'field', name: 'geo_location' },
-        { kind: 'field', name: 'parcel' },
       ],
     },
     target: 'floor_area',
     position: 'before',
   },
-  // Row 1, right: a titled "Pricing" group holding loan_amount+rent_price,
-  // right after the Address group — the pair becomes ONE grid item
-  // occupying that row's second column.
+  // Right column, beside the address + map: every other field, stacked —
+  // the titled "Pricing" group, current_tenant, then the floor_area|uom_id
+  // split. ONE grid item, so it occupies the second column of the address
+  // group's row however tall the map makes that row.
   {
     op: 'addNode',
     node: {
       kind: 'group',
-      // Needs an id: row 2 (below) targets it by id to land immediately
-      // after it, since 'after a field' would insert INSIDE this group
-      // instead of as its own next sibling.
-      id: 'property-loan-rent-group',
-      title: 'Pricing',
-      children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }],
+      id: 'property-details-group',
+      children: [
+        {
+          kind: 'group',
+          id: 'property-loan-rent-group',
+          title: 'Pricing',
+          children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }],
+        },
+        { kind: 'field', name: 'current_tenant' },
+        // A REAL side-by-side floor_area|uom_id split. columnWidths: [1, 1]
+        // — equal halves since uom_id's relation field renders at the same
+        // height and weight as floor_area. minWidth: 280 overrides the
+        // 640px default container-query breakpoint (calibrated for a
+        // TOP-LEVEL form body): this pair sits inside __form_columns' OWN
+        // right column, already halved, so 640px would need a 1300px+ wide
+        // form before this nested split ever activated.
+        {
+          kind: 'group',
+          columns: 2,
+          columnWidths: [1, 1],
+          minWidth: 280,
+          children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
+        },
+      ],
     },
     target: 'property-address-group',
-    position: 'after',
-  },
-  // Row 2, left: current_tenant moves down to sit right after row 1 (a
-  // plain sibling in __form_columns, not wrapped in anything — same "even
-  // index starts a fresh row" mechanic row 1 relies on).
-  { op: 'move', name: 'current_tenant', target: 'property-loan-rent-group', position: 'after' },
-  // Row 2, right: a REAL side-by-side floor_area|uom_id split.
-  // columnWidths: [1, 1] — equal halves since uom_id's relation field now
-  // renders at the same height and weight as floor_area. minWidth: 280 overrides the 640px
-  // default container-query breakpoint (calibrated for a TOP-LEVEL form
-  // body): this pair is nested inside __form_columns' OWN right column,
-  // already halved, so 640px would need a 1300px+ wide form before this
-  // nested split ever activated — which is why it rendered stacked instead
-  // of side by side. offsetTop: 1 matches current_tenant's own field
-  // caption, same reasoning as row 1's loan_amount/rent_price group.
-  {
-    op: 'addNode',
-    node: {
-      kind: 'group',
-      columns: 2,
-      columnWidths: [1, 1],
-      minWidth: 280,
-      offsetTop: 1,
-      children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
-    },
-    target: 'current_tenant',
     position: 'after',
   },
   {
