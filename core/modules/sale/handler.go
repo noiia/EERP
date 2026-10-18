@@ -76,8 +76,11 @@ func (h *Handler) Create(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.invoices, body.InvoiceID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Invoice not found.")
+	}
 
-	if err := h.snapshotFromVariant(ctx, &body); err != nil {
+	if err := h.snapshotFromVariant(ctx, identity.TenantID, &body); err != nil {
 		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
 	}
 	included, err := h.taxIncluded(ctx, identity)
@@ -94,7 +97,7 @@ func (h *Handler) Create(c *echo.Context) error {
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the line.")
 	}
-	if err := h.recomputeTotals(ctx, created.InvoiceID); err != nil {
+	if err := h.recomputeTotals(ctx, identity.TenantID, created.InvoiceID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update invoice totals.")
 	}
 
@@ -113,7 +116,7 @@ func (h *Handler) Update(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.lines.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.lines, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Line not found.")
 	}
@@ -135,14 +138,14 @@ func (h *Handler) Update(c *echo.Context) error {
 		merged.Quantity = body.Quantity
 	}
 
-	if err := h.snapshotFromVariant(ctx, &merged); err != nil {
+	if err := h.snapshotFromVariant(ctx, identity.TenantID, &merged); err != nil {
 		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
 	}
 	// VariantID/Quantity may have just changed the base price — recompute
 	// Total from whatever taxes are ALREADY linked (this endpoint never
 	// touches sale_line_tax itself, so the tag set is untouched by a plain
 	// field edit).
-	taxes, err := h.linkedTaxes(ctx, id)
+	taxes, err := h.linkedTaxes(ctx, identity.TenantID, id)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not read the line's taxes.")
 	}
@@ -156,7 +159,7 @@ func (h *Handler) Update(c *echo.Context) error {
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update the line.")
 	}
-	if err := h.recomputeTotals(ctx, updated.InvoiceID); err != nil {
+	if err := h.recomputeTotals(ctx, identity.TenantID, updated.InvoiceID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update invoice totals.")
 	}
 
@@ -168,13 +171,14 @@ func (h *Handler) Update(c *echo.Context) error {
 // handler has no way to trigger.
 func (h *Handler) Delete(c *echo.Context) error {
 	ctx := c.Request().Context()
+	identity := auth.MustIdentity(ctx)
 
 	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.lines.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.lines, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Line not found.")
 	}
@@ -182,7 +186,7 @@ func (h *Handler) Delete(c *echo.Context) error {
 	if _, err := h.lines.Delete(ctx, id); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not delete the line.")
 	}
-	if err := h.recomputeTotals(ctx, existing.InvoiceID); err != nil {
+	if err := h.recomputeTotals(ctx, identity.TenantID, existing.InvoiceID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update invoice totals.")
 	}
 
@@ -202,6 +206,12 @@ func (h *Handler) CreateLineTax(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.lines, body.SaleLineID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Line not found.")
+	}
+	if _, err := findOwned(ctx, h.taxes, body.SaleTaxID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Tax not found.")
+	}
 
 	created, err := h.lineTaxes.Create(ctx, body)
 	if err != nil {
@@ -225,7 +235,7 @@ func (h *Handler) DeleteLineTax(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.lineTaxes.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.lineTaxes, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Tax link not found.")
 	}
@@ -245,11 +255,11 @@ func (h *Handler) DeleteLineTax(c *echo.Context) error {
 // own Subtotal/TaxAmount/Total back up — the cascade CreateLineTax/
 // DeleteLineTax trigger.
 func (h *Handler) recomputeLineAndInvoice(ctx context.Context, identity auth.Identity, lineID uuid.UUID) error {
-	line, err := h.lines.FindByID(ctx, lineID)
+	line, err := findOwned(ctx, h.lines, lineID, identity.TenantID)
 	if err != nil {
 		return err
 	}
-	taxes, err := h.linkedTaxes(ctx, lineID)
+	taxes, err := h.linkedTaxes(ctx, identity.TenantID, lineID)
 	if err != nil {
 		return err
 	}
@@ -261,13 +271,13 @@ func (h *Handler) recomputeLineAndInvoice(ctx context.Context, identity auth.Ide
 	if _, err := h.lines.Update(ctx, line, lineID); err != nil {
 		return err
 	}
-	return h.recomputeTotals(ctx, line.InvoiceID)
+	return h.recomputeTotals(ctx, identity.TenantID, line.InvoiceID)
 }
 
 // linkedTaxes resolves a line's own sale_line_tax rows into the SaleTax
 // records they point at (see ResolveTaxes).
-func (h *Handler) linkedTaxes(ctx context.Context, lineID uuid.UUID) ([]SaleTax, error) {
-	links, err := h.lineTaxes.FindAll(ctx, orm.Cond("sale_line_id = $1", lineID))
+func (h *Handler) linkedTaxes(ctx context.Context, tenant, lineID uuid.UUID) ([]SaleTax, error) {
+	links, err := h.lineTaxes.FindAll(ctx, orm.Cond("sale_line_id = $1 AND tenant_id = $2", lineID, tenant))
 	if err != nil {
 		return nil, err
 	}
@@ -275,20 +285,20 @@ func (h *Handler) linkedTaxes(ctx context.Context, lineID uuid.UUID) ([]SaleTax,
 	for i, link := range links {
 		ids[i] = link.SaleTaxID
 	}
-	return ResolveTaxes(ctx, h.taxes, ids)
+	return ResolveTaxes(ctx, h.taxes, tenant, ids)
 }
 
 // ResolveTaxes loads the SaleTax each id points at in ONE query (instead of
 // one FindByID per link), returned in ids order with duplicates kept. A
 // dangling id (the tax was deleted) is silently skipped rather than failing
 // the whole computation — "best effort over a stale reference", same posture
-// module.go's other snapshot fields take. Shared with propertymanagement's
-// billing lines.
-func ResolveTaxes(ctx context.Context, taxes *orm.Repository[SaleTax], ids []uuid.UUID) ([]SaleTax, error) {
+// module.go's other snapshot fields take — and so is a tax of another tenant.
+// Shared with propertymanagement's billing lines.
+func ResolveTaxes(ctx context.Context, taxes *orm.Repository[SaleTax], tenant uuid.UUID, ids []uuid.UUID) ([]SaleTax, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	found, err := taxes.FindAll(ctx, orm.Cond("id = ANY($1)", ids))
+	found, err := taxes.FindAll(ctx, orm.Cond("id = ANY($1) AND tenant_id = $2", ids, tenant))
 	if err != nil {
 		return nil, err
 	}
@@ -349,15 +359,15 @@ func computeLineTotal(base, legacyRate float64, taxes []SaleTax, included bool) 
 // line never carries stale or hand-typed pricing, only what its product (or,
 // when the variant carries its own UnitPrice override, the variant) says
 // right now, captured at the moment the line is written.
-func (h *Handler) snapshotFromVariant(ctx context.Context, line *SaleLine) error {
-	variant, err := h.variants.FindByID(ctx, line.VariantID)
+func (h *Handler) snapshotFromVariant(ctx context.Context, tenant uuid.UUID, line *SaleLine) error {
+	variant, err := findOwned(ctx, h.variants, line.VariantID, tenant)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("variant_id must reference an existing product variant")
 		}
 		return err
 	}
-	product, err := h.products.FindByID(ctx, variant.ProductID)
+	product, err := findOwned(ctx, h.products, variant.ProductID, tenant)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("the variant's product no longer exists")
@@ -397,13 +407,13 @@ func resolveTaxRate(product warehouse.Product, variant warehouse.ProductVariant)
 // amount depending on each product's own taxes and prices, and finally the
 // total." Runs after every sale_line Create/Update/Delete so the invoice's
 // stored columns (what the PDF report actually reads) never go stale.
-func (h *Handler) recomputeTotals(ctx context.Context, invoiceID uuid.UUID) error {
-	lines, err := h.lines.FindAll(ctx, orm.Cond("invoice_id = $1", invoiceID))
+func (h *Handler) recomputeTotals(ctx context.Context, tenant, invoiceID uuid.UUID) error {
+	lines, err := h.lines.FindAll(ctx, orm.Cond("invoice_id = $1 AND tenant_id = $2", invoiceID, tenant))
 	if err != nil {
 		return err
 	}
 
-	invoice, err := h.invoices.FindByID(ctx, invoiceID)
+	invoice, err := findOwned(ctx, h.invoices, invoiceID, tenant)
 	if err != nil {
 		return err
 	}
@@ -435,6 +445,17 @@ func sumLines(lines []SaleLine) (subtotal, taxAmount, total float64) {
 	}
 	taxAmount = total - subtotal
 	return subtotal, taxAmount, total
+}
+
+// findOwned reads one row by id within the caller's tenant. Every lookup in
+// handler.go and quote_handler.go goes through it (and every FindAll carries
+// a tenant_id condition): the typed repositories don't scope by tenant the
+// way the generic CRUD layer does, so an id alone — from the path or a
+// request body — would reach, and for the writes modify, another
+// workspace's row. A row of another tenant reads as not found
+// (pgx.ErrNoRows, like a missing one).
+func findOwned[T any](ctx context.Context, repo *orm.Repository[T], id, tenant uuid.UUID) (T, error) {
+	return repo.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2", id, tenant))
 }
 
 // toColumnMap mirrors the generic CRUD handler's JSON shape — snake_case db

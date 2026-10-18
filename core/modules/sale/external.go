@@ -50,7 +50,7 @@ func loadVariant(ctx context.Context, ex orm.Executor, tenant, variantID uuid.UU
 	err := ex.QueryRow(ctx, `
 		SELECT v.name, v.unit_price, v.tax_rate, p.unit, p.unit_price, p.tax_rate
 		FROM product_variant v JOIN product p ON p.id = v.product_id
-		WHERE v.id = $1 AND v.tenant_id = $2 AND v.deleted_at IS NULL AND p.deleted_at IS NULL`, variantID, tenant).
+		WHERE v.id = $1 AND v.tenant_id = $2 AND p.tenant_id = $2 AND v.deleted_at IS NULL AND p.deleted_at IS NULL`, variantID, tenant).
 		Scan(&v.Name, &v.UnitPrice, &v.TaxRate, &p.Unit, &p.UnitPrice, &p.TaxRate)
 	if errors.Is(err, orm.ErrNotFound) {
 		return "", p, v, ErrNoVariant

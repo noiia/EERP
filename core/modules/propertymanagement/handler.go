@@ -434,7 +434,7 @@ func (h *Handler) linkedBillingLineTaxes(ctx context.Context, tenant, lineID uui
 	for i, link := range links {
 		ids[i] = link.SaleTaxID
 	}
-	return sale.ResolveTaxes(ctx, h.taxes, ids)
+	return sale.ResolveTaxes(ctx, h.taxes, tenant, ids)
 }
 
 // computeBillingLineTotal is the pure money math behind a billing line's own
