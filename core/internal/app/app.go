@@ -1050,7 +1050,13 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	srv.Echo().POST("/api/v1/property_management", propertyManagementHandler.CreateProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().GET("/api/v1/property_management/:id", propertyManagementHandler.GetProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().POST("/api/v1/property_management_equipment_status", propertyManagementHandler.CreateEquipmentStatus, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	// GET overridden to inject the computed display_taxes key (the
+	// workspace's "Display taxes on report" setting) the receipt PDF reads.
+	srv.Echo().GET("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.GetRentReceipt, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	srv.Echo().DELETE("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	// Property management app settings: settings:propertymanagement:read|write, route-derived.
+	settingsGroup.GET("/propertymanagement", propertyManagementHandler.GetSettings)
+	settingsGroup.PUT("/propertymanagement", propertyManagementHandler.PutSettings)
 	srv.Echo().POST("/api/v1/property_management_rent_receipt_line", propertyManagementHandler.CreateRentReceiptLine, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	// ── propertymanagement: billing_line Create/Update + billing_line_tax

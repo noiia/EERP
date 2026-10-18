@@ -46,11 +46,20 @@ interface ReportDescriptor {
 }
 
 type ReportNode =
-  | { kind: 'section'; className?: string; children: ReportNode[] }
-  | { kind: 'field'; name: string; className?: string; format?: string }
-  | { kind: 'table'; source: string; columns: { name: string; label: string }[]; className?: string }
+  | { kind: 'section'; className?: string; children: ReportNode[]; display?: Condition }
+  | { kind: 'field'; name: string; className?: string; format?: string; display?: Condition }
+  | { kind: 'table'; source: string; columns: { name: string; label: string; display?: Condition }[]; className?: string }
   | { kind: 'pageBreak' }
 ```
+
+`display` (the form's `FieldDescriptor.states` `Condition` DSL) is evaluated against the fetched
+**record** — for a table column, too, not each row — and hides the node (a column: its header and
+every cell) while it doesn't hold. A workspace setting reaches it as a computed key the entity's
+GET adds: property management's "Display taxes on report" (Settings → Apps → Property management,
+`GET|PUT /api/v1/settings/propertymanagement`, off by default) becomes `display_taxes` on
+`GET /api/v1/property_management_rent_receipt/:id`, which the rent receipt's Tax column tests.
+The PDF is rendered at (re)generation, so it follows the setting at that moment; a receipt's
+stored PDF doesn't change until it is regenerated.
 
 **`pdf-service` HTTP contract:**
 ```

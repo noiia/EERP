@@ -1853,3 +1853,12 @@ msgstr "plus de"
 
 msgid "Close"
 msgstr "Fermer"
+
+msgid "Rent receipts"
+msgstr "Quittances de loyer"
+
+msgid "Display taxes on report"
+msgstr "Afficher les taxes sur le rapport"
+
+msgid "Prints the Tax column on rent receipts generated from now on. Receipts already generated keep their PDF until it is regenerated."
+msgstr "Imprime la colonne Taxe sur les quittances générées à partir de maintenant. Les quittances déjà générées gardent leur PDF tant qu'il n'est pas régénéré."

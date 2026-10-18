@@ -133,6 +133,35 @@ describe('ReportRenderer', () => {
     expect(screen.getByText('Hosting')).toBeInTheDocument()
   })
 
+  it.each([
+    [true, true],
+    [false, false],
+    [undefined, false],
+  ])('prints a column with a display condition only while it holds (flag %s)', (flag, shown) => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [
+        {
+          kind: 'table',
+          source: 'line_items',
+          columns: [
+            { name: 'description', label: 'Description' },
+            { name: 'tax', label: 'Tax', display: { field: 'show_tax', op: 'eq', value: true } },
+          ],
+        },
+      ],
+    }
+    const { container } = render(
+      <ReportRenderer
+        descriptor={descriptor}
+        record={{ show_tax: flag, line_items: [{ description: 'Rent', tax: 'VAT 20%' }] }}
+      />,
+    )
+    expect(screen.queryByText('Tax') !== null).toBe(shown)
+    expect(screen.queryByText('VAT 20%') !== null).toBe(shown)
+    expect(container.querySelectorAll('tbody td')).toHaveLength(shown ? 2 : 1)
+  })
+
   it('renders a table with a header row and no body rows when the source is absent', () => {
     const descriptor: ReportDescriptor = {
       ...baseDescriptor,

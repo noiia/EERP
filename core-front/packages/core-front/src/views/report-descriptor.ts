@@ -109,6 +109,14 @@ export interface ReportTableColumn {
   /** Property name on each row object. */
   name: string
   label: string
+  /**
+   * Same `Condition` DSL as `ReportSectionNode.display`, evaluated against
+   * the fetched RECORD (not the row): the whole column — header and cells —
+   * prints only while it holds. Omitted always prints. E.g. a workspace
+   * setting the print route's record carries as a computed key
+   * (propertymanagement's `display_taxes`).
+   */
+  display?: Condition
 }
 
 export interface ReportTableNode {

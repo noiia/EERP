@@ -14,6 +14,8 @@ import ViewsSettings, { type ViewEntityRow } from '@/components/ViewsSettings'
 import ChatterSettings, { type ChatterEntityRow } from '@/components/ChatterSettings'
 import EventSettings from '@/components/EventSettings'
 import { getEventSettings } from '@/lib/event-settings'
+import PropertyManagementSettings from '@/components/PropertyManagementSettings'
+import { getPropertyManagementSettings } from '@/lib/propertymanagement-settings'
 // Side-effect import: registers every discovered module's FrontModule into
 // the shared registry before enumerating its tree views (mirrors
 // Settings -> Views' own page, which this one replaces).
@@ -100,6 +102,11 @@ export default async function AppSettingsPage({
       ) : (
         <>
           {module === 'event' && <EventSettingsSection canEdit={hasPermission(permissions, 'settings:events:write')} />}
+          {module === 'propertymanagement' && (
+            <PropertyManagementSettingsSection
+              canEdit={hasPermission(permissions, 'settings:propertymanagement:write')}
+            />
+          )}
           <ViewsSettingsSection module={module} canEdit={hasPermission(permissions, 'settings:views:write')} />
         </>
       )}
@@ -107,14 +114,25 @@ export default async function AppSettingsPage({
   )
 }
 
-// The Event app's own workspace settings (reminders) — the one app with
-// settings beyond views/pictures so far, hence a plain module check here.
+// The Event app's own workspace settings (reminders) — apps with settings
+// beyond views/pictures get a plain module check here.
 async function EventSettingsSection({ canEdit }: { canEdit: boolean }) {
   const settings = await getEventSettings()
   if (!settings) return null
   return (
     <Container maxWidth="md" sx={{ pb: 6 }}>
       <EventSettings initial={settings} canEdit={canEdit} />
+    </Container>
+  )
+}
+
+// The Property management app's own workspace settings (rent receipt PDFs).
+async function PropertyManagementSettingsSection({ canEdit }: { canEdit: boolean }) {
+  const settings = await getPropertyManagementSettings()
+  if (!settings) return null
+  return (
+    <Container maxWidth="md" sx={{ pb: 6 }}>
+      <PropertyManagementSettings initial={settings} canEdit={canEdit} />
     </Container>
   )
 }

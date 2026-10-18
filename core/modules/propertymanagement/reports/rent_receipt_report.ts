@@ -106,7 +106,12 @@ export const rentReceiptReport: ReportDescriptor = {
         // (property_management_views.ts's resolveLineTaxLabel) — the
         // now-unused TaxRate scalar's replacement (module.go's own doc
         // comment on PropertyManagementRentReceiptLine.TaxRate/TaxLabel).
-        { name: 'tax_label', label: 'Tax' },
+        // Printed only when Settings -> Apps -> Property management's
+        // "Display taxes on report" is on (off by default) — display_taxes
+        // is a computed key Go's receipt GET adds from that setting
+        // (modules/propertymanagement/settings.go), so the PDF follows the
+        // setting as it is when the receipt is (re)generated.
+        { name: 'tax_label', label: 'Tax', display: { field: 'display_taxes', op: 'eq', value: true } },
         // Copied verbatim from the source billing line at generation time —
         // already server-computed (propertymanagement/handler.go's
         // computeBillingLineTotal). See module.go's

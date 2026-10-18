@@ -92,11 +92,12 @@ function ReportTableView({
 }) {
   const value = record[node.source]
   const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : []
+  const columns = node.columns.filter((col) => !col.display || evaluateCondition(col.display, record))
   return (
     <table className={node.className}>
       <thead>
         <tr>
-          {node.columns.map((col) => (
+          {columns.map((col) => (
             <th key={col.name}>{translate(locale, col.label)}</th>
           ))}
         </tr>
@@ -104,7 +105,7 @@ function ReportTableView({
       <tbody>
         {rows.map((row, i) => (
           <tr key={i}>
-            {node.columns.map((col) => (
+            {columns.map((col) => (
               <td key={col.name}>{formatFieldValue(row[col.name])}</td>
             ))}
           </tr>

@@ -1694,3 +1694,12 @@ msgstr ""
 
 msgid "Close"
 msgstr ""
+
+msgid "Rent receipts"
+msgstr ""
+
+msgid "Display taxes on report"
+msgstr ""
+
+msgid "Prints the Tax column on rent receipts generated from now on. Receipts already generated keep their PDF until it is regenerated."
+msgstr ""
