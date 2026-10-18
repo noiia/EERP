@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"core/internal/types"
 	"core/orm"
 )
 
@@ -100,7 +103,10 @@ func number(t *testing.T, body []byte, key string) float64 {
 }
 
 func TestApp_SaleFlow(t *testing.T) {
-	f := newFlow(t)
+	// No report generation: Send emails without the PDF instead of calling a
+	// pdf-service the test run doesn't start (the attachment path is covered
+	// by modules/sale's workflow tests).
+	f := &flow{buildAppWith(t, func(cfg *types.Config) { cfg.PDFServiceURL, cfg.NatsURL = "", "" })}
 
 	taxIncluded := strings.Contains(string(f.expect(http.MethodGet, "/api/v1/settings/tax", nil, http.StatusOK)), "tax_included")
 
@@ -121,10 +127,11 @@ func TestApp_SaleFlow(t *testing.T) {
 		}
 		f.createAt("/api/v1/"+table, table, body)
 	}
-	// A 422 names every missing field, so the form can list them for the user.
+	// A 422 names every missing field, so the form can list them for the user —
+	// never the number, which the sequence always supplies.
 	missing := string(f.expect(http.MethodPost, "/api/v1/invoice", map[string]any{}, http.StatusUnprocessableEntity))
-	if !strings.Contains(missing, `"fields":[`) || !strings.Contains(missing, `"number"`) {
-		t.Errorf("422 body lacks the missing field list: %s", missing)
+	if !strings.Contains(missing, `"fields":[`) || !strings.Contains(missing, `"customer_name"`) || strings.Contains(missing, `"number"`) {
+		t.Errorf("422 body lacks the missing field list (or names number): %s", missing)
 	}
 	tax := f.create("sale_tax", map[string]any{"name": "VAT", "kind": "percentage", "rate": 0.2})
 
@@ -154,6 +161,83 @@ func TestApp_SaleFlow(t *testing.T) {
 	quoteLine := f.create("quote_line", map[string]any{"quote_id": quote, "variant_id": variant, "quantity": 1})
 	f.expect(http.MethodPut, "/api/v1/quote_line/"+quoteLine, map[string]any{"quantity": 4}, http.StatusOK)
 	f.expect(http.MethodDelete, "/api/v1/quote_line/"+quoteLine, nil, http.StatusNoContent)
+
+	testSaleWorkflow(t, f, variant)
+}
+
+// testSaleWorkflow drives a quote from creation to its invoice: sequence
+// numbers, the one-line rule, confirm/send/accept and the conversion.
+func testSaleWorkflow(t *testing.T, f *flow, variant string) {
+	year := strconv.Itoa(time.Now().Year())
+	str := func(body []byte, key string) string {
+		t.Helper()
+		v, _ := decode(t, body)[key].(string)
+		return v
+	}
+	record := func(body []byte) map[string]any {
+		t.Helper()
+		rec, _ := decode(t, body)["record"].(map[string]any)
+		return rec
+	}
+
+	// The number is the sequence's, never the one typed; each create takes the next.
+	q1 := f.create("quote", map[string]any{"number": "TYPED", "customer_name": "Ada", "customer_email": "ada@example.test"})
+	q2 := f.create("quote", map[string]any{"customer_name": "Bob"})
+	n1 := str(f.expect(http.MethodGet, "/api/v1/quote/"+q1, nil, http.StatusOK), "number")
+	n2 := str(f.expect(http.MethodGet, "/api/v1/quote/"+q2, nil, http.StatusOK), "number")
+	if !strings.HasPrefix(n1, "Q-"+year+"-") || n1 == n2 {
+		t.Fatalf("quote numbers = %q, %q, want two distinct Q-%s-NNNN", n1, n2, year)
+	}
+	// An edit never changes it.
+	f.expect(http.MethodPut, "/api/v1/quote/"+q1, withRequired(t, "quote", map[string]any{
+		"number": "CHANGED", "customer_name": "Ada", "customer_email": "ada@example.test", "status": "draft",
+	}), http.StatusOK)
+	if got := str(f.expect(http.MethodGet, "/api/v1/quote/"+q1, nil, http.StatusOK), "number"); got != n1 {
+		t.Errorf("number after an edit = %q, want %q", got, n1)
+	}
+
+	// No line: neither Confirm nor a plain edit can move it past draft.
+	f.expect(http.MethodPost, "/api/v1/quote/"+q1+"/confirm", nil, http.StatusUnprocessableEntity)
+	f.expect(http.MethodPut, "/api/v1/quote/"+q1, withRequired(t, "quote", map[string]any{
+		"customer_name": "Ada", "customer_email": "ada@example.test", "status": "confirmed",
+	}), http.StatusUnprocessableEntity)
+	// Out of order: only a sent quote can be accepted, a confirmed one sent.
+	f.expect(http.MethodPost, "/api/v1/quote/"+q1+"/accept", nil, http.StatusConflict)
+	f.expect(http.MethodPost, "/api/v1/quote/"+q1+"/send", nil, http.StatusConflict)
+
+	f.create("quote_line", map[string]any{"quote_id": q1, "variant_id": variant, "quantity": 3})
+	if got := record(f.expect(http.MethodPost, "/api/v1/quote/"+q1+"/confirm", nil, http.StatusOK))["status"]; got != "confirmed" {
+		t.Fatalf("confirmed quote status = %v", got)
+	}
+	f.expect(http.MethodPost, "/api/v1/quote/"+q1+"/confirm", nil, http.StatusConflict)
+
+	sent := decode(t, f.expect(http.MethodPost, "/api/v1/quote/"+q1+"/send", nil, http.StatusOK))
+	if to, _ := sent["sent_to"].([]any); len(to) != 1 || to[0] != "ada@example.test" {
+		t.Errorf("sent_to = %v, want the customer's email", sent["sent_to"])
+	}
+
+	accepted := decode(t, f.expect(http.MethodPost, "/api/v1/quote/"+q1+"/accept", nil, http.StatusOK))
+	invoiceID, _ := accepted["invoice_id"].(string)
+	if rec, _ := accepted["record"].(map[string]any); rec["status"] != "accepted" || invoiceID == "" {
+		t.Fatalf("accept = %v", accepted)
+	}
+	inv := decode(t, f.expect(http.MethodGet, "/api/v1/invoice/"+invoiceID, nil, http.StatusOK))
+	if num, _ := inv["number"].(string); !strings.HasPrefix(num, "INV-"+year+"-") || inv["status"] != "draft" || inv["quote_id"] != q1 {
+		t.Errorf("converted invoice = number %v, status %v, quote_id %v", inv["number"], inv["status"], inv["quote_id"])
+	}
+	lines := f.expect(http.MethodGet, "/api/v1/sale_line?filter[invoice_id]="+invoiceID, nil, http.StatusOK)
+	if !strings.Contains(string(lines), `"quantity":3`) {
+		t.Errorf("converted invoice lines = %s, want the quote's line", lines)
+	}
+
+	// The invoice follows the same steps.
+	if got := record(f.expect(http.MethodPost, "/api/v1/invoice/"+invoiceID+"/confirm", nil, http.StatusOK))["status"]; got != "confirmed" {
+		t.Errorf("confirmed invoice status = %v", got)
+	}
+	f.expect(http.MethodPost, "/api/v1/invoice/"+invoiceID+"/send", nil, http.StatusOK)
+	empty := f.create("invoice", map[string]any{"customer_name": "Nobody"})
+	f.expect(http.MethodPost, "/api/v1/invoice/"+empty+"/confirm", nil, http.StatusUnprocessableEntity)
+	f.expect(http.MethodPost, "/api/v1/invoice/not-a-uuid/confirm", nil, http.StatusBadRequest)
 }
 
 func TestApp_PropertyManagementFlow(t *testing.T) {

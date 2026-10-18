@@ -288,6 +288,9 @@ export interface ServerApiClient {
   /** Undoes a SOFT delete via Go's generic `POST /:id/restore` — returns the
    * restored record. */
   restore<T>(entity: string, id: string): Promise<T>
+  /** A record's workflow step — `POST /{entity}/{id}/{action}` — revalidating
+   * the entity's tag plus every `revalidate` one. */
+  action<T>(entity: string, id: string, action: string, body?: unknown, revalidate?: string[]): Promise<T>
   /**
    * entity's Kanban status field / Calendar date field, as configured from
    * Settings -> Views (docs/roadmaps/list-view-modes.md, ADR-006). Never
@@ -467,6 +470,18 @@ class ServerApiClientImpl implements ServerApiClient {
     )
     revalidateTag(entity, REVALIDATE_PROFILE)
     return restored
+  }
+
+  async action<T>(entity: string, id: string, action: string, body?: unknown, revalidate: string[] = []): Promise<T> {
+    const out = await request<T>(
+      'POST',
+      `/${entity}/${id}/${encodeURIComponent(action)}`,
+      [entity],
+      body,
+      this.tokenOverride,
+    )
+    for (const tag of [entity, ...revalidate]) revalidateTag(tag, REVALIDATE_PROFILE)
+    return out
   }
 
   async getViewFields(entity: string): Promise<ViewFieldsConfig> {

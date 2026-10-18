@@ -550,6 +550,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	}
 	srv.Echo().GET("/api/v1/versions", versions.Handler, jwtMw)
 
+	// Set when report generation is configured; sale's quote/invoice Send
+	// attaches the rendered PDF through it.
+	var reportsHandler *reports.Handler
 	if pictures.S3Configured(configContent) && reports.Configured(configContent) {
 		reportsObjects, err := pictures.NewS3Store(configContent)
 		if err != nil {
@@ -567,7 +570,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			pdfRenderer = reports.NewHTTPPDFRenderer(configContent.PDFServiceURL)
 		}
 
-		reportsHandler := reports.NewHandler(
+		reportsHandler = reports.NewHandler(
 			pdfRenderer,
 			reportsObjects,
 			tokenSvc,
@@ -1009,6 +1012,25 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// ── sale: quote_line Create/Update/Delete overrides ──────────────────────
 	// Same reasoning as sale_line above, scoped to Quote/QuoteLine instead of
 	// Invoice/SaleLine. See modules/sale/quote_handler.go.
+	// Quote/invoice workflow (modules/sale/workflow.go): the number comes from
+	// the per-company yearly sequence on create and never changes; a document
+	// with no line stays a draft; confirm/send/accept are server-side steps.
+	var pdfs sale.PDFSource
+	if reportsHandler != nil {
+		pdfs = reportsHandler
+	}
+	saleWorkflow := sale.NewWorkflowHandler(app.DB, companyRepo, settings.NewRepository(app.DB), pdfs)
+	gate := moduleRuntime.ActiveGateMiddleware()
+	srv.Echo().POST("/api/v1/quote", handlers["quote"].Create, jwtMw, permMw, gate, saleWorkflow.NumberQuote)
+	srv.Echo().PUT("/api/v1/quote/:id", handlers["quote"].Update, jwtMw, permMw, gate, saleWorkflow.GuardQuote)
+	srv.Echo().POST("/api/v1/invoice", handlers["invoice"].Create, jwtMw, permMw, gate, saleWorkflow.NumberInvoice)
+	srv.Echo().PUT("/api/v1/invoice/:id", handlers["invoice"].Update, jwtMw, permMw, gate, saleWorkflow.GuardInvoice)
+	srv.Echo().POST("/api/v1/quote/:id/confirm", saleWorkflow.ConfirmQuote, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/quote/:id/send", saleWorkflow.SendQuote, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/quote/:id/accept", saleWorkflow.AcceptQuote, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/invoice/:id/confirm", saleWorkflow.ConfirmInvoice, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/invoice/:id/send", saleWorkflow.SendInvoice, jwtMw, permMw, gate)
+
 	quoteLineHandler := sale.NewQuoteHandler(
 		orm.MustRepo[sale.QuoteLine](app.DB),
 		orm.MustRepo[sale.Quote](app.DB),

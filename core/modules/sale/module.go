@@ -224,8 +224,8 @@ type SaleLineTax struct {
 // letterhead template (Invoice's doc comment above). Kept a SEPARATE table
 // rather than an Invoice row with an "is_quote" flag: a quote and an invoice
 // are distinct documents with their own number sequence and status flow, and
-// a future quote -> invoice conversion needs two real rows to link between,
-// not a flag flip — that conversion isn't built yet.
+// the quote -> invoice conversion (workflow.go's AcceptQuote) needs two real
+// rows to link between, not a flag flip.
 type Quote struct {
 	model.BaseModel
 	Logo       *bool   `db:"logo"`
@@ -256,9 +256,10 @@ type Quote struct {
 	CustomerAddressCountry    string     `db:"customer_address_country"`
 	// DueDate is the quote's validity/expiry date — same column shape as
 	// Invoice.DueDate, different meaning ("valid until" vs "payment due by").
-	DueDate   *time.Time `db:"due_date"`
-	Status    string     `db:"status"` // "draft", "sent", "accepted", "declined", "expired"
-	Reference string     `db:"reference"`
+	DueDate *time.Time `db:"due_date"`
+	Status  string     `db:"status"` // "draft", "confirmed", "sent", "accepted", "declined", "expired"
+	// No Reference column on the struct any more (removed from the quote): the
+	// DB column stays, NOT NULL DEFAULT '', since migrations never drop one.
 	// See Invoice's doc comment: Subtotal/TaxAmount/Total is the HT/TVA/TTC
 	// breakdown, no Discount/Currency column anymore.
 	Subtotal      *float64 `db:"subtotal"`
@@ -281,6 +282,23 @@ type QuoteLine struct {
 	Unit        string    `db:"unit" json:"unit"`
 	TaxRate     float64   `db:"tax_rate" json:"tax_rate"`
 	UnitPrice   float64   `db:"unit_price" json:"unit_price"`
+}
+
+// QuoteRecipient / InvoiceRecipient: the extra contacts a quote or invoice
+// is emailed to on Send, beside its Customer — many2many junctions riding the
+// generic CRUD surface (the form's tags widget writes them, like crm_tag), a
+// hand-written unique (document, contact) index in Migrate. Accepting a quote
+// copies its recipients onto the invoice.
+type QuoteRecipient struct {
+	model.BaseModel
+	QuoteID   uuid.UUID `db:"quote_id,index" json:"quote_id"`
+	ContactID uuid.UUID `db:"contact_id" json:"contact_id"`
+}
+
+type InvoiceRecipient struct {
+	model.BaseModel
+	InvoiceID uuid.UUID `db:"invoice_id,index" json:"invoice_id"`
+	ContactID uuid.UUID `db:"contact_id" json:"contact_id"`
 }
 
 type saleModule struct{}
@@ -306,6 +324,26 @@ func (m *saleModule) Migrate(ctx context.Context, db *orm.DB) error {
 			}
 		}
 	}
+	for _, ddl := range []string{
+		// The quote/invoice number sequences (sequence.go): one row per
+		// tenant, company, kind and year.
+		`CREATE TABLE IF NOT EXISTS sale_sequence (
+			tenant_id  uuid    NOT NULL,
+			company_id uuid    NOT NULL,
+			kind       text    NOT NULL,
+			year       integer NOT NULL,
+			last       integer NOT NULL,
+			PRIMARY KEY (tenant_id, company_id, kind, year)
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_quote_recipient_unique
+			ON quote_recipient (quote_id, contact_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_recipient_unique
+			ON invoice_recipient (invoice_id, contact_id) WHERE deleted_at IS NULL`,
+	} {
+		if _, err := db.Exec(ctx, ddl); err != nil {
+			return fmt.Errorf("sale: migrate: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -327,5 +365,11 @@ func (m *saleModule) Register() error {
 	if err := orm.Register[Quote](); err != nil {
 		return err
 	}
-	return orm.Register[QuoteLine]()
+	if err := orm.Register[QuoteLine](); err != nil {
+		return err
+	}
+	if err := orm.Register[QuoteRecipient](); err != nil {
+		return err
+	}
+	return orm.Register[InvoiceRecipient]()
 }

@@ -450,6 +450,29 @@ function FormRenderer<T extends HasId>({
     return saved as Record<string, unknown> | null
   }
 
+  // HeaderButtonContext.runAction: a server-side workflow step on this
+  // record; Go answers with the updated record, which becomes the form's
+  // state (and the chatter diff's new baseline) — the step changed it on
+  // the server, not through the draft.
+  const onHeaderButtonAction = actions.action
+    ? async (
+        action: string,
+        options?: { body?: unknown; revalidate?: string[] },
+      ): Promise<Record<string, unknown>> => {
+        if (!recordId || !actions.action) throw new Error('no saved record')
+        const res = (await actions.action(recordId, action, options?.body, options?.revalidate)) as Record<
+          string,
+          unknown
+        >
+        const record = res?.record as Partial<T> | undefined
+        if (record) {
+          store.getState().edit(record)
+          lastPersistedRef.current = record
+        }
+        return res ?? {}
+      }
+    : undefined
+
   // Delete via the DEFAULT hard-delete affordance (docs/adr/ADR-015-undo-
   // toast.md) rather than a confirm dialog — EAGER commit, not deferred:
   // actions.remove runs immediately, and only navigates/shows the toast once
@@ -645,6 +668,8 @@ function FormRenderer<T extends HasId>({
           recordId={recordId ?? 'new'}
           draft={draft as Record<string, unknown>}
           onFieldsCommit={onHeaderButtonCommit}
+          onRunAction={onHeaderButtonAction}
+          onNavigate={(path) => router.push(erpPath(path))}
         />
         {statusBar && (
           <StatusBar

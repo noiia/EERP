@@ -74,6 +74,8 @@ function ReportNodeView({
       // target, not an interactive page — no lazy-loading/CDN story applies.
       return <img className={node.className} src={value} alt={node.alt ? translate(locale, node.alt) : ''} />
     }
+    case 'slot':
+      return null
     case 'pageBreak':
       // The print route's stylesheet owns page-break-before: always for this
       // class — ReportRenderer only names the hook, never inlines print CSS.

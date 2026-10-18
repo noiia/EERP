@@ -106,8 +106,8 @@ const PRODUCTS = [
   },
 ] as const
 
-const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled'] as const
-const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as const
+const INVOICE_STATUSES = ['draft', 'confirmed', 'sent', 'paid', 'overdue', 'cancelled'] as const
+const QUOTE_STATUSES = ['draft', 'confirmed', 'sent', 'accepted', 'declined', 'expired'] as const
 
 // The seller's own letterhead — fixed rather than randomized per document,
 // since every invoice/quote from one workspace is issued by the same
@@ -329,16 +329,15 @@ async function seedPictures(targets: PictureTarget[]): Promise<SeedEntityResult>
 /**
  * Shared shape behind buildInvoices/buildQuotes: sale.Invoice and sale.Quote
  * carry the same field set (module.go's doc comment on Quote) — only the
- * number prefix and status vocabulary differ per document kind.
+ * status vocabulary and the reference (invoices only) differ per kind.
  */
 function buildDocuments(
   contacts: { id: string }[],
   count: number,
-  numberPrefix: string,
   statuses: readonly string[],
+  withReference: boolean,
 ): Record<string, unknown>[] {
-  const year = new Date().getFullYear()
-  return Array.from({ length: count }, (_, i) => {
+  return Array.from({ length: count }, () => {
     const first = pick(FIRST_NAMES)
     const last = pick(LAST_NAMES)
     const company = pick(COMPANIES)
@@ -349,8 +348,10 @@ function buildDocuments(
     const dueDate = new Date(issueDate)
     dueDate.setDate(dueDate.getDate() + 30)
     return {
+      // No number: Go gives each document the next of its sequence. The
+      // status is applied after the lines exist (applyStatuses) — Go keeps a
+      // document with no line a draft.
       ...ISSUER,
-      number: `${numberPrefix}-${year}-${String(i + 1).padStart(4, '0')}`,
       status: pick(statuses),
       issue_date: issueDate.toISOString().slice(0, 10),
       due_date: dueDate.toISOString().slice(0, 10),
@@ -366,7 +367,7 @@ function buildDocuments(
       customer_address_city: '',
       customer_address_state: '',
       customer_address_country: '',
-      reference: `PO-${1000 + Math.floor(Math.random() * 9000)}`,
+      ...(withReference ? { reference: `PO-${1000 + Math.floor(Math.random() * 9000)}` } : {}),
       payment_method: pick(PAYMENT_METHODS),
       payment_terms: pick(PAYMENT_TERMS),
       legal_notice: '',
@@ -421,13 +422,15 @@ function buildPageFormats(companyId: string | null): Record<string, unknown>[] {
 async function createMany<R extends { id: string }>(
   entity: string,
   bodies: Record<string, unknown>[],
-): Promise<{ result: SeedEntityResult; records: R[] }> {
+): Promise<{ result: SeedEntityResult; records: R[]; bodies: Record<string, unknown>[] }> {
   const client = createServerApiClient()
   const records: R[] = []
+  const created: Record<string, unknown>[] = []
   const result: SeedEntityResult = { entity, created: 0, failed: 0, errors: [] }
   for (const body of bodies) {
     try {
       records.push(await client.create<R>(entity, body))
+      created.push(body)
       result.created += 1
     } catch (e) {
       result.failed += 1
@@ -436,7 +439,32 @@ async function createMany<R extends { id: string }>(
       }
     }
   }
-  return { result, records }
+  return { result, records, bodies: created }
+}
+
+/**
+ * Moves each seeded document to the status its body picked, once its lines
+ * exist (Go creates every document as a draft: a status past draft needs at
+ * least one line). Same per-record failure tolerance as createMany.
+ */
+async function applyStatuses(
+  entity: string,
+  outcome: { records: { id: string }[]; bodies: Record<string, unknown>[] },
+): Promise<SeedEntityResult> {
+  const client = createServerApiClient()
+  const result: SeedEntityResult = { entity: `${entity} status`, created: 0, failed: 0, errors: [] }
+  for (const [i, record] of outcome.records.entries()) {
+    const body = outcome.bodies[i]
+    if (!body || body.status === 'draft') continue
+    try {
+      await client.update(entity, record.id, body)
+      result.created += 1
+    } catch (e) {
+      result.failed += 1
+      if (result.errors.length < 5) result.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  return result
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────
@@ -605,7 +633,7 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
 
   const invoicesOutcome = await createMany<{ id: string }>(
     'invoice',
-    buildDocuments(contactsOutcome.records, INVOICE_COUNT, 'INV', INVOICE_STATUSES),
+    buildDocuments(contactsOutcome.records, INVOICE_COUNT, INVOICE_STATUSES, true),
   )
   results.push(invoicesOutcome.result)
   pictures.push(...invoicesOutcome.records.map((r, i) => ({ table: 'invoice', id: r.id, field: 'logo', png: () => logoPng(PALETTE[i % PALETTE.length]) })))
@@ -615,10 +643,11 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
     buildDocumentLines('invoice_id', invoicesOutcome.records, variantsOutcome.records),
   )
   results.push(saleLinesOutcome.result)
+  results.push(await applyStatuses('invoice', invoicesOutcome))
 
   const quotesOutcome = await createMany<{ id: string }>(
     'quote',
-    buildDocuments(contactsOutcome.records, QUOTE_COUNT, 'QUO', QUOTE_STATUSES),
+    buildDocuments(contactsOutcome.records, QUOTE_COUNT, QUOTE_STATUSES, false),
   )
   results.push(quotesOutcome.result)
   pictures.push(...quotesOutcome.records.map((r, i) => ({ table: 'quote', id: r.id, field: 'logo', png: () => logoPng(PALETTE[i % PALETTE.length]) })))
@@ -628,6 +657,7 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
     buildDocumentLines('quote_id', quotesOutcome.records, variantsOutcome.records),
   )
   results.push(quoteLinesOutcome.result)
+  results.push(await applyStatuses('quote', quotesOutcome))
 
   const preferences = await getMyLocalePreferences()
   const pageFormatsOutcome = await createMany(

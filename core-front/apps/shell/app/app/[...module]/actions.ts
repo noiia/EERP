@@ -24,3 +24,15 @@ export async function removeRecord(entity: string, id: string): Promise<void | A
 export async function restoreRecord(entity: string, id: string): Promise<unknown> {
   return settleAction(() => createServerApiClient().restore(entity, id))
 }
+
+// A record's server-side workflow step (POST /{entity}/{id}/{action}, e.g.
+// sale's quote confirm/send/accept) — header buttons' runAction.
+export async function recordAction(
+  entity: string,
+  id: string,
+  action: string,
+  body?: unknown,
+  revalidate?: string[],
+): Promise<unknown> {
+  return settleAction(() => createServerApiClient().action(entity, id, action, body, revalidate))
+}

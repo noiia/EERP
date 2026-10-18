@@ -149,6 +149,16 @@ export interface ReportPageBreakNode {
   kind: 'pageBreak'
 }
 
+/**
+ * Where a child report's own layout goes inside its parent's (report
+ * inheritance, `ReportDescriptor.extends`). A parent without one gets its
+ * children's layout appended after its own nodes. Resolved away by
+ * resolveReports — a slot left in a printed layout renders nothing.
+ */
+export interface ReportSlotNode {
+  kind: 'slot'
+}
+
 export type ReportNode =
   | ReportSectionNode
   | ReportFieldNode
@@ -156,10 +166,38 @@ export type ReportNode =
   | ReportPageBreakNode
   | ReportTextNode
   | ReportImageNode
+  | ReportSlotNode
+
+/**
+ * The print route's letterhead around a report's layout: `header` = the
+ * company logo and the configured letterhead address (Settings -> Global
+ * settings -> Reports, or the report's page format), `footer` = the
+ * configured footer text, pinned to the page bottom. Off unless a report
+ * (or a report it inherits from) turns it on — `defaultReport` does.
+ */
+export interface ReportChrome {
+  header?: boolean
+  footer?: boolean
+}
 
 export interface ReportDescriptor {
   /** Also the print route's :name param (e.g. 'crm.statement'). */
   name: string
+  /**
+   * Inherit from another report, by name: its `chrome` (overridable key by
+   * key), its `pageFormat` (unless this one sets its own) and its layout,
+   * with this report's layout put in the parent's `slot` (or appended). Every
+   * report in this codebase extends `defaultReport` ('core.default', the
+   * letterhead header + footer) and adds its own components; one that
+   * mustn't print the letterhead just doesn't extend it. Resolved by
+   * resolveReports (ModuleRegistry.buildReportRegistry) — an unknown parent
+   * or a cycle is an error naming the chain.
+   */
+  extends?: string
+  /** A base to inherit from, never printed itself (the print route 404s). */
+  abstract?: boolean
+  /** See ReportChrome. Merged over the parent's. */
+  chrome?: ReportChrome
   /** Data source entity — the same entity names ViewDescriptor.entity uses. */
   entity: string
   layout: ReportNode[]
@@ -339,8 +377,12 @@ export function reportTitleSection(field: string): ReportFieldNode {
  * the offending node.
  */
 export function validateReportDescriptor(descriptor: ReportDescriptor): void {
+  if (descriptor.extends === descriptor.name) throw new Error(`a report cannot extend itself`)
+  if (!descriptor.abstract && !descriptor.entity) throw new Error(`a printable report requires an entity`)
   const visit = (node: ReportNode): void => {
     switch (node.kind) {
+      case 'slot':
+        return
       case 'field':
         if (!node.name) throw new Error(`a "field" node requires a name`)
         return
@@ -370,4 +412,83 @@ export function validateReportDescriptor(descriptor: ReportDescriptor): void {
     }
   }
   for (const node of descriptor.layout) visit(node)
+}
+
+/** The base every report extends: the letterhead header and footer, and a
+ * slot for the report's own components. Registered by every ModuleRegistry. */
+export const DEFAULT_REPORT_NAME = 'core.default'
+
+export const defaultReport: ReportDescriptor = {
+  name: DEFAULT_REPORT_NAME,
+  abstract: true,
+  entity: '',
+  permissions: [],
+  chrome: { header: true, footer: true },
+  layout: [{ kind: 'slot' }],
+}
+
+function fillSlot(layout: ReportNode[], content: ReportNode[]): { layout: ReportNode[]; filled: boolean } {
+  let filled = false
+  const visit = (nodes: ReportNode[]): ReportNode[] =>
+    nodes.flatMap((node): ReportNode[] => {
+      if (node.kind === 'slot' && !filled) {
+        filled = true
+        return content
+      }
+      if (node.kind === 'section') return [{ ...node, children: visit(node.children) }]
+      return [node]
+    })
+  const out = visit(layout)
+  return { layout: filled ? out : [...layout, ...content], filled }
+}
+
+/**
+ * Flattens report inheritance: every descriptor comes back with its parents'
+ * chrome, page format and layout merged in (see ReportDescriptor.extends),
+ * `extends` cleared — so the print route and every helper over a layout
+ * (reportImageSources, reportTableRelations, …) see one plain descriptor.
+ * Throws on an unknown parent or a cycle, naming the chain.
+ */
+export function resolveReports(descriptors: Iterable<ReportDescriptor>): Map<string, ReportDescriptor> {
+  const byName = new Map<string, ReportDescriptor>()
+  for (const d of descriptors) byName.set(d.name, d)
+  const resolved = new Map<string, ReportDescriptor>()
+
+  const resolve = (name: string, chain: string[]): ReportDescriptor => {
+    const done = resolved.get(name)
+    if (done) return done
+    if (chain.includes(name)) throw new Error(`report inheritance cycle: ${[...chain, name].join(' -> ')}`)
+    const own = byName.get(name)
+    if (!own) {
+      throw new Error(`report "${chain[chain.length - 1]}" extends unknown report "${name}"`)
+    }
+    let out: ReportDescriptor = { ...own, extends: undefined }
+    if (own.extends) {
+      const parent = resolve(own.extends, [...chain, name])
+      out = {
+        ...out,
+        chrome: { ...parent.chrome, ...own.chrome },
+        pageFormat: own.pageFormat ?? parent.pageFormat,
+        layout: fillSlot(parent.layout, own.layout).layout,
+      }
+    }
+    resolved.set(name, out)
+    return out
+  }
+
+  for (const name of byName.keys()) resolve(name, [])
+  return resolved
+}
+
+/**
+ * A labeled address block — a bold caption ("Customer:", "Property:") then
+ * the party's lines, one per row, left-aligned. The rent receipt's own block,
+ * shared by every report that prints a party (sale's quote/invoice customer).
+ */
+export function reportAddressBlock(label: string, lines: ReportNode[], className?: string): ReportSectionNode {
+  return {
+    kind: 'section',
+    className: className ? `eerp-report-address ${className}` : 'eerp-report-address',
+    children: [{ kind: 'text', text: label, className: 'eerp-report-label' }, ...lines],
+  }
 }

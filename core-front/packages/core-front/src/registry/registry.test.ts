@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from '../views/descriptor'
 import { headerMenuRegistry, registerHeaderMenu } from '../views/header-menu-registry'
-import type { ReportDescriptor } from '../views/report-descriptor'
+import { DEFAULT_REPORT_NAME, type ReportDescriptor } from '../views/report-descriptor'
 import { ModuleRegistry, type FrontModule } from './registry'
 
 const formDescriptor: ViewDescriptor = {
@@ -127,23 +127,52 @@ describe('ModuleRegistry reports', () => {
     permissions: ['crm:crm:read'],
     layout: [{ kind: 'field', name: 'name' }],
   }
+  const names = (registry: ModuleRegistry) => [...registry.buildReportRegistry().keys()].sort()
 
   it('resolves a registered report by name, not by path', () => {
     const registry = new ModuleRegistry()
     registry.register({ ...crm, reports: [statement] })
-    expect(registry.buildReportRegistry().get('crm.statement')).toBe(statement)
+    expect(registry.buildReportRegistry().get('crm.statement')).toMatchObject(statement)
   })
 
-  it('is empty when a module declares no reports', () => {
+  it('always holds the built-in default report, abstract', () => {
     const registry = new ModuleRegistry().register(crm)
-    expect(registry.buildReportRegistry().size).toBe(0)
+    expect(names(registry)).toEqual([DEFAULT_REPORT_NAME])
+    expect(registry.buildReportRegistry().get(DEFAULT_REPORT_NAME)).toMatchObject({
+      abstract: true,
+      chrome: { header: true, footer: true },
+    })
   })
 
   it('is idempotent by module name, same as routes', () => {
     const registry = new ModuleRegistry()
     registry.register({ ...crm, reports: [statement] })
     registry.register({ ...crm, reports: [statement] })
-    expect(registry.buildReportRegistry().size).toBe(1)
+    expect(names(registry)).toEqual(['core.default', 'crm.statement'])
+  })
+
+  it('flattens inheritance: a report extending the default gets its header and footer', () => {
+    const registry = new ModuleRegistry().register({ ...crm, reports: [{ ...statement, extends: DEFAULT_REPORT_NAME }] })
+    const resolved = registry.buildReportRegistry().get('crm.statement')!
+    expect(resolved.chrome).toEqual({ header: true, footer: true })
+    expect(resolved.layout).toEqual(statement.layout)
+    expect(resolved.extends).toBeUndefined()
+  })
+
+  it('a report may extend one that a later-registered module ships', () => {
+    const base: ReportDescriptor = { name: 'tag.base', abstract: true, entity: '', permissions: [], layout: [], chrome: { header: true } }
+    const registry = new ModuleRegistry()
+    registry.register({ ...crm, reports: [{ ...statement, extends: 'tag.base' }] })
+    registry.register({ name: 'tag', routes: [], reports: [base] })
+    expect(registry.buildReportRegistry().get('crm.statement')?.chrome).toEqual({ header: true })
+  })
+
+  it('refuses to replace the built-in base, and an unknown parent fails the build', () => {
+    expect(() =>
+      new ModuleRegistry().register({ ...crm, reports: [{ ...statement, name: DEFAULT_REPORT_NAME }] }),
+    ).toThrowError(/built-in base report/)
+    const registry = new ModuleRegistry().register({ ...crm, reports: [{ ...statement, extends: 'nope' }] })
+    expect(() => registry.buildReportRegistry()).toThrowError(/extends unknown report "nope"/)
   })
 
   it('rejects a report descriptor with an invalid node, naming module and report', () => {
@@ -163,11 +192,12 @@ describe('ModuleRegistry reports', () => {
     )
   })
 
-  it('reportForEntity resolves the first report over that entity, null otherwise', () => {
+  it('reportForEntity resolves the first printable report over that entity, null otherwise', () => {
     const registry = new ModuleRegistry()
     registry.register({ ...crm, reports: [statement] })
-    expect(registry.reportForEntity('crm')).toBe(statement)
+    expect(registry.reportForEntity('crm')).toMatchObject(statement)
     expect(registry.reportForEntity('tag')).toBeNull()
+    expect(registry.reportForEntity('')).toBeNull() // the abstract default has no entity
   })
 })
 

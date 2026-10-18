@@ -3,8 +3,11 @@ import {
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerHeaderButtonAction,
+  registerMenuAction,
   type FrontRoute,
+  type HeaderButtonContext,
   type HeaderButtonDescriptor,
+  type MenuNode,
   type Operation,
   type ViewDescriptor,
 } from '@eerp/core-front'
@@ -45,7 +48,6 @@ export interface Quote {
   due_date?: string | null
   /** One of the selection field's options: draft/sent/accepted/declined/expired. */
   status?: string
-  reference?: string
   subtotal?: number | null
   tax_amount?: number | null
   total?: number | null
@@ -65,29 +67,32 @@ registerFieldFunction({
 
 // Quote workflow (header-button-container — core-front/CLAUDE.md's "Header
 // button container" row): draft -> confirmed -> sent -> accepted/declined.
-// Each simple transition is a scripted field-edit-then-save through
-// HeaderButtonContext.setFieldAndCommit — the SAME commit() path Save uses,
-// never a separate write mechanism (see quoteHeaderButtons below for which
-// button shows at which status).
+// Confirm/Send/Accept are server-side steps (modules/sale/workflow.go,
+// HeaderButtonContext.runAction): Go checks the step (a quote needs at least
+// one line to be confirmed), applies it, and the form re-seeds from its
+// answer — Go's refusal message shows beside the buttons. Decline is a plain
+// status edit (setFieldAndCommit, the same commit() path Save uses).
+
+function runAction(ctx: HeaderButtonContext, action: string, revalidate?: string[]) {
+  if (!ctx.runAction) throw new Error('record actions are not available here')
+  return ctx.runAction(action, { revalidate })
+}
 
 registerHeaderButtonAction({
   entity: 'quote',
   name: 'sale.confirmQuote',
   handler: async (ctx) => {
-    await ctx.setFieldAndCommit({ status: 'confirmed' })
+    await runAction(ctx, 'confirm')
   },
 })
 
-// Send both prints the quote (same "call the BFF, open the PDF" dance as
-// invoice_views.ts's sale.printInvoice, over the sale.quote report) AND
-// advances the status — one click does both, since "sent" only means
-// something once the document is actually in the customer's hands.
+// Send emails the quote's PDF to its Customer and every Recipient (the mail
+// outbox, in the same transaction as the status change) — no download here.
 registerHeaderButtonAction({
   entity: 'quote',
   name: 'sale.sendQuote',
   handler: async (ctx) => {
-    await ctx.setFieldAndCommit({ status: 'sent' })
-    await exportReportPDF('sale.quote', ctx.recordId)
+    await runAction(ctx, 'send')
   },
 })
 
@@ -99,72 +104,29 @@ registerHeaderButtonAction({
   },
 })
 
-// Accept both marks the quote won AND raises the invoice it becomes — "if
-// quote is accepted, an invoice is created with the data from this quote."
-// ctx.relationOps is the SAME entity-generic client the relation widgets use
-// (RelationOps): read this quote's own lines, snapshot the quote's fields
-// onto a new invoice (linked back via quote_id — see invoice_views.ts's
-// Invoice.quote_id), then create one sale_line per quote_line. sale_line's
-// own Create override (handler.go) re-resolves Unit/TaxRate/UnitPrice from
-// the variant/product at INVOICE creation time and recomputes the invoice's
-// own totals itself (recomputeTotals) — only invoice_id/variant_id/quantity
-// need passing through here, same as the invoice form's own line-items
-// wizard. Ponytail: this re-prices at TODAY's product/variant rates rather
-// than locking in what the quote itself snapshotted — matches every other
-// sale_line/quote_line creation path in this codebase (no live joins, but
-// always resolved fresh at the CREATING document's own time); revisit if the
-// product ever needs quoted prices to survive unchanged onto the invoice.
+// Accept converts the quote into a draft invoice, server-side and atomically
+// (workflow.go's AcceptQuote): the invoice's own sequence number, the quote's
+// lines at their QUOTED prices, its recipients, invoice.quote_id pointing
+// back — then opens that invoice.
 registerHeaderButtonAction({
   entity: 'quote',
   name: 'sale.acceptQuote',
   handler: async (ctx) => {
-    const ops = ctx.relationOps
-    if (!ops) return
-    const lines = await ops.list('quote_line', {
-      filter: { quote_id: ctx.recordId },
-      pageSize: 200,
-    })
-    const invoice = await ops.create('invoice', {
-      issuer_name: ctx.draft.issuer_name,
-      issuer_address_number: ctx.draft.issuer_address_number,
-      issuer_address_complement: ctx.draft.issuer_address_complement,
-      issuer_address_street: ctx.draft.issuer_address_street,
-      issuer_address_zip_code: ctx.draft.issuer_address_zip_code,
-      issuer_address_city: ctx.draft.issuer_address_city,
-      issuer_address_state: ctx.draft.issuer_address_state,
-      issuer_address_country: ctx.draft.issuer_address_country,
-      issuer_phone: ctx.draft.issuer_phone,
-      issuer_email: ctx.draft.issuer_email,
-      number: `INV-${ctx.draft.number as string}`,
-      issue_date: new Date().toISOString().slice(0, 10),
-      subject: ctx.draft.subject,
-      customer_id: ctx.draft.customer_id,
-      customer_name: ctx.draft.customer_name,
-      customer_email: ctx.draft.customer_email,
-      customer_address_number: ctx.draft.customer_address_number,
-      customer_address_complement: ctx.draft.customer_address_complement,
-      customer_address_street: ctx.draft.customer_address_street,
-      customer_address_zip_code: ctx.draft.customer_address_zip_code,
-      customer_address_city: ctx.draft.customer_address_city,
-      customer_address_state: ctx.draft.customer_address_state,
-      customer_address_country: ctx.draft.customer_address_country,
-      status: 'draft',
-      reference: ctx.draft.reference,
-      quote_id: ctx.recordId,
-      payment_method: ctx.draft.payment_method,
-      payment_terms: ctx.draft.payment_terms,
-      legal_notice: ctx.draft.legal_notice,
-    })
-    for (const line of lines) {
-      await ops.create('sale_line', {
-        invoice_id: invoice.id,
-        variant_id: line.variant_id,
-        quantity: line.quantity,
-      })
-    }
-    await ctx.setFieldAndCommit({ status: 'accepted' })
+    const res = await runAction(ctx, 'accept', ['invoice', 'sale_line', 'invoice_recipient'])
+    if (typeof res.invoice_id === 'string') ctx.navigate?.(`/sale/${res.invoice_id}`)
   },
 })
+
+// Print > Quote in the form's options menu: opens the PDF (Send emails it).
+registerMenuAction({
+  entity: 'quote',
+  name: 'sale.printQuote',
+  handler: ({ recordId }) => exportReportPDF('sale.quote', recordId),
+})
+
+const quoteFormActions: MenuNode[] = [
+  { kind: 'submenu', label: 'Print', children: [{ kind: 'action', label: 'Quote', action: 'sale.printQuote' }] },
+]
 
 // The visual slot each button occupies is entirely driven by `states.visible`
 // against the live 'status' field — several entries with mutually exclusive
@@ -200,7 +162,9 @@ const quoteHeaderButtons: HeaderButtonDescriptor[] = [
 // quoteHeaderButtons above and handler.go's expiry check) — instead of
 // invoice's draft/sent/paid/overdue/cancelled.
 const quoteFields: ViewDescriptor['fields'] = [
-  { name: 'number', label: 'Number', type: 'text', required: true },
+  // Never typed: Go gives every new quote the next number of the company's
+  // yearly quote sequence (Q-2026-0001 — modules/sale/sequence.go).
+  { name: 'number', label: 'Number', type: 'text', readOnly: true },
   // See invoice_views.ts's own fields' identical field for the full
   // rationale — kept in the compact/list set (a many2one's raw FK id isn't
   // list-renderable); customer_id below (form-only) is the primary way to
@@ -241,7 +205,20 @@ const quoteFormFields: ViewDescriptor['fields'] = [
   { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field — same as invoice's formFields (invoice_views.ts):
   // it's the issuing company's own property now (Settings -> Company).
-  { name: 'reference', label: 'Reference', type: 'text' },
+  // Who else Send emails the quote to, beside the Customer — contacts linked
+  // through the quote_recipient junction; Accept copies them to the invoice.
+  {
+    name: 'recipients',
+    label: 'Recipients',
+    type: 'relation',
+    relation: {
+      entity: 'contact',
+      kind: 'many2many',
+      via: 'quote_recipient',
+      viaFields: { own: 'quote_id', related: 'contact_id' },
+      labelField: 'name',
+    },
+  },
   {
     name: 'quote_lines',
     label: 'Line items',
@@ -280,6 +257,7 @@ const quoteFormView: ViewDescriptor = {
   permissions: ['quote:quote:read'],
   statusBar: { field: 'status' },
   headerButtons: quoteHeaderButtons,
+  actions: quoteFormActions,
 }
 
 // Moves quote_lines (+ its totals recap) into its own first-position

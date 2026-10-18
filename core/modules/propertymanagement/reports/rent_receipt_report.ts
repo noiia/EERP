@@ -1,4 +1,4 @@
-import type { ReportDescriptor } from '@eerp/core-front'
+import { DEFAULT_REPORT_NAME, reportAddressBlock, type ReportDescriptor } from '@eerp/core-front'
 
 /** One right-aligned "label / amount" row in the totals recap block — `format:
  * 'monetary'` prints the active company's own currency code alongside the
@@ -23,21 +23,15 @@ function totalsRow(label: string, field: string, grand = false): ReportDescripto
 // re-uploaded onto the receipt's own receipt_file anchor, so a later
 // download always shows exactly what was true when it was generated. No
 // issuer/company block of its own: the printing company's own details
-// (address + logo) now print in the print route's own document header
-// (page.tsx's eerp-report-chrome-header, above EVERY report's content) —
-// the receipt has no issuer_* columns to begin with (there's only ever one
-// party issuing a rent receipt: the printing user's active company), so a
-// bespoke reportPartyAddressFields block here would only have ever
-// duplicated that same chrome. What prints instead is the property/
-// tenant(s) snapshot this entity actually has — a flat address string
-// (formatPropertyAddress's FULL line, not just number+street — the earlier
-// truncation was why a generated report read "barely empty") plus
-// floor_area and a comma-joined tenant list, not the 7-column composite (no
-// per-tenant address exists to decompose: tenants live at the property's own
-// address); its own eerp-report-client--pm class LEFT-aligns it (report.css)
-// — the shared eerp-report-client rule it also carries right-aligns text for
-// sale's own masthead-column client block, wrong once this section moved to
-// a full-width block of its own (see the layout below). The title is a
+// (address + logo) print in the letterhead header of the default report this
+// one extends (core.default) — the receipt has no issuer_* columns to begin
+// with (there's only ever one party issuing a rent receipt: the printing
+// user's active company). What prints instead is the property/tenant(s)
+// snapshot this entity actually has, each in the engine's labeled address
+// block (reportAddressBlock, shared with sale's quote/invoice Customer block)
+// — a flat address string (formatPropertyAddress's FULL line) plus
+// floor_area, and a comma-joined tenant list (no per-tenant address exists to
+// decompose: tenants live at the property's own address). The title is a
 // STATIC bigger label, not `reportTitleSection` over a record field — the
 // receipt form has no writable field at all (handler.go rejects every
 // PUT/DELETE; the document is append-only), so there is no field here a
@@ -52,16 +46,13 @@ function totalsRow(label: string, field: string, grand = false): ReportDescripto
 // sale's own invoice_report.ts.
 export const rentReceiptReport: ReportDescriptor = {
   name: 'propertymanagement.rentReceipt',
+  // The letterhead header (the printing company's address + logo) and footer
+  // come from the default report; this layout is the receipt's own.
+  extends: DEFAULT_REPORT_NAME,
   entity: 'property_management_rent_receipt',
   permissions: ['property_management_rent_receipt:property_management_rent_receipt:read'],
   layout: [
-    {
-      kind: 'section',
-      children: [
-        { kind: 'text', text: 'Tenant(s):', className: 'eerp-report-label' },
-        { kind: 'field', name: 'tenant_names', className: 'eerp-report-tenant-names' },
-      ],
-    },
+    reportAddressBlock('Tenant(s):', [{ kind: 'field', name: 'tenant_names', className: 'eerp-report-tenant-names' }]),
     { kind: 'text', text: 'Rent receipt', className: 'eerp-report-title' },
     {
       kind: 'section',
@@ -71,23 +62,18 @@ export const rentReceiptReport: ReportDescriptor = {
         { kind: 'field', name: 'generated_at', format: 'date' },
       ],
     },
-    {
-      kind: 'section',
-      className: 'eerp-report-client eerp-report-client--pm',
-      children: [
-        { kind: 'text', text: 'Property:', className: 'eerp-report-label' },
-        { kind: 'field', name: 'property_name' },
-        { kind: 'field', name: 'property_address' },
-        {
-          kind: 'section',
-          className: 'eerp-pm-report-property',
-          children: [
-            { kind: 'field', name: 'floor_area', format: 'number' },
-            { kind: 'field', name: 'uom'},
-          ]
-        }
-      ],
-    },
+    reportAddressBlock('Property:', [
+      { kind: 'field', name: 'property_name' },
+      { kind: 'field', name: 'property_address' },
+      {
+        kind: 'section',
+        className: 'eerp-pm-report-property',
+        children: [
+          { kind: 'field', name: 'floor_area', format: 'number' },
+          { kind: 'field', name: 'uom' },
+        ],
+      },
+    ]),
     {
       kind: 'table',
       source: 'lines',

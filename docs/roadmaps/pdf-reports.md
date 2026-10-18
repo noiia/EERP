@@ -40,6 +40,9 @@ lets a developer build a report the way they already build a view.
 ```ts
 interface ReportDescriptor {
   name: string                // e.g. 'crm.statement' — also the print route's :name param
+  extends?: string             // inherit from another report — every report extends 'core.default'
+  abstract?: boolean           // a base only: never printed (the print route 404s)
+  chrome?: { header?: boolean; footer?: boolean } // the letterhead; core.default turns both on
   entity: string               // primary data source, same entity names views already use
   layout: ReportNode[]
   permissions: string[]        // same permission-string convention as ViewDescriptor
@@ -50,7 +53,29 @@ type ReportNode =
   | { kind: 'field'; name: string; className?: string; format?: string; display?: Condition }
   | { kind: 'table'; source: string; columns: { name: string; label: string; display?: Condition }[]; className?: string }
   | { kind: 'pageBreak' }
+  | { kind: 'slot' }           // where a child report's layout goes (inheritance)
 ```
+
+**Inheritance** ([ADR-010](../adr/ADR-010-pdf-report-generation.md) §4b): a report names its
+parent in `extends`; `resolveReports` (inside `ModuleRegistry.buildReportRegistry`) flattens the
+chain — the child's layout fills the parent's `slot` (or is appended), `chrome` merges key by
+key, `pageFormat` is inherited unless set. The engine's `defaultReport` (`DEFAULT_REPORT_NAME`,
+`core.default`) is the letterhead header (company logo + configured address) and footer around a
+slot; the print route prints them only when the resolved report's `chrome` asks. Shared
+components are plain helpers: `reportAddressBlock(label, lines)` is the labeled, left-aligned
+party block (rent receipt's tenant/property, sale's Customer).
+
+```ts
+export const quoteReport: ReportDescriptor = {
+  name: 'sale.quote',
+  extends: DEFAULT_REPORT_NAME,   // letterhead header + footer
+  entity: 'quote',
+  permissions: ['quote:quote:read'],
+  layout: [documentMeta, customerBlock, /* lines table, totals, terms… */],
+}
+```
+
+Pitfall: a report without `extends` prints no letterhead at all.
 
 `display` (the form's `FieldDescriptor.states` `Condition` DSL) is evaluated against the fetched
 **record** — for a table column, too, not each row — and hides the node (a column: its header and

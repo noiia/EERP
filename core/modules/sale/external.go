@@ -23,7 +23,6 @@ type InvoiceRequest struct {
 	CustomerID    *uuid.UUID // a contact, when the customer has one
 	CustomerName  string
 	CustomerEmail string
-	Number        string
 	Subject       string
 	VariantID     uuid.UUID
 	Quantity      float64
@@ -92,6 +91,18 @@ func CreateInvoice(ctx context.Context, ex orm.Executor, req InvoiceRequest) (In
 	if err != nil {
 		return Invoice{}, err
 	}
+	// No user here: the workspace's default company's invoice sequence.
+	var companyID uuid.UUID
+	err = ex.QueryRow(ctx, `SELECT id FROM company WHERE tenant_id = $1 AND deleted_at IS NULL
+		ORDER BY is_default DESC, created_at LIMIT 1`, req.TenantID).Scan(&companyID)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return Invoice{}, err
+	}
+	now := time.Now()
+	number, err := nextNumber(ctx, ex, req.TenantID, companyID, sequenceInvoice, now)
+	if err != nil {
+		return Invoice{}, err
+	}
 	price := resolveUnitPrice(product, variant)
 	if req.UnitPrice != nil {
 		price = *req.UnitPrice
@@ -99,8 +110,7 @@ func CreateInvoice(ctx context.Context, ex orm.Executor, req InvoiceRequest) (In
 	rate := resolveTaxRate(product, variant)
 	subtotal, total := computeLineTotal(req.Quantity*price, rate, nil, included)
 	tax := total - subtotal
-	now := time.Now()
-	inv := Invoice{Number: req.Number, IssueDate: &now, Subject: req.Subject, CustomerID: req.CustomerID,
+	inv := Invoice{Number: number, IssueDate: &now, Subject: req.Subject, CustomerID: req.CustomerID,
 		CustomerName: req.CustomerName, CustomerEmail: req.CustomerEmail, Status: "sent",
 		Subtotal: &subtotal, TaxAmount: &tax, Total: &total}
 	inv.TenantID = req.TenantID

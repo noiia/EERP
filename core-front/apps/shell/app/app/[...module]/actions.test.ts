@@ -5,13 +5,14 @@ const client = vi.hoisted(() => ({
   update: vi.fn(async () => ({ id: 'u' })),
   remove: vi.fn(async () => undefined),
   restore: vi.fn(async () => ({ id: 'r' })),
+  action: vi.fn(async () => ({ record: { id: 'q' }, invoice_id: 'i' })),
 }))
 vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return { ...actual, createServerApiClient: () => client }
 })
 
-import { createRecord, removeRecord, restoreRecord, updateRecord } from './actions'
+import { createRecord, recordAction, removeRecord, restoreRecord, updateRecord } from './actions'
 
 describe('generic entity Server Actions', () => {
   it('forward to the server ApiClient', async () => {
@@ -23,5 +24,7 @@ describe('generic entity Server Actions', () => {
     expect(client.update).toHaveBeenCalledWith('crm', '1', { name: 'b' })
     expect(client.remove).toHaveBeenCalledWith('crm', '1')
     expect(client.restore).toHaveBeenCalledWith('crm', '1')
+    expect(await recordAction('quote', '1', 'accept', undefined, ['invoice'])).toEqual({ record: { id: 'q' }, invoice_id: 'i' })
+    expect(client.action).toHaveBeenCalledWith('quote', '1', 'accept', undefined, ['invoice'])
   })
 })

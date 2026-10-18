@@ -1,4 +1,4 @@
-import { reportTitleSection, type ReportDescriptor } from '@eerp/core-front'
+import { DEFAULT_REPORT_NAME, reportTitleSection, type ReportDescriptor } from '@eerp/core-front'
 
 // crm.statement — the first real ReportDescriptor (docs/roadmaps/pdf-reports.md
 // Phase 4), proving the pipeline end to end on a real business document rather
@@ -21,6 +21,8 @@ import { reportTitleSection, type ReportDescriptor } from '@eerp/core-front'
 // is a real, already-editable field.
 export const statementReport: ReportDescriptor = {
   name: 'crm.statement',
+  // The letterhead header + footer, then the statement's own components.
+  extends: DEFAULT_REPORT_NAME,
   entity: 'crm',
   permissions: ['crm:contacts:read'],
   layout: [

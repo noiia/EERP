@@ -2,8 +2,11 @@ import {
   exportReportPDF,
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
+  registerHeaderButtonAction,
   registerMenuAction,
   type FrontRoute,
+  type HeaderButtonContext,
+  type HeaderButtonDescriptor,
   type MenuNode,
   type Operation,
   type ViewDescriptor,
@@ -83,8 +86,40 @@ registerMenuAction({
   handler: ({ recordId }) => exportReportPDF('sale.invoice', recordId),
 })
 
+// Invoice workflow: draft -> confirmed -> sent -> paid. Confirm and Send are
+// server-side steps (modules/sale/workflow.go, HeaderButtonContext.runAction)
+// — Confirm needs at least one line; Send emails the invoice's PDF to its
+// Customer and every Recipient. Same shape as quote_views.ts's buttons.
+function runAction(ctx: HeaderButtonContext, action: string) {
+  if (!ctx.runAction) throw new Error('record actions are not available here')
+  return ctx.runAction(action)
+}
+
+registerHeaderButtonAction({
+  entity: 'invoice',
+  name: 'sale.confirmInvoice',
+  handler: async (ctx) => {
+    await runAction(ctx, 'confirm')
+  },
+})
+
+registerHeaderButtonAction({
+  entity: 'invoice',
+  name: 'sale.sendInvoice',
+  handler: async (ctx) => {
+    await runAction(ctx, 'send')
+  },
+})
+
+const invoiceHeaderButtons: HeaderButtonDescriptor[] = [
+  { name: 'sale.confirmInvoice', label: 'Confirm', states: { visible: { field: 'status', op: 'eq', value: 'draft' } } },
+  { name: 'sale.sendInvoice', label: 'Send', states: { visible: { field: 'status', op: 'eq', value: 'confirmed' } } },
+]
+
 export const fields: ViewDescriptor['fields'] = [
-  { name: 'number', label: 'Number', type: 'text', required: true },
+  // Never typed: Go gives every new invoice the next number of the company's
+  // yearly invoice sequence (INV-2026-0001 — modules/sale/sequence.go).
+  { name: 'number', label: 'Number', type: 'text', readOnly: true },
   // The bill-to snapshot printed on the PDF (Invoice.CustomerName's own doc
   // comment, module.go) — kept in the compact/list set since it's what the
   // List's DataGrid can actually render as a readable column (a many2one's
@@ -97,7 +132,7 @@ export const fields: ViewDescriptor['fields'] = [
     name: 'status',
     label: 'Status',
     type: 'selection',
-    selection: { options: ['draft', 'sent', 'paid', 'overdue', 'cancelled'] },
+    selection: { options: ['draft', 'confirmed', 'sent', 'paid', 'overdue', 'cancelled'] },
   },
   { name: 'issue_date', label: 'Issue date', type: 'date', default: 'sale.defaultIssueDate' },
   { name: 'due_date', label: 'Due date', type: 'date' },
@@ -138,8 +173,22 @@ const formFields: ViewDescriptor['fields'] = [
   // (internal/company.Company.Currency, Settings -> Company), not duplicated
   // per document.
   { name: 'reference', label: 'Reference', type: 'text' },
-  // System-set provenance link, never hand-picked: quote_views.ts's
-  // sale.acceptQuote is the only writer, at invoice-creation time. readOnly
+  // Who else Send emails the invoice to, beside the Customer (accepting a
+  // quote copies its recipients here).
+  {
+    name: 'recipients',
+    label: 'Recipients',
+    type: 'relation',
+    relation: {
+      entity: 'contact',
+      kind: 'many2many',
+      via: 'invoice_recipient',
+      viaFields: { own: 'invoice_id', related: 'contact_id' },
+      labelField: 'name',
+    },
+  },
+  // System-set provenance link, never hand-picked: accepting a quote
+  // (workflow.go's AcceptQuote) is the only writer, at invoice creation. readOnly
   // rather than omitted from the form entirely — a user should be able to
   // SEE which quote (if any) an invoice came from.
   {
@@ -222,6 +271,7 @@ const formView: ViewDescriptor = {
   // 'status' field's own selection.options above, so this never re-declares
   // the vocabulary — it just points at it.
   statusBar: { field: 'status' },
+  headerButtons: invoiceHeaderButtons,
 }
 
 // Moves sale_lines (+ its totals recap) off the default anatomy's

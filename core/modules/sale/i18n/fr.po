@@ -235,3 +235,9 @@ msgstr "Référence :"
 
 msgid "Valid until:"
 msgstr "Valable jusqu'au :"
+
+msgid "Recipients"
+msgstr "Destinataires"
+
+msgid "Customer:"
+msgstr "Client :"

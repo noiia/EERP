@@ -83,6 +83,22 @@ print route interprets any `ReportDescriptor` into DOM, exactly as `FormRenderer
 interprets `ViewDescriptor`. TS/JSON is the only format — no parallel XML schema/parser,
 avoiding a second report-definition language for no demonstrated interop need.
 
+### 4b. Report inheritance: the letterhead is inherited, not imposed (2026-10-18)
+
+The print route used to wrap **every** report in the letterhead header (company logo +
+configured address) and footer. That couples a document's look to the route: a report that
+must not carry the letterhead (a label sheet, a plain export) had no way out. Instead a
+`ReportDescriptor` may `extends` another by name and declares `chrome: { header?, footer? }`;
+the engine ships one abstract base, `defaultReport` (`core.default`: header + footer around a
+`slot`), and the print route prints the letterhead **only** for a report whose resolved chrome
+asks for it. `resolveReports` (run by `ModuleRegistry.buildReportRegistry`) flattens a chain —
+the child's layout goes in the parent's `slot` (appended without one), chrome merges key by key,
+`pageFormat` is inherited unless overridden, `abstract` is never inherited — so every helper
+over a layout keeps seeing one plain descriptor. Every report in this codebase extends
+`core.default` and only adds its own components; a module can also ship its own abstract base
+for its documents. Consequence: a new report that forgets `extends` prints without the
+letterhead — deliberate, and visible on the first print.
+
 ### 5. Delivery: upload to Garage (S3-compatible), mirroring `internal/pictures`
 
 For v1, `POST /render`'s response bytes are acceptable to return inline (reports are modest

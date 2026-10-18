@@ -114,3 +114,30 @@ msgstr ""
 
 msgid "Invoice"
 msgstr ""
+
+msgid "Recipients"
+msgstr ""
+
+msgid "Customer:"
+msgstr ""
+
+msgid "Quote"
+msgstr ""
+
+msgid "Confirm"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "Accept"
+msgstr ""
+
+msgid "Decline"
+msgstr ""
+
+msgid "Valid until:"
+msgstr ""
+
+msgid "Reference:"
+msgstr ""

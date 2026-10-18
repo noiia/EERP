@@ -96,9 +96,18 @@ func decode(t *testing.T, body []byte) map[string]any {
 // admin seeded, and returns a client logged in as that admin.
 func buildApp(t *testing.T) *client {
 	t.Helper()
+	return buildAppWith(t, nil)
+}
+
+// buildAppWith is buildApp with the config adjusted first (nil = as is).
+func buildAppWith(t *testing.T, adjust func(*types.Config)) *client {
+	t.Helper()
 	cfg := testdb.Config(t)
 	cfg.Environment = "development" // no forced password change for the seeded admin
 	cfg.CronLogDir = t.TempDir()
+	if adjust != nil {
+		adjust(cfg)
+	}
 
 	a, err := Build(context.Background(), cfg, "", false)
 	if err != nil {

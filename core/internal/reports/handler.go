@@ -3,6 +3,7 @@ package reports
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -75,34 +76,15 @@ func (h *Handler) GeneratePDF(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "name and id are required.")
 	}
 
-	required := "report:" + name + ":read"
-	allowed, err := h.permissions.Has(ctx, identity.Roles, required)
-	if err != nil {
-		return fmt.Errorf("reports: check permission: %w", err)
-	}
-	if !allowed {
+	pdf, err := h.Render(ctx, identity, name, recordID)
+	if errors.Is(err, ErrForbidden) {
 		return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "Insufficient permissions.")
 	}
-
-	// Re-derive permissions from the DB — never trust a caller-supplied claim —
-	// to embed in the short-lived token, exactly what Login/Refresh already do
-	// for a full session token, just at a much shorter TTL.
-	perms, err := h.permissions.ForRoles(ctx, identity.Roles)
-	if err != nil {
-		return fmt.Errorf("reports: resolve permissions: %w", err)
-	}
-	user := auth.Users{BaseModel: model.BaseModel{ID: identity.UserID, TenantID: identity.TenantID}}
-	token, err := h.tokens.IssueAccessWithTTL(user, identity.Roles, identity.Groups, perms, printTokenTTL)
-	if err != nil {
-		return fmt.Errorf("reports: issue print token: %w", err)
-	}
-
-	printURL := fmt.Sprintf("%s/print/report/%s/%s?token=%s",
-		h.frontendBase, url.PathEscape(name), url.PathEscape(recordID), url.QueryEscape(token))
-
-	pdf, err := h.renderer.Render(ctx, printURL)
-	if err != nil {
+	if errors.Is(err, ErrRenderFailed) {
 		return errorJSON(c, http.StatusBadGateway, "RENDER_FAILED", "Could not generate the report.")
+	}
+	if err != nil {
+		return err
 	}
 
 	key := fmt.Sprintf("reports/%s/%s/%s/%d.pdf", identity.TenantID, name, recordID, time.Now().UTC().Unix())
@@ -113,6 +95,49 @@ func (h *Handler) GeneratePDF(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, map[string]string{
 		"download_url": "/api/v1/reports/pdf?key=" + url.QueryEscape(key),
 	})
+}
+
+// ErrForbidden: the caller lacks report:<name>:read.
+var ErrForbidden = errors.New("reports: insufficient permissions")
+
+// ErrRenderFailed: the PDF renderer (pdf-service, over HTTP or NATS) failed.
+var ErrRenderFailed = errors.New("reports: render failed")
+
+// Render renders one record's report to PDF bytes as identity — the same
+// report:<name>:read check and short-lived print token GeneratePDF uses, but
+// nothing stored: for a backend flow that needs the bytes themselves (e.g.
+// sale's quote/invoice Send, which attaches the PDF to an email).
+func (h *Handler) Render(ctx context.Context, identity auth.Identity, name, recordID string) ([]byte, error) {
+	required := "report:" + name + ":read"
+	allowed, err := h.permissions.Has(ctx, identity.Roles, required)
+	if err != nil {
+		return nil, fmt.Errorf("reports: check permission: %w", err)
+	}
+	if !allowed {
+		return nil, ErrForbidden
+	}
+
+	// Re-derive permissions from the DB — never trust a caller-supplied claim —
+	// to embed in the short-lived token, exactly what Login/Refresh already do
+	// for a full session token, just at a much shorter TTL.
+	perms, err := h.permissions.ForRoles(ctx, identity.Roles)
+	if err != nil {
+		return nil, fmt.Errorf("reports: resolve permissions: %w", err)
+	}
+	user := auth.Users{BaseModel: model.BaseModel{ID: identity.UserID, TenantID: identity.TenantID}}
+	token, err := h.tokens.IssueAccessWithTTL(user, identity.Roles, identity.Groups, perms, printTokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("reports: issue print token: %w", err)
+	}
+
+	printURL := fmt.Sprintf("%s/print/report/%s/%s?token=%s",
+		h.frontendBase, url.PathEscape(name), url.PathEscape(recordID), url.QueryEscape(token))
+
+	pdf, err := h.renderer.Render(ctx, printURL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrRenderFailed, err)
+	}
+	return pdf, nil
 }
 
 // DownloadPDF handles GET /api/v1/reports/pdf?key=... — streams a

@@ -40,6 +40,11 @@ export interface EntityActions<T extends HasId> {
    * refresh/navigation that drops the pending timer, silently leaving the
    * record undeleted server-side while the UI already moved on. */
   restore?: (id: string) => Promise<T>
+  /** A server-side workflow step on one record: `POST /{entity}/{id}/{action}`
+   * (the host's generic Server Action), revalidating the entity and every
+   * `revalidate` tag. Resolves to Go's answer. Optional — header buttons'
+   * `runAction` is undefined without it. */
+  action?: (id: string, action: string, body?: unknown, revalidate?: string[]) => Promise<unknown>
 }
 
 // --- entity store (list + selection) ---

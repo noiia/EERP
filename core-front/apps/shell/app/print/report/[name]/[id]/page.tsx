@@ -70,7 +70,8 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
   const { token } = await searchParams
 
   const descriptor = moduleRegistry.buildReportRegistry().get(name) as ReportDescriptor | undefined
-  if (!descriptor) notFound()
+  // An abstract report is a base to inherit from (e.g. core.default), never a document.
+  if (!descriptor || descriptor.abstract) notFound()
   if (!token) notFound()
 
   const client = createServerApiClient(token)
@@ -145,8 +146,12 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
   // contract as any other picture field (ADR-011), just read directly off
   // the active company rather than a per-descriptor `image` node, since the
   // header isn't part of any report's own layout.
+  // The letterhead header/footer print only for a report that asks for them
+  // (ReportDescriptor.chrome — every report extending core.default does).
+  const withHeader = descriptor.chrome?.header === true
+  const withFooter = descriptor.chrome?.footer === true
   const companyLogo =
-    company?.logo === true
+    withHeader && company?.logo === true
       ? await resolvePictureDataURL({ table: 'company', recordId: String(company.id), field: 'logo' }, token)
       : null
 
@@ -195,7 +200,7 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       }
     >
       {chrome.pageSizeCss && <style>{`@page { size: ${chrome.pageSizeCss}; }`}</style>}
-      {(chrome.address || companyLogo) && (
+      {withHeader && (chrome.address || companyLogo) && (
         <div className="eerp-report-chrome-header" style={{ padding: `0 ${chrome.paddingPx}px` }}>
           {chrome.address && <div className="eerp-report-chrome-address">{chrome.address}</div>}
           {companyLogo && <img className="eerp-report-chrome-logo" src={companyLogo} alt="Company logo" />}
@@ -204,7 +209,7 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       <div className="eerp-report-content" style={{ padding: chrome.paddingPx }}>
         <ReportRenderer descriptor={descriptor} record={record} locale={locale} />
       </div>
-      {chrome.footer && <div className="eerp-report-chrome-footer">{chrome.footer}</div>}
+      {withFooter && chrome.footer && <div className="eerp-report-chrome-footer">{chrome.footer}</div>}
     </div>
   )
 }

@@ -182,8 +182,10 @@ describe('seedDemoData', () => {
       'product_variant',
       'invoice',
       'sale_line',
+      'invoice status',
       'quote',
       'quote_line',
+      'quote status',
       'report_page_format',
       'event',
       'event_session',
@@ -225,10 +227,12 @@ describe('seedDemoData', () => {
     expect(callsFor('invoice')).toHaveLength(6)
     expect(callsFor('quote')).toHaveLength(6)
     const [, invoiceBody] = callsFor('invoice')[0] as [string, Record<string, unknown>]
+    // No number: Go assigns it from the invoice sequence.
+    expect(invoiceBody).not.toHaveProperty('number')
     expect(invoiceBody).toMatchObject({
-      number: expect.stringMatching(/^INV-\d{4}-\d{4}$/),
       status: expect.any(String),
       customer_name: expect.any(String),
+      reference: expect.stringMatching(/^PO-\d{4}$/),
     })
     // sale.Invoice/Quote's issuer_*/payment_*/legal_notice columns are plain
     // (non-pointer) strings — NOT NULL with no default — so Go's generic
@@ -252,7 +256,13 @@ describe('seedDemoData', () => {
       expect(invoiceBody).toHaveProperty(key)
     }
     const [, quoteBody] = callsFor('quote')[0] as [string, Record<string, unknown>]
-    expect(quoteBody.number).toMatch(/^QUO-\d{4}-\d{4}$/)
+    expect(quoteBody).not.toHaveProperty('number')
+    expect(quoteBody).not.toHaveProperty('reference') // the quote has none any more
+
+    // Go creates every document as a draft (no line yet): each one whose
+    // picked status is past draft gets it once its lines exist.
+    const statusUpdates = updateMock.mock.calls.filter(([e]) => e === 'invoice' || e === 'quote')
+    expect(statusUpdates.every(([, , body]) => (body as Record<string, unknown>).status !== 'draft')).toBe(true)
 
     // Every line references a real seeded document + variant id, never a raw index.
     const saleLineCalls = callsFor('sale_line')

@@ -32,6 +32,21 @@ export interface HeaderButtonContext {
    * RelationOpsProvider, the same inert posture every Ops context takes.
    */
   relationOps: RelationOps | null
+  /**
+   * Run a server-side workflow step on THIS record — `POST /{entity}/{id}/
+   * {action}` (Go checks and applies it; e.g. sale's `confirm`, `send`,
+   * `accept`) — then re-seed the form from the `record` Go answers with.
+   * `revalidate` names OTHER entities whose cached lists the step changes
+   * (e.g. accepting a quote creates an invoice). Resolves to Go's whole
+   * answer; a refusal rejects with Go's ApiError, whose message the button
+   * row shows. Undefined when the host bound no `EntityActions.action`.
+   */
+  runAction?: (
+    action: string,
+    options?: { body?: unknown; revalidate?: string[] },
+  ) => Promise<Record<string, unknown>>
+  /** Navigate to an ERP path (module-relative, e.g. `/sale/invoice/<id>`). */
+  navigate?: (path: string) => void
 }
 
 export interface HeaderButtonHandler {

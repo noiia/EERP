@@ -11,7 +11,12 @@ import {
 import { headerMenuRegistry, type HeaderMenu } from '../views/header-menu-registry'
 import { validateHeaderButtons } from '../views/header-button-actions'
 import { validateMenuActions } from '../views/menu-actions'
-import { validateReportDescriptor, type ReportDescriptor } from '../views/report-descriptor'
+import {
+  defaultReport,
+  resolveReports,
+  validateReportDescriptor,
+  type ReportDescriptor,
+} from '../views/report-descriptor'
 import { applyExtension, type ViewExtension } from './extensions'
 
 // The frontend module contract + registry. A module contributes DESCRIPTORS ONLY:
@@ -184,7 +189,10 @@ export class ModuleRegistry {
   // registration. Reports resolve by NAME, not path — a report has no
   // App Router route of its own to match against, only the print route's
   // :name param — so this is a separate map, not folded into resolvedRoutes.
-  private readonly resolvedReports = new Map<string, ReportDescriptor>()
+  // Holds the reports as declared (plus the built-in defaultReport every
+  // report extends); inheritance is flattened by buildReportRegistry, so a
+  // report may extend one a later-registered module ships.
+  private readonly resolvedReports = new Map<string, ReportDescriptor>([[defaultReport.name, defaultReport]])
 
   register(module: FrontModule, options: RegisterOptions = {}): this {
     // Idempotent by module name: the server manifest and the client manifest
@@ -217,10 +225,11 @@ export class ModuleRegistry {
     }
 
     // Reports validate and register independently of routes/extends — they
-    // have no path to match, no layout-tree merge, no extension mechanism
-    // (v1 scope, docs/roadmaps/pdf-reports.md Phase 2).
+    // have no path to match and no layout-tree merge; their own inheritance
+    // (ReportDescriptor.extends) is flattened by buildReportRegistry.
     for (const report of module.reports ?? []) {
       try {
+        if (report.name === defaultReport.name) throw new Error(`"${report.name}" is the built-in base report`)
         validateReportDescriptor(report)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
@@ -291,12 +300,14 @@ export class ModuleRegistry {
   }
 
   /**
-   * The report name -> ReportDescriptor map, resolved at registration time —
-   * the print route reads this the same way the catch-all reads
-   * buildRegistry(), keyed by ReportDescriptor.name instead of a path.
+   * The report name -> ReportDescriptor map, inheritance flattened
+   * (resolveReports: every report carries its parents' chrome, page format
+   * and layout) — the print route reads this the same way the catch-all
+   * reads buildRegistry(), keyed by ReportDescriptor.name instead of a path.
+   * Abstract bases are in it too; the print route refuses to print them.
    */
   buildReportRegistry(): Map<string, ReportDescriptor> {
-    return new Map(this.resolvedReports)
+    return resolveReports(this.resolvedReports.values())
   }
 
   /**
@@ -477,8 +488,8 @@ export class ModuleRegistry {
    * Create button.
    */
   reportForEntity(entity: string): ReportDescriptor | null {
-    for (const report of this.resolvedReports.values()) {
-      if (report.entity === entity) return report
+    for (const report of this.buildReportRegistry().values()) {
+      if (!report.abstract && report.entity === entity) return report
     }
     return null
   }

@@ -62,7 +62,7 @@ func (s *Service) charge(ctx context.Context, tx *orm.Tx, ev Event, b *EventBook
 	}
 	inv, err := sale.CreateInvoice(ctx, tx, sale.InvoiceRequest{
 		TenantID: ev.TenantID, CustomerID: b.ContactID, CustomerName: b.Name, CustomerEmail: b.Email,
-		Number: "EVT-" + strings.ToUpper(b.ID.String()[:8]), Subject: ev.Name,
+		Subject:   ev.Name,
 		VariantID: *ev.ProductVariantID, Quantity: float64(b.Seats), UnitPrice: override,
 	})
 	if err != nil {
