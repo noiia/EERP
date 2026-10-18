@@ -3,6 +3,7 @@ import { ApiError, serializeError, type SerializedError } from '../api/errors'
 import { createServerApiClient, type ServerApiClient } from '../api/ApiClient'
 import { EMPTY_VIEW_FIELDS, type ViewFieldsConfig } from '../api/view-fields'
 import { effectiveChatterVisible, type ChatterVisibilityConfig } from '../api/chatter-visibility'
+import { EMPTY_STATUS_BAR_CONFIG, type StatusBarConfig } from '../api/status-bar-config'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import type { ViewDescriptor } from './descriptor'
 import { EntityView } from './renderers'
@@ -82,6 +83,23 @@ export async function loadViewFields(
     return await api.getViewFields(entity)
   } catch (e) {
     if (e instanceof ApiError) return EMPTY_VIEW_FIELDS
+    throw e
+  }
+}
+
+/**
+ * entity's admin-configured status-breadcrumb override (Settings -> Apps ->
+ * :module). An unreadable config degrades to "no override" — the module's own
+ * field and every one of its options — rather than failing the form.
+ */
+export async function loadStatusBarConfig(
+  entity: string,
+  api: ServerApiClient = createServerApiClient(),
+): Promise<StatusBarConfig> {
+  try {
+    return await api.getStatusBarConfig(entity)
+  } catch (e) {
+    if (e instanceof ApiError) return EMPTY_STATUS_BAR_CONFIG
     throw e
   }
 }
@@ -221,6 +239,11 @@ export async function EntityViewServer<T extends HasId>({
     descriptor.viewType === 'form'
       ? effectiveChatterVisible(descriptor.showChatter, await loadChatterVisibility(descriptor.entity, client))
       : undefined
+  // Only a form that declares a status breadcrumb has an override to read.
+  const statusBarConfig =
+    descriptor.viewType === 'form' && descriptor.statusBar
+      ? await loadStatusBarConfig(descriptor.entity, client)
+      : undefined
   return (
     <EntityView
       descriptor={descriptor}
@@ -233,6 +256,7 @@ export async function EntityViewServer<T extends HasId>({
       recordTotalEstimated={totalEstimated}
       pictureSize={pictureSize}
       chatterVisible={chatterVisible}
+      statusBarConfig={statusBarConfig}
       title={title}
     />
   )

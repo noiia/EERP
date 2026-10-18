@@ -55,6 +55,17 @@ func ViewChatterKey(entity string) string {
 	return "views." + entity + ".chatter"
 }
 
+// ViewStatusBarKey returns the app_settings key holding entity's form
+// status-breadcrumb override — which selection field the breadcrumb follows
+// and which of its options it lists, in order — stored as JSON:
+// {"field":"status","steps":["incoming","won"]}. Same per-entity shape as
+// ViewChatterKey; absent (or a null part) means no workspace override for
+// that part — the frontend falls back to the module's own
+// ViewDescriptor.statusBar field and every one of its options.
+func ViewStatusBarKey(entity string) string {
+	return "views." + entity + ".status_bar"
+}
+
 // PictureSizeKey is the app_settings key holding the workspace-wide ("Base")
 // default box size for boolean/picture widgets, stored as JSON:
 // {"width":160,"height":96}. Absent means the frontend's own hardcoded

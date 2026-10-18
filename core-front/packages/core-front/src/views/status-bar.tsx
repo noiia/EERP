@@ -1,6 +1,9 @@
 'use client'
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import { useT } from '../i18n/translate'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { layout } from './tokens'
@@ -8,27 +11,39 @@ import type { FieldDescriptor } from './descriptor'
 
 const mobileMediaQuery = `@media (min-width:${layout.mobileBreakpoint}px)` as const
 
-// The form-level status breadcrumb (ViewDescriptor.statusBar): a read-only
-// row of chips over a declared `type: 'selection'` field's own
-// `selection.options`, in declaration order — the field already owns the
-// step order, so nothing here re-declares it (same "don't re-declare what a
-// field already states" spirit `viewModeDefaults.kanbanStatusField` follows
-// for Kanban's columns). Purely a DISPLAY of the field's current value:
-// no click handlers, no way to change status from here — the field stays
-// editable through its normal widget elsewhere on the form, same as before.
+// The form-level status breadcrumb (ViewDescriptor.statusBar): a row of
+// chips over a selection field's steps — by default the field's own
+// `selection.options`, in declaration order, or the admin's chosen subset
+// (api/status-bar-config.ts). A display of the field's current value; with
+// `onSelect` (StatusBarDescriptor.editable) each other step is also a button
+// that picks it — the breadcrumb is then the field's only widget — and the
+// current step opens a menu of every step: below the mobile breakpoint the
+// current step is the only one shown, so the menu is how a phone changes it.
 
 export interface StatusBarProps {
   field: FieldDescriptor
   /** The field's current value on the draft — re-renders live as it changes. */
   value: unknown
+  /** The steps to show, in order; omitted = every option of the field. */
+  steps?: string[]
+  /** Makes the steps clickable: called with the picked option. */
+  onSelect?: (option: string) => void
+  /** Keeps clickable steps visible but inert (e.g. while saving). */
+  disabled?: boolean
 }
 
-export function StatusBar({ field, value }: StatusBarProps) {
+export function StatusBar({ field, value, steps, onSelect, disabled }: StatusBarProps) {
   const t = useT()
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const options = field.selection?.options ?? []
-  if (options.length === 0) return null
+  const shown = steps ?? options
+  if (shown.length === 0) return null
 
-  const currentIndex = options.indexOf(String(value))
+  // A real value the step list leaves out still shows, last, so the record's
+  // status is never invisible — a value the field doesn't know isn't shown.
+  const current = String(value ?? '')
+  const items = options.includes(current) && !shown.includes(current) ? [...shown, current] : shown
+  const currentIndex = items.indexOf(current)
 
   return (
     <Box
@@ -36,9 +51,10 @@ export function StatusBar({ field, value }: StatusBarProps) {
       aria-label={t('Status')}
       sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}
     >
-      {options.map((option, i) => {
+      {items.map((option, i) => {
         const done = currentIndex >= 0 && i < currentIndex
-        const current = i === currentIndex
+        const isCurrent = i === currentIndex
+        const clickable = onSelect && !isCurrent
         return (
           <Box
             key={option}
@@ -46,7 +62,7 @@ export function StatusBar({ field, value }: StatusBarProps) {
               // Below layout.mobileBreakpoint, only the CURRENT step earns
               // screen space — the rest (done/upcoming) hide entirely rather
               // than crowd a narrow toolbar; at/above it every step shows.
-              display: current ? 'flex' : 'none',
+              display: isCurrent ? 'flex' : 'none',
               [mobileMediaQuery]: { display: 'flex' },
               alignItems: 'center',
               gap: 0.5,
@@ -67,13 +83,39 @@ export function StatusBar({ field, value }: StatusBarProps) {
             <Chip
               size="small"
               label={t(option)}
-              color={current ? 'primary' : done ? 'success' : 'default'}
-              variant={current || done ? 'filled' : 'outlined'}
+              color={isCurrent ? 'primary' : done ? 'success' : 'default'}
+              variant={isCurrent || done ? 'filled' : 'outlined'}
               icon={done ? <FontAwesomeIcon icon={byPrefixAndName.fas['check']} size="xs" /> : undefined}
+              aria-current={isCurrent ? 'step' : undefined}
+              aria-haspopup={onSelect && isCurrent ? 'menu' : undefined}
+              onClick={
+                clickable
+                  ? () => onSelect(option)
+                  : onSelect && isCurrent
+                    ? (e: React.MouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget)
+                    : undefined
+              }
+              disabled={onSelect ? disabled : undefined}
             />
           </Box>
         )
       })}
+      {onSelect && (
+        <Menu anchorEl={menuAnchor} open={menuAnchor !== null} onClose={() => setMenuAnchor(null)}>
+          {items.map((option) => (
+            <MenuItem
+              key={option}
+              selected={option === current}
+              onClick={() => {
+                setMenuAnchor(null)
+                if (option !== current) onSelect(option)
+              }}
+            >
+              {t(option)}
+            </MenuItem>
+          ))}
+        </Menu>
+      )}
     </Box>
   )
 }

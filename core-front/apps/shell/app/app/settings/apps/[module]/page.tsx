@@ -12,6 +12,8 @@ import FormatSettings from '@/components/FormatSettings'
 import PictureSizeSettings from '@/components/PictureSizeSettings'
 import ViewsSettings, { type ViewEntityRow } from '@/components/ViewsSettings'
 import ChatterSettings, { type ChatterEntityRow } from '@/components/ChatterSettings'
+import StatusBarSettings, { type StatusBarEntityRow } from '@/components/StatusBarSettings'
+import { getEntityStatusBarConfig } from '@/lib/status-bar-config'
 import EventSettings from '@/components/EventSettings'
 import { getEventSettings } from '@/lib/event-settings'
 import PropertyManagementSettings from '@/components/PropertyManagementSettings'
@@ -154,9 +156,25 @@ async function ViewsSettingsSection({ module, canEdit }: { module: string; canEd
     })),
   )
 
+  const statusBarRows: StatusBarEntityRow[] = await Promise.all(
+    formEntities
+      .filter((e) => e.statusBarField !== undefined)
+      .map(async (e) => ({
+        entity: e.entity,
+        moduleField: e.statusBarField as string,
+        fields: e.selectionFields,
+        config: await getEntityStatusBarConfig(e.entity),
+      })),
+  )
+
   return (
     <>
       <ViewsSettings rows={rows} canEdit={canEdit} />
+      {statusBarRows.length > 0 ? (
+        <Container maxWidth="md" sx={{ pb: 6 }}>
+          <StatusBarSettings rows={statusBarRows} canEdit={canEdit} />
+        </Container>
+      ) : null}
       {chatterRows.length > 0 ? (
         <Container maxWidth="md" sx={{ pb: 6 }}>
           <ChatterSettings rows={chatterRows} canEdit={canEdit} />

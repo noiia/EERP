@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1841,6 +1842,92 @@ func TestGetMyPreferences_UnitSystem(t *testing.T) {
 			}
 			if body.UnitSystem != tc.want {
 				t.Errorf("unit_system = %q, want %q", body.UnitSystem, tc.want)
+			}
+		})
+	}
+}
+
+// ── GET|PUT /settings/views/:entity/status_bar ───────────────────────────────
+
+func TestGetStatusBarSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		entity     string
+		stored     string
+		wantStatus int
+		wantBody   string
+	}{
+		{"unconfigured entity reads as no override, not a 404", "crm", "", http.StatusOK, `{"field":null,"steps":null}`},
+		{"configured entity", "crm", `{"field":"status","steps":["won","lost"]}`, http.StatusOK, `{"field":"status","steps":["won","lost"]}`},
+		{"unparsable stored value degrades to no override", "crm", "{not json", http.StatusOK, `{"field":null,"steps":null}`},
+		{"invalid stored value degrades to no override", "crm", `{"field":"Bad Field","steps":null}`, http.StatusOK, `{"field":null,"steps":null}`},
+		{"junk entity rejected", "../../etc", "", http.StatusBadRequest, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			if tt.stored != "" {
+				store.values = map[string]string{ViewStatusBarKey(tt.entity): tt.stored}
+			}
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
+			rec := serveWithParam(t, h.GetStatusBarSettings, http.MethodGet,
+				"/settings/views/"+tt.entity+"/status_bar", "", identity, "entity", tt.entity)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus == http.StatusOK && strings.TrimSpace(rec.Body.String()) != tt.wantBody {
+				t.Errorf("body = %s, want %s", rec.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestPutStatusBarSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	steps := make([]string, maxStatusBarSteps+1)
+	for i := range steps {
+		steps[i] = `"s` + strconv.Itoa(i) + `"`
+	}
+	many := "[" + strings.Join(steps, ",") + "]"
+
+	tests := []struct {
+		name       string
+		entity     string
+		body       string
+		wantStatus int
+		wantValue  string
+	}{
+		{"field and steps", "crm", `{"field":"status","steps":["incoming","won"]}`, http.StatusNoContent, `{"field":"status","steps":["incoming","won"]}`},
+		{"clear override", "crm", `{"field":null,"steps":null}`, http.StatusNoContent, `{"field":null,"steps":null}`},
+		{"empty field and steps mean no override", "crm", `{"field":"","steps":[]}`, http.StatusNoContent, `{"field":null,"steps":null}`},
+		{"field not a column name", "crm", `{"field":"Status; DROP","steps":null}`, http.StatusBadRequest, ""},
+		{"duplicate step", "crm", `{"field":"status","steps":["won","won"]}`, http.StatusBadRequest, ""},
+		{"empty step", "crm", `{"field":"status","steps":[""]}`, http.StatusBadRequest, ""},
+		{"too many steps", "crm", `{"field":"status","steps":` + many + `}`, http.StatusBadRequest, ""},
+		{"junk entity rejected", "../../etc", `{}`, http.StatusBadRequest, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
+			rec := serveWithParam(t, h.PutStatusBarSettings, http.MethodPut,
+				"/settings/views/"+tt.entity+"/status_bar", tt.body, identity, "entity", tt.entity)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != (tt.wantValue != "") {
+				t.Fatalf("setCalled = %v", store.setCalled)
+			}
+			if tt.wantValue == "" {
+				return
+			}
+			if store.gotTenant != identity.TenantID || store.gotKey != ViewStatusBarKey(tt.entity) {
+				t.Errorf("stored under tenant %s key %q", store.gotTenant, store.gotKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %s, want %s", store.gotValue, tt.wantValue)
 			}
 		})
 	}

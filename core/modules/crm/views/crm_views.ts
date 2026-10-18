@@ -235,6 +235,11 @@ const formView: ViewDescriptor = {
   viewType: 'form',
   fields: formFields,
   permissions: ['crm:contacts:read'],
+  // The status is edited from the breadcrumb at the top of the form (click a
+  // step to set it and save), not from a dropdown in the body. The field and
+  // the steps it lists are overridable per workspace from Settings -> Apps ->
+  // CRM; by default, `status` with every one of its options.
+  statusBar: { field: 'status', editable: true },
 }
 
 // A notebook page coded directly IN this module, as opposed to

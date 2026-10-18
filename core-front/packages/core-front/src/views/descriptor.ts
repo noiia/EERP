@@ -1102,20 +1102,28 @@ export interface SearchDescriptor {
 }
 
 /**
- * `viewType: 'form'`'s built-in read-only status breadcrumb — names a
- * declared `type: 'selection'` field as the status source; the breadcrumb's
- * own steps are that field's `selection.options`, in declaration order (no
- * separately-declared step list — the field already owns that order, the
- * same "don't re-declare what a field already states" spirit
- * `viewModeDefaults.kanbanStatusField` follows for Kanban's columns). The
- * current step is the field's live value; earlier options read as done,
- * later ones as upcoming. Purely a DISPLAY of the field's value — never
- * interactive, never a second way to edit it — validated at registration
- * (validateStatusBarDescriptor): the named field must exist and be
- * `type: 'selection'`.
+ * `viewType: 'form'`'s built-in status breadcrumb — names a declared
+ * `type: 'selection'` field as the status source; by default the steps are
+ * that field's own `selection.options`, in declaration order (no separately
+ * declared step list — the same "don't re-declare what a field already
+ * states" spirit `viewModeDefaults.kanbanStatusField` follows). An admin may
+ * override the field and the steps per entity from Settings -> Apps ->
+ * :module (`api/status-bar-config.ts`, resolveStatusBar). The current step is
+ * the field's live value; earlier steps read as done, later ones as upcoming.
+ * Validated at registration (validateStatusBarDescriptor): the named field
+ * must exist and be `type: 'selection'`.
  */
 export interface StatusBarDescriptor {
   field: string
+  /**
+   * The breadcrumb IS the field's widget: clicking a step sets the field and
+   * saves the record (an unsaved new record only gets the draft value), and
+   * the field leaves the form body. Needs `<entity>:<entity>:write`; a
+   * read-only field (`readOnly`, `states.readOnly`) keeps the breadcrumb a
+   * plain display. Omitted ⇒ display only, the field keeps its own widget in
+   * the body (sale's invoices/quotes).
+   */
+  editable?: boolean
 }
 
 /**
@@ -1238,7 +1246,7 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    */
   listFilter?: EntityListOptions
   /**
-   * For `viewType: 'form'` only: the built-in read-only status breadcrumb
+   * For `viewType: 'form'` only: the built-in status breadcrumb
    * (see StatusBarDescriptor). Omitted ⇒ no breadcrumb renders — opt-in,
    * unlike Save/Reset/the options menu, since not every form has a
    * meaningful status field.

@@ -351,6 +351,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	settingsGroup.PUT("/views/:entity/graph", settingsHandler.PutGraphLayoutSettings)
 	settingsGroup.GET("/views/:entity/chatter", settingsHandler.GetChatterSettings)
 	settingsGroup.PUT("/views/:entity/chatter", settingsHandler.PutChatterSettings)
+	settingsGroup.GET("/views/:entity/status_bar", settingsHandler.GetStatusBarSettings)
+	settingsGroup.PUT("/views/:entity/status_bar", settingsHandler.PutStatusBarSettings)
 	settingsGroup.GET("/apps/:module/picture-size", settingsHandler.GetPictureSizeSettings)
 	settingsGroup.PUT("/apps/:module/picture-size", settingsHandler.PutPictureSizeSettings)
 	settingsGroup.GET("/reports/layout", settingsHandler.GetReportsLayoutSettings)

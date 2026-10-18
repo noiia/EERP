@@ -8,6 +8,7 @@ import type { AttachmentAnchor, AttachmentMeta } from './attachments-client'
 import type { PictureAnchor, PictureMeta } from './pictures-client'
 import type { ViewFieldsConfig } from './view-fields'
 import type { ChatterVisibilityConfig } from './chatter-visibility'
+import type { StatusBarConfig } from './status-bar-config'
 
 export type { EntityListOptions } from './list-options'
 export type { ViewFieldsConfig } from './view-fields'
@@ -300,6 +301,12 @@ export interface ServerApiClient {
    */
   getChatterVisibility(entity: string): Promise<ChatterVisibilityConfig>
   /**
+   * entity's form status-breadcrumb override (field + steps), as configured
+   * from Settings -> Apps -> :module. Never cached, same posture as
+   * getChatterVisibility.
+   */
+  getStatusBarConfig(entity: string): Promise<StatusBarConfig>
+  /**
    * A boolean/picture widget's configured box size, either the workspace-wide
    * Base default (module: 'base') or one specific app's own override
    * (Settings -> Apps) — `null` when unset at that level. Never cached, same
@@ -484,6 +491,17 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     return { enabled: raw.enabled ?? null }
+  }
+
+  async getStatusBarConfig(entity: string): Promise<StatusBarConfig> {
+    const raw = await request<{ field: string | null; steps: string[] | null }>(
+      'GET',
+      `/settings/views/${entity}/status_bar`,
+      null,
+      undefined,
+      this.tokenOverride,
+    )
+    return { field: raw.field ?? null, steps: raw.steps ?? null }
   }
 
   async getPictureSize(module: string): Promise<{ width: number; height: number } | null> {

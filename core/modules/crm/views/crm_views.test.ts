@@ -6,7 +6,9 @@ import {
   FORM_NOTEBOOK_ID,
   ModuleRegistry,
   normalizeLayout,
+  resolveStatusBar,
   validateDescriptorWidgets,
+  validateStatusBarDescriptor,
 } from '@eerp/core-front'
 import crm from './crm_views'
 
@@ -23,6 +25,15 @@ describe('crm FrontModule', () => {
     expect(list.descriptor.viewType).toBe('tree')
     expect(form.descriptor.viewType).toBe('form')
     expect(crm.routes.every((r) => r.descriptor.entity === 'crm')).toBe(true)
+  })
+
+  it('edits the status from a clickable breadcrumb, every status option by default', () => {
+    const form = crm.routes.find((r) => r.path === '/crm/:id')!.descriptor
+    expect(form.statusBar).toEqual({ field: 'status', editable: true })
+    expect(() => validateStatusBarDescriptor(form)).not.toThrow()
+    expect(resolveStatusBar(form)?.steps).toEqual(['incoming', 'running', 'won', 'lost', 'closed'])
+    // The list keeps no breadcrumb — it's a form-only control.
+    expect(crm.routes.find((r) => r.path === '/crm/list')!.descriptor.statusBar).toBeUndefined()
   })
 
   it('makes list rows open the contact form', () => {

@@ -1862,3 +1862,24 @@ msgstr "Afficher les taxes sur le rapport"
 
 msgid "Prints the Tax column on rent receipts generated from now on. Receipts already generated keep their PDF until it is regenerated."
 msgstr "Imprime la colonne Taxe sur les quittances générées à partir de maintenant. Les quittances déjà générées gardent leur PDF tant qu'il n'est pas régénéré."
+
+msgid "Status bar"
+msgstr "Barre de statut"
+
+msgid "Field"
+msgstr "Champ"
+
+msgid "Steps"
+msgstr "Étapes"
+
+msgid "Revert to module settings"
+msgstr "Revenir aux réglages du module"
+
+msgid "Pick at least one step."
+msgstr "Choisissez au moins une étape."
+
+msgid "The steps shown at the top of the form, taken from one of its selection fields. By default: the field the app chose, with every one of its values."
+msgstr "Les étapes affichées en haut du formulaire, tirées d'un de ses champs de sélection. Par défaut : le champ choisi par l'application, avec toutes ses valeurs."
+
+msgid "Changing the status bar requires the settings:views:write permission."
+msgstr "Modifier la barre de statut nécessite la permission settings:views:write."

@@ -59,6 +59,85 @@ const formDescriptor: ViewDescriptor<Contact> = {
   fields: [{ name: 'name', label: 'Name', type: 'text' }],
 }
 
+describe('FormRenderer status breadcrumb', () => {
+  interface Lead {
+    id: string
+    name: string
+    status: string
+  }
+  const leadForm: ViewDescriptor<Lead> = {
+    entity: 'crm',
+    viewType: 'form',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'status', label: 'Status', type: 'selection', selection: { options: ['incoming', 'won', 'lost'] } },
+    ],
+    statusBar: { field: 'status', editable: true },
+  }
+  const lead: Lead = { id: 'l1', name: 'Ada', status: 'incoming' }
+  function leadActions() {
+    return {
+      create: vi.fn(async (b: Partial<Lead>) => ({ id: 'new', name: '', status: 'incoming', ...b }) as Lead),
+      update: vi.fn(async (id: string, b: Partial<Lead>) => ({ ...lead, ...b, id }) as Lead),
+    }
+  }
+
+  it('an editable breadcrumb replaces the field in the body, and a click sets it and saves', async () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    const actions = leadActions()
+    render(<EntityView descriptor={leadForm} initialData={[lead]} actions={actions} />)
+    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument() // no body dropdown
+    fireEvent.click(screen.getByRole('button', { name: 'won', hidden: true }))
+    await waitFor(() => expect(actions.update).toHaveBeenCalled())
+    expect(actions.update.mock.calls[0][1]).toMatchObject({ status: 'won' })
+    await waitFor(() => expect(screen.getByText('won').closest('[aria-current="step"]')).not.toBeNull())
+  })
+
+  it('lists the admin override\'s steps', () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    render(
+      <EntityView
+        descriptor={leadForm}
+        initialData={[lead]}
+        actions={leadActions()}
+        statusBarConfig={{ field: null, steps: ['incoming', 'won'] }}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'won', hidden: true })).toBeInTheDocument()
+    expect(screen.queryByText('lost')).not.toBeInTheDocument()
+  })
+
+  it('without the write permission the steps are not clickable', () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:read']) })
+    render(<EntityView descriptor={leadForm} initialData={[lead]} actions={leadActions()} />)
+    expect(screen.getByText('won')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'won', hidden: true })).not.toBeInTheDocument()
+  })
+
+  it('on an unsaved record a click only sets the draft', async () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    const actions = leadActions()
+    render(<EntityView descriptor={leadForm} initialData={[]} actions={actions} />)
+    fireEvent.click(screen.getByRole('button', { name: 'won', hidden: true }))
+    await waitFor(() => expect(screen.getByText('won').closest('[aria-current="step"]')).not.toBeNull())
+    expect(actions.create).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it('a display-only breadcrumb (sale) keeps the field in the body', () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    render(
+      <EntityView
+        descriptor={{ ...leadForm, statusBar: { field: 'status' } }}
+        initialData={[lead]}
+        actions={leadActions()}
+      />,
+    )
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'won', hidden: true })).not.toBeInTheDocument()
+  })
+})
+
 describe('EntityView', () => {
   it('renders an error alert with the code and request id, no renderer', () => {
     render(

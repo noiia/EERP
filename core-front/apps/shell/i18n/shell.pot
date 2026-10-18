@@ -1703,3 +1703,24 @@ msgstr ""
 
 msgid "Prints the Tax column on rent receipts generated from now on. Receipts already generated keep their PDF until it is regenerated."
 msgstr ""
+
+msgid "Status bar"
+msgstr ""
+
+msgid "Field"
+msgstr ""
+
+msgid "Steps"
+msgstr ""
+
+msgid "Revert to module settings"
+msgstr ""
+
+msgid "Pick at least one step."
+msgstr ""
+
+msgid "The steps shown at the top of the form, taken from one of its selection fields. By default: the field the app chose, with every one of its values."
+msgstr ""
+
+msgid "Changing the status bar requires the settings:views:write permission."
+msgstr ""

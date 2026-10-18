@@ -50,6 +50,11 @@ export interface ViewEntityChatter {
   /** ViewDescriptor.showChatter, undefined = the module declared no opinion
    * (defaults to true). */
   showChatterDefault: boolean | undefined
+  /** ViewDescriptor.statusBar.field when the form declares a status
+   * breadcrumb — the Status bar row's default; undefined = no breadcrumb. */
+  statusBarField: string | undefined
+  /** The form's selection fields that have options — the breadcrumb's choices. */
+  selectionFields: { name: string; label: string; options: string[] }[]
 }
 
 export function formViewEntities(): ViewEntityChatter[] {
@@ -61,6 +66,10 @@ export function formViewEntities(): ViewEntityChatter[] {
       entity: descriptor.entity,
       module,
       showChatterDefault: descriptor.showChatter,
+      statusBarField: descriptor.statusBar?.field,
+      selectionFields: descriptor.fields
+        .filter((f) => f.type === 'selection' && (f.selection?.options.length ?? 0) > 0)
+        .map((f) => ({ name: f.name, label: f.label ?? f.name, options: f.selection?.options ?? [] })),
     })
   }
   return Array.from(seen.values())

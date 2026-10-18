@@ -5,6 +5,7 @@ import {
   loadChatterVisibility,
   loadDashboardWidgets,
   loadPictureSize,
+  loadStatusBarConfig,
   loadView,
   loadViewFields,
 } from './loader'
@@ -28,6 +29,7 @@ function fakeApi(overrides: Partial<ServerApiClient> = {}): ServerApiClient {
     remove: vi.fn(),
     getViewFields: vi.fn(async () => EMPTY_VIEW_FIELDS),
     getChatterVisibility: vi.fn(async () => EMPTY_CHATTER_VISIBILITY),
+    getStatusBarConfig: vi.fn(async () => ({ field: null, steps: null })),
     getPictureSize: vi.fn(async () => null),
     ...overrides,
   } as ServerApiClient
@@ -210,6 +212,40 @@ describe('EntityViewServer', () => {
       recordId: '1',
     })
     expect(element.props.chatterVisible).toBe(true)
+  })
+
+  it('passes the status-bar override to a form that declares a breadcrumb', async () => {
+    const getStatusBarConfig = vi.fn(async () => ({ field: null, steps: ['won'] }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getStatusBarConfig: getStatusBarConfig as never })
+    const element = await EntityViewServer({
+      descriptor: {
+        ...form,
+        fields: [{ name: 'status', label: 'Status', type: 'selection', selection: { options: ['new', 'won'] } }],
+        statusBar: { field: 'status' },
+      },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+    })
+    expect(getStatusBarConfig).toHaveBeenCalledWith('crm')
+    expect(element.props.statusBarConfig).toEqual({ field: null, steps: ['won'] })
+  })
+
+  it('never reads a status-bar override for a form without a breadcrumb', async () => {
+    const getStatusBarConfig = vi.fn(async () => ({ field: null, steps: null }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getStatusBarConfig: getStatusBarConfig as never })
+    const element = await EntityViewServer({ descriptor: form, actions: { create: vi.fn(), update: vi.fn() }, api, recordId: '1' })
+    expect(getStatusBarConfig).not.toHaveBeenCalled()
+    expect(element.props.statusBarConfig).toBeUndefined()
+  })
+
+  it('an unreadable status-bar override reads as none', async () => {
+    const api = fakeApi({
+      getStatusBarConfig: vi.fn(async () => {
+        throw new ApiError({ code: 'FORBIDDEN', message: 'no', requestId: 'r', status: 403 })
+      }) as never,
+    })
+    await expect(loadStatusBarConfig('crm', api)).resolves.toEqual({ field: null, steps: null })
   })
 
   it('skips chatterVisible entirely for a non-form view', async () => {

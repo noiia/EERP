@@ -37,6 +37,7 @@ import { CatalogRenderer } from './catalog-renderer'
 import { ChatterPanel } from './chatter-panel'
 import { useChatterOps } from './chatter-ops'
 import {
+  evaluateCondition,
   fieldLabel,
   isVirtualRelation,
   layoutFieldOrder,
@@ -65,6 +66,7 @@ import { useRelationOps } from './relation-ops'
 import { junctionColumns, relationOf, type PendingManyToMany } from './relation-widgets'
 import { SearchBar } from './search-bar'
 import { StatusBar } from './status-bar'
+import { resolveStatusBar, type StatusBarConfig } from '../api/status-bar-config'
 import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
 import { useUndoToastStore } from './undo-toast'
@@ -124,6 +126,10 @@ export interface EntityViewProps<T extends HasId> {
    * that skips the fetch, e.g. Settings -> Users) behaves as true — chatter
    * is on by design unless something says otherwise. */
   chatterVisible?: boolean
+  /** The admin's status-breadcrumb override for this form (field + steps),
+   * fetched by loader.tsx only when the descriptor declares `statusBar`.
+   * Undefined = no override: the module's field, every one of its options. */
+  statusBarConfig?: StatusBarConfig
   /** The page title (tree views only) — passed down so TreeRenderer can put
    * it on the SAME row as the search bar and Create button instead of the
    * host page rendering a separate title row above. Untranslated source
@@ -358,6 +364,7 @@ function FormRenderer<T extends HasId>({
   actions,
   pictureSize,
   chatterVisible = true,
+  statusBarConfig,
 }: EntityViewProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -375,6 +382,7 @@ function FormRenderer<T extends HasId>({
   // unconditionally (rules of hooks) — same '' -never-matches posture
   // CreateBar's own createPermission check already takes.
   const canDelete = usePermission(`${descriptor.entity}:${descriptor.entity}:delete`)
+  const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
   const [deleteError, setDeleteError] = useState<SerializedError | null>(null)
   // The record's field values as of the last successful load/save — the
   // BEFORE side of the chatter log's diff. Re-seeded from a fresh navigation
@@ -396,14 +404,27 @@ function FormRenderer<T extends HasId>({
   // field's OWN value (not the whole draft) so an edit to some other field doesn't
   // spuriously re-fire this.
   const recordId = (draft as { id?: string }).id
-  // The status breadcrumb's field, when the descriptor opts in — resolved
-  // here (not inside StatusBar) so an unknown/removed field name degrades
-  // to "no breadcrumb" rather than a render error (registration already
-  // caught a genuinely bad descriptor; a stale statusBar on an in-memory
-  // descriptor during a hot-reload shouldn't crash the form).
-  const statusField = descriptor.statusBar
-    ? descriptor.fields.find((f) => f.name === descriptor.statusBar?.field)
-    : undefined
+  // The status breadcrumb, when the descriptor opts in: the module's field
+  // and its options, or the admin's override (resolveStatusBar). Resolved
+  // here, not inside StatusBar, so an unknown/removed field name degrades to
+  // "no breadcrumb" rather than a render error.
+  const statusBar = resolveStatusBar(descriptor, statusBarConfig)
+  // An editable breadcrumb is the field's widget: clickable for writers,
+  // unless the field itself is read-only right now — and the field then
+  // leaves the form body (it would be a second, redundant control).
+  const statusEditable = Boolean(statusBar && descriptor.statusBar?.editable)
+  const statusReadOnly =
+    !statusBar ||
+    statusBar.field.readOnly === true ||
+    Boolean(statusBar.field.compute) ||
+    Boolean(
+      statusBar.field.states?.readOnly &&
+        evaluateCondition(statusBar.field.states.readOnly, draft as Record<string, unknown>),
+    )
+  const hiddenFields = useMemo(
+    () => (statusEditable && statusBar ? new Set([statusBar.field.name]) : undefined),
+    [statusEditable, statusBar?.field.name],
+  )
   const layout = normalizeLayout(descriptor)
   const titleField = titleFieldName(layout) ?? layoutFieldOrder(layout)[0]
   const titleValue = titleField ? (draft as Record<string, unknown>)[titleField] : undefined
@@ -465,6 +486,20 @@ function FormRenderer<T extends HasId>({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+    await save()
+  }
+
+  // A breadcrumb click: the step becomes the field's value (its on_change
+  // runs as for any edit), then the record saves like a Save click —
+  // chatter log included. An unsaved new record only gets the draft value:
+  // saving it would be a create the user didn't ask for yet.
+  async function onStatusSelect(option: string) {
+    if (!statusBar) return
+    setField(statusBar.field.name as keyof T, option as T[keyof T])
+    if (recordId) await save()
+  }
+
+  async function save() {
     setSubmitting(true)
     const before = lastPersistedRef.current
     // An id already present BEFORE this commit means an existing record is
@@ -611,8 +646,14 @@ function FormRenderer<T extends HasId>({
           draft={draft as Record<string, unknown>}
           onFieldsCommit={onHeaderButtonCommit}
         />
-        {statusField && (
-          <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />
+        {statusBar && (
+          <StatusBar
+            field={statusBar.field}
+            steps={statusBar.steps}
+            value={(draft as Record<string, unknown>)[statusBar.field.name]}
+            onSelect={statusEditable && canWrite && !statusReadOnly ? (o) => void onStatusSelect(o) : undefined}
+            disabled={submitting}
+          />
         )}
         <FormListNav entity={descriptor.entity} recordId={recordId} />
       </Box>
@@ -646,6 +687,7 @@ function FormRenderer<T extends HasId>({
                   onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
                   entity={descriptor.entity}
                   recordId={(draft as { id?: string }).id ?? null}
+                  hidden={hiddenFields}
                 />
               </PictureSizeProvider>
             </Stack>

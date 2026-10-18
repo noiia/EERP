@@ -512,6 +512,118 @@ func (h *Handler) PutChatterSettings(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// statusBarConfig is both the stored value of a ViewStatusBarKey(entity)
+// setting and the request/response body of GET|PUT
+// /settings/views/:entity/status_bar. A nil Field or Steps means "no
+// workspace override" for that part. Go never sees the descriptor, so it only
+// checks the shape — the frontend's resolveStatusBar drops a field the form
+// doesn't have and steps the field doesn't offer.
+type statusBarConfig struct {
+	Field *string  `json:"field"`
+	Steps []string `json:"steps"`
+}
+
+// maxStatusBarSteps bounds a stored step list — a breadcrumb past a few
+// dozen chips is unusable anyway.
+const maxStatusBarSteps = 50
+
+// validate normalizes an empty field or step list to "no override" and
+// rejects a malformed one, naming the problem.
+func (s *statusBarConfig) validate() error {
+	if s.Field != nil && *s.Field == "" {
+		s.Field = nil
+	}
+	if s.Field != nil && !entitySlugPattern.MatchString(*s.Field) {
+		return errors.New("field must be a lowercase snake_case column name")
+	}
+	if len(s.Steps) == 0 {
+		s.Steps = nil
+		return nil
+	}
+	if len(s.Steps) > maxStatusBarSteps {
+		return fmt.Errorf("at most %d steps", maxStatusBarSteps)
+	}
+	seen := make(map[string]bool, len(s.Steps))
+	for _, step := range s.Steps {
+		if step == "" || len(step) > 100 {
+			return errors.New("each step must be 1 to 100 characters")
+		}
+		if seen[step] {
+			return fmt.Errorf("step %q is listed twice", step)
+		}
+		seen[step] = true
+	}
+	return nil
+}
+
+// GetStatusBarSettings handles GET /api/v1/settings/views/:entity/status_bar —
+// the workspace's override of entity's form status breadcrumb. An
+// unconfigured entity returns {"field":null,"steps":null}, not a 404.
+// Mounted behind the permission middleware, which derives
+// settings:views:read.
+func (h *Handler) GetStatusBarSettings(c *echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, ViewStatusBarKey(entity))
+	if err != nil {
+		return fmt.Errorf("settings: get status bar for %s: %w", entity, err)
+	}
+
+	var resp statusBarConfig
+	if ok && raw != "" {
+		// An unparsable or no-longer-valid stored value degrades to "no
+		// override" rather than failing the read.
+		if json.Unmarshal([]byte(raw), &resp) != nil || resp.validate() != nil {
+			resp = statusBarConfig{}
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutStatusBarSettings handles PUT /api/v1/settings/views/:entity/status_bar.
+// Mounted behind the permission middleware, which derives
+// settings:views:write from the route.
+func (h *Handler) PutStatusBarSettings(c *echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	var req statusBarConfig
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if err := req.validate(); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal status bar for %s: %w", entity, err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ViewStatusBarKey(entity), string(value)); err != nil {
+		return fmt.Errorf("settings: set status bar for %s: %w", entity, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // graphTile is one tile of an entity's Graph mode layout. Coordinates are
 // integer grid units — one unit is 30px on the frontend (GRID_UNIT), a
 // constant the backend never needs to know. `Config` stays opaque: the
