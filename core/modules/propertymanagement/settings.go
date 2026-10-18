@@ -7,7 +7,6 @@ import (
 
 	"core/internal/auth"
 	"core/internal/settings"
-	"core/orm"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -85,9 +84,7 @@ func (h *Handler) GetRentReceipt(c *echo.Context) error {
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
-	// Tenant-pinned: the typed repository's FindByID doesn't scope by
-	// tenant the way the generic CRUD read does.
-	receipt, err := h.rentReceipts.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2", id, identity.TenantID))
+	receipt, err := findOwned(ctx, h.rentReceipts, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Rent receipt not found.")
 	}

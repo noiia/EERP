@@ -101,13 +101,14 @@ func (h *Handler) taxIncluded(ctx context.Context, identity auth.Identity) (bool
 // GetProperty handles GET /api/v1/property_management/:id.
 func (h *Handler) GetProperty(c *echo.Context) error {
 	ctx := c.Request().Context()
+	identity := auth.MustIdentity(ctx)
 
 	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	property, err := h.properties.FindByID(ctx, id)
+	property, err := findOwned(ctx, h.properties, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Property not found.")
 	}
@@ -203,13 +204,16 @@ func (h *Handler) CreateEquipmentStatus(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.equipment, body.PropertyManagementEquipmentID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Equipment not found.")
+	}
 
 	created, err := h.statuses.Create(ctx, body)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the status entry.")
 	}
 
-	if err := h.rollupCurrentState(ctx, created.PropertyManagementEquipmentID); err != nil {
+	if err := h.rollupCurrentState(ctx, identity.TenantID, created.PropertyManagementEquipmentID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update the equipment's current state.")
 	}
 
@@ -220,8 +224,8 @@ func (h *Handler) CreateEquipmentStatus(c *echo.Context) error {
 // entry's State (by Date) — recomputed from every entry rather than just
 // trusting the one just created, so a backdated Date entered out of order
 // still leaves CurrentState correct.
-func (h *Handler) rollupCurrentState(ctx context.Context, equipmentID uuid.UUID) error {
-	entries, err := h.statuses.FindAll(ctx, orm.Cond("property_management_equipment_id = $1", equipmentID))
+func (h *Handler) rollupCurrentState(ctx context.Context, tenant, equipmentID uuid.UUID) error {
+	entries, err := h.statuses.FindAll(ctx, orm.Cond("property_management_equipment_id = $1 AND tenant_id = $2", equipmentID, tenant))
 	if err != nil {
 		return err
 	}
@@ -229,7 +233,7 @@ func (h *Handler) rollupCurrentState(ctx context.Context, equipmentID uuid.UUID)
 		return nil
 	}
 
-	equipment, err := h.equipment.FindByID(ctx, equipmentID)
+	equipment, err := findOwned(ctx, h.equipment, equipmentID, tenant)
 	if err != nil {
 		return err
 	}
@@ -303,7 +307,7 @@ func (h *Handler) UpdateBillingLine(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.billingLines.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.billingLines, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Billing line not found.")
 	}
@@ -325,7 +329,7 @@ func (h *Handler) UpdateBillingLine(c *echo.Context) error {
 		merged.TaxRate = body.TaxRate
 	}
 
-	taxes, err := h.linkedBillingLineTaxes(ctx, id)
+	taxes, err := h.linkedBillingLineTaxes(ctx, identity.TenantID, id)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not read the line's taxes.")
 	}
@@ -353,6 +357,12 @@ func (h *Handler) CreateBillingLineTax(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.billingLines, body.PropertyManagementBillingLineID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Billing line not found.")
+	}
+	if _, err := findOwned(ctx, h.taxes, body.SaleTaxID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Tax not found.")
+	}
 
 	created, err := h.billingLineTaxes.Create(ctx, body)
 	if err != nil {
@@ -375,7 +385,7 @@ func (h *Handler) DeleteBillingLineTax(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.billingLineTaxes.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.billingLineTaxes, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Tax link not found.")
 	}
@@ -395,11 +405,11 @@ func (h *Handler) DeleteBillingLineTax(c *echo.Context) error {
 // PropertyManagement has no stored aggregate of its own (billing_totals is a
 // live, store:false frontend compute — property_management_views.ts).
 func (h *Handler) recomputeBillingLineTotal(ctx context.Context, identity auth.Identity, lineID uuid.UUID) error {
-	line, err := h.billingLines.FindByID(ctx, lineID)
+	line, err := findOwned(ctx, h.billingLines, lineID, identity.TenantID)
 	if err != nil {
 		return err
 	}
-	taxes, err := h.linkedBillingLineTaxes(ctx, lineID)
+	taxes, err := h.linkedBillingLineTaxes(ctx, identity.TenantID, lineID)
 	if err != nil {
 		return err
 	}
@@ -415,8 +425,8 @@ func (h *Handler) recomputeBillingLineTotal(ctx context.Context, identity auth.I
 // linkedBillingLineTaxes resolves a billing line's own
 // property_management_billing_line_tax rows into the sale.SaleTax records
 // they point at (see sale.ResolveTaxes).
-func (h *Handler) linkedBillingLineTaxes(ctx context.Context, lineID uuid.UUID) ([]sale.SaleTax, error) {
-	links, err := h.billingLineTaxes.FindAll(ctx, orm.Cond("property_management_billing_line_id = $1", lineID))
+func (h *Handler) linkedBillingLineTaxes(ctx context.Context, tenant, lineID uuid.UUID) ([]sale.SaleTax, error) {
+	links, err := h.billingLineTaxes.FindAll(ctx, orm.Cond("property_management_billing_line_id = $1 AND tenant_id = $2", lineID, tenant))
 	if err != nil {
 		return nil, err
 	}
@@ -468,12 +478,15 @@ func (h *Handler) CreateRentReceiptLine(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.rentReceipts, body.RentReceiptID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Rent receipt not found.")
+	}
 
 	created, err := h.rentReceiptLines.Create(ctx, body)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the receipt line.")
 	}
-	if err := h.recomputeReceiptTotals(ctx, created.RentReceiptID); err != nil {
+	if err := h.recomputeReceiptTotals(ctx, identity.TenantID, created.RentReceiptID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update the receipt's totals.")
 	}
 	return c.JSON(http.StatusCreated, toColumnMap(h.rentReceiptLines, created))
@@ -487,12 +500,12 @@ func (h *Handler) CreateRentReceiptLine(c *echo.Context) error {
 // to resolve here beyond summing). Sums each line's own Subtotal rather than
 // UnitPrice: once tax.price_mode is tax_included, UnitPrice alone no longer
 // tells you the tax-excluded figure.
-func (h *Handler) recomputeReceiptTotals(ctx context.Context, receiptID uuid.UUID) error {
-	lines, err := h.rentReceiptLines.FindAll(ctx, orm.Cond("rent_receipt_id = $1", receiptID))
+func (h *Handler) recomputeReceiptTotals(ctx context.Context, tenant, receiptID uuid.UUID) error {
+	lines, err := h.rentReceiptLines.FindAll(ctx, orm.Cond("rent_receipt_id = $1 AND tenant_id = $2", receiptID, tenant))
 	if err != nil {
 		return err
 	}
-	receipt, err := h.rentReceipts.FindByID(ctx, receiptID)
+	receipt, err := findOwned(ctx, h.rentReceipts, receiptID, tenant)
 	if err != nil {
 		return err
 	}
@@ -508,6 +521,16 @@ func (h *Handler) recomputeReceiptTotals(ctx context.Context, receiptID uuid.UUI
 
 	_, err = h.rentReceipts.Update(ctx, receipt, receiptID)
 	return err
+}
+
+// findOwned reads one row by id within the caller's tenant. Every lookup in
+// this file goes through it (and every FindAll carries a tenant_id
+// condition): the typed repositories don't scope by tenant the way the
+// generic CRUD layer does, so an id alone — from the path or a request
+// body — would reach, and for the writes modify, another workspace's row.
+// A row of another tenant reads as not found.
+func findOwned[T any](ctx context.Context, repo *orm.Repository[T], id, tenant uuid.UUID) (T, error) {
+	return repo.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2", id, tenant))
 }
 
 // toColumnMap mirrors the generic CRUD handler's JSON shape — snake_case db
