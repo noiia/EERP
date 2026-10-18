@@ -64,7 +64,8 @@ describe('GET /api/integrations/osm/search', () => {
       }
       return jsonResponse([
         {
-          display_name: '12 Main Street, Springfield, USA',
+          display_name:
+            '12, Main Street, Downtown, Springfield, Sangamon County, Someplace, 00000, USA',
           lat: '48.85',
           lon: '2.35',
           address: {
@@ -76,6 +77,23 @@ describe('GET /api/integrations/osm/search', () => {
             country: 'USA',
           },
         },
+        // Same address, another OSM object: deduplicated by its short label.
+        {
+          display_name: '12, Main Street, Springfield (building)',
+          address: {
+            house_number: '12',
+            road: 'Main Street',
+            postcode: '00000',
+            city: 'Springfield',
+            state: 'Someplace',
+            country: 'USA',
+          },
+        },
+        // One city only: town is ignored once city is set.
+        {
+          display_name: 'Elm Road, Shelbyville, Othertown, USA',
+          address: { road: 'Elm Road', city: 'Shelbyville', town: 'Othertown', country: 'USA' },
+        },
         { display_name: 'Nowhere' },
       ])
     })
@@ -86,7 +104,7 @@ describe('GET /api/integrations/osm/search', () => {
     const body = (await res.json()) as { results: unknown[] }
     expect(body.results).toEqual([
       {
-        label: '12 Main Street, Springfield, USA',
+        label: '12 Main Street, Springfield, Someplace, USA, 00000',
         number: 12,
         street: 'Main Street',
         complement: '',
@@ -96,6 +114,18 @@ describe('GET /api/integrations/osm/search', () => {
         country: 'USA',
         lat: 48.85,
         lon: 2.35,
+      },
+      {
+        label: 'Elm Road, Shelbyville, USA',
+        number: null,
+        street: 'Elm Road',
+        complement: '',
+        zip_code: '',
+        city: 'Shelbyville',
+        state: '',
+        country: 'USA',
+        lat: null,
+        lon: null,
       },
       {
         label: 'Nowhere',
@@ -120,10 +150,55 @@ describe('GET /api/integrations/osm/search', () => {
     expect((upstreamInit.headers as Record<string, string>)['User-Agent']).toBe('eerp/1.0')
   })
 
+  it.each([
+    ['12bis', 12, 'bis Rue de la Paix', '12 bis Rue de la Paix, Paris, France'],
+    ['12 ter', 12, 'ter Rue de la Paix', '12 ter Rue de la Paix, Paris, France'],
+    ['4B', 4, 'B Rue de la Paix', '4 B Rue de la Paix, Paris, France'],
+    ['12-14', 12, 'Rue de la Paix', '12 Rue de la Paix, Paris, France'],
+    ['7', 7, 'Rue de la Paix', '7 Rue de la Paix, Paris, France'],
+  ])(
+    'puts house number %s first, its extension right after',
+    async (houseNumber, number, street, label) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) =>
+          String(input).startsWith('http://api.test/')
+            ? jsonResponse({
+                enabled: true,
+                base_url: 'https://nominatim.example.org',
+                user_agent: '',
+              })
+            : jsonResponse([
+                {
+                  display_name: 'whatever',
+                  address: {
+                    house_number: houseNumber,
+                    road: 'Rue de la Paix',
+                    city: 'Paris',
+                    country: 'France',
+                  },
+                },
+              ]),
+        ),
+      )
+      const res = await GET(
+        new Request('http://localhost/api/integrations/osm/search?q=rue+de+la+paix'),
+      )
+      const body = (await res.json()) as {
+        results: { label: string; number: number | null; street: string }[]
+      }
+      expect(body.results[0]).toMatchObject({ label, number, street })
+    },
+  )
+
   it('degrades to no results when the upstream fetch fails', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).startsWith('http://api.test/')) {
-        return jsonResponse({ enabled: true, base_url: 'https://nominatim.example.org', user_agent: '' })
+        return jsonResponse({
+          enabled: true,
+          base_url: 'https://nominatim.example.org',
+          user_agent: '',
+        })
       }
       throw new Error('network down')
     })

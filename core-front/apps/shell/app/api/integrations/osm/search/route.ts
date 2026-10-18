@@ -17,6 +17,8 @@ interface NominatimAddress {
   city?: string
   town?: string
   village?: string
+  municipality?: string
+  hamlet?: string
   state?: string
   country?: string
 }
@@ -41,21 +43,70 @@ export interface OSMSuggestion {
   lon: number | null
 }
 
+/**
+ * The suggestion's label: only the parts an address field stores — number
+ * (with its extension, "12 bis"), street, ONE city, state, country, zip code — instead of Nominatim's
+ * `display_name`, which also lists suburb, county, region... Falls back to
+ * `display_name` when the result carries none of them (a bare place).
+ */
+function suggestionLabel(s: Omit<OSMSuggestion, 'label'>, displayName: string): string {
+  const street = [s.number ?? '', s.street].filter((p) => p !== '').join(' ')
+  const label = [street, s.city, s.state, s.country, s.zip_code].filter((p) => p !== '').join(', ')
+  return label || displayName
+}
+
+/**
+ * Splits Nominatim's free-text `house_number` into the integer the address
+ * field stores and its extension: "12bis" / "12 bis" -> {12, "bis"},
+ * "4B" -> {4, "B"}. Only a letters-only suffix counts as an extension (bis,
+ * ter, quater, A, B...) — a range like "12-14" keeps just its first number.
+ */
+function parseHouseNumber(raw: string | undefined): { number: number | null; extension: string } {
+  const match = /^\s*(\d+)\s*([^\d\s-].*)?$/u.exec(raw ?? '')
+  if (!match) {
+    const n = Number.parseInt(raw ?? '', 10)
+    return { number: Number.isFinite(n) ? n : null, extension: '' }
+  }
+  const extension = (match[2] ?? '').trim()
+  return {
+    number: Number(match[1]),
+    extension: /^\p{L}+$/u.test(extension) ? extension : '',
+  }
+}
+
 function toSuggestion(result: NominatimResult): OSMSuggestion {
   const address = result.address ?? {}
-  const number = address.house_number ? Number.parseInt(address.house_number, 10) : NaN
-  return {
-    label: result.display_name,
-    number: Number.isFinite(number) ? number : null,
-    street: address.road ?? '',
+  const { number, extension } = parseHouseNumber(address.house_number)
+  const road = address.road ?? ''
+  const parts = {
+    number,
+    // The extension rides at the head of the street ("bis Rue X"): the
+    // number column is an integer, and AddressWidget's combined "Number and
+    // street" input reads number + street back as "12 bis Rue X" — exactly
+    // what typing it by hand stores too.
+    street: [extension, road].filter((p) => p !== '').join(' '),
     complement: '',
     zip_code: address.postcode ?? '',
-    city: address.city ?? address.town ?? address.village ?? '',
+    // One city only: the first locality level Nominatim filled in.
+    city:
+      address.city ??
+      address.town ??
+      address.village ??
+      address.municipality ??
+      address.hamlet ??
+      '',
     state: address.state ?? '',
     country: address.country ?? '',
     lat: result.lat != null && Number.isFinite(Number(result.lat)) ? Number(result.lat) : null,
     lon: result.lon != null && Number.isFinite(Number(result.lon)) ? Number(result.lon) : null,
   }
+  return { label: suggestionLabel(parts, result.display_name), ...parts }
+}
+
+/** Shortened labels can collide (two OSM objects at one address): keep the first. */
+function uniqueByLabel(suggestions: OSMSuggestion[]): OSMSuggestion[] {
+  const seen = new Set<string>()
+  return suggestions.filter((s) => !seen.has(s.label) && seen.add(s.label))
 }
 
 // GET /api/integrations/osm/search?q=... -> { results: OSMSuggestion[] }
@@ -80,7 +131,7 @@ export async function GET(request: Request) {
     })
     if (!res.ok) return NextResponse.json({ results: [] })
     const raw = (await res.json()) as NominatimResult[]
-    return NextResponse.json({ results: raw.map(toSuggestion) })
+    return NextResponse.json({ results: uniqueByLabel(raw.map(toSuggestion)) })
   } catch {
     return NextResponse.json({ results: [] })
   }
