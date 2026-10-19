@@ -212,10 +212,10 @@ func seedDefaultUoms(ctx context.Context, db *orm.DB) error {
 	for _, tenantID := range tenantIDs {
 		for _, u := range defaultUoms {
 			row := ProductUoms{
-				BaseModel: model.BaseModel{ID: seedUUID(tenantID, "product_uoms:"+u.name), TenantID: tenantID},
-				Name:      u.name,
-				Type:      u.kind,
-				Symbol:    u.symbol,
+				ID: seedUUID(tenantID, "product_uoms:"+u.name), TenantID: tenantID,
+				Name:   u.name,
+				Type:   u.kind,
+				Symbol: u.symbol,
 			}
 			// symbol = EXCLUDED.symbol (not the usual "" empty-fragment
 			// DO NOTHING) so an existing deployment seeded before Symbol

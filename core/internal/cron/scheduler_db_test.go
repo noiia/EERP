@@ -14,7 +14,6 @@ import (
 	_ "core/modules/chatter" // registers the chatter module
 	_ "core/modules/notify"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -113,7 +112,7 @@ func TestScheduler_Tick(t *testing.T) {
 	crons := orm.MustRepo[Cron](db)
 	ids := make([]uuid.UUID, len(tests))
 	for i, tt := range tests {
-		c, err := crons.Create(ctx, Cron{BaseModel: model.BaseModel{TenantID: tenant}, Name: tt.name,
+		c, err := crons.Create(ctx, Cron{TenantID: tenant, Name: tt.name,
 			ActionID: tt.action, RunAsUserID: tt.runAs, Status: tt.status, ExecutionDate: tt.due, HistoryRetentionYears: 1})
 		if err != nil {
 			t.Fatalf("seed cron %q: %v", tt.name, err)

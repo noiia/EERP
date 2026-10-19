@@ -7,7 +7,6 @@ import (
 
 	"core/internal/testdb"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -23,7 +22,7 @@ func TestResolveTaxes(t *testing.T) {
 	taxes := orm.MustRepo[SaleTax](app.DB)
 	tenant := uuid.New()
 	seedIn := func(owner uuid.UUID, name string) SaleTax {
-		tax, err := taxes.Create(ctx, SaleTax{BaseModel: model.BaseModel{TenantID: owner}, Name: name, Kind: "percentage", Rate: 0.1})
+		tax, err := taxes.Create(ctx, SaleTax{TenantID: owner, Name: name, Kind: "percentage", Rate: 0.1})
 		if err != nil {
 			t.Fatalf("seed %s: %v", name, err)
 		}

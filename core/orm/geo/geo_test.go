@@ -52,7 +52,7 @@ func TestEWKTFromGeoJSON(t *testing.T) {
 
 func TestEWKTFromGeoJSON_TooManyPositions(t *testing.T) {
 	coords := make([]string, 0, geo.MaxPositions+1)
-	for i := 0; i < geo.MaxPositions+1; i++ {
+	for range geo.MaxPositions + 1 {
 		coords = append(coords, "[0,0]")
 	}
 	in := `{"type":"LineString","coordinates":[` + strings.Join(coords, ",") + `]}`

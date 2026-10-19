@@ -102,7 +102,7 @@ func derivePermissionFromRoute(method, routePath string) string {
 	// any action suffix (e.g. "restore") sit at/after ":id" and do not name the
 	// resource — the method carries the action.
 	var segs []string
-	for _, seg := range strings.Split(trimmed, "/") {
+	for seg := range strings.SplitSeq(trimmed, "/") {
 		if seg == "" {
 			continue
 		}

@@ -252,7 +252,7 @@ func TestAuthRateLimiter_BlocksAfterBurst(t *testing.T) {
 		ormserver.AuthRateLimiter(2)) // burst = 2
 
 	codes := make([]int, 0, 4)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
 		req.RemoteAddr = "203.0.113.7:5555" // same client IP → shared bucket
 		rec := httptest.NewRecorder()

@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"core/internal/auth"
@@ -10,7 +11,6 @@ import (
 	"core/internal/common"
 	"core/internal/notify"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -161,15 +161,16 @@ func (s *Scheduler) runOne(ctx context.Context, c Cron) {
 	// matching.
 	runID := uuid.New()
 	logPath := LogPath(s.logDir, c.TenantID, c.ID, runID)
-	content := fmt.Sprintf("cron: %s (%s)\naction: %s\nstarted: %s\n\n", c.Name, c.ID, c.ActionID, start.Format(time.RFC3339))
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("cron: %s (%s)\naction: %s\nstarted: %s\n\n", c.Name, c.ID, c.ActionID, start.Format(time.RFC3339)))
 	for _, line := range logLines {
-		content += line + "\n"
+		content.WriteString(line + "\n")
 	}
-	if err := WriteLog(logPath, content); err != nil {
+	if err := WriteLog(logPath, content.String()); err != nil {
 		common.Logger.Error("cron: could not write run log", zap.String("cron_id", c.ID.String()), zap.Error(err))
 	}
 
-	history := CronHistory{BaseModel: model.BaseModel{TenantID: c.TenantID}, CronID: c.ID, Failed: failed, LogsFilepath: logPath}
+	history := CronHistory{TenantID: c.TenantID, CronID: c.ID, Failed: failed, LogsFilepath: logPath}
 	if _, err := s.histories.Create(ctx, history); err != nil {
 		common.Logger.Error("cron: could not record run history", zap.String("cron_id", c.ID.String()), zap.Error(err))
 	}
@@ -250,7 +251,7 @@ func (s *Scheduler) postChatterError(ctx context.Context, c Cron, message string
 		return
 	}
 	_, err = s.chatter.Create(ctx, chatter.ChatterMessage{
-		BaseModel: model.BaseModel{TenantID: c.TenantID}, TableName: "cron", RecordID: c.ID,
+		TenantID: c.TenantID, TableName: "cron", RecordID: c.ID,
 		AuthorID: user.ID, AuthorEmail: user.Email,
 		Kind: "log", Body: message,
 	})

@@ -96,7 +96,7 @@ func TestSlotCapacity_CountsCheckedInBookings(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	ev := f.event(t, Event{Name: "Visit", Kind: KindAppointment, SlotMinutes: 30, SlotCapacity: 1, BookingHorizonDays: 60, MinNoticeHours: 2})
-	for wd := 0; wd < 7; wd++ {
+	for wd := range 7 {
 		if _, err := orm.MustRepo[EventAvailability](f.db).Create(ctx,
 			EventAvailability{TenantID: f.tenant, EventID: ev.ID, Weekday: wd, FromTime: "09:00", ToTime: "12:00"}); err != nil {
 			t.Fatal(err)

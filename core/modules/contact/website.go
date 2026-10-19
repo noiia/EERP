@@ -7,7 +7,6 @@ import (
 
 	"core/modules/contact/internal"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -20,7 +19,7 @@ import (
 func CreateWebsiteContact(ctx context.Context, ex orm.Executor, tenant uuid.UUID, name, email string) (uuid.UUID, error) {
 	yes := true
 	c, err := orm.MustRepo[internal.Contact](ex).Create(ctx, internal.Contact{
-		BaseModel: model.BaseModel{TenantID: tenant}, Name: name, Email: email, Status: "lead", Website: &yes})
+		TenantID: tenant, Name: name, Email: email, Status: "lead", Website: &yes})
 	return c.ID, err
 }
 
@@ -56,6 +55,6 @@ func FindOrCreate(ctx context.Context, ex orm.Executor, tenant uuid.UUID, name, 
 		return uuid.Nil, err
 	}
 	c, err := orm.MustRepo[internal.Contact](ex).Create(ctx, internal.Contact{
-		BaseModel: model.BaseModel{TenantID: tenant}, Name: name, Email: strings.ToLower(email), Status: "customer"})
+		TenantID: tenant, Name: name, Email: strings.ToLower(email), Status: "customer"})
 	return c.ID, err
 }

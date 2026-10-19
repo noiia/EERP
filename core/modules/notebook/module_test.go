@@ -1,18 +1,14 @@
 package notebook
 
 import (
+	"slices"
 	"testing"
 
 	"core/orm"
 )
 
 func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // notebook_page must stay registered (so its schema migrates) but excluded

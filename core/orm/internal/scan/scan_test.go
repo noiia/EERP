@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ── mock pgx.Rows ─────────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ func (r *mockRows) CommandTag() pgconn.CommandTag { return pgconn.CommandTag{} }
 func (r *mockRows) Values() ([]any, error)        { return nil, nil }
 func (r *mockRows) RawValues() [][]byte           { return nil }
 func (r *mockRows) Conn() *pgx.Conn               { return nil }
+func (r *mockRows) TypeMap() *pgtype.Map          { return pgtype.NewMap() }
 
 // setPtr writes val into the pointer dest using a type switch.
 // Covers every type used in test fixtures.

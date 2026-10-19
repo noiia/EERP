@@ -8,7 +8,6 @@ import (
 
 	"core/internal/testdb"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -35,7 +34,7 @@ func TestSweepHistory(t *testing.T) {
 	})
 
 	newCron := func(years int) uuid.UUID {
-		c, err := crons.Create(ctx, Cron{BaseModel: model.BaseModel{TenantID: tenant}, Name: "sweep-test", HistoryRetentionYears: years})
+		c, err := crons.Create(ctx, Cron{TenantID: tenant, Name: "sweep-test", HistoryRetentionYears: years})
 		if err != nil {
 			t.Fatalf("seed cron: %v", err)
 		}
@@ -61,7 +60,7 @@ func TestSweepHistory(t *testing.T) {
 	}
 	ids := make([]uuid.UUID, len(tests))
 	for i, tt := range tests {
-		h, err := histories.Create(ctx, CronHistory{BaseModel: model.BaseModel{TenantID: tenant}, CronID: tt.cronID})
+		h, err := histories.Create(ctx, CronHistory{TenantID: tenant, CronID: tt.cronID})
 		if err != nil {
 			t.Fatalf("seed history: %v", err)
 		}

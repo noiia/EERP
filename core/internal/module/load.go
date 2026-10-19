@@ -10,7 +10,7 @@ import (
 	"core/internal/types"
 	"core/orm"
 
-	"github.com/bytecodealliance/wasmtime-go/v15"
+	"github.com/bytecodealliance/wasmtime-go/v49"
 	"go.uber.org/zap"
 )
 
@@ -34,8 +34,7 @@ func loadModule(ctx context.Context, db *orm.DB, store *wasmtime.Store, linker *
 
 	if start := instance.GetFunc(store, "_start"); start != nil {
 		if _, err := start.Call(store); err != nil {
-			var wasmErr *wasmtime.Error
-			if errors.As(err, &wasmErr) {
+			if wasmErr, ok := errors.AsType[*wasmtime.Error](err); ok {
 				if code, ok := wasmErr.ExitStatus(); ok && code == 0 {
 					// normal exit — runtime initialised successfully
 				} else {

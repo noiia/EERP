@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -105,10 +106,8 @@ func (m Methods) Allows(id string) bool {
 	if id == m.defaultID() {
 		return m.configured(id)
 	}
-	for _, e := range m.Enabled {
-		if e == id {
-			return m.configured(id)
-		}
+	if slices.Contains(m.Enabled, id) {
+		return m.configured(id)
 	}
 	return false
 }

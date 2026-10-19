@@ -18,7 +18,6 @@ import (
 	_ "core/modules/mail"
 	_ "core/modules/settings"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -73,15 +72,15 @@ func (f workflowFixture) quote(t *testing.T, status, customerEmail string, custo
 	ctx := context.Background()
 	total := 42.0
 	q, err := orm.MustRepo[Quote](f.db).Create(ctx, Quote{
-		BaseModel: model.BaseModel{TenantID: f.identity.TenantID}, Number: "Q-TEST", Status: status,
+		TenantID: f.identity.TenantID, Number: "Q-TEST", Status: status,
 		Subject: "Desk", CustomerName: "Ada", CustomerEmail: customerEmail, CustomerID: customerID, Total: &total,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < lines; i++ {
+	for range lines {
 		if _, err := orm.MustRepo[QuoteLine](f.db).Create(ctx, QuoteLine{
-			BaseModel: model.BaseModel{TenantID: f.identity.TenantID}, QuoteID: q.ID, VariantID: uuid.New(),
+			TenantID: f.identity.TenantID, QuoteID: q.ID, VariantID: uuid.New(),
 			VariantName: "Oak desk", Quantity: 2, UnitPrice: 100, TaxRate: 0.2,
 		}); err != nil {
 			t.Fatal(err)

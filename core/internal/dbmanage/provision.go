@@ -9,7 +9,7 @@ import (
 	"core/internal/notify"
 	"core/orm"
 
-	"github.com/bytecodealliance/wasmtime-go/v15"
+	"github.com/bytecodealliance/wasmtime-go/v49"
 )
 
 // Provisioner builds a fully-usable EERP database from an empty one — the

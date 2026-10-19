@@ -13,7 +13,6 @@ import (
 	"core/internal/testdb"
 	_ "core/modules/settings"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -51,7 +50,7 @@ func TestDisplayTaxesOnReport(t *testing.T) {
 	})
 	receipts := orm.MustRepo[PropertyManagementRentReceipt](app.DB)
 	receipt, err := receipts.Create(ctx, PropertyManagementRentReceipt{
-		BaseModel: model.BaseModel{TenantID: tenant}, Period: "2026-10",
+		TenantID: tenant, Period: "2026-10",
 	})
 	if err != nil {
 		t.Fatal(err)

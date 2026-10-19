@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ func (e *emptyRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (e *emptyRows) Values() ([]any, error)                       { return nil, nil }
 func (e *emptyRows) RawValues() [][]byte                          { return nil }
 func (e *emptyRows) Conn() *pgx.Conn                              { return nil }
+func (e *emptyRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 
 // errRow satisfies pgx.Row returning a fixed error on Scan.
 type errRow struct{ err error }
@@ -1196,7 +1198,7 @@ func TestCondition_Rebase_TwoDigitPlaceholders(t *testing.T) {
 	t.Parallel()
 
 	b := query.Select[order](mustMeta[order](t))
-	for i := 0; i < 9; i++ {
+	for range 9 {
 		b = b.Where(query.NewCondition("status = $1", "x"))
 	}
 	sql, args := b.Where(query.NewCondition("a = $1 AND b = $2", 1, 2)).ToSQL()

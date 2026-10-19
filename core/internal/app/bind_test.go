@@ -31,11 +31,10 @@ func TestBoundBodies_JSONKeysMatchColumns(t *testing.T) {
 		propertymanagement.PropertyManagementBillingLineTax{},
 		propertymanagement.PropertyManagementRentReceiptLine{},
 	}
-	baseModel := reflect.TypeOf(model.BaseModel{}) // server-controlled columns, never bound
+	baseModel := reflect.TypeFor[model.BaseModel]() // server-controlled columns, never bound
 	var check func(t *testing.T, typ reflect.Type)
 	check = func(t *testing.T, typ reflect.Type) {
-		for i := range typ.NumField() {
-			f := typ.Field(i)
+		for f := range typ.Fields() {
 			if f.Anonymous {
 				if f.Type != baseModel {
 					check(t, f.Type)

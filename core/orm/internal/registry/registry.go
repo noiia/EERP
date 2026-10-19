@@ -12,7 +12,7 @@ import (
 
 	"core/orm/internal/cache"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // FieldMeta describes one API-visible column.
@@ -152,9 +152,9 @@ func Register[T any](opts ...Option) error {
 	var zero T
 	t := reflect.TypeOf(zero)
 	if t == nil {
-		t = reflect.TypeOf((*T)(nil)).Elem()
+		t = reflect.TypeFor[T]()
 	}
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -244,7 +244,7 @@ func applyExtensions(meta TableMeta, ext []SchemaField) TableMeta {
 		}
 		t, goType := f.Type, "*string"
 		if t != nil {
-			if t.Kind() != reflect.Ptr {
+			if t.Kind() != reflect.Pointer {
 				t = reflect.PointerTo(t)
 			}
 			goType = goTypeName(t)
@@ -475,7 +475,7 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 			Name:      cf.Column,
 			Column:    cf.Column,
 			GoType:    goTypeName(cf.Type),
-			Nullable:  cf.Type.Kind() == reflect.Ptr,
+			Nullable:  cf.Type.Kind() == reflect.Pointer,
 			ReadOnly:  roSet[cf.Column],
 			IndexPath: cf.IndexPath,
 			Groups:    o.fieldGroups[cf.Column],
@@ -512,7 +512,7 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 
 // goTypeName returns a human-readable type string, e.g. "string", "uuid.UUID", "*time.Time".
 func goTypeName(t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return "*" + goTypeName(t.Elem())
 	}
 	pkg := t.PkgPath()

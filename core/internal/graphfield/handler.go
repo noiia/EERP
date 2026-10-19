@@ -10,7 +10,6 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -49,7 +48,7 @@ type fieldResponse struct {
 
 func splitRoles(s string) []string {
 	out := []string{}
-	for _, r := range strings.Split(s, ",") {
+	for r := range strings.SplitSeq(s, ",") {
 		if r = strings.TrimSpace(r); r != "" {
 			out = append(out, r)
 		}
@@ -124,8 +123,8 @@ func (h *Handler) Create(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, msg)
 	}
 	created, err := h.store.Create(c.Request().Context(), GraphField{
-		BaseModel: model.BaseModel{TenantID: id.TenantID},
-		Entity:    req.Entity, Key: req.Key, Label: req.Label, Formula: req.Formula,
+		TenantID: id.TenantID,
+		Entity:   req.Entity, Key: req.Key, Label: req.Label, Formula: req.Formula,
 		Roles: strings.Join(req.Roles, ","), Dated: req.Dated,
 	})
 	if errors.Is(err, ErrDuplicateKey) {

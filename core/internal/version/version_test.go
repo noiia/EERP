@@ -34,7 +34,7 @@ func TestRegistry_Collect(t *testing.T) {
 		want *string
 	}{
 		{"core", &version.Version},
-		{"ok", ptr("0.101.0")},
+		{"ok", new("0.101.0")},
 		{"down", nil},
 		{"slow", nil},
 	}
@@ -98,5 +98,3 @@ func TestHandler(t *testing.T) {
 		t.Errorf("body = %s", rec.Body.String())
 	}
 }
-
-func ptr(s string) *string { return &s }

@@ -134,8 +134,7 @@ func TestActiveGateMiddleware(t *testing.T) {
 func TestRegistry_SetActive_AppstoreSelfProtection(t *testing.T) {
 	r := &Registry{active: map[string]bool{appstoreModuleName: true}}
 	_, err := r.SetActive(context.Background(), appstoreModuleName, false)
-	var verr *ValidationError
-	if !errors.As(err, &verr) {
+	if _, ok := errors.AsType[*ValidationError](err); !ok {
 		t.Fatalf("err = %v (%T), want *ValidationError", err, err)
 	}
 	if !r.active[appstoreModuleName] {

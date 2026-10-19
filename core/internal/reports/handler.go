@@ -12,7 +12,6 @@ import (
 
 	"core/internal/auth"
 	"core/internal/pictures"
-	"core/orm/model"
 
 	"github.com/labstack/echo/v5"
 )
@@ -124,7 +123,7 @@ func (h *Handler) Render(ctx context.Context, identity auth.Identity, name, reco
 	if err != nil {
 		return nil, fmt.Errorf("reports: resolve permissions: %w", err)
 	}
-	user := auth.Users{BaseModel: model.BaseModel{ID: identity.UserID, TenantID: identity.TenantID}}
+	user := auth.Users{ID: identity.UserID, TenantID: identity.TenantID}
 	token, err := h.tokens.IssueAccessWithTTL(user, identity.Roles, identity.Groups, perms, printTokenTTL)
 	if err != nil {
 		return nil, fmt.Errorf("reports: issue print token: %w", err)

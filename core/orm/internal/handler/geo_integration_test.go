@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -64,12 +65,7 @@ func doAs(e *echo.Echo, tenant uuid.UUID, readable []string, method, path, body 
 	ctx := access.WithTenant(req.Context(), tenant)
 	if readable != nil {
 		ctx = access.WithReadCheck(ctx, func(table string) bool {
-			for _, r := range readable {
-				if r == table {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(readable, table)
 		})
 	}
 	rec := httptest.NewRecorder()
@@ -235,7 +231,7 @@ func TestGeo_NearWithinCovers(t *testing.T) {
 	// Equal distances (here all NULL) still page stably: no row repeats or
 	// goes missing across pages.
 	unlocated := uuid.New()
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		createGeo(t, e, unlocated, "/api/v1/geo_places", `{"name":"U`+strconv.Itoa(i)+`"}`)
 	}
 	seen := map[string]bool{}

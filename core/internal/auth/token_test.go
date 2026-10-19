@@ -6,7 +6,6 @@ import (
 
 	"core/internal/auth"
 	"core/internal/types"
-	"core/orm/model"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -22,7 +21,7 @@ func testConfig() *types.Config {
 
 func testUser() auth.Users {
 	return auth.Users{
-		BaseModel: model.BaseModel{TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001")},
+		TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 	}
 }
 
@@ -97,14 +96,12 @@ func TestParseAccess_ExpiredToken_ReturnsError(t *testing.T) {
 
 	// Build a token that expired 1 second ago.
 	claims := &auth.Claims{
-		Sub:    u.ID,
-		Tenant: u.TenantID,
-		Roles:  nil,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   u.ID.String(),
-			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
-		},
+		Sub:       u.ID,
+		Tenant:    u.TenantID,
+		Roles:     nil,
+		Subject:   u.ID.String(),
+		IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	raw, _ := token.SignedString([]byte(cfg.MasterPassword))

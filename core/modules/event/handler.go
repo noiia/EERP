@@ -148,13 +148,13 @@ func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 			}
 		}
 		args := []any{tenant, limit}
-		where := ""
+		var where strings.Builder
 		for col, val := range scope.Equals {
 			if !orm.TableHasColumn("event", col) { // col becomes an identifier
 				continue
 			}
 			args = append(args, val)
-			where += fmt.Sprintf(" AND e.%s::text = $%d", col, len(args))
+			where.WriteString(fmt.Sprintf(" AND e.%s::text = $%d", col, len(args)))
 		}
 		rows, err := h.db.Query(ctx, `
 			SELECT e.id, e.name, e.description, e.location, e.kind, e.timezone, e.picture, n.starts_at, n.seats_left, `+distanceSQL+` AS distance_m
@@ -164,7 +164,7 @@ func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 				WHERE s.event_id = e.id AND s.tenant_id = e.tenant_id AND s.deleted_at IS NULL AND s.starts_at > now()
 				ORDER BY s.starts_at LIMIT 1) n ON true
 			WHERE e.tenant_id = $1 AND e.deleted_at IS NULL AND e.published IS TRUE
-			  AND (e.kind = 'appointment' OR n.starts_at IS NOT NULL)`+where+`
+			  AND (e.kind = 'appointment' OR n.starts_at IS NOT NULL)`+where.String()+`
 			ORDER BY `+orderSQL+`n.starts_at NULLS LAST, e.name LIMIT $2`, args...)
 		if err != nil {
 			return err

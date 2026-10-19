@@ -13,7 +13,6 @@ import (
 
 	"core/internal/mail"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -155,7 +154,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, tenantID uuid.UUID, pro
 		return Users{}, fmt.Errorf("user: create: %w", err)
 	}
 
-	u := Users{BaseModel: model.BaseModel{TenantID: tenantID}, PasswordHash: hash}
+	u := Users{TenantID: tenantID, PasswordHash: hash}
 	applyProfile(&u, profile)
 
 	created, err := r.users.Create(ctx, u)
@@ -220,7 +219,7 @@ func (r *RoleRepository) FindInTenant(ctx context.Context, tenantID, id uuid.UUI
 // Roles.TechnicalName on why it's nullable).
 func (r *RoleRepository) CreateRole(ctx context.Context, tenantID uuid.UUID, name, description string, technicalName *string) (Roles, error) {
 	created, err := r.roles.Create(ctx, Roles{
-		BaseModel:     model.BaseModel{TenantID: tenantID},
+		TenantID:      tenantID,
 		Name:          name,
 		Description:   description,
 		TechnicalName: technicalName,
@@ -272,12 +271,12 @@ func (r *UserRepository) CreateWebsiteUser(ctx context.Context, tenantID uuid.UU
 		if taken {
 			return ErrEmailTaken
 		}
-		u := Users{BaseModel: model.BaseModel{TenantID: tenantID}, Email: email, PasswordHash: string(hash), Name: name, Kind: KindWebsite}
+		u := Users{TenantID: tenantID, Email: email, PasswordHash: string(hash), Name: name, Kind: KindWebsite}
 		if created, err = r.users.WithTx(tx).Create(ctx, u); err != nil {
 			return err
 		}
 		if _, err := orm.MustRepo[UserRoles](r.db).WithTx(tx).Create(ctx,
-			UserRoles{BaseModel: model.BaseModel{TenantID: tenantID}, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)}); err != nil {
+			UserRoles{TenantID: tenantID, UserID: created.ID, RoleID: WebsiteUserRoleID(tenantID)}); err != nil {
 			return err
 		}
 		if r.OnWebsiteSignup != nil {

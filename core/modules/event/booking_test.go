@@ -84,7 +84,7 @@ func TestBook_ConcurrentLastSeats(t *testing.T) {
 	s := f.session(t, ev, 5, time.Now().Add(48*time.Hour))
 	var ok, full atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -194,7 +194,7 @@ func TestBook_Slots(t *testing.T) {
 	ev := f.event(t, Event{Name: "Visit", Kind: KindAppointment, SlotMinutes: 30, SlotCapacity: 2, BookingHorizonDays: 60, MinNoticeHours: 2})
 	paris, _ := time.LoadLocation("Europe/Paris")
 	// Availability every day 09:00-12:00 so "next valid slot" always exists.
-	for wd := 0; wd < 7; wd++ {
+	for wd := range 7 {
 		if _, err := orm.MustRepo[EventAvailability](f.db).Create(context.Background(),
 			EventAvailability{TenantID: f.tenant, EventID: ev.ID, Weekday: wd, FromTime: "09:00", ToTime: "12:00"}); err != nil {
 			t.Fatal(err)
@@ -213,14 +213,12 @@ func TestBook_Slots(t *testing.T) {
 
 	var ok atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < 6; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 6 {
+		wg.Go(func() {
 			if _, err := f.svc.Book(context.Background(), f.tenant, BookRequest{EventID: ev.ID, SlotStart: &valid, Seats: 1, Email: "a@x.io", Name: "A"}); err == nil {
 				ok.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if ok.Load() != 2 {

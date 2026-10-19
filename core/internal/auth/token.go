@@ -74,11 +74,9 @@ func (t *TokenService) IssueAccessWithTTL(user Users, roles []string, groups []s
 		Groups:             groups,
 		Permissions:        permissions,
 		MustChangePassword: user.MustChangePassword,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   user.ID.String(),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
-		},
+		Subject:            user.ID.String(),
+		IssuedAt:           jwt.NewNumericDate(time.Now()),
+		ExpiresAt:          jwt.NewNumericDate(time.Now().Add(ttl)),
 	}
 	if user.IsWebsite() {
 		claims.Audience = jwt.ClaimStrings{AudienceWebsite}

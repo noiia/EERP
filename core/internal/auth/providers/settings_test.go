@@ -43,9 +43,9 @@ func TestMethodsValidate(t *testing.T) {
 		{"mapped role unknown", Methods{RoleMapping: []RoleMapping{{Group: "erp-admins", RoleID: uuid.New()}}}, false},
 		{"ldap needs a bind DN", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldaps://x", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, false},
 		{"ldap default role known", Methods{LDAP: withLDAP(ldap, func(l *LDAPConfig) { l.DefaultRoleID = &admin })}, true},
-		{"ldap default role unknown", Methods{LDAP: withLDAP(ldap, func(l *LDAPConfig) { l.DefaultRoleID = ptr(uuid.New()) })}, false},
+		{"ldap default role unknown", Methods{LDAP: withLDAP(ldap, func(l *LDAPConfig) { l.DefaultRoleID = new(uuid.New()) })}, false},
 		{"provider default role known", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.DefaultRoleID = &admin })}, ERPURL: "https://erp"}, true},
-		{"provider default role unknown", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.DefaultRoleID = ptr(uuid.New()) })}, ERPURL: "https://erp"}, false},
+		{"provider default role unknown", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.DefaultRoleID = new(uuid.New()) })}, ERPURL: "https://erp"}, false},
 		{"allowed domains ok", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.AllowedDomains = []string{"example.com", "Corp.Example.org"} })}, ERPURL: "https://erp"}, true},
 		{"allowed domain with @", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.AllowedDomains = []string{"@example.com"} })}, ERPURL: "https://erp"}, false},
 		{"allowed domain empty", Methods{OIDC: []OIDCProvider{withOIDC(okOIDC, func(p *OIDCProvider) { p.AllowedDomains = []string{""} })}, ERPURL: "https://erp"}, false},
@@ -93,8 +93,6 @@ func TestMethodsPublic(t *testing.T) {
 		t.Errorf("callback = %q", got)
 	}
 }
-
-func ptr[T any](v T) *T { return &v }
 
 func withLDAP(l LDAPConfig, f func(*LDAPConfig)) *LDAPConfig { f(&l); return &l }
 

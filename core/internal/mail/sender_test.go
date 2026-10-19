@@ -108,19 +108,17 @@ func TestSender_BacksOffThenFails(t *testing.T) {
 func TestSender_ConcurrentTicksSendOnce(t *testing.T) {
 	app, tenant := setup(t)
 	ctx := context.Background()
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		if err := Enqueue(ctx, app.DB, Message{TenantID: tenant, To: "a@x.io", Subject: "s", Text: "t"}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	tr := &fakeTransport{}
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			_, _, _ = NewSender(app.DB, tr).Tick(ctx, tenant)
-		}()
+		})
 	}
 	wg.Wait()
 	if got := tr.calls.Load(); got != 10 {

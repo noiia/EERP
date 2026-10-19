@@ -7,7 +7,6 @@ import (
 
 	"core/internal/testdb"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -44,7 +43,7 @@ func TestExpireOverdueQuotes(t *testing.T) {
 	}
 	ids := make([]uuid.UUID, len(tests))
 	for i, tt := range tests {
-		q, err := quotes.Create(ctx, Quote{BaseModel: model.BaseModel{TenantID: tenant}, Status: tt.status, DueDate: tt.due})
+		q, err := quotes.Create(ctx, Quote{TenantID: tenant, Status: tt.status, DueDate: tt.due})
 		if err != nil {
 			t.Fatalf("seed %q: %v", tt.name, err)
 		}

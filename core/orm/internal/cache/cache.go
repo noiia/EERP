@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -30,7 +31,7 @@ func Get[T any]() (StructMeta, error) {
 
 // Get returns the StructMeta for the given reflect.Type.
 func (c *MetadataCache) Get(t reflect.Type) (StructMeta, error) {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -124,12 +125,7 @@ const DefaultIndexMethod = "btree"
 
 // validIndexMethod reports whether method is a supported PostgreSQL index method.
 func validIndexMethod(method string) bool {
-	for _, m := range IndexMethods {
-		if m == method {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(IndexMethods, method)
 }
 
 // parseField converts a reflect.StructField + raw tag into a FieldMeta.
@@ -161,8 +157,8 @@ func parseField(sf reflect.StructField, tag string) (FieldMeta, error) {
 		case opt == "index" || strings.HasPrefix(opt, "index="):
 			// "index" → default btree; "index=<method>" → explicit method.
 			method := DefaultIndexMethod
-			if eq := strings.IndexByte(opt, '='); eq >= 0 {
-				method = strings.ToLower(strings.TrimSpace(opt[eq+1:]))
+			if _, after, ok := strings.Cut(opt, "="); ok {
+				method = strings.ToLower(strings.TrimSpace(after))
 			}
 			if !validIndexMethod(method) {
 				return FieldMeta{}, fmt.Errorf(
@@ -198,9 +194,9 @@ func typeOf[T any]() reflect.Type {
 	var zero T
 	t := reflect.TypeOf(zero)
 	if t == nil {
-		t = reflect.TypeOf((*T)(nil)).Elem()
+		t = reflect.TypeFor[T]()
 	}
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	return t

@@ -241,11 +241,9 @@ func TestProvision(t *testing.T) {
 		ids := make([]uuid.UUID, 2)
 		errs := make([]error, 2)
 		for i := range ids {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				ids[i], errs[i] = prov(e, "uid=c,"+e, true, []string{"erp-staff"}, m)
-			}()
+			})
 		}
 		wg.Wait()
 		ok := 0

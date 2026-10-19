@@ -8,7 +8,6 @@ import (
 	"core/internal/auth"
 	authmw "core/internal/middleware"
 	"core/internal/types"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -80,7 +79,7 @@ func TestJWTMiddleware_ValidToken_InjectsIdentityAndCalls200(t *testing.T) {
 	svc := newSvc()
 
 	user := auth.Users{
-		BaseModel: model.BaseModel{TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001")},
+		TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 	}
 	user.BaseModel.ID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
@@ -122,7 +121,7 @@ func TestJWTMiddleware_WrongKeyword_Returns401(t *testing.T) {
 
 	e.GET("/test", recordingHandler(&reached), authmw.JWTMiddleware(svc))
 
-	user := auth.Users{BaseModel: model.BaseModel{TenantID: uuid.New()}}
+	user := auth.Users{TenantID: uuid.New()}
 	user.BaseModel.ID = uuid.New()
 	raw, _ := svc.IssueAccess(user, nil, nil, nil)
 
@@ -140,7 +139,7 @@ func TestJWTMiddleware_WrongKeyword_Returns401(t *testing.T) {
 
 func issueToken(t *testing.T, svc *auth.TokenService) (string, auth.Users) {
 	t.Helper()
-	user := auth.Users{BaseModel: model.BaseModel{TenantID: uuid.New()}}
+	user := auth.Users{TenantID: uuid.New()}
 	user.BaseModel.ID = uuid.New()
 	raw, err := svc.IssueAccess(user, []string{"admin"}, nil, nil)
 	if err != nil {
@@ -239,8 +238,8 @@ func TestJWTOrCookieMiddleware_InvalidCookie_Returns401(t *testing.T) {
 
 func TestAudienceIsEnforced(t *testing.T) {
 	svc := newSvc()
-	erpTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}}, nil, nil, nil)
-	siteTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}, Kind: auth.KindWebsite}, nil, nil, nil)
+	erpTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New()}, nil, nil, nil)
+	siteTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New(), Kind: auth.KindWebsite}, nil, nil, nil)
 	tests := []struct {
 		name  string
 		mw    echo.MiddlewareFunc
@@ -271,8 +270,8 @@ func TestAudienceIsEnforced(t *testing.T) {
 
 func TestOptionalWebsiteJWT(t *testing.T) {
 	svc := newSvc()
-	siteTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}, Kind: auth.KindWebsite}, nil, nil, nil)
-	erpTok, _ := svc.IssueAccess(auth.Users{BaseModel: model.BaseModel{ID: uuid.New(), TenantID: uuid.New()}}, nil, nil, nil)
+	siteTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New(), Kind: auth.KindWebsite}, nil, nil, nil)
+	erpTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New()}, nil, nil, nil)
 	for _, tt := range []struct {
 		name, header string
 		want         int

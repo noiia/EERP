@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -260,9 +261,7 @@ func TestUpload(t *testing.T) {
 	t.Run("validation failures", func(t *testing.T) {
 		valid := func() map[string]string {
 			m := map[string]string{}
-			for k, v := range anchor {
-				m[k] = v
-			}
+			maps.Copy(m, anchor)
 			return m
 		}
 		tests := []struct {

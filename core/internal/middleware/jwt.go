@@ -70,8 +70,8 @@ func JWTOrCookieMiddleware(tokens *auth.TokenService, cookieName string) echo.Mi
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			header := c.Request().Header.Get("Authorization")
-			if strings.HasPrefix(header, "Bearer ") {
-				return authenticate(c, next, tokens, strings.TrimPrefix(header, "Bearer "), false)
+			if after, ok := strings.CutPrefix(header, "Bearer "); ok {
+				return authenticate(c, next, tokens, after, false)
 			}
 			cookie, err := c.Cookie(cookieName)
 			if err != nil || cookie.Value == "" {

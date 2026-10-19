@@ -86,7 +86,7 @@ func MigrationFieldsForTable(tableName string) ([]MigrationField, bool) {
 		fields[i] = MigrationField{
 			Column:    f.Column,
 			SQLType:   reflectTypeToSQL(f.Type),
-			Nullable:  (f.Type != nil && f.Type.Kind() == reflect.Ptr) || declaredNullable[f.Column],
+			Nullable:  (f.Type != nil && f.Type.Kind() == reflect.Pointer) || declaredNullable[f.Column],
 			IsPK:      f.IsPK,
 			SoftDel:   f.SoftDel,
 			Index:     f.Index,
@@ -101,17 +101,17 @@ func reflectTypeToSQL(t reflect.Type) string {
 	if t == nil {
 		return "TEXT"
 	}
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	switch t {
-	case reflect.TypeOf(uuid.UUID{}):
+	case reflect.TypeFor[uuid.UUID]():
 		return "UUID"
-	case reflect.TypeOf(time.Time{}):
+	case reflect.TypeFor[time.Time]():
 		return "TIMESTAMPTZ"
-	case reflect.TypeOf(geo.Point{}):
+	case reflect.TypeFor[geo.Point]():
 		return fmt.Sprintf("geography(Point,%d)", geo.SRID)
-	case reflect.TypeOf(geo.Shape{}):
+	case reflect.TypeFor[geo.Shape]():
 		return fmt.Sprintf("geography(Geometry,%d)", geo.SRID)
 	}
 	switch t.Kind() {

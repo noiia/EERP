@@ -33,7 +33,7 @@ func TestSelectForUpdate_LocksAgainstConcurrentTx(t *testing.T) {
 	tenant := uuid.New()
 	var ids []uuid.UUID
 	for _, name := range []string{"a", "b"} {
-		row, err := repo.Create(ctx, ormLockFixture{BaseModel: model.BaseModel{TenantID: tenant}, Name: name})
+		row, err := repo.Create(ctx, ormLockFixture{TenantID: tenant, Name: name})
 		if err != nil {
 			t.Fatal(err)
 		}

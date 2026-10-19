@@ -70,8 +70,8 @@ func (s *stubCompanies) ResolveActive(_ context.Context, _, _ uuid.UUID) (compan
 		return company.Company{}, s.resolveErr
 	}
 	if s.active.ID == uuid.Nil {
-		c := company.Company{}
-		c.ID = defaultStubCompanyID
+		c := company.Company{
+			ID: defaultStubCompanyID}
 		return c, nil
 	}
 	return s.active, nil
@@ -142,8 +142,6 @@ func serve(t *testing.T, h echo.HandlerFunc, method, target, body string, identi
 	return rec
 }
 
-func strPtr(s string) *string { return &s }
-
 // serveWithParam is serve plus a single Echo path param, for routes like
 // /settings/views/:entity/fields that serve() (no router match) can't set on
 // its own.
@@ -187,7 +185,7 @@ func TestGetMyPreferences(t *testing.T) {
 		},
 		{
 			name:          "preference and default set",
-			users:         &stubUsers{user: auth.Users{PreferredLocale: strPtr("fr")}},
+			users:         &stubUsers{user: auth.Users{PreferredLocale: new("fr")}},
 			store:         &stubStore{values: map[string]string{DefaultLocaleKey: "de"}},
 			wantStatus:    http.StatusOK,
 			wantPreferred: "fr",
@@ -273,9 +271,9 @@ func TestPutMyPreferences(t *testing.T) {
 		wantSet    bool
 		wantLocale *string
 	}{
-		{name: "set a locale", body: `{"preferred_locale":"fr"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: strPtr("fr")},
-		{name: "regioned tag accepted", body: `{"preferred_locale":"pt-BR"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: strPtr("pt-BR")},
-		{name: "source sentinel accepted", body: `{"preferred_locale":"source"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: strPtr("source")},
+		{name: "set a locale", body: `{"preferred_locale":"fr"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: new("fr")},
+		{name: "regioned tag accepted", body: `{"preferred_locale":"pt-BR"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: new("pt-BR")},
+		{name: "source sentinel accepted", body: `{"preferred_locale":"source"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: new("source")},
 		{name: "null clears (inherit default)", body: `{"preferred_locale":null}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: nil},
 		{name: "junk rejected", body: `{"preferred_locale":"fr; DROP TABLE users"}`, wantStatus: http.StatusBadRequest},
 		{name: "overlong rejected", body: `{"preferred_locale":"abcdefghijklmnopqrstuvwxyz"}`, wantStatus: http.StatusBadRequest},
@@ -313,8 +311,8 @@ func TestPutMyPreferences(t *testing.T) {
 func TestGetMyPreferences_ActiveCompany(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	companyID := uuid.New()
-	active := company.Company{Name: "Acme", Currency: "USD"}
-	active.ID = companyID
+	active := company.Company{Name: "Acme", Currency: "USD",
+		ID: companyID}
 
 	h := NewHandler(&stubUsers{}, &stubStore{}, &stubCompanies{active: active}, "development")
 	rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)

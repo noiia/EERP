@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ func (e *emptyRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (e *emptyRows) Values() ([]any, error)                       { return nil, nil }
 func (e *emptyRows) RawValues() [][]byte                          { return nil }
 func (e *emptyRows) Conn() *pgx.Conn                              { return nil }
+func (e *emptyRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 
 type errRow struct{ err error }
 

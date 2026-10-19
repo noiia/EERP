@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ── mockRows ─────────────────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ func (r *mockRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (r *mockRows) Values() ([]any, error)                       { return nil, nil }
 func (r *mockRows) RawValues() [][]byte                          { return nil }
 func (r *mockRows) Conn() *pgx.Conn                              { return nil }
+func (r *mockRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 
 // ── mockRow ───────────────────────────────────────────────────────────────────
 

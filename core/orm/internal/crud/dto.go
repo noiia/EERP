@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"core/orm/access"
@@ -127,10 +128,8 @@ func BuildResponse(ctx context.Context, meta registry.TableMeta, row map[string]
 // intersects reports whether need and have share at least one element.
 func intersects(need, have []string) bool {
 	for _, g := range need {
-		for _, h := range have {
-			if g == h {
-				return true
-			}
+		if slices.Contains(have, g) {
+			return true
 		}
 	}
 	return false

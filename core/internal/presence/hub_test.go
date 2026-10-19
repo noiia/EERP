@@ -62,7 +62,7 @@ func TestHub_CloseAll(t *testing.T) {
 
 	url := "ws" + strings.TrimPrefix(srv.URL, "http")
 	var peers []*websocket.Conn
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		peer, _, err := websocket.DefaultDialer.Dial(url, nil)
 		if err != nil {
 			t.Fatal(err)

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"core/internal/common"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -67,7 +66,7 @@ func (s *Service) Personal(ctx context.Context, tenant, user uuid.UUID, m Messag
 		return Notification{}, err
 	}
 	n, err := s.repo.Create(ctx, Notification{
-		BaseModel: model.BaseModel{TenantID: tenant}, UserID: &user,
+		TenantID: tenant, UserID: &user,
 		Category: m.Category, Kind: "message", Title: m.Title, Body: m.Body, Link: m.Link, Data: m.Data,
 	})
 	if err != nil {
@@ -97,7 +96,7 @@ func (s *Service) Start(ctx context.Context, tenant uuid.UUID, a Activity) (*Run
 		progress = &zero
 	}
 	n, err := s.repo.Create(ctx, Notification{
-		BaseModel: model.BaseModel{TenantID: tenant}, Category: a.Category, Kind: "activity",
+		TenantID: tenant, Category: a.Category, Kind: "activity",
 		Title: a.Title, Link: a.Link, Status: &running, Progress: progress, ActorID: a.ActorID,
 	})
 	if err != nil {
@@ -165,7 +164,7 @@ func (r *Run) Finish(err error, body string, data *string) {
 	// A few attempts: a lost final write leaves the row "running" until the
 	// next restart (and blocks a new seed of the tenant).
 	var werr error
-	for attempt := 0; attempt < finishAttempts; attempt++ {
+	for attempt := range finishAttempts {
 		var n Notification
 		if n, werr = r.svc.repo.UpdateActivity(context.Background(), r.n.ID, u); werr == nil {
 			r.n = n

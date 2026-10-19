@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -115,7 +114,7 @@ func serveAdmin(t *testing.T, h echo.HandlerFunc, method, target, paramID, body 
 func TestAdminListUsers(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	users := &stubAdminUsers{users: []Users{
-		{BaseModel: model.BaseModel{TenantID: identity.TenantID}, Email: "a@x.io", PasswordHash: "secret-hash"},
+		{TenantID: identity.TenantID, Email: "a@x.io", PasswordHash: "secret-hash"},
 	}}
 	h := NewAdminHandler(users, &stubAdminRoles{})
 

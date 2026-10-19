@@ -65,8 +65,8 @@ func percentageRate(taxes []SaleTax) float64 {
 // linkLineTaxes gives an invoice line one sale_line_tax link per tax.
 func linkLineTaxes(ctx context.Context, repo *orm.Repository[SaleLineTax], tenant, lineID uuid.UUID, taxes []SaleTax) error {
 	for _, t := range taxes {
-		link := SaleLineTax{SaleLineID: lineID, SaleTaxID: t.ID}
-		link.TenantID = tenant
+		link := SaleLineTax{SaleLineID: lineID, SaleTaxID: t.ID,
+			TenantID: tenant}
 		if _, err := repo.Create(ctx, link); err != nil {
 			return fmt.Errorf("sale: link line tax: %w", err)
 		}

@@ -16,7 +16,6 @@ import (
 	"core/internal/payment"
 	"core/modules/contact"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -453,7 +452,7 @@ func (s *Service) Slots(ctx context.Context, tenant, eventID uuid.UUID, from, to
 // log posts to the event's chatter after commit; best-effort (a lost log
 // entry must never fail a booking).
 func (s *Service) log(ctx context.Context, tenant, eventID uuid.UUID, email, body string) {
-	_, err := s.chat.Create(ctx, chatter.ChatterMessage{BaseModel: model.BaseModel{TenantID: tenant},
+	_, err := s.chat.Create(ctx, chatter.ChatterMessage{TenantID: tenant,
 		TableName: "event", RecordID: eventID, AuthorEmail: email, Kind: "log", Body: body})
 	if err != nil {
 		common.Logger.Warn("event: chatter log", zap.Error(err))

@@ -103,7 +103,7 @@ func applyDest[T any](dest []any, mapping colMapping, meta cache.StructMeta) (T,
 		}
 
 		val := reflect.ValueOf(dest[colPos])
-		if val.Kind() == reflect.Ptr {
+		if val.Kind() == reflect.Pointer {
 			if val.IsNil() {
 				continue
 			}
@@ -127,7 +127,7 @@ func applyDest[T any](dest []any, mapping colMapping, meta cache.StructMeta) (T,
 func newPtr(t reflect.Type) any {
 	// For pointer fields (e.g. *time.Time for soft-delete), pgx expects **T
 	// so it can set the outer pointer to nil on NULL.
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return reflect.New(t).Interface() // **T
 	}
 	return reflect.New(t).Interface() // *T

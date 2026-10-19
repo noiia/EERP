@@ -13,9 +13,8 @@ import (
 // from the bucket. Pin the absence of the tag, mirroring
 // internal/pictures/models_test.go's TestPictureIsHardDeleted.
 func TestAttachmentIsHardDeleted(t *testing.T) {
-	tt := reflect.TypeOf(Attachment{})
-	for i := 0; i < tt.NumField(); i++ {
-		f := tt.Field(i)
+	tt := reflect.TypeFor[Attachment]()
+	for f := range tt.Fields() {
 		if f.Anonymous {
 			t.Errorf("Attachment embeds %s — embedded bases can smuggle a softdelete column in", f.Type)
 		}

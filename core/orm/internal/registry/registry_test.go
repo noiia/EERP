@@ -156,7 +156,7 @@ func TestRegister_TypeRef_IsCorrectType(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 	meta, _ := registry.Get("product")
-	want := reflect.TypeOf(product{})
+	want := reflect.TypeFor[product]()
 	if meta.TypeRef != want {
 		t.Errorf("TypeRef = %v, want %v", meta.TypeRef, want)
 	}

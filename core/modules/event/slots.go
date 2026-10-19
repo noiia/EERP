@@ -29,10 +29,7 @@ func RulesFor(e Event) (SlotRules, error) {
 
 	buffer := 0
 	if e.BufferMinutes != nil {
-		buffer = *e.BufferMinutes
-		if buffer < 0 {
-			buffer = 0
-		}
+		buffer = max(*e.BufferMinutes, 0)
 	}
 
 	return SlotRules{

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -61,7 +60,7 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 
 	if _, err := users.Upsert(ctx,
 		Users{
-			BaseModel:          model.BaseModel{ID: devUserID, TenantID: DevTenantID},
+			ID: devUserID, TenantID: DevTenantID,
 			Email:              DevAdminEmail,
 			PasswordHash:       string(hash),
 			MustChangePassword: environment == "production",
@@ -70,7 +69,7 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 		return fmt.Errorf("seed dev admin: users: %w", err)
 	}
 	if _, err := roles.Upsert(ctx,
-		Roles{BaseModel: model.BaseModel{ID: devRoleID, TenantID: DevTenantID}, Name: "admin", Description: "Development administrator"},
+		Roles{ID: devRoleID, TenantID: DevTenantID, Name: "admin", Description: "Development administrator"},
 		[]string{"id"}, ""); err != nil {
 		return fmt.Errorf("seed dev admin: roles: %w", err)
 	}
@@ -111,7 +110,7 @@ func SeedDevAdmin(ctx context.Context, db *orm.DB, environment string) error {
 	// infer it as the ON CONFLICT arbiter (core/orm/repo's UpsertPartial doc
 	// comment has the full explanation).
 	if _, err := userRoles.UpsertPartial(ctx,
-		UserRoles{BaseModel: model.BaseModel{TenantID: DevTenantID}, UserID: devUserID, RoleID: devRoleID},
+		UserRoles{TenantID: DevTenantID, UserID: devUserID, RoleID: devRoleID},
 		[]string{"user_id", "role_id"}, "deleted_at IS NULL", ""); err != nil {
 		return fmt.Errorf("seed dev admin: user_roles: %w", err)
 	}
@@ -164,7 +163,7 @@ func seedUUID(tenantID uuid.UUID, label string) uuid.UUID {
 func EnsureAccountRoleTypes(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error {
 	roleTypes := orm.MustRepo[AccountRoleTypes](db)
 	for _, name := range accountRoleTypeNames {
-		rt := AccountRoleTypes{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role_type:"+name), TenantID: tenantID}, Name: name}
+		rt := AccountRoleTypes{ID: seedUUID(tenantID, "role_type:"+name), TenantID: tenantID, Name: name}
 		if _, err := roleTypes.Upsert(ctx, rt, []string{"id"}, ""); err != nil {
 			return fmt.Errorf("ensure account role types: %w", err)
 		}
@@ -218,9 +217,9 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 	viewerPermID := seedUUID(tenantID, "permission:*:*:read")
 
 	for _, r := range []Roles{
-		{BaseModel: model.BaseModel{ID: adminRoleID, TenantID: tenantID}, Name: "Admin", Description: "Full access to every model.", TechnicalName: ptr("admin")},
-		{BaseModel: model.BaseModel{ID: viewerRoleID, TenantID: tenantID}, Name: "Viewer", Description: "Read-only access to every model.", TechnicalName: ptr("viewer")},
-		{BaseModel: model.BaseModel{ID: denyRoleID, TenantID: tenantID}, Name: "Deny", Description: "No access to anything.", TechnicalName: ptr("deny")},
+		{ID: adminRoleID, TenantID: tenantID, Name: "Admin", Description: "Full access to every model.", TechnicalName: new("admin")},
+		{ID: viewerRoleID, TenantID: tenantID, Name: "Viewer", Description: "Read-only access to every model.", TechnicalName: new("viewer")},
+		{ID: denyRoleID, TenantID: tenantID, Name: "Deny", Description: "No access to anything.", TechnicalName: new("deny")},
 	} {
 		if _, err := roles.Upsert(ctx, r, []string{"id"}, ""); err != nil {
 			return fmt.Errorf("seed default roles: roles: %w", err)
@@ -272,13 +271,13 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 	// Deterministic per-(tenant, entity[, right]) ids keep this idempotent.
 	for _, entity := range orm.ExposedRoutePrefixes() {
 		rvpID := seedUUID(tenantID, "role_view_permission:admin:"+entity)
-		rvp := RoleViewPermission{BaseModel: model.BaseModel{ID: rvpID, TenantID: tenantID}, RoleID: adminRoleID, Entity: entity}
+		rvp := RoleViewPermission{ID: rvpID, TenantID: tenantID, RoleID: adminRoleID, Entity: entity}
 		if _, err := viewPerms.Upsert(ctx, rvp, []string{"id"}, ""); err != nil {
 			return fmt.Errorf("seed default roles: role_view_permission: %w", err)
 		}
 		for _, name := range adminGrantedRightNames {
 			right := RoleViewPermissionRight{
-				BaseModel:            model.BaseModel{ID: seedUUID(tenantID, "role_view_permission_right:admin:"+entity+":"+name), TenantID: tenantID},
+				ID: seedUUID(tenantID, "role_view_permission_right:admin:"+entity+":"+name), TenantID: tenantID,
 				RoleViewPermissionID: rvpID,
 				AccountRoleTypeID:    seedUUID(tenantID, "role_type:"+name),
 			}
@@ -291,10 +290,6 @@ func SeedDefaultRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 	return nil
 }
 
-// ptr returns a pointer to a copy of v — Roles.TechnicalName is *string, and
-// a string literal has no address of its own to take inline.
-func ptr[T any](v T) *T { return &v }
-
 // SeedWebsiteRoles idempotently seeds the three website roles (ADR-024) in
 // tenantID. website_anonymous and website_user hold no ERP permission — their
 // access comes only from the /public and /website route groups;
@@ -303,9 +298,9 @@ func SeedWebsiteRoles(ctx context.Context, db *orm.DB, tenantID uuid.UUID) error
 	roles := orm.MustRepo[Roles](db)
 	perms := orm.MustRepo[Permissions](db)
 	for _, r := range []Roles{
-		{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role:website_anonymous"), TenantID: tenantID}, Name: "Website visitor", Description: "Anonymous website visitor. Holds no ERP permission.", TechnicalName: ptr("website_anonymous")},
-		{BaseModel: model.BaseModel{ID: WebsiteUserRoleID(tenantID), TenantID: tenantID}, Name: "Website user", Description: "Self-registered website account. Website-only access.", TechnicalName: ptr("website_user")},
-		{BaseModel: model.BaseModel{ID: seedUUID(tenantID, "role:website_admin"), TenantID: tenantID}, Name: "Website admin", Description: "Manages the website: published data, pages, events, website users.", TechnicalName: ptr("website_admin")},
+		{ID: seedUUID(tenantID, "role:website_anonymous"), TenantID: tenantID, Name: "Website visitor", Description: "Anonymous website visitor. Holds no ERP permission.", TechnicalName: new("website_anonymous")},
+		{ID: WebsiteUserRoleID(tenantID), TenantID: tenantID, Name: "Website user", Description: "Self-registered website account. Website-only access.", TechnicalName: new("website_user")},
+		{ID: seedUUID(tenantID, "role:website_admin"), TenantID: tenantID, Name: "Website admin", Description: "Manages the website: published data, pages, events, website users.", TechnicalName: new("website_admin")},
 	} {
 		if _, err := roles.Upsert(ctx, r, []string{"id"}, ""); err != nil {
 			return fmt.Errorf("seed website roles: %w", err)

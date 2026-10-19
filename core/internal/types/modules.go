@@ -1,15 +1,15 @@
 package types
 
 import (
-	"github.com/dgraph-io/ristretto"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/rogpeppe/go-internal/cache"
 )
 
 // Vente fields
 type Vente struct {
-	ID         string                 `json:"id"`
-	Montant    float64                `json:"montant"`
-	Extensions map[string]interface{} `json:"extensions"`
+	ID         string         `json:"id"`
+	Montant    float64        `json:"montant"`
+	Extensions map[string]any `json:"extensions"`
 }
 
 // Migration fields
@@ -57,6 +57,6 @@ type ModuleCache struct {
 	// Waiting for implementation, commented to run linters while it's not used
 	//config *cache.Cache
 	_ *cache.Cache
-	// wasm   *ristretto.Cache
-	_ *ristretto.Cache
+	// wasm   *ristretto.Cache[string, []byte] (v2 is generic over key and value)
+	_ *ristretto.Cache[string, []byte]
 }

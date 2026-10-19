@@ -11,7 +11,6 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -103,10 +102,10 @@ func TestList(t *testing.T) {
 	target := "/api/v1/notebook_pages?table=crm&record=" + recordID.String()
 
 	t.Run("returns pages ordered by position, envelope shape", func(t *testing.T) {
-		p1 := NotebookPage{BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: recordID, Title: "First", Position: 0}
-		p1.ID = uuid.New()
-		p2 := NotebookPage{BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: recordID, Title: "Second", Position: 1}
-		p2.ID = uuid.New()
+		p1 := NotebookPage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, Title: "First", Position: 0,
+			ID: uuid.New()}
+		p2 := NotebookPage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, Title: "Second", Position: 1,
+			ID: uuid.New()}
 		store := &stubStore{listed: []NotebookPage{p1, p2}}
 
 		rec := serve(t, NewHandler(store).List, http.MethodGet, target, nil, identity, nil)
@@ -156,8 +155,8 @@ func TestCreate(t *testing.T) {
 	recordID := uuid.New()
 
 	t.Run("creates a page at the next position, tenant-pinned", func(t *testing.T) {
-		existing := NotebookPage{Title: "Existing", Position: 0}
-		existing.ID = uuid.New()
+		existing := NotebookPage{Title: "Existing", Position: 0,
+			ID: uuid.New()}
 		store := &stubStore{listed: []NotebookPage{existing}}
 		body := `{"table_name":"crm","record_id":"` + recordID.String() + `","title":"Meeting notes"}`
 
@@ -219,10 +218,10 @@ func TestUpdate(t *testing.T) {
 
 	t.Run("rewrites title and content, leaves the anchor/position alone", func(t *testing.T) {
 		existing := NotebookPage{
-			BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: "crm", RecordID: uuid.New(),
+			TenantID: identity.TenantID, TableName: "crm", RecordID: uuid.New(),
 			Title: "Old title", Position: 2, Content: "old body",
-		}
-		existing.ID = uuid.New()
+
+			ID: uuid.New()}
 		store := &stubStore{found: existing}
 		body := `{"title":"New title","content":"new body"}`
 

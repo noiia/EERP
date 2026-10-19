@@ -118,14 +118,14 @@ func CreateInvoice(ctx context.Context, ex orm.Executor, req InvoiceRequest) (In
 	tax := total - subtotal
 	inv := Invoice{Number: number, IssueDate: &now, Subject: req.Subject, CustomerID: req.CustomerID,
 		CustomerName: req.CustomerName, CustomerEmail: req.CustomerEmail, Status: "sent",
-		Subtotal: &subtotal, TaxAmount: &tax, Total: &total}
-	inv.TenantID = req.TenantID
+		Subtotal: &subtotal, TaxAmount: &tax, Total: &total,
+		TenantID: req.TenantID}
 	if inv, err = orm.MustRepo[Invoice](ex).Create(ctx, inv); err != nil {
 		return Invoice{}, fmt.Errorf("sale: create invoice: %w", err)
 	}
 	line := SaleLine{InvoiceID: inv.ID, VariantID: req.VariantID, VariantName: name, Quantity: req.Quantity,
-		TaxRate: rate, UnitPrice: price, Subtotal: subtotal, Total: total}
-	line.TenantID = req.TenantID
+		TaxRate: rate, UnitPrice: price, Subtotal: subtotal, Total: total,
+		TenantID: req.TenantID}
 	created, err := orm.MustRepo[SaleLine](ex).Create(ctx, line)
 	if err != nil {
 		return Invoice{}, fmt.Errorf("sale: create invoice line: %w", err)

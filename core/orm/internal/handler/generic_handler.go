@@ -270,12 +270,10 @@ func (h *GenericHandler) Create(c *echo.Context) error {
 
 	clean, err := crud.ValidateRequest(h.meta, body, true)
 	if err != nil {
-		var ve *crud.ValidationError
-		if errors.As(err, &ve) {
+		if ve, ok := errors.AsType[*crud.ValidationError](err); ok {
 			return validationJSON(c, err.Error(), ve.Missing)
 		}
-		var ge *crud.GeoValidationError
-		if errors.As(err, &ge) {
+		if ge, ok := errors.AsType[*crud.GeoValidationError](err); ok {
 			return validationJSON(c, err.Error(), []string{ge.Field})
 		}
 		return err
@@ -304,12 +302,10 @@ func (h *GenericHandler) Update(c *echo.Context) error {
 
 	clean, err := crud.ValidateRequest(h.meta, body, false)
 	if err != nil {
-		var ve *crud.ValidationError
-		if errors.As(err, &ve) {
+		if ve, ok := errors.AsType[*crud.ValidationError](err); ok {
 			return validationJSON(c, err.Error(), ve.Missing)
 		}
-		var ge *crud.GeoValidationError
-		if errors.As(err, &ge) {
+		if ge, ok := errors.AsType[*crud.GeoValidationError](err); ok {
 			return validationJSON(c, err.Error(), []string{ge.Field})
 		}
 		return err
@@ -332,8 +328,7 @@ func (h *GenericHandler) Update(c *echo.Context) error {
 // Migrate() report the caller's mistake instead of a 500. The pg error is
 // wrapped, not echoed: the error handler logs it (constraint name included).
 func mapWriteErr(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		switch pgErr.Code {
 		case "23505":
 			return echo.NewHTTPError(http.StatusConflict, "a record with this value already exists").Wrap(err)

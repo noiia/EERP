@@ -28,7 +28,7 @@ func TestCalendar(t *testing.T) {
 			t.Errorf("calendar lacks %q:\n%s", want, out)
 		}
 	}
-	for _, line := range strings.Split(out, "\r\n") {
+	for line := range strings.SplitSeq(out, "\r\n") {
 		if len(line) > 75 {
 			t.Errorf("line longer than 75 octets: %q", line)
 		}

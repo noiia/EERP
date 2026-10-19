@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -139,8 +140,7 @@ func refuse(status int, code, msg string) error { return &workflowError{status, 
 
 // reply turns a workflow error into its envelope; any other error propagates.
 func reply(c *echo.Context, err error) error {
-	var we *workflowError
-	if errors.As(err, &we) {
+	if we, ok := errors.AsType[*workflowError](err); ok {
 		return errorJSON(c, we.status, we.code, we.msg)
 	}
 	return err
@@ -224,9 +224,7 @@ func (h *WorkflowHandler) answer(c *echo.Context, k docKind, tenant, id uuid.UUI
 		return err
 	}
 	out := map[string]any{"record": rec}
-	for key, v := range extra {
-		out[key] = v
-	}
+	maps.Copy(out, extra)
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -481,16 +479,16 @@ func convertQuote(ctx context.Context, tx *orm.Tx, q Quote, lines []QuoteLine, c
 		CustomerAddressCountry: q.CustomerAddressCountry,
 		Status:                 "draft", QuoteID: &quoteID,
 		PaymentMethod: q.PaymentMethod, PaymentTerms: q.PaymentTerms, LegalNotice: q.LegalNotice,
-	}
-	inv.TenantID = q.TenantID
+
+		TenantID: q.TenantID}
 
 	saleLines := make([]SaleLine, len(lines))
 	for i, l := range lines {
 		sl := SaleLine{
 			VariantID: l.VariantID, VariantName: l.VariantName, Quantity: l.Quantity,
 			Unit: l.Unit, TaxRate: l.TaxRate, UnitPrice: l.UnitPrice,
-		}
-		sl.TenantID = q.TenantID
+
+			TenantID: q.TenantID}
 		sl.Subtotal, sl.Total = computeLineTotal(l.Quantity*l.UnitPrice, l.TaxRate, nil, taxIncluded)
 		saleLines[i] = sl
 	}

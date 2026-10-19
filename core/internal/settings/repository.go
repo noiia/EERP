@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -53,7 +52,7 @@ func (r *Repository) Get(ctx context.Context, tenantID, companyID uuid.UUID, key
 // is live now," even if it was previously cleared.
 func (r *Repository) Set(ctx context.Context, tenantID, companyID uuid.UUID, key, value string) error {
 	_, err := r.settings.Upsert(ctx,
-		AppSettings{BaseModel: model.BaseModel{TenantID: tenantID}, CompanyID: &companyID, Key: key, Value: value},
+		AppSettings{TenantID: tenantID, CompanyID: &companyID, Key: key, Value: value},
 		settingsConflictColumns,
 		"value = EXCLUDED.value, updated_at = now(), deleted_at = NULL",
 	)

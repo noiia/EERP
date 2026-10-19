@@ -603,7 +603,7 @@ func TestBookingFlow(t *testing.T) {
 
 	t.Run("appointment slots", func(t *testing.T) {
 		apptID := newEvent(map[string]any{"name": "Appt", "kind": "appointment", "published": true, "slot_minutes": 60, "slot_capacity": 1, "min_notice_hours": 0, "timezone": "UTC"})
-		for wd := 0; wd < 7; wd++ {
+		for wd := range 7 {
 			mustCreate("/api/v1/event_availability", map[string]any{"event_id": apptID, "weekday": wd, "from_time": "09:00", "to_time": "12:00"})
 		}
 		from := time.Now().Add(48 * time.Hour).UTC().Truncate(24 * time.Hour)

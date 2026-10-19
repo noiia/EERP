@@ -178,7 +178,7 @@ func (p *Provider) ParseWebhook(ctx context.Context, tenant uuid.UUID, body []by
 func validSignature(header string, body []byte, secret string, now time.Time) bool {
 	var ts int64
 	var sigs []string
-	for _, part := range strings.Split(header, ",") {
+	for part := range strings.SplitSeq(header, ",") {
 		k, v, _ := strings.Cut(strings.TrimSpace(part), "=")
 		switch k {
 		case "t":

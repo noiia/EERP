@@ -63,11 +63,9 @@ func TestBooking_LinksANativeContact(t *testing.T) {
 	// Concurrent first bookings with one email create one contact.
 	var wg sync.WaitGroup
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = f.svc.Book(ctx, f.tenant, BookRequest{EventID: ev.ID, SessionID: &s.ID, Seats: 1, Email: "race@x.io", Name: "R"})
-		}()
+		})
 	}
 	wg.Wait()
 	var n int

@@ -102,7 +102,7 @@ func TestService_ActivityLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 50; i++ { // a tight loop must be throttled
+	for i := range 50 { // a tight loop must be throttled
 		run.Progress(i, "step")
 	}
 	run.Finish(errors.New("boom"), "", nil)

@@ -120,7 +120,7 @@ func (h *RightsHandler) CreateViewPermission(c *echo.Context) error {
 	}
 	for _, rt := range toTag {
 		right := auth.RoleViewPermissionRight{
-			BaseModel:            model.BaseModel{TenantID: identity.TenantID},
+			TenantID:             identity.TenantID,
 			RoleViewPermissionID: created.ID,
 			AccountRoleTypeID:    rt.id,
 		}

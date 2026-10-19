@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"strconv"
@@ -59,9 +60,7 @@ func withRequired(t *testing.T, table string, fields map[string]any) map[string]
 			body[c.Column] = zero
 		}
 	}
-	for k, v := range fields {
-		body[k] = v
-	}
+	maps.Copy(body, fields)
 	return body
 }
 

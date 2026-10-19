@@ -101,7 +101,7 @@ The pre-ADR-009 code created a single `wasmtime.Store` in `main.go` and
 instantiated every WASM module into it. That was fine when nothing was ever
 unloaded, but `Registry.Reload` needs to replace a module's instance
 without disturbing every other module sharing the same `Store` — and
-wasmtime-go (v15) exposes no per-instance free, only whole-`Store` teardown
+wasmtime-go (v15 then; still true of v49) exposes no per-instance free, only whole-`Store` teardown
 via its Go finalizer. So each module now gets its own `Store` (all still
 sharing the one `Engine`, which is designed to be shared); `Reload` builds
 a fresh `Store`, re-instantiates into it, and drops the old reference for

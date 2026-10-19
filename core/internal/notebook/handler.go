@@ -11,7 +11,6 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -135,7 +134,7 @@ func (h *Handler) Create(c *echo.Context) error {
 	}
 
 	created, err := h.store.Create(c.Request().Context(), NotebookPage{
-		BaseModel: model.BaseModel{TenantID: identity.TenantID}, TableName: req.TableName, RecordID: recordID,
+		TenantID: identity.TenantID, TableName: req.TableName, RecordID: recordID,
 		Title: title, Position: len(existing), Content: req.Content,
 	})
 	if err != nil {

@@ -9,7 +9,6 @@ import (
 	"core/internal/testdb"
 	_ "core/modules/auth"
 	_ "core/modules/notify"
-	"core/orm/model"
 
 	"github.com/google/uuid"
 )
@@ -57,7 +56,7 @@ func setup(t *testing.T) fixture {
 func create(t *testing.T, f fixture, tenant uuid.UUID, owner *uuid.UUID, category string) notify.Notification {
 	t.Helper()
 	n, err := f.repo.Create(context.Background(), notify.Notification{
-		BaseModel: model.BaseModel{TenantID: tenant}, UserID: owner, Category: category,
+		TenantID: tenant, UserID: owner, Category: category,
 		Kind: "message", Title: "t", Link: "/x",
 	})
 	if err != nil {
@@ -179,7 +178,7 @@ func TestSweepAndFailInterrupted(t *testing.T) {
 	running, done := "running", "done"
 	old := time.Now().Add(-40 * 24 * time.Hour)
 	mk := func(owner *uuid.UUID, status *string, finished *time.Time) uuid.UUID {
-		n, err := f.repo.Create(ctx, notify.Notification{BaseModel: model.BaseModel{TenantID: f.tenant},
+		n, err := f.repo.Create(ctx, notify.Notification{TenantID: f.tenant,
 			UserID: owner, Category: "cron", Kind: "activity", Title: "t", Link: "/x", Status: status, FinishedAt: finished})
 		if err != nil {
 			t.Fatal(err)
@@ -226,7 +225,7 @@ func TestFeed_InitiatorSeesOwnActivity(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	running := "running"
-	n, err := f.repo.Create(ctx, notify.Notification{BaseModel: model.BaseModel{TenantID: f.tenant},
+	n, err := f.repo.Create(ctx, notify.Notification{TenantID: f.tenant,
 		Category: "dev_seed", Kind: "activity", Title: "Seeding", Link: "/settings/developer", Status: &running, ActorID: &f.bob})
 	if err != nil {
 		t.Fatal(err)
