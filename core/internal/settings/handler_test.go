@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -1928,6 +1929,72 @@ func TestPutStatusBarSettings(t *testing.T) {
 			}
 			if store.gotValue != tt.wantValue {
 				t.Errorf("value = %s, want %s", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
+// ── GET|PUT /settings/accounts, GET /me/preferences failure paths ────────────
+
+func TestAccountsSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	t.Run("unset reads false, a saved value reads back", func(t *testing.T) {
+		store := &stubStore{}
+		h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
+		rec := serve(t, h.GetAccountsSettings, http.MethodGet, "/settings/accounts", "", identity)
+		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"username_at_format":false}` {
+			t.Fatalf("unset = %d %s", rec.Code, rec.Body.String())
+		}
+		rec = serve(t, h.PutAccountsSettings, http.MethodPut, "/settings/accounts", `{"username_at_format":true}`, identity)
+		if rec.Code != http.StatusNoContent || store.gotKey != AccountsUsernameAtFormatKey || store.gotValue != `{"username_at_format":true}` {
+			t.Fatalf("put = %d, stored %q=%q", rec.Code, store.gotKey, store.gotValue)
+		}
+		store.values = map[string]string{AccountsUsernameAtFormatKey: store.gotValue}
+		rec = serve(t, h.GetAccountsSettings, http.MethodGet, "/settings/accounts", "", identity)
+		if strings.TrimSpace(rec.Body.String()) != `{"username_at_format":true}` {
+			t.Errorf("after put = %s", rec.Body.String())
+		}
+		// The preferences carry it too.
+		rec = serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+		if !strings.Contains(rec.Body.String(), `"username_at_format":true`) {
+			t.Errorf("preferences = %s", rec.Body.String())
+		}
+	})
+
+	t.Run("an unreadable stored value reads false", func(t *testing.T) {
+		h := NewHandler(&stubUsers{}, &stubStore{values: map[string]string{AccountsUsernameAtFormatKey: "{nope"}}, &stubCompanies{}, "development")
+		rec := serve(t, h.GetAccountsSettings, http.MethodGet, "/settings/accounts", "", identity)
+		if strings.TrimSpace(rec.Body.String()) != `{"username_at_format":false}` {
+			t.Errorf("unreadable = %s", rec.Body.String())
+		}
+	})
+
+	failures := []struct {
+		name      string
+		handler   func(h *Handler) echo.HandlerFunc
+		method    string
+		body      string
+		users     *stubUsers
+		store     *stubStore
+		companies *stubCompanies
+		want      int
+	}{
+		{"put: malformed body", func(h *Handler) echo.HandlerFunc { return h.PutAccountsSettings }, http.MethodPut, "{", &stubUsers{}, &stubStore{}, &stubCompanies{}, http.StatusBadRequest},
+		{"put: no active company", func(h *Handler) echo.HandlerFunc { return h.PutAccountsSettings }, http.MethodPut, `{}`, &stubUsers{}, &stubStore{}, &stubCompanies{resolveErr: errors.New("db down")}, http.StatusInternalServerError},
+		{"put: store refuses", func(h *Handler) echo.HandlerFunc { return h.PutAccountsSettings }, http.MethodPut, `{}`, &stubUsers{}, &stubStore{setErr: errors.New("db down")}, &stubCompanies{}, http.StatusInternalServerError},
+		{"get: no active company", func(h *Handler) echo.HandlerFunc { return h.GetAccountsSettings }, http.MethodGet, "", &stubUsers{}, &stubStore{}, &stubCompanies{resolveErr: errors.New("db down")}, http.StatusInternalServerError},
+		{"get: store fails", func(h *Handler) echo.HandlerFunc { return h.GetAccountsSettings }, http.MethodGet, "", &stubUsers{}, &stubStore{getErr: errors.New("db down")}, &stubCompanies{}, http.StatusInternalServerError},
+		{"preferences: account gone", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{findErr: orm.ErrNotFound}, &stubStore{}, &stubCompanies{}, http.StatusUnauthorized},
+		{"preferences: user lookup fails", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{findErr: errors.New("db down")}, &stubStore{}, &stubCompanies{}, http.StatusInternalServerError},
+		{"preferences: no active company", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{}, &stubStore{}, &stubCompanies{resolveErr: errors.New("db down")}, http.StatusInternalServerError},
+		{"preferences: store fails", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{}, &stubStore{getErr: errors.New("db down")}, &stubCompanies{}, http.StatusInternalServerError},
+	}
+	for _, tt := range failures {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(tt.users, tt.store, tt.companies, "development")
+			if rec := serve(t, tt.handler(h), tt.method, "/", tt.body, identity); rec.Code != tt.want {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.want, rec.Body.String())
 			}
 		})
 	}

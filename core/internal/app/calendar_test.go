@@ -47,6 +47,29 @@ func TestCalendarFeeds(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(string(body), uid) || !strings.Contains(string(body), "(0/4)") {
 		t.Errorf("staff feed: %d\n%s", code, body)
 	}
+	// A confirmed appointment booking in range shows in the staff feed too;
+	// a cancelled one doesn't. A malformed token is 404.
+	slot := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Minute)
+	var bookingID, cancelledID string
+	for _, b := range []struct {
+		status string
+		id     *string
+	}{{"confirmed", &bookingID}, {"cancelled", &cancelledID}} {
+		if err := c.a.db.DB.QueryRow(ctx, `INSERT INTO event_booking (tenant_id, event_id, name, email, seats, status, slot_start, slot_end, starts_at)
+			SELECT tenant_id, id, 'Ada', 'ada@cal.test', 1, $2, $3, $4, $3 FROM event WHERE id = $1 RETURNING id`,
+			eventID, b.status, slot, slot.Add(30*time.Minute)).Scan(b.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _, _ = c.a.db.DB.Exec(ctx, `DELETE FROM event_booking WHERE event_id = $1`, eventID) })
+	_, body = anon.do(http.MethodGet, first, nil)
+	if !strings.Contains(string(body), "booking-"+bookingID) || strings.Contains(string(body), "booking-"+cancelledID) {
+		t.Errorf("staff feed bookings:\n%s", body)
+	}
+	if code, _ := anon.do(http.MethodGet, "/api/v1/calendar/short.ics", nil); code != http.StatusNotFound {
+		t.Errorf("malformed feed token = %d, want 404", code)
+	}
+
 	_, body = c.do(http.MethodGet, "/api/v1/me/event_feed", nil)
 	if decode(t, body)["enabled"] != true {
 		t.Errorf("feed status = %s, want enabled", body)

@@ -313,7 +313,7 @@ WHERE $2::int IS NOT NULL`},
 
 	{"quote", `
 INSERT INTO quote (tenant_id, number, issue_date, due_date, subject, customer_id, customer_name, customer_email,
-  customer_address_city, customer_address_country, status, reference,
+  customer_address_city, customer_address_country, status,
   issuer_name, issuer_address_number, issuer_address_street, issuer_address_zip_code, issuer_address_city, issuer_address_country, issuer_phone, issuer_email,
   payment_method, payment_terms, created_at)
 SELECT $1, 'SQ-' || lpad(i::text, 6, '0'), d.issued, d.issued + interval '30 days',
@@ -321,7 +321,6 @@ SELECT $1, 'SQ-' || lpad(i::text, 6, '0'), d.issued, d.issued + interval '30 day
   c.id, c.name, c.email,
   (ARRAY['Paris','London','New York','Berlin','Madrid','Montreal'])[1 + i % 6], (ARRAY['France','United Kingdom','United States','Germany','Spain','Canada'])[1 + i % 6],
   (ARRAY['draft','sent','sent','accepted','accepted','declined','expired'])[1 + i % 7],
-  'PO-' || (100000 + i),
   co.name, co.address_number, co.address_street, co.address_zip_code, co.address_city, co.address_country, co.phone, co.email,
   (ARRAY['Bank transfer','Credit card','Check'])[1 + i % 3], (ARRAY['Net 30','Net 15','Due on receipt'])[1 + i % 3],
   d.issued

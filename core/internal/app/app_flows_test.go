@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"core/internal/auth"
 	"core/internal/types"
 	"core/orm"
+
+	"github.com/google/uuid"
 )
 
 // flow is a client that also hard-deletes, at cleanup, every row it created —
@@ -393,6 +396,7 @@ func TestApp_ProductFlow(t *testing.T) {
 	taxIncluded := strings.Contains(string(f.expect(http.MethodGet, "/api/v1/settings/tax", nil, http.StatusOK)), "tax_included")
 	invoice := f.create("invoice", map[string]any{"customer_name": "Flow"})
 	line := f.create("sale_line", map[string]any{"invoice_id": invoice, "variant_id": variant, "quantity": 2})
+	t.Cleanup(func() { _, _ = f.a.db.DB.Exec(ctx, `DELETE FROM sale_line_tax WHERE sale_line_id = $1`, line) })
 	links := string(f.expect(http.MethodGet, "/api/v1/sale_line_tax?filter[sale_line_id]="+line, nil, http.StatusOK))
 	if !strings.Contains(links, vat) || !strings.Contains(links, levy) {
 		t.Errorf("line tax links = %s, want the product's two taxes", links)
@@ -405,9 +409,22 @@ func TestApp_ProductFlow(t *testing.T) {
 	if got := number(t, f.expect(http.MethodGet, "/api/v1/sale_line/"+line, nil, http.StatusOK), "total"); math.Abs(got-want) > 1e-9 {
 		t.Errorf("line total = %v, want %v", got, want)
 	}
-	for _, l := range decode(t, []byte(links))["data"].([]any) {
-		f.expect(http.MethodDelete, "/api/v1/sale_line_tax/"+l.(map[string]any)["id"].(string), nil, http.StatusNoContent)
+	// Switching the line to another product swaps its taxes for that
+	// product's (here none); a plain quantity edit keeps them.
+	chairVariant := f.create("product_variant", map[string]any{"product_id": p2})
+	f.expect(http.MethodPut, "/api/v1/sale_line/"+line, map[string]any{"quantity": 3}, http.StatusOK)
+	if got := string(f.expect(http.MethodGet, "/api/v1/sale_line_tax?filter[sale_line_id]="+line, nil, http.StatusOK)); !strings.Contains(got, vat) {
+		t.Errorf("a quantity edit dropped the line's taxes: %s", got)
 	}
+	f.expect(http.MethodPut, "/api/v1/sale_line/"+line, map[string]any{"variant_id": chairVariant}, http.StatusOK)
+	if got := string(f.expect(http.MethodGet, "/api/v1/sale_line_tax?filter[sale_line_id]="+line, nil, http.StatusOK)); strings.Contains(got, vat) || strings.Contains(got, levy) {
+		t.Errorf("another product kept the old taxes: %s", got)
+	}
+	// 3 × 50, untaxed.
+	if got := number(t, f.expect(http.MethodGet, "/api/v1/sale_line/"+line, nil, http.StatusOK), "total"); math.Abs(got-150) > 1e-9 {
+		t.Errorf("line total after switching product = %v, want 150", got)
+	}
+	f.expect(http.MethodPut, "/api/v1/sale_line/"+line, map[string]any{"variant_id": invoice}, http.StatusUnprocessableEntity)
 
 	// A quote line has no tax links: its rate is the product's percentage taxes.
 	quote := f.create("quote", map[string]any{"customer_name": "Flow"})
@@ -415,4 +432,105 @@ func TestApp_ProductFlow(t *testing.T) {
 	if got := number(t, f.expect(http.MethodGet, "/api/v1/quote_line/"+quoteLine, nil, http.StatusOK), "tax_rate"); math.Abs(got-0.2) > 1e-9 {
 		t.Errorf("quote line tax_rate = %v, want 0.2", got)
 	}
+}
+
+// TestApp_EventSettings: the Event app's reminder and waiting-list settings —
+// defaults, a round trip, and every refusal.
+func TestApp_EventSettings(t *testing.T) {
+	f := newFlow(t)
+	before := f.expect(http.MethodGet, "/api/v1/settings/events", nil, http.StatusOK)
+	t.Cleanup(func() { f.do(http.MethodPut, "/api/v1/settings/events", json.RawMessage(before)) })
+
+	got := decode(t, f.expect(http.MethodPut, "/api/v1/settings/events", map[string]any{"reminder_hours": 48, "waitlist_claim_hours": 6}, http.StatusOK))
+	if got["reminder_hours"] != 48.0 || got["waitlist_claim_hours"] != 6.0 {
+		t.Errorf("saved = %v", got)
+	}
+	got = decode(t, f.expect(http.MethodGet, "/api/v1/settings/events", nil, http.StatusOK))
+	if got["reminder_hours"] != 48.0 || got["waitlist_claim_hours"] != 6.0 {
+		t.Errorf("read back = %v", got)
+	}
+	// An absent claim window takes the default (12 h).
+	got = decode(t, f.expect(http.MethodPut, "/api/v1/settings/events", map[string]any{"reminder_hours": 0}, http.StatusOK))
+	if got["waitlist_claim_hours"] != 12.0 {
+		t.Errorf("default claim window = %v, want 12", got["waitlist_claim_hours"])
+	}
+	for _, body := range []any{
+		map[string]any{"reminder_hours": -1},
+		map[string]any{"reminder_hours": 721},
+		map[string]any{"reminder_hours": 24, "waitlist_claim_hours": 169},
+		"not an object",
+	} {
+		f.expect(http.MethodPut, "/api/v1/settings/events", body, http.StatusBadRequest)
+	}
+}
+
+// TestApp_DevSeedRoutes: the full demo seed's routes up to the point where a
+// real (100 000-row) seed would start — the group list, refusals, and the
+// development-only gate.
+func TestApp_DevSeedRoutes(t *testing.T) {
+	c := buildApp(t)
+	code, body := c.do(http.MethodGet, "/api/v1/dev_seed", nil)
+	if code != http.StatusOK {
+		t.Fatalf("groups: %d %s", code, body)
+	}
+	groups, _ := decode(t, body)["data"].([]any)
+	keys := map[string]bool{}
+	for _, g := range groups {
+		keys[g.(map[string]any)["key"].(string)] = true
+	}
+	for _, want := range []string{"base", "products", "contacts", "quotes", "invoices"} {
+		if !keys[want] {
+			t.Errorf("groups %v lack %q", keys, want)
+		}
+	}
+	if code, body := c.do(http.MethodPost, "/api/v1/dev_seed", map[string]any{"groups": []string{"no-such-group"}}); code != http.StatusBadRequest {
+		t.Errorf("unknown group = %d %s, want 400", code, body)
+	}
+	if code, _ := c.do(http.MethodPost, "/api/v1/dev_seed", "not an object"); code != http.StatusBadRequest {
+		t.Errorf("malformed body = %d, want 400", code)
+	}
+
+	prod := buildAppWith(t, func(cfg *types.Config) { cfg.Environment = "production" })
+	if code, _ := prod.do(http.MethodPost, "/api/v1/dev_seed", map[string]any{}); code != http.StatusForbidden {
+		t.Errorf("seed outside development = %d, want 403", code)
+	}
+}
+
+// TestApp_SaleAndProductRefusals: every route the sale workflow and the
+// product reference middlewares sit on refuses malformed input and unknown
+// documents cleanly.
+func TestApp_SaleAndProductRefusals(t *testing.T) {
+	f := newFlow(t)
+	unknown := uuid.NewString()
+	tests := []struct {
+		method, path string
+		body         any
+		want         int
+	}{
+		{http.MethodPost, "/api/v1/quote", "not an object", http.StatusBadRequest},
+		{http.MethodPost, "/api/v1/invoice", "not an object", http.StatusBadRequest},
+		{http.MethodPut, "/api/v1/quote/" + unknown, map[string]any{"status": "draft"}, http.StatusNotFound},
+		{http.MethodPut, "/api/v1/quote/not-a-uuid", map[string]any{}, http.StatusBadRequest},
+		{http.MethodPost, "/api/v1/quote/" + unknown + "/confirm", nil, http.StatusNotFound},
+		{http.MethodPost, "/api/v1/quote/" + unknown + "/send", nil, http.StatusNotFound},
+		{http.MethodPost, "/api/v1/quote/" + unknown + "/accept", nil, http.StatusNotFound},
+		{http.MethodPost, "/api/v1/quote/not-a-uuid/accept", nil, http.StatusBadRequest},
+		{http.MethodPost, "/api/v1/quote/not-a-uuid/send", nil, http.StatusBadRequest},
+		{http.MethodPost, "/api/v1/invoice/" + unknown + "/confirm", nil, http.StatusNotFound},
+		{http.MethodPost, "/api/v1/invoice/" + unknown + "/send", nil, http.StatusNotFound},
+		{http.MethodPost, "/api/v1/product", "not an object", http.StatusBadRequest},
+		{http.MethodPut, "/api/v1/product/" + unknown, map[string]any{"name": "x"}, http.StatusNotFound},
+	}
+	for _, tc := range tests {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			f.expect(tc.method, tc.path, tc.body, tc.want)
+		})
+	}
+
+	// A malformed body on an existing quote and product.
+	quote := f.create("quote", map[string]any{"customer_name": "Refusals"})
+	f.expect(http.MethodPut, "/api/v1/quote/"+quote, "not an object", http.StatusBadRequest)
+	f.expect(http.MethodPut, "/api/v1/settings/warehouse", map[string]any{"auto_reference": true}, http.StatusOK)
+	product := f.createAt("/api/v1/product", "product", map[string]any{"name": "Refusals", "unit_price": 1})
+	f.expect(http.MethodPut, "/api/v1/product/"+product, "not an object", http.StatusBadRequest)
 }

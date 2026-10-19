@@ -1,15 +1,18 @@
 profile: core/cover.out
 
 # Overall gate, measured with -coverpkg=./... against a fresh database (TEST_DSN),
-# exactly as test-check.yml runs it. Floored just under the current 74.8% so it
-# blocks regressions; raise it back toward 80 as dbmanage restore/extract and the
-# WASM loader (module/load.go) gain tests. Pitfall: the figure is toolchain-
-# dependent — Go 1.27 counts statements differently and reports ~81% on the same
-# code, so measure with the Go version CI pins (setup-go below), not a newer local one.
+# exactly as test-check.yml runs it (Go 1.27). Floored just under the current
+# ~85.5% so it blocks regressions. What's still uncovered is mostly what needs an
+# external service CI doesn't run: a live LDAP directory (auth/providers/ldap.go),
+# pg_dump/pg_restore matching the server (dbmanage extract/restore), the process
+# entry point and App.Run's background loops. Pitfall: the figure is
+# toolchain-dependent — measure with the Go version CI pins (setup-go in
+# test-check.yml), not another local one; and against a FRESH database, since a
+# migrated dev one keeps columns a fresh one no longer has.
 # Per-file/per-package floors stay off: the entry point and test helpers are
 # legitimately thin.
 threshold:
-  total: 74
+  total: 85
 
 # override:
 #   # Increase coverage threshold to 100% for `foo` package 

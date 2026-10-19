@@ -177,7 +177,11 @@ func (h *ProductHandler) OnUpdate(next echo.HandlerFunc) echo.HandlerFunc {
 		err = h.db.QueryRow(ctx, `SELECT reference FROM product WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
 			id, identity.TenantID).Scan(&ref)
 		if errors.Is(err, orm.ErrNotFound) {
-			return next(c) // the generic handler answers the 404
+			// The generic handler answers the 404 — with the body put back.
+			if err := writeBody(c, body); err != nil {
+				return err
+			}
+			return next(c)
 		}
 		if err != nil {
 			return err

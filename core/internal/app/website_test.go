@@ -262,6 +262,32 @@ func TestWebsiteProfileAndAdmin(t *testing.T) {
 	if code, _ := site.do(http.MethodGet, "/api/v1/website_admin/users", nil); code != http.StatusForbidden {
 		t.Errorf("website token on website_admin = %d, want 403", code)
 	}
+	// Re-enabling restores the sign-in; bad ids and bodies are refused.
+	if code, body := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"disabled": false, "surname": "Back"}); code != http.StatusNoContent {
+		t.Fatalf("re-enable: %d %s", code, body)
+	}
+	if code, _ := anon.do(http.MethodPost, "/api/v1/website/auth/login",
+		map[string]string{"email": email, "password": "correct horse"}); code != http.StatusOK {
+		t.Errorf("re-enabled visitor login = %d, want 200", code)
+	}
+	for _, tc := range []struct {
+		path string
+		body any
+		want int
+	}{
+		{"/api/v1/website_admin/users/not-a-uuid", map[string]any{"name": "X"}, http.StatusBadRequest},
+		{"/api/v1/website_admin/users/" + uuid.NewString(), map[string]any{"name": "X"}, http.StatusNotFound},
+		{"/api/v1/website_admin/users/" + uuid.NewString(), map[string]any{"disabled": true}, http.StatusNotFound},
+		{"/api/v1/website_admin/users/" + id, "not an object", http.StatusBadRequest},
+	} {
+		if code, _ := c.do(http.MethodPut, tc.path, tc.body); code != tc.want {
+			t.Errorf("PUT %s %v = %d, want %d", tc.path, tc.body, code, tc.want)
+		}
+	}
+	// Disabled again: the steps below expect the account gone.
+	if code, _ := c.do(http.MethodPut, "/api/v1/website_admin/users/"+id, map[string]any{"disabled": true}); code != http.StatusNoContent {
+		t.Fatalf("disable again: %d", code)
+	}
 
 	// Re-registering the freed address, then re-enabling the old account: 409.
 	if code, body := anon.do(http.MethodPost, "/api/v1/website/auth/signup",
@@ -637,6 +663,16 @@ func TestBookingFlow(t *testing.T) {
 		}
 		var anonID string
 		_ = c.a.db.DB.QueryRow(ctx, `SELECT id FROM event_booking WHERE email = $1 AND status = 'confirmed'`, email).Scan(&anonID)
+		// The visitor's own booking as an .ics; anyone else's, or a bad id, is 404.
+		code, body = site.do(http.MethodGet, "/api/v1/website/me/bookings/"+mine+"/calendar.ics", nil)
+		if code != http.StatusOK || !strings.Contains(string(body), "UID:booking-"+mine) {
+			t.Errorf("my booking calendar = %d\n%s", code, body)
+		}
+		for _, id := range []string{anonID, "not-a-uuid"} {
+			if code, _ := site.do(http.MethodGet, "/api/v1/website/me/bookings/"+id+"/calendar.ics", nil); code != http.StatusNotFound {
+				t.Errorf("calendar of booking %q = %d, want 404", id, code)
+			}
+		}
 		if code, _ := site.do(http.MethodPost, "/api/v1/website/me/bookings/"+anonID+"/cancel", nil); code != http.StatusNotFound {
 			t.Errorf("cancel someone else's booking = %d, want 404", code)
 		}

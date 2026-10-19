@@ -608,7 +608,11 @@ func (h *WorkflowHandler) guardOnUpdate(k docKind, next echo.HandlerFunc) echo.H
 		err = h.db.QueryRow(ctx, fmt.Sprintf(`SELECT number FROM %s WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, k.table),
 			id, identity.TenantID).Scan(&number)
 		if errors.Is(err, orm.ErrNotFound) {
-			return next(c) // the generic handler answers the 404
+			// The generic handler answers the 404 — with the body put back.
+			if err := writeBody(c, body); err != nil {
+				return err
+			}
+			return next(c)
 		}
 		if err != nil {
 			return err
