@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
@@ -9,7 +8,7 @@ import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { erpPath, useSessionStore, useT } from '@eerp/core-front'
+import { erpPath, useSessionStore, useT, ViewBanner } from '@eerp/core-front'
 import { authBffUrl } from '@/lib/auth-url'
 import type { LoginMethod, LoginMethods } from '@/lib/auth-methods'
 
@@ -68,7 +67,7 @@ function PasswordForm({ method }: { method: LoginMethod }) {
     <Box component="form" onSubmit={onSubmit}>
       <Stack spacing={2}>
         {method.label && <Typography variant="subtitle1">{method.label}</Typography>}
-        {error ? <Alert severity="error">{error}</Alert> : null}
+        {error ? <ViewBanner status="error">{error}</ViewBanner> : null}
         <TextField
           id="login-user"
           label={isLocal ? t('Email') : t('Username')}
@@ -128,9 +127,9 @@ export default function LoginScreen({ methods }: { methods: LoginMethods }) {
         {t('Sign in')}
       </Typography>
       {params.get('error') === 'sso' && (
-        <Alert severity="error">
+        <ViewBanner status="error">
           {t('Single sign-on failed. Try again or use another method.')}
-        </Alert>
+        </ViewBanner>
       )}
       {top.kind === 'password' ? (
         <PasswordForm key={top.id} method={top} />

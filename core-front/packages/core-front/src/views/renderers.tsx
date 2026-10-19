@@ -66,6 +66,7 @@ import { useRelationOps } from './relation-ops'
 import { junctionColumns, relationOf, type PendingManyToMany } from './relation-widgets'
 import { SearchBar } from './search-bar'
 import { StatusBar } from './status-bar'
+import { BannerScope, BannerSlot, ViewBanner } from './banner'
 import { resolveStatusBar, type StatusBarConfig } from '../api/status-bar-config'
 import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
@@ -599,6 +600,10 @@ function FormRenderer<T extends HasId>({
   }
 
   return (
+    // The form's banner scope: every error/notice raised anywhere in it — a
+    // save, a delete, a header button, a widget — shows in the slot between
+    // the toolbar and the form (banner.tsx).
+    <BannerScope>
     <Box
       component="form"
       onSubmit={onSubmit}
@@ -682,6 +687,7 @@ function FormRenderer<T extends HasId>({
         )}
         <FormListNav entity={descriptor.entity} recordId={recordId} />
       </Box>
+      <BannerSlot />
       {/* The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
           the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
           under that — a plain viewport media query, since this wrapper is
@@ -701,9 +707,7 @@ function FormRenderer<T extends HasId>({
         <Card sx={{ flex: 1, minWidth: 0, width: '100%' }}>
           <CardContent sx={{ p: 3 }}>
             <Stack spacing={2.5}>
-              {error ? (
-                <ErrorAlert error={serializeError(error)} fields={descriptor.fields} />
-              ) : null}
+              <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
               <ErrorAlert error={deleteError} />
               <PictureSizeProvider size={pictureSize}>
                 <LayoutForm
@@ -721,6 +725,7 @@ function FormRenderer<T extends HasId>({
         {chatterVisible ? <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} /> : null}
       </Box>
     </Box>
+    </BannerScope>
   )
 }
 
@@ -1285,6 +1290,9 @@ function TreeRenderer<T extends HasId>({
     </Stack>
   )
   return (
+    // The list's banner scope: errors from the list itself, a bulk delete,
+    // Kanban/Calendar moves or Graph show between the search row and the list.
+    <BannerScope>
     <Box>
       {title != null ? (
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
@@ -1306,11 +1314,10 @@ function TreeRenderer<T extends HasId>({
       ) : (
         searchRow
       )}
-      {bulkDeleteError ? (
-        <Typography variant="caption" color="error" sx={{ display: 'block', mb: 1 }}>
-          {bulkDeleteError}
-        </Typography>
-      ) : null}
+      <BannerSlot sx={{ mt: 2 }} />
+      <ViewBanner status="error" open={Boolean(bulkDeleteError)}>
+        {bulkDeleteError}
+      </ViewBanner>
       <ErrorAlert error={pageError} />
       <DisplayModeSwitcher
         entity={descriptor.entity}
@@ -1320,6 +1327,7 @@ function TreeRenderer<T extends HasId>({
       />
       {content}
     </Box>
+    </BannerScope>
   )
 }
 
@@ -1364,8 +1372,18 @@ function DashboardRenderer<T extends HasId>({
     createDashboardStore(descriptor, onRefresh ?? (async () => widgets ?? []), widgets ?? []),
   )
   const items = useStore(store, (s) => s.widgets)
+  const refreshError = useStore(store, (s) => s.error)
+  // A tile whose list view failed to load shows "—"; the banner says why.
+  const unavailable = items.filter((w) => typeof w.count !== 'number').map((w) => t(w.title))
 
   return (
+    // The dashboard's banner scope: its banners show above the tiles.
+    <BannerScope>
+    <BannerSlot />
+    <ErrorAlert error={refreshError ? serializeError(refreshError) : null} />
+    <ViewBanner status="warning" open={unavailable.length > 0}>
+      {t('Some counts could not be loaded')}: {unavailable.join(', ')}
+    </ViewBanner>
     <Grid container spacing={2}>
       {items.map((widget) => {
         // The server seeds count (number) or null when that list view failed to load.
@@ -1399,5 +1417,6 @@ function DashboardRenderer<T extends HasId>({
         )
       })}
     </Grid>
+    </BannerScope>
   )
 }

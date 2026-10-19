@@ -12,6 +12,8 @@ import { ErpUiStyle } from '../../src/components/ErpUiStyle'
 import { SettingsUsersRegistryInit } from '../../src/components/SettingsUsersRegistryInit'
 import { SessionHydrator } from '../../src/components/SessionHydrator'
 import {
+  BannerScope,
+  BannerSlot,
   ChatterOpsProvider,
   GraphOpsProvider,
   NotebookOpsProvider,
@@ -178,7 +180,14 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
                     '@media print': { p: 0, overflowX: 'visible' },
                   }}
                 >
-                  {children}
+                  {/* The page's banner scope: errors and notices raised by
+                      anything outside a form/list/dashboard (settings pages,
+                      the App Store's buttons…) show at the top of the page.
+                      Each view opens its own, nearer scope (banner.tsx). */}
+                  <BannerScope>
+                    <BannerSlot />
+                    {children}
+                  </BannerScope>
                 </Box>
               </SavedFilterOpsProvider>
             </ChatterOpsProvider>

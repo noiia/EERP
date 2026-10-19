@@ -3,9 +3,9 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import Typography from '@mui/material/Typography'
 import { ApiError } from '../api/errors'
 import { useT } from '../i18n/translate'
+import { ViewBanner } from './banner'
 import { evaluateCondition, type HeaderButtonDescriptor } from './descriptor'
 import { headerButtonRegistry, type HeaderButtonContext } from './header-button-actions'
 import { useRelationOps } from './relation-ops'
@@ -83,11 +83,10 @@ export function HeaderButtonContainer({
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      {error ? (
-        <Typography variant="caption" color="error">
-          {error}
-        </Typography>
-      ) : null}
+      {/* Shown in the view's banner slot (banner.tsx), not inline. */}
+      <ViewBanner status="error" open={Boolean(error)}>
+        {error}
+      </ViewBanner>
       {visible.map((button) => {
         // readOnly renders DISABLED, not omitted — unlike visible, which
         // unmounts. "Already generated this month" should still be seen,

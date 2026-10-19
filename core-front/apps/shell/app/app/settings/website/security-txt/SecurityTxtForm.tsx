@@ -1,11 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { previewSiteFile, saveSecurityTxt, type SecurityTxt } from '@/lib/website-settings'
 
 // RFC 3339 <-> the datetime-local input (local time, no zone).
@@ -77,7 +76,7 @@ export default function SecurityTxtForm({ initial }: { initial: SecurityTxt }) {
       <Button variant="contained" onClick={() => void save()} sx={{ alignSelf: 'flex-start' }}>
         {t('Save')}
       </Button>
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
       <Typography variant="subtitle2">{t('Served file')}</Typography>
       <Typography
         component="pre"

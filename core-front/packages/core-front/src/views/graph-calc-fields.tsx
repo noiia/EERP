@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -16,6 +15,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { GraphField, GraphFieldDraft } from '../api/graph'
 import { useT } from '../i18n/translate'
+import { BannerScope, BannerSlot, ViewBanner } from './banner'
 import { CALC_KEY_PREFIX } from './graph-aggregate'
 
 // Calculated-field UI for the Graph view's edit mode: the left-hand list
@@ -146,9 +146,12 @@ export function CalcFieldDialog({
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+      {/* The dialog's own banner scope: its warnings show at its top. */}
+      <BannerScope>
       <DialogTitle>{initial ? t('Edit calculated field') : t('Add calculated field')}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          <BannerSlot sx={{ mb: 0 }} />
           <TextField label={t('Label')} value={label} onChange={(e) => setLabel(e.target.value)} fullWidth />
           <TextField
             label={t('Formula')}
@@ -172,7 +175,9 @@ export function CalcFieldDialog({
             control={<Checkbox checked={dated} onChange={(e) => setDated(e.target.checked)} />}
             label={t('Date variable: compute for each dated line (e.g. each rent receipt)')}
           />
-          {error ? <Alert severity="warning">{error}</Alert> : null}
+          <ViewBanner status="warning" open={Boolean(error)}>
+            {error}
+          </ViewBanner>
         </Stack>
       </DialogContent>
       <DialogActions>
@@ -181,6 +186,7 @@ export function CalcFieldDialog({
           {initial ? t('Save') : t('Add')}
         </Button>
       </DialogActions>
+      </BannerScope>
     </Dialog>
   )
 }

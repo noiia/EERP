@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import Checkbox from '@mui/material/Checkbox'
@@ -9,7 +8,7 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { savePublished, type PublishedTable } from '@/lib/website-settings'
 
 // One card per table the website module declares: which columns the public
@@ -64,7 +63,7 @@ function TableCard({ table }: { table: PublishedTable }) {
             {t('Save')}
           </Button>
         </Stack>
-        {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+        {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
       </Stack>
     </Card>
   )

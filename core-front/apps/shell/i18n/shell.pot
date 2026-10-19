@@ -1724,3 +1724,6 @@ msgstr ""
 
 msgid "Changing the status bar requires the settings:views:write permission."
 msgstr ""
+
+msgid "Some counts could not be loaded"
+msgstr ""

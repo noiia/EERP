@@ -1,10 +1,9 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { setReportsLayout } from '@/lib/report-settings'
 
 // Settings -> Global settings -> Reports: the workspace-wide PDF report
@@ -67,7 +66,7 @@ export default function ReportsGlobalSettings({
           {t('Changing the reports letterhead requires the settings:reports:write permission.')}
         </Typography>
       )}
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

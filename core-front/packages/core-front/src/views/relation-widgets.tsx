@@ -37,6 +37,7 @@ import { useCompanyStore } from './company-store'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { serializeError } from '../api/errors'
+import { BannerScope, BannerSlot, ViewBanner } from './banner'
 import { ErrorAlert } from './error-alert'
 import { LayoutForm } from './layout-renderer'
 import { useNumberFormat } from './format-store'
@@ -406,12 +407,16 @@ function RelationCreateWizard({
 
   return (
     <Dialog open onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
+      {/* The wizard's own banner scope: its errors (and its fields') stay in
+          the dialog instead of going to the form behind it. */}
+      <BannerScope>
       <Box>
         <DialogTitle>
           {t('Create a new')} {t(entityDisplayName(rel.entity))}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
+            <BannerSlot sx={{ mb: 0 }} />
             <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
             {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
                 walks the target descriptor's normalized layout tree, so a
@@ -438,6 +443,7 @@ function RelationCreateWizard({
           </Button>
         </DialogActions>
       </Box>
+      </BannerScope>
     </Dialog>
   )
 }
@@ -557,16 +563,17 @@ function RelationMultiCreateWizard({
 
   return (
     <Dialog open onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
+      {/* Its own banner scope, like RelationCreateWizard's. */}
+      <BannerScope>
       <DialogTitle>
         {t('Add')} {t(entityDisplayName(targetRel.entity))}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
-          {error ? (
-            <Typography variant="caption" color="error">
-              {error}
-            </Typography>
-          ) : null}
+          <BannerSlot sx={{ mb: 0 }} />
+          <ViewBanner status="error" open={Boolean(error)}>
+            {error}
+          </ViewBanner>
           <Stack direction="row" spacing={2}>
             <TextField
               label={t('Search')}
@@ -613,6 +620,7 @@ function RelationMultiCreateWizard({
           {t('Add')} {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
         </Button>
       </DialogActions>
+      </BannerScope>
     </Dialog>
   )
 }
@@ -1188,11 +1196,10 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
           renderInput={(params) => <TextField {...params} placeholder={t('Add…')} />}
         />
       </Stack>
-      {error ? (
-        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
-          {error}
-        </Typography>
-      ) : null}
+      {/* In the form's banner slot (banner.tsx), not under the field. */}
+      <ViewBanner status="error" open={Boolean(error)}>
+        {error}
+      </ViewBanner>
       {createOpen ? (
         <RelationCreateWizard
           rel={rel}
@@ -1488,11 +1495,9 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
           sx={rel.formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
         />
       </Box>
-      {deleteError && (
-        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
-          {deleteError}
-        </Typography>
-      )}
+      <ViewBanner status="error" open={Boolean(deleteError)}>
+        {deleteError}
+      </ViewBanner>
       {inverseField ? (
         <>
       {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row

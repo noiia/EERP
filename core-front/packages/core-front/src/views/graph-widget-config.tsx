@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -20,6 +19,7 @@ import { fieldLabel, type JsonValue, type ViewDescriptor } from './descriptor'
 import type { BarMode, FullAggregate, NumericAggregate } from './graph-aggregate'
 import { orderedFields } from './layout-fields'
 import { useT } from '../i18n/translate'
+import { BannerScope, BannerSlot, ViewBanner } from './banner'
 import type { HasId } from './stores'
 
 // The "+ Add widget" / "configure a tile" dialog (docs/roadmaps/list-view-modes.md,
@@ -215,9 +215,12 @@ export function WidgetConfigDialog<T extends HasId>({
 
   return (
     <Dialog open={open} onClose={handleCancel} fullWidth maxWidth="xs">
+      {/* The dialog's own banner scope: its warnings show at its top. */}
+      <BannerScope>
       <DialogTitle>{initial ? t('Configure widget') : t('Add widget')}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          <BannerSlot sx={{ mb: 0 }} />
           <FormControl fullWidth>
             <InputLabel id="graph-widget-type">{t('Widget type')}</InputLabel>
             <Select
@@ -460,7 +463,9 @@ export function WidgetConfigDialog<T extends HasId>({
             </>
           ) : null}
 
-          {'error' in built ? <Alert severity="warning">{built.error}</Alert> : null}
+          <ViewBanner status="warning" open={'error' in built}>
+            {'error' in built ? built.error : null}
+          </ViewBanner>
         </Stack>
       </DialogContent>
       <DialogActions>
@@ -469,6 +474,7 @@ export function WidgetConfigDialog<T extends HasId>({
           {initial ? t('Save') : t('Add')}
         </Button>
       </DialogActions>
+      </BannerScope>
     </Dialog>
   )
 }

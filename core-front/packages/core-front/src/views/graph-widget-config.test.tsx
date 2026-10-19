@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { WidgetConfigDialog } from './graph-widget-config'
 import type { ViewDescriptor } from './descriptor'
 
@@ -121,7 +121,8 @@ describe('WidgetConfigDialog: xy', () => {
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
 
     await pickSelect('Y fields (number, several = several lines)', 'Amount')
-    expect(screen.queryByText('Pick a number field for Y.')).not.toBeInTheDocument()
+    // The warning banner collapses away (banner.tsx) rather than vanishing.
+    await waitFor(() => expect(screen.queryByText('Pick a number field for Y.')).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
   })
 
@@ -205,7 +206,8 @@ describe('WidgetConfigDialog: bar', () => {
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
 
     await pickSelect('Y fields (number, several = several lines)', 'Amount')
-    expect(screen.queryByText('Pick a number field for Y.')).not.toBeInTheDocument()
+    // The warning banner collapses away (banner.tsx) rather than vanishing.
+    await waitFor(() => expect(screen.queryByText('Pick a number field for Y.')).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
   })
 

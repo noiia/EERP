@@ -1,12 +1,11 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { setOSMConnector, type OSMConnector } from '@/lib/osm-settings'
 
 // Settings -> Global settings -> Integrations: the workspace's OpenStreetMap
@@ -83,7 +82,7 @@ export default function OSMConnectorSettings({
           {t('Changing the OpenStreetMap connector requires the settings:integrations:write permission.')}
         </Typography>
       )}
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

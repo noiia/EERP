@@ -7,8 +7,8 @@ import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
+import { ViewBanner } from './banner'
 import type { MenuNode } from './descriptor'
 import { MenuNodeItem } from './form-actions-menu'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
@@ -83,11 +83,10 @@ export function SelectionBar({
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      {error ? (
-        <Typography variant="caption" color="error">
-          {error}
-        </Typography>
-      ) : null}
+      {/* Shown in the view's banner slot (banner.tsx), not inline. */}
+      <ViewBanner status="error" open={Boolean(error)}>
+        {error}
+      </ViewBanner>
       <Badge badgeContent={selectedIds.length} color="primary" max={999}>
         <Button size="small" variant={allSelected ? 'contained' : 'outlined'} onClick={onSelectAll}>
           {t('Select all')}

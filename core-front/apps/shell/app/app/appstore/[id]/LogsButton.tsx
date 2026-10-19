@@ -13,6 +13,8 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import {
   byPrefixAndName,
+  BannerScope,
+  BannerSlot,
   ErrorAlert,
   FontAwesomeIcon,
   toApiError,
@@ -101,8 +103,11 @@ export function LogsButton({ name }: { name: string }) {
         {t('Logs')}
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
+        {/* The dialog's own banner scope: its error stays in the dialog. */}
+        <BannerScope>
         <DialogTitle>{t('Operation logs')}</DialogTitle>
         <DialogContent>
+          <BannerSlot />
           <ErrorAlert error={error} />
           {!error && pending ? <Typography color="text.secondary">{t('Loading…')}</Typography> : null}
           {!error && !pending && groups?.length === 0 ? (
@@ -142,6 +147,7 @@ export function LogsButton({ name }: { name: string }) {
               </Accordion>
             ))}
         </DialogContent>
+        </BannerScope>
       </Dialog>
     </>
   )

@@ -4,7 +4,6 @@ import Link from 'next/link'
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -20,7 +19,7 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { byPrefixAndName, erpPath, FontAwesomeIcon, useNotificationStore, useT } from '@eerp/core-front'
+import { byPrefixAndName, erpPath, FontAwesomeIcon, useNotificationStore, useT, ViewBanner } from '@eerp/core-front'
 import { getSeedGroups, seedDemoData, type SeedEntityResult, type SeedGroup, type SeedVolume } from '@/lib/dev-seed'
 import { revalidateSeededEntities } from '@/lib/notification-actions'
 
@@ -267,7 +266,7 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
                 )}
               </Stack>
 
-              {error && <Alert severity="error">{error}</Alert>}
+              {error && <ViewBanner status="error">{error}</ViewBanner>}
 
               {results && (
                 <Stack spacing={1}>

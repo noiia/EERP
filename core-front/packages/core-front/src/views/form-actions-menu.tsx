@@ -5,8 +5,8 @@ import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import ListItemText from '@mui/material/ListItemText'
-import Typography from '@mui/material/Typography'
 import { useT } from '../i18n/translate'
+import { ViewBanner } from './banner'
 import { evaluateCondition, type MenuNode } from './descriptor'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { menuActionRegistry } from './menu-actions'
@@ -81,11 +81,10 @@ export function FormActionsMenu({
 
   return (
     <>
-      {error ? (
-        <Typography variant="caption" color="error" sx={{ mr: 1 }}>
-          {error}
-        </Typography>
-      ) : null}
+      {/* Shown in the view's banner slot (banner.tsx), not inline. */}
+      <ViewBanner status="error" open={Boolean(error)}>
+        {error}
+      </ViewBanner>
       <IconButton
         aria-label={t('Options')}
         disabled={!hasAnyItem || !hasRecord || busy}

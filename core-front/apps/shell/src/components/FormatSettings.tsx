@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Container from '@mui/material/Container'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
@@ -8,7 +7,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { formatNumber, useFormatStore, useT } from '@eerp/core-front'
+import { formatNumber, useFormatStore, useT, ViewBanner } from '@eerp/core-front'
 import { setWorkspaceNumberFormat } from '@/lib/preferences'
 
 // Settings → Formats: how numbers display across the whole workspace. The durable
@@ -125,7 +124,7 @@ export default function FormatSettings({ canEdit }: { canEdit: boolean }) {
             {t('Changing the workspace number format requires the settings:format:write permission.')}
           </Typography>
         )}
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && <ViewBanner status="error">{error}</ViewBanner>}
       </Stack>
     </Container>
   )

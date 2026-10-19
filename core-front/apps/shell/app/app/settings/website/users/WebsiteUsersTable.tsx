@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
@@ -9,7 +8,7 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { updateWebsiteUser, type WebsiteUser } from '@/lib/website-settings'
 
 export default function WebsiteUsersTable({ initial }: { initial: WebsiteUser[] }) {
@@ -28,7 +27,7 @@ export default function WebsiteUsersTable({ initial }: { initial: WebsiteUser[] 
 
   return (
     <Stack spacing={2}>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
       <Table size="small">
         <TableHead>
           <TableRow>

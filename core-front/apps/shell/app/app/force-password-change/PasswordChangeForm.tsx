@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
@@ -10,7 +9,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { changeMyPassword, type SelfUserProfile } from '@/lib/force-password-change'
 import { authBffUrl } from '@/lib/auth-url'
-import { erpPath } from '@eerp/core-front'
+import { erpPath, ViewBanner } from '@eerp/core-front'
 
 export default function PasswordChangeForm({ profile }: { profile: SelfUserProfile | null }) {
   const router = useRouter()
@@ -68,9 +67,9 @@ export default function PasswordChangeForm({ profile }: { profile: SelfUserProfi
             This account still has its default password. Set a new one to continue — you can
             optionally update your email address too.
           </Typography>
-          {error ? <Alert severity="error">{error}</Alert> : null}
+          {error ? <ViewBanner status="error">{error}</ViewBanner> : null}
           {!profile ? (
-            <Alert severity="error">Could not load your profile. Refresh the page and try again.</Alert>
+            <ViewBanner status="error">Could not load your profile. Refresh the page and try again.</ViewBanner>
           ) : null}
           <TextField
             id="force-password-change-email"

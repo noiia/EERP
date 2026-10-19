@@ -1,13 +1,12 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { setUnitSettings, type UnitSettings, type UnitSystem } from '@/lib/unit-settings'
 
 // Settings -> Global settings -> Units: the workspace-wide default unit
@@ -69,7 +68,7 @@ export default function UnitSettings({
           {t('Changing the default unit system requires the settings:units:write permission.')}
         </Typography>
       )}
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

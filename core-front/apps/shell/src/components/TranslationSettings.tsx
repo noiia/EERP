@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -17,11 +16,12 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import {
   localeDisplayName,
+  type LocaleInfo,
   renderModulePo,
   translationRegistry,
   useI18nStore,
   useT,
-  type LocaleInfo,
+  ViewBanner,
 } from '@eerp/core-front'
 // Catalogs register as an import side effect; importing here (not only in the layout)
 // guarantees the registry is populated before this page lists it.
@@ -261,7 +261,7 @@ function DefaultLanguageSection({
             )
           : t('Changing the workspace default language requires the settings:i18n:write permission.')}
       </Typography>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

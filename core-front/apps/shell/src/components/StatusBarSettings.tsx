@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import FormControl from '@mui/material/FormControl'
@@ -11,7 +10,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useT, type StatusBarConfig } from '@eerp/core-front'
+import { type StatusBarConfig, useT, ViewBanner } from '@eerp/core-front'
 import { setEntityStatusBarConfig } from '@/lib/status-bar-config'
 
 // Settings -> Apps -> :module: each of this app's forms that shows a status
@@ -133,12 +132,10 @@ function StatusBarRow({ row, canEdit }: { row: StatusBarEntityRow; canEdit: bool
           )}
         </Stack>
       )}
-      {steps.length === 0 && (
-        <Typography variant="caption" color="error">
-          {t('Pick at least one step.')}
-        </Typography>
-      )}
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      <ViewBanner status="warning" open={steps.length === 0}>
+        {t('Pick at least one step.')}
+      </ViewBanner>
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

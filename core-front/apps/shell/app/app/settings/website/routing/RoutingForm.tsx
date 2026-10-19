@@ -1,13 +1,12 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { saveRouting, type Routing } from '@/lib/website-settings'
 
 export default function RoutingForm({ initial }: { initial: Routing }) {
@@ -30,17 +29,17 @@ export default function RoutingForm({ initial }: { initial: Routing }) {
         <>
           <TextField label={t('Website host')} placeholder="www.example.com" value={r.site_host} onChange={(e) => setR({ ...r, site_host: e.target.value })} />
           <TextField label={t('ERP host')} placeholder="erp.example.com" value={r.erp_host} onChange={(e) => setR({ ...r, erp_host: e.target.value })} />
-          <Alert severity="warning">
+          <ViewBanner status="warning">
             {t(
               'To avoid locking yourself out, save this from the ERP address you are entering, e.g. https://erp.example.com/app/settings/website/routing. To recover, set the environment variable EERP_SITE_ROUTING=path.',
             )}
-          </Alert>
+          </ViewBanner>
         </>
       )}
       <Button variant="contained" onClick={() => void save()} sx={{ alignSelf: 'flex-start' }}>
         {t('Save')}
       </Button>
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

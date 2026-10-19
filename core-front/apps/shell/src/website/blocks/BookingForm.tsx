@@ -1,7 +1,6 @@
 'use client'
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
@@ -9,7 +8,7 @@ import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useI18nStore, useT } from '@eerp/core-front'
+import { useI18nStore, useT, ViewBanner } from '@eerp/core-front'
 
 /** One bookable time: a session (id = session id) or a slot (id = its start). */
 export interface BookingChoice { id: string; start: string; seatsLeft: number; price?: number | null }
@@ -113,20 +112,20 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, c
   }
 
   if (status.kind === 'paying') {
-    return <Alert severity="info">{t('Taking you to the payment page…')}</Alert>
+    return <ViewBanner status="info">{t('Taking you to the payment page…')}</ViewBanner>
   }
   if (status.kind === 'waitlisted') {
     return (
-      <Alert severity="info">
+      <ViewBanner status="info">
         {t("You're on the waiting list — we'll email you if a seat frees up:")} {status.email}
-      </Alert>
+      </ViewBanner>
     )
   }
   if (status.kind === 'confirmed') {
     return (
-      <Alert severity="success">
+      <ViewBanner status="info">
         {t('Booking confirmed — a confirmation email is on its way to')} {status.email}
-      </Alert>
+      </ViewBanner>
     )
   }
   if (choices.length === 0) {
@@ -134,7 +133,7 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, c
   }
   return (
     <Stack component="form" spacing={2} onSubmit={(e) => void submit(e)}>
-      {status.kind === 'error' && <Alert severity="error">{status.message}</Alert>}
+      {status.kind === 'error' && <ViewBanner status="error">{status.message}</ViewBanner>}
       <RadioGroup name="choice" value={choice} onChange={(e) => { setChoice(e.target.value); setSeats(1) }}>
         {choices.map((c) => (
           <FormControlLabel

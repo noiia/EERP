@@ -1,11 +1,10 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { setUsernameAtFormat } from '@/lib/preferences'
 
 // Settings -> Global settings -> Accounts: the workspace-wide switch deciding
@@ -60,7 +59,7 @@ export default function AccountsSettings({
           {t('Changing the username display format requires the settings:accounts:write permission.')}
         </Typography>
       )}
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

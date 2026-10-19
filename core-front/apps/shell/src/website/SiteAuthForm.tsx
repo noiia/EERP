@@ -1,13 +1,12 @@
 'use client'
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { safeHref } from './urls'
 
 const MIN_PASSWORD = 8 // Go's website signup rule (8 to 72 characters)
@@ -70,7 +69,7 @@ export function SiteAuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: 
   return (
     <Stack component="form" spacing={2} onSubmit={onSubmit}>
       <Typography variant="h4" component="h1">{login ? t('Log in') : t('Sign up')}</Typography>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
       {!login && (
         <TextField id="site-name" label={t('Name')} autoComplete="name" value={form.name} onChange={set('name')} required />
       )}

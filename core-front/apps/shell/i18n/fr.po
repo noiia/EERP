@@ -1866,9 +1866,6 @@ msgstr "Imprime la colonne Taxe sur les quittances générées à partir de main
 msgid "Status bar"
 msgstr "Barre de statut"
 
-msgid "Field"
-msgstr "Champ"
-
 msgid "Steps"
 msgstr "Étapes"
 
@@ -1883,3 +1880,6 @@ msgstr "Les étapes affichées en haut du formulaire, tirées d'un de ses champs
 
 msgid "Changing the status bar requires the settings:views:write permission."
 msgstr "Modifier la barre de statut nécessite la permission settings:views:write."
+
+msgid "Some counts could not be loaded"
+msgstr "Certains totaux n'ont pas pu être chargés"

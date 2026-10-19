@@ -1,12 +1,11 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { DEFAULT_PICTURE_HEIGHT, DEFAULT_PICTURE_WIDTH, useT } from '@eerp/core-front'
+import { DEFAULT_PICTURE_HEIGHT, DEFAULT_PICTURE_WIDTH, useT, ViewBanner } from '@eerp/core-front'
 import { setModulePictureSize, type PictureSize } from '@/lib/app-settings'
 
 // Settings -> Apps: the boolean/picture widget's box size. `module === 'base'`
@@ -117,7 +116,7 @@ export default function PictureSizeSettings({
           {t('Changing the picture size requires the settings:apps:write permission.')}
         </Typography>
       )}
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

@@ -1,11 +1,10 @@
 'use client'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { usePermission, usePictureClient, useSessionStore, useT, type PictureMeta } from '@eerp/core-front'
+import { type PictureMeta, usePermission, usePictureClient, useSessionStore, useT, ViewBanner } from '@eerp/core-front'
 
 // Go's anchor for it: pictures.WorkspaceTable / FaviconField, record = tenant id.
 // Served anonymously at /api/v1/public/favicon (the root layout's icon link).
@@ -52,7 +51,7 @@ export function FaviconSettings() {
       <Typography variant="body2" color="text.secondary">
         {t('The small icon shown in browser tabs, for the ERP and the public website. A square PNG (e.g. 64×64) works best; browsers may keep the old one for a few minutes.')}
       </Typography>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
         <Box sx={{ width: 48, height: 48, border: 1, borderColor: 'divider', borderRadius: 1, display: 'grid', placeItems: 'center' }}>
           {current && <Box component="img" src={`${pictures.url(current.id)}?v=${current.size}`} alt={t('Favicon')} sx={{ maxWidth: 32, maxHeight: 32 }} />}

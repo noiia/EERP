@@ -1,12 +1,11 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import {
   savePropertyManagementSettings,
   type PropertyManagementSettings as Settings,
@@ -40,7 +39,7 @@ export default function PropertyManagementSettings({ initial, canEdit }: { initi
         {t('Prints the Tax column on rent receipts generated from now on. Receipts already generated keep their PDF until it is regenerated.')}
       </Typography>
       {canEdit && <Button variant="contained" onClick={() => void save()} sx={{ alignSelf: 'flex-start' }}>{t('Save')}</Button>}
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

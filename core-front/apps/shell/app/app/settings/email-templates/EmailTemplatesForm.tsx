@@ -1,13 +1,12 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { HtmlEditor, useT } from '@eerp/core-front'
+import { HtmlEditor, useT, ViewBanner } from '@eerp/core-front'
 import { resetMailTemplate, saveMailTemplate, type MailTemplate, type TemplateContent } from '@/lib/mail-templates'
 
 /** The text a (template, language) sends today: the override, else the default
@@ -89,7 +88,7 @@ export default function EmailTemplatesForm({ templates, canEdit }: { templates: 
           {customized && <Button variant="outlined" onClick={() => void reset()}>{t('Reset to default')}</Button>}
         </Stack>
       )}
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

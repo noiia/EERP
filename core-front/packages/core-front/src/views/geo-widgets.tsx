@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography'
 import type * as Leaflet from 'leaflet'
 import { useT } from '../i18n/translate'
 import { useOSMSuggestions, type OSMSuggestion } from './address-widget'
+import { ViewBanner } from './banner'
 import { ADDRESS_SUFFIXES, type GeoJSONGeometry } from './descriptor'
 import { pinIcon, useLeafletMap } from './geo-map'
 import type { WidgetProps } from './widgets'
@@ -219,11 +220,10 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
           )}
         </Stack>
       )}
-      {notFound && (
-        <Typography variant="caption" color="error">
-          {t('Address not found')}
-        </Typography>
-      )}
+      {/* A warning in the form's banner slot (banner.tsx). */}
+      <ViewBanner status="warning" open={notFound}>
+        {t('Address not found')}
+      </ViewBanner>
       <Box ref={container} sx={MAP_SX} data-testid="geo-map" />
       {point && (
         <Typography variant="caption" color="text.secondary">

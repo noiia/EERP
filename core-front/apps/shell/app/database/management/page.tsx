@@ -1,6 +1,5 @@
 'use client'
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -17,6 +16,7 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { ViewBanner } from '@eerp/core-front'
 
 // /database/management — an Odoo-style database manager, reachable with NO
 // login at all (core/CLAUDE.md's "Database management" bullet). Deliberately
@@ -294,8 +294,8 @@ export default function DatabaseManagementPage() {
           fullWidth
         />
 
-        {error ? <Alert severity="error">{error}</Alert> : null}
-        {notice ? <Alert severity="success">{notice}</Alert> : null}
+        {error ? <ViewBanner status="error">{error}</ViewBanner> : null}
+        {notice ? <ViewBanner status="info">{notice}</ViewBanner> : null}
 
         <Box>
           <Button variant="outlined" onClick={() => void loadDatabases()} disabled={busy || !masterKey}>

@@ -1,9 +1,8 @@
 'use client'
 import { useActionState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import type { TokenResult } from './booking-actions'
 
 /** A one-button form posting an emailed token (cancel, verify). A button, not a GET
@@ -16,7 +15,7 @@ export function TokenActionForm({ action, token, button, done }: {
 }) {
   const t = useT()
   const [result, run, pending] = useActionState(action, null)
-  if (result === 'ok') return <Alert severity="success">{t(done)}</Alert>
+  if (result === 'ok') return <ViewBanner status="info">{t(done)}</ViewBanner>
   const errors: Record<Exclude<TokenResult, 'ok' | null>, string> = {
     invalid: t('This link is invalid or was already used.'),
     session: t('Your session has expired. Please log in again.'),
@@ -25,7 +24,7 @@ export function TokenActionForm({ action, token, button, done }: {
   }
   return (
     <Stack component="form" action={run} spacing={2}>
-      {result && <Alert severity="error">{errors[result]}</Alert>}
+      {result && <ViewBanner status="error">{errors[result]}</ViewBanner>}
       <input type="hidden" name="token" value={token} />
       <Button type="submit" variant="contained" disabled={pending} sx={{ alignSelf: 'flex-start' }}>{t(button)}</Button>
     </Stack>

@@ -1,12 +1,11 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
-import AlertTitle from '@mui/material/AlertTitle'
 import Button from '@mui/material/Button'
 import Collapse from '@mui/material/Collapse'
 import Typography from '@mui/material/Typography'
 import type { SerializedError } from '../api/errors'
 import { useT } from '../i18n/translate'
+import { Banner, useBannerPortal } from './banner'
 import { fieldLabel, type FieldDescriptor } from './descriptor'
 
 // Shared error surface for every renderer that can fail a write: FormRenderer's
@@ -18,6 +17,9 @@ import { fieldLabel, type FieldDescriptor } from './descriptor'
 // Written for two readers: the user, who needs to know what to fix, and the
 // administrator they forward it to, who needs the request id to find the
 // backend log line — hence "Copy details".
+//
+// An error-status Banner (banner.tsx), rendered into the nearest BannerSlot —
+// above the form, list or dashboard it concerns — wherever it is written.
 
 /**
  * Split a VALIDATION_ERROR's missing field names into the ones this form shows
@@ -69,12 +71,13 @@ export function ErrorAlert({
   fields?: FieldDescriptor[]
 }) {
   // The last error stays rendered while the Collapse animates shut.
+  const portal = useBannerPortal()
   const [shown, setShown] = useState<SerializedError | null>(error ?? null)
   if (error && error !== shown) setShown(error)
-  return (
+  return portal(
     <Collapse in={Boolean(error)} unmountOnExit onExited={() => setShown(null)}>
       {shown ? <ErrorAlertBody error={shown} fields={fields} /> : null}
-    </Collapse>
+    </Collapse>,
   )
 }
 
@@ -89,15 +92,15 @@ function ErrorAlertBody({ error, fields }: { error: SerializedError; fields?: Fi
   }
 
   return (
-    <Alert
-      severity="error"
+    <Banner
+      status="error"
+      title={missing.length ? t('Required fields are missing') : error.code}
       action={
         <Button color="inherit" size="small" onClick={copy}>
           {copied ? t('Copied') : t('Copy details')}
         </Button>
       }
     >
-      <AlertTitle>{missing.length ? t('Required fields are missing') : error.code}</AlertTitle>
       {missing.length ? null : t(error.message)}
       {split.onForm.length ? (
         <Typography variant="body2">
@@ -117,6 +120,6 @@ function ErrorAlertBody({ error, fields }: { error: SerializedError; fields?: Fi
           {t('Reference for your administrator')}: {error.requestId}
         </Typography>
       ) : null}
-    </Alert>
+    </Banner>
   )
 }

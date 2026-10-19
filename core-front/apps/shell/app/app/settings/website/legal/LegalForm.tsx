@@ -1,12 +1,11 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { saveLegal, type LegalNotice } from '@/lib/website-settings'
 
 type Field = { key: keyof LegalNotice; label: string; multiline?: boolean; type?: string }
@@ -82,7 +81,7 @@ export default function LegalForm({ initial }: { initial: LegalNotice }) {
           {t('View on the website')}
         </Link>
       </Stack>
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

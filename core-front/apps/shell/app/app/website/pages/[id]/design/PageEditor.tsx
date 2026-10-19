@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState, type ReactNode } from 'react'
 import ReactGridLayout, { getCompactor, useContainerWidth, verticalCompactor } from 'react-grid-layout'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
@@ -11,7 +10,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import type { Theme } from '@mui/material/styles'
-import { createPictureClient, erpPath, useT } from '@eerp/core-front'
+import { createPictureClient, erpPath, useT, ViewBanner } from '@eerp/core-front'
 import type { PublishedTable } from '@/lib/website-settings'
 import { previewBlock } from '@/website/editor-actions'
 import { addBlock, applyGeometry, GRID, removeBlock, rowsPx, updateConfig } from '@/website/layout-ops'
@@ -151,7 +150,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, background, p
             <Button href={`/${slug}`} target="_blank" rel="noopener">{t('View on site')}</Button>
             <Button href={erpPath(`/website/pages/${pageId}`)}>{t('Back')}</Button>
           </Stack>
-          {status && <Alert severity={status.ok ? 'success' : 'error'} sx={{ mx: 2 }} onClose={() => setStatus(null)}>{status.text}</Alert>}
+          {status && <ViewBanner status={status.ok ? 'info' : 'error'} sx={{ mx: 2 }} onClose={() => setStatus(null)}>{status.text}</ViewBanner>}
           {/* Same width as the public site's Container, so blocks wrap as they will there. */}
           <Container maxWidth="lg" sx={{
             py: 2, flex: 1, minWidth: 0,

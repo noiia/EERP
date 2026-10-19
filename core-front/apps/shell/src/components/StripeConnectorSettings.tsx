@@ -1,13 +1,12 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { saveStripeSettings, type StripeStatus } from '@/lib/stripe-settings'
 
 /** Settings → Global settings → Integrations: Stripe online payment (event
@@ -41,7 +40,7 @@ export default function StripeConnectorSettings({ canEdit, initial, webhookURL }
       <Typography color="text.secondary">
         {t('Takes card payments for paid event bookings through Stripe Checkout. Without it, bookings are paid at the event.')}
       </Typography>
-      {!initial.active && <Alert severity="warning">{t('Activate the Stripe payments app (Settings → Apps) for these settings to take effect.')}</Alert>}
+      {!initial.active && <ViewBanner status="warning">{t('Activate the Stripe payments app (Settings → Apps) for these settings to take effect.')}</ViewBanner>}
       <FormControlLabel control={<Switch checked={enabled} disabled={!canEdit} onChange={(e) => setEnabled(e.target.checked)} />}
         label={t('Take payments online')} />
       <TextField id="stripe-secret-key" type="password" label={t('Secret key (sk_…)')} value={secretKey} disabled={!canEdit}
@@ -55,7 +54,7 @@ export default function StripeConnectorSettings({ canEdit, initial, webhookURL }
       </Typography>
       <Typography variant="body2" sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>{webhookURL}</Typography>
       {canEdit && <Button variant="contained" onClick={() => void save()} sx={{ alignSelf: 'flex-start' }}>{t('Save')}</Button>}
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

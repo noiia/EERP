@@ -1,11 +1,10 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { createMyEventFeed, revokeMyEventFeed } from '@/lib/event-settings'
 
 /** Settings → Account: the caller's private calendar feed of every event session
@@ -41,7 +40,7 @@ export default function EventFeedSettings({ enabled }: { enabled: boolean }) {
         <>
           <TextField id="event-feed-url" label={t('Calendar link')} value={url} slotProps={{ htmlInput: { readOnly: true } }}
             onFocus={(e) => e.target.select()} />
-          <Alert severity="info">{t('Copy it now: it is not shown again.')}</Alert>
+          <ViewBanner status="info">{t('Copy it now: it is not shown again.')}</ViewBanner>
         </>
       )}
       <Stack direction="row" spacing={1}>
@@ -50,7 +49,7 @@ export default function EventFeedSettings({ enabled }: { enabled: boolean }) {
         </Button>
         {on && <Button variant="outlined" color="error" onClick={() => void revoke()}>{t('Stop the link')}</Button>}
       </Stack>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

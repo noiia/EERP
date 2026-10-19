@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import MenuItem from '@mui/material/MenuItem'
@@ -11,7 +10,7 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { listOutbox, retryOutbox, type OutboxMail, type OutboxStatus } from '@/lib/website-settings'
 
 const COLORS = { pending: 'default', sent: 'success', failed: 'error' } as const
@@ -36,7 +35,7 @@ export default function OutboxTable({ initial }: { initial: OutboxMail[] }) {
 
   return (
     <Stack spacing={2}>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
       <TextField
         select
         size="small"

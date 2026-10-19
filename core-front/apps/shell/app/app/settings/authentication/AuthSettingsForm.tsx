@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -8,7 +7,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import {
   saveAuthSettings,
   testAuthMethod,
@@ -251,7 +250,7 @@ export default function AuthSettingsForm({
               </Button>
             </Stack>
             {testMsgs.ldap && (
-              <Alert severity={testMsgs.ldap.ok ? 'success' : 'error'}>{testMsgs.ldap.text}</Alert>
+              <ViewBanner status={testMsgs.ldap.ok ? 'info' : 'error'}>{testMsgs.ldap.text}</ViewBanner>
             )}
             <TextField
               label={t('Label')}
@@ -418,9 +417,9 @@ export default function AuthSettingsForm({
               </Button>
             </Stack>
             {testMsgs[`oidc:${o.id}`] && (
-              <Alert severity={testMsgs[`oidc:${o.id}`].ok ? 'success' : 'error'}>
+              <ViewBanner status={testMsgs[`oidc:${o.id}`].ok ? 'info' : 'error'}>
                 {testMsgs[`oidc:${o.id}`].text}
-              </Alert>
+              </ViewBanner>
             )}
           </Stack>
         ))}
@@ -497,7 +496,7 @@ export default function AuthSettingsForm({
       <Button variant="contained" onClick={() => void save()} sx={{ alignSelf: 'flex-start' }}>
         {t('Save')}
       </Button>
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

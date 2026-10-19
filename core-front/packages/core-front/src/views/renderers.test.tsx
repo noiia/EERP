@@ -26,6 +26,7 @@ import { useSessionStore, type Identity } from './session-store'
 import { useUiStore } from './ui-store'
 import { useUndoToastStore } from './undo-toast'
 import type { EntityActions } from './stores'
+import { ApiError } from '../api/errors'
 
 function identityWith(permissions: string[]): Identity {
   return { userId: 'u1', tenantId: 't1', roles: ['tester'], permissions }
@@ -135,6 +136,46 @@ describe('FormRenderer status breadcrumb', () => {
     )
     expect(screen.getByRole('combobox', { name: 'Status' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'won', hidden: true })).not.toBeInTheDocument()
+  })
+})
+
+describe('banners above the view', () => {
+  it('a failed save shows its error banner between the toolbar and the form, not in it', async () => {
+    const actions: EntityActions<Contact> = {
+      create: vi.fn(),
+      update: vi.fn(async () => {
+        throw new ApiError({ code: 'CONFLICT', message: 'Name already taken', status: 409, requestId: 'r1' })
+      }),
+    }
+    const { container } = render(
+      <EntityView descriptor={formDescriptor} initialData={[{ id: 'c1', name: 'Ada' }]} actions={actions} />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Bob' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('Name already taken')
+    const slot = container.querySelector('[data-banner-slot]')!
+    expect(slot).toContainElement(banner)
+    // The slot comes before the form's card in the page.
+    const card = screen.getByPlaceholderText('Name').closest('.MuiCard-root')!
+    expect(slot.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a dashboard warns above its tiles when some counts could not be loaded', () => {
+    const { container } = render(
+      <EntityView
+        descriptor={{ ...formDescriptor, viewType: 'dashboard' }}
+        initialData={[]}
+        actions={noopActions}
+        widgets={[
+          { id: 'a', title: 'Contacts', count: 3 },
+          { id: 'b', title: 'Leads', count: null },
+        ]}
+      />,
+    )
+    const banner = screen.getByRole('alert')
+    expect(banner).toHaveTextContent('Some counts could not be loaded: Leads')
+    expect(container.querySelector('[data-banner-slot]')).toContainElement(banner)
   })
 })
 

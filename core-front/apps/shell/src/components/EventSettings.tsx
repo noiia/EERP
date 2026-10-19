@@ -1,11 +1,10 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { erpPath, useT } from '@eerp/core-front'
+import { erpPath, useT, ViewBanner } from '@eerp/core-front'
 import Link from '@mui/material/Link'
 import { saveEventSettings, type EventSettings as Settings } from '@/lib/event-settings'
 
@@ -36,7 +35,7 @@ export default function EventSettings({ initial, canEdit }: { initial: Settings;
         value={claimHours} disabled={!canEdit} slotProps={{ htmlInput: { min: 1, max: 168 } }}
         onChange={(e) => setClaimHours(e.target.value)} />
       {canEdit && <Button variant="contained" onClick={() => void save()} sx={{ alignSelf: 'flex-start' }}>{t('Save')}</Button>}
-      {msg && <Alert severity={msg.ok ? 'success' : 'error'}>{msg.text}</Alert>}
+      {msg && <ViewBanner status={msg.ok ? 'info' : 'error'}>{msg.text}</ViewBanner>}
     </Stack>
   )
 }

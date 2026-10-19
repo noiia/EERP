@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState, type ReactNode } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -10,7 +9,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { savePublished, type PublishedTable } from '@/lib/website-settings'
 import { listEditorEvents, listEditorPages } from '@/website/editor-actions'
 import type { Block } from '@/website/types'
@@ -340,11 +339,11 @@ export function PublishFields({ table, used, onPublished }: {
     } else setState({ busy: false, error: res.message || t('Could not save.') })
   }
   return (
-    <Alert severity="warning" action={
+    <ViewBanner status="warning" action={
       <Button color="inherit" size="small" disabled={state.busy} onClick={() => void publish()}>{t('Publish')}</Button>
     }>
       {t('Not public yet — the website shows nothing for these fields:')} {missing.join(', ')}
       {state.error && <><br />{state.error}</>}
-    </Alert>
+    </ViewBanner>
   )
 }

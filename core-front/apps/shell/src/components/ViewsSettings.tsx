@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
 import Dialog from '@mui/material/Dialog'
@@ -25,10 +24,11 @@ import Typography from '@mui/material/Typography'
 import {
   byPrefixAndName,
   effectiveViewFields,
+  type FieldDescriptor,
   fieldLabel,
   FontAwesomeIcon,
   useT,
-  type FieldDescriptor,
+  ViewBanner,
   type ViewFieldsConfig,
   type ViewModeDefaults,
 } from '@eerp/core-front'
@@ -277,7 +277,7 @@ export default function ViewsSettings({
             {t('Changing view field configuration requires the settings:views:write permission.')}
           </Typography>
         )}
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && <ViewBanner status="error">{error}</ViewBanner>}
       </Stack>
 
       <Dialog open={pending != null} onClose={() => setPending(null)}>

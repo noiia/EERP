@@ -1,10 +1,9 @@
-import Alert from '@mui/material/Alert'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { T } from '@eerp/core-front'
+import { Banner, T } from '@eerp/core-front'
 import { getMyBookings, type MyBooking } from '@/website/account'
 import Link from '@mui/material/Link'
 import { CancelMyBookingButton, ResendVerificationButton, When } from './MyBookingsClient'
@@ -29,9 +28,9 @@ export async function MyBookings({ verified }: { verified: boolean }) {
   return (
     <Stack spacing={2}>
       {!verified && (
-        <Alert severity="info" action={<ResendVerificationButton />}>
+        <Banner status="info" action={<ResendVerificationButton />}>
           <T text="Confirm your email to see bookings made before you signed up." />
-        </Alert>
+        </Banner>
       )}
       {bookings.length === 0 && <Typography color="text.secondary"><T text="Your bookings will appear here." /></Typography>}
       {bookings.some(upcoming) && (
