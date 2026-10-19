@@ -6,7 +6,7 @@
 
 **Architecture:** PostGIS `geography` columns. The ORM moves geometries as text (EWKB hex out, EWKT in) and speaks GeoJSON on the wire — no pgx codec, no SQL rewriting. The generic list endpoint gains `near`/`within`/`covers`/`inside` params; record references (`table:id:col`) are resolved inside `core/orm/internal/crud` behind a per-request read check the permission middleware stamps on the context. The frontend adds field types `geo` (widgets `point`, `shape`) and `distance` (widget `meters`).
 
-**Tech Stack:** Go 1.26, pgx v5, PostGIS 3.6 on Postgres 18, `github.com/twpayne/go-geom`; Next 16 / React 19 / MUI, `leaflet` 1.9, vitest.
+**Tech Stack:** Go 1.27.1, pgx v5, PostGIS 3.6 on Postgres 18, `github.com/twpayne/go-geom`; Next 16 / React 19 / MUI, `leaflet` 1.9, vitest.
 
 **Spec:** `docs/superpowers/specs/2026-10-09-geo-fields-design.md`
 

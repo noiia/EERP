@@ -1,6 +1,6 @@
 module pdf-service
 
-go 1.26.2
+go 1.27.1
 
 require (
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f

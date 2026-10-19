@@ -6,7 +6,7 @@
 
 **Architecture:** New Go package `core/internal/auth/providers`: each method authenticates and returns an `ExternalIdentity`; one `Provisioner` links/creates the ERP user and re-applies group → role mapping; the existing session issuance ends every login. Settings live in `app_settings` key `auth.methods` with secrets AES-GCM-encrypted under `master_key`. The Next BFF owns cookies (LDAP relay, OIDC start/callback with PKCE state in an httpOnly cookie); the login page is rebuilt around a public `/auth/methods` endpoint.
 
-**Tech Stack:** Go 1.26, echo v5, pgx, `github.com/go-ldap/ldap/v3`, `github.com/coreos/go-oidc/v3`, `golang.org/x/oauth2`, `golang.org/x/crypto/hkdf`; Next 16 / React 19 / MUI, vitest.
+**Tech Stack:** Go 1.27.1, echo v5, pgx, `github.com/go-ldap/ldap/v3`, `github.com/coreos/go-oidc/v3`, `golang.org/x/oauth2`, `golang.org/x/crypto/hkdf`; Next 16 / React 19 / MUI, vitest.
 
 **Spec:** `docs/superpowers/specs/2026-10-10-external-auth-design.md`
 

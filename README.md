@@ -28,7 +28,7 @@ stay current as the design evolves.
 
 ## 🧰 Requirements
 
-- Go **1.26+**
+- Go **1.27+**
 - Node **22+** and pnpm (via `corepack enable`, pinned to `pnpm@12.4.2` in
   `core-front/package.json`) — only needed for frontend work outside Docker
 - Docker + Docker Compose

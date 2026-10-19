@@ -101,7 +101,7 @@ POST /render
 > required for Chromium to launch at all inside a container, which has no setuid sandbox
 > helper available; without it the browser fails to start. The runtime image is
 > `debian:bookworm-slim` + `chromium` (since replaced by `chromedp/headless-shell` to halve the
-> image — ADR-010 decision 2; not `golang:1.26` like `core/Dockerfile`, which has no browser) — verified end to end with a real `docker build` + `docker compose --profile pdf
+> image — ADR-010 decision 2; not `golang:1.27.1` like `core/Dockerfile`, which has no browser) — verified end to end with a real `docker build` + `docker compose --profile pdf
 > up`, hitting `/healthz` and `/render` against the running container. `compose.yml`'s
 > `pdf-service` entry is gated behind `profiles: ["pdf"]` exactly as planned, confirmed absent
 > from `docker compose config --services` without the flag.
