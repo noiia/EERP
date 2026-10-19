@@ -10,6 +10,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -66,7 +67,7 @@ func NewChromeRenderer(execPath string, maxConcurrent int) (*ChromeRenderer, err
 	}
 	// Force the browser to actually start now, at service boot, not on the
 	// first request — so the first real report doesn't pay the launch cost.
-	if err := chromedp.Run(browserCtx); err != nil {
+	if err := chromedp.Do(browserCtx); err != nil {
 		cancel()
 		return nil, fmt.Errorf("chrome startup: %w", err)
 	}
@@ -101,45 +102,47 @@ func (r *ChromeRenderer) Render(ctx context.Context, req RenderRequest) ([]byte,
 	tabCtx, cancelTimeout := context.WithTimeout(tabCtx, timeout)
 	defer cancelTimeout()
 
-	var pdfBuf []byte
 	var loaded, ready time.Time
-	actions := []chromedp.Action{
+	mark := func(at *time.Time) chromedp.Action[chromedp.Void] {
+		return chromedp.Func(func(context.Context, *chromedp.Target) error { *at = time.Now(); return nil })
+	}
+	steps := []chromedp.Action[chromedp.Void]{
 		// The print route is a Server Component: its HTML already carries the
 		// whole report (and the ready marker), so page JavaScript would only
 		// download, parse and hydrate the entire app shell for nothing — the
 		// single biggest cost of a render. Pitfall: a report node that only
 		// renders client-side would come out blank; ReportRenderer must stay
 		// server-renderable (docs/adr/ADR-010).
-		emulation.SetScriptExecutionDisabled(true),
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			_, err := cdp.Call(ctx, t, emulation.SetScriptExecutionDisabled, emulation.SetScriptExecutionDisabledParams{Value: true})
+			return err
+		}),
 		chromedp.Navigate(req.URL),
-		chromedp.ActionFunc(func(context.Context) error { loaded = time.Now(); return nil }),
+		mark(&loaded),
 	}
 	if req.WaitFor != "" {
 		// Printing before the print route's readiness marker is present
 		// silently produces a PDF of a loading/404 state.
-		actions = append(actions, chromedp.WaitVisible(req.WaitFor, chromedp.ByQuery))
+		steps = append(steps, chromedp.WaitVisible(chromedp.CSS(req.WaitFor)))
 	}
-	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
-		ready = time.Now()
-		var err error
-		pdfBuf, _, err = page.PrintToPDF().
-			WithPrintBackground(true).
-			WithDisplayHeaderFooter(true).
-			WithHeaderTemplate(`<span></span>`).
-			WithFooterTemplate(`<div style="font-family:Helvetica,Arial,sans-serif;font-size:8px;width:100%;text-align:center;">Page <span class="pageNumber"></span>/<span class="totalPages"></span></div>`).
-			WithMarginTop(0.4).WithMarginBottom(0.6).
-			// Lets a report's own `@page { size: ... }` CSS rule (set by the
-			// print route from a report_page_format row) pick the paper
-			// dimensions instead of Chrome's US-Letter default — margins stay
-			// governed by the params above regardless (docs/roadmaps/
-			// pdf-reports.md's Reports settings: page size, never page margin,
-			// comes from CSS).
-			WithPreferCSSPageSize(true).
-			Do(ctx)
-		return err
-	}))
-
-	if err := chromedp.Run(tabCtx, actions...); err != nil {
+	steps = append(steps, mark(&ready))
+	if err := chromedp.Do(tabCtx, steps...); err != nil {
+		return nil, fmt.Errorf("render %s: %w", req.URL, err)
+	}
+	pdfBuf, err := chromedp.Run(tabCtx, chromedp.PrintToPDF(
+		chromedp.PDFPrintBackground(),
+		chromedp.PDFHeaderTemplate(`<span></span>`),
+		chromedp.PDFFooterTemplate(`<div style="font-family:Helvetica,Arial,sans-serif;font-size:8px;width:100%;text-align:center;">Page <span class="pageNumber"></span>/<span class="totalPages"></span></div>`),
+		// Top and bottom only: the sides keep Chrome's default (1 cm).
+		func(p *page.PrintToPDFParams) { p.MarginTop, p.MarginBottom = new(0.4), new(0.6) },
+		// Lets a report's own `@page { size: ... }` CSS rule (set by the print
+		// route from a report_page_format row) pick the paper dimensions
+		// instead of Chrome's US-Letter default — margins stay governed by the
+		// options above regardless (docs/roadmaps/pdf-reports.md's Reports
+		// settings: page size, never page margin, comes from CSS).
+		chromedp.PDFPreferCSSPageSize(),
+	))
+	if err != nil {
 		return nil, fmt.Errorf("render %s: %w", req.URL, err)
 	}
 	done := time.Now()

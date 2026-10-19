@@ -105,7 +105,7 @@ func TestRender_ReusesBrowserAcrossCalls(t *testing.T) {
 
 	// Two sequential renders must both succeed against the SAME pooled
 	// browser (no relaunch per call) — the whole point of ChromeRenderer.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		pdf, err := r.Render(context.Background(), RenderRequest{
 			URL:     fixtureURL(t),
 			WaitFor: "[data-report-ready]",
