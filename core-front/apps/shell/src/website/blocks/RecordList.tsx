@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { styled, type SxProps, type Theme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
 import MenuItem from '@mui/material/MenuItem'
@@ -14,6 +15,23 @@ import { pictureUrl } from '../urls'
 import type { RecordListConfig } from '../types'
 import { hasPicture, label } from './fields'
 import { RecordCard } from './RecordCard'
+
+const Table = styled('table')({})
+
+// One container query per field column, hiding column i once the block is
+// narrower than (i + 2) × 160px. Typed explicitly: inferred inline inside sx,
+// the computed keys make a union TypeScript 7 refuses as "too complex".
+function hideColumns(n: number): Record<string, SxProps<Theme>> {
+  const rules: Record<string, SxProps<Theme>> = {}
+  for (let i = 0; i < n; i++) rules[`@container (max-width: ${(i + 2) * 160}px)`] = { [`& .col-${i}`]: { display: 'none' } }
+  return rules
+}
+const tableSx: SxProps<Theme> = {
+  width: '100%', borderCollapse: 'collapse',
+  '& th, & td': { p: 1.25, textAlign: 'left', borderBottom: 1, borderColor: 'divider', verticalAlign: 'middle' },
+  '& th': { typography: 'caption', fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' },
+  '& tbody tr:hover': { bgcolor: 'action.hover' },
+}
 
 const SIZES = [10, 25, 50]
 
@@ -52,11 +70,8 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
         </Box>
       ) : (
         // The table follows the block's own width: field columns drop off right to left as it narrows.
-        <Box sx={{ containerType: 'inline-size', overflowX: 'auto',
-          ...Object.fromEntries(cols.map((_, i) => [`@container (max-width: ${(i + 2) * 160}px)`, { [`& .col-${i}`]: { display: 'none' } }])) }}>
-          <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', '& th, & td': { p: 1.25, textAlign: 'left', borderBottom: 1, borderColor: 'divider', verticalAlign: 'middle' },
-            '& th': { typography: 'caption', fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' },
-            '& tbody tr:hover': { bgcolor: 'action.hover' } }}>
+        <Box sx={{ containerType: 'inline-size', overflowX: 'auto', ...hideColumns(cols.length) }}>
+          <Table sx={tableSx}>
             <thead>
               <tr>
                 {pic && <th />}
@@ -77,7 +92,7 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
                 )
               })}
             </tbody>
-          </Box>
+          </Table>
         </Box>
       )}
       {pages > 1 && <Pagination size="small" count={pages} page={page} onChange={(_, p) => setPage(p)} sx={{ alignSelf: 'center' }} />}

@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom'
+import '@testing-library/jest-dom/vitest'
 
 // jsdom has no native ResizeObserver. react-grid-layout's useContainerWidth (Graph
 // mode, @eerp/core-front's graph-renderer.tsx) uses one internally; this stub keeps

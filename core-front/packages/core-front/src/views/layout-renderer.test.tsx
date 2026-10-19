@@ -104,10 +104,8 @@ describe('LayoutForm', () => {
       (el) => getComputedStyle(el).containerType === 'inline-size',
     )
     expect(outer).toBeDefined()
-    // jsdom doesn't resolve rem to px in getComputedStyle — the raw value is
-    // still proof the hint reached the rendered style, which is what this
-    // test checks; a real browser resolves it to 140px (8.75rem × 16px root).
-    expect(getComputedStyle(outer!).marginTop).toBe('8.75rem')
+    // The hint is 8.75rem; getComputedStyle resolves it against the 16px root.
+    expect(getComputedStyle(outer!).marginTop).toBe('140px')
   })
 
   it('a NEGATIVE offsetTop overrides the outer form Stack\'s own sibling-spacing margin (needs !important to win the specificity fight)', () => {
@@ -127,7 +125,7 @@ describe('LayoutForm', () => {
     const bInput = screen.getByLabelText('B')
     const group = bInput.closest('.MuiStack-root')
     expect(group).not.toBeNull()
-    expect(getComputedStyle(group!).marginTop).toBe('-1.25rem')
+    expect(getComputedStyle(group!).marginTop).toBe('-20px')
   })
 
   // The uneven split only applies inside a `@container (min-width: ...)`

@@ -35,6 +35,19 @@ Phases are **sequential**; tasks inside a phase are mostly parallel unless noted
 
 **Test rule (non-negotiable):** every file ships with tests. Unit tests mock `ApiClient`/Server Actions (no network). Integration tests run against MSW or a live backend, are named `*.integration.test.ts`, and are skipped unless `TEST_API_BASE` is set.
 
+DOM assertions come from `@testing-library/jest-dom/vitest` (the setup files import that entry, and the shell's tsconfig `types` lists it); since v7, the bare `@testing-library/jest-dom` entry no longer augments Vitest's `expect` type. jsdom (30+) resolves `rem`/`vw`/`vh` in `getComputedStyle`, so assert computed `px` values, e.g. `${window.innerWidth * 0.9}px` for `90vw`. MSW 3's unhandled-request option is `onUnhandledFrame`.
+
+## TypeScript 7 beside the TypeScript 6 API
+
+`tsc` is TypeScript 7, the native compiler. It ships no JS API, so tools that `import 'typescript'` (typescript-eslint, Next's build-time type check) still need 6.0. Every workspace `package.json`, module packages included, therefore declares both, as the TypeScript team recommends:
+
+```json
+"@typescript/native": "npm:typescript@^7.0.2",
+"typescript": "npm:@typescript/typescript6@^6.0.2"
+```
+
+`npx tsc` runs 7.0, `npx tsc6` runs 6.0, and `import 'typescript'` gets the 6.0 API. Pitfalls: a plain `"typescript": "^7"` makes ESLint fail with "typescript-eslint does not support TS 7.0"; a new module `package.json` must copy both lines. TS 7 also gives up sooner on huge JSX prop unions (TS2590, "too complex to represent"), for example `<Box component="table">` or computed keys spread inline into `sx`. Use `styled('table')` (which still takes `sx`) and type such objects as `SxProps<Theme>`. Revisit once typescript-eslint supports TS ≥ 7.1's new API.
+
 ---
 
 ## Conventions (contracts — source of truth)

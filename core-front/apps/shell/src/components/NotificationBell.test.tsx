@@ -116,7 +116,8 @@ describe('NotificationBell: reading and layout', () => {
       // In front of the page as a dialog (centered by its container, not by a
       // transform the open animation would overwrite), over a blurred backdrop.
       expect(screen.getByRole('dialog')).toContainElement(panel)
-      expect(panel).toHaveStyle({ width: '90vw', height: '90vh' })
+      // 90vw × 90vh, which getComputedStyle resolves against the window.
+      expect(panel).toHaveStyle({ width: `${window.innerWidth * 0.9}px`, height: `${window.innerHeight * 0.9}px` })
       expect(screen.getByTestId('notification-backdrop')).toBeInTheDocument()
     } finally {
       window.matchMedia = real

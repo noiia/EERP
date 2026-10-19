@@ -321,8 +321,9 @@ const packageJSONTmpl = `{
     "@eerp/core-front": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^6",
-    "vitest": "^4"
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.5"
   }
 }
 `
