@@ -67,6 +67,7 @@ import { junctionColumns, relationOf, type PendingManyToMany } from './relation-
 import { SearchBar } from './search-bar'
 import { StatusBar } from './status-bar'
 import { BannerScope, BannerSlot, ViewBanner } from './banner'
+import { FormContextProvider } from './form-context'
 import { resolveStatusBar, type StatusBarConfig } from '../api/status-bar-config'
 import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
@@ -131,6 +132,9 @@ export interface EntityViewProps<T extends HasId> {
    * fetched by loader.tsx only when the descriptor declares `statusBar`.
    * Undefined = no override: the module's field, every one of its options. */
   statusBarConfig?: StatusBarConfig
+  /** The form's context values (ViewDescriptor.formContext), read by the
+   * loader; field conditions test them as `context.<key>`. */
+  formContext?: Record<string, unknown>
   /** The page title (tree views only) — passed down so TreeRenderer can put
    * it on the SAME row as the search bar and Create button instead of the
    * host page rendering a separate title row above. Untranslated source
@@ -366,6 +370,7 @@ function FormRenderer<T extends HasId>({
   pictureSize,
   chatterVisible = true,
   statusBarConfig,
+  formContext,
 }: EntityViewProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -602,7 +607,9 @@ function FormRenderer<T extends HasId>({
   return (
     // The form's banner scope: every error/notice raised anywhere in it — a
     // save, a delete, a header button, a widget — shows in the slot between
-    // the toolbar and the form (banner.tsx).
+    // the toolbar and the form (banner.tsx). The context provider gives field
+    // conditions the form's context values (form-context.tsx).
+    <FormContextProvider values={formContext}>
     <BannerScope>
     <Box
       component="form"
@@ -726,6 +733,7 @@ function FormRenderer<T extends HasId>({
       </Box>
     </Box>
     </BannerScope>
+    </FormContextProvider>
   )
 }
 

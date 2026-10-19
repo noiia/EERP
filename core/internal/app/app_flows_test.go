@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"core/internal/auth"
 	"core/internal/types"
 	"core/orm"
 )
@@ -326,4 +327,92 @@ func TestApp_AdminAndRecordFeatures(t *testing.T) {
 	// Module reload: a re-validation no-op for Go modules, logged as an operation.
 	f.expect(http.MethodPost, "/api/v1/modules/sale/reload", nil, http.StatusOK)
 	f.expect(http.MethodGet, "/api/v1/modules/nope", nil, http.StatusNotFound)
+}
+
+// TestApp_ProductFlow: product creation needs no description, references
+// come from the sequence while the warehouse setting is on (the default) and
+// can't change, are typed while it's off; a line created from a product
+// inherits its taxes (product_tax).
+func TestApp_ProductFlow(t *testing.T) {
+	f := newFlow(t)
+	str := func(body []byte, key string) string {
+		t.Helper()
+		v, _ := decode(t, body)[key].(string)
+		return v
+	}
+	// The suite may run against the live dev DB: leave the workspace's
+	// product sequence as found, so its next real product isn't numbered
+	// after these test ones.
+	ctx := context.Background()
+	var lastBefore *int
+	_ = f.a.db.DB.QueryRow(ctx, `SELECT last FROM warehouse_sequence WHERE tenant_id = $1 AND kind = 'product'`, auth.DevTenantID).Scan(&lastBefore)
+	t.Cleanup(func() {
+		if lastBefore == nil {
+			_, _ = f.a.db.DB.Exec(ctx, `DELETE FROM warehouse_sequence WHERE tenant_id = $1 AND kind = 'product'`, auth.DevTenantID)
+		} else {
+			_, _ = f.a.db.DB.Exec(ctx, `UPDATE warehouse_sequence SET last = $2 WHERE tenant_id = $1 AND kind = 'product'`, auth.DevTenantID, *lastBefore)
+		}
+	})
+	settingsBody := f.expect(http.MethodGet, "/api/v1/settings/warehouse", nil, http.StatusOK)
+	auto, _ := decode(t, settingsBody)["auto_reference"].(bool)
+	t.Cleanup(func() { f.do(http.MethodPut, "/api/v1/settings/warehouse", map[string]any{"auto_reference": auto}) })
+	f.expect(http.MethodPut, "/api/v1/settings/warehouse", map[string]any{"auto_reference": true}, http.StatusOK)
+
+	// No description, no reference: both optional; the reference is the sequence's.
+	p1 := f.createAt("/api/v1/product", "product", map[string]any{"name": "Flow desk", "unit_price": 100, "reference": "TYPED"})
+	p2 := f.createAt("/api/v1/product", "product", map[string]any{"name": "Flow chair", "unit_price": 50})
+	r1 := str(f.expect(http.MethodGet, "/api/v1/product/"+p1, nil, http.StatusOK), "reference")
+	r2 := str(f.expect(http.MethodGet, "/api/v1/product/"+p2, nil, http.StatusOK), "reference")
+	if !strings.HasPrefix(r1, "PRD-") || r1 == r2 || r1 == "TYPED" {
+		t.Fatalf("auto references = %q, %q, want two distinct PRD-NNNNN", r1, r2)
+	}
+	f.expect(http.MethodPut, "/api/v1/product/"+p1, map[string]any{"name": "Flow desk", "reference": "CHANGED", "unit_price": 100, "description": ""}, http.StatusOK)
+	if got := str(f.expect(http.MethodGet, "/api/v1/product/"+p1, nil, http.StatusOK), "reference"); got != r1 {
+		t.Errorf("auto reference after an edit = %q, want %q", got, r1)
+	}
+
+	// Manual mode: the typed reference stands, and can be edited.
+	f.expect(http.MethodPut, "/api/v1/settings/warehouse", map[string]any{"auto_reference": false}, http.StatusOK)
+	if got, _ := decode(t, f.expect(http.MethodGet, "/api/v1/settings/warehouse", nil, http.StatusOK))["auto_reference"].(bool); got {
+		t.Fatal("auto_reference still on after turning it off")
+	}
+	p3 := f.createAt("/api/v1/product", "product", map[string]any{"name": "Flow lamp", "unit_price": 10, "reference": "LAMP-1"})
+	f.expect(http.MethodPut, "/api/v1/product/"+p3, map[string]any{"name": "Flow lamp", "reference": "LAMP-2", "unit_price": 10, "description": ""}, http.StatusOK)
+	if got := str(f.expect(http.MethodGet, "/api/v1/product/"+p3, nil, http.StatusOK), "reference"); got != "LAMP-2" {
+		t.Errorf("manual reference = %q, want LAMP-2", got)
+	}
+	f.expect(http.MethodPut, "/api/v1/settings/warehouse", map[string]any{}, http.StatusBadRequest)
+
+	// Taxes: a 20% VAT and a fixed 1.5 levy on the desk.
+	vat := f.create("sale_tax", map[string]any{"name": "Flow VAT 20%", "kind": "percentage", "rate": 0.2})
+	levy := f.create("sale_tax", map[string]any{"name": "Flow levy", "kind": "fixed", "amount": 1.5})
+	f.create("product_tax", map[string]any{"product_id": p1, "sale_tax_id": vat})
+	f.create("product_tax", map[string]any{"product_id": p1, "sale_tax_id": levy})
+	variant := f.create("product_variant", map[string]any{"product_id": p1})
+
+	taxIncluded := strings.Contains(string(f.expect(http.MethodGet, "/api/v1/settings/tax", nil, http.StatusOK)), "tax_included")
+	invoice := f.create("invoice", map[string]any{"customer_name": "Flow"})
+	line := f.create("sale_line", map[string]any{"invoice_id": invoice, "variant_id": variant, "quantity": 2})
+	links := string(f.expect(http.MethodGet, "/api/v1/sale_line_tax?filter[sale_line_id]="+line, nil, http.StatusOK))
+	if !strings.Contains(links, vat) || !strings.Contains(links, levy) {
+		t.Errorf("line tax links = %s, want the product's two taxes", links)
+	}
+	// 2 × 100 + 20% + 1.5 = 241.5 on top of the price, or 200 tax included.
+	want := 241.5
+	if taxIncluded {
+		want = 200
+	}
+	if got := number(t, f.expect(http.MethodGet, "/api/v1/sale_line/"+line, nil, http.StatusOK), "total"); math.Abs(got-want) > 1e-9 {
+		t.Errorf("line total = %v, want %v", got, want)
+	}
+	for _, l := range decode(t, []byte(links))["data"].([]any) {
+		f.expect(http.MethodDelete, "/api/v1/sale_line_tax/"+l.(map[string]any)["id"].(string), nil, http.StatusNoContent)
+	}
+
+	// A quote line has no tax links: its rate is the product's percentage taxes.
+	quote := f.create("quote", map[string]any{"customer_name": "Flow"})
+	quoteLine := f.create("quote_line", map[string]any{"quote_id": quote, "variant_id": variant, "quantity": 1})
+	if got := number(t, f.expect(http.MethodGet, "/api/v1/quote_line/"+quoteLine, nil, http.StatusOK), "tax_rate"); math.Abs(got-0.2) > 1e-9 {
+		t.Errorf("quote line tax_rate = %v, want 0.2", got)
+	}
 }

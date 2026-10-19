@@ -139,6 +139,47 @@ describe('FormRenderer status breadcrumb', () => {
   })
 })
 
+describe('form context (ViewDescriptor.formContext)', () => {
+  const descriptor: ViewDescriptor<Contact> = {
+    entity: 'product',
+    viewType: 'form',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      {
+        name: 'reference',
+        label: 'Reference',
+        type: 'text',
+        states: { readOnly: { field: 'context.auto_reference', op: 'eq', value: true } },
+      },
+    ],
+  }
+
+  it.each([
+    [{ auto_reference: true }, true],
+    [{ auto_reference: false }, false],
+    [undefined, false],
+  ])('context %o makes the field read-only: %s', (formContext, disabled) => {
+    render(<EntityView descriptor={descriptor} initialData={[{ id: 'p1', name: 'Desk' }]} actions={noopActions} formContext={formContext} />)
+    expect((screen.getByLabelText('Reference') as HTMLInputElement).disabled).toBe(disabled)
+  })
+
+  it('never puts the context into the record it saves', async () => {
+    const update = vi.fn(async (id: string, b: Partial<Contact>) => ({ id, name: '', ...b }) as Contact)
+    render(
+      <EntityView
+        descriptor={descriptor}
+        initialData={[{ id: 'p1', name: 'Desk' }]}
+        actions={{ create: vi.fn(), update }}
+        formContext={{ auto_reference: true }}
+      />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Chair' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(Object.keys(update.mock.calls[0][1] as object).some((k) => k.startsWith('context.') || k === 'auto_reference')).toBe(false)
+  })
+})
+
 describe('banners above the view', () => {
   it('a failed save shows its error banner between the toolbar and the form, not in it', async () => {
     const actions: EntityActions<Contact> = {

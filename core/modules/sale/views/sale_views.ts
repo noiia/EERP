@@ -4,6 +4,7 @@ import { quoteRoutes, quoteLinesPageOperations } from './quote_views'
 import { saleLineRoutes } from './sale_line_views'
 import { quoteLineRoutes } from './quote_line_views'
 import { saleTaxRoutes } from './sale_tax_views'
+import { productTaxesOperations } from './product_tax_views'
 import { invoiceReport } from '../reports/invoice_report'
 import { quoteReport } from '../reports/quote_report'
 
@@ -39,6 +40,8 @@ const sale: FrontModule = {
   extends: [
     { path: '/sale/:id', operations: orderLinesPageOperations },
     { path: '/sale/quote/:id', operations: quoteLinesPageOperations },
+    // A product's Taxes, next to its price (product_tax_views.ts).
+    { path: '/warehouse/products/:id', operations: productTaxesOperations },
   ],
 }
 

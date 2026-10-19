@@ -47,10 +47,10 @@ func loadVariant(ctx context.Context, ex orm.Executor, tenant, variantID uuid.UU
 	var v warehouse.ProductVariant
 	var p warehouse.Product
 	err := ex.QueryRow(ctx, `
-		SELECT v.name, v.unit_price, v.tax_rate, p.unit, p.unit_price, p.tax_rate
+		SELECT v.name, v.unit_price, v.tax_rate, p.id, p.unit_price
 		FROM product_variant v JOIN product p ON p.id = v.product_id
 		WHERE v.id = $1 AND v.tenant_id = $2 AND p.tenant_id = $2 AND v.deleted_at IS NULL AND p.deleted_at IS NULL`, variantID, tenant).
-		Scan(&v.Name, &v.UnitPrice, &v.TaxRate, &p.Unit, &p.UnitPrice, &p.TaxRate)
+		Scan(&v.Name, &v.UnitPrice, &v.TaxRate, &p.ID, &p.UnitPrice)
 	if errors.Is(err, orm.ErrNotFound) {
 		return "", p, v, ErrNoVariant
 	}
@@ -107,8 +107,14 @@ func CreateInvoice(ctx context.Context, ex orm.Executor, req InvoiceRequest) (In
 	if req.UnitPrice != nil {
 		price = *req.UnitPrice
 	}
-	rate := resolveTaxRate(product, variant)
-	subtotal, total := computeLineTotal(req.Quantity*price, rate, nil, included)
+	// Same taxes as an invoice line typed in the form: the product's (linked
+	// below) plus the variant's own rate.
+	taxes, err := productTaxes(ctx, orm.MustRepo[ProductTax](ex), orm.MustRepo[SaleTax](ex), req.TenantID, product.ID)
+	if err != nil {
+		return Invoice{}, err
+	}
+	rate := variantRate(variant)
+	subtotal, total := computeLineTotal(req.Quantity*price, rate, taxes, included)
 	tax := total - subtotal
 	inv := Invoice{Number: number, IssueDate: &now, Subject: req.Subject, CustomerID: req.CustomerID,
 		CustomerName: req.CustomerName, CustomerEmail: req.CustomerEmail, Status: "sent",
@@ -118,10 +124,14 @@ func CreateInvoice(ctx context.Context, ex orm.Executor, req InvoiceRequest) (In
 		return Invoice{}, fmt.Errorf("sale: create invoice: %w", err)
 	}
 	line := SaleLine{InvoiceID: inv.ID, VariantID: req.VariantID, VariantName: name, Quantity: req.Quantity,
-		Unit: product.Unit, TaxRate: rate, UnitPrice: price, Subtotal: subtotal, Total: total}
+		TaxRate: rate, UnitPrice: price, Subtotal: subtotal, Total: total}
 	line.TenantID = req.TenantID
-	if _, err := orm.MustRepo[SaleLine](ex).Create(ctx, line); err != nil {
+	created, err := orm.MustRepo[SaleLine](ex).Create(ctx, line)
+	if err != nil {
 		return Invoice{}, fmt.Errorf("sale: create invoice line: %w", err)
+	}
+	if err := linkLineTaxes(ctx, orm.MustRepo[SaleLineTax](ex), req.TenantID, created.ID, taxes); err != nil {
+		return Invoice{}, err
 	}
 	return inv, nil
 }
@@ -153,9 +163,13 @@ func VariantPricing(ctx context.Context, ex orm.Executor, tenant, variantID uuid
 	if err != nil {
 		return 0, nil, err
 	}
-	rate := resolveTaxRate(product, variant)
+	taxes, err := productTaxes(ctx, orm.MustRepo[ProductTax](ex), orm.MustRepo[SaleTax](ex), tenant, product.ID)
+	if err != nil {
+		return 0, nil, err
+	}
+	rate := variantRate(variant)
 	return resolveUnitPrice(product, variant), func(unit float64) float64 {
-		_, total := computeLineTotal(unit, rate, nil, included)
+		_, total := computeLineTotal(unit, rate, taxes, included)
 		return total
 	}, nil
 }

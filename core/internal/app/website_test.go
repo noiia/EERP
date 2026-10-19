@@ -52,7 +52,7 @@ func TestPublicRoutes(t *testing.T) {
 
 	// Seed one product and publish {name} only.
 	name := "pub-" + uuid.NewString()
-	code, body := c.do(http.MethodPost, "/api/v1/product", map[string]any{"name": name, "description": "d", "reference": "r", "unit": "pcs", "tax_rate": 0.2, "unit_price": 12.5})
+	code, body := c.do(http.MethodPost, "/api/v1/product", map[string]any{"name": name, "description": "d", "unit_price": 12.5})
 	if code != http.StatusCreated && code != http.StatusOK {
 		t.Fatalf("create product: %d %s", code, body)
 	}
@@ -719,12 +719,19 @@ func TestBookingFlow(t *testing.T) {
 	})
 
 	t.Run("paid event", func(t *testing.T) {
-		code, body := c.do(http.MethodPost, "/api/v1/product", map[string]any{"name": prefix + "-ticket", "description": "", "reference": "T",
-			"unit": "unit", "tax_rate": 0.2, "unit_price": 12.5})
+		code, body := c.do(http.MethodPost, "/api/v1/product", map[string]any{"name": prefix + "-ticket", "unit_price": 12.5})
 		if code != http.StatusCreated && code != http.StatusOK {
 			t.Fatalf("create product: %d %s", code, body)
 		}
 		productID := decode(t, body)["id"].(string)
+		// Its 20% tax, linked the way the product form's Taxes field does.
+		taxID := mustCreate("/api/v1/sale_tax", map[string]any{"name": prefix + " VAT 20%", "kind": "percentage", "rate": 0.2, "amount": 0})
+		mustCreate("/api/v1/product_tax", map[string]any{"product_id": productID, "sale_tax_id": taxID})
+		t.Cleanup(func() {
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM sale_line_tax WHERE sale_tax_id = $1`, taxID)
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM product_tax WHERE product_id = $1`, productID)
+			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM sale_tax WHERE id = $1`, taxID)
+		})
 		variantID := mustCreate("/api/v1/product_variant", map[string]any{"product_id": productID, "name": "Ticket"})
 		t.Cleanup(func() {
 			_, _ = c.a.db.DB.Exec(ctx, `DELETE FROM sale_line WHERE variant_id = $1`, variantID)

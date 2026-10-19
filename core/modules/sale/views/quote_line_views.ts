@@ -32,7 +32,6 @@ const quoteLineFields: ViewDescriptor['fields'] = [
     relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' },
   },
   { name: 'quantity', label: 'Quantity', type: 'number', required: true },
-  { name: 'unit', label: 'Unit', type: 'text', readOnly: true },
   { name: 'tax_rate', label: 'Tax', type: 'number', widget: 'percent', readOnly: true },
   { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float', readOnly: true },
 ]

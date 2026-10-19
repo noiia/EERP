@@ -141,3 +141,6 @@ msgstr ""
 
 msgid "Reference:"
 msgstr ""
+
+msgid "Taxes"
+msgstr ""

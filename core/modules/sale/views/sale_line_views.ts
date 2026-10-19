@@ -32,9 +32,10 @@ export interface SaleLine {
 // create-wizard (RelationListWidget/RelationCreateWizard) has a form to
 // render: invoice_id is preset+hidden by the wizard's context (same
 // contact.crm_records/contact_id pattern), variant_id is the line's real
-// "product.variant many2one" first column, and unit/tax_rate/unit_price are
+// "product.variant many2one" first column, and tax_rate/unit_price are
 // read-only because the backend snapshots them from the chosen variant's
-// product (core/modules/sale/handler.go) — never hand-typed.
+// product (core/modules/sale/handler.go) — never hand-typed. The line's
+// taxes start as its product's (product_tax.go).
 const saleLineFields: ViewDescriptor['fields'] = [
   {
     name: 'invoice_id',
@@ -51,7 +52,6 @@ const saleLineFields: ViewDescriptor['fields'] = [
     relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' },
   },
   { name: 'quantity', label: 'Quantity', type: 'number', required: true },
-  { name: 'unit', label: 'Unit', type: 'text', readOnly: true },
   { name: 'tax_rate', label: 'Tax', type: 'number', widget: 'percent', readOnly: true },
   { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float', readOnly: true },
   // Extra taxes, stacked on top of tax_rate above (module.go's SaleLine.Total

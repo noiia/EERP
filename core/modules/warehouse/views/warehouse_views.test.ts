@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { evaluateCondition, FORM_HEADER_ID } from '@eerp/core-front'
 import mod from './warehouse_views'
 
 describe('warehouse FrontModule', () => {
@@ -63,5 +64,32 @@ describe('warehouse FrontModule', () => {
     const typeField = formRoute.descriptor.fields.find((f) => f.name === 'type')
     expect(typeField?.required).toBe(true)
     expect(typeField?.selection?.options).toEqual(['piece', 'length', 'weight', 'volume', 'surface', 'custom'])
+  })
+})
+
+describe('warehouse — product form', () => {
+  const form = () => mod.routes.find((r) => r.path === '/warehouse/products/:id')!.descriptor
+
+  it('has no unit and no single tax rate (taxes are sale\'s Taxes field)', () => {
+    const names = form().fields.map((f) => f.name)
+    expect(names).not.toContain('unit')
+    expect(names).not.toContain('tax_rate')
+  })
+
+  it('shows the picture on top, beside the name', () => {
+    const header = form().layout?.find((n) => n.kind !== 'field' && n.id === FORM_HEADER_ID)
+    expect(header && header.kind !== 'field' ? header.children : []).toEqual([
+      { kind: 'field', name: 'picture' },
+      { kind: 'field', name: 'name', variant: 'title' },
+    ])
+  })
+
+  it('makes the reference read-only while the warehouse setting auto_reference is on', () => {
+    expect(form().formContext).toBe('/settings/warehouse')
+    const reference = form().fields.find((f) => f.name === 'reference')!
+    expect(reference.required).toBeUndefined()
+    expect(reference.states?.readOnly).toEqual({ field: 'context.auto_reference', op: 'eq', value: true })
+    expect(evaluateCondition(reference.states!.readOnly!, { 'context.auto_reference': true })).toBe(true)
+    expect(evaluateCondition(reference.states!.readOnly!, { 'context.auto_reference': false })).toBe(false)
   })
 })

@@ -225,17 +225,28 @@ FROM (VALUES
 WHERE $2::int IS NOT NULL`},
 
 	{"product", `
-INSERT INTO product (tenant_id, name, reference, unit, unit_price, tax_rate, created_at)
+INSERT INTO product (tenant_id, name, reference, unit_price, created_at)
 SELECT $1,
   (ARRAY['Premium','Compact','Industrial','Eco','Pro','Smart','Classic','Heavy-duty','Wireless','Modular','Organic','Deluxe'])[1 + i % 12]
     || ' ' || (ARRAY['drill','consulting hour','server rack','desk','sensor','cable','license','pump','valve','lamp','router','chair','panel','filter','battery','training day','printer','monitor','bracket','gasket'])[1 + (i / 12) % 20]
     || ' ' || i,
   'SEED-' || lpad(i::text, 6, '0'),
-  (ARRAY['pcs','hour','month','kg','m'])[1 + i % 5],
   round((5 + random() * 1995)::numeric, 2),
-  CASE WHEN i % 10 < 6 THEN 0.2 WHEN i % 10 < 8 THEN 0.1 WHEN i % 10 < 9 THEN 0.055 ELSE 0.021 END,
   now() - random() * interval '730 days'
 FROM generate_series(1, $2) AS i`},
+
+	// Each product's VAT, picked from its seed number (6 in 10 at 20%, 2 at
+	// 10%, 1 at 5.5%, 1 at 2.1%), linked to the catalog's matching tax — none
+	// without the tax catalog group.
+	{"product_tax", `
+INSERT INTO product_tax (tenant_id, product_id, sale_tax_id)
+SELECT p.tenant_id, p.id, t.id
+FROM product p
+JOIN sale_tax t ON t.tenant_id = p.tenant_id AND t.kind = 'percentage' AND t.deleted_at IS NULL
+  AND t.name = CASE WHEN substring(p.reference from 6)::int % 10 < 6 THEN 'VAT 20%'
+                    WHEN substring(p.reference from 6)::int % 10 < 8 THEN 'VAT 10%'
+                    WHEN substring(p.reference from 6)::int % 10 < 9 THEN 'VAT 5.5%' ELSE 'VAT 2.1%' END
+WHERE p.tenant_id = $1 AND p.reference LIKE 'SEED-%' AND $2::int IS NOT NULL`},
 
 	{"product_variant", `
 INSERT INTO product_variant (tenant_id, product_id, name, unit_price, tax_rate, created_at)
@@ -247,8 +258,11 @@ FROM product p WHERE p.tenant_id = $1 AND p.reference LIKE 'SEED-%' AND $2::int 
 
 	{"", `
 CREATE TEMP TABLE seed_variants ON COMMIT DROP AS
-SELECT row_number() OVER (ORDER BY p.reference) AS idx, v.id, v.name, p.unit,
-  COALESCE(v.unit_price, p.unit_price) AS price, COALESCE(v.tax_rate, p.tax_rate) AS rate
+SELECT row_number() OVER (ORDER BY p.reference) AS idx, v.id, v.name, ''::text AS unit,
+  COALESCE(v.unit_price, p.unit_price) AS price,
+  -- A line's rate: the product's percentage taxes plus the variant's own.
+  COALESCE(v.tax_rate, 0) + COALESCE((SELECT sum(t.rate) FROM product_tax pt JOIN sale_tax t ON t.id = pt.sale_tax_id
+    WHERE pt.product_id = p.id AND pt.deleted_at IS NULL AND t.kind = 'percentage' AND t.deleted_at IS NULL), 0) AS rate
 FROM product_variant v JOIN product p ON p.id = v.product_id
 WHERE v.tenant_id = $1 AND p.reference LIKE 'SEED-%' AND $2::int IS NOT NULL`},
 }, analyze("seed_variants", "product", "product_variant"), []step{

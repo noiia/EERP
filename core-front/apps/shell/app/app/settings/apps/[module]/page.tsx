@@ -17,6 +17,8 @@ import { getEntityStatusBarConfig } from '@/lib/status-bar-config'
 import EventSettings from '@/components/EventSettings'
 import { getEventSettings } from '@/lib/event-settings'
 import PropertyManagementSettings from '@/components/PropertyManagementSettings'
+import WarehouseSettings from '@/components/WarehouseSettings'
+import { getWarehouseSettings } from '@/lib/warehouse-settings'
 import { getPropertyManagementSettings } from '@/lib/propertymanagement-settings'
 // Side-effect import: registers every discovered module's FrontModule into
 // the shared registry before enumerating its tree views (mirrors
@@ -104,6 +106,9 @@ export default async function AppSettingsPage({
       ) : (
         <>
           {module === 'event' && <EventSettingsSection canEdit={hasPermission(permissions, 'settings:events:write')} />}
+          {module === 'warehouse' && (
+            <WarehouseSettingsSection canEdit={hasPermission(permissions, 'settings:warehouse:write')} />
+          )}
           {module === 'propertymanagement' && (
             <PropertyManagementSettingsSection
               canEdit={hasPermission(permissions, 'settings:propertymanagement:write')}
@@ -124,6 +129,17 @@ async function EventSettingsSection({ canEdit }: { canEdit: boolean }) {
   return (
     <Container maxWidth="md" sx={{ pb: 6 }}>
       <EventSettings initial={settings} canEdit={canEdit} />
+    </Container>
+  )
+}
+
+// The warehouse app's own workspace settings (product references).
+async function WarehouseSettingsSection({ canEdit }: { canEdit: boolean }) {
+  const settings = await getWarehouseSettings()
+  if (!settings) return null
+  return (
+    <Container maxWidth="md" sx={{ pb: 6 }}>
+      <WarehouseSettings initial={settings} canEdit={canEdit} />
     </Container>
   )
 }

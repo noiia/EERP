@@ -76,3 +76,6 @@ msgstr "Personnalisé"
 
 msgid "Picture"
 msgstr "Image"
+
+msgid "Extra tax rate"
+msgstr "Taux de taxe supplémentaire"

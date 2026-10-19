@@ -8,7 +8,7 @@
     "description": "Sale module — invoice management and PDF export",
     "app_mode": true,
     "menu_icon": "file-invoice-dollar",
-    "depends": [],
+    "depends": ["warehouse"],
     "static_files": {
         "views": [
             "sale_views.ts"

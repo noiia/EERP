@@ -179,6 +179,8 @@ describe('seedDemoData', () => {
       'crm',
       'crm_tag',
       'product',
+      'sale_tax',
+      'product_tax',
       'product_variant',
       'invoice',
       'sale_line',
@@ -263,6 +265,17 @@ describe('seedDemoData', () => {
     // picked status is past draft gets it once its lines exist.
     const statusUpdates = updateMock.mock.calls.filter(([e]) => e === 'invoice' || e === 'quote')
     expect(statusUpdates.every(([, , body]) => (body as Record<string, unknown>).status !== 'draft')).toBe(true)
+
+    // Products carry no unit/tax_rate (Go numbers them, sale's Taxes link
+    // their VAT): every product gets a product_tax link to a seeded tax.
+    for (const [, body] of callsFor('product') as [string, Record<string, unknown>][]) {
+      expect(body).not.toHaveProperty('unit')
+      expect(body).not.toHaveProperty('tax_rate')
+    }
+    expect(callsFor('product_tax')).toHaveLength(callsFor('product').length)
+    for (const [, body] of callsFor('product_tax') as [string, Record<string, unknown>][]) {
+      expect(body.sale_tax_id).toMatch(/^sale_tax-\d+$/)
+    }
 
     // Every line references a real seeded document + variant id, never a raw index.
     const saleLineCalls = callsFor('sale_line')

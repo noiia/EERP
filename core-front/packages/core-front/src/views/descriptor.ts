@@ -1253,6 +1253,15 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    */
   statusBar?: StatusBarDescriptor
   /**
+   * For `viewType: 'form'` only: an API path (relative to `/api/v1`, e.g.
+   * `/settings/warehouse`) whose JSON object becomes the form's context —
+   * read server-side by the loader, and testable by any field condition as
+   * `context.<key>` (form-context.tsx), never part of the record. An
+   * unreadable endpoint gives an empty context (conditions on it read as
+   * unset).
+   */
+  formContext?: string
+  /**
    * For `viewType: 'form'` only: the header-button-container (see
    * HeaderButtonDescriptor) — real workflow buttons in the top toolbar, right
    * of the options menu. Omitted ⇒ nothing renders there, unlike Save/Reset/

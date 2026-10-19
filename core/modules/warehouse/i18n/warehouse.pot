@@ -9,3 +9,6 @@ msgstr ""
 
 msgid "Picture"
 msgstr ""
+
+msgid "Extra tax rate"
+msgstr ""

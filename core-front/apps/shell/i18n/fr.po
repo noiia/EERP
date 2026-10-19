@@ -1883,3 +1883,12 @@ msgstr "Modifier la barre de statut nécessite la permission settings:views:writ
 
 msgid "Some counts could not be loaded"
 msgstr "Certains totaux n'ont pas pu être chargés"
+
+msgid "Products"
+msgstr "Produits"
+
+msgid "Generate references automatically"
+msgstr "Générer les références automatiquement"
+
+msgid "On: each new product gets the next reference (PRD-00001, PRD-00002…), which cannot be edited. Off: references are typed by hand."
+msgstr "Activé : chaque nouveau produit reçoit la référence suivante (PRD-00001, PRD-00002…), non modifiable. Désactivé : les références sont saisies à la main."

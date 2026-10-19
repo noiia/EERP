@@ -231,6 +231,38 @@ describe('EntityViewServer', () => {
     expect(element.props.statusBarConfig).toEqual({ field: null, steps: ['won'] })
   })
 
+  it('reads a form context only for a form that names one; an unreadable one is empty', async () => {
+    const getFormContext = vi.fn(async () => ({ auto_reference: true }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getFormContext: getFormContext as never })
+    const withContext = await EntityViewServer({
+      descriptor: { ...form, formContext: '/settings/warehouse' },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+    })
+    expect(getFormContext).toHaveBeenCalledWith('/settings/warehouse')
+    expect(withContext.props.formContext).toEqual({ auto_reference: true })
+
+    getFormContext.mockClear()
+    const without = await EntityViewServer({ descriptor: form, actions: { create: vi.fn(), update: vi.fn() }, api, recordId: '1' })
+    expect(getFormContext).not.toHaveBeenCalled()
+    expect(without.props.formContext).toBeUndefined()
+
+    const denied = fakeApi({
+      get: vi.fn(async () => ({ id: '1' })) as never,
+      getFormContext: vi.fn(async () => {
+        throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
+      }) as never,
+    })
+    const empty = await EntityViewServer({
+      descriptor: { ...form, formContext: '/settings/warehouse' },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api: denied,
+      recordId: '1',
+    })
+    expect(empty.props.formContext).toEqual({})
+  })
+
   it('never reads a status-bar override for a form without a breadcrumb', async () => {
     const getStatusBarConfig = vi.fn(async () => ({ field: null, steps: null }))
     const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getStatusBarConfig: getStatusBarConfig as never })

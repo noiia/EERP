@@ -309,6 +309,8 @@ export interface ServerApiClient {
    * getChatterVisibility.
    */
   getStatusBarConfig(entity: string): Promise<StatusBarConfig>
+  /** A form's context: GET `path` (ViewDescriptor.formContext), never cached. */
+  getFormContext(path: string): Promise<Record<string, unknown>>
   /**
    * A boolean/picture widget's configured box size, either the workspace-wide
    * Base default (module: 'base') or one specific app's own override
@@ -506,6 +508,11 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     return { enabled: raw.enabled ?? null }
+  }
+
+  async getFormContext(path: string): Promise<Record<string, unknown>> {
+    const raw = await request<unknown>('GET', path.startsWith('/') ? path : `/${path}`, null, undefined, this.tokenOverride)
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
   }
 
   async getStatusBarConfig(entity: string): Promise<StatusBarConfig> {

@@ -15,10 +15,12 @@ func init() {
 	module.RegisterGoModule(&warehouseModule{})
 }
 
-// Product is the sellable catalog entry: name, unit of measure, and the
-// price/tax pair a sale line snapshots from ("unit price free taxes" +
-// "the tax from the product" in sale.SaleLine's doc comment). It is never
-// referenced directly by a sale line — see ProductVariant.
+// Product is the sellable catalog entry: name, reference, price excl. tax,
+// picture. Its taxes are sale's product_tax links (sale.ProductTax — the
+// sale module owns the tax catalog), which a sale line copies from when it is
+// created. It is never referenced directly by a sale line — see
+// ProductVariant. The unit and tax_rate columns are gone from the model (the
+// DB keeps them, defaulted, since migrations never drop a column).
 // json tags mirror the db tags exactly: Echo's default Bind uses
 // encoding/json, which without an explicit `json` tag matches a JSON key to
 // a Go field name case-insensitively but NOT underscore-insensitively — a
@@ -31,20 +33,13 @@ type Product struct {
 	// Description is long-form catalog copy, added for the public website's
 	// product pages (ADR-024); optional, blank by default.
 	Description string `db:"description" json:"description"`
-	// Reference is a free-text SKU/internal code — optional, no uniqueness
-	// enforced (this ORM has no unique-constraint support yet).
+	// Reference is the SKU/internal code. With the warehouse setting
+	// auto_reference on (the default), the product sequence fills it on
+	// create and it can't change (reference.go); off, it's typed by hand.
+	// No uniqueness enforced.
 	Reference string `db:"reference" json:"reference"`
-	// Unit is the unit of measure (e.g. "pcs", "kg", "hour") — free text
-	// rather than a selection, since the set of units a business needs is
-	// open-ended.
-	Unit string `db:"unit" json:"unit"`
 	// UnitPrice is the price excl. tax ("free taxes" in the request).
 	UnitPrice float64 `db:"unit_price" json:"unit_price"`
-	// TaxRate is a 0..1 ratio (percent widget on the frontend), same
-	// contract as sale.Invoice's former single invoice-level TaxRate — here
-	// it lives per product, since sale.Invoice.TaxAmount is now the sum of
-	// each line's own product tax.
-	TaxRate float64 `db:"tax_rate" json:"tax_rate"`
 	// Picture is the flag behind the form's boolean/picture widget: true ⇔ a
 	// picture exists on the (table, record, picture) anchor; the picture
 	// service owns the bytes. Public-declared, so the website shows it.
@@ -73,11 +68,9 @@ type ProductVariant struct {
 	// snapshotFromVariant (handler.go and quote_handler.go) prefers this over
 	// Product.UnitPrice when present.
 	UnitPrice *float64 `db:"unit_price" json:"unit_price"`
-	// TaxRate, when set, overrides the parent Product's tax rate for this one
-	// variant — same "nil means inherit" contract as UnitPrice above. sale's
-	// snapshotFromVariant (handler.go and quote_handler.go) prefers this over
-	// Product.TaxRate when present, so a sale line's tax percent is always
-	// resolved from the specific variant sold, not just its product.
+	// TaxRate, when set, is this variant's own extra tax rate (0..1) — sale's
+	// snapshot puts it in the line's tax_rate beside the product's taxes
+	// (sale.ProductTax); nil means none.
 	TaxRate *float64 `db:"tax_rate" json:"tax_rate"`
 	// Picture is the flag behind the form's boolean/picture widget: true ⇔ a
 	// picture exists on the (table, record, picture) anchor; the picture
@@ -242,5 +235,14 @@ func seedDefaultUoms(ctx context.Context, db *orm.DB) error {
 // and the struct-derived table auto-migration, same as any other module's DDL
 // step (core/internal/module/go_module.go's loadGoModule).
 func (m *warehouseModule) Migrate(ctx context.Context, db *orm.DB) error {
+	// The product reference sequence (reference.go): one row per tenant.
+	if _, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS warehouse_sequence (
+		tenant_id uuid    NOT NULL,
+		kind      text    NOT NULL,
+		last      integer NOT NULL,
+		PRIMARY KEY (tenant_id, kind)
+	)`); err != nil {
+		return fmt.Errorf("warehouse: create warehouse_sequence: %w", err)
+	}
 	return seedDefaultUoms(ctx, db)
 }

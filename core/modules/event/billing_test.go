@@ -10,14 +10,22 @@ import (
 	"github.com/google/uuid"
 )
 
-// variant creates a product at price (excl. tax) with tax rate, and its variant.
+// variant creates a product at price (excl. tax) taxed at rate (a percentage
+// tax linked through product_tax), and its variant.
 func (f fixture) variant(t *testing.T, price, rate float64) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
 	var product, variant uuid.UUID
-	if err := f.db.QueryRow(ctx, `INSERT INTO product (tenant_id, name, description, reference, unit, unit_price, tax_rate)
-		VALUES ($1, 'Ticket', '', 'T', 'unit', $2, $3) RETURNING id`, f.tenant, price, rate).Scan(&product); err != nil {
+	if err := f.db.QueryRow(ctx, `INSERT INTO product (tenant_id, name, description, reference, unit_price)
+		VALUES ($1, 'Ticket', '', 'T', $2) RETURNING id`, f.tenant, price).Scan(&product); err != nil {
 		t.Fatal(err)
+	}
+	if rate > 0 {
+		if _, err := f.db.Exec(ctx, `WITH t AS (INSERT INTO sale_tax (tenant_id, name, kind, rate, amount)
+			VALUES ($1, 'VAT', 'percentage', $3, 0) RETURNING id)
+			INSERT INTO product_tax (tenant_id, product_id, sale_tax_id) SELECT $1, $2, id FROM t`, f.tenant, product, rate); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := f.db.QueryRow(ctx, `INSERT INTO product_variant (tenant_id, product_id, name) VALUES ($1, $2, 'Ticket') RETURNING id`,
 		f.tenant, product).Scan(&variant); err != nil {

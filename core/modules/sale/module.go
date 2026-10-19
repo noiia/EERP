@@ -339,12 +339,14 @@ func (m *saleModule) Migrate(ctx context.Context, db *orm.DB) error {
 			ON quote_recipient (quote_id, contact_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_recipient_unique
 			ON invoice_recipient (invoice_id, contact_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_tax_unique
+			ON product_tax (product_id, sale_tax_id) WHERE deleted_at IS NULL`,
 	} {
 		if _, err := db.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("sale: migrate: %w", err)
 		}
 	}
-	return nil
+	return migrateProductTaxRates(ctx, db)
 }
 
 func (m *saleModule) Name() string { return "sale" }
@@ -369,6 +371,9 @@ func (m *saleModule) Register() error {
 		return err
 	}
 	if err := orm.Register[QuoteRecipient](); err != nil {
+		return err
+	}
+	if err := orm.Register[ProductTax](); err != nil {
 		return err
 	}
 	return orm.Register[InvoiceRecipient]()

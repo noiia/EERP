@@ -962,6 +962,17 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	)
 	srv.Echo().POST("/api/v1/product_variant", productVariantCreate.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
+	// ── warehouse: product reference (sequence or typed) + app settings ──────
+	// modules/warehouse/reference.go: with auto_reference on (the default) a
+	// new product takes the next PRD-<n> and an edit keeps it; the create
+	// also fills the optional text columns a client may leave out.
+	productRefs := warehouse.NewProductHandler(app.DB, settings.NewRepository(app.DB))
+	srv.Echo().POST("/api/v1/product", handlers["product"].Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), productRefs.OnCreate)
+	srv.Echo().PUT("/api/v1/product/:id", handlers["product"].Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), productRefs.OnUpdate)
+	// Warehouse app settings: settings:warehouse:read|write, route-derived.
+	settingsGroup.GET("/warehouse", productRefs.GetSettings)
+	settingsGroup.PUT("/warehouse", productRefs.PutSettings)
+
 	// ── sale: sale_line Create/Update/Delete overrides ───────────────────────
 	// Unlike crminheritdemo/warehouse above, THREE verbs are overridden here
 	// (GET stays generic) — every mutation needs to resolve the line's variant
@@ -974,6 +985,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		orm.MustRepo[warehouse.Product](app.DB),
 		orm.MustRepo[sale.SaleTax](app.DB),
 		orm.MustRepo[sale.SaleLineTax](app.DB),
+		orm.MustRepo[sale.ProductTax](app.DB),
 		settings.NewRepository(app.DB),
 		companyRepo,
 	)
@@ -1036,6 +1048,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		orm.MustRepo[sale.Quote](app.DB),
 		orm.MustRepo[warehouse.ProductVariant](app.DB),
 		orm.MustRepo[warehouse.Product](app.DB),
+		orm.MustRepo[sale.ProductTax](app.DB),
+		orm.MustRepo[sale.SaleTax](app.DB),
 	)
 	quoteLineGroup := srv.Echo().Group("/api/v1/quote_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	quoteLineGroup.POST("", quoteLineHandler.Create)

@@ -12,6 +12,7 @@ import {
   type HeaderButtonContext,
 } from '@eerp/core-front'
 import sale from './sale_views'
+import warehouse from '../../warehouse/views/warehouse_views'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('sale FrontModule', () => {
@@ -173,7 +174,6 @@ describe('sale FrontModule', () => {
     expect(table?.kind === 'table' ? table.source : null).toBe('lines')
     expect(table?.kind === 'table' ? table.columns.map((c) => c.name) : []).toEqual([
       'variant_name',
-      'unit',
       'quantity',
       'unit_price',
       'tax_rate',
@@ -210,7 +210,8 @@ describe('sale FrontModule', () => {
 describe('sale — self-extended "Order lines" notebook page (registry-level)', () => {
   function register(): ModuleRegistry {
     const registry = new ModuleRegistry()
-    registry.register(sale)
+    registry.register(warehouse)
+    registry.register(sale, { depends: ['warehouse'] })
     return registry
   }
 
@@ -293,7 +294,8 @@ describe('sale — quote registers ahead of invoice (dashboard tile ordering)', 
 describe('sale — self-extended "Quote lines" notebook page (registry-level)', () => {
   function register(): ModuleRegistry {
     const registry = new ModuleRegistry()
-    registry.register(sale)
+    registry.register(warehouse)
+    registry.register(sale, { depends: ['warehouse'] })
     return registry
   }
 
@@ -455,7 +457,7 @@ describe('sale — invoice.quote_id (provenance link)', () => {
 })
 
 describe('sale — quote and invoice reports', () => {
-  const registry = () => new ModuleRegistry().register(sale)
+  const registry = () => new ModuleRegistry().register(warehouse).register(sale, { depends: ['warehouse'] })
   const report = (name: string) => registry().buildReportRegistry().get(name)!
 
   it.each(['sale.quote', 'sale.invoice'])('%s extends the default report: letterhead header + footer', (name) => {
@@ -486,5 +488,22 @@ describe('sale — quote and invoice reports', () => {
     // The quote has no reference any more; the invoice keeps its own.
     expect(JSON.stringify(report('sale.quote').layout)).not.toContain('"reference"')
     expect(JSON.stringify(report('sale.invoice').layout)).toContain('"reference"')
+  })
+})
+
+describe('sale — product Taxes (extends the warehouse product form)', () => {
+  it('adds a Taxes many2many over product_tax next to the price', () => {
+    const registry = new ModuleRegistry().register(warehouse).register(sale, { depends: ['warehouse'] })
+    const form = registry.buildRegistry().get('/warehouse/products/:id')!.descriptor
+    expect(form.fields.find((f) => f.name === 'taxes')?.relation).toEqual({
+      entity: 'sale_tax',
+      kind: 'many2many',
+      via: 'product_tax',
+      viaFields: { own: 'product_id', related: 'sale_tax_id' },
+      labelField: 'name',
+    })
+    const columns = normalizeLayout(form).find((n) => n.kind !== 'field' && n.id === '__form_columns')
+    const names = columns && columns.kind !== 'field' ? columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind)) : []
+    expect(names).toEqual(['reference', 'unit_price', 'taxes'])
   })
 })

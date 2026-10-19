@@ -239,6 +239,14 @@ export async function EntityViewServer<T extends HasId>({
     descriptor.viewType === 'form'
       ? effectiveChatterVisible(descriptor.showChatter, await loadChatterVisibility(descriptor.entity, client))
       : undefined
+  // A form's context (ViewDescriptor.formContext): degrades to none.
+  const formContext =
+    descriptor.viewType === 'form' && descriptor.formContext
+      ? await client.getFormContext(descriptor.formContext).catch((e: unknown) => {
+          if (e instanceof ApiError) return {}
+          throw e
+        })
+      : undefined
   // Only a form that declares a status breadcrumb has an override to read.
   const statusBarConfig =
     descriptor.viewType === 'form' && descriptor.statusBar
@@ -257,6 +265,7 @@ export async function EntityViewServer<T extends HasId>({
       pictureSize={pictureSize}
       chatterVisible={chatterVisible}
       statusBarConfig={statusBarConfig}
+      formContext={formContext}
       title={title}
     />
   )

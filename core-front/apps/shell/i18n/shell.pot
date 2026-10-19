@@ -1727,3 +1727,12 @@ msgstr ""
 
 msgid "Some counts could not be loaded"
 msgstr ""
+
+msgid "Products"
+msgstr ""
+
+msgid "Generate references automatically"
+msgstr ""
+
+msgid "On: each new product gets the next reference (PRD-00001, PRD-00002…), which cannot be edited. Off: references are typed by hand."
+msgstr ""

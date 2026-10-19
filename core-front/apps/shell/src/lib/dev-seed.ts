@@ -66,7 +66,9 @@ const TAG_NAMES = ['VIP', 'Newsletter', 'Hot lead', 'Enterprise', 'Churn risk', 
 
 // warehouse.Product's small fixed catalog — a product catalog reads more
 // realistically as concrete offerings than as randomly combined words, unlike
-// contacts/CRM records above. tax_rate is a 0..1 ratio (see warehouse/module.go).
+// contacts/CRM records above. `reference`/`unit` are descriptive only (Go
+// numbers products itself, products have no unit); `tax_rate` (0..1) picks the
+// "VAT n%" tax each product gets linked to (seedProductTaxes).
 const PRODUCTS = [
   {
     name: 'Standard consulting hour', reference: 'CONS-STD', unit: 'hour', unit_price: 85, tax_rate: 0.2,
@@ -211,9 +213,27 @@ function buildTagLinks(
 }
 
 function buildProducts(): Record<string, unknown>[] {
-  return PRODUCTS.map((p) => ({
-    name: p.name, reference: p.reference, unit: p.unit, unit_price: p.unit_price, tax_rate: p.tax_rate, description: p.description,
-  }))
+  return PRODUCTS.map((p) => ({ name: p.name, unit_price: p.unit_price, description: p.description }))
+}
+
+/** One "VAT n%" tax per rate the catalog uses, and each product's link to its
+ * own — the product form's Taxes (sale's product_tax). */
+async function seedProductTaxes(products: { id: string; name?: unknown }[]): Promise<SeedEntityResult[]> {
+  const rates = [...new Set(PRODUCTS.map((p) => p.tax_rate))]
+  const taxes = await createMany<{ id: string; rate?: unknown }>(
+    'sale_tax',
+    rates.map((rate) => ({ name: `VAT ${Math.round(rate * 1000) / 10}%`, kind: 'percentage', rate, amount: 0 })),
+  )
+  const taxFor = new Map(taxes.records.map((t, i) => [rates[i], t.id]))
+  const links = await createMany(
+    'product_tax',
+    products.flatMap((p) => {
+      const rate = PRODUCTS.find((d) => d.name === p.name)?.tax_rate
+      const tax = rate === undefined ? undefined : taxFor.get(rate)
+      return tax ? [{ product_id: p.id, sale_tax_id: tax }] : []
+    }),
+  )
+  return [taxes.result, links.result]
 }
 
 /**
@@ -221,11 +241,11 @@ function buildProducts(): Record<string, unknown>[] {
  * warehouse.Handler's Create override, which defaults it from the product's own
  * name ("each product automatically references a variant") — then its named
  * variants, each with its own price. `products` is in PRODUCTS order (a failed
- * create drops out, hence the lookup by reference).
+ * create drops out, hence the lookup by name — the reference is Go's).
  */
-function buildProductVariants(products: { id: string; reference?: unknown }[]): Record<string, unknown>[] {
+function buildProductVariants(products: { id: string; name?: unknown }[]): Record<string, unknown>[] {
   return products.flatMap((p) => {
-    const def = PRODUCTS.find((d) => d.reference === p.reference)
+    const def = PRODUCTS.find((d) => d.name === p.name)
     return [{ product_id: p.id }, ...(def?.variants ?? []).map((v) => ({ product_id: p.id, ...v }))]
   })
 }
@@ -613,8 +633,10 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
     results.push(linksOutcome.result)
   }
 
-  const productsOutcome = await createMany<{ id: string; reference?: unknown }>('product', buildProducts())
+  const productsOutcome = await createMany<{ id: string; name?: unknown }>('product', buildProducts())
   results.push(productsOutcome.result)
+  // A seed taxes its catalog the way the product form's Taxes field does.
+  results.push(...(await seedProductTaxes(productsOutcome.records)))
 
   const variantsOutcome = await createMany<{ id: string; product_id?: unknown }>(
     'product_variant',

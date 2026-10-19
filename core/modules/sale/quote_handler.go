@@ -26,6 +26,9 @@ type QuoteHandler struct {
 	quotes   *orm.Repository[Quote]
 	variants *orm.Repository[warehouse.ProductVariant]
 	products *orm.Repository[warehouse.Product]
+	// productTaxes/taxes resolve a product's taxes (product_tax.go).
+	productTaxes *orm.Repository[ProductTax]
+	taxes        *orm.Repository[SaleTax]
 }
 
 func NewQuoteHandler(
@@ -33,8 +36,10 @@ func NewQuoteHandler(
 	quotes *orm.Repository[Quote],
 	variants *orm.Repository[warehouse.ProductVariant],
 	products *orm.Repository[warehouse.Product],
+	productTaxes *orm.Repository[ProductTax],
+	taxes *orm.Repository[SaleTax],
 ) *QuoteHandler {
-	return &QuoteHandler{lines: lines, quotes: quotes, variants: variants, products: products}
+	return &QuoteHandler{lines: lines, quotes: quotes, variants: variants, products: products, productTaxes: productTaxes, taxes: taxes}
 }
 
 // Create handles POST /api/v1/quote_line.
@@ -153,9 +158,16 @@ func (h *QuoteHandler) snapshotFromVariant(ctx context.Context, tenant uuid.UUID
 		}
 		return err
 	}
+	// A quote line has no tax links of its own: its tax_rate is the
+	// product's percentage taxes plus the variant's own rate (a fixed-amount
+	// tax can't be a rate, so it isn't carried onto quotes).
+	taxes, err := productTaxes(ctx, h.productTaxes, h.taxes, tenant, product.ID)
+	if err != nil {
+		return err
+	}
 	line.VariantName = variant.Name
-	line.Unit = product.Unit
-	line.TaxRate = resolveTaxRate(product, variant)
+	line.Unit = "" // products have no unit any more
+	line.TaxRate = percentageRate(taxes) + variantRate(variant)
 	line.UnitPrice = resolveUnitPrice(product, variant)
 	return nil
 }

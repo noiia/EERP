@@ -22,6 +22,7 @@ import {
   type LayoutNode,
   type ViewDescriptor,
 } from './descriptor'
+import { useConditionRecord } from './form-context'
 import { ErrorAlert } from './error-alert'
 import { useNotebookOps, type NotebookPageRecord } from './notebook-ops'
 import { useSessionStore } from './session-store'
@@ -433,6 +434,8 @@ function LayoutNodeView({
 }) {
   const t = useT()
   const callerGroups = useSessionStore((s) => s.identity?.groups ?? NO_GROUPS)
+  // What conditions read: the draft plus the form's context (form-context.tsx).
+  const conditionRecord = useConditionRecord(draft)
 
   if (node.kind === 'field') {
     if (hidden?.has(node.name)) return null
@@ -448,9 +451,9 @@ function LayoutNodeView({
     // states.visible back on shows it unchanged. `field.groups` is the same
     // static-hide family — see FieldDescriptor.groups's doc on why this is a
     // UX mirror, not the security boundary.
-    if (!isFieldVisible(field, draft, callerGroups)) return null
+    if (!isFieldVisible(field, conditionRecord, callerGroups)) return null
     const stateReadOnly = field.states?.readOnly
-      ? evaluateCondition(field.states.readOnly, draft)
+      ? evaluateCondition(field.states.readOnly, conditionRecord)
       : false
     // Static readOnly (docs/roadmaps/app-store.md, Phase 2) OR's in alongside
     // compute and the declarative states.readOnly — static wins, since

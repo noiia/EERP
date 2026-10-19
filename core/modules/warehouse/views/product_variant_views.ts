@@ -10,7 +10,7 @@ export interface ProductVariant {
   name: string
   /** Overrides the parent Product's unit_price for this variant when set. */
   unit_price?: number | null
-  /** Overrides the parent Product's tax_rate for this variant when set. */
+  /** This variant's own extra tax rate, added to its product's taxes when set. */
   tax_rate?: number | null
 }
 
@@ -36,7 +36,7 @@ const variantFields: ViewDescriptor['fields'] = [
   // override contract as unit_price above. default: null for the same
   // reason — a new variant seeded with 0 would silently zero-rate every
   // sale line on it.
-  { name: 'tax_rate', label: 'Tax rate override', type: 'number', widget: 'percent', default: null },
+  { name: 'tax_rate', label: 'Extra tax rate', type: 'number', widget: 'percent', default: null },
 ]
 
 const variantListView: ViewDescriptor = {

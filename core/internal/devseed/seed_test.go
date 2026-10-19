@@ -102,8 +102,8 @@ func TestSeed(t *testing.T) {
 	if got := one(`SELECT count(*) FROM app_settings WHERE tenant_id = $1 AND key LIKE 'views.%.fields' AND value::jsonb->>'enable_graphs' = 'true'`); got != 4*7 {
 		t.Errorf("graphs enabled = %v, want 28", got)
 	}
-	if got := one(`SELECT count(*) FROM graph_field WHERE tenant_id = $1`); got != 13 {
-		t.Errorf("calculated fields = %v, want 13", got)
+	if got := one(`SELECT count(*) FROM graph_field WHERE tenant_id = $1`); got != 11 {
+		t.Errorf("calculated fields = %v, want 11", got)
 	}
 	if got := one(`SELECT avg(total) FROM invoice WHERE tenant_id = $1`); got <= 0 || math.IsNaN(got) {
 		t.Errorf("invoices have no totals: %v", got)

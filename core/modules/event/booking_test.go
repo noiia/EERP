@@ -37,7 +37,7 @@ func newFixture(t *testing.T) fixture {
 	tenant := uuid.New()
 	t.Cleanup(func() {
 		ctx := context.Background()
-		for _, table := range []string{"sale_line", "invoice", "product_variant", "product", "company", "event_booking", "event_session", "event_availability", "event", "contact", "mail_outbox", "mail_template", "app_settings", "chatter_message", "user_roles", "users"} {
+		for _, table := range []string{"sale_line_tax", "sale_line", "invoice", "product_tax", "sale_tax", "product_variant", "product", "company", "event_booking", "event_session", "event_availability", "event", "contact", "mail_outbox", "mail_template", "app_settings", "chatter_message", "user_roles", "users"} {
 			_, _ = app.DB.Exec(ctx, `DELETE FROM `+table+` WHERE tenant_id = $1`, tenant)
 		}
 	})

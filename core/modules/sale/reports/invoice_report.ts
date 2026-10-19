@@ -33,7 +33,6 @@ export const invoiceReport: ReportDescriptor = {
       relation: { entity: 'sale_line', inverseField: 'invoice_id' },
       columns: [
         { name: 'variant_name', label: 'Product' },
-        { name: 'unit', label: 'Unit' },
         { name: 'quantity', label: 'Quantity' },
         { name: 'unit_price', label: 'Unit price' },
         { name: 'tax_rate', label: 'Tax' },

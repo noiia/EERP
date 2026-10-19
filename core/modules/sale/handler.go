@@ -39,6 +39,7 @@ type Handler struct {
 	products      *orm.Repository[warehouse.Product]
 	taxes         *orm.Repository[SaleTax]
 	lineTaxes     *orm.Repository[SaleLineTax]
+	productTaxes  *orm.Repository[ProductTax]
 	settingsStore *settings.Repository
 	companies     *company.Repository
 }
@@ -50,12 +51,13 @@ func NewHandler(
 	products *orm.Repository[warehouse.Product],
 	taxes *orm.Repository[SaleTax],
 	lineTaxes *orm.Repository[SaleLineTax],
+	productTaxes *orm.Repository[ProductTax],
 	settingsStore *settings.Repository,
 	companies *company.Repository,
 ) *Handler {
 	return &Handler{
 		lines: lines, invoices: invoices, variants: variants, products: products,
-		taxes: taxes, lineTaxes: lineTaxes, settingsStore: settingsStore, companies: companies,
+		taxes: taxes, lineTaxes: lineTaxes, productTaxes: productTaxes, settingsStore: settingsStore, companies: companies,
 	}
 }
 
@@ -80,22 +82,28 @@ func (h *Handler) Create(c *echo.Context) error {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Invoice not found.")
 	}
 
-	if err := h.snapshotFromVariant(ctx, identity.TenantID, &body); err != nil {
+	productID, err := h.snapshotFromVariant(ctx, identity.TenantID, &body)
+	if err != nil {
 		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
+	}
+	// The line starts with its product's taxes (product_tax.go), linked
+	// right after the insert — a sale_line_tax row needs the line's id.
+	taxes, err := productTaxes(ctx, h.productTaxes, h.taxes, identity.TenantID, productID)
+	if err != nil {
+		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not read the product's taxes.")
 	}
 	included, err := h.taxIncluded(ctx, identity)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not resolve the tax price mode.")
 	}
-	// No taxes can be linked yet (sale_line_tax rows reference this line's
-	// own id, which doesn't exist until the Create below) — Total is just
-	// the base price plus TaxRate. Tagging a tax afterward is what
-	// recomputes it for real (CreateLineTax/DeleteLineTax below).
-	body.Subtotal, body.Total = computeLineTotal(body.Quantity*body.UnitPrice, body.TaxRate, nil, included)
+	body.Subtotal, body.Total = computeLineTotal(body.Quantity*body.UnitPrice, body.TaxRate, taxes, included)
 
 	created, err := h.lines.Create(ctx, body)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the line.")
+	}
+	if err := linkLineTaxes(ctx, h.lineTaxes, identity.TenantID, created.ID, taxes); err != nil {
+		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not link the line's taxes.")
 	}
 	if err := h.recomputeTotals(ctx, identity.TenantID, created.InvoiceID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update invoice totals.")
@@ -138,13 +146,18 @@ func (h *Handler) Update(c *echo.Context) error {
 		merged.Quantity = body.Quantity
 	}
 
-	if err := h.snapshotFromVariant(ctx, identity.TenantID, &merged); err != nil {
+	productID, err := h.snapshotFromVariant(ctx, identity.TenantID, &merged)
+	if err != nil {
 		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
 	}
-	// VariantID/Quantity may have just changed the base price — recompute
-	// Total from whatever taxes are ALREADY linked (this endpoint never
-	// touches sale_line_tax itself, so the tag set is untouched by a plain
-	// field edit).
+	// Another variant: the line's taxes become the new product's. A plain
+	// quantity edit keeps whatever taxes are linked (the user may have
+	// tagged or untagged some since).
+	if merged.VariantID != existing.VariantID {
+		if err := h.relinkProductTaxes(ctx, identity.TenantID, id, productID); err != nil {
+			return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not link the line's taxes.")
+		}
+	}
 	taxes, err := h.linkedTaxes(ctx, identity.TenantID, id)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not read the line's taxes.")
@@ -359,26 +372,47 @@ func computeLineTotal(base, legacyRate float64, taxes []SaleTax, included bool) 
 // line never carries stale or hand-typed pricing, only what its product (or,
 // when the variant carries its own UnitPrice override, the variant) says
 // right now, captured at the moment the line is written.
-func (h *Handler) snapshotFromVariant(ctx context.Context, tenant uuid.UUID, line *SaleLine) error {
+func (h *Handler) snapshotFromVariant(ctx context.Context, tenant uuid.UUID, line *SaleLine) (uuid.UUID, error) {
 	variant, err := findOwned(ctx, h.variants, line.VariantID, tenant)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("variant_id must reference an existing product variant")
+			return uuid.Nil, fmt.Errorf("variant_id must reference an existing product variant")
 		}
-		return err
+		return uuid.Nil, err
 	}
 	product, err := findOwned(ctx, h.products, variant.ProductID, tenant)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("the variant's product no longer exists")
+			return uuid.Nil, fmt.Errorf("the variant's product no longer exists")
 		}
-		return err
+		return uuid.Nil, err
 	}
 	line.VariantName = variant.Name
-	line.Unit = product.Unit
-	line.TaxRate = resolveTaxRate(product, variant)
+	// Products have no unit any more; the column stays for older lines.
+	line.Unit = ""
+	// The product's taxes are linked separately (sale_line_tax); tax_rate
+	// carries only the variant's own extra rate.
+	line.TaxRate = variantRate(variant)
 	line.UnitPrice = resolveUnitPrice(product, variant)
-	return nil
+	return product.ID, nil
+}
+
+// relinkProductTaxes replaces a line's tax links with its (new) product's.
+func (h *Handler) relinkProductTaxes(ctx context.Context, tenant, lineID, productID uuid.UUID) error {
+	old, err := h.lineTaxes.FindAll(ctx, orm.Cond("sale_line_id = $1 AND tenant_id = $2", lineID, tenant))
+	if err != nil {
+		return err
+	}
+	for _, l := range old {
+		if _, err := h.lineTaxes.Delete(ctx, l.ID); err != nil {
+			return err
+		}
+	}
+	taxes, err := productTaxes(ctx, h.productTaxes, h.taxes, tenant, productID)
+	if err != nil {
+		return err
+	}
+	return linkLineTaxes(ctx, h.lineTaxes, tenant, lineID, taxes)
 }
 
 // resolveUnitPrice is pulled out as a pure function (no DB, no HTTP) so the
@@ -389,17 +423,6 @@ func resolveUnitPrice(product warehouse.Product, variant warehouse.ProductVarian
 		return *variant.UnitPrice
 	}
 	return product.UnitPrice
-}
-
-// resolveTaxRate mirrors resolveUnitPrice: the variant's own TaxRate
-// override, when set, wins over the product's — "each line has its own tax
-// percent," resolved from the specific variant sold rather than just its
-// product.
-func resolveTaxRate(product warehouse.Product, variant warehouse.ProductVariant) float64 {
-	if variant.TaxRate != nil {
-		return *variant.TaxRate
-	}
-	return product.TaxRate
 }
 
 // recomputeTotals sums every active line on the invoice into

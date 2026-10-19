@@ -20,7 +20,6 @@ export const quoteReport: ReportDescriptor = {
       relation: { entity: 'quote_line', inverseField: 'quote_id' },
       columns: [
         { name: 'variant_name', label: 'Product' },
-        { name: 'unit', label: 'Unit' },
         { name: 'quantity', label: 'Quantity' },
         { name: 'unit_price', label: 'Unit price' },
         { name: 'tax_rate', label: 'Tax' },

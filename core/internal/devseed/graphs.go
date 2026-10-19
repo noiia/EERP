@@ -119,19 +119,15 @@ var graphSpecs = map[string]graphSpec{
 			bar("crm-new", 0, 11, "New leads per month", "created_at", "id", "count", "month", "status", "grouped"),
 		},
 	},
+	// A product's taxes are product_tax links now, not a column a formula or
+	// a tile can read — its presets are about prices only.
 	"product": {
-		fields: []calcField{
-			{"calc_price_incl_tax", "Price incl. tax", "unit_price * (1 + tax_rate)"},
-			{"calc_tax_per_unit", "Tax per unit", "calc_price_incl_tax - unit_price"},
-		},
 		tiles: []tile{
 			stat("pro-count", 0, "Products", "id", "count"),
 			stat("pro-avg", 6, "Avg price", "unit_price", "avg"),
 			stat("pro-median", 12, "Median price", "unit_price", "median"),
-			stat("pro-tax", 18, "Avg tax per unit", "calc_tax_per_unit", "avg"),
-			pie("pro-unit", 0, 3, "By unit", "unit", ""),
-			pie("pro-rate", 8, 3, "By tax rate", "tax_rate", ""),
-			bar("pro-price", 16, 3, "Avg price incl. tax per month", "created_at", "calc_price_incl_tax", "avg", "month", "unit", "grouped"),
+			stat("pro-sum", 18, "Catalog value", "unit_price", "sum"),
+			bar("pro-price", 0, 3, "Avg price excl. tax per month", "created_at", "unit_price", "avg", "month", "", "grouped"),
 		},
 	},
 	"product_variant": {

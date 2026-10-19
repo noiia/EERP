@@ -45,7 +45,9 @@ func (h *Handler) Create(c *echo.Context) error {
 	}
 	body.TenantID = identity.TenantID
 
-	product, err := h.products.FindByID(c.Request().Context(), body.ProductID)
+	// Tenant-pinned: the typed repository's FindByID doesn't scope by tenant.
+	product, err := h.products.FindOne(c.Request().Context(),
+		orm.Cond("id = $1 AND tenant_id = $2", body.ProductID, identity.TenantID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "product_id must reference an existing product.")
