@@ -6,9 +6,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 // a plain mutable var a test can reassign before rendering, mirroring how
 // pushMock is a plain shared mock every test already reads/clears.
 const pushMock = vi.fn()
+const prefetchMock = vi.fn()
 let mockPathname = '/app/crm/c1'
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, prefetch: prefetchMock }),
   usePathname: () => mockPathname,
 }))
 
@@ -1549,8 +1550,13 @@ describe('EntityView', () => {
     )
     expect(screen.getByText('Contacts')).toBeInTheDocument()
     expect(screen.getByText('12')).toBeInTheDocument()
-    // The block links to its list view.
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/app/crm/list')
+    // The block links to its list view through a client-side Next link (no full
+    // page load): it prefetches on hover, never just for being on screen.
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', '/app/crm/list')
+    expect(prefetchMock).not.toHaveBeenCalled()
+    fireEvent.mouseEnter(link)
+    expect(prefetchMock).toHaveBeenCalledWith('/app/crm/list')
   })
 
   it('shows a dash for a dashboard block whose count failed to load', () => {

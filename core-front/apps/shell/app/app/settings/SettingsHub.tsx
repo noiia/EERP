@@ -1,12 +1,11 @@
 'use client'
-import { IntentLink } from '@/components/IntentLink'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { erpPath, useT } from '@eerp/core-front'
+import { erpPath, useT, IntentLink } from '@eerp/core-front'
 
 // The main settings page: the catalog of setting sections, rendered as navigable
 // cards (the same shape as the application menu). Purely presentational — the page

@@ -1,11 +1,10 @@
 'use client'
-import { IntentLink } from './IntentLink'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import Typography from '@mui/material/Typography'
-import { erpPath } from '@eerp/core-front'
+import { erpPath, IntentLink } from '@eerp/core-front'
 
 // The row list for Settings -> Apps. A CLIENT component specifically because
 // `ListItemButton component={IntentLink}` passes the Link function as a prop into

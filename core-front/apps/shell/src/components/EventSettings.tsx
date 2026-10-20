@@ -4,7 +4,7 @@ import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { erpPath, useT, ViewBanner } from '@eerp/core-front'
+import { erpPath, IntentLink, useT, ViewBanner } from '@eerp/core-front'
 import Link from '@mui/material/Link'
 import { saveEventSettings, type EventSettings as Settings } from '@/lib/event-settings'
 
@@ -28,7 +28,7 @@ export default function EventSettings({ initial, canEdit }: { initial: Settings;
         onChange={(e) => setHours(e.target.value)} />
       <Typography variant="body2" color="text.secondary">
         {t('Bookings made less than that before the start get no reminder: their confirmation is recent enough.')}{' '}
-        <Link href={erpPath('/settings/email-templates')}>{t('Edit the email texts')}</Link>
+        <Link component={IntentLink} href={erpPath('/settings/email-templates')}>{t('Edit the email texts')}</Link>
       </Typography>
       <Typography variant="h6" component="h2">{t('Waiting list')}</Typography>
       <TextField id="event-claim-hours" type="number" label={t('Hours a freed seat stays reserved for the next person on the waiting list')}

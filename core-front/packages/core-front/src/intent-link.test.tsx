@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 const prefetch = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ prefetch }) }))
 
-import { IntentLink } from './IntentLink'
+import { IntentLink } from './intent-link'
 
 afterEach(() => prefetch.mockClear())
 

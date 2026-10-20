@@ -1,11 +1,10 @@
 'use client'
-import { IntentLink } from './IntentLink'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { T, erpPath } from '@eerp/core-front'
+import { T, erpPath, IntentLink } from '@eerp/core-front'
 
 // Client Component: `CardActionArea component={IntentLink}` can't cross the Server/Client
 // boundary as a prop from the page (Next: "Functions cannot be passed directly to

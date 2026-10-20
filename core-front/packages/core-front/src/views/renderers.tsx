@@ -2,6 +2,7 @@
 import { formatTotal } from './total-format'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { IntentLink } from '../intent-link'
 import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -1414,7 +1415,8 @@ function DashboardRenderer<T extends HasId>({
           <Grid key={widget.id} size={{ xs: 12, sm: 6, md: 3 }}>
             <Card variant="outlined">
               {href ? (
-                <CardActionArea component="a" href={erpPath(href)}>
+                // A client-side navigation, not a full page load (IntentLink).
+                <CardActionArea component={IntentLink} href={erpPath(href)}>
                   {block}
                 </CardActionArea>
               ) : (

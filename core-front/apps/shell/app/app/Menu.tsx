@@ -1,6 +1,5 @@
 'use client'
 import type { ReactNode } from 'react'
-import { IntentLink } from '@/components/IntentLink'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -10,6 +9,7 @@ import {
   byPrefixAndName,
   erpPath,
   FontAwesomeIcon,
+  IntentLink,
   layout,
   useT,
   type IconDefinition,

@@ -32,7 +32,7 @@ if (typeof window !== 'undefined' && typeof window.matchMedia === 'undefined') {
 }
 
 // Outside a mounted App Router, next/navigation's useRouter throws. Links render
-// through IntentLink (src/components/IntentLink.tsx), which reads the router to
+// through the engine's IntentLink (@eerp/core-front), which reads the router to
 // prefetch on hover, so every test rendering a link needs one: this default keeps
 // the real module and stubs only useRouter. A test file mocking next/navigation
 // itself replaces this whole mock.

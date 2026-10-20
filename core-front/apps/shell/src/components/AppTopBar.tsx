@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import { IntentLink } from './IntentLink'
 import { usePathname, useRouter } from 'next/navigation'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
@@ -22,6 +21,7 @@ import {
   ERP_BASE,
   erpPath,
   FontAwesomeIcon,
+  IntentLink,
   layout,
   moduleRegistry,
   nextBreadcrumbTrail,

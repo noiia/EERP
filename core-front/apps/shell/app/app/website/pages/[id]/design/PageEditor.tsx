@@ -10,7 +10,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import type { Theme } from '@mui/material/styles'
-import { createPictureClient, erpPath, useT, ViewBanner } from '@eerp/core-front'
+import { createPictureClient, erpPath, IntentLink, useT, ViewBanner } from '@eerp/core-front'
 import type { PublishedTable } from '@/lib/website-settings'
 import { previewBlock } from '@/website/editor-actions'
 import { addBlock, applyGeometry, GRID, removeBlock, rowsPx, updateConfig } from '@/website/layout-ops'
@@ -121,7 +121,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, background, p
           <Typography variant="body2" color="text.secondary">
             {t('Set a background picture (and parallax) in the page form; add a Background section block for a colored band.')}
           </Typography>
-          <Button size="small" href={erpPath(`/website/pages/${pageId}`)} sx={{ alignSelf: 'flex-start' }}>{t('Open the page form')}</Button>
+          <Button size="small" component={IntentLink} href={erpPath(`/website/pages/${pageId}`)} sx={{ alignSelf: 'flex-start' }}>{t('Open the page form')}</Button>
           {background?.on && pagePub && (
             <PublishFields table={pagePub} used={['background', 'background_parallax']}
               onPublished={(tb) => setPub((p) => p.map((x) => (x.table === tb.table ? tb : x)))} />
@@ -148,7 +148,7 @@ export function PageEditor({ pageId, slug, title, layout: initial, background, p
             <BlockPalette onAdd={(type) => setLayout((l) => addBlock(l, type))} />
             <Button variant="contained" onClick={() => void onSave()} disabled={saving}>{t('Save')}</Button>
             <Button href={`/${slug}`} target="_blank" rel="noopener">{t('View on site')}</Button>
-            <Button href={erpPath(`/website/pages/${pageId}`)}>{t('Back')}</Button>
+            <Button component={IntentLink} href={erpPath(`/website/pages/${pageId}`)}>{t('Back')}</Button>
           </Stack>
           {status && <ViewBanner status={status.ok ? 'info' : 'error'} sx={{ mx: 2 }} onClose={() => setStatus(null)}>{status.text}</ViewBanner>}
           {/* Same width as the public site's Container, so blocks wrap as they will there. */}
