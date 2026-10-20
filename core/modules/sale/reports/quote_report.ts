@@ -1,4 +1,4 @@
-import { DEFAULT_REPORT_NAME, reportTitleSection, type ReportDescriptor } from '@eerp/core-front'
+import { DEFAULT_REPORT_NAME, type ReportDescriptor } from '@eerp/core-front'
 import { customerBlock, documentMeta, labeledLine, legalNotice, totalsSection } from './document_parts'
 
 // sale.quote — the quote's printable PDF (Print > Quote, and the attachment
@@ -12,7 +12,6 @@ export const quoteReport: ReportDescriptor = {
   layout: [
     documentMeta,
     customerBlock,
-    reportTitleSection('subject'),
     {
       kind: 'table',
       source: 'lines',

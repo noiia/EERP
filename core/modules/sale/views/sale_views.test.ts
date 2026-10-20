@@ -127,6 +127,18 @@ describe('sale FrontModule', () => {
     },
   )
 
+  it('quote form: no subject; customer name/email and status declared but hidden', () => {
+    const fields = sale.routes.find((r) => r.path === '/sale/quote/:id')!.descriptor.fields
+    expect(fields.find((f) => f.name === 'subject')).toBeUndefined()
+    for (const name of ['customer_name', 'customer_email', 'status']) {
+      expect(fields.find((f) => f.name === name)?.invisible, name).toBe(true)
+    }
+    // The list keeps showing them.
+    const list = sale.routes.find((r) => r.path === '/sale/quote/list')!.descriptor.fields
+    expect(list.find((f) => f.name === 'customer_name')?.invisible).toBeUndefined()
+    expect(list.find((f) => f.name === 'status')?.invisible).toBeUndefined()
+  })
+
   it('exposes sale_lines as a real one2many relation over sale_line, scoped by invoice_id', () => {
     const linesField = sale.routes
       .find((r) => r.path === '/sale/:id')!

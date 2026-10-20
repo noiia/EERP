@@ -186,6 +186,12 @@ func testSaleWorkflow(t *testing.T, f *flow, variant string) {
 	// The number is the sequence's, never the one typed; each create takes the next.
 	q1 := f.create("quote", map[string]any{"number": "TYPED", "customer_name": "Ada", "customer_email": "ada@example.test"})
 	q2 := f.create("quote", map[string]any{"customer_name": "Bob"})
+	// The quote form has no subject and may have no customer email: both
+	// default to empty rather than "missing required fields".
+	formBody := withRequired(t, "quote", map[string]any{"customer_name": "Cy"})
+	delete(formBody, "subject")
+	delete(formBody, "customer_email")
+	f.createAt("/api/v1/quote", "quote", formBody)
 	n1 := str(f.expect(http.MethodGet, "/api/v1/quote/"+q1, nil, http.StatusOK), "number")
 	n2 := str(f.expect(http.MethodGet, "/api/v1/quote/"+q2, nil, http.StatusOK), "number")
 	if !strings.HasPrefix(n1, "Q-"+year+"-") || n1 == n2 {

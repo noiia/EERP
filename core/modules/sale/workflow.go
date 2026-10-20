@@ -47,15 +47,19 @@ const (
 
 var documentVars = []string{"name", "number", "subject", "total", "company"}
 
+// A quote has no subject (its form doesn't show one), so its template doesn't
+// offer the variable.
+var quoteVars = []string{"name", "number", "total", "company"}
+
 func init() {
 	eerpmail.RegisterTemplate(eerpmail.TemplateDef{
-		Key: TemplateQuoteSent, Label: "Quote sent to a customer", Vars: documentVars,
+		Key: TemplateQuoteSent, Label: "Quote sent to a customer", Vars: quoteVars,
 		Defaults: map[string]eerpmail.Content{
 			"en": {Subject: "Quote {{number}} from {{company}}", HTML: `<p>Hello {{name}},</p>` +
-				`<p>Please find attached our quote {{number}}: {{subject}}.</p><p>Total: {{total}}</p>` +
+				`<p>Please find attached our quote {{number}}.</p><p>Total: {{total}}</p>` +
 				`<p>Best regards,<br>{{company}}</p>`},
 			"fr": {Subject: "Devis {{number}} de {{company}}", HTML: `<p>Bonjour {{name}},</p>` +
-				`<p>Veuillez trouver ci-joint notre devis {{number}} : {{subject}}.</p><p>Total : {{total}}</p>` +
+				`<p>Veuillez trouver ci-joint notre devis {{number}}.</p><p>Total : {{total}}</p>` +
 				`<p>Cordialement,<br>{{company}}</p>`},
 		},
 	})
@@ -568,6 +572,13 @@ func (h *WorkflowHandler) numberOnCreate(k docKind, next echo.HandlerFunc) echo.
 			return err
 		}
 		body["number"] = number
+		// Text columns the form may not send (a quote's form has no subject
+		// and only snapshots the customer's email): empty, never "required".
+		for _, col := range []string{"subject", "customer_email"} {
+			if v, ok := body[col]; !ok || v == nil {
+				body[col] = ""
+			}
+		}
 		if s, _ := body["status"].(string); s == "" || k.needsLines[s] {
 			body["status"] = "draft"
 		}
@@ -616,6 +627,13 @@ func (h *WorkflowHandler) guardOnUpdate(k docKind, next echo.HandlerFunc) echo.H
 			return err
 		}
 		body["number"] = number
+		// Text columns the form may not send (a quote's form has no subject
+		// and only snapshots the customer's email): empty, never "required".
+		for _, col := range []string{"subject", "customer_email"} {
+			if v, ok := body[col]; !ok || v == nil {
+				body[col] = ""
+			}
+		}
 		if s, _ := body["status"].(string); k.needsLines[s] {
 			n, err := lineCount(ctx, h.db, k, identity.TenantID, id)
 			if err != nil {

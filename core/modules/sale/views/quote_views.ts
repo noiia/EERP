@@ -33,7 +33,6 @@ export interface Quote {
   issuer_email?: string
   number: string
   issue_date?: string | null
-  subject?: string
   customer_id?: string | null
   customer_name: string
   customer_email?: string
@@ -189,7 +188,11 @@ const quoteFormFields: ViewDescriptor['fields'] = [
     type: 'boolean',
     widget: 'picture',
   },
-  ...quoteFields,
+  // The list's customer_name/status columns stay declared here but don't
+  // render: the Customer contact below fills the name/email snapshot (what
+  // the report and Send use), and the status breadcrumb — which needs its
+  // field declared — plus the workflow buttons show and move the status.
+  ...quoteFields.map((f) => (f.name === 'customer_name' || f.name === 'status' ? { ...f, invisible: true } : f)),
   {
     // See invoice_views.ts's own customer_id field for the full rationale —
     // identical fillFields contract.
@@ -200,8 +203,7 @@ const quoteFormFields: ViewDescriptor['fields'] = [
     relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
     widgetOptions: { fillFields: { name: 'customer_name', email: 'customer_email' } },
   },
-  { name: 'subject', label: 'Subject', type: 'text' },
-  { name: 'customer_email', label: 'Customer email', type: 'text' },
+  { name: 'customer_email', label: 'Customer email', type: 'text', invisible: true },
   { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field — same as invoice's formFields (invoice_views.ts):
   // it's the issuing company's own property now (Settings -> Company).
