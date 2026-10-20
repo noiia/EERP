@@ -1,6 +1,6 @@
 'use client'
 import Button from '@mui/material/Button'
-import Link from 'next/link'
+import { IntentLink } from './IntentLink'
 import { byPrefixAndName, erpPath, FontAwesomeIcon, T } from '@eerp/core-front'
 
 // Links to Global settings' Accounts accordion — e.g. the username "@"
@@ -13,7 +13,7 @@ import { byPrefixAndName, erpPath, FontAwesomeIcon, T } from '@eerp/core-front'
 export default function UsersSettingsButton() {
   return (
     <Button
-      component={Link}
+      component={IntentLink}
       href={erpPath('/settings/appearance')}
       variant="outlined"
       startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['gear']} size="sm" />}

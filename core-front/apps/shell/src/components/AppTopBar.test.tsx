@@ -20,7 +20,7 @@ const pushMock = vi.fn()
 const refreshMock = vi.fn()
 vi.mock('next/navigation', () => ({
   usePathname: () => pathnameMock(),
-  useRouter: () => ({ push: pushMock, refresh: refreshMock }),
+  useRouter: () => ({ push: pushMock, refresh: refreshMock, prefetch: () => {} }),
 }))
 
 const setActiveCompanyMock = vi.fn()

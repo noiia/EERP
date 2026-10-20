@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest'
+import { vi } from 'vitest'
 
 // jsdom has no native ResizeObserver. react-grid-layout's useContainerWidth (Graph
 // mode, @eerp/core-front's graph-renderer.tsx) uses one internally; this stub keeps
@@ -29,3 +30,20 @@ if (typeof window !== 'undefined' && typeof window.matchMedia === 'undefined') {
     dispatchEvent: () => false,
   })
 }
+
+// Outside a mounted App Router, next/navigation's useRouter throws. Links render
+// through IntentLink (src/components/IntentLink.tsx), which reads the router to
+// prefetch on hover, so every test rendering a link needs one: this default keeps
+// the real module and stubs only useRouter. A test file mocking next/navigation
+// itself replaces this whole mock.
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+  }),
+}))

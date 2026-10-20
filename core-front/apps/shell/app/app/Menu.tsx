@@ -1,6 +1,6 @@
 'use client'
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import { IntentLink } from '@/components/IntentLink'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -17,7 +17,7 @@ import {
 } from '@eerp/core-front'
 
 // The landing menu: one square tile per installed application. A Client Component
-// because each tile uses MUI's `component={Link}` (a function prop MUI can't receive
+// because each tile uses MUI's `component={IntentLink}` (a function prop MUI can't receive
 // across the RSC boundary). Purely presentational — no async, no data access,
 // serializable props — so it stays trivially unit-testable; the page (page.tsx, a Server
 // Component) resolves the session and feeds the registry menu here. Settings is appended
@@ -72,7 +72,7 @@ function MenuTile({ href, label, icon }: { href: string; label: string; icon?: R
       }}
     >
       <CardActionArea
-        component={Link}
+        component={IntentLink}
         href={erpPath(href)}
         sx={{
           height: '100%',

@@ -1,5 +1,5 @@
 'use client'
-import Link from 'next/link'
+import { IntentLink } from '@/components/IntentLink'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -117,7 +117,7 @@ export default function SettingsHub({
       >
         {sections.map((section) => (
           <Card key={section.path} variant="outlined">
-            <CardActionArea component={Link} href={erpPath(section.path)} sx={{ p: 2, height: '100%' }}>
+            <CardActionArea component={IntentLink} href={erpPath(section.path)} sx={{ p: 2, height: '100%' }}>
               <Stack spacing={1}>
                 <Typography variant="subtitle1">{t(section.title)}</Typography>
                 <Typography variant="body2" color="text.secondary">

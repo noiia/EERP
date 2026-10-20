@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { IntentLink } from './IntentLink'
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
@@ -153,7 +153,7 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
                 )}
               </Typography>
               <Stack direction="row">
-                <Button variant="outlined" component={Link} href={erpPath('/cron')}>
+                <Button variant="outlined" component={IntentLink} href={erpPath('/cron')}>
                   {t('Manage crons')}
                 </Button>
               </Stack>

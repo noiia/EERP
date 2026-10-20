@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import Link from 'next/link'
+import { IntentLink } from './IntentLink'
 import { usePathname, useRouter } from 'next/navigation'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
@@ -192,7 +192,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
           <FontAwesomeIcon icon={byPrefixAndName.fas['angles-right']} size="sm" />
         </IconButton>
         <Menu anchorEl={anchorEl} open={open} onClose={close}>
-          <MenuItem component={Link} href={erpPath('/')} onClick={close}>
+          <MenuItem component={IntentLink} href={erpPath('/')} onClick={close}>
             <ListItemIcon>
               <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
             </ListItemIcon>
@@ -204,7 +204,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
                 <ListItemText>{recordLabel ?? t(crumb.label)}</ListItemText>
               </MenuItem>
             ) : (
-              <MenuItem key={crumb.href} component={Link} href={erpPath(crumb.href)} onClick={close}>
+              <MenuItem key={crumb.href} component={IntentLink} href={erpPath(crumb.href)} onClick={close}>
                 <ListItemText>{t(crumb.label)}</ListItemText>
               </MenuItem>
             ),
@@ -239,7 +239,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
         </Box>
       ) : (
         <MuiLink
-          component={Link}
+          component={IntentLink}
           href={erpPath('/')}
           color="inherit"
           underline="hover"
@@ -262,7 +262,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
         ) : (
           <MuiLink
             key={crumb.href}
-            component={Link}
+            component={IntentLink}
             href={erpPath(crumb.href)}
             color="inherit"
             underline="hover"
@@ -386,7 +386,7 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
           </MenuItem>
         ))}
         <Divider />
-        <MenuItem component={Link} href={erpPath('/settings')} onClick={close}>
+        <MenuItem component={IntentLink} href={erpPath('/settings')} onClick={close}>
           <ListItemIcon>
             <FontAwesomeIcon icon={byPrefixAndName.fas['gear']} size="sm" />
           </ListItemIcon>
@@ -503,7 +503,7 @@ function CompanySwitcher({
           </MenuItem>
         ))}
         <Divider />
-        <MenuItem component={Link} href={erpPath('/settings/company')} onClick={close}>
+        <MenuItem component={IntentLink} href={erpPath('/settings/company')} onClick={close}>
           <ListItemText>{t('Manage companies')}</ListItemText>
         </MenuItem>
       </Menu>

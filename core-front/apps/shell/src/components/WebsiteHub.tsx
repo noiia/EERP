@@ -1,5 +1,5 @@
 'use client'
-import Link from 'next/link'
+import { IntentLink } from './IntentLink'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
@@ -7,7 +7,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { T, erpPath } from '@eerp/core-front'
 
-// Client Component: `CardActionArea component={Link}` can't cross the Server/Client
+// Client Component: `CardActionArea component={IntentLink}` can't cross the Server/Client
 // boundary as a prop from the page (Next: "Functions cannot be passed directly to
 // Client Components"), same reason as AppsList.
 const PAGES = [
@@ -29,7 +29,7 @@ export default function WebsiteHub() {
         </Typography>
         {PAGES.map((p) => (
           <Card key={p.path} variant="outlined">
-            <CardActionArea component={Link} href={erpPath(p.path)} sx={{ p: 2 }}>
+            <CardActionArea component={IntentLink} href={erpPath(p.path)} sx={{ p: 2 }}>
               <Typography variant="subtitle1">
                 <T text={p.title} />
               </Typography>
