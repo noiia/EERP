@@ -190,10 +190,7 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
   if (!formPath || !createPermission || !allowed) return null
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-      <Button
-        variant="contained"
-        onClick={() => router.push(erpPath(formPath.replace(':id', 'new')))}
-      >
+      <Button variant="contained" onClick={() => router.push(erpPath(formPath.replace(':id', 'new')))}>
         {t('Create')}
       </Button>
     </Box>
@@ -240,11 +237,7 @@ export function summarizeFieldChanges(
     if ((prev ?? '') === (next ?? '')) continue
     // Objects (a geo field's GeoJSON) arrive as fresh instances on every
     // save: compare their content, not their identity.
-    if (
-      typeof prev === 'object' &&
-      typeof next === 'object' &&
-      JSON.stringify(prev) === JSON.stringify(next)
-    ) {
+    if (typeof prev === 'object' && typeof next === 'object' && JSON.stringify(prev) === JSON.stringify(next)) {
       continue
     }
     // A geometry has no readable one-line value: say that it changed.
@@ -289,22 +282,10 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
     let cancelled = false
     // Server-paged when it can be, so the total counts every row, not one page.
     const load = relationOps.listPage
-      ? relationOps
-          .listPage(entity, { page: 1, pageSize: DEFAULT_DISPLAY_PAGE_SIZE })
-          .then((res): ListNav => ({
-            ids: res.records.map((r) => r.id),
-            offset: 0,
-            total: res.total,
-            totalEstimated: res.totalEstimated,
-            paging: { pageSize: DEFAULT_DISPLAY_PAGE_SIZE },
-          }))
-      : relationOps
-          .list(entity)
-          .then((records): ListNav => ({
-            ids: records.map((r) => r.id),
-            offset: 0,
-            total: records.length,
-          }))
+      ? relationOps.listPage(entity, { page: 1, pageSize: DEFAULT_DISPLAY_PAGE_SIZE }).then((res): ListNav => ({
+          ids: res.records.map((r) => r.id), offset: 0, total: res.total, totalEstimated: res.totalEstimated, paging: { pageSize: DEFAULT_DISPLAY_PAGE_SIZE },
+        }))
+      : relationOps.list(entity).then((records): ListNav => ({ ids: records.map((r) => r.id), offset: 0, total: records.length }))
     load
       .then((n) => {
         if (!cancelled) useListNavStore.getState().setNav(entity, n)
@@ -339,25 +320,13 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
     const page = Math.floor(target / paging.pageSize)
     setBusy(true)
     try {
-      const res = await relationOps.listPage(entity, {
-        ...paging.options,
-        page: page + 1,
-        pageSize: paging.pageSize,
-      })
+      const res = await relationOps.listPage(entity, { ...paging.options, page: page + 1, pageSize: paging.pageSize })
       const ids = res.records.map((r) => r.id)
       const id = ids[target - page * paging.pageSize]
       // Past the real end (only reachable over an estimated total): keep the
       // loaded page, so this record — and the navigator — stay where they are.
       if (!id) return
-      useListNavStore
-        .getState()
-        .setNav(entity, {
-          ...nav,
-          ids,
-          offset: page * paging.pageSize,
-          total: res.total,
-          totalEstimated: res.totalEstimated,
-        })
+      useListNavStore.getState().setNav(entity, { ...nav, ids, offset: page * paging.pageSize, total: res.total, totalEstimated: res.totalEstimated })
       open(id)
     } catch {
       // The page couldn't load; stay on this record.
@@ -455,7 +424,7 @@ function FormRenderer<T extends HasId>({
     Boolean(statusBar.field.compute) ||
     Boolean(
       statusBar.field.states?.readOnly &&
-      evaluateCondition(statusBar.field.states.readOnly, draft as Record<string, unknown>),
+        evaluateCondition(statusBar.field.states.readOnly, draft as Record<string, unknown>),
     )
   const hiddenFields = useMemo(
     () => (statusEditable && statusBar ? new Set([statusBar.field.name]) : undefined),
@@ -468,10 +437,7 @@ function FormRenderer<T extends HasId>({
     if (!recordId) return
     useRecordLabelStore
       .getState()
-      .setLabel(
-        recordId,
-        typeof titleValue === 'string' && titleValue.trim() !== '' ? titleValue : null,
-      )
+      .setLabel(recordId, typeof titleValue === 'string' && titleValue.trim() !== '' ? titleValue : null)
   }, [recordId, titleValue])
 
   // The header-button-container's write path (HeaderButtonContext.setFieldAndCommit):
@@ -499,12 +465,10 @@ function FormRenderer<T extends HasId>({
         options?: { body?: unknown; revalidate?: string[] },
       ): Promise<Record<string, unknown>> => {
         if (!recordId || !actions.action) throw new Error('no saved record')
-        const res = (await actions.action(
-          recordId,
-          action,
-          options?.body,
-          options?.revalidate,
-        )) as Record<string, unknown>
+        const res = (await actions.action(recordId, action, options?.body, options?.revalidate)) as Record<
+          string,
+          unknown
+        >
         const record = res?.record as Partial<T> | undefined
         if (record) {
           store.getState().edit(record)
@@ -604,11 +568,7 @@ function FormRenderer<T extends HasId>({
             if (field.type !== 'relation' || field.relation?.kind !== 'many2many') continue
             if (field.widgetOptions?.deferred !== true) continue
             const pending = preCommitDraft[field.name] as PendingManyToMany | undefined
-            if (
-              !pending ||
-              (pending.toLink.length === 0 && pending.toUnlinkJunctionIds.length === 0)
-            )
-              continue
+            if (!pending || (pending.toLink.length === 0 && pending.toUnlinkJunctionIds.length === 0)) continue
             const rel = relationOf(field)
             const via = rel.via as string
             const cols = junctionColumns(rel, descriptor.entity)
@@ -649,20 +609,20 @@ function FormRenderer<T extends HasId>({
     // the toolbar and the form (banner.tsx). The context provider gives field
     // conditions the form's context values (form-context.tsx).
     <FormContextProvider values={formContext}>
-      <BannerScope>
-        <Box
-          component="form"
-          onSubmit={onSubmit}
-          aria-busy={submitting}
-          // Full width inside RootLayout's page inset (docs/roadmaps/
-          // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
-          // sense for a single flat column but wastes most of a wide screen now
-          // that the default anatomy is a header + two responsive columns.
-          // The relation wizard's dialog (relation-widgets.tsx) sizes itself off
-          // its own layout.wizardWidth/wizardWideWidth tokens instead.
-          sx={{ maxWidth: '100%', width: '100%' }}
-        >
-          {/* Top toolbar: Reset + Save sit immediately left of the form's options
+    <BannerScope>
+    <Box
+      component="form"
+      onSubmit={onSubmit}
+      aria-busy={submitting}
+      // Full width inside RootLayout's page inset (docs/roadmaps/
+      // responsive-displays.md, Phase 3) — the old formMaxWidth cap made
+      // sense for a single flat column but wastes most of a wide screen now
+      // that the default anatomy is a header + two responsive columns.
+      // The relation wizard's dialog (relation-widgets.tsx) sizes itself off
+      // its own layout.wizardWidth/wizardWideWidth tokens instead.
+      sx={{ maxWidth: '100%', width: '100%' }}
+    >
+      {/* Top toolbar: Reset + Save sit immediately left of the form's options
           menu (docs/adr/ADR-011) — the group's left edge lands exactly where
           the menu used to sit alone (apps/shell/app/[...module]/page.tsx no
           longer renders it; the form owns its own top chrome now). Reset is
@@ -673,119 +633,105 @@ function FormRenderer<T extends HasId>({
           than living inside the form-card's own column, as it used to) — so
           the chatter panel's top edge lines up with the form Card's top edge
           instead of sitting a whole toolbar-row lower than it. */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <IconButton
-              aria-label={t('Reset')}
-              disabled={!dirty || submitting}
-              onClick={() => store.getState().reset()}
-            >
-              <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
-            </IconButton>
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={!dirty || submitting}
-              // Explicit accessible name, independent of the visible label's
-              // own CSS breakpoint below — an icon-only button (< mobileBreakpoint)
-              // still needs a real name for assistive tech, not just a glyph.
-              aria-label={submitting ? t('Saving…') : t('Save')}
-              sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
-            >
-              {submitting ? (
-                <CircularProgress size={16} color="inherit" thickness={5} />
-              ) : (
-                <FontAwesomeIcon icon={byPrefixAndName.fas['floppy-disk']} size="sm" />
-              )}
-              {/* Below layout.mobileBreakpoint the button is icon-only (the
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <IconButton
+          aria-label={t('Reset')}
+          disabled={!dirty || submitting}
+          onClick={() => store.getState().reset()}
+        >
+          <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
+        </IconButton>
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={!dirty || submitting}
+          // Explicit accessible name, independent of the visible label's
+          // own CSS breakpoint below — an icon-only button (< mobileBreakpoint)
+          // still needs a real name for assistive tech, not just a glyph.
+          aria-label={submitting ? t('Saving…') : t('Save')}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+        >
+          {submitting ? (
+            <CircularProgress size={16} color="inherit" thickness={5} />
+          ) : (
+            <FontAwesomeIcon icon={byPrefixAndName.fas['floppy-disk']} size="sm" />
+          )}
+          {/* Below layout.mobileBreakpoint the button is icon-only (the
               floppy disk glyph alone reads as "Save" without crowding a
               narrow toolbar); at/above it the label follows the icon.
               display:none removes the span from flex layout entirely, so
               the `gap` above never leaves a stray space next to a lone icon. */}
-              <Box
-                component="span"
-                sx={{ display: 'none', [mobileMediaQuery]: { display: 'inline' } }}
-              >
-                {submitting ? t('Saving…') : t('Save')}
-              </Box>
-            </Button>
-            <FormActionsMenu
-              entity={descriptor.entity}
-              actions={descriptor.actions ?? []}
-              recordId={recordId ?? 'new'}
-              onDelete={canDelete && actions.remove ? handleDelete : undefined}
-              draft={draft as Record<string, unknown>}
-              onFieldsCommit={onHeaderButtonCommit}
-            />
-            <HeaderButtonContainer
-              entity={descriptor.entity}
-              buttons={descriptor.headerButtons ?? []}
-              recordId={recordId ?? 'new'}
-              draft={draft as Record<string, unknown>}
-              onFieldsCommit={onHeaderButtonCommit}
-              onRunAction={onHeaderButtonAction}
-              onNavigate={(path) => router.push(erpPath(path))}
-            />
-            {statusBar && (
-              <StatusBar
-                field={statusBar.field}
-                steps={statusBar.steps}
-                value={(draft as Record<string, unknown>)[statusBar.field.name]}
-                onSelect={
-                  statusEditable && canWrite && !statusReadOnly
-                    ? (o) => void onStatusSelect(o)
-                    : undefined
-                }
-                disabled={submitting}
-              />
-            )}
-            <FormListNav entity={descriptor.entity} recordId={recordId} />
+          <Box component="span" sx={{ display: 'none', [mobileMediaQuery]: { display: 'inline' } }}>
+            {submitting ? t('Saving…') : t('Save')}
           </Box>
-          <BannerSlot />
-          {/* The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
+        </Button>
+        <FormActionsMenu
+          entity={descriptor.entity}
+          actions={descriptor.actions ?? []}
+          recordId={recordId ?? 'new'}
+          onDelete={canDelete && actions.remove ? handleDelete : undefined}
+          draft={draft as Record<string, unknown>}
+          onFieldsCommit={onHeaderButtonCommit}
+        />
+        <HeaderButtonContainer
+          entity={descriptor.entity}
+          buttons={descriptor.headerButtons ?? []}
+          recordId={recordId ?? 'new'}
+          draft={draft as Record<string, unknown>}
+          onFieldsCommit={onHeaderButtonCommit}
+          onRunAction={onHeaderButtonAction}
+          onNavigate={(path) => router.push(erpPath(path))}
+        />
+        {statusBar && (
+          <StatusBar
+            field={statusBar.field}
+            steps={statusBar.steps}
+            value={(draft as Record<string, unknown>)[statusBar.field.name]}
+            onSelect={statusEditable && canWrite && !statusReadOnly ? (o) => void onStatusSelect(o) : undefined}
+            disabled={submitting}
+          />
+        )}
+        <FormListNav entity={descriptor.entity} recordId={recordId} />
+      </Box>
+      <BannerSlot />
+      {/* The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
           the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
           under that — a plain viewport media query, since this wrapper is
           always the whole form page, never re-embedded in a narrower container.
           Both this row's children start at the same y — the toolbar above is
           now a full-width sibling, not part of the form-card's own column —
           so the chatter Card's top border lands flush with the form Card's. */}
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: 2,
-              [`@media (min-width:${layoutTokens.chatterBreakpoint}px)`]: { flexDirection: 'row' },
-            }}
-          >
-            <Card sx={{ flex: 1, minWidth: 0, width: '100%' }}>
-              <CardContent sx={{ p: 3 }}>
-                <Stack spacing={2.5}>
-                  <ErrorAlert
-                    error={error ? serializeError(error) : null}
-                    fields={descriptor.fields}
-                  />
-                  <ErrorAlert error={deleteError} />
-                  <PictureSizeProvider size={pictureSize}>
-                    <LayoutForm
-                      descriptor={descriptor}
-                      draft={draft as Record<string, unknown>}
-                      onFieldChange={(name, value) =>
-                        setField(name as keyof T, value as T[keyof T])
-                      }
-                      entity={descriptor.entity}
-                      recordId={(draft as { id?: string }).id ?? null}
-                      hidden={hiddenFields}
-                    />
-                  </PictureSizeProvider>
-                </Stack>
-              </CardContent>
-            </Card>
-            {chatterVisible ? (
-              <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} />
-            ) : null}
-          </Box>
-        </Box>
-      </BannerScope>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 2,
+          [`@media (min-width:${layoutTokens.chatterBreakpoint}px)`]: { flexDirection: 'row' },
+        }}
+      >
+        <Card sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+          <CardContent sx={{ p: 3 }}>
+            <Stack spacing={2.5}>
+              <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
+              <ErrorAlert error={deleteError} />
+              <PictureSizeProvider size={pictureSize}>
+                <LayoutForm
+                  descriptor={descriptor}
+                  draft={draft as Record<string, unknown>}
+                  onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
+                  entity={descriptor.entity}
+                  recordId={(draft as { id?: string }).id ?? null}
+                  hidden={hiddenFields}
+                />
+              </PictureSizeProvider>
+            </Stack>
+          </CardContent>
+        </Card>
+        {chatterVisible ? <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} /> : null}
+      </Box>
+    </Box>
+    </BannerScope>
     </FormContextProvider>
   )
 }
@@ -1048,7 +994,8 @@ function TreeRenderer<T extends HasId>({
     let cancelled = false
     setPageLoading(true)
     setPageError(null)
-    relationOps.listPage!(descriptor.entity, { ...baseOptions, page: page + 1, pageSize })
+    relationOps
+      .listPage!(descriptor.entity, { ...baseOptions, page: page + 1, pageSize })
       .then((res) => {
         if (cancelled) return
         setLiveRecords(res.records as unknown as T[])
@@ -1064,18 +1011,7 @@ function TreeRenderer<T extends HasId>({
     return () => {
       cancelled = true
     }
-  }, [
-    paged,
-    mode,
-    liveResults,
-    paginationModel,
-    baseOptions,
-    activeFilters,
-    initialData,
-    recordTotal,
-    recordTotalEstimated,
-    descriptor.entity,
-  ])
+  }, [paged, mode, liveResults, paginationModel, baseOptions, activeFilters, initialData, recordTotal, recordTotalEstimated, descriptor.entity])
   const serverPaged = paged && liveResults == null
   // Quick-find results (or the cleared-query fallback, SearchBar's `fallback`
   // — initialData by identity) feed every mode exactly as before.
@@ -1098,30 +1034,10 @@ function TreeRenderer<T extends HasId>({
   // row and steps across page boundaries; other modes hold all their rows.
   useEffect(() => {
     const ids = liveRecords.map((r) => r.id)
-    useListNavStore
-      .getState()
-      .setNav(
-        descriptor.entity,
-        serverPaged && mode === 'list'
-          ? {
-              ids,
-              offset: paginationModel.page * paginationModel.pageSize,
-              total,
-              totalEstimated,
-              paging: { options: baseOptions, pageSize: paginationModel.pageSize },
-            }
-          : { ids, offset: 0, total: ids.length },
-      )
-  }, [
-    liveRecords,
-    descriptor.entity,
-    serverPaged,
-    mode,
-    paginationModel,
-    total,
-    totalEstimated,
-    baseOptions,
-  ])
+    useListNavStore.getState().setNav(descriptor.entity, serverPaged && mode === 'list'
+      ? { ids, offset: paginationModel.page * paginationModel.pageSize, total, totalEstimated, paging: { options: baseOptions, pageSize: paginationModel.pageSize } }
+      : { ids, offset: 0, total: ids.length })
+  }, [liveRecords, descriptor.entity, serverPaged, mode, paginationModel, total, totalEstimated, baseOptions])
 
   // An estimated total (ADR-032) can undercount by a lot, so it must never
   // bound paging: the grid runs with an unknown row count (-1), shows the
@@ -1160,7 +1076,8 @@ function TreeRenderer<T extends HasId>({
       : liveRecords.map((r) => r.id).filter((id) => !selectionModel.ids.has(id))
   function toggleSelectAll() {
     setSelectionModel((prev) => {
-      const count = prev.type === 'include' ? prev.ids.size : liveRecords.length - prev.ids.size
+      const count =
+        prev.type === 'include' ? prev.ids.size : liveRecords.length - prev.ids.size
       if (count === liveRecords.length && liveRecords.length > 0) {
         return { type: 'include', ids: new Set() }
       }
@@ -1268,17 +1185,12 @@ function TreeRenderer<T extends HasId>({
           // presence bubble beside the field's own value instead of the bare
           // text DataGrid renders by default (Settings -> Users' first user).
           if (f.widget === 'datetime') {
-            col.valueFormatter = (v: unknown) =>
-              typeof v === 'string' && v ? new Date(v).toLocaleString() : ''
+            col.valueFormatter = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString() : '')
           }
           if (f.widget === 'user-presence') {
             col.renderCell = (params) => (
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', height: '100%' }}>
-                <AvatarWithPresence
-                  userId={String(params.row.id)}
-                  label={String(params.value ?? '')}
-                  size={20}
-                />
+                <AvatarWithPresence userId={String(params.row.id)} label={String(params.value ?? '')} size={20} />
                 <span>{String(params.value ?? '')}</span>
               </Stack>
             )
@@ -1291,8 +1203,7 @@ function TreeRenderer<T extends HasId>({
           field: '_distance_m',
           headerName: t('Distance'),
           sortable: false,
-          valueFormatter: (v: unknown) =>
-            formatDistance(v as number | null, unitSystem, i18nLocale),
+          valueFormatter: (v: unknown) => formatDistance(v as number | null, unitSystem, i18nLocale),
         })
       }
       // A formPath makes rows navigable: clicking one opens that record's form.
@@ -1344,9 +1255,7 @@ function TreeRenderer<T extends HasId>({
         </Box>
       )
     } else {
-      content = (
-        <HierarchyTree descriptor={descriptor} initialData={initialData as (T & TreeNode)[]} />
-      )
+      content = <HierarchyTree descriptor={descriptor} initialData={initialData as (T & TreeNode)[]} />
     }
   }
   // `title` set (the catch-all route only): the host page skipped its own
@@ -1392,40 +1301,40 @@ function TreeRenderer<T extends HasId>({
     // The list's banner scope: errors from the list itself, a bulk delete,
     // Kanban/Calendar moves or Graph show between the search row and the list.
     <BannerScope>
-      <Box>
-        {title != null ? (
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-            <Typography variant="h4" component="h1" sx={{ flexShrink: 0 }}>
-              {t(title)}
-            </Typography>
-            {/* Built-in search/filter bar (docs/adr/ADR-014-search-filter-bar.md) —
+    <Box>
+      {title != null ? (
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+          <Typography variant="h4" component="h1" sx={{ flexShrink: 0 }}>
+            {t(title)}
+          </Typography>
+          {/* Built-in search/filter bar (docs/adr/ADR-014-search-filter-bar.md) —
               every tree view gets it automatically, same "no opt-in" posture the
               mode switcher below takes. Writes into the SAME liveRecords state
               Kanban/Calendar drags already share, so a filter/search/group-by
               result shows up identically across List/Kanban/Calendar/Graph. The
               selection toolbar (SelectionBar) rides along on the SAME row, right
               of the search bar. */}
-            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{searchRow}</Box>
-            <Box sx={{ flexShrink: 0 }}>
-              <CreateBar descriptor={descriptor} />
-            </Box>
+          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{searchRow}</Box>
+          <Box sx={{ flexShrink: 0 }}>
+            <CreateBar descriptor={descriptor} />
           </Box>
-        ) : (
-          searchRow
-        )}
-        <BannerSlot sx={{ mt: 2 }} />
-        <ViewBanner status="error" open={Boolean(bulkDeleteError)}>
-          {bulkDeleteError}
-        </ViewBanner>
-        <ErrorAlert error={pageError} />
-        <DisplayModeSwitcher
-          entity={descriptor.entity}
-          mode={mode}
-          onChange={(next) => setViewMode(descriptor.entity, next)}
-          availability={availability}
-        />
-        {content}
-      </Box>
+        </Box>
+      ) : (
+        searchRow
+      )}
+      <BannerSlot sx={{ mt: 2 }} />
+      <ViewBanner status="error" open={Boolean(bulkDeleteError)}>
+        {bulkDeleteError}
+      </ViewBanner>
+      <ErrorAlert error={pageError} />
+      <DisplayModeSwitcher
+        entity={descriptor.entity}
+        mode={mode}
+        onChange={(next) => setViewMode(descriptor.entity, next)}
+        availability={availability}
+      />
+      {content}
+    </Box>
     </BannerScope>
   )
 }
@@ -1478,46 +1387,44 @@ function DashboardRenderer<T extends HasId>({
   return (
     // The dashboard's banner scope: its banners show above the tiles.
     <BannerScope>
-      <BannerSlot />
-      <ErrorAlert error={refreshError ? serializeError(refreshError) : null} />
-      <ViewBanner status="warning" open={unavailable.length > 0}>
-        {t('Some counts could not be loaded')}: {unavailable.join(', ')}
-      </ViewBanner>
-      <Grid container spacing={2}>
-        {items.map((widget) => {
-          // The server seeds count (number) or null when that list view failed to load.
-          const count = widget.count
-          const href = typeof widget.href === 'string' ? widget.href : undefined
-          const block = (
-            <CardContent sx={{ p: 2 }}>
-              {/* Name in bold, top-left; the entry count below it. */}
-              <Typography sx={{ fontWeight: 700 }}>{t(widget.title)}</Typography>
-              <Typography
-                variant="h4"
-                component="div"
-                sx={{ mt: 0.5, fontVariantNumeric: tabularNums }}
-              >
-                {typeof count === 'number'
-                  ? formatTotal(count, widget.countEstimated === true)
-                  : '—'}
-              </Typography>
-            </CardContent>
-          )
-          return (
-            <Grid key={widget.id} size={{ xs: 12, sm: 6, md: 3 }}>
-              <Card variant="outlined">
-                {href ? (
-                  <CardActionArea component="a" href={erpPath(href)}>
-                    {block}
-                  </CardActionArea>
-                ) : (
-                  block
-                )}
-              </Card>
-            </Grid>
-          )
-        })}
-      </Grid>
+    <BannerSlot />
+    <ErrorAlert error={refreshError ? serializeError(refreshError) : null} />
+    <ViewBanner status="warning" open={unavailable.length > 0}>
+      {t('Some counts could not be loaded')}: {unavailable.join(', ')}
+    </ViewBanner>
+    <Grid container spacing={2}>
+      {items.map((widget) => {
+        // The server seeds count (number) or null when that list view failed to load.
+        const count = widget.count
+        const href = typeof widget.href === 'string' ? widget.href : undefined
+        const block = (
+          <CardContent sx={{ p: 2 }}>
+            {/* Name in bold, top-left; the entry count below it. */}
+            <Typography sx={{ fontWeight: 700 }}>{t(widget.title)}</Typography>
+            <Typography
+              variant="h4"
+              component="div"
+              sx={{ mt: 0.5, fontVariantNumeric: tabularNums }}
+            >
+              {typeof count === 'number' ? formatTotal(count, widget.countEstimated === true) : '—'}
+            </Typography>
+          </CardContent>
+        )
+        return (
+          <Grid key={widget.id} size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card variant="outlined">
+              {href ? (
+                <CardActionArea component="a" href={erpPath(href)}>
+                  {block}
+                </CardActionArea>
+              ) : (
+                block
+              )}
+            </Card>
+          </Grid>
+        )
+      })}
+    </Grid>
     </BannerScope>
   )
 }

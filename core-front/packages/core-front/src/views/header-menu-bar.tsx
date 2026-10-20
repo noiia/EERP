@@ -325,11 +325,7 @@ export function AppHeaderMenuBar({ menus }: { menus: HeaderMenu[] }) {
                     <ListItemText>{t('Back')}</ListItemText>
                   </MenuItem>,
                   <Divider key="__divider" />,
-                  ...renderMenuEntries(
-                    permittedEntries(selected.entries, permissions),
-                    t,
-                    navigate,
-                  ),
+                  ...renderMenuEntries(permittedEntries(selected.entries, permissions), t, navigate),
                 ]
               : visibleMenus.map((m) => (
                   <MenuItem key={m.name} onClick={() => pick(m)}>

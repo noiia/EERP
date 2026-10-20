@@ -94,10 +94,9 @@ function colorFor(index: number, palette: readonly string[]): string {
  * the element only appears on a later render, it never retries (the exact
  * bug graph-renderer.tsx's own container hit earlier in this effort).
  */
-function useElementSize<T extends HTMLElement>(fallback: {
-  width: number
-  height: number
-}): [RefObject<T | null>, { width: number; height: number }] {
+function useElementSize<T extends HTMLElement>(
+  fallback: { width: number; height: number },
+): [RefObject<T | null>, { width: number; height: number }] {
   const ref = useRef<T>(null)
   const [size, setSize] = useState(fallback)
   useEffect(() => {
@@ -159,15 +158,7 @@ function PartialDataBadge({ shown, total }: { shown: number; total: number | und
 function NoData() {
   const t = useT()
   return (
-    <Box
-      sx={{
-        height: '100%',
-        width: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
+    <Box sx={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <Typography variant="caption" color="text.secondary">
         {t('No data')}
       </Typography>
@@ -192,8 +183,7 @@ function StatWidgetBody<T extends HasId>({
   const { format } = useNumberFormat()
   const config = tile.config as { field?: string; aggregate?: FullAggregate }
   if (!config.field || !config.aggregate) return <NoData />
-  const value =
-    server?.stat ?? statValue(records, { field: config.field, aggregate: config.aggregate })
+  const value = server?.stat ?? statValue(records, { field: config.field, aggregate: config.aggregate })
   return (
     <Stack spacing={0.25} sx={{ height: '100%', width: '100%' }}>
       {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
@@ -233,22 +223,14 @@ function StatWidgetBody<T extends HasId>({
  * `new Date('YYYY-MM-DD')` (UTC-midnight parsing, the classic wrong-local-day
  * bug this codebase's Calendar renderer already avoids); built from the
  * numeric constructor throughout, same discipline as `bucketKey` itself. */
-function formatBucketLabel(
-  bucket: string,
-  granularity: BucketGranularity,
-  locale: string | undefined,
-): string {
+function formatBucketLabel(bucket: string, granularity: BucketGranularity, locale: string | undefined): string {
   const parts = bucket.split('-').map(Number)
   if (granularity === 'month') {
     const [y, m] = parts as [number, number]
-    return new Intl.DateTimeFormat(locale, { month: 'short', year: '2-digit' }).format(
-      new Date(y, m - 1, 1),
-    )
+    return new Intl.DateTimeFormat(locale, { month: 'short', year: '2-digit' }).format(new Date(y, m - 1, 1))
   }
   const [y, m, d] = parts as [number, number, number]
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(
-    new Date(y, m - 1, d),
-  )
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(y, m - 1, d))
 }
 
 /** A smooth (not straight-segment) path through `coords`, via a cubic Bézier
@@ -293,14 +275,7 @@ function CroppedPoint({
   return (
     <g className="graph-point graph-point-cropped" data-direction={direction}>
       <path d={`M ${x - 4.5},${y - s} L ${x},${y + 6 * s} L ${x + 4.5},${y - s} Z`} fill={color} />
-      <text
-        x={x}
-        y={direction === 'high' ? y - 8 : y + 16}
-        textAnchor="middle"
-        fontSize={10}
-        fontWeight={600}
-        fill={color}
-      >
+      <text x={x} y={direction === 'high' ? y - 8 : y + 16} textAnchor="middle" fontSize={10} fontWeight={600} fill={color}>
         {label}
       </text>
     </g>
@@ -346,8 +321,7 @@ function XyChart({
   const ticks = niceRange(Math.min(0, ...inliers), Math.max(0, ...inliers))
   const domainMin = ticks[0]!
   const domainMax = ticks.length > 1 ? ticks[ticks.length - 1]! : domainMin + 1
-  const cropOf = (v: number): 'high' | 'low' | null =>
-    v > domainMax ? 'high' : v < domainMin ? 'low' : null
+  const cropOf = (v: number): 'high' | 'low' | null => (v > domainMax ? 'high' : v < domainMin ? 'low' : null)
   const hasHigh = allValues.some((v) => cropOf(v) === 'high')
   const hasLow = allValues.some((v) => cropOf(v) === 'low')
 
@@ -371,9 +345,7 @@ function XyChart({
   const bucketIndex = new Map(buckets.map((b, i) => [b, i]))
 
   return (
-    <Box
-      sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}
-    >
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}>
       <Box ref={chartRef} sx={{ flex: 1, minHeight: 0, width: '100%' }}>
         {!hasData ? (
           <NoData />
@@ -393,26 +365,15 @@ function XyChart({
                     strokeWidth={1}
                     opacity={tick === 0 ? 1 : 0.5}
                   />
-                  <text
-                    x={AXIS_PADDING.left - 8}
-                    y={y}
-                    textAnchor="end"
-                    dominantBaseline="middle"
-                    fontSize={10}
-                    fill={palette.chrome.mutedInk}
-                  >
+                  <text x={AXIS_PADDING.left - 8} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={palette.chrome.mutedInk}>
                     {format(tick)}
                   </text>
                 </g>
               )
             })}
             {/* Axis-break marks: the axis is cut on the side holding cropped points. */}
-            {hasHigh ? (
-              <AxisBreak x={AXIS_PADDING.left} y={plotTop} color={palette.chrome.mutedInk} />
-            ) : null}
-            {hasLow ? (
-              <AxisBreak x={AXIS_PADDING.left} y={plotBottom} color={palette.chrome.mutedInk} />
-            ) : null}
+            {hasHigh ? <AxisBreak x={AXIS_PADDING.left} y={plotTop} color={palette.chrome.mutedInk} /> : null}
+            {hasLow ? <AxisBreak x={AXIS_PADDING.left} y={plotBottom} color={palette.chrome.mutedInk} /> : null}
             {/* X-axis bucket labels. */}
             {buckets.map((bucketKeyValue, i) => (
               <text
@@ -449,14 +410,7 @@ function XyChart({
               return (
                 <g key={s.label || seriesIndex}>
                   {runs.map((r) => (
-                    <path
-                      key={r[0]!.point.bucket}
-                      d={smoothPath(r)}
-                      fill="none"
-                      stroke={color}
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                    />
+                    <path key={r[0]!.point.bucket} d={smoothPath(r)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" />
                   ))}
                   {coords.map((c) => {
                     const crop = cropOf(c.point.value)
@@ -466,27 +420,12 @@ function XyChart({
                         title={`${s.label ? `${s.label} — ` : ''}${formatBucketLabel(c.point.bucket, bucket, locale)}: ${format(c.point.value)}`}
                       >
                         {/* A wider transparent hit area around the small visible point. */}
-                        <Box
-                          component="g"
-                          sx={{ cursor: 'pointer', '&:hover .graph-point': { r: 5.5 } }}
-                        >
+                        <Box component="g" sx={{ cursor: 'pointer', '&:hover .graph-point': { r: 5.5 } }}>
                           <circle cx={c.x} cy={c.y} r={10} fill="transparent" />
                           {crop ? (
-                            <CroppedPoint
-                              x={c.x}
-                              y={c.y}
-                              direction={crop}
-                              color={color}
-                              label={format(c.point.value)}
-                            />
+                            <CroppedPoint x={c.x} y={c.y} direction={crop} color={color} label={format(c.point.value)} />
                           ) : (
-                            <circle
-                              className="graph-point"
-                              cx={c.x}
-                              cy={c.y}
-                              r={3.5}
-                              fill={color}
-                            />
+                            <circle className="graph-point" cx={c.x} cy={c.y} r={3.5} fill={color} />
                           )}
                         </Box>
                       </ChartTip>
@@ -499,11 +438,7 @@ function XyChart({
         )}
       </Box>
       {showLegend ? (
-        <Stack
-          direction="row"
-          spacing={1.5}
-          sx={{ flexWrap: 'wrap', px: `${AXIS_PADDING.left}px`, minHeight: legendHeight }}
-        >
+        <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', px: `${AXIS_PADDING.left}px`, minHeight: legendHeight }}>
           {series.map((s, i) => (
             <Stack key={s.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
               <Box
@@ -578,9 +513,7 @@ function BarChart({
   const yForValue = (v: number) => AXIS_PADDING.top + innerH - (v / domainMax) * innerH
 
   return (
-    <Box
-      sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}
-    >
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}>
       <Box ref={chartRef} sx={{ flex: 1, minHeight: 0, width: '100%' }}>
         {!hasData ? (
           <NoData />
@@ -605,14 +538,7 @@ function BarChart({
                     strokeWidth={1}
                     opacity={tick === 0 ? 1 : 0.5}
                   />
-                  <text
-                    x={AXIS_PADDING.left - 8}
-                    y={y}
-                    textAnchor="end"
-                    dominantBaseline="middle"
-                    fontSize={10}
-                    fill={palette.chrome.mutedInk}
-                  >
+                  <text x={AXIS_PADDING.left - 8} y={y} textAnchor="end" dominantBaseline="middle" fontSize={10} fill={palette.chrome.mutedInk}>
                     {format(tick)}
                   </text>
                 </g>
@@ -694,11 +620,7 @@ function BarChart({
         )}
       </Box>
       {showLegend ? (
-        <Stack
-          direction="row"
-          spacing={1.5}
-          sx={{ flexWrap: 'wrap', px: `${AXIS_PADDING.left}px`, minHeight: legendHeight }}
-        >
+        <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', px: `${AXIS_PADDING.left}px`, minHeight: legendHeight }}>
           {series.map((s, i) => (
             <Stack key={s.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
               <Box
@@ -761,12 +683,7 @@ function BarWidgetBody<T extends HasId>({
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
       {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
-        <BarChart
-          series={series}
-          bucket={config.bucket}
-          mode={config.mode ?? 'grouped'}
-          format={(v) => format(v, { decimals: 1 })}
-        />
+        <BarChart series={series} bucket={config.bucket} mode={config.mode ?? 'grouped'} format={(v) => format(v, { decimals: 1 })} />
       </Box>
     </Stack>
   )
@@ -811,11 +728,7 @@ function XyWidgetBody<T extends HasId>({
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
       {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
-        <XyChart
-          series={series}
-          bucket={config.bucket}
-          format={(v) => format(v, { decimals: 1 })}
-        />
+        <XyChart series={series} bucket={config.bucket} format={(v) => format(v, { decimals: 1 })} />
       </Box>
     </Stack>
   )
@@ -829,10 +742,7 @@ function XyWidgetBody<T extends HasId>({
 function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) => string }) {
   const t = useT()
   const palette = useGraphPalette()
-  const [containerRef, { width, height }] = useElementSize<HTMLDivElement>({
-    width: 200,
-    height: 84,
-  })
+  const [containerRef, { width, height }] = useElementSize<HTMLDivElement>({ width: 200, height: 84 })
   const total = slices.reduce((sum, s) => sum + s.count, 0)
 
   // The donut scales with whichever dimension is tighter (a short-wide tile
@@ -849,22 +759,12 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
   return (
     <Box
       ref={containerRef}
-      sx={{
-        height: '100%',
-        width: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
+      sx={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
     >
       {total <= 0 ? (
         <NoData />
       ) : (
-        <Stack
-          direction="row"
-          spacing={1.5}
-          sx={{ alignItems: 'center', minWidth: 0, maxWidth: '100%' }}
-        >
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
           <svg
             width={size}
             height={size}
@@ -879,9 +779,7 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
                 const dashoffset = -offset
                 offset += length
                 const color =
-                  slice.label === OTHER_LABEL
-                    ? palette.chrome.mutedInk
-                    : colorFor(i, palette.categorical)
+                  slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical)
                 return (
                   <ChartTip
                     key={slice.label}
@@ -913,9 +811,7 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
                     borderRadius: '50%',
                     flexShrink: 0,
                     bgcolor:
-                      slice.label === OTHER_LABEL
-                        ? palette.chrome.mutedInk
-                        : colorFor(i, palette.categorical),
+                      slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical),
                   }}
                 />
                 <Typography variant="caption" noWrap color="text.secondary">
@@ -945,16 +841,12 @@ function PieWidgetBody<T extends HasId>({
   const config = tile.config as { groupByField?: string; valueField?: string }
   if (!config.groupByField) return <NoData />
   const slices =
-    server?.slices ??
-    pieSlices(records, { groupByField: config.groupByField, valueField: config.valueField })
+    server?.slices ?? pieSlices(records, { groupByField: config.groupByField, valueField: config.valueField })
   return (
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
       {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
-        <PieChart
-          slices={slices}
-          format={(v) => format(v, { decimals: config.valueField ? 1 : 0 })}
-        />
+        <PieChart slices={slices} format={(v) => format(v, { decimals: config.valueField ? 1 : 0 })} />
       </Box>
     </Stack>
   )
@@ -973,11 +865,7 @@ function ListWidgetBody<T extends HasId>({
 }) {
   const t = useT()
   const ops = useRelationOps()
-  const config = tile.config as {
-    filterField?: string
-    filterValue?: string
-    displayFields?: string[]
-  }
+  const config = tile.config as { filterField?: string; filterValue?: string; displayFields?: string[] }
   const [rows, setRows] = useState<RelationRecord[] | null>(null)
 
   useEffect(() => {
@@ -1057,29 +945,11 @@ export function GraphWidgetBody<T extends HasId>({
   const data = server === 'loading' ? undefined : server
   switch (tile.type) {
     case 'stat':
-      return (
-        <StatWidgetBody tile={tile} records={records} recordTotal={recordTotal} server={data} />
-      )
+      return <StatWidgetBody tile={tile} records={records} recordTotal={recordTotal} server={data} />
     case 'xy':
-      return (
-        <XyWidgetBody
-          tile={tile}
-          records={records}
-          recordTotal={recordTotal}
-          yLabels={yLabels}
-          server={data}
-        />
-      )
+      return <XyWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} server={data} />
     case 'bar':
-      return (
-        <BarWidgetBody
-          tile={tile}
-          records={records}
-          recordTotal={recordTotal}
-          yLabels={yLabels}
-          server={data}
-        />
-      )
+      return <BarWidgetBody tile={tile} records={records} recordTotal={recordTotal} yLabels={yLabels} server={data} />
     case 'pie':
       return <PieWidgetBody tile={tile} records={records} recordTotal={recordTotal} server={data} />
     case 'list':

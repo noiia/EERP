@@ -33,12 +33,7 @@ import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { isHexColor } from './palette'
 import { BooleanFileWidget } from './file-widgets'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
-import {
-  RelationListWidget,
-  RelationSearchWidget,
-  RelationTagsWidget,
-  TaxTotalsWidget,
-} from './relation-widgets'
+import { RelationListWidget, RelationSearchWidget, RelationTagsWidget, TaxTotalsWidget } from './relation-widgets'
 import { useNumberFormat } from './format-store'
 import { tabularNums } from './tokens'
 
@@ -182,10 +177,7 @@ function TextPasswordWidget({ field, value, onChange, disabled }: WidgetProps) {
                 edge="end"
                 size="small"
               >
-                <FontAwesomeIcon
-                  icon={byPrefixAndName.fas[visible ? 'eye-slash' : 'eye']}
-                  size="sm"
-                />
+                <FontAwesomeIcon icon={byPrefixAndName.fas[visible ? 'eye-slash' : 'eye']} size="sm" />
               </IconButton>
             </InputAdornment>
           ),
@@ -225,10 +217,7 @@ function TextUrlWidget({ field, value, onChange, disabled }: WidgetProps) {
                 size="small"
                 onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
               >
-                <FontAwesomeIcon
-                  icon={byPrefixAndName.fas['arrow-up-right-from-square']}
-                  size="xs"
-                />
+                <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-up-right-from-square']} size="xs" />
               </IconButton>
             </InputAdornment>
           ),
@@ -447,8 +436,7 @@ type LinkedSelectionPresets = Record<string, Record<string, JsonValue>>
 function SelectionLinkedWidget({ field, value, onChange, onChangeField, disabled }: WidgetProps) {
   const t = useT()
   const options = field.selection?.options ?? []
-  const presets =
-    (field.widgetOptions?.presets as unknown as LinkedSelectionPresets | undefined) ?? {}
+  const presets = (field.widgetOptions?.presets as unknown as LinkedSelectionPresets | undefined) ?? {}
 
   function handleChange(option: string) {
     onChange(option)
@@ -622,8 +610,7 @@ function NumberInput({
 }
 
 function NumberFloatWidget({ field, value, onChange, disabled }: WidgetProps) {
-  const decimals =
-    typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
+  const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
   const input = useNumericInput({ value, onChange, decimals })
   return <NumberInput field={field} input={input} disabled={disabled} />
 }
@@ -639,18 +626,10 @@ function NumberFloatWidget({ field, value, onChange, disabled }: WidgetProps) {
  * field is still fully usable, just undecorated until the mirror catches up.
  */
 function NumberMonetaryWidget({ field, value, onChange, disabled }: WidgetProps) {
-  const decimals =
-    typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
+  const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
   const currency = useCompanyStore((s) => s.currency)
   const input = useNumericInput({ value, onChange, decimals })
-  return (
-    <NumberInput
-      field={field}
-      input={input}
-      endAdornment={currency || undefined}
-      disabled={disabled}
-    />
-  )
+  return <NumberInput field={field} input={input} endAdornment={currency || undefined} disabled={disabled} />
 }
 
 function NumberIntWidget({ field, value, onChange, disabled }: WidgetProps) {
@@ -661,8 +640,7 @@ function NumberIntWidget({ field, value, onChange, disabled }: WidgetProps) {
 function NumberPercentWidget({ field, value, onChange, disabled }: WidgetProps) {
   // base 'ratio' (default): 0.25 stored, "25 %" shown. base 'percent': stored as-is.
   const scale = field.widgetOptions?.base === 'percent' ? 1 : 100
-  const decimals =
-    typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
+  const decimals = typeof field.widgetOptions?.decimals === 'number' ? field.widgetOptions.decimals : 2
   const input = useNumericInput({ value, onChange, decimals, scale })
   return <NumberInput field={field} input={input} endAdornment="%" disabled={disabled} />
 }
@@ -721,10 +699,7 @@ const PHONE_COUNTRIES: readonly { code: string; dial: string; flag: string }[] =
 ]
 
 /** Split a stored phone value into the matched country + national digits. */
-function splitPhone(value: unknown): {
-  country: (typeof PHONE_COUNTRIES)[number] | null
-  national: string
-} {
+function splitPhone(value: unknown): { country: (typeof PHONE_COUNTRIES)[number] | null; national: string } {
   const digits = String(value ?? '')
     .replace(/^\+/, '')
     .replace(/\D/g, '')
@@ -740,9 +715,7 @@ function splitPhone(value: unknown): {
 function PhoneWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   const defaultCode =
-    typeof field.widgetOptions?.defaultCountry === 'string'
-      ? field.widgetOptions.defaultCountry
-      : 'FR'
+    typeof field.widgetOptions?.defaultCountry === 'string' ? field.widgetOptions.defaultCountry : 'FR'
   const parsed = splitPhone(value)
   // The picked country only needs local state while the number is still empty;
   // once digits exist the stored E.164 value is the single source of truth.
