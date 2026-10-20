@@ -27,7 +27,6 @@ import { ApiError, createServerApiClient } from '@eerp/core-front/server'
 interface Contact {
   id: string
   name: string
-  email: string
   company?: string
   status?: string
 }
@@ -55,7 +54,7 @@ beforeEach(() => {
     ),
     http.post(`${BASE}/api/v1/crm`, async ({ request }) => {
       const body = (await request.json()) as Partial<Contact>
-      const record = { id: `c${++seq}`, name: '', email: '', ...body } as Contact
+      const record = { id: `c${++seq}`, name: '', ...body } as Contact
       contacts.push(record)
       return HttpResponse.json(record, { status: 201 })
     }),
@@ -84,8 +83,8 @@ describe('CRM CRUD via the engine ApiClient (MSW twin)', () => {
 
     expect(await api.list<Contact>('crm')).toEqual([])
 
-    const created = await api.create<Contact>('crm', { name: 'Ada', email: 'ada@x.io' })
-    expect(created).toMatchObject({ id: 'c1', name: 'Ada', email: 'ada@x.io' })
+    const created = await api.create<Contact>('crm', { name: 'Ada', company: 'Acme' })
+    expect(created).toMatchObject({ id: 'c1', name: 'Ada', company: 'Acme' })
     expect(revalidateTag).toHaveBeenCalledWith('crm', 'max')
 
     const list = await api.list<Contact>('crm')
@@ -96,7 +95,7 @@ describe('CRM CRUD via the engine ApiClient (MSW twin)', () => {
     expect(fetched).toMatchObject({ name: 'Ada' })
 
     revalidateTag.mockClear()
-    const updated = await api.update<Contact>('crm', 'c1', { name: 'Ada L.', email: 'ada@x.io' })
+    const updated = await api.update<Contact>('crm', 'c1', { name: 'Ada L.', company: 'Acme' })
     expect(updated).toMatchObject({ name: 'Ada L.' })
     expect(revalidateTag).toHaveBeenCalledWith('crm', 'max')
 

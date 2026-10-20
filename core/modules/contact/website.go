@@ -11,15 +11,20 @@ import (
 	"github.com/google/uuid"
 )
 
+// A contact's kind: a company (parent) or a person (child, "contact").
+const (
+	KindCompany = "company"
+	KindContact = "contact"
+)
+
 // CreateWebsiteContact inserts the contact of a new website account
 // (website = true). Called inside the signup transaction (auth's
 // OnWebsiteSignup hook, wired in internal/app), so a failed signup leaves no
 // contact. A new contact even when an ERP contact already has this email:
 // "created from the website" is the fact recorded, merging is a human call.
 func CreateWebsiteContact(ctx context.Context, ex orm.Executor, tenant uuid.UUID, name, email string) (uuid.UUID, error) {
-	yes := true
 	c, err := orm.MustRepo[internal.Contact](ex).Create(ctx, internal.Contact{
-		TenantID: tenant, Name: name, Email: email, Status: "lead", Website: &yes})
+		TenantID: tenant, Name: name, Email: email, Status: "lead", Kind: new(KindContact), Website: new(true)})
 	return c.ID, err
 }
 
@@ -55,6 +60,6 @@ func FindOrCreate(ctx context.Context, ex orm.Executor, tenant uuid.UUID, name, 
 		return uuid.Nil, err
 	}
 	c, err := orm.MustRepo[internal.Contact](ex).Create(ctx, internal.Contact{
-		TenantID: tenant, Name: name, Email: strings.ToLower(email), Status: "customer"})
+		TenantID: tenant, Name: name, Email: strings.ToLower(email), Status: "customer", Kind: new(KindContact)})
 	return c.ID, err
 }

@@ -1,4 +1,10 @@
-import type { FrontModule, GeoJSONGeometry, ViewDescriptor } from '@eerp/core-front'
+import {
+  FORM_NOTEBOOK_ID,
+  type FrontModule,
+  type GeoJSONGeometry,
+  type Operation,
+  type ViewDescriptor,
+} from '@eerp/core-front'
 
 // contacts frontend — DESCRIPTORS ONLY. The engine derives the server loader, the Zustand
 // store, and the renderer from these; this module ships no controllers or renderers.
@@ -16,6 +22,9 @@ export interface Contact {
   email: string
   company?: string
   status?: string
+  /** A company (parent) or a person (child), linked many2many through
+   * contact_company. Older rows read as 'contact'. */
+  kind?: 'company' | 'contact' | null
   /** Created by a website signup (set by Go, never edited). */
   website?: boolean | null
   /** Where the contact is — a GeoJSON Point (map pick or geocoded). */
@@ -23,6 +32,14 @@ export interface Contact {
 }
 
 const fields: ViewDescriptor['fields'] = [
+  {
+    name: 'kind',
+    label: 'Type',
+    type: 'selection',
+    widget: 'radio',
+    selection: { options: ['company', 'contact'] },
+    default: 'contact',
+  },
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'company', label: 'Company', type: 'text' },
@@ -36,6 +53,58 @@ const fields: ViewDescriptor['fields'] = [
     type: 'geo',
     widget: 'point',
     widgetOptions: { zones: [{ entity: 'company', field: 'service_zone', label: 'Company service zone' }] },
+  },
+]
+
+// The parent/child links, both sides of the same contact_company junction:
+// a company lists its contacts, a contact the companies it belongs to (0..n
+// either way). Each side only offers rows of the other kind, and shows only
+// on its own kind — the notebook drops the page whose field is hidden.
+const companiesField: ViewDescriptor['fields'][number] = {
+  name: 'companies',
+  label: 'Companies',
+  type: 'relation',
+  relation: {
+    entity: 'contact',
+    kind: 'many2many',
+    via: 'contact_company',
+    viaFields: { own: 'contact_id', related: 'company_id' },
+    labelField: 'name',
+    filter: { kind: 'company' },
+  },
+  states: { visible: { field: 'kind', op: 'ne', value: 'company' } },
+}
+const contactsField: ViewDescriptor['fields'][number] = {
+  name: 'contacts',
+  label: 'Contacts',
+  type: 'relation',
+  relation: {
+    entity: 'contact',
+    kind: 'many2many',
+    via: 'contact_company',
+    viaFields: { own: 'company_id', related: 'contact_id' },
+    labelField: 'name',
+    filter: { kind: 'contact' },
+  },
+  states: { visible: { field: 'kind', op: 'eq', value: 'company' } },
+}
+
+// The children come first in the notebook: Contacts on a company, Companies
+// on a contact.
+export const relationsPageOperations: Operation[] = [
+  { op: 'addField', field: companiesField },
+  { op: 'addField', field: contactsField },
+  {
+    op: 'addNode',
+    node: { kind: 'page', title: 'Companies', children: [{ kind: 'field', name: 'companies' }] },
+    target: FORM_NOTEBOOK_ID,
+    position: 'first',
+  },
+  {
+    op: 'addNode',
+    node: { kind: 'page', title: 'Contacts', children: [{ kind: 'field', name: 'contacts' }] },
+    target: FORM_NOTEBOOK_ID,
+    position: 'first',
   },
 ]
 
@@ -87,6 +156,7 @@ const contacts: FrontModule = {
     { path: '/contacts/list', descriptor: listView },
     { path: '/contacts/:id', descriptor: formView },
   ],
+  extends: [{ path: '/contacts/:id', operations: relationsPageOperations }],
 }
 
 export default contacts

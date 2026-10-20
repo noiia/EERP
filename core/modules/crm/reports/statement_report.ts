@@ -35,10 +35,7 @@ export const statementReport: ReportDescriptor = {
     {
       kind: 'section',
       className: 'eerp-report-contact',
-      children: [
-        { kind: 'field', name: 'email' },
-        { kind: 'field', name: 'phone' },
-      ],
+      children: [{ kind: 'field', name: 'phone' }],
     },
     {
       kind: 'section',

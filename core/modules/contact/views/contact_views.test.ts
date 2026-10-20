@@ -1,4 +1,4 @@
-import { resolveWidget } from '@eerp/core-front'
+import { ModuleRegistry, normalizeLayout, resolveWidget, FORM_NOTEBOOK_ID } from '@eerp/core-front'
 import { describe, expect, it } from 'vitest'
 import contacts from './contact_views'
 
@@ -46,6 +46,7 @@ describe('contacts FrontModule', () => {
 
   it('exposes the contact fields under their snake_case column names', () => {
     expect(contacts.routes[0].descriptor.fields.map((f) => f.name)).toEqual([
+      'kind',
       'name',
       'email',
       'company',
@@ -77,5 +78,40 @@ describe('contacts FrontModule', () => {
     // The tree keeps it for the near/inside search filters (the grid skips geo columns).
     const list = contacts.routes.find((r) => r.path === '/contacts/list')!.descriptor
     expect(list.fields.some((f) => f.name === 'geo_location')).toBe(true)
+  })
+
+  it('picks the kind with radio buttons, a new record being a contact', () => {
+    const kind = contacts.routes[2].descriptor.fields.find((f) => f.name === 'kind')!
+    expect(kind).toMatchObject({ type: 'selection', widget: 'radio', default: 'contact' })
+    expect(kind.selection?.options).toEqual(['company', 'contact'])
+  })
+
+  it('links contacts and companies both ways, as the first notebook page of the matching kind', () => {
+    const registry = new ModuleRegistry()
+    registry.register(contacts)
+    const form = registry.buildRegistry().get('/contacts/:id')!.descriptor
+    const companies = form.fields.find((f) => f.name === 'companies')!
+    const members = form.fields.find((f) => f.name === 'contacts')!
+    expect(companies.relation).toMatchObject({
+      entity: 'contact',
+      kind: 'many2many',
+      via: 'contact_company',
+      viaFields: { own: 'contact_id', related: 'company_id' },
+      filter: { kind: 'company' },
+    })
+    expect(members.relation).toMatchObject({
+      via: 'contact_company',
+      viaFields: { own: 'company_id', related: 'contact_id' },
+      filter: { kind: 'contact' },
+    })
+    expect(companies.states?.visible).toEqual({ field: 'kind', op: 'ne', value: 'company' })
+    expect(members.states?.visible).toEqual({ field: 'kind', op: 'eq', value: 'company' })
+
+    const notebook = normalizeLayout(form).find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    if (!notebook || notebook.kind === 'field') throw new Error('no notebook')
+    expect(notebook.children.slice(0, 2).map((p) => (p.kind === 'field' ? p.name : p.title))).toEqual([
+      'Contacts',
+      'Companies',
+    ])
   })
 })

@@ -57,7 +57,6 @@ describe('crm FrontModule', () => {
   it('exposes the scalar fields on every view and the relations on the form only', () => {
     expect(crm.routes[0].descriptor.fields.map((f) => f.name)).toEqual([
       'name',
-      'email',
       'company',
       'status',
       'score',
@@ -69,7 +68,6 @@ describe('crm FrontModule', () => {
     expect(form?.descriptor.fields.map((f) => f.name)).toEqual([
       'picture',
       'name',
-      'email',
       'company',
       'status',
       'score',
@@ -77,7 +75,6 @@ describe('crm FrontModule', () => {
       'satisfaction',
       'deals',
       'notes',
-      'display_name',
       'contact_id',
       'tags',
     ])
@@ -165,27 +162,6 @@ describe('crm FrontModule', () => {
     expect(score?.compute).toBeUndefined()
     expect(score?.store).toBeUndefined()
     expect(score?.widget).toBe('stars')
-  })
-
-  it('registers crm.displayName as a display-only (store:false) compute', () => {
-    const fn = behaviorRegistry.fieldFunction('crm.displayName')
-    expect(fn?.depends).toEqual(['name', 'company'])
-    expect(fn?.handler({ name: 'Ada', company: 'Acme' })).toBe('Ada (Acme)')
-    expect(fn?.handler({ name: 'Ada' })).toBe('Ada')
-
-    const form = crm.routes.find((r) => r.path === '/crm/:id')
-    const display = form?.descriptor.fields.find((f) => f.name === 'display_name')
-    expect(display?.compute).toBe('crm.displayName')
-    expect(display?.store).toBe(false)
-  })
-
-  it('registers crm.suggestEmail: company edits patch an empty email only', () => {
-    const handler = behaviorRegistry.onChangeFor('crm').find((h) => h.name === 'crm.suggestEmail')
-    expect(handler?.onChange).toEqual(['company'])
-    expect(handler?.handler({ company: 'Acme Corp.' })).toEqual({ email: 'contact@acmecorp.com' })
-    // Never clobbers what the user already typed.
-    expect(handler?.handler({ company: 'Acme', email: 'ada@ada.io' })).toBeUndefined()
-    expect(handler?.handler({ company: '' })).toBeUndefined()
   })
 })
 

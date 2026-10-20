@@ -165,6 +165,7 @@ function buildContacts(): Record<string, unknown>[] {
       email: fakeEmail(first, last, company),
       company,
       status: pick(['prospect', 'customer', 'archived']),
+      kind: 'contact',
     }
   })
 }
@@ -180,7 +181,6 @@ function buildCrmRecords(contacts: { id: string }[]): Record<string, unknown>[] 
     const contact = contacts.length > 0 && Math.random() > 0.33 ? pick(contacts) : null
     return {
       name: `${first} ${last}`,
-      email: fakeEmail(first, last, company),
       company,
       status,
       contact_id: contact?.id ?? null,

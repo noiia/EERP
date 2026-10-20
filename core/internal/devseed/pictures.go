@@ -46,8 +46,8 @@ var pictureTargets = []pictureTarget{
 	{"products", "product", "picture", "picture", kindPhoto, `SELECT id FROM product WHERE tenant_id = $1 AND reference LIKE 'SEED-%'`},
 	{"products", "product_variant", "picture", "picture", kindPhoto, `SELECT v.id FROM product_variant v JOIN product p ON p.id = v.product_id
 		WHERE v.tenant_id = $1 AND p.reference LIKE 'SEED-%'`},
-	{"crm", "crm", "picture", "picture", kindPhoto, `SELECT id FROM crm WHERE tenant_id = $1 AND email LIKE '%.seed.example'`},
-	{"crm", "crm", "signature", "signature", kindSignature, `SELECT id FROM crm WHERE tenant_id = $1 AND email LIKE '%.seed.example'`},
+	{"crm", "crm", "picture", "picture", kindPhoto, `SELECT id FROM crm WHERE tenant_id = $1 AND ` + seededCRM},
+	{"crm", "crm", "signature", "signature", kindSignature, `SELECT id FROM crm WHERE tenant_id = $1 AND ` + seededCRM},
 	{"quotes", "quote", "logo", "logo", kindLogo, `SELECT id FROM quote WHERE tenant_id = $1 AND number LIKE 'SQ-%'`},
 	{"invoices", "invoice", "logo", "logo", kindLogo, `SELECT id FROM invoice WHERE tenant_id = $1 AND number LIKE 'SI-%'`},
 	// Photo rows have no flag: the row itself is the carousel slide.

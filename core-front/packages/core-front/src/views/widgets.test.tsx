@@ -322,6 +322,29 @@ describe('selection', () => {
   })
 })
 
+describe('selection/radio', () => {
+  const kindField: FieldDescriptor = {
+    name: 'kind',
+    label: 'Type',
+    type: 'selection',
+    widget: 'radio',
+    selection: { options: ['company', 'contact'] },
+  }
+
+  it('shows every option as a radio, the value checked, and picks on click', () => {
+    const { onChange } = renderWidget(kindField, 'contact')
+    expect(screen.getByRole('radio', { name: 'contact' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'company' })).not.toBeChecked()
+    fireEvent.click(screen.getByRole('radio', { name: 'company' }))
+    expect(onChange).toHaveBeenCalledWith('company')
+  })
+
+  it('checks nothing for a value outside the list', () => {
+    renderWidget(kindField, 'other')
+    expect(screen.getAllByRole('radio').every((r) => !(r as HTMLInputElement).checked)).toBe(true)
+  })
+})
+
 describe('selection/linked', () => {
   const presetField: FieldDescriptor = {
     name: 'size_preset',

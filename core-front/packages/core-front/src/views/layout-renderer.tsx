@@ -19,6 +19,7 @@ import {
   FORM_HEADER_ID,
   type FieldDescriptor,
   type LayoutContainerNode,
+  type LayoutFieldNode,
   type LayoutNode,
   type ViewDescriptor,
 } from './descriptor'
@@ -257,8 +258,20 @@ function NotebookNode({
   hidden?: ReadonlySet<string>
 }) {
   const t = useT()
-  const [active, setActive] = useState(0)
+  const [selected, setSelected] = useState(0)
   const pages = node.children as LayoutContainerNode[]
+  const callerGroups = useSessionStore((s) => s.identity?.groups ?? NO_GROUPS)
+  const conditionRecord = useConditionRecord(draft)
+  // A page whose every field is hidden right now (invisible, states.visible,
+  // groups) has nothing to show: its tab goes too — e.g. a contact's
+  // "Companies" page vs a company's "Contacts" page, by its kind.
+  const pageShown = pages.map((page) =>
+    hasVisibleField(page, fieldsByName, conditionRecord, callerGroups, hidden),
+  )
+  const firstShown = Math.max(pageShown.indexOf(true), 0)
+  // The selected tab may just have hidden itself: fall back to the first one shown.
+  const active = selected < pages.length && !pageShown[selected] ? firstShown : selected
+  const setActive = setSelected
 
   const ops = useNotebookOps()
   const canWrite = usePermission('notebook_pages:notebook_pages:write')
@@ -347,13 +360,13 @@ function NotebookNode({
           scrollButtons="auto"
           sx={{ flexGrow: 1, minHeight: 0, borderBottom: 0 }}
         >
-          {pages.map((page, i) => (
-            <Tab key={`d:${page.id ?? i}`} label={t(page.title ?? '')} />
-          ))}
-          {storedPages.map((page) => (
+          {pages.map((page, i) =>
+            pageShown[i] ? <Tab key={`d:${page.id ?? i}`} value={i} label={t(page.title ?? '')} /> : null,
+          )}
+          {storedPages.map((page, i) => (
             // Stored titles are user data, never translated (msgids are
             // static developer strings; a record's own page title is not).
-            <Tab key={`s:${page.id}`} label={page.title} />
+            <Tab key={`s:${page.id}`} value={pages.length + i} label={page.title} />
           ))}
         </Tabs>
         {showAdd ? (
@@ -399,6 +412,26 @@ function NotebookNode({
         : null}
     </Box>
   )
+}
+
+/** Whether a layout subtree renders at least one field right now. A
+ * page with no field leaf at all (pure structure) counts as shown. */
+function hasVisibleField(
+  node: LayoutNode,
+  fieldsByName: Map<string, FieldDescriptor>,
+  conditionRecord: Record<string, unknown>,
+  callerGroups: string[],
+  hidden?: ReadonlySet<string>,
+): boolean {
+  const leaves: LayoutFieldNode[] = []
+  const walk = (n: LayoutNode) => (n.kind === 'field' ? leaves.push(n) : n.children.forEach(walk))
+  walk(node)
+  if (leaves.length === 0) return true
+  return leaves.some((leaf) => {
+    if (hidden?.has(leaf.name)) return false
+    const field = fieldsByName.get(leaf.name)
+    return field ? isFieldVisible(field, conditionRecord, callerGroups) : false
+  })
 }
 
 /**

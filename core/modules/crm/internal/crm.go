@@ -11,7 +11,6 @@ import (
 type CRM struct {
 	model.BaseModel
 	Name    string `db:"name"`
-	Email   string `db:"email"`
 	Company string `db:"company"`
 	Status  string `db:"status"` // "lead", "prospect", "customer", "churned"
 	// Contacts is the optional many2one FK behind the form's contact search

@@ -492,6 +492,40 @@ describe('LayoutForm — the synthesized notebook', () => {
     expect(screen.getByLabelText('NOTES')).toHaveValue('kept')
   })
 
+  it("drops a page's tab while every field on it is hidden, falling back to a shown page", () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'contact',
+      viewType: 'form',
+      fields: [
+        textField('kind'),
+        { ...textField('members'), states: { visible: { field: 'kind', op: 'eq', value: 'company' } } },
+        { ...textField('parents'), states: { visible: { field: 'kind', op: 'ne', value: 'company' } } },
+      ],
+      layout: [
+        { kind: 'field', name: 'kind' },
+        {
+          kind: 'notebook',
+          children: [
+            { kind: 'page', title: 'Contacts', children: [{ kind: 'field', name: 'members' }] },
+            { kind: 'page', title: 'Companies', children: [{ kind: 'field', name: 'parents' }] },
+          ],
+        },
+      ],
+    }
+    const { rerender } = render(
+      <LayoutForm descriptor={descriptor} draft={{ kind: 'company' }} onFieldChange={vi.fn()} entity="contact" recordId={null} />,
+    )
+    expect(screen.getByRole('tab', { name: 'Contacts' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Companies' })).toBeNull()
+
+    rerender(
+      <LayoutForm descriptor={descriptor} draft={{ kind: 'contact' }} onFieldChange={vi.fn()} entity="contact" recordId={null} />,
+    )
+    expect(screen.queryByRole('tab', { name: 'Contacts' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Companies' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('PARENTS').closest('[hidden]')).toBeNull()
+  })
+
   it('a notebook with no long field still renders — the Settings tab, empty', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',

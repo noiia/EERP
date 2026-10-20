@@ -154,12 +154,12 @@ describe('seedDemoData', () => {
       email: expect.stringContaining('@'),
       company: expect.any(String),
       status: expect.any(String),
+      kind: 'contact',
     })
-
     const [, crmBody] = callsFor('crm')[0] as [string, Record<string, unknown>]
+    expect(crmBody).not.toHaveProperty('email')
     expect(crmBody).toMatchObject({
       name: expect.any(String),
-      email: expect.any(String),
       status: expect.any(String),
       contact_id: expect.stringMatching(/^contact-\d+$/),
       score: expect.any(Number),

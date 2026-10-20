@@ -1736,3 +1736,21 @@ msgstr ""
 
 msgid "On: each new product gets the next reference (PRD-00001, PRD-00002…), which cannot be edited. Off: references are typed by hand."
 msgstr ""
+
+msgid "Create…"
+msgstr ""
+
+msgid "Create an address"
+msgstr ""
+
+msgid "Number and street"
+msgstr ""
+
+msgid "Zip code"
+msgstr ""
+
+msgid "City"
+msgstr ""
+
+msgid "State"
+msgstr ""

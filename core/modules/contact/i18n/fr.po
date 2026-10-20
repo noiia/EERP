@@ -31,3 +31,18 @@ msgstr "Emplacement"
 
 msgid "Company service zone"
 msgstr "Zone de service de l'entreprise"
+
+msgid "Type"
+msgstr "Type"
+
+msgid "company"
+msgstr "Société"
+
+msgid "contact"
+msgstr "Contact"
+
+msgid "Companies"
+msgstr "Sociétés"
+
+msgid "Contacts"
+msgstr "Contacts"

@@ -33,6 +33,10 @@ type Result struct {
 }
 
 // ErrAlreadySeeded: every selected group was already seeded for the tenant.
+// seededCRM matches the CRM rows this seed wrote: those of a seeded contact
+// (the contacts' emails end in .seed.example; a CRM row has no email).
+const seededCRM = `contact_id IN (SELECT id FROM contact WHERE tenant_id = $1 AND email LIKE '%.seed.example')`
+
 var ErrAlreadySeeded = fmt.Errorf("the selected demo data was already seeded for this workspace")
 
 // step is one set-based statement; entity names its Result row ("" = none).
@@ -268,11 +272,12 @@ WHERE v.tenant_id = $1 AND p.reference LIKE 'SEED-%' AND $2::int IS NOT NULL`},
 }, analyze("seed_variants", "product", "product_variant"), []step{
 
 	{"contact", `
-INSERT INTO contact (tenant_id, name, email, company, status, created_at)
+INSERT INTO contact (tenant_id, name, email, company, status, kind, created_at)
 SELECT $1, f.first || ' ' || l.last,
   lower(f.first || '.' || l.last || '.' || i) || '@' || lower(replace(c.company, ' ', '')) || '.seed.example',
   c.company,
   (ARRAY['lead','prospect','customer','customer','churned'])[1 + i % 5],
+  'contact',
   now() - random() * interval '1095 days'
 FROM generate_series(1, $2) AS i
 CROSS JOIN LATERAL (SELECT (ARRAY['Ava','Liam','Maya','Noah','Elena','Lucas','Sofia','Mateo','Nina','Kenji','Zoe','Omar','Ines','Theo','Amara','Felix'])[1 + i % 16] AS first) f
@@ -286,8 +291,8 @@ FROM contact WHERE tenant_id = $1 AND email LIKE '%.seed.example' AND $2::int IS
 }, analyze("seed_contacts", "contact"), []step{
 
 	{"crm", `
-INSERT INTO crm (tenant_id, name, email, company, status, contact_id, phone, notes, satisfaction, deals, score, created_at)
-SELECT $1, c.name, c.email, c.company, s.status, c.id,
+INSERT INTO crm (tenant_id, name, company, status, contact_id, phone, notes, satisfaction, deals, score, created_at)
+SELECT $1, c.name, c.company, s.status, c.id,
   '+1 555 ' || lpad((c.idx % 10000)::text, 4, '0'),
   (ARRAY['Introduced via the autumn trade show.','Wants a pilot before committing to the full package.','Existing customer looking to expand seats.','Referred by an existing account.','Following up after a stalled quarter.','Comparing us against two other vendors.'])[1 + c.idx % 6],
   round((1 + random() * 4)::numeric, 1),
@@ -306,7 +311,7 @@ WHERE $2::int IS NOT NULL`},
 	{"crm_tag", `
 INSERT INTO crm_tag (tenant_id, crm_id, tag_id)
 SELECT $1, r.id, t.id
-FROM (SELECT id, row_number() OVER (ORDER BY id) AS idx FROM crm WHERE tenant_id = $1 AND email LIKE '%.seed.example') r
+FROM (SELECT id, row_number() OVER (ORDER BY id) AS idx FROM crm WHERE tenant_id = $1 AND ` + seededCRM + `) r
 JOIN (SELECT id, row_number() OVER (ORDER BY created_at DESC, id) - 1 AS idx FROM tag WHERE tenant_id = $1 ORDER BY created_at DESC, id LIMIT 6) t
   ON t.idx = r.idx % 6
 WHERE $2::int IS NOT NULL`},

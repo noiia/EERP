@@ -3,6 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -65,6 +69,90 @@ function useOSMEnabled(): boolean {
   return enabled
 }
 
+/** The address search's last row, as in a many2one's dropdown: "Create…"
+ * opens AddressCreateDialog for a place the search doesn't find. */
+type SearchOption = OSMSuggestion | { create: true }
+const CREATE_ROW: SearchOption = { create: true }
+const isCreateRow = (o: SearchOption): o is { create: true } => 'create' in o
+
+const MANUAL_ADDRESS_FIELDS = [
+  ['street', 'Number and street'],
+  ['zip_code', 'Zip code'],
+  ['city', 'City'],
+  ['state', 'State'],
+  ['country', 'Country'],
+] as const
+type ManualAddress = Record<(typeof MANUAL_ADDRESS_FIELDS)[number][0], string>
+
+/**
+ * A hand-typed address for the point: geocoded on Create; when the
+ * connector can't find it either, the pin goes to the map's center for the
+ * user to drag into place.
+ */
+function AddressCreateDialog({
+  initial,
+  onClose,
+  onCreate,
+}: {
+  initial: string
+  onClose: () => void
+  onCreate: (address: string) => Promise<void>
+}) {
+  const t = useT()
+  const [address, setAddress] = useState<ManualAddress>({
+    street: initial,
+    zip_code: '',
+    city: '',
+    state: '',
+    country: '',
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const line = [
+    address.street,
+    [address.zip_code, address.city].filter((s) => s.trim()).join(' '),
+    address.state,
+    address.country,
+  ]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(', ')
+  const submit = async () => {
+    setSubmitting(true)
+    try {
+      await onCreate(line)
+      onClose()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>{t('Create an address')}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          {MANUAL_ADDRESS_FIELDS.map(([key, label]) => (
+            <TextField
+              key={key}
+              label={t(label)}
+              size="small"
+              value={address[key]}
+              onChange={(e) => setAddress((a) => ({ ...a, [key]: e.target.value }))}
+            />
+          ))}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
+          {t('Cancel')}
+        </Button>
+        <Button variant="contained" onClick={() => void submit()} disabled={submitting || !line}>
+          {t('Create')}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
 /** How long the sibling address must stay unchanged before `autoLocate`
  * geocodes it — one OSM call per settled edit, not one per keystroke. */
 export const AUTO_LOCATE_DEBOUNCE_MS = 800
@@ -75,6 +163,8 @@ export const AUTO_LOCATE_DEBOUNCE_MS = 800
  * widgetOptions:
  * - `search` (default true): show the "Search an address" place finder above
  *   the map; `false` hides it (e.g. when the point follows a sibling address).
+ *   Its last row, "Create…", opens a dialog to type an address the search
+ *   doesn't find (geocoded on Create; not found → the map's center, to drag).
  * - `address`: the prefix of a sibling `type: 'address'` field — enables
  *   "Locate from address".
  * - `autoLocate` (with `address`): geocode the sibling address through the
@@ -90,6 +180,8 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
   const { options, search } = useOSMSuggestions()
   const [locating, setLocating] = useState(false)
   const [notFound, setNotFound] = useState(false)
+  const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState<string | null>(null)
   const osmEnabled = useOSMEnabled()
   const addressPrefix =
     typeof field.widgetOptions?.address === 'string' ? field.widgetOptions.address : null
@@ -158,6 +250,16 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
     }
   }
 
+  // The create dialog's address: geocoded, else the map's center.
+  const placeTyped = async (address: string) => {
+    setNotFound(false)
+    const found = await geocode(address)
+    if (found) return set(found)
+    const center = map?.getCenter()
+    if (center) set([center.lng, center.lat])
+    setNotFound(true)
+  }
+
   // autoLocate: follow the sibling address. The baseline is the address as
   // loaded (re-taken when the record changes), so only an edit geocodes.
   const located = useRef({ recordId, address: currentAddress })
@@ -190,16 +292,36 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
       {!disabled && (
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           {osmEnabled && showSearch && (
-            <Autocomplete
+            <Autocomplete<SearchOption>
               sx={{ flex: 1 }}
               size="small"
-              options={options}
+              options={[...options, CREATE_ROW]}
               filterOptions={(o) => o}
-              getOptionLabel={(o) => (typeof o === 'string' ? o : o.label)}
-              onInputChange={(_, q, reason) => reason === 'input' && search(q)}
-              onChange={(_, o) =>
-                o && typeof o !== 'string' && o.lat != null && o.lon != null && set([o.lon, o.lat])
-              }
+              getOptionLabel={(o) => (isCreateRow(o) ? '' : o.label)}
+              onInputChange={(_, q, reason) => {
+                if (reason !== 'input') return
+                setQuery(q)
+                search(q)
+              }}
+              onChange={(_, o) => {
+                if (!o) return
+                if (isCreateRow(o)) setCreating(query)
+                else if (o.lat != null && o.lon != null) set([o.lon, o.lat])
+              }}
+              renderOption={(props, o) => {
+                const { key, ...optionProps } = props
+                return (
+                  <li key={key} {...optionProps}>
+                    {isCreateRow(o) ? (
+                      <Typography component="span" color="primary">
+                        {t('Create…')}
+                      </Typography>
+                    ) : (
+                      o.label
+                    )}
+                  </li>
+                )
+              }}
               renderInput={(params) => <TextField {...params} label={t('Search an address')} />}
             />
           )}
@@ -219,6 +341,13 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
             </Button>
           )}
         </Stack>
+      )}
+      {creating !== null && (
+        <AddressCreateDialog
+          initial={creating}
+          onClose={() => setCreating(null)}
+          onCreate={placeTyped}
+        />
       )}
       {/* A warning in the form's banner slot (banner.tsx). */}
       <ViewBanner status="warning" open={notFound}>

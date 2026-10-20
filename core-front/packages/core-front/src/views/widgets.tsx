@@ -1,10 +1,14 @@
 'use client'
 import { useState, type ComponentType } from 'react'
 import Box from '@mui/material/Box'
+import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import FormLabel from '@mui/material/FormLabel'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import Rating from '@mui/material/Rating'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
@@ -391,6 +395,30 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
   )
 }
 
+/**
+ * The same closed list as SelectionWidget, as a row of radio buttons — for a
+ * short list the user should see whole (a contact's Company / Contact kind).
+ */
+function SelectionRadioWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const options = field.selection?.options ?? []
+  return (
+    <FormControl disabled={disabled} required={field.required}>
+      {!field.hideLabel && <FormLabel>{t(fieldLabel(field))}</FormLabel>}
+      <RadioGroup
+        row
+        name={field.name}
+        value={typeof value === 'string' && options.includes(value) ? value : ''}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((option) => (
+          <FormControlLabel key={option} value={option} control={<Radio />} label={t(option)} />
+        ))}
+      </RadioGroup>
+    </FormControl>
+  )
+}
+
 /** widgetOptions.presets entry for SelectionLinkedWidget — a plain field-name
  * -> value patch applied to SIBLING fields (never this field's own value,
  * which onChange already handles) when that option is picked. */
@@ -766,6 +794,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'date/datetime': DateTimeWidget,
   'selection/select': SelectionWidget,
   'selection/linked': SelectionLinkedWidget,
+  'selection/radio': SelectionRadioWidget,
   'relation/search': RelationSearchWidget,
   'relation/tags': RelationTagsWidget,
   'relation/list': RelationListWidget,

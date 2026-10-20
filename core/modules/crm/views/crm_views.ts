@@ -24,7 +24,6 @@ import { statementReport } from '../reports/statement_report'
 export interface Crm {
   id: string
   name: string
-  email: string
   company?: string
   /** One of the selection field's options: incoming/running/won/lost/closed. */
   status?: string
@@ -79,20 +78,6 @@ registerOnChange({
   }),
 })
 
-// compute + store:false: display-only. Recomputed from name/company on every
-// edit, but stripped from commit payloads — there is no display_name column,
-// and the form tolerates its absence in server data (re-seeded after save).
-registerFieldFunction({
-  entity: 'crm',
-  name: 'crm.displayName',
-  depends: ['name', 'company'],
-  handler: (draft: Readonly<DraftRecord>) => {
-    const name = String(draft.name ?? '')
-    const company = String(draft.company ?? '')
-    return company ? `${name} (${company})` : name
-  },
-})
-
 // default as a FUNCTION: the descriptor's `default` names this registration
 // (same name-not-function rule as compute); called with the seed draft when a
 // record lacks the field — here, new CRM records start at 50% satisfaction.
@@ -103,26 +88,8 @@ registerFieldFunction({
   handler: () => 0.5,
 })
 
-// on_change: fires when a listed field (`company`) changes; the returned patch
-// merges into the draft — here, suggest an email once a company is typed,
-// without ever clobbering an address the user already entered. A patched field
-// would in turn recompute any compute depending on it (cycle-guarded).
-registerOnChange({
-  entity: 'crm',
-  name: 'crm.suggestEmail',
-  onChange: ['company'],
-  handler: (draft: Readonly<DraftRecord>) => {
-    if (draft.email) return
-    const slug = String(draft.company ?? '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '')
-    return slug ? { email: `contact@${slug}.com` } : undefined
-  },
-})
-
 const fields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
-  { name: 'email', label: 'Email', type: 'text', required: true },
   { name: 'company', label: 'Company', type: 'text' },
   {
     // selection: a closed value list, dropdown widget. No explicit `default`
@@ -189,15 +156,6 @@ const formFields: ViewDescriptor['fields'] = [
     name: 'notes',
     type: 'text',
     widget: 'long',
-  },
-  {
-    // Display-only compute (see crm.displayName above): store:false keeps it
-    // out of every commit payload — a pure UI projection of name + company.
-    name: 'display_name',
-    label: 'Display name',
-    type: 'text',
-    compute: 'crm.displayName',
-    store: false,
   },
   {
     name: 'contact_id',

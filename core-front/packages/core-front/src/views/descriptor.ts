@@ -102,7 +102,7 @@ export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   date: ['simple', 'datetime'],
   relation: ['search', 'tags', 'list', 'carousel', 'summary'],
   address: ['form'],
-  selection: ['select', 'linked'],
+  selection: ['select', 'linked', 'radio'],
   totals: ['recap'],
   geo: ['point', 'shape'],
   distance: ['meters'],

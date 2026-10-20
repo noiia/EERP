@@ -63,11 +63,11 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(order[order.indexOf('status') + 1]).toBe('date')
   })
 
-  it('email moves to sit immediately after date in LAYOUT order — crm_views.ts\'s own fields[] declaration is untouched', () => {
+  it('company moves to sit immediately after date in LAYOUT order — crm_views.ts\'s own fields[] declaration is untouched', () => {
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm/:id')!
     const order = layoutFieldOrder(normalizeLayout(resolved.descriptor))
-    expect(order[order.indexOf('date') + 1]).toBe('email')
+    expect(order[order.indexOf('date') + 1]).toBe('company')
   })
 
   it('comment carries the hide-while-incoming state', () => {
@@ -82,14 +82,14 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(registry.buildRegistry().get('/crm/:id')?.module).toBe('crm')
   })
 
-  it('/crm/list is ALSO extended — date/comment columns, email reordered to sit after date', () => {
+  it('/crm/list is ALSO extended — date/comment columns, company reordered to sit after date', () => {
     const registry = registerBoth()
     const resolved = registry.buildRegistry().get('/crm/list')!
     const names = resolved.descriptor.fields.map((f) => f.name)
     expect(names).toContain('date')
     expect(names).toContain('comment')
     const order = layoutFieldOrder(normalizeLayout(resolved.descriptor))
-    expect(order[order.indexOf('date') + 1]).toBe('email')
+    expect(order[order.indexOf('date') + 1]).toBe('company')
   })
 
   it('the dashboard (/crm) is untouched — the extension targets only :id and list', () => {
@@ -98,14 +98,14 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(resolved.descriptor.fields.map((f) => f.name)).not.toContain('date')
   })
 
-  it('email lands in __form_columns immediately after date, NOT in the header — retargeted so the header stays just picture+title', () => {
-    // crminheritdemo's `move email` op originally targeted 'name' (the title
-    // field), which put email INSIDE the synthesized header row alongside
+  it('company lands in __form_columns immediately after date, NOT in the header — retargeted so the header stays just picture+title', () => {
+    // crminheritdemo's `move company` op originally targeted 'name' (the title
+    // field), which put company INSIDE the synthesized header row alongside
     // the picture and the big title — three side-by-side items that
     // crowded the header at phone width (flagged, not fixed, when Phase 3
     // landed — see docs/roadmaps/responsive-displays.md). The op now
     // targets 'date' instead (itself inserted right after 'status' in
-    // __form_columns via the 'date' addField above), so email joins the
+    // __form_columns via the 'date' addField above), so company joins the
     // two-column body instead — the header keeps exactly its intended two
     // items.
     const registry = registerBoth()
@@ -123,7 +123,7 @@ describe('crminheritdemo — resolved descriptor (registry-level)', () => {
     expect(columns).toBeDefined()
     if (columns && columns.kind !== 'field') {
       const columnNames = columns.children.map((c) => (c.kind === 'field' ? c.name : c.id))
-      expect(columnNames[columnNames.indexOf('date') + 1]).toBe('email')
+      expect(columnNames[columnNames.indexOf('date') + 1]).toBe('company')
     }
   })
 

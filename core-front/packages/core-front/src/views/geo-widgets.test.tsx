@@ -21,6 +21,7 @@ vi.mock('leaflet', () => {
       if (handlers[evt] === fn) delete handlers[evt]
     },
     remove: vi.fn(),
+    getCenter: () => ({ lat: 46.5, lng: 2.5 }),
   })
   const L = {
     map: vi.fn<(el: unknown, opts?: Record<string, unknown>) => ReturnType<typeof makeMap>>(() => makeMap()),
@@ -211,6 +212,51 @@ describe('GeoPointWidget', () => {
     await screen.findByRole('button', { name: /locate from address/i })
     expect(screen.queryByLabelText(/search an address/i)).toBeNull()
     vi.unstubAllGlobals()
+  })
+
+  describe('"Create…" in the address search', () => {
+    // Types into the search, picks its last row and fills the dialog.
+    async function createByHand(street: string, city: string) {
+      const input = await screen.findByLabelText(/search an address/i)
+      fireEvent.change(input, { target: { value: street } })
+      fireEvent.keyDown(input, { key: 'ArrowDown' })
+      fireEvent.click(await screen.findByText('Create…'))
+      expect(await screen.findByText('Create an address')).toBeInTheDocument()
+      // The typed text seeds the street.
+      expect(screen.getByLabelText('Number and street')).toHaveValue(street)
+      fireEvent.change(screen.getByLabelText('City'), { target: { value: city } })
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    }
+
+    it('geocodes the hand-typed address and places the point there', async () => {
+      const fetchMock = stubOSM(
+        true,
+        () => new Response(JSON.stringify({ results: [{ label: 'x', lat: 43.6, lon: 1.44 }] })),
+      )
+      const onChange = vi.fn()
+      render(<GeoPointWidget field={{ name: 'geo_location', type: 'geo' }} value={null} onChange={onChange} />)
+      await createByHand('3 Impasse Y', 'Toulouse')
+      await waitFor(() =>
+        expect(onChange).toHaveBeenCalledWith({ type: 'Point', coordinates: [1.44, 43.6] }),
+      )
+      expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain(
+        encodeURIComponent('3 Impasse Y, Toulouse'),
+      )
+      await waitFor(() => expect(screen.queryByText('Create an address')).toBeNull())
+      vi.unstubAllGlobals()
+    })
+
+    it("drops the pin at the map's center when the address can't be found", async () => {
+      stubOSM(true, () => new Response(JSON.stringify({ results: [] })))
+      const onChange = vi.fn()
+      render(<GeoPointWidget field={{ name: 'geo_location', type: 'geo' }} value={null} onChange={onChange} />)
+      await createByHand('Nowhere', 'Atlantis')
+      await waitFor(() =>
+        expect(onChange).toHaveBeenCalledWith({ type: 'Point', coordinates: [2.5, 46.5] }),
+      )
+      expect(await screen.findByText('Address not found')).toBeInTheDocument()
+      vi.unstubAllGlobals()
+    })
   })
 
   describe('autoLocate', () => {
