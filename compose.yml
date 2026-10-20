@@ -217,9 +217,11 @@ services:
   # step — idempotent (skips regenerating if the cert already exists in the
   # volume from a previous run), same "no missing-piece surprise" posture
   # pdf-service above takes. Exits after running; api-gateway waits on its
-  # successful completion via depends_on below.
+  # successful completion via depends_on below. The image ships the openssl CLI,
+  # so the step needs no network: installing it at start (apk add) failed
+  # whenever containers couldn't reach the Alpine mirror.
   gateway-certs:
-    image: alpine:3.20
+    image: alpine/openssl:3.5.9
     container_name: gateway-certs
     volumes:
       - ./infra/nginx/gen-certs.sh:/gen-certs.sh:ro

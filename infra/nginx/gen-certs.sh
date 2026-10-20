@@ -1,7 +1,8 @@
 #!/bin/sh
 # Idempotent bootstrap of the api-gateway's self-signed TLS cert (dev/internal
 # use only — HTTP/2 requires TLS, browsers never negotiate h2 over plain HTTP).
-# Runs INSIDE the `gateway-certs` one-shot compose service (alpine + openssl),
+# Runs INSIDE the `gateway-certs` one-shot compose service (the alpine/openssl
+# image: the openssl CLI is built in, so no package install and no network),
 # writing into the `gateway-certs` named volume that api-gateway also mounts
 # read-only at /etc/nginx/certs — so `docker compose up` alone provisions the
 # cert with no separate manual step, mirroring infra/garage/init.sh's
@@ -25,7 +26,6 @@ SAN="DNS:localhost,DNS:api-gateway,IP:127.0.0.1"
 [ -n "${ERP_HOST:-}" ] && SAN="$SAN,DNS:$ERP_HOST"
 
 echo "==> generating self-signed gateway cert (10y, dev/internal only)"
-apk add --no-cache openssl >/dev/null
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout "$KEY" -out "$CRT" \
   -subj "/CN=eerp-gateway" \

@@ -13,7 +13,8 @@ hostname, so the site and ERP hosts of [ADR-025](../../docs/adr/ADR-025-website-
 need no extra server block.
 
 ## Dev certificate
-`gen-certs.sh` runs in the one-shot `gateway-certs` compose service and writes a self-signed
+`gen-certs.sh` runs in the one-shot `gateway-certs` compose service (image `alpine/openssl`,
+which ships the CLI, so it needs no network) and writes a self-signed
 cert into the `gateway-certs` volume; it is idempotent (skips if `gateway.crt`/`gateway.key`
 exist). SANs: `localhost`, `api-gateway`, `127.0.0.1`, plus `SITE_HOST` / `ERP_HOST` when set
 in `.env`. To regenerate (e.g. after adding a host), clear the volume:
