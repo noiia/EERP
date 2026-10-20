@@ -38,8 +38,11 @@ func fakeSMTP(t *testing.T, startTLS bool, quitReply string) (int, func() (cmds 
 			if err != nil {
 				return
 			}
-			line = strings.TrimRight(line, "\r\n")
-			cmds = append(cmds, strings.ToUpper(strings.Fields(line + " ")[0]))
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			cmds = append(cmds, strings.ToUpper(fields[0]))
 			switch cmds[len(cmds)-1] {
 			case "EHLO":
 				if startTLS {
@@ -135,7 +138,13 @@ func scriptedSMTP(t *testing.T, extensions []string, replies map[string]string) 
 			if err != nil {
 				return
 			}
-			cmd := strings.ToUpper(strings.Fields(strings.TrimRight(line, "\r\n") + " ")[0])
+			// A blank line has no command — and the implicit-TLS case sends a
+			// binary ClientHello, whose random bytes can hold whitespace-only lines.
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			cmd := strings.ToUpper(fields[0])
 			cmds = append(cmds, cmd)
 			if reply, ok := replies[cmd]; ok {
 				w(reply)
