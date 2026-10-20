@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import Menu from './Menu'
-import type { MenuModule } from '@eerp/core-front'
+import type { IconDefinition, MenuModule } from '@eerp/core-front'
+
+const handshake = {
+  prefix: 'fas',
+  iconName: 'handshake',
+  icon: [512, 512, [], '', 'M0 0h512v512H0z'],
+} as IconDefinition
 
 const descriptor = { entity: 'x', viewType: 'tree', fields: [] }
 const menu = [
@@ -22,7 +28,10 @@ describe('Menu', () => {
   it('renders one tile per module plus the built-in Settings tile, each linking to its first route', () => {
     render(<Menu menu={menu} />)
     expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/app/crm')
-    expect(screen.getByRole('link', { name: /stock manager/i })).toHaveAttribute('href', '/app/stock')
+    expect(screen.getByRole('link', { name: /stock manager/i })).toHaveAttribute(
+      'href',
+      '/app/stock',
+    )
     expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/app/settings')
   })
 
@@ -48,17 +57,17 @@ describe('Menu', () => {
     expect(crmLink).toHaveTextContent(/^C/)
   })
 
-  it('a module declaring a Font Awesome menu_icon renders it instead of the monogram', () => {
+  it('a module whose menu_icon the server resolved renders it instead of the monogram', () => {
     const menuWithIcon = [
       { name: 'crm', routes: [{ path: '/crm', descriptor }], icon: 'handshake' },
     ] as unknown as MenuModule[]
-    render(<Menu menu={menuWithIcon} />)
+    render(<Menu menu={menuWithIcon} icons={{ crm: handshake }} />)
     const crmLink = screen.getByRole('link', { name: /crm/i })
     expect(crmLink.querySelector('svg')).toBeInTheDocument()
     expect(crmLink).not.toHaveTextContent(/^C\s/)
   })
 
-  it('an unknown menu_icon name falls back to the monogram instead of rendering nothing', () => {
+  it('a menu_icon the server could not resolve falls back to the monogram instead of rendering nothing', () => {
     const menuWithBadIcon = [
       { name: 'crm', routes: [{ path: '/crm', descriptor }], icon: 'not-a-real-icon' },
     ] as unknown as MenuModule[]
@@ -70,7 +79,11 @@ describe('Menu', () => {
 
   it('prefers displayName over the titleized name when set', () => {
     const menuWithDisplayName = [
-      { name: 'propertymanagement', routes: [{ path: '/pm', descriptor }], displayName: 'Real Estate' },
+      {
+        name: 'propertymanagement',
+        routes: [{ path: '/pm', descriptor }],
+        displayName: 'Real Estate',
+      },
     ] as unknown as MenuModule[]
     render(<Menu menu={menuWithDisplayName} />)
     expect(screen.getByRole('link', { name: /real estate/i })).toBeInTheDocument()

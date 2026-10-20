@@ -1,4 +1,4 @@
-import { moduleRegistry } from '@eerp/core-front/server'
+import { moduleRegistry, solidIcon, type IconDefinition } from '@eerp/core-front/server'
 // Side-effect import: registers every discovered module's FrontModule into the shared
 // registry before we read the menu (same manifest the catch-all route imports).
 import '@/generated/generated-modules'
@@ -26,5 +26,12 @@ export default async function HomePage() {
   const identity = await requireAuth()
   const active = await activeModuleNames()
   const menu = moduleRegistry.menu(identity.permissions).filter((m) => active.has(m.name))
-  return <Menu menu={menu} />
+  // Tile icons are resolved here, on the server: a `menu_icon` may name any Solid
+  // icon, and only these few definitions should reach the browser.
+  const icons: Record<string, IconDefinition> = {}
+  for (const m of menu) {
+    const def = solidIcon(m.icon)
+    if (def) icons[m.name] = def
+  }
+  return <Menu menu={menu} icons={icons} />
 }

@@ -26,3 +26,8 @@ export * from './src/registry'
 
 // ERP base path (/app) — isomorphic; also on the client barrel.
 export * from './src/navigation'
+
+// Solid icons by name (the whole set — server-only so it never enters a browser
+// bundle; the landing page resolves module tile icons with it).
+export * from './src/views/solid-icon'
+export type { IconDefinition } from './src/views/icons'

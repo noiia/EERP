@@ -34,9 +34,6 @@ const pretty = {
   // The grid item itself is positioned with a transform by react-grid-layout, so the
   // tile inside it is what scales in.
   '.react-grid-item > *': { animation: `erp-pop ${motion.duration.enter}ms ${enter} backwards` },
-  // The route loading screen (app/app/loading.tsx) only shows up once a navigation
-  // has taken a moment, so a fast one never flashes it.
-  '.erp-loading': { animation: `erp-fade ${motion.duration.standard}ms ${enter} 180ms backwards` },
   // The bell's "something new" dot (NotificationBell): a slow pulse until opened.
   '@keyframes erp-breathe': {
     '0%, 100%': { transform: 'scale(1)', opacity: 1 },

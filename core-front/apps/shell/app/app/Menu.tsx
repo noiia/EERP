@@ -6,7 +6,15 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
-import { byPrefixAndName, erpPath, FontAwesomeIcon, layout, useT, type MenuModule } from '@eerp/core-front'
+import {
+  byPrefixAndName,
+  erpPath,
+  FontAwesomeIcon,
+  layout,
+  useT,
+  type IconDefinition,
+  type MenuModule,
+} from '@eerp/core-front'
 
 // The landing menu: one square tile per installed application. A Client Component
 // because each tile uses MUI's `component={Link}` (a function prop MUI can't receive
@@ -26,6 +34,10 @@ import { byPrefixAndName, erpPath, FontAwesomeIcon, layout, useT, type MenuModul
 export interface MenuProps {
   /** Installed modules with their navigable views, already permission-filtered. */
   menu: MenuModule[]
+  /** Each module's tile icon (its `menu_icon`), keyed by module name — resolved on
+   * the server (`solidIcon`) so the full icon set never ships to the browser. A
+   * module missing here gets a monogram. */
+  icons?: Record<string, IconDefinition>
 }
 
 const mobileMediaQuery = `@media (min-width:${layout.mobileBreakpoint}px)` as const
@@ -95,7 +107,7 @@ function MenuTile({ href, label, icon }: { href: string; label: string; icon?: R
   )
 }
 
-export default function Menu({ menu }: MenuProps) {
+export default function Menu({ menu, icons = {} }: MenuProps) {
   // Tile labels are the module's display_name (module.json), falling back to a
   // titleized module name when absent — either way a msgid like any other
   // string, so a module can localize its tile by translating it in its .po.
@@ -132,7 +144,7 @@ export default function Menu({ menu }: MenuProps) {
         }}
       >
         {menu.map((module) => {
-          const iconDef = module.icon ? byPrefixAndName.fas[module.icon] : undefined
+          const iconDef = icons[module.name]
           return (
             <MenuTile
               key={module.name}

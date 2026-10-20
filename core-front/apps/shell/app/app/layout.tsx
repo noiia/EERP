@@ -65,23 +65,25 @@ import {
 export default async function ErpLayout({ children }: { children: ReactNode }) {
   // Resolve identity on the server and seed the client mirror for UI gating.
   const identity = await getIdentity()
-  // The caller's preferences (email + active company for the top bar). The root
-  // layout reads the same GET for LocaleSync; Next's request memoization dedupes it.
-  const preferences = identity ? await getMyLocalePreferences() : null
-  // Per-module top-bar header menus (plain data → client AppTopBar) — see
-  // ModuleRegistry.headerMenus(). Discovery compiles every module regardless
-  // of `active` (ADR-009), so a deactivated module's menus are filtered out
-  // HERE, from the live Go-sourced active state — skipped entirely for an
-  // anonymous visitor (no session to authenticate the /api/v1/modules read
-  // with, and nothing renders the bar without an identity anyway).
-  const activeSet = identity ? await activeModuleNames() : new Set<string>()
+  // The three reads below are independent, so they run in parallel — one
+  // backend round trip of latency instead of three, on every ERP navigation.
+  //  - The caller's preferences (email + active company for the top bar). The
+  //    root layout reads the same GET for LocaleSync; Next's request
+  //    memoization dedupes it.
+  //  - The live module active state: discovery compiles every module
+  //    regardless of `active` (ADR-009), so a deactivated module's top-bar
+  //    header menus (ModuleRegistry.headerMenus()) are filtered out HERE.
+  //  - Every company in the tenant, for the top-bar switcher's menu (multi-
+  //    company), kept only when there's an active company to switch away from.
+  // All skipped for an anonymous visitor: no session to authenticate them with,
+  // and nothing renders the bar without an identity anyway.
+  const [preferences, activeSet, allCompanies] = identity
+    ? await Promise.all([getMyLocalePreferences(), activeModuleNames(), listCompanies()])
+    : [null, new Set<string>(), []]
   const headerMenus = identity
     ? moduleRegistry.headerMenus().filter((m) => activeSet.has(m.module))
     : []
-  // Every company in the tenant, for the top-bar switcher's menu (multi-
-  // company) — only worth fetching once we know there's an active company
-  // to switch AWAY from.
-  const companies = preferences?.active_company ? await listCompanies() : []
+  const companies = preferences?.active_company ? allCompanies : []
   return (
     <>
       <ModulesInit />
@@ -125,15 +127,17 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
             references over the tenant-scoped settings endpoint — every
             read/save re-enters Go's permission gate with the caller's
             session (docs/roadmaps/list-view-modes.md, Phase 4). */}
-        <GraphOpsProvider ops={{
-          get: getEntityGraphLayout,
-          save: setEntityGraphLayout,
-          listFields: listEntityGraphFields,
-          createField: createEntityGraphField,
-          updateField: updateEntityGraphField,
-          deleteField: deleteEntityGraphField,
-          aggregate: aggregateEntity,
-        }}>
+        <GraphOpsProvider
+          ops={{
+            get: getEntityGraphLayout,
+            save: setEntityGraphLayout,
+            listFields: listEntityGraphFields,
+            createField: createEntityGraphField,
+            updateField: updateEntityGraphField,
+            deleteField: deleteEntityGraphField,
+            aggregate: aggregateEntity,
+          }}
+        >
           {/* A record's own runtime notebook pages (docs/roadmaps/
               responsive-displays.md, Phase 5) — per-record data, not
               per-entity settings, so its own context rather than folded
@@ -149,9 +153,7 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
             {/* A record's own activity feed (the form chatter panel) —
                 per-record data like NotebookOps, its own context for the
                 same reason. */}
-            <ChatterOpsProvider
-              ops={{ list: listChatterMessages, create: createChatterMessage }}
-            >
+            <ChatterOpsProvider ops={{ list: listChatterMessages, create: createChatterMessage }}>
               {/* The search bar's named, reusable filter combinations
                   (docs/adr/ADR-014-search-filter-bar.md) — independent
                   named rows a user creates/renames/deletes, the same
