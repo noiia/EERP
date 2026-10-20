@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const { saveMailTemplate, resetMailTemplate } = vi.hoisted(() => ({
@@ -7,9 +7,12 @@ const { saveMailTemplate, resetMailTemplate } = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/mail-templates', () => ({ saveMailTemplate, resetMailTemplate }))
 
+import { preloadLazyComponents } from '@eerp/core-front'
 import EmailTemplatesForm from './EmailTemplatesForm'
 import type { MailTemplate } from '@/lib/mail-templates'
 
+// The editor ships in its own chunk; load it so the form renders at once.
+beforeAll(() => preloadLazyComponents())
 afterEach(() => vi.clearAllMocks())
 
 const templates: MailTemplate[] = [

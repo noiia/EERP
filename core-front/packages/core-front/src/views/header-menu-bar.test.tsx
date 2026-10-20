@@ -17,7 +17,7 @@ const useContainerWidthMock = vi.fn(() => ({
   containerRef: { current: null },
   mounted: true,
 }))
-vi.mock('react-grid-layout', () => ({
+vi.mock('./use-container-width', () => ({
   useContainerWidth: () => useContainerWidthMock(),
 }))
 
@@ -226,7 +226,9 @@ describe('AppHeaderMenuBar', () => {
     // Drilldown: Configuration's own entries render, with a Back line above
     // them — the overview's "Products"/"Configuration" titles are gone,
     // replaced entirely (one Menu, swapped content), not a second panel.
-    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument(),
+    )
     expect(screen.getByRole('menuitem', { name: 'Back' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Products' })).not.toBeInTheDocument()
 

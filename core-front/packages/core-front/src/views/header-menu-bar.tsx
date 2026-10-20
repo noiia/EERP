@@ -11,7 +11,7 @@ import ListItemText from '@mui/material/ListItemText'
 import ListSubheader from '@mui/material/ListSubheader'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import { useContainerWidth } from 'react-grid-layout'
+import { useContainerWidth } from './use-container-width'
 import { hasPermission } from '../auth/permissions'
 import { useT } from '../i18n/translate'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
@@ -225,11 +225,7 @@ export function AppHeaderMenuBar({ menus }: { menus: HeaderMenu[] }) {
     [menus, permissions],
   )
 
-  const {
-    width: containerWidth,
-    containerRef,
-    mounted,
-  } = useContainerWidth({ measureBeforeMount: true })
+  const { width: containerWidth, containerRef, mounted } = useContainerWidth()
   const probeRef = useRef<HTMLDivElement | null>(null)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -329,7 +325,11 @@ export function AppHeaderMenuBar({ menus }: { menus: HeaderMenu[] }) {
                     <ListItemText>{t('Back')}</ListItemText>
                   </MenuItem>,
                   <Divider key="__divider" />,
-                  ...renderMenuEntries(permittedEntries(selected.entries, permissions), t, navigate),
+                  ...renderMenuEntries(
+                    permittedEntries(selected.entries, permissions),
+                    t,
+                    navigate,
+                  ),
                 ]
               : visibleMenus.map((m) => (
                   <MenuItem key={m.name} onClick={() => pick(m)}>

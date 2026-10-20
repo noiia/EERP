@@ -16,13 +16,13 @@ import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import {
-  DataGrid,
-  type GridColDef,
-  type GridRenderCellParams,
-  type GridRowParams,
-  type GridRowSelectionModel,
+import type {
+  GridColDef,
+  GridRenderCellParams,
+  GridRowParams,
+  GridRowSelectionModel,
 } from '@mui/x-data-grid'
+import { DataGrid } from './lazy-widgets'
 import { useRouter } from 'next/navigation'
 import { erpPath } from '../navigation'
 import { useT } from '../i18n/translate'
@@ -120,7 +120,11 @@ export function relationOf(field: FieldDescriptor): RelationDescriptor {
  * itself, ...). Harmless no-op for a relation pointing at a different
  * entity — its rows' ids never collide with this record's own.
  */
-function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor, excludeId?: string | null) {
+function useRelationSearch(
+  ops: RelationOps | null,
+  rel: RelationDescriptor,
+  excludeId?: string | null,
+) {
   const labelField = rel.labelField ?? 'name'
   const [options, setOptions] = useState<RelationRecord[]>([])
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -219,7 +223,14 @@ function relatedColumns(
   t: (s: string) => string,
   extraHidden: string[] = [],
 ): GridColDef[] {
-  const hidden = new Set(['id', 'tenant_id', 'created_at', 'updated_at', 'deleted_at', ...extraHidden])
+  const hidden = new Set([
+    'id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+    ...extraHidden,
+  ])
   const keys = new Set<string>([labelField])
   for (const row of rows) {
     for (const key of Object.keys(row)) {
@@ -410,39 +421,39 @@ function RelationCreateWizard({
       {/* The wizard's own banner scope: its errors (and its fields') stay in
           the dialog instead of going to the form behind it. */}
       <BannerScope>
-      <Box>
-        <DialogTitle>
-          {t('Create a new')} {t(entityDisplayName(rel.entity))}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2.5} sx={{ pt: 1 }}>
-            <BannerSlot sx={{ mb: 0 }} />
-            <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
-            {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
+        <Box>
+          <DialogTitle>
+            {t('Create a new')} {t(entityDisplayName(rel.entity))}
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={2.5} sx={{ pt: 1 }}>
+              <BannerSlot sx={{ mb: 0 }} />
+              <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
+              {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
                 walks the target descriptor's normalized layout tree, so a
                 registered form's grouping/rows render here too, not just a
                 flat field dump. `hidden` skips the preset inverse FK (o2m). */}
-            <LayoutForm
-              descriptor={descriptor}
-              draft={draft as Record<string, unknown>}
-              onFieldChange={(name, value) => setField(name, value)}
-              entity={rel.entity}
-              // No id yet: service-backed widgets (picture/signature) and
-              // o2m/m2m render their unsaved-record hint, as on any new form.
-              recordId={null}
-              hidden={hiddenSet}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button color="inherit" onClick={onClose} disabled={submitting}>
-            {t('Cancel')}
-          </Button>
-          <Button variant="contained" onClick={submit} disabled={submitting}>
-            {t('Create')}
-          </Button>
-        </DialogActions>
-      </Box>
+              <LayoutForm
+                descriptor={descriptor}
+                draft={draft as Record<string, unknown>}
+                onFieldChange={(name, value) => setField(name, value)}
+                entity={rel.entity}
+                // No id yet: service-backed widgets (picture/signature) and
+                // o2m/m2m render their unsaved-record hint, as on any new form.
+                recordId={null}
+                hidden={hiddenSet}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button color="inherit" onClick={onClose} disabled={submitting}>
+              {t('Cancel')}
+            </Button>
+            <Button variant="contained" onClick={submit} disabled={submitting}>
+              {t('Create')}
+            </Button>
+          </DialogActions>
+        </Box>
       </BannerScope>
     </Dialog>
   )
@@ -499,7 +510,8 @@ function RelationMultiCreateWizard({
   const targetRel = (() => {
     const child = moduleRegistry.formDescriptorFor(rel.entity)
     const field = child?.fields.find((f) => f.name === targetField)
-    if (!field?.relation) throw new Error(`multiCreate: "${rel.entity}"."${targetField}" has no relation block`)
+    if (!field?.relation)
+      throw new Error(`multiCreate: "${rel.entity}"."${targetField}" has no relation block`)
     return field.relation
   })()
   const targetLabelField = targetRel.labelField ?? 'name'
@@ -508,7 +520,10 @@ function RelationMultiCreateWizard({
   const [rows, setRows] = useState<RelationRecord[]>([])
   const [text, setText] = useState('')
   const [app, setApp] = useState<string>('')
-  const [selection, setSelection] = useState<GridRowSelectionModel>({ type: 'include', ids: new Set() })
+  const [selection, setSelection] = useState<GridRowSelectionModel>({
+    type: 'include',
+    ids: new Set(),
+  })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -531,11 +546,23 @@ function RelationMultiCreateWizard({
   }, [ops, targetRel.entity])
 
   const apps = groupByModule
-    ? [...new Set(rows.map((r) => moduleRegistry.moduleForEntity(String(r.id))?.name).filter((n) => n != null))]
+    ? [
+        ...new Set(
+          rows
+            .map((r) => moduleRegistry.moduleForEntity(String(r.id))?.name)
+            .filter((n) => n != null),
+        ),
+      ]
     : []
 
   const visible = rows.filter((r) => {
-    if (text && !String(r[targetLabelField] ?? r.id).toLowerCase().includes(text.toLowerCase())) return false
+    if (
+      text &&
+      !String(r[targetLabelField] ?? r.id)
+        .toLowerCase()
+        .includes(text.toLowerCase())
+    )
+      return false
     if (app && moduleRegistry.moduleForEntity(String(r.id))?.name !== app) return false
     return true
   })
@@ -565,61 +592,65 @@ function RelationMultiCreateWizard({
     <Dialog open onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
       {/* Its own banner scope, like RelationCreateWizard's. */}
       <BannerScope>
-      <DialogTitle>
-        {t('Add')} {t(entityDisplayName(targetRel.entity))}
-      </DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ pt: 1 }}>
-          <BannerSlot sx={{ mb: 0 }} />
-          <ViewBanner status="error" open={Boolean(error)}>
-            {error}
-          </ViewBanner>
-          <Stack direction="row" spacing={2}>
-            <TextField
-              label={t('Search')}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              fullWidth
-              autoFocus
+        <DialogTitle>
+          {t('Add')} {t(entityDisplayName(targetRel.entity))}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <BannerSlot sx={{ mb: 0 }} />
+            <ViewBanner status="error" open={Boolean(error)}>
+              {error}
+            </ViewBanner>
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label={t('Search')}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                fullWidth
+                autoFocus
+              />
+              {groupByModule && apps.length > 0 ? (
+                <FormControl sx={{ minWidth: 200 }}>
+                  <InputLabel id="multi-create-app-filter">{t('App')}</InputLabel>
+                  <Select
+                    labelId="multi-create-app-filter"
+                    label={t('App')}
+                    value={app}
+                    onChange={(e) => setApp(e.target.value)}
+                  >
+                    <MenuItem value="">{t('All apps')}</MenuItem>
+                    {apps.map((name) => (
+                      <MenuItem key={name} value={name}>
+                        {t(moduleRegistry.displayNameFor(name as string) ?? (name as string))}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
+            </Stack>
+            <DataGrid
+              rows={visible}
+              columns={relatedColumns(visible, targetLabelField, t)}
+              autoHeight
+              hideFooter
+              checkboxSelection
+              rowSelectionModel={selection}
+              onRowSelectionModelChange={setSelection}
             />
-            {groupByModule && apps.length > 0 ? (
-              <FormControl sx={{ minWidth: 200 }}>
-                <InputLabel id="multi-create-app-filter">{t('App')}</InputLabel>
-                <Select
-                  labelId="multi-create-app-filter"
-                  label={t('App')}
-                  value={app}
-                  onChange={(e) => setApp(e.target.value)}
-                >
-                  <MenuItem value="">{t('All apps')}</MenuItem>
-                  {apps.map((name) => (
-                    <MenuItem key={name} value={name}>
-                      {t(moduleRegistry.displayNameFor(name as string) ?? (name as string))}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : null}
           </Stack>
-          <DataGrid
-            rows={visible}
-            columns={relatedColumns(visible, targetLabelField, t)}
-            autoHeight
-            hideFooter
-            checkboxSelection
-            rowSelectionModel={selection}
-            onRowSelectionModelChange={setSelection}
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button color="inherit" onClick={onClose} disabled={submitting}>
-          {t('Cancel')}
-        </Button>
-        <Button variant="contained" onClick={submit} disabled={submitting || selectedIds.length === 0}>
-          {t('Add')} {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
-        </Button>
-      </DialogActions>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={onClose} disabled={submitting}>
+            {t('Cancel')}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={submit}
+            disabled={submitting || selectedIds.length === 0}
+          >
+            {t('Add')} {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
+          </Button>
+        </DialogActions>
       </BannerScope>
     </Dialog>
   )
@@ -825,7 +856,9 @@ export function RelationSearchWidget({
               setSelectedLabel(null)
               onChange(null)
             }}
-            onNavigate={formPath ? () => router.push(erpPath(formPath.replace(':id', selectedId))) : undefined}
+            onNavigate={
+              formPath ? () => router.push(erpPath(formPath.replace(':id', selectedId))) : undefined
+            }
           />
         ) : (
           <Autocomplete<RelationRecord>
@@ -969,9 +1002,14 @@ export async function resolveManyToManyLinks(
   cols: { own: string; related: string },
   ownRecordId: string,
 ): Promise<TagLink[]> {
-  const junctions = await ops.list(via, { filter: { [cols.own]: ownRecordId }, pageSize: EMBED_PAGE_SIZE })
+  const junctions = await ops.list(via, {
+    filter: { [cols.own]: ownRecordId },
+    pageSize: EMBED_PAGE_SIZE,
+  })
   const relatedIds = [
-    ...new Set(junctions.map((row) => row[cols.related]).filter((v): v is string => typeof v === 'string')),
+    ...new Set(
+      junctions.map((row) => row[cols.related]).filter((v): v is string => typeof v === 'string'),
+    ),
   ]
   const related =
     relatedIds.length > 0
@@ -1009,7 +1047,10 @@ export async function loadSubRelation(
   ownRecordId: string,
 ): Promise<RelationRecord[]> {
   if (subRel.kind === 'one2many' && subRel.inverseField) {
-    return ops.list(subRel.entity, { filter: { [subRel.inverseField]: ownRecordId }, pageSize: EMBED_PAGE_SIZE })
+    return ops.list(subRel.entity, {
+      filter: { [subRel.inverseField]: ownRecordId },
+      pageSize: EMBED_PAGE_SIZE,
+    })
   }
   if (subRel.kind === 'many2many' && subRel.via) {
     const cols = junctionColumns(subRel, ownEntity)
@@ -1019,7 +1060,14 @@ export async function loadSubRelation(
   return []
 }
 
-export function RelationTagsWidget({ field, value, onChange, disabled, entity, recordId }: WidgetProps) {
+export function RelationTagsWidget({
+  field,
+  value,
+  onChange,
+  disabled,
+  entity,
+  recordId,
+}: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
@@ -1039,7 +1087,9 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   // Every other many2many field keeps the original write-on-interaction
   // behavior, unchanged — this is read only when opted in.
   const deferred = field.widgetOptions?.deferred === true
-  const pending: PendingManyToMany = (deferred ? (value as PendingManyToMany | undefined) : undefined) ?? {
+  const pending: PendingManyToMany = (deferred
+    ? (value as PendingManyToMany | undefined)
+    : undefined) ?? {
     toLink: [],
     toUnlinkJunctionIds: [],
   }
@@ -1079,7 +1129,8 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   useEffect(() => {
     if (field.required !== true) return
     const hasAny =
-      links.some((l) => !pending.toUnlinkJunctionIds.includes(l.junctionId)) || pending.toLink.length > 0
+      links.some((l) => !pending.toUnlinkJunctionIds.includes(l.junctionId)) ||
+      pending.toLink.length > 0
     useHasLinksStore.getState().setHasLinks(field.name, hasAny)
   }, [field.required, field.name, links, pending.toUnlinkJunctionIds, pending.toLink])
 
@@ -1088,7 +1139,8 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   // draft instead of writing junction rows, precisely so it's usable before
   // the record has an id — so unlike a normal (eager) m2m field, it does NOT
   // fall back to the "Available once the record has been saved." hint here.
-  if (!recordId && !deferred) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
+  if (!recordId && !deferred)
+    return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
   // Deferred: the persisted set minus anything staged for removal, plus
   // anything staged for addition (marked `staged` so unlink knows which side
@@ -1096,7 +1148,11 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   const visible: (TagLink & { staged?: boolean })[] = deferred
     ? [
         ...links.filter((l) => !pending.toUnlinkJunctionIds.includes(l.junctionId)),
-        ...pending.toLink.map((related) => ({ junctionId: `pending:${related.id}`, related, staged: true })),
+        ...pending.toLink.map((related) => ({
+          junctionId: `pending:${related.id}`,
+          related,
+          staged: true,
+        })),
       ]
     : links
   const linkedIds = new Set(visible.map((l) => l.related.id))
@@ -1120,7 +1176,10 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
       if (link.staged) {
         onChange({ ...pending, toLink: pending.toLink.filter((o) => o.id !== link.related.id) })
       } else {
-        onChange({ ...pending, toUnlinkJunctionIds: [...pending.toUnlinkJunctionIds, link.junctionId] })
+        onChange({
+          ...pending,
+          toUnlinkJunctionIds: [...pending.toUnlinkJunctionIds, link.junctionId],
+        })
       }
       return
     }
@@ -1147,7 +1206,11 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
             label={labelOf(link.related, labelField)}
             disabled={disabled}
             onUnlink={() => unlink(link)}
-            onNavigate={formPath ? () => router.push(erpPath(formPath.replace(':id', link.related.id))) : undefined}
+            onNavigate={
+              formPath
+                ? () => router.push(erpPath(formPath.replace(':id', link.related.id)))
+                : undefined
+            }
           />
         ))}
         <Autocomplete<RelationRecord>
@@ -1243,7 +1306,8 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   // A zone relation (`rel.inside`) has no inverse FK: rows are matched by
   // containment in this record's shape, so it is read-only and not creatable.
   const inverseField = rel.inverseField ?? null
-  const insideRef = rel.inside && entity && recordId ? `${entity}:${recordId}:${rel.inside.zone}` : null
+  const insideRef =
+    rel.inside && entity && recordId ? `${entity}:${recordId}:${rel.inside.zone}` : null
   const labelField = rel.labelField ?? 'name'
   const [rows, setRows] = useState<RelationRecord[]>([])
   const [createOpen, setCreateOpen] = useState(false)
@@ -1341,7 +1405,10 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   // the footer appears once the rows don't fit the smallest page. Without
   // it, the first EMBED_PAGE_SIZE rows load once, as before.
   const paged = Boolean(ops?.listPage)
-  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: EMBED_DEFAULT_PAGE_SIZE })
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: EMBED_DEFAULT_PAGE_SIZE,
+  })
   const [rowTotal, setRowTotal] = useState<number | null>(null)
   const [loadingRows, setLoadingRows] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -1361,11 +1428,16 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
     const listPage = ops.listPage
     const load = listPage
       ? (() => {
-          const page = { ...scope, page: paginationModel.page + 1, pageSize: paginationModel.pageSize }
+          const page = {
+            ...scope,
+            page: paginationModel.page + 1,
+            pageSize: paginationModel.pageSize,
+          }
           // An entity without created_at answers 400 to the sort: page it unsorted.
-          return listPage(rel.entity, { ...page, order: reverse ? '-created_at' : 'created_at' }).catch(() =>
-            listPage(rel.entity, page),
-          )
+          return listPage(rel.entity, {
+            ...page,
+            order: reverse ? '-created_at' : 'created_at',
+          }).catch(() => listPage(rel.entity, page))
         })()
       : ops
           .list(rel.entity, { ...scope, pageSize: EMBED_PAGE_SIZE })
@@ -1376,7 +1448,10 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
         if (cancelled) return
         // A delete emptied the last page: step back to the new last one.
         if (listPage && found.length === 0 && paginationModel.page > 0 && total != null) {
-          setPaginationModel((m) => ({ ...m, page: Math.max(0, Math.ceil(total / m.pageSize) - 1) }))
+          setPaginationModel((m) => ({
+            ...m,
+            page: Math.max(0, Math.ceil(total / m.pageSize) - 1),
+          }))
           return
         }
         setRows(found)
@@ -1391,7 +1466,18 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, rel.inside, insideRef, inverseField, recordId, refreshSignal, reverse, paginationModel, reloadKey])
+  }, [
+    ops,
+    rel.entity,
+    rel.inside,
+    insideRef,
+    inverseField,
+    recordId,
+    refreshSignal,
+    reverse,
+    paginationModel,
+    reloadKey,
+  ])
 
   useEffect(() => {
     if (!ops || !expandField || rows.length === 0) {
@@ -1422,7 +1508,9 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
-  const expandedRows = expandField ? rows.map((row) => ({ ...row, [expandField]: expanded[row.id] ?? '' })) : rows
+  const expandedRows = expandField
+    ? rows.map((row) => ({ ...row, [expandField]: expanded[row.id] ?? '' }))
+    : rows
   // Literal-value columns (widgetOptions.columns' own `value`) apply to
   // EVERY row, real or synthetic — same rule, no special case for either.
   const literalRows = explicitColumns
@@ -1437,12 +1525,22 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
       ? {
           id: PREVIEW_ROW_ID,
           [labelField]: draft[previewRowConfig.nameField] ?? '',
-          ...Object.fromEntries(previewRowConfig.amountColumns.map((col) => [col, draft[previewRowConfig.amountField] ?? 0])),
-          ...Object.fromEntries((explicitColumns ?? []).filter((c) => c.value !== undefined).map((c) => [c.key, c.value])),
+          ...Object.fromEntries(
+            previewRowConfig.amountColumns.map((col) => [
+              col,
+              draft[previewRowConfig.amountField] ?? 0,
+            ]),
+          ),
+          ...Object.fromEntries(
+            (explicitColumns ?? [])
+              .filter((c) => c.value !== undefined)
+              .map((c) => [c.key, c.value]),
+          ),
         }
       : null
   // The preview line leads the table, so only the first page carries it.
-  const displayRows = previewRow && paginationModel.page === 0 ? [previewRow, ...literalRows] : literalRows
+  const displayRows =
+    previewRow && paginationModel.page === 0 ? [previewRow, ...literalRows] : literalRows
   const showFooter = paged && rowTotal != null && rowTotal > EMBED_PAGE_SIZE_OPTIONS[0]!
   const columns = explicitColumns
     ? explicitRelationColumns(explicitColumns, labelField, t)
@@ -1500,48 +1598,48 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
       </ViewBanner>
       {inverseField ? (
         <>
-      {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
+          {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
           rather than relying on the Button default staying primary. */}
-      <Button
-        size="small"
-        color="primary"
-        onClick={() => setCreateOpen(true)}
-        disabled={disabled}
-        sx={{ mt: 0.5 }}
-      >
-        {multiCreate ? (
-          <>
-            {t('Add')} {t(fieldLabel(field))}
-          </>
-        ) : (
-          <>
-            {t('Create a new')} {t(entityDisplayName(rel.entity))}
-          </>
-        )}
-      </Button>
-      {createOpen && multiCreate ? (
-        <RelationMultiCreateWizard
-          rel={rel}
-          targetField={multiCreate.field}
-          groupByModule={multiCreate.groupByModule === true}
-          ops={ops}
-          preset={{ [inverseField as string]: recordId }}
-          excludeIds={rows.map((r) => r[multiCreate.field])}
-          onClose={() => setCreateOpen(false)}
-          onCreated={(records) => setRows((prev) => [...prev, ...records])}
-        />
-      ) : null}
-      {createOpen && !multiCreate ? (
-        <RelationCreateWizard
-          rel={rel}
-          ops={ops}
-          // The context decides the link: preset the inverse FK, never ask for it.
-          preset={{ [inverseField as string]: recordId }}
-          hidden={[inverseField as string]}
-          onClose={() => setCreateOpen(false)}
-          onCreated={(record) => setRows((prev) => [...prev, record])}
-        />
-      ) : null}
+          <Button
+            size="small"
+            color="primary"
+            onClick={() => setCreateOpen(true)}
+            disabled={disabled}
+            sx={{ mt: 0.5 }}
+          >
+            {multiCreate ? (
+              <>
+                {t('Add')} {t(fieldLabel(field))}
+              </>
+            ) : (
+              <>
+                {t('Create a new')} {t(entityDisplayName(rel.entity))}
+              </>
+            )}
+          </Button>
+          {createOpen && multiCreate ? (
+            <RelationMultiCreateWizard
+              rel={rel}
+              targetField={multiCreate.field}
+              groupByModule={multiCreate.groupByModule === true}
+              ops={ops}
+              preset={{ [inverseField as string]: recordId }}
+              excludeIds={rows.map((r) => r[multiCreate.field])}
+              onClose={() => setCreateOpen(false)}
+              onCreated={(records) => setRows((prev) => [...prev, ...records])}
+            />
+          ) : null}
+          {createOpen && !multiCreate ? (
+            <RelationCreateWizard
+              rel={rel}
+              ops={ops}
+              // The context decides the link: preset the inverse FK, never ask for it.
+              preset={{ [inverseField as string]: recordId }}
+              hidden={[inverseField as string]}
+              onClose={() => setCreateOpen(false)}
+              onCreated={(record) => setRows((prev) => [...prev, record])}
+            />
+          ) : null}
         </>
       ) : null}
     </Box>
@@ -1617,7 +1715,10 @@ export function TaxTotalsWidget({ field, recordId, draft }: WidgetProps) {
     // feature added — out of scope, see sale/module.go's own doc comment);
     // fall back to its own tax_rate applied inline, the exact math this
     // widget used everywhere before Total existed.
-    total += row.total === undefined ? amount + amount * (Number(row.tax_rate) || 0) : Number(row.total) || 0
+    total +=
+      row.total === undefined
+        ? amount + amount * (Number(row.tax_rate) || 0)
+        : Number(row.total) || 0
   }
   // widgetOptions.previewAmountField (opt-in, e.g. propertymanagement's
   // rent_price): a SIBLING draft field folded into subtotal/total alongside

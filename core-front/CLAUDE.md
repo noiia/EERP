@@ -54,6 +54,12 @@ DOM assertions come from `@testing-library/jest-dom/vitest` (the setup files imp
 
 The server reads behind a page run in parallel for the same reason: the ERP layout's preferences, module state and companies (`app/app/layout.tsx`), and `EntityViewServer`'s record, view settings, chatter visibility, form context and status bar (`views/loader.tsx`) are each one `Promise.all`, so a page waits one backend round trip instead of up to five. Pitfall: a new read that doesn't depend on another belongs in that `Promise.all`, not in an `await` of its own.
 
+## Heavy widgets load on their own
+
+The data grid (`@mui/x-data-grid`), the tree view, the rich-text editor (Tiptap) and Graph mode (react-grid-layout) are each in their own chunk, so an ERP page ships about 1.4 MB of JavaScript (430 KB gzip) instead of 2.3 MB. The engine reaches them only through `views/lazy-widgets.tsx` (`DataGrid`, `RichTreeView`, `HtmlEditor`, `GraphRenderer`), built with `lazyComponent()` (`views/lazy-component.tsx`): unlike `React.lazy`, a component whose chunk is loaded renders synchronously, so it never shows a Suspense fallback and never pays the ~300 ms reveal throttle above. `PreloadWidgets` (ERP layout) loads every chunk once the browser is idle, so the next list or graph finds it ready. The top bar's menu row measures itself with the engine's own `useContainerWidth` (`views/use-container-width.ts`) rather than react-grid-layout's. The data grid renders nothing on the server either way (MUI X draws it on the client).
+
+How to use it: import a heavy library through a `lazyComponent(() => import('…'))` wrapper in `lazy-widgets.tsx`, never statically (type-only imports are fine). Pitfalls: one static value import of such a library, anywhere the client barrel reaches, puts it back in every page; a test that renders a lazy widget must load it first — the engine's test setup calls `preloadLazyComponents()` before each file, a shell test does it in its own `beforeAll`.
+
 ---
 
 ## Conventions (contracts — source of truth)

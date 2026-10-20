@@ -6,6 +6,7 @@ import { moduleRegistry } from '@eerp/core-front/server'
 import '@/generated/generated-modules'
 import { AppTopBar } from '../../src/components/AppTopBar'
 import { ModulesInit } from '../../src/components/ModulesInit'
+import { PreloadWidgets } from '../../src/components/PreloadWidgets'
 import { PresenceInit } from '../../src/components/PresenceInit'
 import { NotificationsInit } from '../../src/components/NotificationsInit'
 import { ErpUiStyle } from '../../src/components/ErpUiStyle'
@@ -87,6 +88,7 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <ModulesInit />
+      <PreloadWidgets />
       <ErpUiStyle />
       <SettingsUsersRegistryInit />
       <SessionHydrator identity={identity} />
