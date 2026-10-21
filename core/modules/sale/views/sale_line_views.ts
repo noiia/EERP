@@ -32,10 +32,11 @@ export interface SaleLine {
 // create-wizard (RelationListWidget/RelationCreateWizard) has a form to
 // render: invoice_id is preset+hidden by the wizard's context (same
 // contact.crm_records/contact_id pattern), variant_id is the line's real
-// "product.variant many2one" first column, and tax_rate/unit_price are
-// read-only because the backend snapshots them from the chosen variant's
-// product (core/modules/sale/handler.go) — never hand-typed. The line's
-// taxes start as its product's (product_tax.go).
+// "product.variant many2one" first column, and unit_price is read-only
+// because the backend snapshots it from the chosen variant's product
+// (core/modules/sale/handler.go) — never hand-typed. The line's taxes are
+// the Taxes tags (they start as its product's — product_tax.go); tax_rate,
+// a variant's own extra rate, isn't shown: Go still adds it into Total.
 const saleLineFields: ViewDescriptor['fields'] = [
   {
     name: 'invoice_id',
@@ -52,11 +53,10 @@ const saleLineFields: ViewDescriptor['fields'] = [
     relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' },
   },
   { name: 'quantity', label: 'Quantity', type: 'number', required: true },
-  { name: 'tax_rate', label: 'Tax', type: 'number', widget: 'percent', readOnly: true },
   { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float', readOnly: true },
-  // Extra taxes, stacked on top of tax_rate above (module.go's SaleLine.Total
-  // doc comment) — junction is sale_line_tax, hand-mounted Create/Delete
-  // (handler.go) so tagging/untagging recomputes total below.
+  // The line's taxes (module.go's SaleLine.Total doc comment) — junction is
+  // sale_line_tax, hand-mounted Create/Delete (handler.go) so tagging/
+  // untagging recomputes total below.
   {
     name: 'taxes',
     label: 'Taxes',

@@ -194,6 +194,12 @@ describe('sale FrontModule', () => {
     ])
   })
 
+  it("the line form shows the line's taxes as Taxes tags, not a separate Tax rate field", () => {
+    const fields = sale.routes.find((r) => r.path === '/sale/lines/:id')!.descriptor.fields
+    expect(fields.some((f) => f.name === 'tax_rate')).toBe(false)
+    expect(fields.find((f) => f.name === 'taxes')?.relation).toMatchObject({ kind: 'many2many', via: 'sale_line_tax' })
+  })
+
   it('resolves the printed line items from sale_line, scoped by invoice_id', () => {
     expect(reportTableRelations(sale.reports![0])).toEqual([
       { source: 'lines', entity: 'sale_line', inverseField: 'invoice_id' },
