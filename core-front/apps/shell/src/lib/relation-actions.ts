@@ -38,6 +38,14 @@ export async function createRelationRecord(
   return settleAction(() => createServerApiClient().create<RelationRecord>(entity, body))
 }
 
+export async function updateRelationRecord(
+  entity: string,
+  id: string,
+  body: Record<string, unknown>,
+): Promise<RelationRecord | ActionError> {
+  return settleAction(() => createServerApiClient().update<RelationRecord>(entity, id, body))
+}
+
 export async function removeRelationRecord(entity: string, id: string): Promise<void | ActionError> {
   return settleAction(() => createServerApiClient().remove(entity, id))
 }

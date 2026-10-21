@@ -50,6 +50,7 @@ import {
   listRecords,
   listRecordsPage,
   removeRelationRecord,
+  updateRelationRecord,
 } from '../../src/lib/relation-actions'
 import {
   createSavedFilter,
@@ -120,6 +121,7 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
           list: listRecords,
           get: getRecord,
           create: createRelationRecord,
+          update: updateRelationRecord,
           remove: removeRelationRecord,
           distinctValues,
           listPage: listRecordsPage,

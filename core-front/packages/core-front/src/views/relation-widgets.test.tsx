@@ -12,6 +12,7 @@ vi.mock('next/navigation', () => ({
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { moduleRegistry } from '../registry'
 import { useCompanyStore } from './company-store'
+import { useEntityRefreshStore } from './entity-refresh-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { useHasLinksStore } from './required-relation-store'
 import { fieldWidget, type WidgetProps } from './widgets'
@@ -43,6 +44,7 @@ function Harness({
   initialValue,
   recordId,
   draft,
+  disabled,
 }: {
   field: FieldDescriptor
   ops: RelationOps
@@ -51,6 +53,7 @@ function Harness({
   initialValue: unknown
   recordId: string | null
   draft?: Record<string, unknown>
+  disabled?: boolean
 }) {
   const [value, setValue] = useState<unknown>(initialValue)
   const Widget = fieldWidget(field)
@@ -67,6 +70,7 @@ function Harness({
         entity="crm"
         recordId={recordId}
         draft={draft}
+        disabled={disabled}
       />
     </RelationOpsProvider>
   )
@@ -88,6 +92,7 @@ function renderWidget(
       initialValue={props.value ?? null}
       recordId={props.recordId !== undefined ? props.recordId : 'r1'}
       draft={props.draft}
+      disabled={props.disabled}
     />,
   )
   return { onChange, onChangeField }
@@ -700,6 +705,64 @@ describe('relation/list (one2many)', () => {
     expect(await screen.findByText('New deal')).toBeInTheDocument()
   })
 
+  describe('double-click a row: edit it in the same wizard', () => {
+    it('opens the wizard on the row, saves through update and refreshes the row', async () => {
+      const update = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ ...body, id }) as RelationRecord)
+      const ops = stubOps({ update })
+      renderWidget(listField, ops)
+
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).toHaveTextContent('Edit Crm')
+      // The inverse FK stays hidden, as on creation.
+      expect(within(dialog).queryByText('contact_id')).not.toBeInTheDocument()
+      const name = within(dialog).getByRole('textbox')
+      expect(name).toHaveValue('Acme')
+
+      fireEvent.change(name, { target: { value: 'Acme Corp' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledWith('crm', 'c1', expect.objectContaining({ id: 'c1', name: 'Acme Corp' })),
+      )
+      expect(ops.create).not.toHaveBeenCalled()
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('tells the rest of the form the lines changed, without leaving the current page', async () => {
+      const update = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ ...body, id }) as RelationRecord)
+      const ops = stubOps({ update })
+      renderWidget(listField, ops)
+      const before = useEntityRefreshStore.getState().bumps.crm ?? 0
+
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(useEntityRefreshStore.getState().bumps.crm).toBe(before + 1))
+      // ...and the table itself refetches its rows (server-computed totals).
+      await waitFor(() => expect((ops.list as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1))
+    })
+
+    it.each([
+      ['the host binds no update', {}, {}],
+      ['the form is read-only', { update: vi.fn() }, { disabled: true }],
+    ])('stays off when %s', async (_why, opsOverrides, props) => {
+      renderWidget(listField, stubOps(opsOverrides as Partial<RelationOps>), props as Partial<WidgetProps>)
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('stays off on a table whose rows open their own form (relation.formPath)', async () => {
+      const navigableField: FieldDescriptor = {
+        ...listField,
+        relation: { ...listField.relation!, formPath: '/crm/lines/:id' },
+      }
+      renderWidget(navigableField, stubOps({ update: vi.fn() }))
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
   it('shows a hint before the record exists', () => {
     renderWidget(listField, stubOps(), { recordId: null })
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()
@@ -1124,6 +1187,17 @@ describe('totals/recap', () => {
     expect(screen.getByText('Tax:', { exact: false })).toBeInTheDocument()
     expect(screen.getByText('43.00')).toBeInTheDocument()
     expect(screen.getByText('273.00')).toBeInTheDocument()
+  })
+
+  it('recomputes when the lines table announces a created or edited line', async () => {
+    const ops = stubOps({ list: vi.fn(async () => [{ id: 'l1', quantity: 1, unit_price: 100, tax_rate: 0.2, total: 120 }]) })
+    renderWidget(totalsField, ops, { recordId: 'inv1' })
+    expect(await screen.findByText('100.00')).toBeInTheDocument()
+    ;(ops.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'l1', quantity: 3, unit_price: 100, tax_rate: 0.2, total: 360 },
+    ])
+    useEntityRefreshStore.getState().bump('sale_line')
+    expect(await screen.findByText('300.00')).toBeInTheDocument()
   })
 
   it('falls back to tax_rate applied inline when total is absent (quote_line, which never got the many2many taxes/Total column)', async () => {

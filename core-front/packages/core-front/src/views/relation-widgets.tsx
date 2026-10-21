@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -349,12 +349,18 @@ function creationDescriptor(rel: RelationDescriptor): ViewDescriptor {
  * text as the label); preset FK fields are hidden — the wizard never asks for
  * what the context already decided. Mount only while open: each opening gets a
  * fresh store, so drafts never leak between creations.
+ *
+ * Given a `record` (a one2many row double-clicked in its table), the same
+ * dialog edits it instead: the draft starts from the record and Save goes
+ * through RelationOps.update (required then). A loaded record runs computes
+ * only, never on_change, like any form opening an existing record.
  */
 function RelationCreateWizard({
   rel,
   ops,
   preset = {},
   hidden = [],
+  record,
   onClose,
   onCreated,
 }: {
@@ -362,6 +368,7 @@ function RelationCreateWizard({
   ops: RelationOps
   preset?: Record<string, unknown>
   hidden?: string[]
+  record?: RelationRecord
   onClose: () => void
   onCreated: (record: RelationRecord) => void
 }) {
@@ -374,11 +381,12 @@ function RelationCreateWizard({
       descriptor as ViewDescriptor<RelationRecord>,
       {
         create: (body) => ops.create(rel.entity, body as Record<string, unknown>),
-        update: () => {
-          throw new Error('unreachable: creation drafts have no id')
+        update: (id, body) => {
+          if (!ops.update) throw new Error('RelationOps.update is not bound on this host')
+          return ops.update(rel.entity, id, body as Record<string, unknown>)
         },
       },
-      preset as Partial<RelationRecord>,
+      (record ?? preset) as Partial<RelationRecord>,
     ),
   )
   const draft = useFormDraft(store)
@@ -407,7 +415,7 @@ function RelationCreateWizard({
       <BannerScope>
       <Box>
         <DialogTitle>
-          {t('Create a new')} {t(entityDisplayName(rel.entity))}
+          {record ? t('Edit') : t('Create a new')} {t(entityDisplayName(rel.entity))}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
@@ -422,9 +430,9 @@ function RelationCreateWizard({
               draft={draft as Record<string, unknown>}
               onFieldChange={(name, value) => setField(name, value)}
               entity={rel.entity}
-              // No id yet: service-backed widgets (picture/signature) and
-              // o2m/m2m render their unsaved-record hint, as on any new form.
-              recordId={null}
+              // No id yet (creation): service-backed widgets (picture/signature)
+              // and o2m/m2m render their unsaved-record hint, as on any new form.
+              recordId={record?.id ?? null}
               hidden={hiddenSet}
             />
           </Stack>
@@ -434,7 +442,7 @@ function RelationCreateWizard({
             {t('Cancel')}
           </Button>
           <Button variant="contained" onClick={submit} disabled={submitting}>
-            {t('Create')}
+            {record ? t('Save') : t('Create')}
           </Button>
         </DialogActions>
       </Box>
@@ -1242,6 +1250,8 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   const labelField = rel.labelField ?? 'name'
   const [rows, setRows] = useState<RelationRecord[]>([])
   const [createOpen, setCreateOpen] = useState(false)
+  // The row being edited in the wizard (double-click), null when none.
+  const [editing, setEditing] = useState<RelationRecord | null>(null)
 
   // widgetOptions.columns (opt-in, e.g. propertymanagement's billing_lines):
   // an EXPLICIT, ordered column list replacing relatedColumns' generic
@@ -1272,6 +1282,16 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   // this widget's own create wizard (e.g. a header button using relationOps
   // directly) — see entity-refresh-store.ts.
   const refreshSignal = useEntityRefreshStore((s) => s.bumps[rel.entity])
+  // Set while this widget announces its own change (a created or edited row),
+  // so the bump refetches the current page instead of starting over at page 1.
+  const ownBump = useRef(false)
+  // A row was created or edited here: everything showing rel.entity rows
+  // refetches — this table (Go recomputes a line's totals) and the form's
+  // totals recap reading the same lines.
+  const announceChange = () => {
+    ownBump.current = true
+    useEntityRefreshStore.getState().bump(rel.entity)
+  }
 
   // widgetOptions.reverse (opt-in, e.g. propertymanagement's rent_receipts):
   // newest first — sorted server-side (`order=-created_at`) when the grid is
@@ -1342,6 +1362,10 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   const [reloadKey, setReloadKey] = useState(0)
   // A different record (or an outside change to the rows) starts over at page 1.
   useEffect(() => {
+    if (ownBump.current) {
+      ownBump.current = false
+      return
+    }
     setPaginationModel((m) => (m.page === 0 ? m : { ...m, page: 0 }))
   }, [recordId, insideRef, refreshSignal])
   useEffect(() => {
@@ -1442,6 +1466,10 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
   const columns = explicitColumns
     ? explicitRelationColumns(explicitColumns, labelField, t)
     : relatedColumns(displayRows, labelField, t, inverseField ? [inverseField] : [])
+  // Double-click a row to edit it in the creation wizard: rows this table
+  // owns (an inverse FK), when the host can update and the form is editable.
+  // A table with its own formPath navigates on click instead.
+  const editable = Boolean(inverseField && ops.update && !disabled && !rel.formPath)
 
   return (
     <Box>
@@ -1450,11 +1478,11 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
           {t(fieldLabel(field))}
         </Typography>
       )}
-      {/* Rows stay read-only inline (inline edit is a later iteration); creation
-          goes through the wizard line below — the inverse FK is preset, so the
-          new record lands in this list by construction. rel.formPath (opt-in —
-          absent for sale_lines/quote_lines, which intentionally stay inert on
-          click) navigates to the clicked row's own dedicated form instead. */}
+      {/* Rows stay read-only inline; creation goes through the wizard line
+          below — the inverse FK is preset, so the new record lands in this list
+          by construction — and a double-click edits a row in that same wizard.
+          rel.formPath (opt-in) navigates to the clicked row's own dedicated
+          form instead. */}
       {/* overflowX: auto scopes the horizontal scrollbar to just this table
           when its columns don't fit — the surrounding notebook page (and the
           rest of the form) never scrolls sideways because of one wide grid. */}
@@ -1487,7 +1515,28 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
                 }
               : undefined
           }
-          sx={rel.formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
+          onRowDoubleClick={
+            editable
+              ? (params: GridRowParams) => {
+                  const row = rows.find((r) => r.id === params.id)
+                  if (row) setEditing(row)
+                }
+              : undefined
+          }
+          // A double-click would also select a word of the row: prevent the
+          // second press's default only, so a drag still selects text.
+          slotProps={
+            editable
+              ? {
+                  row: {
+                    onMouseDown: (e: ReactMouseEvent<HTMLDivElement>) => {
+                      if (e.detail > 1) e.preventDefault()
+                    },
+                  },
+                }
+              : undefined
+          }
+          sx={rel.formPath || editable ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
         />
       </Box>
       <ViewBanner status="error" open={Boolean(deleteError)}>
@@ -1534,7 +1583,23 @@ export function RelationListWidget({ field, disabled, entity, recordId, draft }:
           preset={{ [inverseField as string]: recordId }}
           hidden={[inverseField as string]}
           onClose={() => setCreateOpen(false)}
-          onCreated={(record) => setRows((prev) => [...prev, record])}
+          onCreated={(record) => {
+            setRows((prev) => [...prev, record])
+            announceChange()
+          }}
+        />
+      ) : null}
+      {editing ? (
+        <RelationCreateWizard
+          rel={rel}
+          ops={ops}
+          record={editing}
+          hidden={[inverseField as string]}
+          onClose={() => setEditing(null)}
+          onCreated={(saved) => {
+            setRows((prev) => prev.map((r) => (r.id === saved.id ? saved : r)))
+            announceChange()
+          }}
         />
       ) : null}
         </>
@@ -1571,6 +1636,8 @@ export function TaxTotalsWidget({ field, recordId, draft }: WidgetProps) {
   const rel = relationOf(field)
   const inverseField = rel.inverseField as string
   const [rows, setRows] = useState<RelationRecord[]>([])
+  // The lines table beside it announces created/edited rows.
+  const refreshSignal = useEntityRefreshStore((s) => s.bumps[rel.entity])
 
   useEffect(() => {
     if (!ops || !recordId) {
@@ -1589,7 +1656,7 @@ export function TaxTotalsWidget({ field, recordId, draft }: WidgetProps) {
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, inverseField, recordId])
+  }, [ops, rel.entity, inverseField, recordId, refreshSignal])
 
   if (!ops || !recordId) return null
 

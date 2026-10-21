@@ -21,6 +21,12 @@ export interface RelationOps {
   /** Junction-row removal (m2m unlink). */
   remove: (entity: string, id: string) => Promise<void>
   /**
+   * Edit one related record — a one2many row double-clicked in its embedded
+   * table opens the creation wizard on it. Optional, fail-open: without it,
+   * rows stay read-only.
+   */
+  update?: (entity: string, id: string, body: Record<string, unknown>) => Promise<RelationRecord>
+  /**
    * The search bar's group-by section (docs/adr/ADR-014-search-filter-bar.md):
    * every distinct value of column (+ count) among rows matching options'
    * filters. Optional and fail-open (undefined, not a rejected promise) for
