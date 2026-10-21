@@ -1,4 +1,4 @@
-import { ModuleRegistry, normalizeLayout, resolveWidget, FORM_COLUMNS_ID, FORM_NOTEBOOK_ID } from '@eerp/core-front'
+import { ModuleRegistry, normalizeLayout, resolveWidget, FORM_COLUMNS_ID, FORM_NOTEBOOK_ID, PAGE_SETTINGS_ID } from '@eerp/core-front'
 import { describe, expect, it } from 'vitest'
 import contacts from './contact_views'
 
@@ -134,5 +134,24 @@ describe('contacts FrontModule', () => {
     const inColumns = columns.children.map((c) => (c.kind === 'field' ? c.name : c.id))
     expect(inColumns).not.toContain('crm_records')
     expect(inColumns).not.toContain('geo_location')
+  })
+
+  it('shows the Website flag on the Settings page, leaving the main columns two full rows', () => {
+    const registry = new ModuleRegistry()
+    registry.register(contacts)
+    const layout = normalizeLayout(registry.buildRegistry().get('/contacts/:id')!.descriptor)
+    const columns = layout.find((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
+    if (!columns || columns.kind === 'field') throw new Error('no columns')
+    expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.id))).toEqual([
+      'kind',
+      'email',
+      'company',
+      'status',
+    ])
+    const notebook = layout.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
+    if (!notebook || notebook.kind === 'field') throw new Error('no notebook')
+    const settings = notebook.children.find((p) => p.kind !== 'field' && p.id === PAGE_SETTINGS_ID)
+    if (!settings || settings.kind === 'field') throw new Error('no settings page')
+    expect(settings.children.map((c) => (c.kind === 'field' ? c.name : c.id))).toContain('website')
   })
 })

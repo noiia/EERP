@@ -339,6 +339,12 @@ describe('selection/radio', () => {
     expect(onChange).toHaveBeenCalledWith('company')
   })
 
+  it("is a radio group named by the field label, in a text field's box", () => {
+    const { view } = renderWidget(kindField, 'contact')
+    expect(screen.getByRole('radiogroup', { name: 'Type' })).toBeInTheDocument()
+    expect(view.container.querySelector('.MuiOutlinedInput-root')).not.toBeNull()
+  })
+
   it('checks nothing for a value outside the list', () => {
     renderWidget(kindField, 'other')
     expect(screen.getAllByRole('radio').every((r) => !(r as HTMLInputElement).checked)).toBe(true)

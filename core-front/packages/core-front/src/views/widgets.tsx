@@ -1,9 +1,8 @@
 'use client'
-import { useState, type ComponentType } from 'react'
+import { forwardRef, useId, useState, type ComponentType } from 'react'
 import Box from '@mui/material/Box'
-import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
-import FormLabel from '@mui/material/FormLabel'
+import type { InputBaseComponentProps } from '@mui/material/InputBase'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
@@ -395,27 +394,91 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
   )
 }
 
+/** The radios as a TextField's input: what InputBase hands an input
+ * component (class, focus/blur, disabled) plus the options and the pick. */
+const RadioRowInput = forwardRef<HTMLDivElement, InputBaseComponentProps>(function RadioRowInput(
+  {
+    className,
+    value,
+    disabled,
+    onFocus,
+    onBlur,
+    id,
+    name,
+    options,
+    labels,
+    onPick,
+    'aria-labelledby': labelledBy,
+  },
+  ref,
+) {
+  return (
+    <RadioGroup
+      ref={ref}
+      row
+      id={id}
+      aria-labelledby={labelledBy}
+      name={name}
+      className={className}
+      value={value}
+      onChange={(e) => onPick(e.target.value)}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      // `&&`: InputBase's input class (display: block, a fixed height) would
+      // otherwise win over the row layout and cancel the gap.
+      sx={{ '&&': { display: 'flex', flexWrap: 'nowrap', gap: 3, height: 'auto' } }}
+    >
+      {(options as string[]).map((option, i) => (
+        <FormControlLabel
+          key={option}
+          value={option}
+          disabled={disabled}
+          control={<Radio size="small" sx={{ p: 0, mr: 0.75 }} />}
+          label={(labels as string[])[i]}
+          // The input's own line height, so the box is exactly a text field's.
+          sx={{ m: 0, '& .MuiFormControlLabel-label': { lineHeight: 'inherit' } }}
+        />
+      ))}
+    </RadioGroup>
+  )
+})
+
 /**
- * The same closed list as SelectionWidget, as a row of radio buttons — for a
- * short list the user should see whole (a contact's Company / Contact kind).
+ * selection/radio — the same closed list as SelectionWidget, as a row of radio
+ * buttons, for a short list the user should see whole (a contact's Company /
+ * Contact kind). It takes a text field's box (its height and its label
+ * position, without the outline), so it lines up with the fields around it
+ * instead of stacking a label line over the radios.
  */
 function SelectionRadioWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
+  const id = useId()
   const options = field.selection?.options ?? []
   return (
-    <FormControl disabled={disabled} required={field.required}>
-      {!field.hideLabel && <FormLabel>{t(fieldLabel(field))}</FormLabel>}
-      <RadioGroup
-        row
-        name={field.name}
-        value={typeof value === 'string' && options.includes(value) ? value : ''}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((option) => (
-          <FormControlLabel key={option} value={option} control={<Radio />} label={t(option)} />
-        ))}
-      </RadioGroup>
-    </FormControl>
+    <TextField
+      id={id}
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      value={typeof value === 'string' && options.includes(value) ? value : ''}
+      slotProps={{
+        inputLabel: { shrink: true },
+        input: {
+          inputComponent: RadioRowInput,
+          // No outline: the radios are their own affordance. Hidden rather than
+          // borderless, so the focus/hover rules restyling it can't bring it back.
+          sx: { '& .MuiOutlinedInput-notchedOutline': { display: 'none' } },
+          inputProps: {
+            name: field.name,
+            options,
+            labels: options.map((o) => t(o)),
+            onPick: onChange,
+            'aria-labelledby': field.hideLabel ? undefined : `${id}-label`,
+          },
+        },
+      }}
+    />
   )
 }
 

@@ -1,6 +1,7 @@
 import {
   FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
+  PAGE_SETTINGS_ID,
   type FrontModule,
   type GeoJSONGeometry,
   type Operation,
@@ -145,6 +146,9 @@ export const locationRowOperations: Operation[] = [
     target: FORM_COLUMNS_ID,
     position: 'after',
   },
+  // A read-only flag set by a website signup: kept out of the main columns,
+  // where it took a row of its own, on the Settings page.
+  { op: 'move', name: 'website', target: PAGE_SETTINGS_ID, position: 'last' },
 ]
 
 const dashboardView: ViewDescriptor = {
