@@ -1,5 +1,6 @@
 import {
   exportReportPDF,
+  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerHeaderButtonAction,
@@ -280,6 +281,36 @@ export const quoteLinesPageOperations: Operation[] = [
     },
     target: FORM_NOTEBOOK_ID,
     position: 'first',
+  },
+]
+
+// Below the dates, two independent columns: the billing address on the left,
+// who the quote goes to and how it's paid on the right (Customer, Payment
+// method, Recipients). The default two-column body fills row by row, which
+// put the tall address beside Customer and left a gap under it; one sub-group
+// per column stacks each side on its own. Narrow forms stack the two.
+export const quotePartiesOperations: Operation[] = [
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      id: 'quote_parties',
+      columns: 2,
+      children: [
+        { kind: 'group', id: 'quote_parties_left', children: [{ kind: 'field', name: 'customer_address' }] },
+        {
+          kind: 'group',
+          id: 'quote_parties_right',
+          children: [
+            { kind: 'field', name: 'customer_id' },
+            { kind: 'field', name: 'payment_method' },
+            { kind: 'field', name: 'recipients' },
+          ],
+        },
+      ],
+    },
+    target: FORM_COLUMNS_ID,
+    position: 'after',
   },
 ]
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   ModuleRegistry,
   headerButtonRegistry,
@@ -319,6 +320,34 @@ describe('sale — self-extended "Quote lines" notebook page (registry-level)', 
     expect(notebook && notebook.kind !== 'field' ? notebook.children.map((p) => p.kind !== 'field' && p.title) : []).toEqual([
       'Quote lines',
       'Settings',
+    ])
+  })
+
+  it('stacks the billing address alone on the left, Customer / Payment method / Recipients on the right', () => {
+    const nodes = normalizeLayout(register().buildRegistry().get('/sale/quote/:id')!.descriptor)
+    const ids = nodes.map((n) => (n.kind === 'field' ? n.name : n.id))
+    expect(ids.indexOf('quote_parties')).toBe(ids.indexOf(FORM_COLUMNS_ID) + 1)
+    const names = (id: string): string[] => {
+      const find = (list: typeof nodes): (typeof nodes)[number] | undefined => {
+        for (const n of list) {
+          if (n.kind === 'field') continue
+          if (n.id === id) return n
+          const hit = find(n.children)
+          if (hit) return hit
+        }
+        return undefined
+      }
+      const node = find(nodes)
+      if (!node || node.kind === 'field') throw new Error(`no ${id}`)
+      return node.children.map((c) => (c.kind === 'field' ? c.name : (c.id ?? '')))
+    }
+    expect(names('quote_parties')).toEqual(['quote_parties_left', 'quote_parties_right'])
+    expect(names('quote_parties_left')).toEqual(['customer_address'])
+    expect(names('quote_parties_right')).toEqual(['customer_id', 'payment_method', 'recipients'])
+    // The dates stay in the main columns, alone.
+    expect(names(FORM_COLUMNS_ID).filter((n) => !['customer_name', 'status', 'customer_email'].includes(n))).toEqual([
+      'issue_date',
+      'due_date',
     ])
   })
 
