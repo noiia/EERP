@@ -1,5 +1,6 @@
 import {
   exportReportPDF,
+  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerHeaderButtonAction,
@@ -166,13 +167,16 @@ const formFields: ViewDescriptor['fields'] = [
     relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
     widgetOptions: { fillFields: { name: 'customer_name', email: 'customer_email' } },
   },
-  { name: 'subject', label: 'Subject', type: 'text' },
-  { name: 'customer_email', label: 'Customer email', type: 'text' },
+  // Filled by the Customer pick (fillFields) and used by Send, never typed:
+  // declared so it rides the draft, but not shown.
+  { name: 'customer_email', label: 'Customer email', type: 'text', invisible: true },
   { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field: currency is now the ISSUING COMPANY's own property
   // (internal/company.Company.Currency, Settings -> Company), not duplicated
   // per document.
-  { name: 'reference', label: 'Reference', type: 'text' },
+  // No subject or reference field on the form: the columns stay (the external
+  // API and an accepted quote can still set them, and the PDF prints them when
+  // set), but they're not typed here.
   // Who else Send emails the invoice to, beside the Customer (accepting a
   // quote copies its recipients here).
   {
@@ -299,6 +303,37 @@ export const orderLinesPageOperations: Operation[] = [
     },
     target: FORM_NOTEBOOK_ID,
     position: 'first',
+  },
+]
+
+// Below the dates, two independent columns, as on the quote: the billing
+// address on the left; the Customer on the right with the other fields
+// stacked under it (Payment method, Recipients, the source Quote). The
+// default two-column body fills row by row, which left a gap beside the tall
+// address; one sub-group per column keeps each side top-to-bottom.
+export const invoicePartiesOperations: Operation[] = [
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      id: 'invoice_parties',
+      columns: 2,
+      children: [
+        { kind: 'group', id: 'invoice_parties_left', children: [{ kind: 'field', name: 'customer_address' }] },
+        {
+          kind: 'group',
+          id: 'invoice_parties_right',
+          children: [
+            { kind: 'field', name: 'customer_id' },
+            { kind: 'field', name: 'payment_method' },
+            { kind: 'field', name: 'recipients' },
+            { kind: 'field', name: 'quote_id' },
+          ],
+        },
+      ],
+    },
+    target: FORM_COLUMNS_ID,
+    position: 'after',
   },
 ]
 

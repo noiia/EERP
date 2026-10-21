@@ -351,6 +351,37 @@ describe('sale — self-extended "Quote lines" notebook page (registry-level)', 
     ])
   })
 
+  it('invoice: no subject, customer email hidden; billing address left, Customer and the rest stacked right', () => {
+    const descriptor = register().buildRegistry().get('/sale/:id')!.descriptor
+    expect(descriptor.fields.find((f) => f.name === 'subject')).toBeUndefined()
+    expect(descriptor.fields.find((f) => f.name === 'customer_email')?.invisible).toBe(true)
+    const nodes = normalizeLayout(descriptor)
+    const ids = nodes.map((n) => (n.kind === 'field' ? n.name : n.id))
+    expect(ids.indexOf('invoice_parties')).toBe(ids.indexOf(FORM_COLUMNS_ID) + 1)
+    const childrenOf = (id: string): string[] => {
+      const find = (list: typeof nodes): (typeof nodes)[number] | undefined => {
+        for (const n of list) {
+          if (n.kind === 'field') continue
+          if (n.id === id) return n
+          const hit = find(n.children)
+          if (hit) return hit
+        }
+        return undefined
+      }
+      const node = find(nodes)
+      if (!node || node.kind === 'field') throw new Error(`no ${id}`)
+      return node.children.map((c) => (c.kind === 'field' ? c.name : (c.id ?? '')))
+    }
+    expect(childrenOf('invoice_parties_left')).toEqual(['customer_address'])
+    expect(childrenOf('invoice_parties_right')).toEqual(['customer_id', 'payment_method', 'recipients', 'quote_id'])
+    expect(childrenOf(FORM_COLUMNS_ID).filter((n) => n !== 'customer_email')).toEqual([
+      'customer_name',
+      'status',
+      'issue_date',
+      'due_date',
+    ])
+  })
+
   it('/sale/quote/list is untouched — the extension targets only /sale/quote/:id', () => {
     const registry = register()
     expect(registry.buildRegistry().get('/sale/quote/list')?.descriptor.fields.map((f) => f.name)).not.toContain(
@@ -467,9 +498,9 @@ describe('sale — numbers and recipients', () => {
     expect(form(path).fields.find((f) => f.name === 'number')?.required).toBeUndefined()
   })
 
-  it('the quote has no reference field any more; the invoice keeps its own', () => {
+  it('neither form has a reference field (the invoice PDF still prints a stored one)', () => {
     expect(form('/sale/quote/:id').fields.some((f) => f.name === 'reference')).toBe(false)
-    expect(form('/sale/:id').fields.some((f) => f.name === 'reference')).toBe(true)
+    expect(form('/sale/:id').fields.some((f) => f.name === 'reference')).toBe(false)
   })
 
   it.each([
@@ -526,7 +557,7 @@ describe('sale — quote and invoice reports', () => {
     expect(reportTableRelations(report('sale.invoice'))).toEqual([{ source: 'lines', entity: 'sale_line', inverseField: 'invoice_id' }])
     expect(JSON.stringify(report('sale.quote').layout)).toContain('Valid until:')
     expect(JSON.stringify(report('sale.invoice').layout)).toContain('Due date:')
-    // The quote has no reference any more; the invoice keeps its own.
+    // The quote PDF prints no reference; the invoice PDF prints a stored one.
     expect(JSON.stringify(report('sale.quote').layout)).not.toContain('"reference"')
     expect(JSON.stringify(report('sale.invoice').layout)).toContain('"reference"')
   })
