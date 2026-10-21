@@ -51,6 +51,20 @@ describe('buildAppTheme', () => {
     expect(theme.palette.text.primary).toBe(neutral[50])
   })
 
+  it('reads read-only (disabled) field values in neutral[100] in dark mode, leaving light mode and buttons alone', () => {
+    const dark = buildAppTheme(DEFAULT_PALETTE, 'dark')
+    const input = dark.components?.MuiInputBase?.styleOverrides?.root as Record<string, Record<string, string>>
+    expect(input['&.Mui-disabled'].color).toBe(neutral[100])
+    expect(input['& .MuiInputBase-input.Mui-disabled'].WebkitTextFillColor).toBe(neutral[100])
+    const label = dark.components?.MuiFormLabel?.styleOverrides?.root as Record<string, Record<string, string>>
+    expect(label['&.Mui-disabled'].color).toBe(dark.palette.text.secondary)
+    // Readable on the dark surface (AA).
+    expect(getContrastRatio(neutral[100], DEFAULT_PALETTE.deepOcean)).toBeGreaterThanOrEqual(4.5)
+    // Disabled buttons keep text.disabled; light mode keeps MUI's own.
+    expect(dark.palette.text.disabled).toBe(neutral[600])
+    expect(buildAppTheme(DEFAULT_PALETTE, 'light').components?.MuiInputBase).toBeUndefined()
+  })
+
   it('lightens a dark primary in dark mode until it reads on the dark surface', () => {
     const theme = buildAppTheme(DEFAULT_PALETTE, 'dark')
     expect(theme.palette.primary.main).not.toBe(DEFAULT_PALETTE.goBlue)

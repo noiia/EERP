@@ -155,6 +155,29 @@ export function buildAppTheme(
     MuiTextField: {
       defaultProps: { size: 'small', variant: 'outlined' },
     },
+    // Read-only form fields render as MUI "disabled". In dark mode text.disabled
+    // (neutral[600]) all but vanishes on the dark surfaces, so a read-only value
+    // (a line's unit price, a computed total) reads in neutral[100] instead and
+    // its label in the normal label color. Light mode keeps MUI's own. Disabled
+    // BUTTONS still use text.disabled, so they don't look clickable.
+    ...(isLight
+      ? {}
+      : {
+          MuiInputBase: {
+            styleOverrides: {
+              root: {
+                '&.Mui-disabled': { color: neutral[100] },
+                '& .MuiInputBase-input.Mui-disabled': { WebkitTextFillColor: neutral[100] },
+              },
+            },
+          },
+          MuiFormLabel: {
+            styleOverrides: { root: { '&.Mui-disabled': { color: theme.palette.text.secondary } } },
+          },
+          MuiFormControlLabel: {
+            styleOverrides: { label: { '&.Mui-disabled': { color: neutral[100] } } },
+          },
+        }),
     MuiAlert: {
       styleOverrides: { root: { borderRadius: radius.sm } },
     },
