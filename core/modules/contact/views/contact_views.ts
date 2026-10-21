@@ -1,4 +1,5 @@
 import {
+  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   type FrontModule,
   type GeoJSONGeometry,
@@ -126,6 +127,26 @@ const formFields: ViewDescriptor['fields'] = [
   },
 ]
 
+// The CRM records table and the map share one row (table left, map right)
+// below the main field columns, instead of the tall map leaving the table on a
+// row of its own. Narrow forms stack them.
+export const locationRowOperations: Operation[] = [
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      id: 'contact_location',
+      columns: 2,
+      children: [
+        { kind: 'field', name: 'crm_records' },
+        { kind: 'field', name: 'geo_location' },
+      ],
+    },
+    target: FORM_COLUMNS_ID,
+    position: 'after',
+  },
+]
+
 const dashboardView: ViewDescriptor = {
   entity: 'contact',
   viewType: 'dashboard',
@@ -156,7 +177,9 @@ const contacts: FrontModule = {
     { path: '/contacts/list', descriptor: listView },
     { path: '/contacts/:id', descriptor: formView },
   ],
-  extends: [{ path: '/contacts/:id', operations: relationsPageOperations }],
+  extends: [
+    { path: '/contacts/:id', operations: [...relationsPageOperations, ...locationRowOperations] },
+  ],
 }
 
 export default contacts

@@ -71,9 +71,11 @@ vi.mock('leaflet', () => {
 })
 
 import { AUTO_LOCATE_DEBOUNCE_MS, GeoPointWidget, GeoShapeWidget } from './geo-widgets'
+import { useRecentAddressStore } from './recent-addresses'
 import * as Leaflet from 'leaflet'
 
 beforeEach(() => {
+  useRecentAddressStore.setState({ addresses: [] })
   for (const k of Object.keys(handlers)) delete handlers[k]
   markers.length = 0
   polygons.length = 0
@@ -243,6 +245,90 @@ describe('GeoPointWidget', () => {
         encodeURIComponent('3 Impasse Y, Toulouse'),
       )
       await waitFor(() => expect(screen.queryByText('Create an address')).toBeNull())
+      vi.unstubAllGlobals()
+    })
+
+    const toulouse = {
+      label: '3 Impasse Y, Toulouse, France',
+      number: 3,
+      street: 'Impasse Y',
+      complement: '',
+      zip_code: '31000',
+      city: 'Toulouse',
+      state: 'Occitanie',
+      country: 'France',
+      lat: 43.6,
+      lon: 1.44,
+    }
+
+    it('autocompletes the street, fills every field and places the pin without geocoding again', async () => {
+      const fetchMock = stubOSM(true, () => new Response(JSON.stringify({ results: [toulouse] })))
+      const onChange = vi.fn()
+      render(<GeoPointWidget field={{ name: 'geo_location', type: 'geo' }} value={null} onChange={onChange} />)
+      const search = await screen.findByLabelText(/search an address/i)
+      fireEvent.change(search, { target: { value: 'nowhere' } })
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
+      fireEvent.click(await screen.findByText('Create…'))
+      const street = await screen.findByLabelText('Number and street')
+      fireEvent.change(street, { target: { value: '3 Impasse' } })
+      fireEvent.click(await screen.findByText(toulouse.label, {}, { timeout: 2000 }))
+      expect(screen.getByLabelText('Number and street')).toHaveValue('3 Impasse Y')
+      expect(screen.getByLabelText('Zip code')).toHaveValue('31000')
+      expect(screen.getByLabelText('City')).toHaveValue('Toulouse')
+      expect(screen.getByLabelText('State')).toHaveValue('Occitanie')
+      expect(screen.getByLabelText('Country')).toHaveValue('France')
+      const searches = fetchMock.mock.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+      await waitFor(() =>
+        expect(onChange).toHaveBeenCalledWith({ type: 'Point', coordinates: [1.44, 43.6] }),
+      )
+      expect(fetchMock.mock.calls.length).toBe(searches)
+      // The completed address is kept on the device, with where it is.
+      expect(useRecentAddressStore.getState().addresses[0]).toMatchObject({
+        street: '3 Impasse Y',
+        city: 'Toulouse',
+        lat: 43.6,
+        lon: 1.44,
+      })
+      vi.unstubAllGlobals()
+    })
+
+    it('remembers a hand-typed address once it is created', async () => {
+      stubOSM(true, () => new Response(JSON.stringify({ results: [{ label: 'x', lat: 43.6, lon: 1.44 }] })))
+      render(<GeoPointWidget field={{ name: 'geo_location', type: 'geo' }} value={null} onChange={vi.fn()} />)
+      await createByHand('3 Impasse Y', 'Toulouse')
+      await waitFor(() =>
+        expect(useRecentAddressStore.getState().addresses[0]).toMatchObject({
+          label: '3 Impasse Y, Toulouse',
+          lat: 43.6,
+          lon: 1.44,
+        }),
+      )
+      vi.unstubAllGlobals()
+    })
+
+    it('offers the recent addresses while nothing is typed, and places a picked one', async () => {
+      const fetchMock = stubOSM(true, () => new Response(JSON.stringify({ results: [] })))
+      useRecentAddressStore.getState().remember({
+        label: '1 Rue X, 69001 Lyon',
+        street: '1 Rue X',
+        zip_code: '69001',
+        city: 'Lyon',
+        state: '',
+        country: '',
+        lat: 45.75,
+        lon: 4.85,
+      })
+      const onChange = vi.fn()
+      render(<GeoPointWidget field={{ name: 'geo_location', type: 'geo' }} value={null} onChange={onChange} />)
+      const search = await screen.findByLabelText(/search an address/i)
+      fireEvent.keyDown(search, { key: 'ArrowDown' })
+      fireEvent.click(await screen.findByText('1 Rue X, 69001 Lyon'))
+      await waitFor(() =>
+        expect(onChange).toHaveBeenCalledWith({ type: 'Point', coordinates: [4.85, 45.75] }),
+      )
+      // Its stored position is used: no geocoding.
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/osm/search'))).toBe(false)
       vi.unstubAllGlobals()
     })
 

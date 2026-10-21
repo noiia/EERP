@@ -16,6 +16,8 @@ import { useOSMSuggestions, type OSMSuggestion } from './address-widget'
 import { ViewBanner } from './banner'
 import { ADDRESS_SUFFIXES, type GeoJSONGeometry } from './descriptor'
 import { pinIcon, useLeafletMap } from './geo-map'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { useRecentAddressStore, type RecentAddress } from './recent-addresses'
 import type { WidgetProps } from './widgets'
 
 type LonLat = [number, number]
@@ -69,23 +71,55 @@ function useOSMEnabled(): boolean {
   return enabled
 }
 
-/** The address search's last row, as in a many2one's dropdown: "Create…"
+/** A search suggestion in the dialog's shape: number and street on one line. */
+function fromSuggestion(o: OSMSuggestion): RecentAddress {
+  return {
+    label: o.label,
+    street: [o.number ?? '', o.street].join(' ').trim(),
+    zip_code: o.zip_code,
+    city: o.city,
+    state: o.state,
+    country: o.country,
+    lat: o.lat,
+    lon: o.lon,
+  }
+}
+
+/** A recent address row, marked with a history icon. */
+function RecentOption({ label }: { label: string }) {
+  return (
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+      <FontAwesomeIcon icon={byPrefixAndName.fas['clock-rotate-left']} style={{ opacity: 0.6 }} />
+      <span>{label}</span>
+    </Stack>
+  )
+}
+
+/** The address search's rows: suggestions, the device's recent addresses while
+ * nothing is typed, and last, as in a many2one's dropdown, "Create…", which
  * opens AddressCreateDialog for a place the search doesn't find. */
-type SearchOption = OSMSuggestion | { create: true }
+type SearchOption = OSMSuggestion | { recent: RecentAddress } | { create: true }
 const CREATE_ROW: SearchOption = { create: true }
 const isCreateRow = (o: SearchOption): o is { create: true } => 'create' in o
+const isRecentRow = (o: SearchOption): o is { recent: RecentAddress } => 'recent' in o
 
 const MANUAL_ADDRESS_FIELDS = [
-  ['street', 'Number and street'],
   ['zip_code', 'Zip code'],
   ['city', 'City'],
   ['state', 'State'],
   ['country', 'Country'],
 ] as const
-type ManualAddress = Record<(typeof MANUAL_ADDRESS_FIELDS)[number][0], string>
+type ManualAddress = Pick<RecentAddress, 'street' | (typeof MANUAL_ADDRESS_FIELDS)[number][0]>
+
+/** The dialog's street choices: search suggestions, or the recent addresses
+ * while the field is empty. */
+type StreetOption = { address: RecentAddress; recent: boolean }
 
 /**
- * A hand-typed address for the point: geocoded on Create; when the
+ * A hand-typed address for the point. "Number and street" autocompletes like
+ * the address widget; a picked suggestion (or recent address) fills every
+ * field and keeps its coordinates, so Create needs no new geocoding. Typing
+ * over it drops them: Create then geocodes the typed address, and when the
  * connector can't find it either, the pin goes to the map's center for the
  * user to drag into place.
  */
@@ -96,7 +130,7 @@ function AddressCreateDialog({
 }: {
   initial: string
   onClose: () => void
-  onCreate: (address: string) => Promise<void>
+  onCreate: (address: RecentAddress) => Promise<void>
 }) {
   const t = useT()
   const [address, setAddress] = useState<ManualAddress>({
@@ -106,7 +140,13 @@ function AddressCreateDialog({
     state: '',
     country: '',
   })
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const osm = useOSMSuggestions()
+  const recent = useRecentAddressStore((s) => s.addresses)
+  const streetOptions: StreetOption[] = address.street.trim()
+    ? osm.options.map((o) => ({ address: fromSuggestion(o), recent: false }))
+    : recent.map((a) => ({ address: a, recent: true }))
   const line = [
     address.street,
     [address.zip_code, address.city].filter((s) => s.trim()).join(' '),
@@ -116,10 +156,19 @@ function AddressCreateDialog({
     .map((s) => s.trim())
     .filter(Boolean)
     .join(', ')
+  const edit = (patch: Partial<ManualAddress>) => {
+    setAddress((a) => ({ ...a, ...patch }))
+    setCoords(null)
+  }
+  const pick = (picked: RecentAddress) => {
+    const { street, zip_code, city, state, country, lat, lon } = picked
+    setAddress({ street, zip_code, city, state, country })
+    setCoords(lat != null && lon != null ? { lat, lon } : null)
+  }
   const submit = async () => {
     setSubmitting(true)
     try {
-      await onCreate(line)
+      await onCreate({ ...address, label: line, lat: coords?.lat ?? null, lon: coords?.lon ?? null })
       onClose()
     } finally {
       setSubmitting(false)
@@ -130,13 +179,39 @@ function AddressCreateDialog({
       <DialogTitle>{t('Create an address')}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
+          <Autocomplete<StreetOption, false, false, true>
+            freeSolo
+            size="small"
+            options={streetOptions}
+            loading={osm.loading}
+            filterOptions={(o) => o}
+            getOptionLabel={(o) => (typeof o === 'string' ? o : o.address.label)}
+            inputValue={address.street}
+            onInputChange={(_, value, reason) => {
+              if (reason !== 'input') return
+              edit({ street: value })
+              osm.search(value)
+            }}
+            onChange={(_, o) => {
+              if (o && typeof o !== 'string') pick(o.address)
+            }}
+            renderOption={(props, o) => {
+              const { key, ...optionProps } = props
+              return (
+                <li key={key} {...optionProps}>
+                  {o.recent ? <RecentOption label={o.address.label} /> : o.address.label}
+                </li>
+              )
+            }}
+            renderInput={(params) => <TextField {...params} label={t('Number and street')} />}
+          />
           {MANUAL_ADDRESS_FIELDS.map(([key, label]) => (
             <TextField
               key={key}
               label={t(label)}
               size="small"
               value={address[key]}
-              onChange={(e) => setAddress((a) => ({ ...a, [key]: e.target.value }))}
+              onChange={(e) => edit({ [key]: e.target.value })}
             />
           ))}
         </Stack>
@@ -164,7 +239,10 @@ export const AUTO_LOCATE_DEBOUNCE_MS = 800
  * - `search` (default true): show the "Search an address" place finder above
  *   the map; `false` hides it (e.g. when the point follows a sibling address).
  *   Its last row, "Create…", opens a dialog to type an address the search
- *   doesn't find (geocoded on Create; not found → the map's center, to drag).
+ *   doesn't find (its street autocompletes; a typed address is geocoded on
+ *   Create; not found → the map's center, to drag). The last
+ *   RECENT_ADDRESS_LIMIT addresses picked or created are kept on the device
+ *   (recent-addresses.ts) and offered while the search is empty.
  * - `address`: the prefix of a sibling `type: 'address'` field — enables
  *   "Locate from address".
  * - `autoLocate` (with `address`): geocode the sibling address through the
@@ -183,6 +261,8 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState<string | null>(null)
   const osmEnabled = useOSMEnabled()
+  const recent = useRecentAddressStore((s) => s.addresses)
+  const remember = useRecentAddressStore((s) => s.remember)
   const addressPrefix =
     typeof field.widgetOptions?.address === 'string' ? field.widgetOptions.address : null
   const showSearch = field.widgetOptions?.search !== false
@@ -250,10 +330,15 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
     }
   }
 
-  // The create dialog's address: geocoded, else the map's center.
-  const placeTyped = async (address: string) => {
+  // A completed address (the create dialog's, or a recent one): its own
+  // coordinates, else geocoded, else the map's center. Remembered either way.
+  const placeAddress = async (address: RecentAddress) => {
     setNotFound(false)
-    const found = await geocode(address)
+    const found: LonLat | null =
+      address.lat != null && address.lon != null
+        ? [address.lon, address.lat]
+        : await geocode(address.label)
+    remember(found ? { ...address, lon: found[0], lat: found[1] } : address)
     if (found) return set(found)
     const center = map?.getCenter()
     if (center) set([center.lng, center.lat])
@@ -295,9 +380,14 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
             <Autocomplete<SearchOption>
               sx={{ flex: 1 }}
               size="small"
-              options={[...options, CREATE_ROW]}
+              options={[
+                ...(query.trim() ? options : recent.map((a) => ({ recent: a }))),
+                CREATE_ROW,
+              ]}
               filterOptions={(o) => o}
-              getOptionLabel={(o) => (isCreateRow(o) ? '' : o.label)}
+              getOptionLabel={(o) =>
+                isCreateRow(o) ? '' : isRecentRow(o) ? o.recent.label : o.label
+              }
               onInputChange={(_, q, reason) => {
                 if (reason !== 'input') return
                 setQuery(q)
@@ -305,8 +395,15 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
               }}
               onChange={(_, o) => {
                 if (!o) return
-                if (isCreateRow(o)) setCreating(query)
-                else if (o.lat != null && o.lon != null) set([o.lon, o.lat])
+                if (isCreateRow(o)) {
+                  search('') // drops the pending debounced search: the dialog takes over
+                  setCreating(query)
+                }
+                else if (isRecentRow(o)) void placeAddress(o.recent)
+                else if (o.lat != null && o.lon != null) {
+                  remember(fromSuggestion(o))
+                  set([o.lon, o.lat])
+                }
               }}
               renderOption={(props, o) => {
                 const { key, ...optionProps } = props
@@ -316,6 +413,8 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
                       <Typography component="span" color="primary">
                         {t('Create…')}
                       </Typography>
+                    ) : isRecentRow(o) ? (
+                      <RecentOption label={o.recent.label} />
                     ) : (
                       o.label
                     )}
@@ -346,7 +445,7 @@ export function GeoPointWidget({ field, value, onChange, disabled, draft }: Widg
         <AddressCreateDialog
           initial={creating}
           onClose={() => setCreating(null)}
-          onCreate={placeTyped}
+          onCreate={placeAddress}
         />
       )}
       {/* A warning in the form's banner slot (banner.tsx). */}

@@ -1,4 +1,4 @@
-import { ModuleRegistry, normalizeLayout, resolveWidget, FORM_NOTEBOOK_ID } from '@eerp/core-front'
+import { ModuleRegistry, normalizeLayout, resolveWidget, FORM_COLUMNS_ID, FORM_NOTEBOOK_ID } from '@eerp/core-front'
 import { describe, expect, it } from 'vitest'
 import contacts from './contact_views'
 
@@ -113,5 +113,26 @@ describe('contacts FrontModule', () => {
       'Contacts',
       'Companies',
     ])
+  })
+
+  it('puts the CRM records table left of the map, on one row below the main columns', () => {
+    const registry = new ModuleRegistry()
+    registry.register(contacts)
+    const layout = normalizeLayout(registry.buildRegistry().get('/contacts/:id')!.descriptor)
+    const ids = layout.map((n) => (n.kind === 'field' ? n.name : n.id))
+    expect(ids.indexOf('contact_location')).toBe(ids.indexOf(FORM_COLUMNS_ID) + 1)
+    const row = layout.find((n) => n.kind !== 'field' && n.id === 'contact_location')
+    if (!row || row.kind === 'field') throw new Error('no location row')
+    expect(row.columns).toBe(2)
+    expect(row.children.map((c) => (c.kind === 'field' ? c.name : c.id))).toEqual([
+      'crm_records',
+      'geo_location',
+    ])
+    // Both left the main columns.
+    const columns = layout.find((n) => n.kind !== 'field' && n.id === FORM_COLUMNS_ID)
+    if (!columns || columns.kind === 'field') throw new Error('no columns')
+    const inColumns = columns.children.map((c) => (c.kind === 'field' ? c.name : c.id))
+    expect(inColumns).not.toContain('crm_records')
+    expect(inColumns).not.toContain('geo_location')
   })
 })
