@@ -40,6 +40,9 @@ type Product struct {
 	Reference string `db:"reference" json:"reference"`
 	// UnitPrice is the price excl. tax ("free taxes" in the request).
 	UnitPrice float64 `db:"unit_price" json:"unit_price"`
+	// UomID is the unit the product is sold in (a product_uoms row), optional.
+	// A sale line takes it as its own unit unless it names another one.
+	UomID *uuid.UUID `db:"uom_id" json:"uom_id"`
 	// Picture is the flag behind the form's boolean/picture widget: true ⇔ a
 	// picture exists on the (table, record, picture) anchor; the picture
 	// service owns the bytes. Public-declared, so the website shows it.

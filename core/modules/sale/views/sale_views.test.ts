@@ -200,6 +200,37 @@ describe('sale FrontModule', () => {
     expect(fields.find((f) => f.name === 'taxes')?.relation).toMatchObject({ kind: 'many2many', via: 'sale_line_tax' })
   })
 
+  it('the line tables show the unit and, on the invoice, the Taxes tags — never raw ids', () => {
+    const field = (path: string, name: string) =>
+      sale.routes.find((r) => r.path === path)!.descriptor.fields.find((f) => f.name === name)!
+    const invoiceLines = field('/sale/:id', 'sale_lines').widgetOptions!
+    expect(invoiceLines.relatedRelationField).toBe('taxes')
+    expect((invoiceLines.columns as unknown as { key: string }[]).map((c) => c.key)).toEqual([
+      'quantity',
+      'unit',
+      'unit_price',
+      'subtotal',
+      'taxes',
+      'total',
+    ])
+    const quoteLines = field('/sale/quote/:id', 'quote_lines').widgetOptions!
+    expect((quoteLines.columns as unknown as { key: string }[]).map((c) => c.key)).toEqual([
+      'quantity',
+      'unit',
+      'unit_price',
+      'tax_rate',
+    ])
+  })
+
+  it.each(['/sale/lines/:id', '/sale/quote/lines/:id'])('%s: the line picks its unit of measure', (path) => {
+    const route = sale.routes.find((r) => r.path === path)
+    expect(route, `no route ${path}`).toBeDefined()
+    expect(route!.descriptor.fields.find((f) => f.name === 'uom_id')?.relation).toMatchObject({
+      entity: 'product_uoms',
+      kind: 'many2one',
+    })
+  })
+
   it('resolves the printed line items from sale_line, scoped by invoice_id', () => {
     expect(reportTableRelations(sale.reports![0])).toEqual([
       { source: 'lines', entity: 'sale_line', inverseField: 'invoice_id' },
@@ -582,6 +613,6 @@ describe('sale — product Taxes (extends the warehouse product form)', () => {
     })
     const columns = normalizeLayout(form).find((n) => n.kind !== 'field' && n.id === '__form_columns')
     const names = columns && columns.kind !== 'field' ? columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind)) : []
-    expect(names).toEqual(['reference', 'unit_price', 'taxes'])
+    expect(names).toEqual(['reference', 'unit_price', 'taxes', 'uom_id'])
   })
 })

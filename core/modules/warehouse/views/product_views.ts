@@ -26,8 +26,8 @@ const productFields: ViewDescriptor['fields'] = [
     states: { readOnly: { field: 'context.auto_reference', op: 'eq', value: true } },
   },
   { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float' },
-  // No unit and no single tax rate any more: a product's taxes are the sale
-  // module's Taxes field (product_tax), added to this form by sale_views.ts.
+  // No single tax rate any more: a product's taxes are the sale module's
+  // Taxes field (product_tax), added to this form by sale_views.ts.
 ]
 
 // Form-only: every ProductVariant referencing this product, embedded
@@ -38,6 +38,14 @@ const productFields: ViewDescriptor['fields'] = [
 const productFormFields: ViewDescriptor['fields'] = [
   { name: 'picture', label: 'Picture', type: 'boolean', widget: 'picture', hideLabel: true },
   ...productFields,
+  // The unit the product is sold in (product_uoms): a sale line takes it as
+  // its own unit unless it picks another (sale's resolveLineUnit).
+  {
+    name: 'uom_id',
+    label: 'Unit of measure',
+    type: 'relation',
+    relation: { entity: 'product_uoms', kind: 'many2one', labelField: 'name' },
+  },
   {
     name: 'variants',
     label: 'Variants',
@@ -83,6 +91,7 @@ const productFormView: ViewDescriptor = {
       children: [
         { kind: 'field', name: 'reference' },
         { kind: 'field', name: 'unit_price' },
+        { kind: 'field', name: 'uom_id' },
       ],
     },
     { kind: 'group', id: 'variants_group', children: [{ kind: 'field', name: 'variants' }] },

@@ -65,8 +65,9 @@ func TestLineOverrides_AreTenantScoped(t *testing.T) {
 	quotes := orm.MustRepo[Quote](app.DB)
 	// companies: only the tax price mode needs it, reached past the guards.
 	productTaxLinks := orm.MustRepo[ProductTax](app.DB)
-	h := NewHandler(lines, invoices, variants, products, taxes, lineTaxes, productTaxLinks, settings.NewRepository(app.DB), nil)
-	qh := NewQuoteHandler(quoteLines, quotes, variants, products, productTaxLinks, taxes)
+	uoms := orm.MustRepo[warehouse.ProductUoms](app.DB)
+	h := NewHandler(lines, invoices, variants, products, taxes, lineTaxes, productTaxLinks, uoms, settings.NewRepository(app.DB), nil)
+	qh := NewQuoteHandler(quoteLines, quotes, variants, products, productTaxLinks, taxes, uoms)
 
 	in := func(tenant uuid.UUID) model.BaseModel { return model.BaseModel{TenantID: tenant} }
 	product, err := products.Create(ctx, warehouse.Product{BaseModel: in(owner), Name: "Desk", UnitPrice: 100})

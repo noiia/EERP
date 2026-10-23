@@ -986,6 +986,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		orm.MustRepo[sale.SaleTax](app.DB),
 		orm.MustRepo[sale.SaleLineTax](app.DB),
 		orm.MustRepo[sale.ProductTax](app.DB),
+		orm.MustRepo[warehouse.ProductUoms](app.DB),
 		settings.NewRepository(app.DB),
 		companyRepo,
 	)
@@ -1050,6 +1051,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		orm.MustRepo[warehouse.Product](app.DB),
 		orm.MustRepo[sale.ProductTax](app.DB),
 		orm.MustRepo[sale.SaleTax](app.DB),
+		orm.MustRepo[warehouse.ProductUoms](app.DB),
 	)
 	quoteLineGroup := srv.Echo().Group("/api/v1/quote_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 	quoteLineGroup.POST("", quoteLineHandler.Create)

@@ -218,7 +218,21 @@ const formFields: ViewDescriptor['fields'] = [
     label: 'Line items',
     type: 'relation',
     relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id', labelField: 'variant_name' },
-    widgetOptions: { deletable: true },
+    // Explicit columns: the line's Taxes tags (resolved per row from the line
+    // form's own `taxes` many2many) instead of the raw tax_rate, the unit Go
+    // prints from the line's UoM, and no raw ids (variant_id, uom_id).
+    widgetOptions: {
+      deletable: true,
+      relatedRelationField: 'taxes',
+      columns: [
+        { key: 'quantity', label: 'Quantity' },
+        { key: 'unit', label: 'Unit' },
+        { key: 'unit_price', label: 'Unit price' },
+        { key: 'subtotal', label: 'Subtotal' },
+        { key: 'taxes', label: 'Taxes' },
+        { key: 'total', label: 'Total' },
+      ],
+    },
   },
   // The HT -> tax-by-rate -> TTC recap block (docs/roadmaps — sale totals):
   // computes itself, live, from the SAME sale_lines above (each line's own

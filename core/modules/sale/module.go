@@ -157,6 +157,10 @@ type SaleLine struct {
 	Unit      string  `db:"unit" json:"unit"`
 	TaxRate   float64 `db:"tax_rate" json:"tax_rate"`
 	UnitPrice float64 `db:"unit_price" json:"unit_price"`
+	// UomID is the line's unit of measure (a warehouse.ProductUoms row):
+	// the one the line names, else its product's (resolveLineUnit). Unit
+	// above is its printed label, rewritten on every write.
+	UomID *uuid.UUID `db:"uom_id" json:"uom_id"`
 	// Total is this line's own final price — quantity × unit_price, plus
 	// TaxRate above, PLUS every tax tagged on it via SaleLineTax below
 	// (percentage or fixed, see SaleTax) — computed server-side ONLY
@@ -282,6 +286,8 @@ type QuoteLine struct {
 	Unit        string    `db:"unit" json:"unit"`
 	TaxRate     float64   `db:"tax_rate" json:"tax_rate"`
 	UnitPrice   float64   `db:"unit_price" json:"unit_price"`
+	// UomID: see SaleLine.UomID.
+	UomID *uuid.UUID `db:"uom_id" json:"uom_id"`
 }
 
 // QuoteRecipient / InvoiceRecipient: the extra contacts a quote or invoice

@@ -490,7 +490,7 @@ func convertQuote(ctx context.Context, tx *orm.Tx, q Quote, lines []QuoteLine, c
 	for i, l := range lines {
 		sl := SaleLine{
 			VariantID: l.VariantID, VariantName: l.VariantName, Quantity: l.Quantity,
-			Unit: l.Unit, TaxRate: l.TaxRate, UnitPrice: l.UnitPrice,
+			Unit: l.Unit, UomID: l.UomID, TaxRate: l.TaxRate, UnitPrice: l.UnitPrice,
 
 			TenantID: q.TenantID}
 		sl.Subtotal, sl.Total = computeLineTotal(l.Quantity*l.UnitPrice, l.TaxRate, nil, taxIncluded)

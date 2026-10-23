@@ -32,6 +32,14 @@ const quoteLineFields: ViewDescriptor['fields'] = [
     relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' },
   },
   { name: 'quantity', label: 'Quantity', type: 'number', required: true },
+  // The line's unit: empty takes the product's on save (Go's
+  // resolveLineUnit), which also prints it in the table's Unit column.
+  {
+    name: 'uom_id',
+    label: 'Unit of measure',
+    type: 'relation',
+    relation: { entity: 'product_uoms', kind: 'many2one', labelField: 'name' },
+  },
   { name: 'tax_rate', label: 'Tax', type: 'number', widget: 'percent', readOnly: true },
   { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float', readOnly: true },
 ]

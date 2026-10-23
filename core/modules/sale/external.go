@@ -114,6 +114,10 @@ func CreateInvoice(ctx context.Context, ex orm.Executor, req InvoiceRequest) (In
 		return Invoice{}, err
 	}
 	rate := variantRate(variant)
+	uomID, unit, err := resolveLineUnit(ctx, orm.MustRepo[warehouse.ProductUoms](ex), req.TenantID, nil, product.UomID)
+	if err != nil {
+		return Invoice{}, err
+	}
 	subtotal, total := computeLineTotal(req.Quantity*price, rate, taxes, included)
 	tax := total - subtotal
 	inv := Invoice{Number: number, IssueDate: &now, Subject: req.Subject, CustomerID: req.CustomerID,
@@ -124,7 +128,7 @@ func CreateInvoice(ctx context.Context, ex orm.Executor, req InvoiceRequest) (In
 		return Invoice{}, fmt.Errorf("sale: create invoice: %w", err)
 	}
 	line := SaleLine{InvoiceID: inv.ID, VariantID: req.VariantID, VariantName: name, Quantity: req.Quantity,
-		TaxRate: rate, UnitPrice: price, Subtotal: subtotal, Total: total,
+		Unit: unit, UomID: uomID, TaxRate: rate, UnitPrice: price, Subtotal: subtotal, Total: total,
 		TenantID: req.TenantID}
 	created, err := orm.MustRepo[SaleLine](ex).Create(ctx, line)
 	if err != nil {

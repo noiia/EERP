@@ -227,7 +227,18 @@ const quoteFormFields: ViewDescriptor['fields'] = [
     label: 'Line items',
     type: 'relation',
     relation: { entity: 'quote_line', kind: 'one2many', inverseField: 'quote_id', labelField: 'variant_name' },
-    widgetOptions: { deletable: true },
+    // Explicit columns, as on the invoice: the unit Go prints from the line's
+    // UoM and no raw ids. A quote line has no tax tags — its tax_rate is the
+    // product's percentage taxes folded together.
+    widgetOptions: {
+      deletable: true,
+      columns: [
+        { key: 'quantity', label: 'Quantity' },
+        { key: 'unit', label: 'Unit' },
+        { key: 'unit_price', label: 'Unit price' },
+        { key: 'tax_rate', label: 'Tax rate' },
+      ],
+    },
   },
   // Same totals recap as invoice's sale_totals, scoped to this quote's own
   // lines — see invoice_views.ts's formFields for the full doc comment.

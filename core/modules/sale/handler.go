@@ -40,6 +40,7 @@ type Handler struct {
 	taxes         *orm.Repository[SaleTax]
 	lineTaxes     *orm.Repository[SaleLineTax]
 	productTaxes  *orm.Repository[ProductTax]
+	uoms          *orm.Repository[warehouse.ProductUoms]
 	settingsStore *settings.Repository
 	companies     *company.Repository
 }
@@ -52,12 +53,14 @@ func NewHandler(
 	taxes *orm.Repository[SaleTax],
 	lineTaxes *orm.Repository[SaleLineTax],
 	productTaxes *orm.Repository[ProductTax],
+	uoms *orm.Repository[warehouse.ProductUoms],
 	settingsStore *settings.Repository,
 	companies *company.Repository,
 ) *Handler {
 	return &Handler{
 		lines: lines, invoices: invoices, variants: variants, products: products,
-		taxes: taxes, lineTaxes: lineTaxes, productTaxes: productTaxes, settingsStore: settingsStore, companies: companies,
+		taxes: taxes, lineTaxes: lineTaxes, productTaxes: productTaxes, uoms: uoms,
+		settingsStore: settingsStore, companies: companies,
 	}
 }
 
@@ -388,8 +391,9 @@ func (h *Handler) snapshotFromVariant(ctx context.Context, tenant uuid.UUID, lin
 		return uuid.Nil, err
 	}
 	line.VariantName = variant.Name
-	// Products have no unit any more; the column stays for older lines.
-	line.Unit = ""
+	if line.UomID, line.Unit, err = resolveLineUnit(ctx, h.uoms, tenant, line.UomID, product.UomID); err != nil {
+		return uuid.Nil, err
+	}
 	// The product's taxes are linked separately (sale_line_tax); tax_rate
 	// carries only the variant's own extra rate.
 	line.TaxRate = variantRate(variant)
@@ -477,6 +481,40 @@ func sumLines(lines []SaleLine) (subtotal, taxAmount, total float64) {
 // request body — would reach, and for the writes modify, another
 // workspace's row. A row of another tenant reads as not found
 // (pgx.ErrNoRows, like a missing one).
+// resolveLineUnit picks a line's unit of measure — the one it names, else its
+// product's — and the label the line items table and the PDF print for it
+// (the symbol, else the name). A unit the line names must exist (a client
+// error otherwise); a product's unit that no longer does is just dropped, so
+// a deleted unit never blocks selling the product.
+func resolveLineUnit(
+	ctx context.Context,
+	uoms *orm.Repository[warehouse.ProductUoms],
+	tenant uuid.UUID,
+	lineUom, productUom *uuid.UUID,
+) (*uuid.UUID, string, error) {
+	id := lineUom
+	if id == nil {
+		id = productUom
+	}
+	if id == nil {
+		return nil, "", nil
+	}
+	uom, err := findOwned(ctx, uoms, *id, tenant)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if lineUom != nil {
+			return nil, "", fmt.Errorf("uom_id must reference an existing unit of measure")
+		}
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if uom.Symbol != "" {
+		return id, uom.Symbol, nil
+	}
+	return id, uom.Name, nil
+}
+
 func findOwned[T any](ctx context.Context, repo *orm.Repository[T], id, tenant uuid.UUID) (T, error) {
 	return repo.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2", id, tenant))
 }
