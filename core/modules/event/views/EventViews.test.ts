@@ -48,6 +48,10 @@ describe('event views', () => {
     const field = (name: string) => form.fields.find((f) => f.name === name)!
     expect(field('sessions').states?.visible).toEqual({ field: 'kind', op: 'eq', value: 'sessions' })
     expect(field('availability').states?.visible).toEqual({ field: 'kind', op: 'eq', value: 'appointment' })
+    expect(field('slot_minutes').widget).toBe('duration')
+    expect(field('slot_minutes').label).toBe('Slot length')
+    expect(field('buffer_minutes').widget).toBe('duration')
+    expect(field('buffer_minutes').label).toBe('Buffer between slots')
     expect(field('slot_minutes').states?.visible).toEqual({ field: 'kind', op: 'eq', value: 'appointment' })
   })
 

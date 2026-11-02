@@ -1754,3 +1754,16 @@ msgstr ""
 
 msgid "State"
 msgstr ""
+
+#: @eerp/core-front widgets (number/duration)
+msgid "Hours"
+msgstr ""
+
+msgid "Minutes"
+msgstr ""
+
+msgid "h"
+msgstr ""
+
+msgid "min"
+msgstr ""

@@ -238,6 +238,40 @@ describe('number/percent', () => {
   })
 })
 
+describe('number/duration', () => {
+  const field: FieldDescriptor = { name: 'slot', label: 'Slot length', type: 'number', widget: 'duration' }
+
+  it('splits minutes into hours and minutes with a clock icon', () => {
+    const { view } = renderWidget(field, 90)
+    expect(screen.getByLabelText('Hours')).toHaveValue(1)
+    expect(screen.getByLabelText('Minutes')).toHaveValue(30)
+    expect(view.container.querySelector('svg')).not.toBeNull()
+  })
+
+  it('emits total minutes when hours change', () => {
+    const { onChange } = renderWidget(field, 90)
+    fireEvent.change(screen.getByLabelText('Hours'), { target: { value: '2' } })
+    expect(onChange).toHaveBeenCalledWith(150)
+  })
+
+  it('clamps minutes to 59', () => {
+    const { onChange } = renderWidget(field, 60)
+    fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '75' } })
+    expect(onChange).toHaveBeenCalledWith(119)
+  })
+
+  it('emits null once both inputs are emptied', () => {
+    const { onChange } = renderWidget(field, 30)
+    fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '' } })
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+
+  it('renders text when disabled', () => {
+    renderWidget(field, 90, { disabled: true })
+    expect(screen.getByText('1 h 30 min')).toBeInTheDocument()
+  })
+})
+
 describe('number/stars', () => {
   it('defaults to 3 stars with half-step granularity', () => {
     const { onChange } = renderWidget(

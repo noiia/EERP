@@ -1910,3 +1910,15 @@ msgstr "Ville"
 
 msgid "State"
 msgstr "Région"
+
+msgid "Hours"
+msgstr "Heures"
+
+msgid "Minutes"
+msgstr "Minutes"
+
+msgid "h"
+msgstr "h"
+
+msgid "min"
+msgstr "min"

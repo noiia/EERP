@@ -708,6 +708,71 @@ function NumberPercentWidget({ field, value, onChange, disabled }: WidgetProps) 
   return <NumberInput field={field} input={input} endAdornment="%" disabled={disabled} />
 }
 
+/**
+ * Integer minutes edited as hours : minutes (slot length, buffer). The stored
+ * value stays a plain minute count; minutes clamp to 0-59 and emptying minutes
+ * with no hours (or both inputs) clears the field. Read-only shows "1 h 30 min".
+ */
+function NumberDurationWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const total = typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null
+  const hours = total === null ? '' : String(Math.floor(total / 60))
+  const minutes = total === null ? '' : String(total % 60)
+  const label = t(fieldLabel(field))
+  const hUnit = t('h')
+  const mUnit = t('min')
+  const clock = byPrefixAndName.fas['clock']
+  if (disabled) {
+    return (
+      <Box>
+        {!field.hideLabel && (
+          <Typography variant="caption" color="text.secondary" component="div">
+            {label}
+          </Typography>
+        )}
+        <Typography variant="body1">{total === null ? '' : `${hours} ${hUnit} ${minutes} ${mUnit}`}</Typography>
+      </Box>
+    )
+  }
+  const emit = (h: string, m: string) => {
+    if (m === '' && (h === '' || Number(h) === 0)) return onChange(null)
+    const hh = Math.max(0, Math.trunc(Number(h) || 0))
+    const mm = Math.min(59, Math.max(0, Math.trunc(Number(m) || 0)))
+    onChange(hh * 60 + mm)
+  }
+  return (
+    <Box>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="div">
+          {label}
+        </Typography>
+      )}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {clock && <FontAwesomeIcon icon={clock} />}
+        <TextField
+          size="small"
+          type="number"
+          sx={{ width: 80 }}
+          value={hours}
+          onChange={(e) => emit(e.target.value, minutes)}
+          slotProps={{ htmlInput: { min: 0, step: 1, 'aria-label': t('Hours') } }}
+        />
+        <span>{hUnit}</span>
+        <span>:</span>
+        <TextField
+          size="small"
+          type="number"
+          sx={{ width: 80 }}
+          value={minutes}
+          onChange={(e) => emit(hours, e.target.value)}
+          slotProps={{ htmlInput: { min: 0, max: 59, step: 1, 'aria-label': t('Minutes') } }}
+        />
+        <span>{mUnit}</span>
+      </Box>
+    </Box>
+  )
+}
+
 function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   const max = typeof field.widgetOptions?.max === 'number' ? field.widgetOptions.max : 3
@@ -848,6 +913,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'number/int': NumberIntWidget,
   'number/percent': NumberPercentWidget,
   'number/stars': NumberStarsWidget,
+  'number/duration': NumberDurationWidget,
   'number/phone': PhoneWidget,
   'boolean/switch': BooleanSwitchWidget,
   'boolean/picture': BooleanPictureWidget,

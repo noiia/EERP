@@ -97,7 +97,7 @@ export type JsonValue =
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username', 'user-presence', 'html'],
-  number: ['float', 'int', 'percent', 'stars', 'phone', 'monetary'],
+  number: ['float', 'int', 'percent', 'stars', 'duration', 'phone', 'monetary'],
   boolean: ['switch', 'picture', 'signature', 'file'],
   date: ['simple', 'datetime'],
   relation: ['search', 'tags', 'list', 'carousel', 'summary'],

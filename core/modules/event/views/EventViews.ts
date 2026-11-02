@@ -61,9 +61,9 @@ const eventFormFields: ViewDescriptor['fields'] = [
   // own price overrides the unit price). Empty: bookings are free.
   { name: 'product_variant_id', label: 'Product (paid bookings)', type: 'relation', relation: { entity: 'product_variant', kind: 'many2one', labelField: 'name' } },
   { name: 'max_seats_per_booking', label: 'Max seats per booking', type: 'number', widget: 'int', default: 10 },
-  { name: 'slot_minutes', label: 'Slot length (minutes)', type: 'number', widget: 'int', default: 30, states: { visible: isAppointment } },
+  { name: 'slot_minutes', label: 'Slot length', type: 'number', widget: 'duration', default: 30, states: { visible: isAppointment } },
   { name: 'slot_capacity', label: 'Seats per slot', type: 'number', widget: 'int', default: 1, states: { visible: isAppointment } },
-  { name: 'buffer_minutes', label: 'Buffer between slots (minutes)', type: 'number', widget: 'int', states: { visible: isAppointment } },
+  { name: 'buffer_minutes', label: 'Buffer between slots', type: 'number', widget: 'duration', states: { visible: isAppointment } },
   { name: 'booking_horizon_days', label: 'Bookable up to (days ahead)', type: 'number', widget: 'int', default: 60, states: { visible: isAppointment } },
   { name: 'min_notice_hours', label: 'Minimum notice (hours)', type: 'number', widget: 'int', default: 2, states: { visible: isAppointment } },
   { name: 'description', label: 'Description', type: 'text', widget: 'long' },

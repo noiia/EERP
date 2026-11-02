@@ -35,14 +35,14 @@ msgstr "Fuseau horaire (IANA, ex. Europe/Paris)"
 msgid "Max seats per booking"
 msgstr "Places max par réservation"
 
-msgid "Slot length (minutes)"
-msgstr "Durée d'un créneau (minutes)"
+msgid "Slot length"
+msgstr "Durée d'un créneau"
 
 msgid "Seats per slot"
 msgstr "Places par créneau"
 
-msgid "Buffer between slots (minutes)"
-msgstr "Battement entre créneaux (minutes)"
+msgid "Buffer between slots"
+msgstr "Battement entre créneaux"
 
 msgid "Bookable up to (days ahead)"
 msgstr "Réservable jusqu'à (jours à l'avance)"

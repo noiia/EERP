@@ -34,13 +34,13 @@ msgstr ""
 msgid "Max seats per booking"
 msgstr ""
 
-msgid "Slot length (minutes)"
+msgid "Slot length"
 msgstr ""
 
 msgid "Seats per slot"
 msgstr ""
 
-msgid "Buffer between slots (minutes)"
+msgid "Buffer between slots"
 msgstr ""
 
 msgid "Bookable up to (days ahead)"
