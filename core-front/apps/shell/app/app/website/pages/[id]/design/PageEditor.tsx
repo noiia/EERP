@@ -10,7 +10,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import type { Theme } from '@mui/material/styles'
-import { createPictureClient, erpPath, IntentLink, useT, ViewBanner } from '@eerp/core-front'
+import { BannerScope, BannerSlot, createPictureClient, erpPath, IntentLink, useT, ViewBanner } from '@eerp/core-front'
 import type { PublishedTable } from '@/lib/website-settings'
 import { previewBlock } from '@/website/editor-actions'
 import { addBlock, applyGeometry, GRID, removeBlock, rowsPx, updateConfig } from '@/website/layout-ops'
@@ -139,7 +139,11 @@ export function PageEditor({ pageId, slug, title, layout: initial, background, p
     },
   })
 
+  // The editor's own banner scope: its notices (save result, the settings panel's
+  // warnings) show in the canvas column, between the screen's left edge and the
+  // fixed settings panel — the ERP page's slot spans the full width, under it.
   return (
+    <BannerScope>
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -150,7 +154,9 @@ export function PageEditor({ pageId, slug, title, layout: initial, background, p
             <Button href={`/${slug}`} target="_blank" rel="noopener">{t('View on site')}</Button>
             <Button component={IntentLink} href={erpPath(`/website/pages/${pageId}`)}>{t('Back')}</Button>
           </Stack>
-          {status && <ViewBanner status={status.ok ? 'info' : 'error'} sx={{ mx: 2 }} onClose={() => setStatus(null)}>{status.text}</ViewBanner>}
+          {/* One slot, one inset: every banner the editor raises has the same width. */}
+          <BannerSlot sx={{ mx: 2 }} />
+          {status && <ViewBanner status={status.ok ? 'info' : 'error'} onClose={() => setStatus(null)}>{status.text}</ViewBanner>}
           {/* Same width as the public site's Container, so blocks wrap as they will there. */}
           <Container maxWidth="lg" sx={{
             py: 2, flex: 1, minWidth: 0,
@@ -204,5 +210,6 @@ export function PageEditor({ pageId, slug, title, layout: initial, background, p
         </Drawer>
       )}
     </Box>
+    </BannerScope>
   )
 }

@@ -64,11 +64,13 @@ describe('PageEditor', () => {
     fireEvent.mouseDown(within(panel).getByLabelText(/table/i))
     fireEvent.click(screen.getByRole('option', { name: 'product' }))
     fireEvent.click(within(panel).getByRole('checkbox', { name: 'name' }))
-    expect(within(panel).queryByText(/not public yet/i)).toBeNull()
+    // The warning shows in the editor's banner slot (the canvas column), not in the panel.
+    const slot = () => document.querySelector('[data-banner-slot]') as HTMLElement
+    expect(within(slot()).queryByText(/not public yet/i)).toBeNull()
     fireEvent.click(within(panel).getByRole('checkbox', { name: 'reference' }))
-    expect(within(panel).getByText(/not public yet/i).textContent).toContain('reference')
-    fireEvent.click(within(panel).getByRole('button', { name: 'Publish' }))
-    await vi.waitFor(() => expect(within(panel).queryByText(/not public yet/i)).toBeNull())
+    expect(within(slot()).getByText(/not public yet/i).textContent).toContain('reference')
+    fireEvent.click(within(slot()).getByRole('button', { name: 'Publish' }))
+    await vi.waitFor(() => expect(within(slot()).queryByText(/not public yet/i)).toBeNull())
     expect(savePublished).toHaveBeenCalledWith('product', { fields: ['name', 'unit_price', 'reference'], filter: {} })
   })
 
