@@ -72,6 +72,10 @@ A `contact` target is special, because people already exist in the ERP:
 *Sign up* link instead of the form (`LoginGate`), both returning to `after_login_slug` or the same
 page through a same-site `?next=`.
 
+Only a form's `login_required` is enforced (Go answers 401 to an anonymous submit). A booking
+block's `login_required` is presentational: the booking API stays open to anonymous visitors, so
+restrict the event itself if bookings must be account-only.
+
 ```mermaid
 sequenceDiagram
     participant V as Visitor (browser)

@@ -960,6 +960,9 @@ msgstr ""
 msgid "Book a slot"
 msgstr ""
 
+msgid "1 seat left"
+msgstr ""
+
 msgid "seats left"
 msgstr ""
 

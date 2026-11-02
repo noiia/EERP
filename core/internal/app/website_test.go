@@ -1354,6 +1354,38 @@ func TestWebsiteForms(t *testing.T) {
 		}
 	})
 
+	t.Run("a stale website token cannot submit", func(t *testing.T) {
+		signup := func(tag string) (*client, string) {
+			email := prefix + "-" + tag + "@test.io"
+			code, body := anon.do(http.MethodPost, "/api/v1/website/auth/signup",
+				map[string]string{"email": email, "password": "correct horse", "name": "Stale"})
+			if code != http.StatusOK {
+				t.Fatalf("signup: %d %s", code, body)
+			}
+			return &client{t: t, h: c.h, token: decode(t, body)["access_token"].(string)}, email
+		}
+		values := map[string]any{"name": "Stale", "email": prefix + "-stale-target@test.io"}
+
+		disabled, email := signup("disabled")
+		if code, body := submit(disabled, pageID, "f1", values); code != http.StatusCreated {
+			t.Fatalf("live token: %d %s", code, body)
+		}
+		if _, err := db.Exec(ctx, `UPDATE users SET deleted_at = now() WHERE email = $1`, email); err != nil {
+			t.Fatal(err)
+		}
+		if code, body := submit(disabled, pageID, "f1", values); code != http.StatusUnauthorized {
+			t.Errorf("disabled visitor = %d, want 401: %s", code, body)
+		}
+
+		moved, email := signup("moved")
+		if _, err := db.Exec(ctx, `UPDATE users SET tenant_id = $2 WHERE email = $1`, email, uuid.New()); err != nil {
+			t.Fatal(err)
+		}
+		if code, body := submit(moved, pageID, "f1", values); code != http.StatusUnauthorized {
+			t.Errorf("other-tenant visitor = %d, want 401: %s", code, body)
+		}
+	})
+
 	t.Run("refusals", func(t *testing.T) {
 		ok := map[string]any{"name": "R", "email": prefix + "-r@test.io"}
 		tests := []struct {

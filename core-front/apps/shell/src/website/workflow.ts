@@ -25,9 +25,12 @@ const pageNode = (slug: string): NodeId => `page:${slug}`
 
 /** The node a stored href points at; null when it is none of a page, a system page or http(s)/mailto. */
 function hrefNode(href: string): NodeId | null {
-  if (href === '/') return pageNode('')
-  if (href in SYS_NODES) return SYS_NODES[href as keyof typeof SYS_NODES]
-  if (href.startsWith('/') && !href.startsWith('//')) return pageNode(href.slice(1))
+  if (href.startsWith('/') && !href.startsWith('//')) {
+    const path = href.split(/[?#]/)[0]
+    if (path === '/') return pageNode('')
+    if (path in SYS_NODES) return SYS_NODES[path as keyof typeof SYS_NODES]
+    return pageNode(path.slice(1).split('/')[0])
+  }
   try {
     const u = new URL(href)
     if (u.protocol === 'http:' || u.protocol === 'https:') return `ext:${u.host}`

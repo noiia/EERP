@@ -1169,6 +1169,9 @@ msgstr "Aucun événement à venir."
 msgid "Book a slot"
 msgstr "Réserver un créneau"
 
+msgid "1 seat left"
+msgstr "1 place restante"
+
 msgid "seats left"
 msgstr "places restantes"
 

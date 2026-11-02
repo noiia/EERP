@@ -61,7 +61,7 @@ export function EventList({ config, events: initial }: { config: EventListConfig
     if (ev.kind === 'appointment' || !ev.next_session_at) return `${t('Book a slot')}${away}`
     const date = formatChoice(ev.next_session_at, ev.timezone ?? 'Europe/Paris', locale)
     const seats = ev.seats_left ?? 0
-    return `${date} — ${seats > 0 ? `${seats} ${t('seats left')}` : t('Full')}${away}`
+    return `${date} — ${seats > 0 ? (seats === 1 ? t('1 seat left') : `${seats} ${t('seats left')}`) : t('Full')}${away}`
   }
 
   if (config.display === 'list') {

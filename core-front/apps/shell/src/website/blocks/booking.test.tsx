@@ -109,6 +109,12 @@ describe('BookingForm', () => {
     expect(screen.getByText(/3 seats left/)).toBeTruthy()
   })
 
+  it('one seat left is singular', () => {
+    render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" choices={[{ id: 's1', start, seatsLeft: 1 }]} />)
+    expect(screen.getByText(/1 seat left/)).toBeTruthy()
+    expect(screen.queryByText(/1 seats left/)).toBeNull()
+  })
+
   it('a slot label shows its seats left', () => {
     render(<BookingForm eventId="e1" kind="slot" timeZone="Europe/Paris" choices={[{ id: start, start, seatsLeft: 2 }]} />)
     expect(screen.getByText(/2 seats left/)).toBeTruthy()

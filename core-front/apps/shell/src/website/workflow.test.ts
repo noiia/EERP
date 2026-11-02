@@ -113,4 +113,14 @@ describe('buildWorkflow unsafe hrefs', () => {
     expect(w.edges).toEqual([])
     expect(w.problems).toEqual([])
   })
+
+  it('ignores query and hash and matches a page by its first segment', () => {
+    const w = buildWorkflow([
+      page('p1', '', [blk('b1', 'hero', { cta_href: '/login?next=/book' }), blk('b2', 'hero', { cta_href: '/events/abc#x' })]),
+      page('p2', 'events'),
+    ])
+    expect(w.edges.find((e) => e.id === 'p1:b1:cta_href')!.to).toBe('sys:login')
+    expect(w.edges.find((e) => e.id === 'p1:b2:cta_href')!.to).toBe('page:events')
+    expect(w.problems).toEqual([])
+  })
 })
