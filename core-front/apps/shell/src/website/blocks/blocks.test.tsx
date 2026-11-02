@@ -34,6 +34,11 @@ describe('blocks', () => {
     expect(btn.className).toMatch(/fullWidth/)
   })
 
+  it('hero: a Login button returns to the chosen page', async () => {
+    await renderBlock(block('hero', { cta_label: 'Join', cta_href: '/login', cta_next: 'book' }), source([]))
+    expect(screen.getByRole('link', { name: 'Join' }).getAttribute('href')).toBe('/login?next=%2Fbook')
+  })
+
   it('hero and image drop unsafe links', async () => {
     await renderBlock(block('hero', { title: 'W', cta_label: 'Go', cta_href: 'javascript:alert(1)' }), source([]))
     expect(screen.queryByRole('link', { name: 'Go' })).toBeNull()

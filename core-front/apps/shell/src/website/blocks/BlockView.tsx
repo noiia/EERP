@@ -32,11 +32,11 @@ export async function BlockView({ block, source, params }: { block: Block; sourc
     // Unset event: the one in the URL — a single generic event page serves every event.
     case 'event_booking': {
       const cfg = c as unknown as BookingConfig
-      return EventBookingBlock({ config: { event_id: cfg.event_id || params.id }, source })
+      return EventBookingBlock({ config: { ...cfg, event_id: cfg.event_id || params.id }, source, path: params.path })
     }
     case 'appointment_booking': {
       const cfg = c as unknown as BookingConfig
-      return AppointmentBookingBlock({ config: { event_id: cfg.event_id || params.id }, source })
+      return AppointmentBookingBlock({ config: { ...cfg, event_id: cfg.event_id || params.id }, source, path: params.path })
     }
     case 'event_list': return EventListBlock({ config: c as unknown as EventListConfig })
     case 'form': return FormBlock({ config: c as unknown as FormConfig, pageId: params.pageId ?? '', blockId: block.id, path: params.path ?? '/' })

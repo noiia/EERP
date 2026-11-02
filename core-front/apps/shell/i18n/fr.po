@@ -2054,3 +2054,18 @@ msgstr "Se connecter pour continuer"
 
 msgid "Street number"
 msgstr "Numéro"
+
+msgid "Login"
+msgstr "Connexion"
+
+msgid "Site page"
+msgstr "Page du site"
+
+msgid "External link"
+msgstr "Lien externe"
+
+msgid "URL"
+msgstr "URL"
+
+msgid "Not a valid link (https://, mailto: or a /path)."
+msgstr "Lien invalide (https://, mailto: ou un /chemin)."

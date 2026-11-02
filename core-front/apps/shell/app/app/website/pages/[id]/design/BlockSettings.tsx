@@ -7,6 +7,7 @@ import FormGroup from '@mui/material/FormGroup'
 import IconButton from '@mui/material/IconButton'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT, ViewBanner } from '@eerp/core-front'
@@ -15,6 +16,7 @@ import { listEditorEvents, listEditorPages } from '@/website/editor-actions'
 import type { Block, FormConfig } from '@/website/types'
 import { BLOCK_LABELS } from './BlockPalette'
 import { FormSettings } from './FormSettings'
+import { LinkPicker } from './LinkPicker'
 import { RecordPicker } from './RecordPicker'
 
 type Config = Record<string, unknown>
@@ -45,7 +47,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   useEffect(() => {
     if (bookingKind) void listEditorEvents(bookingKind).then(setEvents)
   }, [bookingKind])
-  const links = block.type === 'record_list' || block.type === 'record_carousel' || block.type === 'image_carousel' || block.type === 'event_list'
+  const links = bookingKind !== null || block.type === 'record_list' || block.type === 'record_carousel' || block.type === 'image_carousel' || block.type === 'event_list'
   const [pages, setPages] = useState<{ slug: string; title: string; published: boolean }[]>([])
   useEffect(() => {
     if (links) void listEditorPages().then(setPages)
@@ -60,6 +62,10 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
       {opts.none && <MenuItem value="">{t('None')}</MenuItem>}
       {options.map((o) => <MenuItem key={o} value={o}>{opts.labels ? t(opts.labels[o]) : o}</MenuItem>)}
     </TextField>
+  )
+  // A link destination (page / Login / Sign up / My account / URL) stored as `<key>` + `<key>_next`.
+  const link = (k: string, label: string, nextKey: string) => (
+    <LinkPicker key={k} id={id(k)} label={label} href={str(k)} next={str(nextKey)} onChange={(href, next) => set({ [k]: href, [nextKey]: next })} />
   )
   // Where a card click goes: /<slug>/<id>, a page whose record_detail block (record
   // left empty) shows that id. A slug matching no page (typed before this picker) is
@@ -103,7 +109,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
       value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />,
   ] : []
   // Hero content: the hero's own form, and what an image or a section lays over itself.
-  const heroFields = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), text('cta_href', 'Button link'),
+  const heroFields = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), link('cta_href', 'Button link', 'cta_next'),
     select('align', 'Horizontal alignment', ['left', 'center', 'right'], { labels: { left: 'Left', center: 'Center', right: 'Right' } }),
     select('valign', 'Vertical alignment', ['top', 'center', 'bottom'], { labels: { top: 'Top', center: 'Center', bottom: 'Bottom' } }),
     select('button_size', 'Button size', ['small', 'medium', 'large'], { labels: { small: 'Small', medium: 'Medium', large: 'Large' } }),
@@ -208,7 +214,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
     case 'image':
       form = [tableSelect, ...pictureSource, text('alt', 'Alternative text'),
         select('fit', 'Picture fit', ['cover', 'contain'], { labels: { cover: 'Fill the block (crop)', contain: 'Whole picture' } }),
-        text('href', 'Link (without a button)'),
+        link('href', 'Link (without a button)', 'href_next'),
         ...overlayTitle('Optional: shown over the picture.'), ...heroFields]
       break
     case 'form':
@@ -279,6 +285,15 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         <Typography key="hint" variant="body2" color="text.secondary">
           {t('The block shows once the event is published.')}
         </Typography>,
+        <FormControlLabel key="login_required" label={t('Login required')}
+          control={<Switch size="small" checked={c.login_required === true} onChange={(e) => set({ login_required: e.target.checked })} />} />,
+        c.login_required === true && <TextField key="after_login_slug" id={id('after_login_slug')} select size="small" label={t('After login, go to')}
+          value={str('after_login_slug')} onChange={(e) => set({ after_login_slug: e.target.value })}>
+          <MenuItem value="">{t('This page')}</MenuItem>
+          {pages.map((p) => <MenuItem key={p.slug} value={p.slug}>{p.title} (/{p.slug}){p.published ? '' : ` — ${t('not published')}`}</MenuItem>)}
+          {str('after_login_slug') && !pages.some((p) => p.slug === str('after_login_slug')) &&
+            <MenuItem value={str('after_login_slug')}>{str('after_login_slug')} — {t('page not found')}</MenuItem>}
+        </TextField>,
         !str('event_id') && <Typography key="url-hint" variant="body2" color="text.secondary">
           {t('Left on the event in the URL, this page can serve every event: pick it as the Event page of an Event list block.')}
         </Typography>,

@@ -1,14 +1,14 @@
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
-import { safeHref } from '../urls'
+import { linkHref } from '../links'
 import type { HeroConfig } from '../types'
 
 const FLEX = { left: 'flex-start', top: 'flex-start', center: 'center', right: 'flex-end', bottom: 'flex-end' } as const
 const PADDING = { none: 0, compact: 2, normal: 4, spacious: 8 } as const
 
 /** Whether a config carries any hero content to lay over a picture or a section. */
-export const hasHeroContent = (c: HeroConfig) => !!(c.title || c.subtitle || (c.cta_label && safeHref(c.cta_href)))
+export const hasHeroContent = (c: HeroConfig) => !!(c.title || c.subtitle || (c.cta_label && linkHref(c.cta_href, c.cta_next)))
 
 /** Readable text color on `hex` (#rgb / #rrggbb); undefined for anything else. */
 export function contrastText(hex: string | undefined): string | undefined {
@@ -24,7 +24,7 @@ export function contrastText(hex: string | undefined): string | undefined {
 // button's space, not a title's. `color` set (over a picture or a colored section):
 // text inherits it instead of the theme's.
 export function HeroContent({ config, color }: { config: HeroConfig; color?: string }) {
-  const href = safeHref(config.cta_href)
+  const href = linkHref(config.cta_href, config.cta_next)
   const align = config.align ?? 'center'
   const full = config.button_width === 'full'
   return (

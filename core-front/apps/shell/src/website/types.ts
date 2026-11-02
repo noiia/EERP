@@ -16,6 +16,8 @@ export interface TextConfig { heading?: string; body: string; align?: 'left' | '
 /** Title, subtitle and button laid over a block (hero, image, section): only the set parts render. */
 export interface HeroConfig {
   title?: string; subtitle?: string; cta_label?: string; cta_href?: string
+  /** Bare slug of the page Login/Sign up return to when `cta_href` is one of them ('' = /account). */
+  cta_next?: string
   /** Horizontal / vertical placement of the content inside the block (default center / center). */
   align?: 'left' | 'center' | 'right'; valign?: 'top' | 'center' | 'bottom'
   /** Button size (default large) and width: its text width, or the block's full width. */
@@ -27,6 +29,8 @@ export interface HeroConfig {
  * the block; optional hero content laid over it on a dark scrim. */
 export interface ImageConfig extends HeroConfig {
   table: string; record: string; field: string; alt: string; href?: string
+  /** Same as `cta_next`, for `href`. */
+  href_next?: string
   /** cover (default) crops to fill the block; contain shows the whole picture. */
   fit?: 'cover' | 'contain'
 }
@@ -46,7 +50,13 @@ export interface RecordListConfig {
 }
 /** event_booking / appointment_booking: the event to book; unset = the id from the URL
  * (/<slug>/<id>, what an event_list's `detail_slug` links to). */
-export interface BookingConfig { event_id?: string }
+export interface BookingConfig {
+  event_id?: string
+  /** Anonymous visitors get a log-in / sign-up gate instead of the booking UI. */
+  login_required?: boolean
+  /** Where the gate returns; empty = this page (with the event id from the URL). */
+  after_login_slug?: string
+}
 /** event_list: upcoming published events (Go's /public/events/upcoming), as cards or a
  * list, each linking to `/<detail_slug>/<id>` when set. `limit` caps it (1–50, default 12).
  * `nearest`: ask the visitor's position and list nearest first; refused → soonest first. */

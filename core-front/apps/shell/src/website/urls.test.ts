@@ -12,6 +12,8 @@ it('pictureUrl encodes each segment', () => {
 
 it('safeNext keeps same-site paths outside the ERP, else the fallback', () => {
   for (const ok of ['/book', '/a/b?x=1', '/']) expect(safeNext(ok)).toBe(ok)
-  for (const bad of ['//evil.com', '/app', '/app/crm', '/./app', '/a/../app', 'https://x.io', '/\\evil.com', undefined]) expect(safeNext(bad)).toBe('/account')
+  for (const bad of ['//evil.com', '/app', '/app/crm', '/./app', '/a/../app', 'https://x.io', '/\\evil.com', undefined,
+    '/%2e%2e/app', '/x/%2E%2E/app', '/%2e/app', '/%2e%2E/app', '/%2fapp', '/%61pp/x']) expect(safeNext(bad)).toBe('/account')
   expect(safeNext('//evil.com', '/')).toBe('/')
+  expect(safeNext('/a%20b?x=1')).toBe('/a%20b?x=1')
 })

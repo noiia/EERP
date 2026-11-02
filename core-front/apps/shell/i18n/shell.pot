@@ -1899,3 +1899,18 @@ msgstr ""
 
 msgid "Street number"
 msgstr ""
+
+msgid "Login"
+msgstr ""
+
+msgid "Site page"
+msgstr ""
+
+msgid "External link"
+msgstr ""
+
+msgid "URL"
+msgstr ""
+
+msgid "Not a valid link (https://, mailto: or a /path)."
+msgstr ""

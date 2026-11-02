@@ -1,7 +1,9 @@
+import type { ReactElement } from 'react'
 import Typography from '@mui/material/Typography'
 import { getSiteIdentity } from '@/lib/site-session'
 import { getWebsiteMe } from '../account'
-import type { PublicDataSource } from '../types'
+import type { BookingConfig, PublicDataSource } from '../types'
+import { LoginGate } from './LoginGate'
 
 /** A published event's public fields (Go seeds this selection). */
 export interface PublicEvent { id: string; name?: string; description?: string | null; location?: string | null; kind?: string; timezone?: string }
@@ -18,6 +20,13 @@ export async function bookingDefaults(): Promise<{ name?: string; email?: string
   if (!(await getSiteIdentity())) return undefined
   const me = await getWebsiteMe().catch(() => null)
   return me ? { name: me.name, email: me.email } : undefined
+}
+
+/** The login gate of a login-required booking block while the visitor is anonymous, else
+ * null. It returns to `after_login_slug`, else the page's own path (`/<slug>[/<id>]`). */
+export async function bookingGate(config: BookingConfig, path: string | undefined): Promise<ReactElement | null> {
+  if (!config.login_required || (await getSiteIdentity())) return null
+  return <LoginGate next={config.after_login_slug ? `/${config.after_login_slug}` : path || '/'} />
 }
 
 export function EventHeader({ event }: { event: PublicEvent }) {

@@ -3,14 +3,16 @@ import { T } from '@eerp/core-front'
 import { getJSON } from '../public-api'
 import type { BookingConfig, PublicDataSource } from '../types'
 import { BookingForm } from './BookingForm'
-import { bookingDefaults, EventHeader, publicEvent } from './EventHeader'
+import { bookingDefaults, bookingGate, EventHeader, publicEvent } from './EventHeader'
 
 interface PublicSession { id: string; starts_at: string; seats_left: number; price?: number | null }
 
 /** Booking on a sessions event: its future sessions, each with seats left. */
-export async function EventBookingBlock({ config, source }: { config: BookingConfig; source: PublicDataSource }) {
+export async function EventBookingBlock({ config, source, path }: { config: BookingConfig; source: PublicDataSource; path?: string }) {
   const event = await publicEvent(source, config.event_id, 'sessions')
   if (!event) return null
+  const gate = await bookingGate(config, path)
+  if (gate) return <div><EventHeader event={event} />{gate}</div>
   const [sessions, defaults] = await Promise.all([
     getJSON<{ data: PublicSession[]; currency?: string }>(`/event/${encodeURIComponent(event.id)}/sessions`, ['event']),
     bookingDefaults(),

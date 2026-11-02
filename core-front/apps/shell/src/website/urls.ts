@@ -17,14 +17,26 @@ export function safeHref(url: string | undefined): string | undefined {
 
 /** A `?next=` destination: same-site relative paths only (safeHref refuses control chars,
  * whitespace and backslashes the URL parser would strip into "//evil.example"), never
- * into the ERP ("/./app" and "/../app" normalise into it, so dot segments are refused
- * too); anything else is `fallback`. */
+ * into the ERP. The path is normalised first, so "/./app", "/../app" and their
+ * percent-encoded forms ("/%2e%2e/app") are judged by where they land; any dot segment,
+ * raw or encoded, is refused outright. Anything else is `fallback`. The original string
+ * is returned, not the normalised one. */
 export function safeNext(n: string | undefined, fallback = '/account'): string {
-  return n &&
-    n.startsWith('/') &&
-    safeHref(n) &&
-    n.split(/[/?#]/)[1] !== 'app' &&
-    !n.split(/[?#]/)[0].split('/').some((s) => s === '.' || s === '..')
-    ? n
-    : fallback
+  if (!n || !n.startsWith('/') || !safeHref(n)) return fallback
+  const raw = n.split(/[?#]/)[0].split('/')
+  if (raw.some((s) => /^(\.|%2e){1,2}$/i.test(s)) || /%(2f|5c)/i.test(n.split(/[?#]/)[0])) return fallback
+  let url: URL
+  try {
+    url = new URL(n, 'http://x')
+  } catch {
+    return fallback
+  }
+  let first: string
+  try {
+    first = decodeURIComponent(url.pathname.split('/')[1] ?? '')
+  } catch {
+    return fallback
+  }
+  if (url.origin !== 'http://x' || first.toLowerCase() === 'app' || url.pathname.includes('//')) return fallback
+  return n
 }

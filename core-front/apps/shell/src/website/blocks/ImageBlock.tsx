@@ -1,6 +1,7 @@
 import Box from '@mui/material/Box'
 import { recordsWithPicture } from '../pictures'
-import { pictureUrl, safeHref } from '../urls'
+import { linkHref } from '../links'
+import { pictureUrl } from '../urls'
 import type { ImageConfig, PublicDataSource } from '../types'
 import { HeroContent, hasHeroContent } from './HeroBlock'
 
@@ -12,7 +13,7 @@ export async function ImageBlock({ config, source }: { config: ImageConfig; sour
   const rec = (await recordsWithPicture(source, { table: config.table, field: config.field, records: config.record ? [config.record] : undefined, limit: 1 }))[0]
   if (!rec) return null
   const overlay = hasHeroContent(config)
-  const href = overlay ? undefined : safeHref(config.href)
+  const href = overlay ? undefined : linkHref(config.href, config.href_next)
   const img = (
     <Box component="img" src={pictureUrl(config.table, String(rec.id), config.field)} alt={config.alt ?? ''} loading="lazy"
       sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: config.fit ?? 'cover', transition: 'transform .4s ease' }} />
