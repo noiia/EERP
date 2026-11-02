@@ -8,6 +8,14 @@ import type { ViewModeDefaults } from '../api/view-fields'
 
 export type ViewType = 'form' | 'tree' | 'dashboard' | 'catalog'
 
+/** A dashboard tile linking to a page instead of counting a list. */
+export interface DashboardLink {
+  title: string
+  description?: string
+  icon?: string
+  path: string
+}
+
 export type FieldType =
   | 'text'
   | 'number'
@@ -1298,6 +1306,13 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * every qualifying route.
    */
   hideFromTopBar?: boolean
+  /**
+   * For `viewType: 'dashboard'` only: extra tiles after the count tiles, each
+   * opening a hand-built page of the module (e.g. the Website app's workflow
+   * map). `title`/`description` are msgids; `icon` is a `byPrefixAndName.fas`
+   * name (it must be in `views/icons.ts`); `path` is module-relative.
+   */
+  dashboardLinks?: DashboardLink[]
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

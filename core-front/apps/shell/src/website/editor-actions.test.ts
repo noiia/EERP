@@ -14,7 +14,7 @@ vi.mock('./public-api', () => ({ serverPublicSource: { list: listMock, get: vi.f
 const blockViewMock = vi.hoisted(() => vi.fn())
 vi.mock('./blocks/BlockView', () => ({ BlockView: blockViewMock }))
 
-import { listEditorEvents, listEditorPages, listFormTargets, listEditorRecords, previewBlock, saveLayout } from './editor-actions'
+import { getPageLayout, listEditorEvents, listEditorPages, listFormTargets, listEditorRecords, previewBlock, saveLayout } from './editor-actions'
 import type { Block } from './types'
 
 const block = (type: Block['type'], config: Record<string, unknown> = {}): Block => ({ id: 'b', type, x: 0, y: 0, w: 1, h: 1, config })
@@ -106,5 +106,20 @@ describe('editor lists', () => {
     expect(apiRequestMock.mock.calls[1][1]).toBe('/product?page_size=20&in%5Bid%5D=a%2Cb')
     apiRequestMock.mockRejectedValueOnce(new Error('x'))
     expect(await listEditorRecords('product', 'name', {})).toEqual([])
+  })
+})
+
+describe('getPageLayout', () => {
+  it("reads the page's current layout through the uncached staff API", async () => {
+    apiRequestMock.mockResolvedValue({ id: 'p1', layout: [block('text')] })
+    expect(await getPageLayout('p1')).toEqual([block('text')])
+    expect(apiRequestMock).toHaveBeenCalledWith('GET', '/website_page/p1')
+  })
+
+  it('reads a null layout as empty and a failure as null', async () => {
+    apiRequestMock.mockResolvedValue({ id: 'p1', layout: null })
+    expect(await getPageLayout('p1')).toEqual([])
+    apiRequestMock.mockRejectedValue(new ApiError({ code: 'NOT_FOUND', message: 'gone', status: 404 }))
+    expect(await getPageLayout('p1')).toBeNull()
   })
 })

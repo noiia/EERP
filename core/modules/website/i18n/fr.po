@@ -34,3 +34,9 @@ msgstr "Image d'arrière-plan"
 
 msgid "Parallax background"
 msgstr "Arrière-plan en parallaxe"
+
+msgid "Workflows"
+msgstr "Parcours"
+
+msgid "Pages and the buttons between them"
+msgstr "Les pages et les boutons qui les relient"

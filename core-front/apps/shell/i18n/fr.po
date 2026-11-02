@@ -2069,3 +2069,39 @@ msgstr "URL"
 
 msgid "Not a valid link (https://, mailto: or a /path)."
 msgstr "Lien invalide (https://, mailto: ou un /chemin)."
+
+msgid "Section"
+msgstr "Section"
+
+msgid "Button"
+msgstr "Bouton"
+
+msgid "after login"
+msgstr "après connexion"
+
+msgid "Link to a page that doesn't exist"
+msgstr "Lien vers une page qui n'existe pas"
+
+msgid "A published page links to an unpublished page"
+msgstr "Une page publiée renvoie vers une page non publiée"
+
+msgid "Unpublished page in the menu"
+msgstr "Page non publiée dans le menu"
+
+msgid "Detail page has no detail or booking block"
+msgstr "La page de détail n'a ni bloc de détail ni bloc de réservation"
+
+msgid "The page could not be loaded."
+msgstr "La page n'a pas pu être chargée."
+
+msgid "Problems"
+msgstr "Problèmes"
+
+msgid "No problems found."
+msgstr "Aucun problème trouvé."
+
+msgid "Unpublished"
+msgstr "Non publiée"
+
+msgid "Click a page to open it in the builder. Drag the end of an arrow onto another page to change where that button leads."
+msgstr "Cliquez sur une page pour l'ouvrir dans l'éditeur. Faites glisser l'extrémité d'une flèche sur une autre page pour changer la destination de ce bouton."

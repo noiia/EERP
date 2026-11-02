@@ -44,6 +44,18 @@ export async function saveLayout(id: string, layout: Block[]): Promise<string | 
   }
 }
 
+/** The page's layout as stored right now (staff read, never cached), or null when it
+ * can't be read. The workflow map re-reads it just before re-targeting a link, so a
+ * save never overwrites blocks added since the map was loaded. */
+export async function getPageLayout(id: string): Promise<Block[] | null> {
+  try {
+    const page = await apiRequest<{ layout: Block[] | null }>('GET', `/website_page/${encodeURIComponent(id)}`)
+    return page.layout ?? []
+  } catch {
+    return null
+  }
+}
+
 /** Events a booking block can point at (staff view: published or not — the
  * block renders nothing until the event is published). */
 export async function listEditorEvents(kind: 'sessions' | 'appointment'): Promise<{ id: string; name: string }[]> {

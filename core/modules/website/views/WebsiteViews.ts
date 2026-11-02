@@ -1,6 +1,7 @@
 import {
   erpPath,
   registerHeaderButtonAction,
+  registerHeaderMenu,
   type FrontModule,
   type HeaderButtonDescriptor,
   type ViewDescriptor,
@@ -59,7 +60,22 @@ const headerButtons: HeaderButtonDescriptor[] = [
 
 const permissions = ['website_page:website_page:read']
 
-const dashboardView: ViewDescriptor = { entity: 'website_page', viewType: 'dashboard', fields: listFields, permissions }
+// The workflow map is a hand-built page (no route here): its own top-bar menu line.
+registerHeaderMenu('website', 'workflows', {
+  label: 'Workflows',
+  entries: [{ kind: 'line', label: 'Workflows', path: '/website/workflows', permission: 'website_page:website_page:read' }],
+})
+
+const dashboardView: ViewDescriptor = {
+  entity: 'website_page',
+  viewType: 'dashboard',
+  fields: listFields,
+  permissions,
+  // The workflow map (hand-built page, app/app/website/workflows): pages and the buttons between them.
+  dashboardLinks: [
+    { title: 'Workflows', description: 'Pages and the buttons between them', icon: 'diagram-project', path: '/website/workflows' },
+  ],
+}
 
 const listView: ViewDescriptor = {
   entity: 'website_page',

@@ -34,3 +34,9 @@ msgstr ""
 
 msgid "Parallax background"
 msgstr ""
+
+msgid "Workflows"
+msgstr ""
+
+msgid "Pages and the buttons between them"
+msgstr ""

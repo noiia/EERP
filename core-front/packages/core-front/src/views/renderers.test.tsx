@@ -1559,6 +1559,31 @@ describe('EntityView', () => {
     expect(prefetchMock).toHaveBeenCalledWith('/app/crm/list')
   })
 
+  it('renders the descriptor dashboardLinks as tiles after the counts', () => {
+    const dashDescriptor: ViewDescriptor<Contact> = {
+      ...formDescriptor,
+      viewType: 'dashboard',
+      dashboardLinks: [
+        { title: 'Workflows', description: 'Pages and the buttons between them', icon: 'diagram-project', path: '/website/workflows' },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={dashDescriptor}
+        initialData={[]}
+        actions={noopActions}
+        widgets={[{ id: 'w1', title: 'Pages', href: '/website/pages', count: 3 }]}
+      />,
+    )
+    const links = screen.getAllByRole('link')
+    expect(links.map((l) => l.getAttribute('href'))).toEqual(['/app/website/pages', '/app/website/workflows'])
+    expect(links[1]).toHaveTextContent('Workflows')
+    expect(links[1]).toHaveTextContent('Pages and the buttons between them')
+    expect(links[1].querySelector('svg')).not.toBeNull()
+    fireEvent.mouseEnter(links[1])
+    expect(prefetchMock).toHaveBeenCalledWith('/app/website/workflows')
+  })
+
   it('shows a dash for a dashboard block whose count failed to load', () => {
     const dashDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'dashboard' }
     render(

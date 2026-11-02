@@ -1426,6 +1426,29 @@ function DashboardRenderer<T extends HasId>({
           </Grid>
         )
       })}
+      {/* Module pages the dashboard links to (descriptor.dashboardLinks), after the counts. */}
+      {(descriptor.dashboardLinks ?? []).map((link) => {
+        const icon = link.icon ? byPrefixAndName.fas[link.icon] : undefined
+        return (
+          <Grid key={`link:${link.path}`} size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card variant="outlined" sx={{ height: '100%' }}>
+              <CardActionArea component={IntentLink} href={erpPath(link.path)} sx={{ height: '100%' }}>
+                <CardContent sx={{ p: 2 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                    {icon && <FontAwesomeIcon icon={icon} />}
+                    <Typography sx={{ fontWeight: 700 }}>{t(link.title)}</Typography>
+                  </Stack>
+                  {link.description && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      {t(link.description)}
+                    </Typography>
+                  )}
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </Grid>
+        )
+      })}
     </Grid>
     </BannerScope>
   )

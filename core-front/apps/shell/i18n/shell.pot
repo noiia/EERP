@@ -1914,3 +1914,39 @@ msgstr ""
 
 msgid "Not a valid link (https://, mailto: or a /path)."
 msgstr ""
+
+msgid "Section"
+msgstr ""
+
+msgid "Button"
+msgstr ""
+
+msgid "after login"
+msgstr ""
+
+msgid "Link to a page that doesn't exist"
+msgstr ""
+
+msgid "A published page links to an unpublished page"
+msgstr ""
+
+msgid "Unpublished page in the menu"
+msgstr ""
+
+msgid "Detail page has no detail or booking block"
+msgstr ""
+
+msgid "The page could not be loaded."
+msgstr ""
+
+msgid "Problems"
+msgstr ""
+
+msgid "No problems found."
+msgstr ""
+
+msgid "Unpublished"
+msgstr ""
+
+msgid "Click a page to open it in the builder. Drag the end of an arrow onto another page to change where that button leads."
+msgstr ""
