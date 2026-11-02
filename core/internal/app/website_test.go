@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1137,4 +1138,274 @@ func TestPublicUpcomingEvents(t *testing.T) {
 	if code, _ := anon.do(http.MethodGet, "/api/v1/public/events/upcoming", nil); code != http.StatusNotFound {
 		t.Errorf("event table unpublished = %d, want 404", code)
 	}
+}
+
+// formPage creates a published website page holding one form block "f1" (and
+// a text block "t1") and returns its id. The form writes a contact, then a
+// CRM lead linked to it (status fixed to "lead").
+func formPage(t *testing.T, c *client, slug string, published, loginRequired bool) string {
+	t.Helper()
+	form := map[string]any{
+		"targets": []map[string]any{
+			{"table": "contact"},
+			{"table": "crm", "links": map[string]int{"contact_id": 0}, "fixed": map[string]string{"status": "lead"}},
+		},
+		"fields": []map[string]any{
+			{"id": "name", "label": "Name", "type": "text", "column": "name", "required": true, "target": 0},
+			{"id": "email", "label": "Email", "type": "email", "column": "email", "required": true, "target": 0},
+			{"id": "phone", "label": "Phone", "type": "phone", "column": "phone", "target": 0},
+			{"id": "addr", "label": "Address", "type": "address", "column": "address", "target": 0},
+			{"id": "topic", "label": "Topic", "type": "select", "column": "name", "options": []string{"Sales", "Support"}, "target": 1},
+			{"id": "msg", "label": "Message", "type": "long", "column": "notes", "target": 1},
+		},
+		"login_required": loginRequired,
+		"after":          map[string]any{"kind": "message", "message": "Thanks"},
+	}
+	layout := []map[string]any{
+		{"id": "t1", "type": "text", "x": 0, "y": 0, "w": 12, "h": 2, "config": map[string]any{"body": "Hi"}},
+		{"id": "f1", "type": "form", "x": 0, "y": 2, "w": 12, "h": 6, "config": form},
+	}
+	code, body := c.do(http.MethodPost, "/api/v1/website_page",
+		map[string]any{"slug": slug, "title": "Contact us", "published": published, "layout": layout})
+	if code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("create form page: %d %s", code, body)
+	}
+	return decode(t, body)["id"].(string)
+}
+
+func TestWebsiteForms(t *testing.T) {
+	c := buildSiteApp(t)
+	anon := &client{t: t, h: c.h}
+	ctx := context.Background()
+	db := c.a.db.DB
+	prefix := "form-" + uuid.NewString()[:8]
+	t.Cleanup(func() {
+		for _, q := range []string{
+			`DELETE FROM chatter_message WHERE record_id IN (SELECT id FROM contact WHERE email LIKE $1)`,
+			`DELETE FROM crm WHERE contact_id IN (SELECT id FROM contact WHERE email LIKE $1)`,
+			`DELETE FROM mail_outbox WHERE to_address LIKE $1`,
+			`DELETE FROM contact WHERE email LIKE $1`,
+			`DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email LIKE $1)`,
+			`DELETE FROM users WHERE email LIKE $1`,
+			`DELETE FROM website_page WHERE slug LIKE $1`,
+		} {
+			_, _ = db.Exec(ctx, q, prefix+"%")
+		}
+	})
+	pageID := formPage(t, c, prefix+"-open", true, false)
+	loginPageID := formPage(t, c, prefix+"-login", true, true)
+	draftPageID := formPage(t, c, prefix+"-draft", false, false)
+	submit := func(cl *client, page, block string, values map[string]any) (int, []byte) {
+		return cl.do(http.MethodPost, "/api/v1/website/forms/"+page+"/"+block, map[string]any{"values": values})
+	}
+	contactsByEmail := func(email string) []string {
+		rows, err := db.Query(ctx, `SELECT id FROM contact WHERE lower(email) = lower($1) AND deleted_at IS NULL`, email)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var ids []string
+		for rows.Next() {
+			var id uuid.UUID
+			_ = rows.Scan(&id)
+			ids = append(ids, id.String())
+		}
+		return ids
+	}
+
+	t.Run("form_targets lists the registry for staff only", func(t *testing.T) {
+		code, body := c.do(http.MethodGet, "/api/v1/settings/website/form_targets", nil)
+		if code != http.StatusOK {
+			t.Fatalf("form_targets: %d %s", code, body)
+		}
+		var got struct {
+			Data []struct {
+				Table   string   `json:"table"`
+				Columns []string `json:"columns"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(body, &got)
+		tables := map[string][]string{}
+		for _, d := range got.Data {
+			tables[d.Table] = d.Columns
+		}
+		if !strings.Contains(strings.Join(tables["contact"], ","), "email") || !strings.Contains(strings.Join(tables["crm"], ","), "contact_id") {
+			t.Errorf("form_targets = %s", body)
+		}
+		if code, _ := anon.do(http.MethodGet, "/api/v1/settings/website/form_targets", nil); code != http.StatusUnauthorized {
+			t.Errorf("anonymous form_targets = %d, want 401", code)
+		}
+	})
+
+	t.Run("anonymous new email creates the contact and a linked lead", func(t *testing.T) {
+		email := prefix + "-new@test.io"
+		code, body := submit(anon, pageID, "f1", map[string]any{
+			"name": "Nora", "email": email, "phone": "0601", "topic": "Sales", "msg": "Call me",
+			"addr":  map[string]any{"number": 12, "street": "Main St", "zip_code": "75001", "city": "Paris", "country": "FR"},
+			"bogus": "ignored", "tenant_id": uuid.NewString(),
+		})
+		if code != http.StatusCreated {
+			t.Fatalf("submit: %d %s", code, body)
+		}
+		ids := contactsByEmail(email)
+		if len(ids) != 1 {
+			t.Fatalf("contacts = %v, want 1", ids)
+		}
+		var name, phone, city string
+		var number int
+		if err := db.QueryRow(ctx, `SELECT name, phone, address_city, address_number FROM contact WHERE id = $1 AND tenant_id = $2`,
+			ids[0], auth.DevTenantID).Scan(&name, &phone, &city, &number); err != nil {
+			t.Fatal(err)
+		}
+		if name != "Nora" || phone != "0601" || city != "Paris" || number != 12 {
+			t.Errorf("contact = %q %q %q %d", name, phone, city, number)
+		}
+		var leadName, notes, status string
+		if err := db.QueryRow(ctx, `SELECT name, notes, status FROM crm WHERE contact_id = $1 AND tenant_id = $2`,
+			ids[0], auth.DevTenantID).Scan(&leadName, &notes, &status); err != nil {
+			t.Fatalf("lead: %v", err)
+		}
+		if leadName != "Sales" || notes != "Call me" || status != "lead" {
+			t.Errorf("lead = %q %q %q", leadName, notes, status)
+		}
+	})
+
+	t.Run("anonymous existing email leaves the contact untouched and logs on it", func(t *testing.T) {
+		email := prefix + "-old@test.io"
+		code, body := c.do(http.MethodPost, "/api/v1/contact", map[string]any{"name": "Olga", "email": email, "phone": "111", "company": "", "status": "customer"})
+		if code != http.StatusCreated && code != http.StatusOK {
+			t.Fatalf("seed contact: %d %s", code, body)
+		}
+		existing := decode(t, body)["id"].(string)
+		if code, body := submit(anon, pageID, "f1", map[string]any{"name": "Mallory", "email": email, "phone": "999", "topic": "Support"}); code != http.StatusCreated {
+			t.Fatalf("submit: %d %s", code, body)
+		}
+		if ids := contactsByEmail(email); len(ids) != 1 || ids[0] != existing {
+			t.Fatalf("contacts = %v, want only %s", ids, existing)
+		}
+		var name, phone string
+		_ = db.QueryRow(ctx, `SELECT name, phone FROM contact WHERE id = $1`, existing).Scan(&name, &phone)
+		if name != "Olga" || phone != "111" {
+			t.Errorf("existing contact overwritten: %q %q", name, phone)
+		}
+		var logBody, author, kind string
+		if err := db.QueryRow(ctx, `SELECT body, author_email, kind FROM chatter_message WHERE table_name = 'contact' AND record_id = $1`,
+			existing).Scan(&logBody, &author, &kind); err != nil {
+			t.Fatalf("chatter log: %v", err)
+		}
+		if kind != "log" || author != email || !strings.Contains(logBody, `Website form "Contact us"`) || !strings.Contains(logBody, "Phone: 999") {
+			t.Errorf("chatter = %q %q %q", kind, author, logBody)
+		}
+		var leads int
+		_ = db.QueryRow(ctx, `SELECT count(*) FROM crm WHERE contact_id = $1`, existing).Scan(&leads)
+		if leads != 1 {
+			t.Errorf("leads linked to the existing contact = %d, want 1", leads)
+		}
+	})
+
+	t.Run("signed-in visitor updates their own website contact, never users", func(t *testing.T) {
+		email := prefix + "-acct@test.io"
+		code, body := anon.do(http.MethodPost, "/api/v1/website/auth/signup",
+			map[string]string{"email": email, "password": "correct horse", "name": "Ada", "phone": "0100"})
+		if code != http.StatusOK {
+			t.Fatalf("signup: %d %s", code, body)
+		}
+		site := &client{t: t, h: c.h, token: decode(t, body)["access_token"].(string)}
+		var userPhone string
+		var userUpdated time.Time
+		_ = db.QueryRow(ctx, `SELECT phone, updated_at FROM users WHERE email = $1`, email).Scan(&userPhone, &userUpdated)
+
+		// GET /me/contact: the visitor's website contact; an ERP token is refused.
+		code, body = site.do(http.MethodGet, "/api/v1/website/me/contact", nil)
+		if code != http.StatusOK || decode(t, body)["email"] != email || decode(t, body)["name"] != "Ada" {
+			t.Fatalf("me/contact: %d %s", code, body)
+		}
+		if code, _ := c.do(http.MethodGet, "/api/v1/website/me/contact", nil); code != http.StatusForbidden {
+			t.Errorf("erp token on /me/contact = %d, want 403", code)
+		}
+
+		// A different typed email must not move the contact off the account.
+		if code, body := submit(site, pageID, "f1", map[string]any{"name": "Ada L", "email": "other-" + email, "phone": "0777", "topic": "Sales"}); code != http.StatusCreated {
+			t.Fatalf("submit: %d %s", code, body)
+		}
+		ids := contactsByEmail(email)
+		if len(ids) != 1 || len(contactsByEmail("other-"+email)) != 0 {
+			t.Fatalf("contacts = %v, want the one website contact", ids)
+		}
+		var phone, name string
+		_ = db.QueryRow(ctx, `SELECT phone, name FROM contact WHERE id = $1`, ids[0]).Scan(&phone, &name)
+		if phone != "0777" || name != "Ada L" {
+			t.Errorf("website contact = %q %q, want updated", phone, name)
+		}
+		var gotPhone string
+		var gotUpdated time.Time
+		_ = db.QueryRow(ctx, `SELECT phone, updated_at FROM users WHERE email = $1`, email).Scan(&gotPhone, &gotUpdated)
+		if gotPhone != userPhone || !gotUpdated.Equal(userUpdated) {
+			t.Errorf("users row changed: %q→%q %v→%v", userPhone, gotPhone, userUpdated, gotUpdated)
+		}
+		var leads int
+		_ = db.QueryRow(ctx, `SELECT count(*) FROM crm WHERE contact_id = $1`, ids[0]).Scan(&leads)
+		if leads != 1 {
+			t.Errorf("leads = %d, want 1", leads)
+		}
+		// The login-required form accepts the signed-in visitor.
+		if code, body := submit(site, loginPageID, "f1", map[string]any{"name": "Ada L", "email": email}); code != http.StatusCreated {
+			t.Errorf("login-required signed in: %d %s", code, body)
+		}
+	})
+
+	t.Run("refusals", func(t *testing.T) {
+		ok := map[string]any{"name": "R", "email": prefix + "-r@test.io"}
+		tests := []struct {
+			name, page, block string
+			values            map[string]any
+			want              int
+			fields            []any
+		}{
+			{"login required and anonymous", loginPageID, "f1", ok, http.StatusUnauthorized, nil},
+			{"unpublished page", draftPageID, "f1", ok, http.StatusNotFound, nil},
+			{"unknown page", uuid.NewString(), "f1", ok, http.StatusNotFound, nil},
+			{"malformed page id", "nope", "f1", ok, http.StatusNotFound, nil},
+			{"missing block", pageID, "zz", ok, http.StatusNotFound, nil},
+			{"not a form block", pageID, "t1", ok, http.StatusNotFound, nil},
+			{"missing required email", pageID, "f1", map[string]any{"name": "R"}, http.StatusUnprocessableEntity, []any{"email"}},
+			{"invalid email", pageID, "f1", map[string]any{"name": "R", "email": "R <r@x.io>"}, http.StatusUnprocessableEntity, []any{"email"}},
+			{"select outside options", pageID, "f1", map[string]any{"name": "R", "email": prefix + "-r@test.io", "topic": "Hack"}, http.StatusUnprocessableEntity, []any{"topic"}},
+			{"wrong json type", pageID, "f1", map[string]any{"name": 5, "email": prefix + "-r@test.io"}, http.StatusUnprocessableEntity, []any{"name"}},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				code, body := submit(anon, tt.page, tt.block, tt.values)
+				if code != tt.want {
+					t.Fatalf("status = %d, want %d: %s", code, tt.want, body)
+				}
+				if tt.fields != nil {
+					e, _ := decode(t, body)["error"].(map[string]any)
+					if e["code"] != "VALIDATION_ERROR" || !reflect.DeepEqual(e["fields"], tt.fields) {
+						t.Errorf("error = %v, want fields %v", e, tt.fields)
+					}
+				}
+			})
+		}
+		if ids := contactsByEmail(prefix + "-r@test.io"); len(ids) != 0 {
+			t.Errorf("a refused submission wrote contacts %v", ids)
+		}
+	})
+
+	t.Run("an inactive target table is a 422", func(t *testing.T) {
+		h := website.NewFormHandler(db, auth.DevTenantID, func(table string) bool { return table != "crm" }, c.a.userRepo)
+		e := echo.New()
+		e.POST("/f/:page_id/:block_id", h.Submit, website.TenantMiddleware(auth.DevTenantID))
+		req := httptest.NewRequest(http.MethodPost, "/f/"+pageID+"/f1",
+			strings.NewReader(`{"values":{"name":"I","email":"`+prefix+`-inactive@test.io"}}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("status = %d, want 422: %s", rec.Code, rec.Body)
+		}
+		if ids := contactsByEmail(prefix + "-inactive@test.io"); len(ids) != 0 {
+			t.Errorf("inactive target still wrote contacts %v", ids)
+		}
+	})
 }

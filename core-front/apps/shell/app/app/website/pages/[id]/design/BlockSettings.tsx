@@ -12,8 +12,9 @@ import Typography from '@mui/material/Typography'
 import { useT, ViewBanner } from '@eerp/core-front'
 import { savePublished, type PublishedTable } from '@/lib/website-settings'
 import { listEditorEvents, listEditorPages } from '@/website/editor-actions'
-import type { Block } from '@/website/types'
+import type { Block, FormConfig } from '@/website/types'
 import { BLOCK_LABELS } from './BlockPalette'
+import { FormSettings } from './FormSettings'
 import { RecordPicker } from './RecordPicker'
 
 type Config = Record<string, unknown>
@@ -209,6 +210,9 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         select('fit', 'Picture fit', ['cover', 'contain'], { labels: { cover: 'Fill the block (crop)', contain: 'Whole picture' } }),
         text('href', 'Link (without a button)'),
         ...overlayTitle('Optional: shown over the picture.'), ...heroFields]
+      break
+    case 'form':
+      form = [<FormSettings key="form" blockId={block.id} config={c as unknown as FormConfig} onChange={(next) => onChange(next as unknown as Config)} />]
       break
     case 'section':
       form = [

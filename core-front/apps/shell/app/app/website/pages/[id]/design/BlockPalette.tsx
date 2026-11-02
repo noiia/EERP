@@ -19,6 +19,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   appointment_booking: 'Appointment booking',
   event_list: 'Event list',
   section: 'Background section',
+  form: 'Form',
 }
 
 // Icon names resolved through `byPrefixAndName.fas` (see packages/core-front/src/views/icons.ts).
@@ -34,6 +35,7 @@ export const BLOCK_ICONS: Record<BlockType, string> = {
   appointment_booking: 'clock',
   event_list: 'calendar-days',
   section: 'square',
+  form: 'rectangle-list',
 }
 
 export function BlockPalette({ onAdd }: { onAdd: (type: BlockType) => void }) {

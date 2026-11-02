@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"core/internal/module"
+	"core/internal/website/formtarget"
 	"core/modules/contact/internal"
 	"core/orm"
 )
@@ -18,6 +19,9 @@ type contactModule struct{}
 func (m *contactModule) Name() string { return "contact" }
 
 func (m *contactModule) Register() error {
+	// What a public website form may write into a contact.
+	formtarget.RegisterFormTarget("contact", "name", "surname", "email", "phone", "company",
+		"address_number", "address_complement", "address_street", "address_zip_code", "address_city", "address_state", "address_country")
 	if err := orm.Register[internal.Contact](); err != nil {
 		return err
 	}

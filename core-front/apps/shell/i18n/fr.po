@@ -1922,3 +1922,135 @@ msgstr "h"
 
 msgid "min"
 msgstr "min"
+
+msgid "Form"
+msgstr "Formulaire"
+
+msgid "Long text"
+msgstr "Texte long"
+
+msgid "Number"
+msgstr "Nombre"
+
+msgid "Date"
+msgstr "Date"
+
+msgid "Checkbox"
+msgstr "Case à cocher"
+
+msgid "Selection"
+msgstr "Liste de choix"
+
+msgid "User data"
+msgstr "Données utilisateur"
+
+msgid "Message"
+msgstr "Message"
+
+msgid "Target {n}"
+msgstr "Cible {n}"
+
+msgid "Remove target {n}"
+msgstr "Retirer la cible {n}"
+
+msgid "Not linked"
+msgstr "Non lié"
+
+msgid "← record of target {n}"
+msgstr "← enregistrement de la cible {n}"
+
+msgid "Fixed value"
+msgstr "Valeur fixe"
+
+msgid "Remove fixed value"
+msgstr "Retirer la valeur fixe"
+
+msgid "Add fixed value"
+msgstr "Ajouter une valeur fixe"
+
+msgid "Remove field"
+msgstr "Retirer le champ"
+
+msgid "Stored in"
+msgstr "Enregistré dans"
+
+msgid "Options (one per line)"
+msgstr "Options (une par ligne)"
+
+msgid "Required"
+msgstr "Obligatoire"
+
+msgid "Saved into"
+msgstr "Enregistré dans"
+
+msgid "Each submission creates one record per target, in order. Only tables and columns a module allows are offered."
+msgstr "Chaque envoi crée un enregistrement par cible, dans l'ordre. Seules les tables et colonnes autorisées par un module sont proposées."
+
+msgid "Add target"
+msgstr "Ajouter une cible"
+
+msgid "Add field"
+msgstr "Ajouter un champ"
+
+msgid "Send"
+msgstr "Envoyer"
+
+msgid "After submit"
+msgstr "Après l'envoi"
+
+msgid "Then"
+msgstr "Ensuite"
+
+msgid "Show a message"
+msgstr "Afficher un message"
+
+msgid "Go to a page"
+msgstr "Aller à une page"
+
+msgid "Thank you — your answers were sent."
+msgstr "Merci — vos réponses ont été envoyées."
+
+msgid "Page"
+msgstr "Page"
+
+msgid "Login required"
+msgstr "Connexion requise"
+
+msgid "After login, go to"
+msgstr "Après la connexion, aller à"
+
+msgid "This page"
+msgstr "Cette page"
+
+msgid "Allow account creation"
+msgstr "Autoriser la création de compte"
+
+msgid "Street"
+msgstr "Rue"
+
+msgid "Complement"
+msgstr "Complément d'adresse"
+
+msgid "This email already has an account — log in instead."
+msgstr "Cet e-mail a déjà un compte — connectez-vous plutôt."
+
+msgid "This field is required."
+msgstr "Ce champ est obligatoire."
+
+msgid "Check this value."
+msgstr "Vérifiez cette valeur."
+
+msgid "This form is not available right now."
+msgstr "Ce formulaire n'est pas disponible pour le moment."
+
+msgid "Please log in to send this form."
+msgstr "Connectez-vous pour envoyer ce formulaire."
+
+msgid "Create an account"
+msgstr "Créer un compte"
+
+msgid "Log in to continue"
+msgstr "Se connecter pour continuer"
+
+msgid "Street number"
+msgstr "Numéro"

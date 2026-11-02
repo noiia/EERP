@@ -19,6 +19,8 @@ const DEFAULTS: Record<BlockType, { w: number; h: number; config: () => Record<s
   appointment_booking: { w: 36, h: 18, config: () => ({}) },
   event_list: { w: 36, h: 18, config: () => ({ display: 'cards', limit: 12 }) },
   section: { w: 36, h: 24, config: () => ({ color: '#f5f5f5' }) },
+  // Saved layouts must validate server-side (>= 1 target), so a fresh form starts with a minimal contact one.
+  form: { w: 36, h: 24, config: () => ({ targets: [{ table: 'contact' }], fields: [{ id: 'name', label: 'Name', type: 'text', column: 'name', required: true, target: 0 }], after: { kind: 'message', message: '' } }) },
 }
 
 /** Appends a block of `type` below the lowest one, with that type's default size and config. */

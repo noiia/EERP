@@ -19,7 +19,7 @@ async function resolve(params: Props['params']) {
   // No published home page (e.g. right after upgrading an ERP-only install): "/"
   // was the ERP, so send visitors there rather than to a 404.
   if (!page && slug.length === 0) redirect(erpPath('/'))
-  return page ? { page, id: slug[1] } : null
+  return page ? { page, id: slug[1], path: `/${slug.join('/')}` } : null
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -33,7 +33,7 @@ export default async function SitePage({ params }: Props) {
   const rendered = new Map(
     await Promise.all(
       r.page.layout.map(
-        async (b) => [b.id, await BlockView({ block: b, source: serverPublicSource, params: { id: r.id } })] as const,
+        async (b) => [b.id, await BlockView({ block: b, source: serverPublicSource, params: { id: r.id, pageId: r.page.id, path: r.path } })] as const,
       ),
     ),
   )

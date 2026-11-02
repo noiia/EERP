@@ -10,6 +10,7 @@ import (
 	"regexp"
 
 	"core/internal/module"
+	"core/internal/website/formtarget"
 
 	"github.com/labstack/echo/v5"
 )
@@ -18,7 +19,7 @@ import (
 // core-front/apps/shell/src/website/types.ts BLOCK_TYPES.
 var BlockTypes = map[string]bool{
 	"text": true, "image": true, "hero": true, "record_list": true, "record_detail": true, "record_carousel": true, "image_carousel": true,
-	"event_booking": true, "appointment_booking": true, "event_list": true, "section": true,
+	"event_booking": true, "appointment_booking": true, "event_list": true, "section": true, "form": true,
 }
 
 // ReservedSlugs are first path segments the site can never own.
@@ -43,6 +44,8 @@ type block struct {
 	Y    int    `json:"y"`
 	W    int    `json:"w"`
 	H    int    `json:"h"`
+	// Config is opaque to Go except for a form block's (see formtarget).
+	Config json.RawMessage `json:"config"`
 }
 
 // validatePage checks the keys present in body (a PUT may send a subset).
@@ -85,6 +88,15 @@ func validatePage(body map[string]any, isModule func(string) bool) error {
 			return fmt.Errorf("%w: block %q: w/h must be >= 1", errPage, b.ID)
 		case b.X+b.W > gridCols:
 			return fmt.Errorf("%w: block %q exceeds the grid's %d columns", errPage, b.ID, gridCols)
+		}
+		if b.Type == "form" {
+			var cfg formtarget.FormConfig
+			if err := json.Unmarshal(b.Config, &cfg); err != nil {
+				return fmt.Errorf("%w: block %q: malformed form config", errPage, b.ID)
+			}
+			if err := formtarget.ValidateFormConfig(cfg); err != nil {
+				return fmt.Errorf("%w: block %q: %s", errPage, b.ID, err)
+			}
 		}
 		seen[b.ID] = true
 	}

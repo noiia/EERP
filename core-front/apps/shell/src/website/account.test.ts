@@ -6,7 +6,7 @@ vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
 }))
 
-import { getMyBookings, getWebsiteMe } from './account'
+import { getMyBookings, getMyContact, getWebsiteMe } from './account'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 
@@ -43,5 +43,18 @@ describe('getMyBookings', () => {
     expect(await getMyBookings()).toEqual([{ id: 'b1' }])
     vi.stubGlobal('fetch', vi.fn(async () => json({}, 500)))
     expect(await getMyBookings()).toBeNull()
+  })
+})
+
+describe('getMyContact', () => {
+  it("returns the visitor's website contact, null otherwise", async () => {
+    expect(await getMyContact()).toBeNull()
+    jar.set('eerp_site_access', 'tok')
+    const f = vi.fn(async () => json({ name: 'Vi', email: 'v@x.io' }))
+    vi.stubGlobal('fetch', f)
+    expect(await getMyContact()).toEqual({ name: 'Vi', email: 'v@x.io' })
+    expect((f.mock.calls[0] as unknown as [string])[0]).toBe('http://api.test/api/v1/website/me/contact')
+    vi.stubGlobal('fetch', vi.fn(async () => json({}, 404)))
+    expect(await getMyContact()).toBeNull()
   })
 })

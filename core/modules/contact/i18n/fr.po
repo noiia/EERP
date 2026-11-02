@@ -46,3 +46,12 @@ msgstr "Sociétés"
 
 msgid "Contacts"
 msgstr "Contacts"
+
+msgid "Surname"
+msgstr "Prénom"
+
+msgid "Phone"
+msgstr "Téléphone"
+
+msgid "Address"
+msgstr "Adresse"

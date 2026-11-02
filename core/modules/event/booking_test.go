@@ -166,7 +166,7 @@ func TestBook_SessionRules(t *testing.T) {
 		ctx := context.Background()
 		users := auth.NewUserRepository(f.db)
 		users.OnWebsiteSignup = func(ctx context.Context, tx *orm.Tx, u auth.Users) error {
-			_, err := contact.CreateWebsiteContact(ctx, tx, u.TenantID, u.Name, u.Email)
+			_, err := contact.CreateWebsiteContact(ctx, tx, u.TenantID, contact.WebsiteContact{Name: u.Name, Surname: u.Surname, Email: u.Email, Phone: u.Phone})
 			return err
 		}
 		u, err := users.CreateWebsiteUser(ctx, f.tenant, "member@x.io", "pw-123456789", "Member", "")

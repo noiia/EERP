@@ -14,3 +14,17 @@ export function safeHref(url: string | undefined): string | undefined {
   if (/^\/(?![/\\])/.test(url) || url === '/') return url
   return /^(https?:\/\/|mailto:)[^\s\\]+$/i.test(url) ? url : undefined
 }
+
+/** A `?next=` destination: same-site relative paths only (safeHref refuses control chars,
+ * whitespace and backslashes the URL parser would strip into "//evil.example"), never
+ * into the ERP ("/./app" and "/../app" normalise into it, so dot segments are refused
+ * too); anything else is `fallback`. */
+export function safeNext(n: string | undefined, fallback = '/account'): string {
+  return n &&
+    n.startsWith('/') &&
+    safeHref(n) &&
+    n.split(/[/?#]/)[1] !== 'app' &&
+    !n.split(/[?#]/)[0].split('/').some((s) => s === '.' || s === '..')
+    ? n
+    : fallback
+}

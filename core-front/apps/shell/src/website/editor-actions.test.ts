@@ -14,7 +14,7 @@ vi.mock('./public-api', () => ({ serverPublicSource: { list: listMock, get: vi.f
 const blockViewMock = vi.hoisted(() => vi.fn())
 vi.mock('./blocks/BlockView', () => ({ BlockView: blockViewMock }))
 
-import { listEditorEvents, listEditorPages, listEditorRecords, previewBlock, saveLayout } from './editor-actions'
+import { listEditorEvents, listEditorPages, listFormTargets, listEditorRecords, previewBlock, saveLayout } from './editor-actions'
 import type { Block } from './types'
 
 const block = (type: Block['type'], config: Record<string, unknown> = {}): Block => ({ id: 'b', type, x: 0, y: 0, w: 1, h: 1, config })
@@ -86,6 +86,14 @@ describe('editor lists', () => {
     expect(await listEditorPages()).toEqual([])
     apiRequestMock.mockRejectedValueOnce(new Error('x'))
     expect(await listEditorPages()).toEqual([])
+  })
+
+  it('lists the registered form targets', async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [{ table: 'contact', columns: ['email', 'name'] }] })
+    expect(await listFormTargets()).toEqual([{ table: 'contact', columns: ['email', 'name'] }])
+    expect(apiRequestMock.mock.calls[0]).toEqual(['GET', '/settings/website/form_targets'])
+    apiRequestMock.mockRejectedValueOnce(new Error('x'))
+    expect(await listFormTargets()).toEqual([])
   })
 
   it('searches or fetches picked records by label', async () => {

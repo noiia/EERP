@@ -82,3 +82,13 @@ export async function listEditorRecords(table: string, labelField: string, q: { 
     return []
   }
 }
+
+/** Tables (with their columns) a Form block may write — the ones modules register
+ * in Go, active modules only (ADR-033). Empty on failure: the editor then offers none. */
+export async function listFormTargets(): Promise<{ table: string; columns: string[] }[]> {
+  try {
+    return (await apiRequest<{ data: { table: string; columns: string[] }[] }>('GET', '/settings/website/form_targets')).data ?? []
+  } catch {
+    return []
+  }
+}

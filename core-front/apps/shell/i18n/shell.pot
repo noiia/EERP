@@ -1767,3 +1767,135 @@ msgstr ""
 
 msgid "min"
 msgstr ""
+
+msgid "Form"
+msgstr ""
+
+msgid "Long text"
+msgstr ""
+
+msgid "Number"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Checkbox"
+msgstr ""
+
+msgid "Selection"
+msgstr ""
+
+msgid "User data"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Target {n}"
+msgstr ""
+
+msgid "Remove target {n}"
+msgstr ""
+
+msgid "Not linked"
+msgstr ""
+
+msgid "← record of target {n}"
+msgstr ""
+
+msgid "Fixed value"
+msgstr ""
+
+msgid "Remove fixed value"
+msgstr ""
+
+msgid "Add fixed value"
+msgstr ""
+
+msgid "Remove field"
+msgstr ""
+
+msgid "Stored in"
+msgstr ""
+
+msgid "Options (one per line)"
+msgstr ""
+
+msgid "Required"
+msgstr ""
+
+msgid "Saved into"
+msgstr ""
+
+msgid "Each submission creates one record per target, in order. Only tables and columns a module allows are offered."
+msgstr ""
+
+msgid "Add target"
+msgstr ""
+
+msgid "Add field"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "After submit"
+msgstr ""
+
+msgid "Then"
+msgstr ""
+
+msgid "Show a message"
+msgstr ""
+
+msgid "Go to a page"
+msgstr ""
+
+msgid "Thank you — your answers were sent."
+msgstr ""
+
+msgid "Page"
+msgstr ""
+
+msgid "Login required"
+msgstr ""
+
+msgid "After login, go to"
+msgstr ""
+
+msgid "This page"
+msgstr ""
+
+msgid "Allow account creation"
+msgstr ""
+
+msgid "Street"
+msgstr ""
+
+msgid "Complement"
+msgstr ""
+
+msgid "This email already has an account — log in instead."
+msgstr ""
+
+msgid "This field is required."
+msgstr ""
+
+msgid "Check this value."
+msgstr ""
+
+msgid "This form is not available right now."
+msgstr ""
+
+msgid "Please log in to send this form."
+msgstr ""
+
+msgid "Create an account"
+msgstr ""
+
+msgid "Log in to continue"
+msgstr ""
+
+msgid "Street number"
+msgstr ""

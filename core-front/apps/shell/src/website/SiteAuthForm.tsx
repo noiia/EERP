@@ -7,21 +7,11 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useT, ViewBanner } from '@eerp/core-front'
-import { safeHref } from './urls'
+import { safeNext } from './urls'
 
 const MIN_PASSWORD = 8 // Go's website signup rule (8 to 72 characters)
 
-// Same-site relative paths only (safeHref refuses control chars, whitespace and
-// backslashes the URL parser would strip into "//evil.example"), never into the ERP
-// ("/./app" and "/../app" normalise into it, so dot segments are refused too).
-const safeNext = (n?: string) =>
-  n &&
-  n.startsWith('/') &&
-  safeHref(n) &&
-  n.split(/[/?#]/)[1] !== 'app' &&
-  !n.split(/[?#]/)[0].split('/').some((s) => s === '.' || s === '..')
-    ? n
-    : '/account'
+const withNext = (page: string, next?: string) => (next && safeNext(next, '') ? `${page}?next=${encodeURIComponent(next)}` : page)
 
 /** Website visitor login/signup, posting to the /api/site-auth BFF routes (ADR-024). */
 export function SiteAuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: string }) {
@@ -85,9 +75,10 @@ export function SiteAuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: 
         required
       />
       <Button type="submit" variant="contained" disabled={pending}>{login ? t('Log in') : t('Sign up')}</Button>
+      {/* Switching between login and signup keeps where the visitor was headed. */}
       {login
-        ? <Link href="/signup">{t('No account yet? Sign up')}</Link>
-        : <Link href="/login">{t('Already have an account? Log in')}</Link>}
+        ? <Link href={withNext('/signup', next)}>{t('No account yet? Sign up')}</Link>
+        : <Link href={withNext('/login', next)}>{t('Already have an account? Log in')}</Link>}
     </Stack>
   )
 }

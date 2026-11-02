@@ -22,6 +22,10 @@ export interface Contact {
   tenant_id: string
   name: string
   email: string
+  surname?: string | null
+  phone?: string | null
+  /** The 7 address_* columns the 'address' composite reads and writes. */
+  address_street?: string | null
   company?: string
   status?: string
   /** A company (parent) or a person (child), linked many2many through
@@ -43,7 +47,9 @@ const fields: ViewDescriptor['fields'] = [
     default: 'contact',
   },
   { name: 'name', label: 'Name', type: 'text', required: true },
+  { name: 'surname', label: 'Surname', type: 'text' },
   { name: 'email', label: 'Email', type: 'text', required: true },
+  { name: 'phone', label: 'Phone', type: 'text', widget: 'phone' },
   { name: 'company', label: 'Company', type: 'text' },
   { name: 'status', label: 'Status', type: 'text' },
   { name: 'website', label: 'Website', type: 'boolean', widget: 'switch', readOnly: true },
@@ -115,6 +121,7 @@ export const relationsPageOperations: Operation[] = [
 // contact's commit payload.
 const formFields: ViewDescriptor['fields'] = [
   ...fields,
+  { name: 'address', label: 'Address', type: 'address' },
   {
     name: 'crm_records',
     label: 'CRM records',

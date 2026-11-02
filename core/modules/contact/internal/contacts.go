@@ -21,6 +21,19 @@ type Contact struct {
 	// Website marks the contact of a website account, created at signup. A
 	// pointer: optional on the generic create, NULL on older rows.
 	Website *bool `db:"website" json:"website"`
+	// Surname and Phone: the person's other profile fields (a website
+	// signup copies them from the account). Pointers: optional, NULL when empty.
+	Surname *string `db:"surname" json:"surname"`
+	Phone   *string `db:"phone" json:"phone"`
+	// Address*: the same 7-sibling-column composite as users (the
+	// `type: 'address'` field widget reads these exact names).
+	AddressNumber     *int    `db:"address_number" json:"address_number"`
+	AddressComplement *string `db:"address_complement" json:"address_complement"`
+	AddressStreet     *string `db:"address_street" json:"address_street"`
+	AddressZipCode    *string `db:"address_zip_code" json:"address_zip_code"`
+	AddressCity       *string `db:"address_city" json:"address_city"`
+	AddressState      *string `db:"address_state" json:"address_state"`
+	AddressCountry    *string `db:"address_country" json:"address_country"`
 	// GeoLocation: where the contact is (picked on a map or geocoded).
 	GeoLocation *orm.GeoPoint `db:"geo_location,index=gist" json:"geo_location"`
 }

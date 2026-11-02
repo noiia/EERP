@@ -73,3 +73,46 @@ func TestMigrate_KindBackfillAndUniqueLink(t *testing.T) {
 		t.Error("a second live link of the same pair: want a unique violation")
 	}
 }
+
+// A website signup's contact carries the account's person data, and the new
+// columns exist on the table (address names equal the users table's).
+func TestCreateWebsiteContact_CopiesPersonAndAddress(t *testing.T) {
+	ctx := context.Background()
+	app := testdb.Open(t)
+	testdb.MigrateModules(t, app, "contact")
+	tenant := uuid.New()
+	t.Cleanup(func() { _, _ = app.DB.Exec(ctx, `DELETE FROM contact WHERE tenant_id = $1`, tenant) })
+
+	id, err := CreateWebsiteContact(ctx, app.DB, tenant, WebsiteContact{
+		Name: "Ann", Surname: "Lee", Email: "ann@x.test", Phone: "+33 1 23"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var name, email string
+	var surname, phone, street *string
+	var number *int
+	if err := app.DB.QueryRow(ctx, `SELECT name, email, surname, phone, address_street, address_number FROM contact WHERE id = $1`, id).
+		Scan(&name, &email, &surname, &phone, &street, &number); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Ann" || email != "ann@x.test" || surname == nil || *surname != "Lee" || phone == nil || *phone != "+33 1 23" || street != nil || number != nil {
+		t.Errorf("got %q %q %v %v %v %v", name, email, surname, phone, street, number)
+	}
+
+	// Empty surname/phone are stored as NULL.
+	id2, err := CreateWebsiteContact(ctx, app.DB, tenant, WebsiteContact{Name: "Bob", Email: "bob@x.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DB.QueryRow(ctx, `SELECT surname, phone FROM contact WHERE id = $1`, id2).Scan(&surname, &phone); err != nil {
+		t.Fatal(err)
+	}
+	if surname != nil || phone != nil {
+		t.Errorf("empty surname/phone should be NULL, got %v %v", surname, phone)
+	}
+
+	// Address columns round-trip.
+	if _, err := app.DB.Exec(ctx, `UPDATE contact SET address_number = 4, address_complement = 'b', address_street = 'Rue X', address_zip_code = '31000', address_city = 'Toulouse', address_state = 'Occ', address_country = 'FR' WHERE id = $1`, id); err != nil {
+		t.Fatalf("address columns: %v", err)
+	}
+}

@@ -275,7 +275,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// A website signup also creates its contact (contact.website = true), in the
 	// same transaction; bookings made from that account link to it.
 	userRepo.OnWebsiteSignup = func(ctx context.Context, tx *orm.Tx, u auth.Users) error {
-		_, err := contactmodule.CreateWebsiteContact(ctx, tx, u.TenantID, u.Name, u.Email)
+		_, err := contactmodule.CreateWebsiteContact(ctx, tx, u.TenantID, contactmodule.WebsiteContact{
+			Name: u.Name, Surname: u.Surname, Email: u.Email, Phone: u.Phone})
 		return err
 	}
 	permRepo := auth.NewPermissionRepository(app.DB)
@@ -432,6 +433,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	settingsGroup.PUT("/website/security", siteFiles.PutSecurity)
 	settingsGroup.GET("/website/robots", siteFiles.GetRobots)
 	settingsGroup.PUT("/website/robots", siteFiles.PutRobots)
+	// Website forms (ADR-033): the tables/columns a Form block may write.
+	siteForms := website.NewFormHandler(app.DB, siteTenant, moduleRuntime.IsTableActive, userRepo)
+	settingsGroup.GET("/website/form_targets", siteForms.FormTargets)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new
@@ -904,6 +908,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteGroup.POST("/me/verify/resend", siteVerify.Resend)
 		websiteGroup.POST("/me/bookings/:id/cancel", eventH.CancelMine)
 		websiteGroup.GET("/me/bookings/:id/calendar.ics", eventH.MyBookingCalendar)
+		websiteGroup.GET("/me/contact", siteForms.MyContact)
 
 		// Bookings: anonymous visitors OR logged-in website users. The site
 		// tenant is stamped first; a website token's tenant is the same.
@@ -914,6 +919,15 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		bookings.POST("", eventH.Book)
 		bookings.POST("/cancel", eventH.CancelByToken)
 		bookings.POST("/claim", eventH.ClaimByToken) // a waiting-list offer's link
+
+		// Form block submissions (ADR-033): anonymous or signed-in visitors,
+		// same stack as bookings. The handler reads the form from the stored,
+		// published page — the request only carries values.
+		forms := srv.Echo().Group("/api/v1/website/forms",
+			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
+			website.TenantMiddleware(siteTenant),
+			authmw.OptionalWebsiteJWTMiddleware(tokenSvc))
+		forms.POST("/:page_id/:block_id", siteForms.Submit)
 	} else {
 		// No site tenant: the Next proxy still needs an answer.
 		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)

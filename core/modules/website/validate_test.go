@@ -1,6 +1,7 @@
 package website
 
 import (
+	"core/internal/website/formtarget"
 	"maps"
 	"os"
 	"regexp"
@@ -9,9 +10,16 @@ import (
 	"testing"
 )
 
+func init() { formtarget.RegisterFormTarget("contact", "name", "email") }
+
 func TestValidatePage(t *testing.T) {
 	block := func(id, typ string, x, y, w, h int) map[string]any {
 		return map[string]any{"id": id, "type": typ, "x": x, "y": y, "w": w, "h": h, "config": map[string]any{}}
+	}
+	formBlock := func(id string, cfg map[string]any) map[string]any {
+		b := block(id, "form", 0, 0, 36, 10)
+		b["config"] = cfg
+		return b
 	}
 	tests := []struct {
 		name    string
@@ -38,6 +46,18 @@ func TestValidatePage(t *testing.T) {
 		{"zero width", map[string]any{"layout": []any{block("a", "text", 0, 0, 0, 1)}}, "w/h"},
 		{"wider than grid", map[string]any{"layout": []any{block("a", "text", 30, 0, 7, 1)}}, "36 columns"},
 		{"layout not an array", map[string]any{"layout": "nope"}, "layout"},
+		{"form block ok", map[string]any{"layout": []any{formBlock("f", map[string]any{
+			"targets": []any{map[string]any{"table": "contact"}},
+			"fields":  []any{map[string]any{"id": "n", "type": "text", "column": "name", "target": 0}},
+		})}}, ""},
+		{"form block writing users", map[string]any{"layout": []any{formBlock("f", map[string]any{
+			"targets": []any{map[string]any{"table": "users"}},
+		})}}, "not a form target"},
+		{"form block unregistered column", map[string]any{"layout": []any{formBlock("f", map[string]any{
+			"targets": []any{map[string]any{"table": "contact"}},
+			"fields":  []any{map[string]any{"id": "n", "type": "text", "column": "tenant_id", "target": 0}},
+		})}}, "not allowed"},
+		{"form block without config", map[string]any{"layout": []any{formBlock("f", nil)}}, "target"},
 		{"no slug key on update is fine", map[string]any{"title": "x"}, ""},
 	}
 	for _, tt := range tests {

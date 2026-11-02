@@ -48,7 +48,9 @@ describe('contacts FrontModule', () => {
     expect(contacts.routes[0].descriptor.fields.map((f) => f.name)).toEqual([
       'kind',
       'name',
+      'surname',
       'email',
+      'phone',
       'company',
       'status',
       'website',
@@ -144,14 +146,27 @@ describe('contacts FrontModule', () => {
     if (!columns || columns.kind === 'field') throw new Error('no columns')
     expect(columns.children.map((c) => (c.kind === 'field' ? c.name : c.id))).toEqual([
       'kind',
+      'surname',
       'email',
+      'phone',
       'company',
       'status',
+      'address',
     ])
     const notebook = layout.find((n) => n.kind !== 'field' && n.id === FORM_NOTEBOOK_ID)
     if (!notebook || notebook.kind === 'field') throw new Error('no notebook')
     const settings = notebook.children.find((p) => p.kind !== 'field' && p.id === PAGE_SETTINGS_ID)
     if (!settings || settings.kind === 'field') throw new Error('no settings page')
     expect(settings.children.map((c) => (c.kind === 'field' ? c.name : c.id))).toContain('website')
+  })
+})
+
+describe('contact person and address fields', () => {
+  it('the form carries surname, phone and the address composite', () => {
+    const form = contacts.routes.find((r) => r.path === '/contacts/:id')!
+    const byName = Object.fromEntries(form.descriptor.fields.map((f) => [f.name, f]))
+    expect(byName.surname?.type).toBe('text')
+    expect(byName.phone?.widget).toBe('phone')
+    expect(byName.address?.type).toBe('address')
   })
 })

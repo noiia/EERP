@@ -1,5 +1,5 @@
 // Keep in sync with core/modules/website/validate.go BlockTypes.
-export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking', 'event_list', 'section'] as const
+export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking', 'event_list', 'section', 'form'] as const
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 export interface Block {
@@ -72,6 +72,32 @@ export interface RecordCarouselConfig {
   picture_position?: 'top' | 'left' | 'right'; picture_width?: number
   /** Card width in px on the row (default 280). */
   card_width?: number
+}
+
+/** form: mirrors Go's formtarget.FormConfig (ADR-033). Each submission writes one record
+ * per target, in order; Go reads this definition from the stored, published page, never
+ * from the request, and only registered tables/columns are allowed. */
+export const FORM_FIELD_TYPES = ['text', 'long', 'email', 'phone', 'number', 'date', 'checkbox', 'select', 'address'] as const
+export type FormFieldType = (typeof FORM_FIELD_TYPES)[number]
+/** `links[col] = i`: col takes the id of the record target i (an earlier one) created;
+ * `fixed[col]`: a constant set by the designer. */
+export interface FormTargetSpec { table: string; links?: Record<string, number>; fixed?: Record<string, string> }
+/** One input mapped to a column of `targets[target]`; an `address` field's `column` is
+ * the prefix of its 7 columns (`<prefix>_number`, `_street`, …). */
+export interface FormField {
+  id: string; label: string; type: FormFieldType; column: string; target: number
+  required?: boolean; options?: string[]; preset?: string
+}
+export interface FormConfig {
+  targets: FormTargetSpec[]
+  fields: FormField[]
+  login_required?: boolean
+  /** Anonymous visitors may tick "Create an account" (hidden when login is required). */
+  allow_signup?: boolean
+  after: { kind: 'message' | 'page'; message?: string; slug?: string }
+  /** Where the login button returns; empty = this page. */
+  after_login_slug?: string
+  submit_label?: string
 }
 
 /** Where blocks read published data — the public API server-side, a Server

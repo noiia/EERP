@@ -1,7 +1,8 @@
-import type { Block, BookingConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, SectionConfig, TextConfig } from '../types'
+import type { Block, BookingConfig, FormConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, SectionConfig, TextConfig } from '../types'
 import { AppointmentBookingBlock } from './AppointmentBookingBlock'
 import { EventBookingBlock } from './EventBookingBlock'
 import { EventListBlock } from './EventListBlock'
+import { FormBlock } from './FormBlock'
 import { HeroBlock } from './HeroBlock'
 import { ImageBlock } from './ImageBlock'
 import { ImageCarouselBlock } from './ImageCarouselBlock'
@@ -12,8 +13,9 @@ import { SectionBlock } from './SectionBlock'
 import { TextBlock } from './TextBlock'
 
 // Async children are awaited as plain functions so the result renders in vitest too (RTL cannot render async elements).
-/** Async server component: renders one block from published data. Shared by the public site and the editor preview. */
-export async function BlockView({ block, source, params }: { block: Block; source: PublicDataSource; params: { id?: string } }) {
+/** Async server component: renders one block from published data. Shared by the public site and the editor preview.
+ * `params`: the URL's record id, plus — on the site — the page id and path a form block posts to and returns to. */
+export async function BlockView({ block, source, params }: { block: Block; source: PublicDataSource; params: { id?: string; pageId?: string; path?: string } }) {
   const c = block.config
   switch (block.type) {
     case 'text': return <TextBlock config={c as unknown as TextConfig} />
@@ -37,6 +39,7 @@ export async function BlockView({ block, source, params }: { block: Block; sourc
       return AppointmentBookingBlock({ config: { event_id: cfg.event_id || params.id }, source })
     }
     case 'event_list': return EventListBlock({ config: c as unknown as EventListConfig })
+    case 'form': return FormBlock({ config: c as unknown as FormConfig, pageId: params.pageId ?? '', blockId: block.id, path: params.path ?? '/' })
     default: return null
   }
 }

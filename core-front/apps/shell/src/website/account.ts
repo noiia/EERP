@@ -49,3 +49,15 @@ export async function getMyBookings(): Promise<MyBooking[] | null> {
   if (!res || !res.ok) return null
   return ((await res.json()) as { data: MyBooking[] }).data
 }
+
+/** The visitor's own website contact (form prefill), or null (no session, no contact). */
+export interface MyContact {
+  name: string; surname: string | null; email: string; phone: string | null
+  address_number?: number | null; address_complement?: string | null; address_street?: string | null
+  address_zip_code?: string | null; address_city?: string | null; address_state?: string | null; address_country?: string | null
+}
+export async function getMyContact(): Promise<MyContact | null> {
+  const res = await goSiteFetch('/website/me/contact').catch(() => null)
+  if (!res || !res.ok) return null
+  return (await res.json()) as MyContact
+}

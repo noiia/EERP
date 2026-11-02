@@ -70,6 +70,14 @@ describe('SiteAuthForm', () => {
     expect(pushMock).not.toHaveBeenCalled()
   })
 
+  it('the login/signup cross-links keep a safe next', () => {
+    const { unmount } = render(<SiteAuthForm mode="login" next="/book" />)
+    expect(screen.getByRole('link', { name: /sign up/i }).getAttribute('href')).toBe('/signup?next=%2Fbook')
+    unmount()
+    render(<SiteAuthForm mode="signup" next="/app/crm" />)
+    expect(screen.getByRole('link', { name: /log in/i }).getAttribute('href')).toBe('/login')
+  })
+
   it('signup refuses a password under 8 characters without posting', async () => {
     const f = vi.fn()
     vi.stubGlobal('fetch', f)

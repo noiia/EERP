@@ -3,11 +3,12 @@ import Container from '@mui/material/Container'
 import { getSiteIdentity } from '@/lib/site-session'
 import { SiteAuthForm } from '@/website/SiteAuthForm'
 
-export default async function SiteSignupPage() {
+export default async function SiteSignupPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   if (await getSiteIdentity()) redirect('/account')
+  const { next } = await searchParams
   return (
     <Container maxWidth="xs" sx={{ py: 6 }}>
-      <SiteAuthForm mode="signup" />
+      <SiteAuthForm mode="signup" next={next} />
     </Container>
   )
 }
