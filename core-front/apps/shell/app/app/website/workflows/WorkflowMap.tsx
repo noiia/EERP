@@ -1,5 +1,6 @@
 'use client'
 import { useMemo, useState, type ReactNode } from 'react'
+import Button from '@mui/material/Button'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import List from '@mui/material/List'
@@ -10,18 +11,24 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useTheme, type Theme } from '@mui/material/styles'
-import { Background, Controls, MarkerType, Position, ReactFlow, type Connection, type Edge, type Node } from '@xyflow/react'
+import { Background, Controls, MarkerType, Position, ReactFlow, type Connection, type Edge, type IsValidConnection, type Node, type NodeChange, type XYPosition } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { BannerScope, BannerSlot, byPrefixAndName, erpPath, FontAwesomeIcon, useT, ViewBanner } from '@eerp/core-front'
-import { getPageLayout, saveLayout } from '@/website/editor-actions'
+import { getPageLayout, saveLayout, saveWorkflowPositions, type WorkflowPositions } from '@/website/editor-actions'
 import { buildWorkflow, retarget, type NodeId, type WfEdge, type WfNode, type WfPage } from '@/website/workflow'
+import { addLink, canLinkTo, removable, removeLink, type NewLink } from '@/website/workflow-edit'
 import { layoutWorkflow, problemLevels, type Level } from '@/website/workflow-layout'
+import { NewLinkDialog, RemoveLinkDialog } from './WorkflowDialogs'
 
 // The Website app's workflow map: every page, the system pages and external hosts,
 // with the links between them read from the pages' layouts (src/website/workflow.ts).
-// Clicking a page opens it in the builder; dragging an edge's end onto another node
-// re-targets that link in the source page's layout. React Flow is heavy: this module
-// is only reached through LazyWorkflowMap, so it ships in its own chunk.
+// Clicking a page opens it in the builder. With website_page write rights, dragging an
+// edge's end onto another node re-targets that link, dragging from a page's handle onto
+// another node adds one (NewLinkDialog: which block holds it), and a selected edge can
+// be removed — each a rewrite of the source page's layout (src/website/workflow-edit.ts).
+// With settings:website:write, boxes can be moved; positions are shared by the team
+// (website.workflow_layout), unsaved ones laid out automatically. React Flow is heavy:
+// this module is only reached through LazyWorkflowMap, so it ships in its own chunk.
 
 const COL_W = 280
 const ROW_H = 120
@@ -33,7 +40,15 @@ type MapEdge = Edge<{ wf: WfEdge }>
 const levelColor = (theme: Theme, level: Level | undefined, fallback: string) =>
   level === 'error' ? theme.palette.error.main : level === 'warning' ? theme.palette.warning.main : fallback
 
-export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
+export function WorkflowMap({ pages: initial, positions: savedPositions = {}, canEdit = false, canArrange = false }: {
+  pages: WfPage[]
+  /** Saved box positions by node id (shared setting); others are laid out automatically. */
+  positions?: WorkflowPositions
+  /** May rewrite page layouts: re-target, add and remove links. */
+  canEdit?: boolean
+  /** May move boxes and save their positions. */
+  canArrange?: boolean
+}) {
   const t = useT()
   const theme = useTheme()
   const router = useRouter()
@@ -44,6 +59,10 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
   const [moved, setMoved] = useState<{ edgeId: string; to: NodeId } | null>(null)
   const [focus, setFocus] = useState<{ nodeId?: NodeId; edgeId?: string }>({})
   const [error, setError] = useState<string | null>(null)
+  const [positions, setPositions] = useState(savedPositions)
+  const [live, setLive] = useState<Record<string, XYPosition>>({}) // boxes being dragged
+  const [adding, setAdding] = useState<{ pageId: string; to: NodeId } | null>(null)
+  const [removing, setRemoving] = useState<WfEdge | null>(null)
 
   const wf = useMemo(() => buildWorkflow(pages), [pages])
   const levels = useMemo(() => problemLevels(wf.nodes, wf.problems), [wf])
@@ -55,7 +74,10 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
       const system = !n.id.startsWith('page:')
       return {
         id: n.id,
-        position: { x: cells[n.id].col * COL_W, y: cells[n.id].row * ROW_H },
+        position: live[n.id] ?? positions[n.id] ?? { x: cells[n.id].col * COL_W, y: cells[n.id].row * ROW_H },
+        deletable: false,
+        // Only an existing page can hold a new link (it's written into its layout).
+        connectable: canEdit && !!n.pageId,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         selected: focus.nodeId === n.id,
@@ -71,7 +93,7 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
         },
       }
     })
-  }, [wf, levels, focus.nodeId, theme])
+  }, [wf, levels, focus.nodeId, theme, live, positions, canEdit])
 
   const edges: MapEdge[] = useMemo(() => wf.edges.map((e) => {
     const level = levels.edges.get(e.id)
@@ -86,7 +108,8 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
       label: t(e.label),
       data: { wf: e },
       selected,
-      reconnectable: gate ? false : 'target',
+      reconnectable: canEdit && !gate ? 'target' : false,
+      deletable: canEdit && removable(e.key),
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
       style: { stroke, strokeWidth: selected ? 3 : level ? 2 : 1.25 },
       labelStyle: { fill: theme.palette.text.primary },
@@ -124,7 +147,72 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
     router.refresh()
   }
 
-  const label = (id?: NodeId) => wf.nodes.find((n) => n.id === id)?.label ?? ''
+  // Live drag: React Flow reports positions, the map renders them until the drop.
+  const onNodesChange = (changes: NodeChange<MapNode>[]) => {
+    const moves = changes.flatMap((c) => (c.type === 'position' && c.position ? [[c.id, c.position] as const] : []))
+    if (moves.length) setLive((l) => ({ ...l, ...Object.fromEntries(moves) }))
+  }
+
+  // Drop: save every position (only nodes still on the map, so the setting stays small).
+  const onNodeDragStop = async (_: unknown, node: MapNode) => {
+    const ids = new Set(wf.nodes.map((n) => n.id as string))
+    const next = Object.fromEntries(Object.entries({ ...positions, [node.id]: node.position }).filter(([id]) => ids.has(id)))
+    setPositions(next)
+    setLive({})
+    const err = await saveWorkflowPositions(next)
+    if (err !== null) setError(err || t('Could not save the positions.'))
+  }
+
+  const arrangeAutomatically = async () => {
+    setPositions({})
+    const err = await saveWorkflowPositions({})
+    if (err !== null) setError(err || t('Could not save the positions.'))
+  }
+
+  const nodeOf = (id?: NodeId) => wf.nodes.find((n) => n.id === id)
+  const label = (id?: NodeId) => nodeOf(id)?.label ?? ''
+
+  // A new arrow: from an existing page to a page that exists or a system page.
+  const isValidConnection: IsValidConnection = (c) => {
+    const from = nodeOf(c.source as NodeId)
+    const to = nodeOf(c.target as NodeId)
+    return !!from?.pageId && !!to && to.id !== from.id && canLinkTo(to.id, !!to.missing)
+  }
+  const onConnect = (c: Connection) => {
+    const from = nodeOf(c.source as NodeId)
+    if (from?.pageId && isValidConnection(c)) setAdding({ pageId: from.pageId, to: c.target as NodeId })
+  }
+
+  // Shared by add and remove: re-read the page's layout, apply `edit`, save.
+  const rewrite = async (pageId: string, edit: (layout: WfPage['layout']) => WfPage['layout'], refused: string): Promise<boolean> => {
+    setError(null)
+    const fresh = await getPageLayout(pageId)
+    if (!fresh) { setError(t('The page could not be loaded.')); return false }
+    const next = edit(fresh)
+    if (next === fresh) { setError(t(refused)); return false }
+    const err = await saveLayout(pageId, next)
+    if (err !== null) { setError(err || t('Could not save.')); return false }
+    setPages((ps) => ps.map((p) => (p.id === pageId ? { ...p, layout: next } : p)))
+    router.refresh()
+    return true
+  }
+
+  const saveNewLink = async (link: NewLink) => {
+    if (!adding) return
+    if (await rewrite(adding.pageId, (l) => addLink(l, link), 'That block already has a link. Pick another one.')) setAdding(null)
+  }
+
+  const confirmRemove = async () => {
+    if (!removing) return
+    if (await rewrite(removing.pageId, (l) => removeLink(l, removing.blockId, removing.key), 'This link is no longer on the page.')) {
+      setRemoving(null)
+      setFocus({})
+    }
+  }
+
+  const focusedEdge = wf.edges.find((e) => e.id === focus.edgeId)
+  const addingPage = adding && pages.find((p) => p.id === adding.pageId)
+  const addingTo = adding && nodeOf(adding.to)
 
   return (
     <BannerScope>
@@ -139,9 +227,19 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
             onEdgeClick={(_, e) => setFocus({ edgeId: e.id })}
             onPaneClick={() => setFocus({})}
             onReconnect={(old, conn) => void onReconnect(old, conn)}
-            edgesReconnectable={moved === null}
-            nodesDraggable={false}
-            nodesConnectable={false}
+            edgesReconnectable={canEdit && moved === null}
+            nodesDraggable={canArrange}
+            onNodesChange={onNodesChange}
+            onNodeDragStop={(e, n) => void onNodeDragStop(e, n)}
+            nodesConnectable={canEdit}
+            isValidConnection={isValidConnection}
+            onConnect={onConnect}
+            // Delete/Backspace on a selected arrow asks first; nothing is deleted by React Flow itself.
+            onBeforeDelete={async ({ edges: gone }) => {
+              const e = gone.map((g) => (g as MapEdge).data?.wf).find((w) => w && removable(w.key))
+              if (e) setRemoving(e)
+              return false
+            }}
             colorMode={theme.palette.mode}
             fitView
             proOptions={{ hideAttribution: true }}
@@ -151,6 +249,16 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
           </ReactFlow>
         </Paper>
         <Box sx={{ width: { md: 320 }, flexShrink: 0 }}>
+          {focusedEdge && canEdit && removable(focusedEdge.key) && (
+            <Button color="error" variant="outlined" size="small" fullWidth sx={{ mb: 2 }} onClick={() => setRemoving(focusedEdge)}>
+              {t('Remove link')}
+            </Button>
+          )}
+          {canArrange && Object.keys(positions).length > 0 && (
+            <Button variant="text" size="small" fullWidth sx={{ mb: 2 }} onClick={() => void arrangeAutomatically()}>
+              {t('Arrange automatically')}
+            </Button>
+          )}
           <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('Problems')}</Typography>
           {wf.problems.length === 0 ? (
             <Typography variant="body2" color="text.secondary">{t('No problems found.')}</Typography>
@@ -172,6 +280,17 @@ export function WorkflowMap({ pages: initial }: { pages: WfPage[] }) {
           )}
         </Box>
       </Stack>
+      {addingPage && addingTo && (
+        <NewLinkDialog page={addingPage} to={addingTo} pages={pages} onCancel={() => setAdding(null)} onSave={saveNewLink} />
+      )}
+      {removing && (
+        <RemoveLinkDialog
+          label={t(removing.label)}
+          pageTitle={label(removing.from)}
+          onCancel={() => setRemoving(null)}
+          onConfirm={confirmRemove}
+        />
+      )}
     </BannerScope>
   )
 }

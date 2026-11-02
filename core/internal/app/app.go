@@ -436,6 +436,10 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// Website forms (ADR-033): the tables/columns a Form block may write.
 	siteForms := website.NewFormHandler(app.DB, siteTenant, moduleRuntime.IsTableActive, userRepo)
 	settingsGroup.GET("/website/form_targets", siteForms.FormTargets)
+	// Positions of the Website app's workflow map boxes, shared by the team.
+	workflowLayout := website.NewWorkflowLayoutHandler(siteStore)
+	settingsGroup.GET("/website/workflow_layout", workflowLayout.Get)
+	settingsGroup.PUT("/website/workflow_layout", workflowLayout.Put)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new

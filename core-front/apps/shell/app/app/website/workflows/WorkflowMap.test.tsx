@@ -7,13 +7,21 @@ import type { WfPage } from '@/website/workflow'
 // React Flow's canvas needs real layout (ResizeObserver, sizes) jsdom lacks: the stub
 // renders the nodes/edges it is given and keeps its props, so the tests drive the
 // map's own handlers (onNodeClick, onReconnect) the way React Flow would call them.
-type RfNode = { id: string; data: { label: ReactNode }; selected?: boolean }
-type RfEdge = { id: string; source: string; target: string; selected?: boolean; style?: { stroke?: string } }
+type RfNode = { id: string; data: { label: ReactNode }; selected?: boolean; position: { x: number; y: number }; connectable?: boolean }
+type RfEdge = { id: string; source: string; target: string; selected?: boolean; deletable?: boolean; reconnectable?: boolean | string; style?: { stroke?: string } }
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
   onNodeClick?: (e: unknown, n: RfNode) => void
   onReconnect?: (old: RfEdge, conn: { source: string; target: string; sourceHandle: null; targetHandle: null }) => void
+  onConnect?: (conn: { source: string; target: string; sourceHandle: null; targetHandle: null }) => void
+  isValidConnection?: (conn: { source: string; target: string }) => boolean
+  onEdgeClick?: (e: unknown, edge: RfEdge) => void
+  onNodesChange?: (changes: { type: 'position'; id: string; position?: { x: number; y: number } }[]) => void
+  onNodeDragStop?: (e: unknown, n: RfNode) => void
+  onBeforeDelete?: (els: { nodes: RfNode[]; edges: RfEdge[] }) => Promise<boolean>
+  nodesDraggable?: boolean
+  nodesConnectable?: boolean
 }
 const rf = vi.hoisted(() => ({ props: null as unknown as RfProps }))
 vi.mock('@xyflow/react', () => ({
@@ -44,9 +52,11 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh, prefetch:
 
 const getPageLayout = vi.fn<(id: string) => Promise<Block[] | null>>()
 const saveLayout = vi.fn<(id: string, layout: Block[]) => Promise<string | null>>()
+const savePositions = vi.fn<(p: Record<string, { x: number; y: number }>) => Promise<string | null>>()
 vi.mock('@/website/editor-actions', () => ({
   getPageLayout: (id: string) => getPageLayout(id),
   saveLayout: (id: string, layout: Block[]) => saveLayout(id, layout),
+  saveWorkflowPositions: (p: Record<string, { x: number; y: number }>) => savePositions(p),
 }))
 
 import { WorkflowMap } from './WorkflowMap'
@@ -60,7 +70,7 @@ const pages: WfPage[] = [
 const homeEdge = 'p-home:h1:cta_href'
 
 beforeEach(() => {
-  push.mockReset(); refresh.mockReset(); getPageLayout.mockReset(); saveLayout.mockReset()
+  push.mockReset(); refresh.mockReset(); getPageLayout.mockReset(); saveLayout.mockReset(); savePositions.mockReset()
 })
 
 describe('WorkflowMap', () => {
@@ -87,7 +97,7 @@ describe('WorkflowMap', () => {
     const extra: Block = { id: 't1', type: 'text', x: 0, y: 10, w: 36, h: 2, config: { body: 'new' } }
     getPageLayout.mockResolvedValue([hero('/about'), extra])
     saveLayout.mockResolvedValue(null)
-    render(<WorkflowMap pages={pages} />)
+    render(<WorkflowMap pages={pages} canEdit />)
     const old = rf.props.edges.find((e) => e.id === homeEdge)!
     await act(async () => rf.props.onReconnect!(old, { source: 'page:', target: 'page:contact', sourceHandle: null, targetHandle: null }))
     expect(getPageLayout).toHaveBeenCalledWith('p-home')
@@ -99,7 +109,7 @@ describe('WorkflowMap', () => {
   it('shows the error and snaps the edge back when the save fails', async () => {
     getPageLayout.mockResolvedValue([hero('/about')])
     saveLayout.mockResolvedValue('slug is reserved')
-    render(<WorkflowMap pages={pages} />)
+    render(<WorkflowMap pages={pages} canEdit />)
     const old = rf.props.edges.find((e) => e.id === homeEdge)!
     await act(async () => rf.props.onReconnect!(old, { source: 'page:', target: 'page:contact', sourceHandle: null, targetHandle: null }))
     expect(await screen.findByText('slug is reserved')).toBeInTheDocument()
@@ -108,7 +118,7 @@ describe('WorkflowMap', () => {
 
   it('snaps back without saving when the drop is refused', async () => {
     getPageLayout.mockResolvedValue([hero('/about')])
-    render(<WorkflowMap pages={pages} />)
+    render(<WorkflowMap pages={pages} canEdit />)
     const nextEdge = rf.props.edges.find((e) => e.id === 'p-about:h1:cta_href:next')!
     // cta_next is a slug: it can't point at the login page.
     await act(async () => rf.props.onReconnect!(nextEdge, { source: 'sys:login', target: 'sys:login', sourceHandle: null, targetHandle: null }))
@@ -122,5 +132,68 @@ describe('WorkflowMap', () => {
     expect(screen.getByTestId('edge-p-about:h1:cta_href:next')).toHaveAttribute('data-selected', 'false')
     fireEvent.click(item)
     expect(screen.getByTestId('edge-p-about:h1:cta_href:next')).toHaveAttribute('data-selected', 'true')
+  })
+
+  it('read-only: no moving, linking, re-targeting or removing', () => {
+    render(<WorkflowMap pages={pages} />)
+    expect(rf.props.nodesDraggable).toBe(false)
+    expect(rf.props.nodesConnectable).toBe(false)
+    const e = rf.props.edges.find((x) => x.id === homeEdge)!
+    expect(e.reconnectable).toBe(false)
+    expect(e.deletable).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Remove link' })).not.toBeInTheDocument()
+  })
+
+  it('places saved boxes where they were left and saves a moved one', async () => {
+    savePositions.mockResolvedValue(null)
+    render(<WorkflowMap pages={pages} canArrange positions={{ 'page:about': { x: 900, y: 40 }, 'page:deleted': { x: 1, y: 1 } }} />)
+    expect(rf.props.nodes.find((n) => n.id === 'page:about')!.position).toEqual({ x: 900, y: 40 })
+    act(() => rf.props.onNodesChange!([{ type: 'position', id: 'page:contact', position: { x: 50, y: 60 } }]))
+    const contact = rf.props.nodes.find((n) => n.id === 'page:contact')!
+    expect(contact.position).toEqual({ x: 50, y: 60 })
+    await act(async () => rf.props.onNodeDragStop!({}, contact))
+    // A stale id (page deleted since) is dropped from the saved set.
+    expect(savePositions).toHaveBeenCalledWith({ 'page:about': { x: 900, y: 40 }, 'page:contact': { x: 50, y: 60 } })
+  })
+
+  it('a new arrow asks which block holds it, then saves a new button block', async () => {
+    getPageLayout.mockResolvedValue([])
+    saveLayout.mockResolvedValue(null)
+    render(<WorkflowMap pages={pages} canEdit />)
+    expect(rf.props.isValidConnection!({ source: 'page:contact', target: 'page:gone' })).toBe(false)
+    expect(rf.props.isValidConnection!({ source: 'sys:login', target: 'page:about' })).toBe(false)
+    expect(rf.props.isValidConnection!({ source: 'page:contact', target: 'page:about' })).toBe(true)
+    act(() => rf.props.onConnect!({ source: 'page:contact', target: 'page:about', sourceHandle: null, targetHandle: null }))
+    expect(screen.getByRole('radio', { name: 'Add a new button block at the bottom of the page' })).toBeChecked()
+    fireEvent.change(screen.getByLabelText(/Button text/), { target: { value: 'Learn more' } })
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Add link' })))
+    expect(getPageLayout).toHaveBeenCalledWith('p-contact')
+    const [id, layout] = saveLayout.mock.calls[0]
+    expect(id).toBe('p-contact')
+    expect(layout).toHaveLength(1)
+    expect(layout[0]).toMatchObject({ type: 'section', config: { cta_href: '/about', cta_label: 'Learn more' } })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(rf.props.edges.some((e) => e.source === 'page:contact' && e.target === 'page:about')).toBe(true)
+  })
+
+  it('removes a selected arrow after confirmation; Delete asks too', async () => {
+    getPageLayout.mockResolvedValue([hero('/about')])
+    saveLayout.mockResolvedValue(null)
+    render(<WorkflowMap pages={pages} canEdit />)
+    const edge = rf.props.edges.find((e) => e.id === homeEdge)!
+    expect(edge.deletable).toBe(true)
+    // React Flow's own deletion is always refused: the map asks first.
+    let allowed: boolean | undefined
+    await act(async () => { allowed = await rf.props.onBeforeDelete!({ nodes: [], edges: [edge] }) })
+    expect(allowed).toBe(false)
+    expect(screen.getByText('Remove this link?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText('Remove this link?')).not.toBeInTheDocument())
+
+    act(() => rf.props.onEdgeClick!({}, edge))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove link' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Remove' })))
+    expect(saveLayout).toHaveBeenCalledWith('p-home', [{ ...hero('/about'), config: {} }])
+    await waitFor(() => expect(screen.queryByTestId(`edge-${homeEdge}`)).not.toBeInTheDocument())
   })
 })

@@ -104,3 +104,26 @@ export async function listFormTargets(): Promise<{ table: string; columns: strin
     return []
   }
 }
+
+export type WorkflowPositions = Record<string, { x: number; y: number }>
+
+/** Where staff placed the workflow map's boxes, shared by the team (Go
+ * `website.workflow_layout`). Empty when nothing is saved or it can't be read: the
+ * map then lays every box out automatically. */
+export async function getWorkflowPositions(): Promise<WorkflowPositions> {
+  try {
+    return (await apiRequest<{ positions?: WorkflowPositions }>('GET', '/settings/website/workflow_layout')).positions ?? {}
+  } catch {
+    return {}
+  }
+}
+
+/** Replaces every saved box position; null on success, else Go's message ('' without one). */
+export async function saveWorkflowPositions(positions: WorkflowPositions): Promise<string | null> {
+  try {
+    await apiRequest('PUT', '/settings/website/workflow_layout', { positions })
+    return null
+  } catch (e) {
+    return e instanceof ApiError ? e.message : ''
+  }
+}

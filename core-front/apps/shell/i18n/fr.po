@@ -2106,5 +2106,53 @@ msgstr "Aucun problème trouvé."
 msgid "Unpublished"
 msgstr "Non publiée"
 
-msgid "Click a page to open it in the builder. Drag the end of an arrow onto another page to change where that button leads."
-msgstr "Cliquez sur une page pour l'ouvrir dans l'éditeur. Faites glisser l'extrémité d'une flèche sur une autre page pour changer la destination de ce bouton."
+msgid "Click a page to open it in the builder. Drag a box to move it, drag from the dot on its right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it."
+msgstr "Cliquez sur une page pour l'ouvrir dans l'éditeur. Faites glisser une case pour la déplacer, tirez depuis le point à sa droite jusqu'à une autre page pour ajouter un lien, ou faites glisser l'extrémité d'une flèche pour changer sa destination. Sélectionnez une flèche pour la supprimer."
+
+msgid "Could not save the positions."
+msgstr "Impossible d'enregistrer les positions."
+
+msgid "That block already has a link. Pick another one."
+msgstr "Ce bloc a déjà un lien. Choisissez-en un autre."
+
+msgid "This link is no longer on the page."
+msgstr "Ce lien n'est plus sur la page."
+
+msgid "Arrange automatically"
+msgstr "Disposer automatiquement"
+
+msgid "New link"
+msgstr "Nouveau lien"
+
+msgid "From"
+msgstr "De"
+
+msgid "To"
+msgstr "Vers"
+
+msgid "Which block holds the link?"
+msgstr "Quel bloc porte le lien ?"
+
+msgid "Add a new button block at the bottom of the page"
+msgstr "Ajouter un nouveau bloc bouton en bas de la page"
+
+msgid "Button text"
+msgstr "Texte du bouton"
+
+msgid "Add link"
+msgstr "Ajouter le lien"
+
+msgid "Remove this link?"
+msgstr "Supprimer ce lien ?"
+
+msgid "The block stays on the page; only its link is removed."
+msgstr "Le bloc reste sur la page ; seul son lien est supprimé."
+
+msgid "Image link"
+msgstr "Lien de l'image"
+
+msgid "Card detail page"
+msgstr "Page de détail des cartes"
+
+msgid "Page after submit"
+msgstr "Page après envoi"

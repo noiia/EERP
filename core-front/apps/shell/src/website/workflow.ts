@@ -10,7 +10,7 @@ export interface WfProblem { level: 'error' | 'warning'; message: string; nodeId
 export interface WfPage { id: string; slug: string; title: string; published: boolean; in_menu: boolean; layout: Block[] }
 
 /** English msgids the map translates. */
-const BLOCK_LABELS: Record<string, string> = {
+export const BLOCK_LABELS: Record<string, string> = {
   text: 'Text', image: 'Image', hero: 'Hero', record_list: 'Record list', record_detail: 'Record detail',
   record_carousel: 'Record carousel', image_carousel: 'Image carousel', event_booking: 'Event booking',
   appointment_booking: 'Appointment booking', event_list: 'Event list', section: 'Section', form: 'Form',
