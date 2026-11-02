@@ -152,6 +152,8 @@ func parseField(sf reflect.StructField, tag string) (FieldMeta, error) {
 			fm.OmitEmpty = true
 		case opt == "pk":
 			fm.IsPK = true
+		case opt == "generated":
+			fm.Generated = true
 		case opt == "softdelete":
 			fm.SoftDel = true
 		case opt == "index" || strings.HasPrefix(opt, "index="):

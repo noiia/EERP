@@ -78,6 +78,7 @@ const eventFormFields: ViewDescriptor['fields'] = [
         { key: 'ends_at', label: 'End' },
         { key: 'capacity', label: 'Capacity' },
         { key: 'seats_taken', label: 'Seats taken' },
+        { key: 'remaining_seats', label: 'Remaining seats' },
       ],
     },
     states: { visible: isSessions },
@@ -193,6 +194,7 @@ const sessionFields: ViewDescriptor['fields'] = [
   { name: 'ends_at', label: 'End', type: 'date', widget: 'datetime', required: true },
   { name: 'capacity', label: 'Capacity', type: 'number', widget: 'int', default: 10 },
   { name: 'seats_taken', label: 'Seats taken', type: 'number', widget: 'int', readOnly: true },
+  { name: 'remaining_seats', label: 'Remaining seats', type: 'number', widget: 'int', readOnly: true },
   { name: 'price', label: "Price (overrides the event product's)", type: 'number', widget: 'monetary' },
 ]
 
@@ -202,6 +204,7 @@ const sessionListFields: ViewDescriptor['fields'] = [
   { name: 'ends_at', label: 'End', type: 'date', widget: 'datetime' },
   { name: 'capacity', label: 'Capacity', type: 'number', widget: 'int' },
   { name: 'seats_taken', label: 'Seats taken', type: 'number', widget: 'int', readOnly: true },
+  { name: 'remaining_seats', label: 'Remaining seats', type: 'number', widget: 'int', readOnly: true },
 ]
 
 const availabilityFields: ViewDescriptor['fields'] = [

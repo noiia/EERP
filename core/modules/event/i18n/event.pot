@@ -76,6 +76,9 @@ msgstr ""
 msgid "Seats taken"
 msgstr ""
 
+msgid "Remaining seats"
+msgstr ""
+
 msgid "From"
 msgstr ""
 

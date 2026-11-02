@@ -1208,3 +1208,29 @@ func TestCondition_Rebase_TwoDigitPlaceholders(t *testing.T) {
 		t.Errorf("args = %v", args)
 	}
 }
+
+type seatRow struct {
+	ID             int `db:"id,pk"`
+	Capacity       int `db:"capacity"`
+	RemainingSeats int `db:"remaining_seats,generated"`
+}
+
+func TestInsert_SkipsGenerated(t *testing.T) {
+	meta := mustMeta[seatRow](t)
+	sql, args := query.Insert[seatRow](meta, seatRow{Capacity: 4, RemainingSeats: 9}).ToSQL()
+	assertNotContains(t, sql, "remaining_seats")
+	if len(args) != 1 {
+		t.Errorf("want 1 arg, got %v", args)
+	}
+}
+
+func TestUpdateFromStruct_SkipsGenerated(t *testing.T) {
+	meta := mustMeta[seatRow](t)
+	sql, _, err := query.Update[seatRow](meta).
+		FromStruct(seatRow{Capacity: 4, RemainingSeats: 9}).
+		Where(query.NewCondition("id = $1", 1)).ToSQL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNotContains(t, sql, "remaining_seats")
+}

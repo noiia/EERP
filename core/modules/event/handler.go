@@ -42,7 +42,7 @@ func (h *Handler) PublicSessions(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
 	rows, err := h.db.Query(ctx, `
-		SELECT s.id, s.starts_at, s.ends_at, s.capacity, s.seats_taken, s.price
+		SELECT s.id, s.starts_at, s.ends_at, s.capacity, s.remaining_seats, s.price
 		FROM event_session s JOIN event e ON e.id = s.event_id
 		WHERE e.id = $1 AND e.tenant_id = $2 AND s.tenant_id = $2 AND e.published
 		  AND e.deleted_at IS NULL AND s.deleted_at IS NULL AND s.starts_at > now()
@@ -55,13 +55,13 @@ func (h *Handler) PublicSessions(c *echo.Context) error {
 		id         uuid.UUID
 		start, end time.Time
 		capacity   int
-		taken      int
+		left       int
 		price      *float64
 	}
 	var sessions []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.start, &r.end, &r.capacity, &r.taken, &r.price); err != nil {
+		if err := rows.Scan(&r.id, &r.start, &r.end, &r.capacity, &r.left, &r.price); err != nil {
 			return err
 		}
 		sessions = append(sessions, r)
@@ -95,7 +95,7 @@ func (h *Handler) PublicSessions(c *echo.Context) error {
 			price = &p
 		}
 		out = append(out, map[string]any{"id": r.id, "starts_at": r.start, "ends_at": r.end,
-			"capacity": r.capacity, "seats_left": r.capacity - r.taken, "price": price})
+			"capacity": r.capacity, "seats_left": r.left, "price": price})
 	}
 	currency, err := sale.WorkspaceCurrency(ctx, h.db, tenant)
 	if err != nil {
@@ -160,7 +160,7 @@ func (h *Handler) PublicUpcoming(resolve PublicResolver) echo.HandlerFunc {
 			SELECT e.id, e.name, e.description, e.location, e.kind, e.timezone, e.picture, n.starts_at, n.seats_left, `+distanceSQL+` AS distance_m
 			FROM event e
 			LEFT JOIN LATERAL (
-				SELECT s.starts_at, s.capacity - s.seats_taken AS seats_left FROM event_session s
+				SELECT s.starts_at, s.remaining_seats AS seats_left FROM event_session s
 				WHERE s.event_id = e.id AND s.tenant_id = e.tenant_id AND s.deleted_at IS NULL AND s.starts_at > now()
 				ORDER BY s.starts_at LIMIT 1) n ON true
 			WHERE e.tenant_id = $1 AND e.deleted_at IS NULL AND e.published IS TRUE

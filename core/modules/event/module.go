@@ -57,6 +57,10 @@ var checks = []struct{ table, name, expr string }{
 // can't fail boot — then validated best-effort (a failure is only logged).
 func (m *eventModule) Migrate(ctx context.Context, db *orm.DB) error {
 	for _, stmt := range []string{
+		// remaining_seats: stored, DB-generated (the ORM's ",generated" tag never
+		// writes or adds it), so lists can filter and sort on seats left.
+		`ALTER TABLE event_session ADD COLUMN IF NOT EXISTS remaining_seats integer GENERATED ALWAYS AS (capacity - seats_taken) STORED`,
+		`CREATE INDEX IF NOT EXISTS idx_event_session_remaining_seats ON event_session (remaining_seats)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_booking_cancel_token ON event_booking (cancel_token) WHERE cancel_token <> ''`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_booking_offer_token ON event_booking (offer_token) WHERE offer_token <> ''`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_feed_token ON event_feed (token_hash)`,

@@ -89,7 +89,7 @@ describe('BookingForm', () => {
   it('seat count is capped by seats left and by the event maximum', () => {
     render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" maxSeats={3} choices={[{ id: 's1', start, seatsLeft: 2 }]} />)
     fireEvent.click(screen.getByRole('radio'))
-    expect(Number((screen.getByLabelText(/seats/i) as HTMLInputElement).max)).toBe(2)
+    expect(Number((screen.getByLabelText(/^seats$/i) as HTMLInputElement).max)).toBe(2)
   })
 
   it('a full session offers the waiting list', async () => {
@@ -102,6 +102,16 @@ describe('BookingForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /join the waiting list/i }))
     await screen.findByText(/you're on the waiting list/i)
     expect(JSON.parse(String((fetchMock.mock.calls[0][1]!).body))).toMatchObject({ session_id: 's1', waitlist: true })
+  })
+
+  it('shows how many seats are left on each choice', () => {
+    render(<BookingForm eventId="e1" kind="session" timeZone="Europe/Paris" choices={[{ id: 's1', start, seatsLeft: 3 }]} />)
+    expect(screen.getByText(/3 seats left/)).toBeTruthy()
+  })
+
+  it('a slot label shows its seats left', () => {
+    render(<BookingForm eventId="e1" kind="slot" timeZone="Europe/Paris" choices={[{ id: start, start, seatsLeft: 2 }]} />)
+    expect(screen.getByText(/2 seats left/)).toBeTruthy()
   })
 
   it('a full slot stays unselectable (no waiting list for appointments)', () => {

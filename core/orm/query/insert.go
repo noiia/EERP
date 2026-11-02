@@ -116,6 +116,9 @@ var timestampCols = map[string]bool{"created_at": true, "updated_at": true}
 func (b InsertBuilder[T]) insertableColumns() []string {
 	cols := make([]string, 0, len(b.meta.Fields))
 	for _, f := range b.meta.Fields {
+		if f.Generated {
+			continue
+		}
 		if (f.IsPK || timestampCols[f.Column]) && b.allRowsZero(f.Column) {
 			continue
 		}

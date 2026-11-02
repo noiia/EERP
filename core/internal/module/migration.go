@@ -165,7 +165,7 @@ func zeroSQLDefault(sqlType string) string {
 // that is not a BaseModel column. Idempotent — safe to call on extension.
 func ensureColumns(ctx context.Context, db orm.Executor, table string, fields []orm.MigrationField) error {
 	for _, f := range fields {
-		if baseModelColumns[f.Column] {
+		if baseModelColumns[f.Column] || f.Generated {
 			continue
 		}
 		required := !f.Nullable && !f.IsPK

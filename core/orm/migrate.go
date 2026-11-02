@@ -19,6 +19,9 @@ type MigrationField struct {
 	Nullable bool
 	IsPK     bool
 	SoftDel  bool
+	// Generated columns are computed by Postgres; the owning module's Migrate()
+	// adds them with their expression, so the generic pass must skip them.
+	Generated bool
 	// Index, when true, requests a secondary index on this column.
 	// IndexType is the PostgreSQL index method (btree, hash, gin, …);
 	// empty means btree.
@@ -89,6 +92,7 @@ func MigrationFieldsForTable(tableName string) ([]MigrationField, bool) {
 			Nullable:  (f.Type != nil && f.Type.Kind() == reflect.Pointer) || declaredNullable[f.Column],
 			IsPK:      f.IsPK,
 			SoftDel:   f.SoftDel,
+			Generated: f.Generated,
 			Index:     f.Index,
 			IndexType: f.IndexType,
 		}

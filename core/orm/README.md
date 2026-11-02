@@ -686,6 +686,19 @@ Validation errors also nest a `fields` array under `error`:
 
 ---
 
+## Generated columns
+
+**Why.** A value derived from other columns (seats left = capacity - seats taken) is best computed by Postgres: it can be filtered and sorted like any column and can never drift from its inputs.
+
+**How.** Tag the field `db:"remaining_seats,generated"`. The ORM still selects, scans, filters and sorts it, but never writes it: it is left out of typed and generic INSERT, UPDATE and Upsert, the generic `ensureColumns` pass does not add it, and its API field is read-only. The owning module adds the column with its expression in `Migrate()`:
+
+```sql
+ALTER TABLE event_session ADD COLUMN IF NOT EXISTS remaining_seats integer
+  GENERATED ALWAYS AS (capacity - seats_taken) STORED
+```
+
+**Pitfalls.** After `Create`/`Update` the struct's value comes from `RETURNING`, never from what the caller put in it. A table that does not exist yet is created without the column until `Migrate()` runs, so add it there.
+
 ## Running tests
 
 Unit tests (no database required):

@@ -266,3 +266,52 @@ func TestCancel(t *testing.T) {
 		t.Errorf("cancel by a non-owner: %v, want ErrNotFound", err)
 	}
 }
+
+func remainingSeats(t *testing.T, f fixture, id uuid.UUID) int {
+	t.Helper()
+	got, err := orm.MustRepo[EventSession](f.db).FindByID(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got.RemainingSeats
+}
+
+func TestRemainingSeats_Generated(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	ev := f.event(t, Event{Name: "Workshop", Kind: KindSessions})
+	s := f.session(t, ev, 10, time.Now().Add(48*time.Hour))
+	if got := remainingSeats(t, f, s.ID); got != 10 {
+		t.Fatalf("fresh session remaining = %d, want 10", got)
+	}
+	b, err := f.svc.Book(ctx, f.tenant, BookRequest{EventID: ev.ID, SessionID: &s.ID, Seats: 3, Email: "v@x.io", Name: "V"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := remainingSeats(t, f, s.ID); got != 7 {
+		t.Fatalf("after booking 3 remaining = %d, want 7", got)
+	}
+	if _, err := f.db.Exec(ctx, `UPDATE event_session SET capacity = 5 WHERE id = $1`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := remainingSeats(t, f, s.ID); got != 2 {
+		t.Fatalf("after capacity 5 remaining = %d, want 2", got)
+	}
+	if err := f.svc.CancelByID(ctx, f.tenant, b.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := remainingSeats(t, f, s.ID); got != 5 {
+		t.Fatalf("after cancel remaining = %d, want 5", got)
+	}
+	// Filterable and sortable like any column.
+	rows, err := orm.MustRepo[EventSession](f.db).FindAll(ctx,
+		orm.Cond("tenant_id = $1", f.tenant), orm.Cond("remaining_seats < $1", 6))
+	if err != nil || len(rows) != 1 || rows[0].ID != s.ID {
+		t.Fatalf("remaining_seats<6 listing = %+v, %v", rows, err)
+	}
+	// Never written by the ORM: creating with a value must not fail or store it.
+	if _, err := orm.MustRepo[EventSession](f.db).Create(ctx, EventSession{TenantID: f.tenant, EventID: ev.ID,
+		StartsAt: time.Now().Add(72 * time.Hour), EndsAt: time.Now().Add(73 * time.Hour), Capacity: 4, RemainingSeats: 99}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -145,7 +145,7 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, c
               <span suppressHydrationWarning>
                 {formatChoice(c.start, timeZone, locale)}
                 {c.price != null && c.price > 0 ? ` — ${formatPrice(c.price, currency, locale)}` : ''}
-                {c.seatsLeft <= 0 ? ` — ${kind === 'session' ? t('Full — join the waiting list') : t('Full')}` : ''}
+                {c.seatsLeft <= 0 ? ` — ${kind === 'session' ? t('Full — join the waiting list') : t('Full')}` : ` — ${c.seatsLeft} ${t('seats left')}`}
               </span>
             }
           />

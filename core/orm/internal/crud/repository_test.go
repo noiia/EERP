@@ -700,3 +700,30 @@ func TestRepository_FindAll_RejectsUnknownOrGatedOrderColumn(t *testing.T) {
 		t.Errorf("no SQL must run for a gated order column, got %v", ex.queries)
 	}
 }
+
+type seatItem struct {
+	model.BaseModel
+	Capacity       int `db:"capacity"`
+	RemainingSeats int `db:"remaining_seats,generated"`
+}
+
+func TestRepository_WritesSkipGeneratedColumns(t *testing.T) {
+	if err := registry.Register[seatItem](); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := registry.Get("seat_item")
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, m)
+	ctx := access.WithTenant(context.Background(), uuid.New())
+
+	_, _ = repo.Update(ctx, uuid.New(), map[string]any{"capacity": 2, "remaining_seats": 3})
+	q, _ := ex.find(t, "UPDATE seat_item")
+	if strings.Contains(q, "remaining_seats") {
+		t.Errorf("UPDATE writes a generated column: %q", q)
+	}
+	_, _ = repo.Create(ctx, map[string]any{"capacity": 2, "remaining_seats": 3})
+	q, _ = ex.find(t, "INSERT INTO seat_item")
+	if strings.Contains(q, "remaining_seats") {
+		t.Errorf("INSERT writes a generated column: %q", q)
+	}
+}

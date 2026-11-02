@@ -353,3 +353,23 @@ func TestGet_NonStruct_ReturnsError(t *testing.T) {
 		t.Error("expected error for non-struct type, got nil")
 	}
 }
+
+type generatedModel struct {
+	ID             int `db:"id,pk"`
+	Capacity       int `db:"capacity"`
+	RemainingSeats int `db:"remaining_seats,generated"`
+}
+
+func TestParseTag_Generated(t *testing.T) {
+	meta, err := cache.Get[generatedModel]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := meta.ColumnIndex("remaining_seats")
+	if i < 0 || !meta.Fields[i].Generated {
+		t.Fatalf("remaining_seats must be Generated: %+v", meta.Fields)
+	}
+	if meta.Fields[meta.ColumnIndex("capacity")].Generated {
+		t.Error("capacity must not be Generated")
+	}
+}

@@ -476,7 +476,7 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 			Column:    cf.Column,
 			GoType:    goTypeName(cf.Type),
 			Nullable:  cf.Type.Kind() == reflect.Pointer,
-			ReadOnly:  roSet[cf.Column],
+			ReadOnly:  roSet[cf.Column] || cf.Generated,
 			IndexPath: cf.IndexPath,
 			Groups:    o.fieldGroups[cf.Column],
 		}

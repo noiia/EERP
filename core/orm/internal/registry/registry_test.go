@@ -496,3 +496,25 @@ func TestExtendSchema(t *testing.T) {
 		}
 	})
 }
+
+type seatSession struct {
+	model.BaseModel
+	Capacity       int `db:"capacity"`
+	RemainingSeats int `db:"remaining_seats,generated"`
+}
+
+func TestRegister_GeneratedIsReadOnly(t *testing.T) {
+	resetRegistry()
+	if err := registry.Register[seatSession](); err != nil {
+		t.Fatal(err)
+	}
+	meta, _ := registry.Get("seat_session")
+	for _, f := range meta.Fields {
+		if f.Column == "remaining_seats" && !f.ReadOnly {
+			t.Error("generated field must be read-only")
+		}
+		if f.Column == "capacity" && f.ReadOnly {
+			t.Error("capacity must stay writable")
+		}
+	}
+}

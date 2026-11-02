@@ -122,6 +122,15 @@ describe('event views', () => {
     expect(status.selection?.options).toEqual(['waitlisted', 'pending_payment', 'confirmed', 'attended', 'no_show', 'cancelled', 'expired'])
   })
 
+  it('shows the generated remaining seats on sessions', () => {
+    for (const path of ['/event/sessions', '/event/sessions/:id']) {
+      const d = mod.routes.find((r) => r.path === path)!.descriptor
+      expect(d.fields.find((f) => f.name === 'remaining_seats')).toMatchObject({ label: 'Remaining seats', readOnly: true })
+    }
+    const sessions = mod.routes.find((r) => r.path === '/event/:id')!.descriptor.fields.find((f) => f.name === 'sessions')!
+    expect(sessions.widgetOptions!.columns).toContainEqual({ key: 'remaining_seats', label: 'Remaining seats' })
+  })
+
   it('ships kanban, calendar and graph defaults', () => {
     const list = (path: string) => mod.routes.find((r) => r.path === path)!.descriptor
     expect(list('/event/bookings').viewModeDefaults).toEqual({ kanbanStatusField: 'status', calendarDateField: 'starts_at', enableGraphs: true })

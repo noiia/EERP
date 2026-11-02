@@ -72,7 +72,10 @@ type EventSession struct {
 	EndsAt     time.Time `db:"ends_at" json:"ends_at"`
 	Capacity   int       `db:"capacity" json:"capacity"`
 	SeatsTaken int       `db:"seats_taken" json:"seats_taken"`
-	Price      *float64  `db:"price" json:"price"` // display only
+	// RemainingSeats is capacity - seats_taken, stored (GENERATED ALWAYS AS in
+	// Migrate) so lists can filter and sort on it; never written by the ORM.
+	RemainingSeats int      `db:"remaining_seats,generated" json:"remaining_seats"`
+	Price          *float64 `db:"price" json:"price"` // display only
 }
 
 // EventAvailability: local wall-clock hours ("09:00") on a weekday (0 = Sunday).

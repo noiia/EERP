@@ -54,7 +54,7 @@ func (b UpdateBuilder[T]) FromStruct(v T) UpdateBuilder[T] {
 	rv := reflect.ValueOf(v)
 	sets := make([]setClause, 0, len(b.meta.Fields))
 	for _, f := range b.meta.Fields {
-		if f.IsPK {
+		if f.IsPK || f.Generated {
 			continue
 		}
 		fv := f.FieldValue(rv)

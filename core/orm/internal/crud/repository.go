@@ -570,6 +570,9 @@ func (r *Repository) Update(ctx context.Context, id any, data map[string]any) (m
 		if f.Column == tenantColumn {
 			continue // tenant is immutable — a client cannot move a row across tenants
 		}
+		if r.isGenerated(f.Column) {
+			continue
+		}
 		val, ok := data[f.Column]
 		if !ok {
 			continue
@@ -707,12 +710,22 @@ func (r *Repository) hardDelete(ctx context.Context, id any) error {
 	return nil
 }
 
+// isGenerated reports whether col is a Postgres generated column, which
+// rejects any explicit write.
+func (r *Repository) isGenerated(col string) bool {
+	i := r.meta.StructMeta.ColumnIndex(col)
+	return i >= 0 && r.meta.StructMeta.Fields[i].Generated
+}
+
 // orderedData iterates meta.Fields in order and returns aligned cols/vals slices
 // for only the columns present in data. Deterministic ordering ensures stable SQL.
 func (r *Repository) orderedData(data map[string]any) ([]string, []any) {
 	cols := make([]string, 0, len(data))
 	vals := make([]any, 0, len(data))
 	for _, f := range r.meta.Fields {
+		if r.isGenerated(f.Column) {
+			continue
+		}
 		if val, ok := data[f.Column]; ok {
 			cols = append(cols, f.Column)
 			vals = append(vals, val)
