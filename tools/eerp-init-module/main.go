@@ -3,6 +3,35 @@
 // frontend views package (package.json, tsconfig.json, vitest.config.ts,
 // views/), following the shape of core/modules/contact and
 // core/modules/crminheritdemo.
+//
+// # Usage
+//
+// The tool is its own Go module (no go.mod at the repo root), so build or run
+// it from this directory:
+//
+//	cd tools/eerp-init-module
+//	go build -o eerp-init-module .          # the executable
+//	./eerp-init-module -p ../../core/modules/expense -t go
+//
+//	go run . -p ../../core/modules/expense -t go   # or without building
+//
+// Flags (both required):
+//
+//	-p <path>  where the module is created; relative to the current directory.
+//	           Its last segment is the module name: lowercase letters and
+//	           digits, starting with a letter (it becomes a Go package, an npm
+//	           package and a table name). The directory must not exist yet.
+//	-t go|wasm "go" compiles the module into the core binary; "wasm" is
+//	           loaded at runtime from its built .wasm.
+//
+// It writes module.json, module.go, module_test.go, package.json,
+// tsconfig.json, vitest.config.ts, views/<Name>Views.ts (+ its test) and
+// i18n/<name>.pot. When the path is directly under core/modules it also
+// adds the import to core/modules/all/all.go (-t go only) and runs
+// `pnpm install` in core-front to link the views package; elsewhere it
+// prints what to wire by hand. Then add the new module's path to
+// module_root in eerp-config.json if it lives outside the existing roots,
+// and rebuild the frontend to pick up its views.
 package main
 
 import (
