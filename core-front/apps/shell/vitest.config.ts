@@ -26,6 +26,10 @@ export default defineConfig({
     // Heavy MUI renders (e.g. AppearanceSettings) exceed the 5s default under
     // coverage instrumentation on a loaded machine or CI runner.
     testTimeout: 15_000,
+    // A file that renders a lazy widget preloads every heavy chunk (data grid, tree,
+    // Tiptap, Graph) in a beforeAll — ~3 s alone, past the 10 s hook default when the
+    // whole suite runs in parallel.
+    hookTimeout: 30_000,
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     server: {
