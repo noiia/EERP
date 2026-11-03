@@ -7,7 +7,7 @@ import type { WfPage } from '@/website/workflow'
 // React Flow's canvas needs real layout (ResizeObserver, sizes) jsdom lacks: the stub
 // renders the nodes/edges it is given and keeps its props, so the tests drive the
 // map's own handlers (onNodeClick, onReconnect) the way React Flow would call them.
-type RfNode = { id: string; data: { label: ReactNode }; selected?: boolean; position: { x: number; y: number }; connectable?: boolean }
+type RfNode = { id: string; data: { label: ReactNode }; selected?: boolean; position: { x: number; y: number }; connectable?: boolean; measured?: { width: number; height: number } }
 type RfEdge = { id: string; source: string; target: string; selected?: boolean; deletable?: boolean; reconnectable?: boolean | string; style?: { stroke?: string } }
 type RfProps = {
   nodes: RfNode[]
@@ -17,7 +17,7 @@ type RfProps = {
   onConnect?: (conn: { source: string; target: string; sourceHandle: null; targetHandle: null }) => void
   isValidConnection?: (conn: { source: string; target: string }) => boolean
   onEdgeClick?: (e: unknown, edge: RfEdge) => void
-  onNodesChange?: (changes: { type: 'position'; id: string; position?: { x: number; y: number } }[]) => void
+  onNodesChange?: (changes: ({ type: 'position'; id: string; position?: { x: number; y: number } } | { type: 'dimensions'; id: string; dimensions?: { width: number; height: number } })[]) => void
   onNodeDragStop?: (e: unknown, n: RfNode) => void
   onBeforeDelete?: (els: { nodes: RfNode[]; edges: RfEdge[] }) => Promise<boolean>
   nodesDraggable?: boolean
@@ -152,6 +152,7 @@ describe('WorkflowMap', () => {
     const contact = rf.props.nodes.find((n) => n.id === 'page:contact')!
     expect(contact.position).toEqual({ x: 50, y: 60 })
     await act(async () => rf.props.onNodeDragStop!({}, contact))
+
     // A stale id (page deleted since) is dropped from the saved set.
     expect(savePositions).toHaveBeenCalledWith({ 'page:about': { x: 900, y: 40 }, 'page:contact': { x: 50, y: 60 } })
   })
@@ -195,5 +196,12 @@ describe('WorkflowMap', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Remove' })))
     expect(saveLayout).toHaveBeenCalledWith('p-home', [{ ...hero('/about'), config: {} }])
     await waitFor(() => expect(screen.queryByTestId(`edge-${homeEdge}`)).not.toBeInTheDocument())
+  })
+
+  it('keeps every box measured while one is dragged, so none disappears', () => {
+    render(<WorkflowMap pages={pages} canArrange />)
+    act(() => rf.props.onNodesChange!(rf.props.nodes.map((n) => ({ type: 'dimensions' as const, id: n.id, dimensions: { width: 150, height: 40 } }))))
+    act(() => rf.props.onNodesChange!([{ type: 'position', id: 'page:about', position: { x: 10, y: 10 } }]))
+    for (const n of rf.props.nodes) expect(n.measured).toEqual({ width: 150, height: 40 })
   })
 })

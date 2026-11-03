@@ -61,6 +61,10 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
   const [error, setError] = useState<string | null>(null)
   const [positions, setPositions] = useState(savedPositions)
   const [live, setLive] = useState<Record<string, XYPosition>>({}) // boxes being dragged
+  // The boxes' measured sizes, as React Flow reports them. Every node object the map
+  // builds must carry its `measured`: a node rebuilt without it (each drag frame does)
+  // is hidden, with its arrows, until re-measured — which never comes, its size unchanged.
+  const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
   const [adding, setAdding] = useState<{ pageId: string; to: NodeId } | null>(null)
   const [removing, setRemoving] = useState<WfEdge | null>(null)
 
@@ -75,6 +79,7 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
       return {
         id: n.id,
         position: live[n.id] ?? positions[n.id] ?? { x: cells[n.id].col * COL_W, y: cells[n.id].row * ROW_H },
+        measured: sizes[n.id],
         deletable: false,
         // Only an existing page can hold a new link (it's written into its layout).
         connectable: canEdit && !!n.pageId,
@@ -93,7 +98,7 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
         },
       }
     })
-  }, [wf, levels, focus.nodeId, theme, live, positions, canEdit])
+  }, [wf, levels, focus.nodeId, theme, live, positions, sizes, canEdit])
 
   const edges: MapEdge[] = useMemo(() => wf.edges.map((e) => {
     const level = levels.edges.get(e.id)
@@ -151,6 +156,8 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
   const onNodesChange = (changes: NodeChange<MapNode>[]) => {
     const moves = changes.flatMap((c) => (c.type === 'position' && c.position ? [[c.id, c.position] as const] : []))
     if (moves.length) setLive((l) => ({ ...l, ...Object.fromEntries(moves) }))
+    const measured = changes.flatMap((c) => (c.type === 'dimensions' && c.dimensions ? [[c.id, c.dimensions] as const] : []))
+    if (measured.length) setSizes((m) => ({ ...m, ...Object.fromEntries(measured) }))
   }
 
   // Drop: save every position (only nodes still on the map, so the setting stays small).
