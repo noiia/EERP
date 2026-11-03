@@ -77,6 +77,7 @@ type App struct {
 	startedAt   time.Time       // when Build began: activities created before it are from a previous process
 	cache       *orm.QueryCache // nil when redis_url is unset/unreachable
 	extAuth     *providers.Handler
+	rates       *website.LiveRates // the site's live exchange rates, refreshed by Run
 }
 
 // Build validates cfg (relative paths already resolved — types.Config.ResolvePaths),
@@ -220,7 +221,7 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 	qc := openQueryCache(ctx, configContent)
 	app.DB.SetQueryCache(qc)
 
-	a := &App{cfg: configContent, configPath: configPath, db: app, engine: engine, linker: linker, cache: qc, startedAt: buildStart}
+	a := &App{cfg: configContent, configPath: configPath, db: app, engine: engine, linker: linker, cache: qc, startedAt: buildStart, rates: website.NewLiveRates(website.ECBDailyURL)}
 	if err := a.mountRoutes(moduleRuntime); err != nil {
 		_ = app.Close()
 		return nil, err
@@ -346,6 +347,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
 	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
 	settingsGroup.PUT("/format", settingsHandler.PutFormatSettings)
+	settingsGroup.PUT("/format/date", settingsHandler.PutDateFormatSettings)
 	settingsGroup.GET("/views/:entity/fields", settingsHandler.GetViewFieldsSettings)
 	settingsGroup.PUT("/views/:entity/fields", settingsHandler.PutViewFieldsSettings)
 	settingsGroup.GET("/views/:entity/graph", settingsHandler.GetGraphLayoutSettings)
@@ -440,6 +442,10 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	workflowLayout := website.NewWorkflowLayoutHandler(siteStore)
 	settingsGroup.GET("/website/workflow_layout", workflowLayout.Get)
 	settingsGroup.PUT("/website/workflow_layout", workflowLayout.Put)
+	// Site language & currency defaults, offered currencies and rate overrides.
+	siteLocalization := website.NewLocalizationHandler(siteStore, siteTenant, siteCompany(app.DB), a.rates)
+	settingsGroup.GET("/website/localization", siteLocalization.Get)
+	settingsGroup.PUT("/website/localization", siteLocalization.Put)
 
 	// Company (multi-company): POST /company/:id/clone-settings copies every
 	// setting from company :id (the source) to target_company_id — a new
@@ -850,6 +856,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			website.TenantMiddleware(siteTenant))
 		publicGroup.GET("/site", routing.PublicSite)
 		publicGroup.GET("/legal", siteFiles.PublicLegal)
+		publicGroup.GET("/localization", siteLocalization.Public)
 		publicGroup.GET("/security.txt", siteFiles.PublicSecurityTxt)
 		publicGroup.GET("/robots.txt", siteFiles.PublicRobotsTxt)
 		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
@@ -905,6 +912,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
 		websiteGroup.GET("/me", siteMe.Get)
 		websiteGroup.PUT("/me", siteMe.Put)
+		websiteGroup.PUT("/me/preferences", siteMe.PutPreferences)
 		websiteGroup.GET("/me/bookings", eventH.MyBookings)
 		// Email verification (owner session only) attaches earlier anonymous bookings.
 		siteVerify := website.NewVerifyHandler(app.DB, eventmodule.AttachBookings, userRepo, configContent.SiteURL)
@@ -1211,6 +1219,10 @@ func (a *App) Run(ctx context.Context) error {
 	// large table can take minutes, and the server must not wait for it.
 	go searchindex.Run(ctx, app.DB, time.Hour)
 
+	// Live exchange rates for the website's currency switcher (ECB daily feed),
+	// refreshed in the background — never fetched on a request path.
+	go a.rates.Run(ctx)
+
 	// Event sweep (modules/event): every 5 minutes, queue the reminder of
 	// bookings entering their tenant's reminder window (events.settings
 	// reminder_hours), expire unclaimed waiting-list offers (their seats pass to
@@ -1248,6 +1260,20 @@ func (a *App) Run(ctx context.Context) error {
 
 	common.Logger.Info("server starting")
 	return a.server.Start(ctx)
+}
+
+// siteCompany is the website's company: the workspace's first one, the same
+// company sale.WorkspaceCurrency prices event sessions in.
+func siteCompany(db *orm.DB) website.SiteCompany {
+	return func(ctx context.Context, tenant uuid.UUID) (uuid.UUID, string, error) {
+		var id uuid.UUID
+		var currency string
+		err := db.QueryRow(ctx, `SELECT id, currency FROM company WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1`, tenant).Scan(&id, &currency)
+		if errors.Is(err, orm.ErrNotFound) {
+			return uuid.Nil, "", nil
+		}
+		return id, currency, err
+	}
 }
 
 func publicRateLimit(cfg *types.Config) int {

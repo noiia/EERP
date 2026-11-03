@@ -7,8 +7,8 @@ import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { formatNumber, useFormatStore, useT, ViewBanner } from '@eerp/core-front'
-import { setWorkspaceNumberFormat } from '@/lib/preferences'
+import { DATE_FORMATS, formatDatePattern, formatNumber, useFormatStore, useT, ViewBanner } from '@eerp/core-front'
+import { setWorkspaceDateFormat, setWorkspaceNumberFormat } from '@/lib/preferences'
 
 // Settings → Formats: how numbers display across the whole workspace. The durable
 // value is server state (app_settings key format.number, PUT /settings/format,
@@ -19,6 +19,10 @@ import { setWorkspaceNumberFormat } from '@/lib/preferences'
 
 /** Sentinel for the "no grouping" thousands choice ('' can't be a Select value). */
 const NONE_VALUE = 'none'
+/** Sentinel for "the language's own short date" (null can't be a Select value). */
+const LOCALE_DATE = 'locale'
+/** A day whose day and month differ, so each pattern's order is visible. */
+const PREVIEW_DATE = new Date(2026, 11, 31, 12)
 
 const DECIMAL_CHOICES = [
   { value: '.', label: 'Period' },
@@ -38,6 +42,8 @@ export default function FormatSettings({ canEdit }: { canEdit: boolean }) {
   const decimalSeparator = useFormatStore((s) => s.decimalSeparator)
   const thousandsSeparator = useFormatStore((s) => s.thousandsSeparator)
   const setNumberFormat = useFormatStore((s) => s.setNumberFormat)
+  const dateFormat = useFormatStore((s) => s.dateFormat)
+  const setDateFormat = useFormatStore((s) => s.setDateFormat)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,6 +69,19 @@ export default function FormatSettings({ canEdit }: { canEdit: boolean }) {
     }
   }
 
+  async function onDateChange(next: string | null) {
+    const previous = dateFormat
+    setError(null)
+    setDateFormat(next)
+    setSaving(true)
+    const result = await setWorkspaceDateFormat(next)
+    setSaving(false)
+    if (!result.ok) {
+      setDateFormat(previous)
+      setError(result.message)
+    }
+  }
+
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
       <Stack spacing={3}>
@@ -71,7 +90,7 @@ export default function FormatSettings({ canEdit }: { canEdit: boolean }) {
             {t('Formats')}
           </Typography>
           <Typography color="text.secondary">
-            {t('How numbers display across the workspace, for everyone.')}
+            {t('How numbers and short dates display across the workspace, for everyone.')}
           </Typography>
         </Stack>
 
@@ -118,6 +137,28 @@ export default function FormatSettings({ canEdit }: { canEdit: boolean }) {
         <Typography data-testid="format-preview" sx={{ fontVariantNumeric: 'tabular-nums' }}>
           {t('Preview:')} {formatNumber(1234567.89, config, { decimals: 2 })}
         </Typography>
+
+        <Stack spacing={1}>
+          <FormControl sx={{ maxWidth: 416 }} disabled={!canEdit || saving}>
+            <InputLabel id="date-format-label">{t('Short date format')}</InputLabel>
+            <Select
+              labelId="date-format-label"
+              label={t('Short date format')}
+              value={dateFormat ?? LOCALE_DATE}
+              onChange={(e) => void onDateChange(e.target.value === LOCALE_DATE ? null : e.target.value)}
+            >
+              <MenuItem value={LOCALE_DATE}>{t("The language's own")}</MenuItem>
+              {DATE_FORMATS.map((pattern) => (
+                <MenuItem key={pattern} value={pattern}>
+                  {pattern} ({formatDatePattern(PREVIEW_DATE, pattern)})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Typography variant="body2" color="text.secondary">
+            {t('Used where space is short, such as the website booking list on a phone.')}
+          </Typography>
+        </Stack>
 
         {!canEdit && (
           <Typography variant="body2" color="text.secondary">

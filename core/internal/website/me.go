@@ -16,6 +16,7 @@ import (
 type meStore interface {
 	FindByID(ctx context.Context, id uuid.UUID) (auth.Users, error)
 	UpdateWebsiteProfile(ctx context.Context, tenantID, id uuid.UUID, p auth.WebsiteProfile) error
+	SetWebsitePreferences(ctx context.Context, tenantID, id uuid.UUID, locale, currency *string) error
 }
 
 // MeHandler serves a website user's own profile, behind WebsiteJWTMiddleware.
@@ -35,7 +36,9 @@ func (h *MeHandler) Get(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"email": u.Email, "name": u.Name, "surname": u.Surname, "phone": u.Phone,
-		"email_verified": u.EmailVerifiedAt != nil,
+		"email_verified":     u.EmailVerifiedAt != nil,
+		"preferred_locale":   u.PreferredLocale,
+		"preferred_currency": u.PreferredCurrency,
 	})
 }
 
@@ -65,4 +68,32 @@ func validProfile(p *auth.WebsiteProfile) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required; name/surname max 200, phone max 50 characters")
 	}
 	return nil
+}
+
+// PutPreferences handles PUT /api/v1/website/me/preferences —
+// {preferred_locale, preferred_currency}, each null to follow the site
+// default. Both are replaced together (the footer sends both).
+func (h *MeHandler) PutPreferences(c *echo.Context) error {
+	id := auth.MustIdentity(c.Request().Context())
+	var req struct {
+		PreferredLocale   *string `json:"preferred_locale"`
+		PreferredCurrency *string `json:"preferred_currency"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
+	}
+	if req.PreferredLocale != nil && *req.PreferredLocale != "source" && !siteLocaleTag.MatchString(*req.PreferredLocale) {
+		return echo.NewHTTPError(http.StatusBadRequest, "preferred_locale must be null, \"source\" or a locale tag like fr")
+	}
+	if req.PreferredCurrency != nil && !currencyCode.MatchString(*req.PreferredCurrency) {
+		return echo.NewHTTPError(http.StatusBadRequest, "preferred_currency must be null or an ISO 4217 code like EUR")
+	}
+	err := h.users.SetWebsitePreferences(c.Request().Context(), id.TenantID, id.UserID, req.PreferredLocale, req.PreferredCurrency)
+	if errors.Is(err, orm.ErrNotFound) {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	if err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }

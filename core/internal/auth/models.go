@@ -48,6 +48,10 @@ type Users struct {
 	// tenant default (app_settings "i18n.default_locale"); the reserved value
 	// "source" forces the untranslated source language.
 	PreferredLocale *string `db:"preferred_locale"`
+	// PreferredCurrency is a website visitor's display currency (ISO 4217),
+	// picked in the site footer. nil follows the site default
+	// (website.localization). Unused for ERP staff.
+	PreferredCurrency *string `db:"preferred_currency"`
 	// ActiveCompanyID is the caller's current company selection — nil until
 	// company.Repository.ResolveActive lazily bootstraps it on first touch of
 	// any company-scoped setting, same posture as PreferredLocale.

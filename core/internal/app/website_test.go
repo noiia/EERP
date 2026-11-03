@@ -223,6 +223,18 @@ func TestWebsiteProfileAndAdmin(t *testing.T) {
 		t.Errorf("blank name = %d, want 400", code)
 	}
 
+	// Footer choices: language and currency, stored on the account.
+	if code, body := site.do(http.MethodPut, "/api/v1/website/me/preferences", map[string]any{"preferred_locale": "fr", "preferred_currency": "USD"}); code != http.StatusNoContent {
+		t.Fatalf("put preferences: %d %s", code, body)
+	}
+	_, body = site.do(http.MethodGet, "/api/v1/website/me", nil)
+	if me := decode(t, body); me["preferred_locale"] != "fr" || me["preferred_currency"] != "USD" {
+		t.Fatalf("preferences not stored: %v", me)
+	}
+	if code, _ := site.do(http.MethodPut, "/api/v1/website/me/preferences", map[string]any{"preferred_currency": "usd"}); code != http.StatusBadRequest {
+		t.Errorf("lowercase currency = %d, want 400", code)
+	}
+
 	// ERP admin lists and disables the visitor.
 	_, body = c.do(http.MethodGet, "/api/v1/website_admin/users", nil)
 	var id string
@@ -428,6 +440,9 @@ func TestWebsiteSiteFiles(t *testing.T) {
 	}
 	if code, body := c.do(http.MethodPut, "/api/v1/settings/website/legal", map[string]any{"company_name": "Acme SAS"}); code != http.StatusNoContent {
 		t.Fatalf("put legal = %d %s", code, body)
+	}
+	if code, body := anon.do(http.MethodGet, "/api/v1/public/localization", nil); code != http.StatusOK || decode(t, body)["rates"] == nil {
+		t.Errorf("public localization = %d %s", code, body)
 	}
 	if code, body := anon.do(http.MethodGet, "/api/v1/public/legal", nil); code != http.StatusOK || decode(t, body)["company_name"] != "Acme SAS" {
 		t.Errorf("public legal = %d %s", code, body)

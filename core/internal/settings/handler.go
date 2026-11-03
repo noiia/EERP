@@ -116,6 +116,9 @@ type preferencesResponse struct {
 	// frontend's built-in default. Rides along with the preferences load so
 	// one round-trip seeds every client-side format mirror.
 	NumberFormat *numberFormat `json:"number_format"`
+	// DateFormat: the workspace short date format (DateFormatKey). null =
+	// the frontend's locale default.
+	DateFormat *string `json:"date_format"`
 	// ActiveCompany: the caller's current company (multi-company) — never
 	// null once resolved, since ResolveActive always bootstraps one. Rides
 	// along here so the top bar's company switcher needs no separate fetch.
@@ -207,6 +210,14 @@ func (h *Handler) GetMyPreferences(c *echo.Context) error {
 		if err := json.Unmarshal([]byte(rawFormat), &format); err == nil {
 			resp.NumberFormat = &format
 		}
+	}
+
+	dateFormat, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, DateFormatKey)
+	if err != nil {
+		return fmt.Errorf("preferences: read date format: %w", err)
+	}
+	if ok && DateFormats[dateFormat] {
+		resp.DateFormat = &dateFormat
 	}
 
 	rawAccounts, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, AccountsUsernameAtFormatKey)

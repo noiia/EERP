@@ -46,6 +46,8 @@ export interface LocalePreferences {
   preferred_locale: string | null
   default_locale: string | null
   number_format?: NumberFormatPreference | null
+  /** Workspace short date pattern (format.date, e.g. 'dd/MM/yyyy'); null = locale default. */
+  date_format?: string | null
   active_company?: ActiveCompanyRef | null
   username_at_format?: boolean
   /** The workspace's unit system (GET /me/preferences). */

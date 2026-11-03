@@ -376,6 +376,22 @@ func (r *UserRepository) UpdateWebsiteProfile(ctx context.Context, tenantID, id 
 	return nil
 }
 
+// SetWebsitePreferences stores a live website account's footer choices
+// (language and currency; nil = follow the site default).
+func (r *UserRepository) SetWebsitePreferences(ctx context.Context, tenantID, id uuid.UUID, locale, currency *string) error {
+	n, err := r.users.UpdateQuery().
+		Set("preferred_locale", locale).Set("preferred_currency", currency).Set("updated_at", time.Now()).
+		Where(orm.Cond("id = $1 AND tenant_id = $2 AND kind = $3 AND deleted_at IS NULL", id, tenantID, KindWebsite)).
+		Exec(ctx, r.db)
+	if err != nil {
+		return fmt.Errorf("user: set website preferences: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("user: set website preferences: %w", orm.ErrNotFound)
+	}
+	return nil
+}
+
 // ListWebsiteUsers returns tenantID's website accounts, disabled ones
 // (soft-deleted) included — raw SQL because the typed repo hides them.
 func (r *UserRepository) ListWebsiteUsers(ctx context.Context, tenantID uuid.UUID) ([]Users, error) {

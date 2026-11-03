@@ -91,3 +91,23 @@ export async function getMenuPages(): Promise<Pick<SitePage, 'slug' | 'title'>[]
 export function getLegalNotice(): Promise<LegalNotice | null> {
   return getJSON<LegalNotice>('/legal', ['site_legal'])
 }
+
+/** The site's language/currency defaults and display rates (Go's /public/localization). */
+export interface SiteLocalization {
+  default_locale: string
+  default_currency: string
+  /** The workspace currency prices are stored in. */
+  base: string
+  /** 1 base = rate units, for every currency the footer offers. */
+  rates: Record<string, number>
+  /** The footer's choices, the base first. */
+  currencies: string[]
+  /** Workspace short date pattern, '' = the language's own. */
+  date_format: string
+}
+
+export const EMPTY_LOCALIZATION: SiteLocalization = { default_locale: '', default_currency: '', base: '', rates: {}, currencies: [], date_format: '' }
+
+export async function getLocalization(): Promise<SiteLocalization> {
+  return (await getJSON<SiteLocalization>('/localization', ['site_localization']).catch(() => null)) ?? EMPTY_LOCALIZATION
+}

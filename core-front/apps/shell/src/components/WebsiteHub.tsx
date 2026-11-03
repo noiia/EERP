@@ -11,6 +11,7 @@ import { T, erpPath, IntentLink } from '@eerp/core-front'
 // Client Components"), same reason as AppsList.
 const PAGES = [
   { path: '/settings/website/published', title: 'Published data', description: 'Which tables and columns the public website may read.' },
+  { path: '/settings/website/localization', title: 'Language & currency', description: 'The default language and currency, and the currencies visitors can pick.' },
   { path: '/settings/website/routing', title: 'Routing', description: 'Serve the website from a path or its own domain.' },
   { path: '/settings/website/legal', title: 'Legal notice', description: 'The publisher and host details shown on the website and in the ERP.' },
   { path: '/settings/website/security-txt', title: 'security.txt', description: 'How security researchers can reach you (RFC 9116).' },

@@ -38,6 +38,11 @@ export function LocaleSync({ preferences }: { preferences: LocalePreferences | n
       })
     }
 
+    // Present = the server answered (null = no workspace pattern): mirror it.
+    if (preferences.date_format !== undefined) {
+      useFormatStore.getState().setDateFormat(preferences.date_format)
+    }
+
     // Same reasoning as number_format above: an absent active_company (the
     // read itself failed upstream) keeps the mirror's last-known value
     // instead of clobbering it with an empty currency.

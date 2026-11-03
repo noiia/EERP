@@ -2165,3 +2165,57 @@ msgstr "Lister, créer, changer, supprimer, extraire et restaurer les bases de d
 
 msgid "Open database management"
 msgstr "Ouvrir la gestion des bases de données"
+
+msgid "Language & currency"
+msgstr "Langue et devise"
+
+msgid "The default language and currency, and the currencies visitors can pick."
+msgstr "La langue et la devise par défaut, et les devises que les visiteurs peuvent choisir."
+
+msgid "What a first-time visitor sees. Visitors can change both in the website footer; an account keeps its own choice."
+msgstr "Ce que voit un nouveau visiteur. Les visiteurs peuvent changer les deux dans le pied de page du site ; un compte garde son propre choix."
+
+msgid "Currencies"
+msgstr "Devises"
+
+msgid "Prices are stored in the workspace currency; other currencies are converted for display only, at the live rate (European Central Bank) unless you set one. Bookings are still charged in the workspace currency."
+msgstr "Les prix sont enregistrés dans la devise de l'espace de travail ; les autres devises sont converties pour l'affichage seulement, au taux en direct (Banque centrale européenne) sauf si vous en fixez un. Les réservations restent facturées dans la devise de l'espace de travail."
+
+msgid "Workspace currency"
+msgstr "Devise de l'espace de travail"
+
+msgid "Rate"
+msgstr "Taux"
+
+msgid "No live rate"
+msgstr "Pas de taux en direct"
+
+msgid "Live rate"
+msgstr "Taux en direct"
+
+msgid "No live rate: set one, or the currency is not offered."
+msgstr "Pas de taux en direct : fixez-en un, sinon la devise n'est pas proposée."
+
+msgid "Add a currency (ISO code)"
+msgstr "Ajouter une devise (code ISO)"
+
+msgid "The rate you set is below the live rate, so prices show lower than their market conversion:"
+msgstr "Le taux que vous avez fixé est inférieur au taux en direct : les prix s'affichent plus bas que leur conversion au cours du marché :"
+
+msgid "Default currency"
+msgstr "Devise par défaut"
+
+msgid "Currency"
+msgstr "Devise"
+
+msgid "Short date format"
+msgstr "Format de date court"
+
+msgid "The language's own"
+msgstr "Celui de la langue"
+
+msgid "Used where space is short, such as the website booking list on a phone."
+msgstr "Utilisé quand la place manque, comme la liste de réservation du site sur téléphone."
+
+msgid "How numbers and short dates display across the workspace, for everyone."
+msgstr "L'affichage des nombres et des dates courtes dans tout l'espace de travail, pour tout le monde."

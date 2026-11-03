@@ -72,6 +72,17 @@ export async function setWorkspaceNumberFormat(
   }
 }
 
+/** Save the workspace short date pattern (null = the locale's own). Same
+ * settings:format:write permission as the number format. */
+export async function setWorkspaceDateFormat(dateFormat: string | null): Promise<SaveResult> {
+  try {
+    await apiRequest('PUT', '/settings/format/date', { date_format: dateFormat })
+    return { ok: true }
+  } catch (e) {
+    return failure(e, 'Could not save the workspace date format.')
+  }
+}
+
 /**
  * Save the workspace's username display format — whether a `text/username`
  * field always renders with a leading "@". Go authorizes: callers without

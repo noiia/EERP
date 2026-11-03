@@ -1,6 +1,7 @@
 'use client'
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
@@ -8,16 +9,19 @@ import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useI18nStore, useT, ViewBanner } from '@eerp/core-front'
+import { byPrefixAndName, FontAwesomeIcon, formatDatePattern, useI18nStore, useT, ViewBanner } from '@eerp/core-front'
+import { convertPrice } from '../site-prefs'
+import { useSitePrefs } from '../site-prefs-store'
 
 /** One bookable time: a session (id = session id) or a slot (id = its start). */
 export interface BookingChoice { id: string; start: string; seatsLeft: number; price?: number | null }
 
-/** A paid session's price, tax included, in the workspace currency (bare when unknown). */
-function formatPrice(price: number, currency: string | undefined, locale: string | null): string {
+/** A paid session's price, tax included, in `currency` (bare when unknown). `narrow`:
+ * the currency as its symbol only ($, €) — the phone layout's. */
+function formatPrice(price: number, currency: string | undefined, locale: string | null, narrow = false): string {
   const tag = locale && locale !== 'source' ? locale : undefined
   try {
-    if (currency) return new Intl.NumberFormat(tag, { style: 'currency', currency }).format(price)
+    if (currency) return new Intl.NumberFormat(tag, { style: 'currency', currency, currencyDisplay: narrow ? 'narrowSymbol' : 'symbol' }).format(price)
   } catch {
     // an unknown currency code: fall through to the bare amount
   }
@@ -32,6 +36,41 @@ export function formatChoice(start: string, timeZone: string, locale: string | n
   } catch {
     return new Date(start).toLocaleString(tag) // unknown zone: the browser's own
   }
+}
+
+/** One choice's label. sm and up: the full text date, " — " separated. A phone: the
+ * workspace short date, the seats left as a seat icon and count, the price with its
+ * currency symbol. A price shown in another currency than the stored one is a
+ * conversion (prefixed ≈); the booking is still charged in the stored currency. */
+function ChoiceLabel({ c, kind, timeZone, currency }: { c: BookingChoice; kind: 'session' | 'slot'; timeZone: string; currency?: string }) {
+  const t = useT()
+  const locale = useI18nStore((s) => s.locale)
+  const site = useSitePrefs()
+  const tag = locale && locale !== 'source' ? locale : undefined
+  const shown = site.currency || currency
+  const converted = c.price != null && c.price > 0 && shown ? convertPrice(c.price, currency, shown, site) : null
+  // No rate for the visitor's currency: the stored price, as is.
+  const [amount, unit] = converted != null ? [converted, shown] : [c.price ?? 0, currency]
+  const approx = unit !== currency ? '≈ ' : ''
+  const paid = c.price != null && c.price > 0
+  const full = c.seatsLeft <= 0
+  return (
+    <span suppressHydrationWarning>
+      <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+        {formatChoice(c.start, timeZone, locale)}
+        {paid ? ` — ${approx}${formatPrice(amount, unit, locale)}` : ''}
+        {full ? ` — ${kind === 'session' ? t('Full — join the waiting list') : t('Full')}` : ` — ${c.seatsLeft === 1 ? t('1 seat left') : `${c.seatsLeft} ${t('seats left')}`}`}
+      </Box>
+      <Box component="span" sx={{ display: { xs: 'inline-flex', sm: 'none' }, alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap' }}>
+        <span>{formatDatePattern(c.start, site.dateFormat, { timeZone, locale: tag, time: true })}</span>
+        <Box component="span" title={full ? t('Full') : t('seats left')} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: full ? 'error.main' : 'text.secondary' }}>
+          <FontAwesomeIcon icon={byPrefixAndName.fas.chair} aria-label={t('seats left')} />
+          {Math.max(c.seatsLeft, 0)}
+        </Box>
+        {paid && <span>{approx}{formatPrice(amount, unit, locale, true)}</span>}
+      </Box>
+    </span>
+  )
 }
 
 type Status =
@@ -55,7 +94,6 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, c
 }) {
   const t = useT()
   const router = useRouter()
-  const locale = useI18nStore((s) => s.locale)
   const [choice, setChoice] = useState('')
   const [seats, setSeats] = useState(1)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
@@ -141,13 +179,7 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, c
             value={c.id}
             disabled={c.seatsLeft <= 0 && kind !== 'session'}
             control={<Radio required />}
-            label={
-              <span suppressHydrationWarning>
-                {formatChoice(c.start, timeZone, locale)}
-                {c.price != null && c.price > 0 ? ` — ${formatPrice(c.price, currency, locale)}` : ''}
-                {c.seatsLeft <= 0 ? ` — ${kind === 'session' ? t('Full — join the waiting list') : t('Full')}` : ` — ${c.seatsLeft === 1 ? t('1 seat left') : `${c.seatsLeft} ${t('seats left')}`}`}
-              </span>
-            }
+            label={<ChoiceLabel c={c} kind={kind} timeZone={timeZone} currency={currency} />}
           />
         ))}
       </RadioGroup>

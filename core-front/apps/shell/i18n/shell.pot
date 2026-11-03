@@ -2029,3 +2029,57 @@ msgstr ""
 #: src/components/DeveloperSettings.tsx
 msgid "Open database management"
 msgstr ""
+
+msgid "Language & currency"
+msgstr ""
+
+msgid "The default language and currency, and the currencies visitors can pick."
+msgstr ""
+
+msgid "What a first-time visitor sees. Visitors can change both in the website footer; an account keeps its own choice."
+msgstr ""
+
+msgid "Currencies"
+msgstr ""
+
+msgid "Prices are stored in the workspace currency; other currencies are converted for display only, at the live rate (European Central Bank) unless you set one. Bookings are still charged in the workspace currency."
+msgstr ""
+
+msgid "Workspace currency"
+msgstr ""
+
+msgid "Rate"
+msgstr ""
+
+msgid "No live rate"
+msgstr ""
+
+msgid "Live rate"
+msgstr ""
+
+msgid "No live rate: set one, or the currency is not offered."
+msgstr ""
+
+msgid "Add a currency (ISO code)"
+msgstr ""
+
+msgid "The rate you set is below the live rate, so prices show lower than their market conversion:"
+msgstr ""
+
+msgid "Default currency"
+msgstr ""
+
+msgid "Currency"
+msgstr ""
+
+msgid "Short date format"
+msgstr ""
+
+msgid "The language's own"
+msgstr ""
+
+msgid "Used where space is short, such as the website booking list on a phone."
+msgstr ""
+
+msgid "How numbers and short dates display across the workspace, for everyone."
+msgstr ""

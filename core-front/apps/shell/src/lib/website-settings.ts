@@ -223,3 +223,35 @@ export async function previewSiteFile(name: 'robots.txt' | 'security.txt'): Prom
     return ''
   }
 }
+
+/** Settings → Website → Language & currency (website.localization). */
+export interface WebsiteLocalization {
+  default_locale: string
+  default_currency: string
+  /** Offered besides the workspace currency (`base`). */
+  currencies: string[]
+  /** Hand-set rates, 1 base = rate units, replacing the live one. */
+  overrides: Record<string, number>
+}
+export interface WebsiteLocalizationView extends WebsiteLocalization {
+  base: string
+  /** Live rates of the offered currencies the ECB feed quotes. */
+  live: Record<string, number>
+  live_date: string
+}
+
+export async function getWebsiteLocalization(): Promise<WebsiteLocalizationView> {
+  const empty: WebsiteLocalizationView = { default_locale: '', default_currency: '', currencies: [], overrides: {}, base: '', live: {}, live_date: '' }
+  try {
+    return { ...empty, ...(await apiRequest<Partial<WebsiteLocalizationView>>('GET', '/settings/website/localization')) }
+  } catch {
+    return empty
+  }
+}
+
+export async function saveWebsiteLocalization(l: WebsiteLocalization): Promise<SaveResult> {
+  const res = await save('PUT', '/settings/website/localization', l)
+  // public-api.ts caches the site's copy (footer choices, rates) under this tag.
+  if (res.ok) revalidateTag('site_localization', { expire: 0 })
+  return res
+}
