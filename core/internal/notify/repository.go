@@ -33,6 +33,9 @@ func (r *Repository) SyncCatalog(ctx context.Context) error {
 			WHERE u.deleted_at IS NULL
 			  AND NOT EXISTS (SELECT 1 FROM notification_category nc
 			                  WHERE nc.tenant_id = u.tenant_id AND nc.key = $1 AND nc.deleted_at IS NULL)
+			-- Another process syncing (or creating the row) at the same time already
+			-- added it: theirs stands, and its admin grant is theirs to make.
+			ON CONFLICT (tenant_id, key) WHERE deleted_at IS NULL DO NOTHING
 			RETURNING id, tenant_id`, c.Key, c.Label)
 		if err != nil {
 			return fmt.Errorf("notify: sync catalog %s: %w", c.Key, err)

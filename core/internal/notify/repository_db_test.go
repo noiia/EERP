@@ -48,7 +48,13 @@ func setup(t *testing.T) fixture {
 	exec(`INSERT INTO roles (id, tenant_id, name) VALUES ($1, $3, 'Ops'), ($2, $3, 'Watchers')`, ops, watchers, f.tenant)
 	exec(`INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3)`, f.tenant, f.alice, ops)
 	exec(`INSERT INTO role_belongs (tenant_id, role_id, belongs_to_role_id) VALUES ($1, $2, $3)`, f.tenant, ops, watchers)
-	exec(`INSERT INTO notification_category (id, tenant_id, key, label, name) VALUES ($1, $2, 'cron', 'Scheduled actions', 'Scheduled actions')`, cat, f.tenant)
+	// Another package's boot may run SyncCatalog in parallel (same database) and add
+	// this tenant's "cron" category as soon as its users exist: take that row if so.
+	exec(`INSERT INTO notification_category (id, tenant_id, key, label, name) VALUES ($1, $2, 'cron', 'Scheduled actions', 'Scheduled actions')
+		ON CONFLICT (tenant_id, key) WHERE deleted_at IS NULL DO NOTHING`, cat, f.tenant)
+	if err := app.DB.QueryRow(ctx, `SELECT id FROM notification_category WHERE tenant_id = $1 AND key = 'cron' AND deleted_at IS NULL`, f.tenant).Scan(&cat); err != nil {
+		t.Fatal(err)
+	}
 	exec(`INSERT INTO role_notification_category (id, tenant_id, role_id, notification_category_id) VALUES ($1, $2, $3, $4)`, f.cronRoleLink, f.tenant, watchers, cat)
 	return f
 }
