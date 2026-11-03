@@ -194,6 +194,8 @@ describe('seedDemoData', () => {
       'event_availability',
       'event_booking',
       'event_booking (status changes)',
+      'website publishing',
+      'website_page',
       'picture',
     ])
     expect(outcome.results.every((r) => r.failed === 0)).toBe(true)
@@ -399,3 +401,41 @@ describe('seedDemoData events', () => {
   })
 })
 
+
+describe('seedDemoData — demo website', () => {
+  it('publishes what the site reads and creates its pages, linked to each other by slug', async () => {
+    const result = await seedDemoData()
+    expect(result.ok).toBe(true)
+
+    const pages = callsFor('website_page').map(([, body]) => body as { slug: string; layout: { config: { detail_slug?: string } }[] })
+    expect(pages.map((p) => p.slug)).toEqual(['home', 'events', 'products', 'event-details', 'product'])
+    const slugs = new Set(pages.map((p) => p.slug))
+    for (const p of pages) for (const b of p.layout) if (b.config.detail_slug) expect(slugs.has(b.config.detail_slug)).toBe(true)
+
+    const puts = apiRequestMock.mock.calls.filter(([m, path]) => m === 'PUT' && String(path).startsWith('/settings/website/public/'))
+    expect(puts.map(([, path]) => path)).toEqual([
+      '/settings/website/public/website_page',
+      '/settings/website/public/event',
+      '/settings/website/public/product',
+      '/settings/website/public/product_variant',
+    ])
+    expect(revalidateTagMock).toHaveBeenCalledWith('website_page', { expire: 0 })
+  })
+
+  it('keeps a table\'s published fields and filter, and skips pages whose slug exists', async () => {
+    apiRequestMock.mockImplementation(async (method: string, path: string) => {
+      if (method === 'GET' && path === '/settings/website/public') {
+        return [{ table: 'product', declared: [], fields: ['name', 'weight'], filter: { active: 'true' } }]
+      }
+      if (method === 'GET' && path.startsWith('/website_page?filter[slug]=home')) return { data: [{ id: 'existing' }] }
+      return {}
+    })
+    await seedDemoData()
+
+    expect(callsFor('website_page').map(([, body]) => (body as { slug: string }).slug)).not.toContain('home')
+    const product = apiRequestMock.mock.calls.find(([m, path]) => m === 'PUT' && path === '/settings/website/public/product')!
+    const body = product[2] as { fields: string[]; filter: Record<string, string> }
+    expect(body.filter).toEqual({ active: 'true' })
+    expect(body.fields).toEqual(expect.arrayContaining(['name', 'weight', 'picture', 'unit_price']))
+  })
+})

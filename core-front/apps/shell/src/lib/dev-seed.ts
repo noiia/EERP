@@ -1,7 +1,9 @@
 'use server'
 import { deflateSync, crc32 } from 'node:zlib'
 import { ApiError, apiRequest, createServerApiClient, uploadPicture } from '@eerp/core-front/server'
+import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
+import { DEMO_SITE_PAGES, DEMO_SITE_PUBLISHED } from './dev-seed-website'
 import { getMyLocalePreferences } from './preferences'
 import { PAPER_SIZE_PRESETS } from '../../app/app/settings/appearance/page-formats/descriptors'
 
@@ -602,9 +604,55 @@ async function seedEvents(people: Person[], variantId: string | undefined, pictu
 }
 
 /**
+ * The demo website (dev-seed-website.ts): publishes what its blocks read, then
+ * creates its pages. Publishing only ADDS fields to a table's existing selection and
+ * keeps its forced filter when it has one, so a workspace's own choices survive; a
+ * page whose slug already exists is left alone (slugs are unique), so a second run
+ * creates nothing. The site's cached reads are expired at the end.
+ */
+async function seedWebsite(): Promise<SeedEntityResult[]> {
+  const publish: SeedEntityResult = { entity: 'website publishing', created: 0, failed: 0, errors: [] }
+  let current: { table: string; fields: string[]; filter: Record<string, string> }[] = []
+  try {
+    const res = await apiRequest<unknown>('GET', '/settings/website/public')
+    if (Array.isArray(res)) current = res
+  } catch {
+    // unreadable: publish ours as they are
+  }
+  for (const want of DEMO_SITE_PUBLISHED) {
+    const have = current.find((c) => c.table === want.table)
+    const fields = [...new Set([...(have?.fields ?? []), ...want.fields])]
+    const filter = have && Object.keys(have.filter ?? {}).length > 0 ? have.filter : want.filter
+    try {
+      await apiRequest('PUT', `/settings/website/public/${encodeURIComponent(want.table)}`, { fields, filter })
+      publish.created += 1
+    } catch (e) {
+      publish.failed += 1
+      if (publish.errors.length < 5) publish.errors.push(`${want.table}: ${e instanceof ApiError ? e.message : 'Unknown error'}`)
+    }
+  }
+
+  const fresh: Record<string, unknown>[] = []
+  for (const page of DEMO_SITE_PAGES) {
+    try {
+      const res = await apiRequest<{ data?: unknown[] }>('GET', `/website_page?filter[slug]=${encodeURIComponent(String(page.slug))}&page_size=1`)
+      if (res?.data?.length) continue
+    } catch {
+      // unreadable: try to create it, a duplicate slug is refused anyway
+    }
+    fresh.push(page)
+  }
+  const pages = await createMany('website_page', fresh)
+
+  for (const tag of ['website_page', ...DEMO_SITE_PUBLISHED.map((p) => p.table)]) revalidateTag(tag, { expire: 0 })
+  return [publish, pages.result]
+}
+
+/**
  * Seed the workspace with fake contacts, CRM opportunities, tags, warehouse
  * products (described, with named variants and generated pictures), sale invoices/quotes (with their line items), default report
- * page formats and the Event app's demo events (seedEvents) — through the ordinary entity API, in dependency order
+ * page formats, the Event app's demo events (seedEvents) and a demo website
+ * (seedWebsite) — through the ordinary entity API, in dependency order
  * (parents before the rows that reference their ids).
  */
 export async function seedDemoData(volume: SeedVolume = 'light', groups: string[] = []): Promise<SeedResult> {
@@ -692,6 +740,8 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
     .filter((c) => typeof c.name === 'string' && typeof c.email === 'string')
     .map((c) => ({ name: c.name as string, email: c.email as string }))
   results.push(...(await seedEvents(people, variantsOutcome.records[0]?.id, pictures)))
+  // Last of the records: its pages list the events and products seeded above.
+  results.push(...(await seedWebsite()))
 
   // The active company's logo, only if it has none (never replace a real one).
   const companyId = preferences?.active_company?.id
