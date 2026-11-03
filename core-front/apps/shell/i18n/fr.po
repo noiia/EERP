@@ -2156,3 +2156,12 @@ msgstr "Page de détail des cartes"
 
 msgid "Page after submit"
 msgstr "Page après envoi"
+
+msgid "Databases"
+msgstr "Bases de données"
+
+msgid "List, create, switch, delete, extract and restore the databases of this server. The page sits outside the ERP and asks for the master key, not your session."
+msgstr "Lister, créer, changer, supprimer, extraire et restaurer les bases de données de ce serveur. La page est hors de l'ERP et demande la clé maître, pas votre session."
+
+msgid "Open database management"
+msgstr "Ouvrir la gestion des bases de données"

@@ -39,6 +39,11 @@ beforeEach(() => {
 })
 
 describe('DeveloperSettings', () => {
+  it('links to the database manager at the root, outside the ERP', () => {
+    render(<DeveloperSettings isDev />)
+    expect(screen.getByRole('link', { name: 'Open database management' })).toHaveAttribute('href', '/database/management')
+  })
+
   it('runs the seed action and lists a per-entity summary of the result', async () => {
     const result: SeedResult = {
       ok: true,

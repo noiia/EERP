@@ -164,6 +164,30 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
           <AccordionSummary
             expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
           >
+            <Typography variant="subtitle1">{t('Databases')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t(
+                  'List, create, switch, delete, extract and restore the databases of this server. The page sits outside the ERP and asks for the master key, not your session.',
+                )}
+              </Typography>
+              <Stack direction="row">
+                {/* A plain link, not IntentLink/erpPath: the manager lives at the
+                    root (/database/management), outside the ERP and its session. */}
+                <Button variant="outlined" component="a" href="/database/management">
+                  {t('Open database management')}
+                </Button>
+              </Stack>
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion defaultExpanded disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
             {/* "Demo data", not "Seed demo data": the section title must not
                 collide with the action Button's own accessible name below —
                 MUI's AccordionSummary toggle is itself a <button> whose

@@ -2017,3 +2017,15 @@ msgstr ""
 #: app/app/website/workflows
 msgid "Page after submit"
 msgstr ""
+
+#: src/components/DeveloperSettings.tsx
+msgid "Databases"
+msgstr ""
+
+#: src/components/DeveloperSettings.tsx
+msgid "List, create, switch, delete, extract and restore the databases of this server. The page sits outside the ERP and asks for the master key, not your session."
+msgstr ""
+
+#: src/components/DeveloperSettings.tsx
+msgid "Open database management"
+msgstr ""
