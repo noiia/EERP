@@ -40,6 +40,8 @@ vi.mock('@xyflow/react', () => ({
     )
   },
   Background: () => null,
+  BaseEdge: () => null,
+  getBezierPath: () => ['', 0, 0, 0, 0],
   Controls: () => null,
   MarkerType: { ArrowClosed: 'arrowclosed' },
   Position: { Left: 'left', Right: 'right' },
@@ -155,6 +157,19 @@ describe('WorkflowMap', () => {
 
     // A stale id (page deleted since) is dropped from the saved set.
     expect(savePositions).toHaveBeenCalledWith({ 'page:about': { x: 900, y: 40 }, 'page:contact': { x: 50, y: 60 } })
+  })
+
+  it('a box dropped on another lands beside it, and labels get a spot of their own', async () => {
+    savePositions.mockResolvedValue(null)
+    render(<WorkflowMap pages={pages} canArrange positions={{ 'page:about': { x: 900, y: 40 } }} />)
+    const contact = { ...rf.props.nodes.find((n) => n.id === 'page:contact')!, position: { x: 905, y: 45 } }
+    await act(async () => rf.props.onNodeDragStop!({}, contact))
+    const saved = savePositions.mock.calls[0][0]['page:contact']
+    expect(saved).not.toEqual({ x: 905, y: 45 })
+    // Default box size 150×40 plus the 16px gap: clear of page:about on at least one axis.
+    expect(Math.abs(saved.x - 900) >= 166 || Math.abs(saved.y - 40) >= 56).toBe(true)
+    const edges = rf.props.edges as (RfEdge & { type?: string; data?: { spot?: unknown } })[]
+    expect(edges.every((e) => e.type === 'labeled' && e.data?.spot)).toBe(true)
   })
 
   it('a new arrow asks which block holds it, then saves a new button block', async () => {

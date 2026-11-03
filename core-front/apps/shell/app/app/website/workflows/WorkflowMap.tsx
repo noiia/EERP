@@ -11,13 +11,14 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useTheme, type Theme } from '@mui/material/styles'
-import { Background, Controls, MarkerType, Position, ReactFlow, type Connection, type Edge, type IsValidConnection, type Node, type NodeChange, type XYPosition } from '@xyflow/react'
+import { Background, BaseEdge, Controls, getBezierPath, MarkerType, Position, ReactFlow, type Connection, type Edge, type EdgeProps, type EdgeTypes, type IsValidConnection, type Node, type NodeChange, type XYPosition } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { BannerScope, BannerSlot, byPrefixAndName, erpPath, FontAwesomeIcon, useT, ViewBanner } from '@eerp/core-front'
 import { getPageLayout, saveLayout, saveWorkflowPositions, type WorkflowPositions } from '@/website/editor-actions'
 import { buildWorkflow, retarget, type NodeId, type WfEdge, type WfNode, type WfPage } from '@/website/workflow'
 import { addLink, canLinkTo, removable, removeLink, type NewLink } from '@/website/workflow-edit'
 import { layoutWorkflow, problemLevels, type Level } from '@/website/workflow-layout'
+import { bezierPoint, DEFAULT_NODE_SIZE, freeSpot, labelSize, placeLabels, separateBoxes, type LabelSpot, type Rect } from '@/website/workflow-collide'
 import { NewLinkDialog, RemoveLinkDialog } from './WorkflowDialogs'
 
 // The Website app's workflow map: every page, the system pages and external hosts,
@@ -29,12 +30,15 @@ import { NewLinkDialog, RemoveLinkDialog } from './WorkflowDialogs'
 // With settings:website:write, boxes can be moved; positions are shared by the team
 // (website.workflow_layout), unsaved ones laid out automatically. React Flow is heavy:
 // this module is only reached through LazyWorkflowMap, so it ships in its own chunk.
+// Collisions (src/website/workflow-collide.ts): auto-placed boxes step aside from saved
+// ones, a dropped box lands on the nearest free spot, and each arrow's label slides
+// along its arrow (or off it) until it covers no other label and no box.
 
 const COL_W = 280
 const ROW_H = 120
 
 type MapNode = Node<{ label: ReactNode; wf: WfNode }>
-type MapEdge = Edge<{ wf: WfEdge }>
+type MapEdge = Edge<{ wf: WfEdge; spot?: LabelSpot }>
 
 /** Errors red, warnings orange (the theme's palette), else `fallback`. */
 const levelColor = (theme: Theme, level: Level | undefined, fallback: string) =>
@@ -71,14 +75,40 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
   const wf = useMemo(() => buildWorkflow(pages), [pages])
   const levels = useMemo(() => problemLevels(wf.nodes, wf.problems), [wf])
 
-  const nodes: MapNode[] = useMemo(() => {
+  const sizeOf = (id: string) => sizes[id] ?? DEFAULT_NODE_SIZE
+
+  // Where every box is drawn: a dragged or saved box stays where it was put; the
+  // automatic ones take the free spot nearest their grid cell.
+  const placed = useMemo(() => {
     const cells = layoutWorkflow(wf.nodes, wf.edges)
+    return separateBoxes(wf.nodes.map((n) => {
+      const fixed = live[n.id] ?? positions[n.id]
+      const { width, height } = sizes[n.id] ?? DEFAULT_NODE_SIZE
+      return { id: n.id, ...(fixed ?? { x: cells[n.id].col * COL_W, y: cells[n.id].row * ROW_H }), w: width, h: height, fixed: !!fixed }
+    }))
+  }, [wf, live, positions, sizes])
+
+  // Each label's spot along its arrow, clear of the other labels and of every box.
+  const labelSpots = useMemo(() => {
+    const box = (id: string): Rect => {
+      const { width, height } = sizes[id] ?? DEFAULT_NODE_SIZE
+      return { ...placed[id], w: width, h: height }
+    }
+    const boxes = wf.nodes.map((n) => box(n.id))
+    return placeLabels(wf.edges.filter((e) => placed[e.from] && placed[e.to]).map((e) => {
+      const s = box(e.from)
+      const tg = box(moved?.edgeId === e.id ? moved.to : e.to)
+      return { id: e.id, source: { x: s.x + s.w, y: s.y + s.h / 2 }, target: { x: tg.x, y: tg.y + tg.h / 2 }, ...labelSize(t(e.label)) }
+    }), boxes)
+  }, [wf, placed, sizes, moved, t])
+
+  const nodes: MapNode[] = useMemo(() => {
     return wf.nodes.map((n) => {
       const level = levels.nodes.get(n.id)
       const system = !n.id.startsWith('page:')
       return {
         id: n.id,
-        position: live[n.id] ?? positions[n.id] ?? { x: cells[n.id].col * COL_W, y: cells[n.id].row * ROW_H },
+        position: placed[n.id],
         measured: sizes[n.id],
         deletable: false,
         // Only an existing page can hold a new link (it's written into its layout).
@@ -98,7 +128,7 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
         },
       }
     })
-  }, [wf, levels, focus.nodeId, theme, live, positions, sizes, canEdit])
+  }, [wf, levels, focus.nodeId, theme, placed, sizes, canEdit])
 
   const edges: MapEdge[] = useMemo(() => wf.edges.map((e) => {
     const level = levels.edges.get(e.id)
@@ -110,8 +140,9 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
       id: e.id,
       source: e.from,
       target: moved?.edgeId === e.id ? moved.to : e.to,
+      type: 'labeled',
       label: t(e.label),
-      data: { wf: e },
+      data: { wf: e, spot: labelSpots[e.id] },
       selected,
       reconnectable: canEdit && !gate ? 'target' : false,
       deletable: canEdit && removable(e.key),
@@ -120,7 +151,7 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
       labelStyle: { fill: theme.palette.text.primary },
       labelBgStyle: { fill: theme.palette.background.paper },
     }
-  }), [wf, levels, focus.edgeId, moved, theme, t])
+  }), [wf, levels, focus.edgeId, moved, theme, t, labelSpots])
 
   const onNodeClick = (_: unknown, node: MapNode) => {
     const pageId = node.data.wf.pageId
@@ -160,10 +191,13 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
     if (measured.length) setSizes((m) => ({ ...m, ...Object.fromEntries(measured) }))
   }
 
-  // Drop: save every position (only nodes still on the map, so the setting stays small).
+  // Drop: the box lands on the nearest spot clear of the others, then every position is
+  // saved (only nodes still on the map, so the setting stays small).
   const onNodeDragStop = async (_: unknown, node: MapNode) => {
     const ids = new Set(wf.nodes.map((n) => n.id as string))
-    const next = Object.fromEntries(Object.entries({ ...positions, [node.id]: node.position }).filter(([id]) => ids.has(id)))
+    const others = wf.nodes.filter((n) => n.id !== node.id).map((n) => ({ ...placed[n.id], w: sizeOf(n.id).width, h: sizeOf(n.id).height }))
+    const spot = freeSpot({ ...node.position, w: sizeOf(node.id).width, h: sizeOf(node.id).height }, others)
+    const next = Object.fromEntries(Object.entries({ ...positions, [node.id]: spot }).filter(([id]) => ids.has(id)))
     setPositions(next)
     setLive({})
     const err = await saveWorkflowPositions(next)
@@ -230,6 +264,7 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            edgeTypes={edgeTypes}
             onNodeClick={onNodeClick}
             onEdgeClick={(_, e) => setFocus({ edgeId: e.id })}
             onPaneClick={() => setFocus({})}
@@ -315,3 +350,30 @@ function NodeLabel({ node }: { node: WfNode }) {
     </Box>
   )
 }
+
+/** The map's arrow: React Flow's bezier, its label drawn at the spot the map chose for it
+ * (`data.spot`, see placeLabels) instead of always the middle. */
+function LabeledEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, ...rest }: EdgeProps<MapEdge>) {
+  const [path, midX, midY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
+  const spot = data?.spot
+  const at = spot ? bezierPoint({ x: sourceX, y: sourceY }, { x: targetX, y: targetY }, spot.t) : { x: midX, y: midY }
+  return (
+    <BaseEdge
+      id={rest.id}
+      path={path}
+      markerEnd={rest.markerEnd}
+      style={rest.style}
+      interactionWidth={rest.interactionWidth}
+      label={rest.label}
+      labelX={at.x}
+      labelY={at.y + (spot?.dy ?? 0)}
+      labelStyle={rest.labelStyle}
+      labelShowBg={rest.labelShowBg}
+      labelBgStyle={rest.labelBgStyle}
+      labelBgPadding={rest.labelBgPadding}
+      labelBgBorderRadius={rest.labelBgBorderRadius}
+    />
+  )
+}
+
+const edgeTypes: EdgeTypes = { labeled: LabeledEdge }
