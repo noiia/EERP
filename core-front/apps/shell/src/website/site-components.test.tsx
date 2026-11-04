@@ -15,6 +15,8 @@ vi.mock('./blocks/BookingForm', () => ({
 
 import { LogoutButton, ProfileForm } from './AccountForm'
 import { SiteHeader } from './SiteHeader'
+import { SiteTheme } from './SiteTheme'
+import { parseSiteMode } from './site-prefs'
 import { SlotPicker } from './blocks/SlotPicker'
 
 beforeEach(() => {
@@ -36,6 +38,32 @@ describe('SiteHeader', () => {
     expect(screen.getAllByRole('link', { name: 'Home' })[0].getAttribute('aria-current')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Home' }))
+  })
+
+  it('toggles dark mode and keeps the pick in a cookie', () => {
+    document.cookie = 'eerp_site_theme=; path=/; max-age=0'
+    render(<SiteTheme switchable><SiteHeader menu={[]} signedIn={false} staff={false} /></SiteTheme>)
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to dark mode' }))
+    expect(document.cookie).toContain('eerp_site_theme=dark')
+    // The button now offers the way back.
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to light mode' }))
+    expect(document.cookie).toContain('eerp_site_theme=light')
+    expect(screen.getByRole('button', { name: 'Switch to dark mode' })).toBeTruthy()
+  })
+
+  it('starts from the mode the layout read from the cookie', () => {
+    render(<SiteTheme switchable initialMode="dark"><SiteHeader menu={[]} signedIn={false} staff={false} /></SiteTheme>)
+    expect(screen.getByRole('button', { name: 'Switch to light mode' })).toBeTruthy()
+  })
+
+  it('has no toggle outside a switchable site theme (the page editor canvas)', () => {
+    render(<SiteTheme><SiteHeader menu={[]} signedIn={false} staff={false} /></SiteTheme>)
+    expect(screen.queryByRole('button', { name: /switch to (dark|light) mode/i })).toBeNull()
+  })
+
+  it('reads only "dark" as dark from the cookie', () => {
+    expect(parseSiteMode('dark')).toBe('dark')
+    for (const v of ['light', '', 'DARK', undefined]) expect(parseSiteMode(v)).toBe('light')
   })
 
   it('offers log in to a visitor', () => {

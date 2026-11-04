@@ -2,6 +2,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import { linkHref } from '../links'
+import { SITE_COLORS } from '../site-colors'
 import type { HeroConfig } from '../types'
 
 const FLEX = { left: 'flex-start', top: 'flex-start', center: 'center', right: 'flex-end', bottom: 'flex-end' } as const
@@ -47,7 +48,7 @@ export function HeroContent({ config, color }: { config: HeroConfig; color?: str
         <Button variant="contained" disableElevation href={href} size={config.button_size ?? 'large'} fullWidth={full}
           // Over a picture or a dark band (`color` set) the button turns white so it reads.
           sx={{ mt: config.title || config.subtitle ? 1.5 : 0, maxWidth: '100%', whiteSpace: 'normal', borderRadius: 999, px: 3.5, fontWeight: 700,
-            ...(color === '#fff' && { bgcolor: '#fff', color: 'text.primary', '&:hover': { bgcolor: 'rgba(255,255,255,0.88)' } }) }}>
+            ...(color === '#fff' && { bgcolor: '#fff', color: SITE_COLORS.ink, '&:hover': { bgcolor: 'rgba(255,255,255,0.88)' } }) }}>
           {config.cta_label}
         </Button>
       )}

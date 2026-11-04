@@ -2242,3 +2242,9 @@ msgstr ""
 
 msgid "Domain and search engines"
 msgstr ""
+
+msgid "Switch to dark mode"
+msgstr ""
+
+msgid "Switch to light mode"
+msgstr ""

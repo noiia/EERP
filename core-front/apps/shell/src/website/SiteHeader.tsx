@@ -7,7 +7,10 @@ import Container from '@mui/material/Container'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import Tooltip from '@mui/material/Tooltip'
+import { alpha } from '@mui/material/styles'
 import { byPrefixAndName, erpPath, FontAwesomeIcon, T, useT } from '@eerp/core-front'
+import { useSiteMode } from './SiteTheme'
 
 export interface SiteHeaderProps {
   menu: { slug: string; title: string }[]
@@ -20,8 +23,9 @@ const isCurrent = (href: string, path: string | null) =>
   !!path && (href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`))
 
 // The site's header: the menu pages (the current one marked), then the visitor's own
-// entries — My account or Log in, plus ERP for a signed-in staff member. Below md the
-// pages fold into a menu button; the account entry stays visible.
+// entries — My account or Log in, plus ERP for a signed-in staff member — and the
+// light/dark toggle. Below md the pages fold into a menu button; the account entry and
+// the toggle stay visible.
 export function SiteHeader({ menu, signedIn, staff }: SiteHeaderProps) {
   const t = useT()
   const path = usePathname()
@@ -30,7 +34,7 @@ export function SiteHeader({ menu, signedIn, staff }: SiteHeaderProps) {
   return (
     <Box component="header" sx={{
       position: 'sticky', top: 0, zIndex: (theme) => theme.zIndex.appBar,
-      bgcolor: 'rgba(255,255,255,0.92)', backdropFilter: 'saturate(180%) blur(8px)', borderBottom: 1, borderColor: 'divider',
+      bgcolor: (theme) => alpha(theme.palette.background.paper, 0.92), backdropFilter: 'saturate(180%) blur(8px)', borderBottom: 1, borderColor: 'divider',
     }}>
       <Container maxWidth="lg" sx={{ display: 'flex', alignItems: 'center', gap: 1, minHeight: 64 }}>
         {links.length > 0 && (
@@ -70,11 +74,28 @@ export function SiteHeader({ menu, signedIn, staff }: SiteHeaderProps) {
           })}
         </Box>
         <Box sx={{ flex: { xs: 1, md: 0 } }} />
+        <SiteModeToggle />
         {staff && <Button href={erpPath('/')} color="inherit" sx={{ color: 'text.secondary' }}><T text="ERP" /></Button>}
         {signedIn
           ? <Button href="/account" variant="outlined" color="inherit" sx={{ borderColor: 'divider' }}><T text="My account" /></Button>
           : <Button href="/login" variant="contained"><T text="Log in" /></Button>}
       </Container>
     </Box>
+  )
+}
+
+/** The visitor's light/dark switch. Its name says what a click does, not the current
+ * state. Renders nothing outside a switchable SiteTheme. */
+function SiteModeToggle() {
+  const t = useT()
+  const siteMode = useSiteMode()
+  if (!siteMode) return null
+  const label = siteMode.mode === 'dark' ? t('Switch to light mode') : t('Switch to dark mode')
+  return (
+    <Tooltip title={label}>
+      <IconButton aria-label={label} onClick={siteMode.toggle} sx={{ fontSize: '1.125rem', color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
+        <FontAwesomeIcon icon={byPrefixAndName.fas[siteMode.mode === 'dark' ? 'sun' : 'moon']} fixedWidth />
+      </IconButton>
+    </Tooltip>
   )
 }

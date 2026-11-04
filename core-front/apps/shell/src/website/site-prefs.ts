@@ -7,6 +7,12 @@ import type { SiteLocalization } from './public-api'
 
 export const SITE_LOCALE_COOKIE = 'eerp_site_locale'
 export const SITE_CURRENCY_COOKIE = 'eerp_site_currency'
+/** The visitor's light/dark pick (the header's toggle). Absent or unknown = light. */
+export const SITE_THEME_COOKIE = 'eerp_site_theme'
+
+export type SiteMode = 'light' | 'dark'
+/** The site mode a cookie value asks for; anything but `dark` is the light default. */
+export const parseSiteMode = (value: string | undefined): SiteMode => (value === 'dark' ? 'dark' : 'light')
 /** Stored locale value forcing the untranslated source language. */
 export const SOURCE_LOCALE_VALUE = 'source'
 
