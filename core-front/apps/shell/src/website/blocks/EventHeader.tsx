@@ -32,9 +32,9 @@ export async function bookingGate(config: BookingConfig, path: string | undefine
 export function EventHeader({ event }: { event: PublicEvent }) {
   return (
     <>
-      <Typography variant="h4" component="h2" gutterBottom>{event.name}</Typography>
-      {event.location && <Typography color="text.secondary" gutterBottom>{event.location}</Typography>}
-      {event.description && <Typography sx={{ whiteSpace: 'pre-line', mb: 2 }}>{event.description}</Typography>}
+      <Typography variant="h2" sx={{ mb: 1 }}>{event.name}</Typography>
+      {event.location && <Typography variant="subtitle1" color="text.secondary" sx={{ fontWeight: 500, mb: 2 }}>{event.location}</Typography>}
+      {event.description && <Typography sx={{ whiteSpace: 'pre-line', mb: 3, maxWidth: '70ch' }}>{event.description}</Typography>}
     </>
   )
 }

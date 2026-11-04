@@ -11,7 +11,7 @@ export default async function CancelBookingPage({ searchParams }: { searchParams
   return (
     <Container maxWidth="sm" sx={{ py: 6 }}>
       <Stack spacing={3}>
-        <Typography variant="h4" component="h1"><T text="Cancel this booking?" /></Typography>
+        <Typography variant="h2" component="h1"><T text="Cancel this booking?" /></Typography>
         <TokenActionForm action={cancelByToken} token={token} button="Cancel booking" done="Your booking is cancelled." />
       </Stack>
     </Container>

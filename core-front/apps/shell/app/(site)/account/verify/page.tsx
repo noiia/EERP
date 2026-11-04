@@ -17,7 +17,7 @@ export default async function VerifyEmailPage({ searchParams }: { searchParams: 
   return (
     <Container maxWidth="sm" sx={{ py: 6 }}>
       <Stack spacing={3}>
-        <Typography variant="h4" component="h1"><T text="Confirm your email address" /></Typography>
+        <Typography variant="h2" component="h1"><T text="Confirm your email address" /></Typography>
         <TokenActionForm action={verifyEmail} token={token} button="Confirm my email"
           done="Your email is confirmed. Your earlier bookings now appear in your account." />
       </Stack>

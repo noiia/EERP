@@ -14,7 +14,7 @@ export default async function LegalNoticePage() {
   if (!legal) notFound()
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
-      <Typography variant="h3" component="h1" gutterBottom>
+      <Typography variant="h2" component="h1" gutterBottom>
         <T text="Legal notice" />
       </Typography>
       <LegalNoticeView legal={legal} />

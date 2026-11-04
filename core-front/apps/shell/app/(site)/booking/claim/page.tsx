@@ -12,7 +12,7 @@ export default async function ClaimSeatPage({ searchParams }: { searchParams: Pr
   return (
     <Container maxWidth="sm" sx={{ py: 6 }}>
       <Stack spacing={3}>
-        <Typography variant="h4" component="h1"><T text="A seat is free" /></Typography>
+        <Typography variant="h2" component="h1"><T text="A seat is free" /></Typography>
         <TokenActionForm action={claimByToken} token={token} button="Book my seat" done="Your seat is booked — a confirmation email is on its way." />
       </Stack>
     </Container>

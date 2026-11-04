@@ -17,13 +17,13 @@ export default async function AccountPage() {
     <Container maxWidth="sm" sx={{ py: 6 }}>
       <Stack spacing={3}>
         <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Typography variant="h4" component="h1"><T text="My account" /></Typography>
+          <Typography variant="h2" component="h1"><T text="My account" /></Typography>
           <LogoutButton />
         </Stack>
         <ProfileForm me={me} />
         <Divider />
         <section>
-          <Typography variant="h5" component="h2" gutterBottom><T text="My bookings" /></Typography>
+          <Typography variant="h4" component="h2" gutterBottom><T text="My bookings" /></Typography>
           <MyBookings verified={me.email_verified} />
         </section>
       </Stack>

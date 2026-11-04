@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { faGlobe } from '@fortawesome/free-solid-svg-icons'
+import { faHandshake } from '@fortawesome/free-solid-svg-icons'
 import { byPrefixAndName, registerIcons } from './icons'
 import { solidIcon } from './solid-icon'
 
@@ -8,12 +8,12 @@ describe('byPrefixAndName', () => {
     expect(byPrefixAndName.fas['xmark']?.iconName).toBe('xmark')
     expect(byPrefixAndName.fas['eye-slash']?.iconName).toBe('eye-slash')
     // Not every Solid icon: the full set is what this list keeps out of the bundle.
-    expect(byPrefixAndName.fas['globe']).toBeUndefined()
+    expect(byPrefixAndName.fas['handshake']).toBeUndefined()
   })
 
   it('registerIcons adds an icon to the lookup', () => {
-    registerIcons(faGlobe)
-    expect(byPrefixAndName.fas['globe']).toBe(faGlobe)
+    registerIcons(faHandshake)
+    expect(byPrefixAndName.fas['handshake']).toBe(faHandshake)
   })
 })
 

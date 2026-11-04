@@ -2083,3 +2083,162 @@ msgstr ""
 
 msgid "How numbers and short dates display across the workspace, for everyone."
 msgstr ""
+
+msgid "Main"
+msgstr ""
+
+msgid "A heading and paragraphs."
+msgstr ""
+
+msgid "A picture from a record, with optional text and a button over it."
+msgstr ""
+
+msgid "A large title, a subtitle and a button."
+msgstr ""
+
+msgid "Records as a grid of cards or a table."
+msgstr ""
+
+msgid "One record: its picture and fields."
+msgstr ""
+
+msgid "A row of record cards that scrolls sideways."
+msgstr ""
+
+msgid "Pictures one at a time, with arrows and swipe."
+msgstr ""
+
+msgid "An event’s sessions, booked by visitors."
+msgstr ""
+
+msgid "Free time slots of an appointment event."
+msgstr ""
+
+msgid "Upcoming events, soonest first."
+msgstr ""
+
+msgid "A colored or picture band other blocks sit on."
+msgstr ""
+
+msgid "Fields visitors fill in, saved into records."
+msgstr ""
+
+msgid "Layout and content"
+msgstr ""
+
+msgid "Records"
+msgstr ""
+
+msgid "Events"
+msgstr ""
+
+msgid "Visitors"
+msgstr ""
+
+msgid "Close (Esc)"
+msgstr ""
+
+msgid "Blocks"
+msgstr ""
+
+msgid "Select a block on the page or in this list to configure it."
+msgstr ""
+
+msgid "No blocks yet."
+msgstr ""
+
+msgid "Ctrl+S saves the page. Esc closes the block settings."
+msgstr ""
+
+msgid "This page has no blocks yet"
+msgstr ""
+
+msgid "Add a hero, a text or any other block, then drag it into place and resize it from its corner."
+msgstr ""
+
+msgid "Back to the page form"
+msgstr ""
+
+msgid "Unsaved changes"
+msgstr ""
+
+msgid "All changes saved"
+msgstr ""
+
+msgid "Preview width"
+msgstr ""
+
+msgid "Desktop"
+msgstr ""
+
+msgid "Desktop: drag and resize blocks"
+msgstr ""
+
+msgid "Phone: blocks stacked as visitors see them"
+msgstr ""
+
+msgid "Layout"
+msgstr ""
+
+msgid "Picture"
+msgstr ""
+
+msgid "Background"
+msgstr ""
+
+msgid "Data"
+msgstr ""
+
+msgid "Card"
+msgstr ""
+
+msgid "Access"
+msgstr ""
+
+msgid "Leave an empty line between paragraphs."
+msgstr ""
+
+msgid "Fields shown on each record."
+msgstr ""
+
+msgid "The default view: visitors can switch between grid and list."
+msgstr ""
+
+msgid "Pick a table first."
+msgstr ""
+
+msgid "Optional: rows of another table linked to this record, e.g. product variants."
+msgstr ""
+
+msgid "Map details"
+msgstr ""
+
+msgid "Legend"
+msgstr ""
+
+msgid "A page of the site"
+msgstr ""
+
+msgid "Login, sign-up, account, or another site"
+msgstr ""
+
+msgid "Needs attention"
+msgstr ""
+
+msgid "Broken"
+msgstr ""
+
+msgid "Click a page to open it in the builder."
+msgstr ""
+
+msgid "Drag a box to move it."
+msgstr ""
+
+msgid "Drag from the dot on a page’s right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it."
+msgstr ""
+
+msgid "Every page of the site and the buttons and links between them."
+msgstr ""
+
+msgid "Domain and search engines"
+msgstr ""

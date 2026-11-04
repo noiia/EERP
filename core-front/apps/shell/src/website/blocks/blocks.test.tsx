@@ -3,6 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { BlockView } from './BlockView'
 import { sectionOf, stackOrder, type Block, type PublicDataSource } from '../types'
 
+/** A field line (`label: value`), whose label is its own muted span. */
+const fieldLine = (text: string) => (_: string, el: Element | null) => el?.tagName === 'P' && el.textContent === text
+
 const source = (records: Record<string, unknown>[] | null): PublicDataSource => ({
   list: async () => (records ? { records, total: records.length } : null),
   get: async (_t, id) => records?.find((r) => r.id === id) ?? null,
@@ -182,9 +185,9 @@ describe('blocks', () => {
     }
     await renderBlock(block('record_detail', { table: 'product', fields: ['name'], title_field: 'name', picture_field: 'picture',
       related: { table: 'product_variant', link_field: 'product_id', fields: ['unit_price'], title_field: 'name', picture_field: 'picture' } }), s, { id: '7' })
-    expect(screen.getByText('Unit price: 10')).toBeTruthy() // first variant picked by default
+    expect(screen.getByText(fieldLine('Unit price: 10'))).toBeTruthy() // first variant picked by default
     fireEvent.click(screen.getByRole('button', { name: 'Blue' }))
-    expect(screen.getByText('Unit price: 12')).toBeTruthy()
+    expect(screen.getByText(fieldLine('Unit price: 12'))).toBeTruthy()
     expect(screen.getByRole('img').getAttribute('src')).toBe('/api/v1/public/product_variant/v2/picture/picture')
   })
 

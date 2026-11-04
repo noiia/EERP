@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState, type ReactNode } from 'react'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import List from '@mui/material/List'
@@ -290,37 +291,54 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
             <Controls showInteractive={false} />
           </ReactFlow>
         </Paper>
-        <Box sx={{ width: { md: 320 }, flexShrink: 0 }}>
-          {focusedEdge && canEdit && removable(focusedEdge.key) && (
-            <Button color="error" variant="outlined" size="small" fullWidth sx={{ mb: 2 }} onClick={() => setRemoving(focusedEdge)}>
-              {t('Remove link')}
-            </Button>
-          )}
-          {canArrange && Object.keys(positions).length > 0 && (
-            <Button variant="text" size="small" fullWidth sx={{ mb: 2 }} onClick={() => void arrangeAutomatically()}>
-              {t('Arrange automatically')}
-            </Button>
-          )}
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('Problems')}</Typography>
-          {wf.problems.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">{t('No problems found.')}</Typography>
-          ) : (
-            <List dense disablePadding>
-              {wf.problems.map((p, i) => (
-                <ListItemButton
-                  key={`${p.edgeId ?? p.nodeId}:${i}`}
-                  selected={p.edgeId ? focus.edgeId === p.edgeId : focus.nodeId === p.nodeId}
-                  onClick={() => setFocus(p.edgeId ? { edgeId: p.edgeId } : { nodeId: p.nodeId })}
-                >
-                  <ListItemIcon sx={{ minWidth: 28, color: levelColor(theme, p.level, '') }}>
-                    <FontAwesomeIcon icon={byPrefixAndName.fas[p.level === 'error' ? 'circle-exclamation' : 'triangle-exclamation']} />
-                  </ListItemIcon>
-                  <ListItemText primary={t(p.message)} secondary={label(p.nodeId)} />
-                </ListItemButton>
-              ))}
-            </List>
-          )}
-        </Box>
+        <Stack component="aside" spacing={2.5} aria-label={t('Map details')} sx={{ width: { md: 320 }, flexShrink: 0 }}>
+          {(focusedEdge && canEdit && removable(focusedEdge.key)) || (canArrange && Object.keys(positions).length > 0) ? (
+            <Stack spacing={1}>
+              {focusedEdge && canEdit && removable(focusedEdge.key) && (
+                <Button color="error" variant="outlined" size="small" fullWidth onClick={() => setRemoving(focusedEdge)}
+                  startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas.trash} />}>
+                  {t('Remove link')}
+                </Button>
+              )}
+              {canArrange && Object.keys(positions).length > 0 && (
+                <Button variant="text" size="small" fullWidth onClick={() => void arrangeAutomatically()}>
+                  {t('Arrange automatically')}
+                </Button>
+              )}
+            </Stack>
+          ) : null}
+          <Box>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
+              <Typography variant="subtitle2" component="h2">{t('Problems')}</Typography>
+              {wf.problems.length > 0 && (
+                <Chip size="small" label={wf.problems.length} color={wf.problems.some((p) => p.level === 'error') ? 'error' : 'warning'} sx={{ height: 20 }} />
+              )}
+            </Stack>
+            {wf.problems.length === 0 ? (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'text.secondary' }}>
+                <Box component="span" sx={{ color: 'success.main' }}><FontAwesomeIcon icon={byPrefixAndName.fas.check} /></Box>
+                <Typography variant="body2">{t('No problems found.')}</Typography>
+              </Stack>
+            ) : (
+              <List dense disablePadding sx={{ mx: -1 }}>
+                {wf.problems.map((p, i) => (
+                  <ListItemButton
+                    key={`${p.edgeId ?? p.nodeId}:${i}`}
+                    selected={p.edgeId ? focus.edgeId === p.edgeId : focus.nodeId === p.nodeId}
+                    onClick={() => setFocus(p.edgeId ? { edgeId: p.edgeId } : { nodeId: p.nodeId })}
+                    sx={{ borderRadius: 1, alignItems: 'flex-start' }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 28, mt: 0.5, color: levelColor(theme, p.level, '') }}>
+                      <FontAwesomeIcon icon={byPrefixAndName.fas[p.level === 'error' ? 'circle-exclamation' : 'triangle-exclamation']} />
+                    </ListItemIcon>
+                    <ListItemText primary={t(p.message)} secondary={label(p.nodeId)} />
+                  </ListItemButton>
+                ))}
+              </List>
+            )}
+          </Box>
+          <MapLegend canEdit={canEdit} canArrange={canArrange} />
+        </Stack>
       </Stack>
       {addingPage && addingTo && (
         <NewLinkDialog page={addingPage} to={addingTo} pages={pages} onCancel={() => setAdding(null)} onSave={saveNewLink} />
@@ -337,16 +355,53 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
   )
 }
 
+/** A box's label: an icon naming its kind (page, home, system page, other site), its
+ * title and path, and its state when it isn't a live published page. */
 function NodeLabel({ node }: { node: WfNode }) {
   const t = useT()
-  if (node.id.startsWith('sys:')) return <Typography variant="body2" sx={{ fontWeight: 600 }}>{t(node.label)}</Typography>
-  if (node.id.startsWith('ext:')) return <Typography variant="body2">{node.label}</Typography>
+  const kind = node.id.startsWith('sys:') ? 'sys' : node.id.startsWith('ext:') ? 'ext' : 'page'
+  const icon = kind === 'sys' ? 'user' : kind === 'ext' ? 'globe' : node.slug === '' ? 'house' : 'file'
+  const state = kind !== 'page' ? null : node.missing ? { text: t('Page not found'), color: 'error.main' } : !node.published ? { text: t('Unpublished'), color: 'warning.main' } : null
+  return (
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', textAlign: 'left' }}>
+      <Box aria-hidden sx={{ color: 'text.secondary', fontSize: 12, pt: 0.25 }}><FontAwesomeIcon icon={byPrefixAndName.fas[icon]} fixedWidth /></Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="body2" sx={{ fontWeight: kind === 'ext' ? 400 : 600, overflowWrap: 'anywhere' }}>{kind === 'sys' ? t(node.label) : node.label}</Typography>
+        {kind === 'page' && node.label !== `/${node.slug}` && <Typography variant="caption" color="text.secondary" component="div">/{node.slug}</Typography>}
+        {state && (
+          <Typography variant="caption" component="div" sx={{ color: state.color, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box component="span" aria-hidden sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: state.color }} />{state.text}
+          </Typography>
+        )}
+      </Box>
+    </Stack>
+  )
+}
+
+/** What the map's marks mean, and what the user may do with it (by their rights). */
+function MapLegend({ canEdit, canArrange }: { canEdit: boolean; canArrange: boolean }) {
+  const t = useT()
+  const swatch = (border: string, style: 'solid' | 'dashed') => (
+    <Box aria-hidden sx={{ width: 18, height: 12, borderRadius: 0.5, border: 1.5, borderStyle: style, borderColor: border, flexShrink: 0 }} />
+  )
+  const row = (mark: ReactNode, text: string) => (
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>{mark}<Typography variant="caption" color="text.secondary">{text}</Typography></Stack>
+  )
   return (
     <Box>
-      <Typography variant="body2" sx={{ fontWeight: 600 }}>{node.label}</Typography>
-      {node.label !== `/${node.slug}` && <Typography variant="caption" color="text.secondary" component="div">/{node.slug}</Typography>}
-      {node.missing && <Typography variant="caption" color="error" component="div">{t('Page not found')}</Typography>}
-      {!node.missing && !node.published && <Typography variant="caption" color="warning.main" component="div">{t('Unpublished')}</Typography>}
+      <Typography variant="subtitle2" component="h2" sx={{ mb: 1 }}>{t('Legend')}</Typography>
+      <Stack spacing={0.75}>
+        {row(swatch('primary.main', 'solid'), t('A page of the site'))}
+        {row(swatch('divider', 'dashed'), t('Login, sign-up, account, or another site'))}
+        {row(swatch('warning.main', 'solid'), t('Needs attention'))}
+        {row(swatch('error.main', 'solid'), t('Broken'))}
+      </Stack>
+      <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1.5, mb: 0 }}>
+        {[t('Click a page to open it in the builder.'),
+          canArrange && t('Drag a box to move it.'),
+          canEdit && t('Drag from the dot on a page’s right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it.'),
+        ].filter(Boolean).join(' ')}
+      </Typography>
     </Box>
   )
 }

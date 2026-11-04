@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, type ReactNode } from 'react'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -10,12 +11,12 @@ import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT, ViewBanner } from '@eerp/core-front'
+import { byPrefixAndName, FontAwesomeIcon, useT, ViewBanner } from '@eerp/core-front'
 import { savePublished, type PublishedTable } from '@/lib/website-settings'
 import { listEditorEvents, listEditorPages } from '@/website/editor-actions'
 import type { Block, FormConfig } from '@/website/types'
-import { BLOCK_LABELS } from './BlockPalette'
 import { FormSettings } from './FormSettings'
+import { InspectorSection } from './Inspector'
 import { LinkPicker } from './LinkPicker'
 import { RecordPicker } from './RecordPicker'
 
@@ -53,6 +54,10 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
     if (links) void listEditorPages().then(setPages)
   }, [links])
 
+  /** A titled group of settings (nodes set to false are left out). */
+  const sec = (title: string, nodes: ReactNode[], hint?: string) => (
+    <InspectorSection key={title} title={t(title)} hint={hint ? t(hint) : undefined}>{nodes}</InspectorSection>
+  )
   const text = (k: string, label: string, extra: { multiline?: boolean; type?: string } = {}) => (
     <TextField key={k} id={id(k)} size="small" label={t(label)} value={str(k)} onChange={(e) => set({ [k]: e.target.value })}
       multiline={extra.multiline} minRows={extra.multiline ? 4 : undefined} type={extra.type} />
@@ -109,21 +114,18 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
       value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />,
   ] : []
   // Hero content: the hero's own form, and what an image or a section lays over itself.
-  const heroFields = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), link('cta_href', 'Button link', 'cta_next'),
+  const heroContent = [text('title', 'Title'), text('subtitle', 'Subtitle'), text('cta_label', 'Button label'), link('cta_href', 'Button link', 'cta_next')]
+  const heroLayout = [
     select('align', 'Horizontal alignment', ['left', 'center', 'right'], { labels: { left: 'Left', center: 'Center', right: 'Right' } }),
     select('valign', 'Vertical alignment', ['top', 'center', 'bottom'], { labels: { top: 'Top', center: 'Center', bottom: 'Bottom' } }),
     select('button_size', 'Button size', ['small', 'medium', 'large'], { labels: { small: 'Small', medium: 'Medium', large: 'Large' } }),
     select('button_width', 'Button width', ['auto', 'full'], { labels: { auto: 'Fit its text', full: 'Full width' } }),
     select('padding', 'Padding', ['none', 'compact', 'normal', 'spacious'], { labels: { none: 'None', compact: 'Compact', normal: 'Normal', spacious: 'Spacious' } })]
-  const overlayTitle = (hint: string) => [
-    <Typography key="overlay" variant="subtitle2" sx={{ pt: 1 }}>{t('Text and button')}</Typography>,
-    <Typography key="overlay-hint" variant="caption" color="text.secondary">{t(hint)}</Typography>,
-  ]
   const fieldBoxes = (
-    <FormGroup key="fields">
-      <Typography variant="subtitle2">{t('Fields')}</Typography>
+    <FormGroup key="fields" aria-label={t('Fields')} sx={FIELD_GRID}>
+      {fields.length === 0 && <Typography variant="body2" color="text.secondary" sx={{ gridColumn: '1 / -1' }}>{t('Pick a table first.')}</Typography>}
       {fields.map((f) => (
-        <FormControlLabel key={f} label={f} control={
+        <FormControlLabel key={f} label={breakable(f)} control={
           <Checkbox size="small" checked={chosen.includes(f)}
             onChange={(e) => set({ fields: e.target.checked ? [...chosen, f] : chosen.filter((x) => x !== f) })} />
         } />
@@ -135,7 +137,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
     const put = (next: [string, string][]) => set({ filter: Object.fromEntries(next) })
     return (
       <Stack key="filter" spacing={1}>
-        <Typography variant="subtitle2">{t('Only rows where')}</Typography>
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>{t('Only rows where')}</Typography>
         {rows.map(([col, v], i) => (
           <Stack key={i} direction="row" spacing={1}>
             <TextField select size="small" label={t('Column')} value={col} sx={{ minWidth: 120 }}
@@ -144,12 +146,15 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
             </TextField>
             <TextField size="small" label={t('Value')} value={v}
               onChange={(e) => put(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))} />
-            <IconButton aria-label={t('Remove filter')} onClick={() => put(rows.filter((_, j) => j !== i))}>×</IconButton>
+            <IconButton size="small" aria-label={t('Remove filter')} onClick={() => put(rows.filter((_, j) => j !== i))} sx={{ alignSelf: 'center' }}>
+              <FontAwesomeIcon icon={byPrefixAndName.fas.xmark} />
+            </IconButton>
           </Stack>
         ))}
         {/* An object can hold one value per column: offer a new row only while a column is free. */}
         {fields.some((f) => !rows.some(([col]) => col === f)) && (
-          <Button size="small" onClick={() => put([...rows, [fields.find((f) => !rows.some(([col]) => col === f))!, '']])}>
+          <Button size="small" sx={{ alignSelf: 'flex-start' }} startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas.plus} />}
+            onClick={() => put([...rows, [fields.find((f) => !rows.some(([col]) => col === f))!, '']])}>
             {t('Add filter')}
           </Button>
         )}
@@ -172,8 +177,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
     </TextField>
   )
   const relatedForm = (
-    <Stack key="related" spacing={2}>
-      <Typography variant="subtitle2">{t('Related records picker')}</Typography>
+    <InspectorSection key="related" title={t('Related records picker')} hint={t('Optional: rows of another table linked to this record, e.g. product variants.')}>
       <TextField id={id('related-table')} select size="small" label={t('Related table')} value={relStr('table')}
         // A new table: guess the link column `<detail table>_id` when it has one.
         onChange={(e) => {
@@ -188,10 +192,10 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         {relSelect('link_field', 'Column holding the record id', relFields)}
         {relSelect('title_field', 'Related title field', relFields)}
         {relSelect('picture_field', 'Related picture field', relTable.pictures ?? [], true)}
-        <FormGroup>
-          <Typography variant="subtitle2">{t('Related fields')}</Typography>
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>{t('Related fields')}</Typography>
+        <FormGroup aria-label={t('Related fields')} sx={FIELD_GRID}>
           {relFields.map((f) => (
-            <FormControlLabel key={f} label={f} control={
+            <FormControlLabel key={f} label={breakable(f)} control={
               <Checkbox size="small" checked={relChosen.includes(f)}
                 onChange={(e) => setRel({ fields: e.target.checked ? [...relChosen, f] : relChosen.filter((x) => x !== f) })} />
             } />
@@ -199,134 +203,143 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         </FormGroup>
         <PublishFields table={relTable} used={[...usedFields(rel), ...(relStr('link_field') ? [relStr('link_field')] : [])]} onPublished={onPublished} />
       </>}
-    </Stack>
+    </InspectorSection>
   )
+
+  const pickRecords = str('table') && <RecordPicker key="records" multiple table={str('table')} labelField={str('title_field')} label="Records (empty = the first ones)"
+    value={Array.isArray(c.records) ? (c.records as string[]) : []} onChange={(ids) => set({ records: ids })} />
 
   let form: ReactNode[]
   switch (block.type) {
     case 'text':
-      form = [text('heading', 'Heading'), text('body', 'Body', { multiline: true }),
-        select('align', 'Alignment', ['left', 'center', 'right'], { none: true, labels: { left: 'Left', center: 'Center', right: 'Right' } })]
+      form = [sec('Content', [text('heading', 'Heading'), text('body', 'Body', { multiline: true }),
+        select('align', 'Alignment', ['left', 'center', 'right'], { none: true, labels: { left: 'Left', center: 'Center', right: 'Right' } })],
+      'Leave an empty line between paragraphs.')]
       break
     case 'hero':
-      form = heroFields
+      form = [sec('Content', heroContent), sec('Layout', heroLayout)]
       break
     case 'image':
-      form = [tableSelect, ...pictureSource, text('alt', 'Alternative text'),
-        select('fit', 'Picture fit', ['cover', 'contain'], { labels: { cover: 'Fill the block (crop)', contain: 'Whole picture' } }),
-        link('href', 'Link (without a button)', 'href_next'),
-        ...overlayTitle('Optional: shown over the picture.'), ...heroFields]
+      form = [
+        sec('Picture', [tableSelect, ...pictureSource, text('alt', 'Alternative text'),
+          select('fit', 'Picture fit', ['cover', 'contain'], { labels: { cover: 'Fill the block (crop)', contain: 'Whole picture' } })]),
+        sec('Link', [link('href', 'Link (without a button)', 'href_next')]),
+        sec('Text and button', heroContent, 'Optional: shown over the picture.'),
+        sec('Layout', heroLayout),
+      ]
       break
     case 'form':
       form = [<FormSettings key="form" blockId={block.id} config={c as unknown as FormConfig} onChange={(next) => onChange(next as unknown as Config)} />]
       break
     case 'section':
       form = [
-        <Stack key="color" direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <TextField id={id('color')} size="small" type="color" label={t('Background color')} value={str('color') || '#ffffff'}
-            onChange={(e) => set({ color: e.target.value })} sx={{ width: 140 }} />
-          {str('color') && <Button size="small" onClick={() => set({ color: '' })}>{t('No color')}</Button>}
-        </Stack>,
-        tableSelect, ...pictureSource,
-        str('table') && check('parallax', 'Parallax (picture stays fixed while scrolling)'),
-        str('table') && num('dim', 'Darken the picture (%)', 0, 80),
-        <Typography key="hint" variant="body2" color="text.secondary">
-          {t('Blocks placed over this section are drawn on top of it.')}
-        </Typography>,
-        ...overlayTitle('Optional: shown on the section itself.'), ...heroFields]
+        sec('Background', [
+          <Stack key="color" direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <TextField id={id('color')} size="small" type="color" label={t('Background color')} value={str('color') || '#ffffff'}
+              onChange={(e) => set({ color: e.target.value })} sx={{ width: 140 }} />
+            {str('color') && <Button size="small" onClick={() => set({ color: '' })}>{t('No color')}</Button>}
+          </Stack>,
+          tableSelect, ...pictureSource,
+          str('table') && check('parallax', 'Parallax (picture stays fixed while scrolling)'),
+          str('table') && num('dim', 'Darken the picture (%)', 0, 80),
+        ], 'Blocks placed over this section are drawn on top of it.'),
+        sec('Text and button', heroContent, 'Optional: shown on the section itself.'),
+        sec('Layout', heroLayout),
+      ]
       break
     case 'record_list':
-      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields),
-        select('display', 'Display', ['grid', 'list'], { labels: { grid: 'Grid', list: 'List' } }),
-        <TextField key="page_size" id={id('page_size')} size="small" type="number" label={t('Records per page')}
-          value={typeof c.page_size === 'number' ? c.page_size : ''} slotProps={{ htmlInput: { min: 1, max: 100 } }}
-          onChange={(e) => set({ page_size: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        detailSelect, select('picture_field', 'Picture field', pictures, { none: true }), filterRows()]
+      form = [
+        sec('Data', [tableSelect, filterRows()]),
+        sec('Card', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true })], 'Fields shown on each record.'),
+        sec('Display', [select('display', 'Display', ['grid', 'list'], { labels: { grid: 'Grid', list: 'List' } }), num('page_size', 'Records per page', 1, 100)],
+          'The default view: visitors can switch between grid and list.'),
+        sec('Link', [detailSelect]),
+      ]
       break
     case 'record_detail':
-      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
-        str('table') && <RecordPicker key="record" table={str('table')} labelField={str('title_field')} label="Record (empty = the one in the URL)"
-          value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />,
-        relatedForm]
+      form = [
+        sec('Data', [tableSelect,
+          str('table') && <RecordPicker key="record" table={str('table')} labelField={str('title_field')} label="Record (empty = the one in the URL)"
+            value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />]),
+        sec('Content', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true })]),
+        relatedForm,
+      ]
       break
     case 'record_carousel':
-      form = [tableSelect, fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
-        <TextField key="limit" id={id('limit')} size="small" type="number" label={t('Maximum number of records')}
-          value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 100 } }}
-          onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        str('table') && <RecordPicker key="records" multiple table={str('table')} labelField={str('title_field')} label="Records (empty = the first ones)"
-          value={Array.isArray(c.records) ? (c.records as string[]) : []} onChange={(ids) => set({ records: ids })} />,
-        select('picture_position', 'Picture position', ['top', 'left', 'right'], { labels: { top: 'Top', left: 'Left', right: 'Right' } }),
-        <TextField key="picture_width" id={id('picture_width')} size="small" type="number" label={t('Picture width beside the text (%)')}
-          value={typeof c.picture_width === 'number' ? c.picture_width : ''} slotProps={{ htmlInput: { min: 10, max: 90 } }}
-          onChange={(e) => set({ picture_width: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        <TextField key="card_width" id={id('card_width')} size="small" type="number" label={t('Card width (px)')}
-          value={typeof c.card_width === 'number' ? c.card_width : ''} slotProps={{ htmlInput: { min: 160, max: 1200 } }}
-          onChange={(e) => set({ card_width: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        detailSelect]
+      form = [
+        sec('Data', [tableSelect, pickRecords, num('limit', 'Maximum number of records', 1, 100)]),
+        sec('Card', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
+          select('picture_position', 'Picture position', ['top', 'left', 'right'], { labels: { top: 'Top', left: 'Left', right: 'Right' } }),
+          num('picture_width', 'Picture width beside the text (%)', 10, 90), num('card_width', 'Card width (px)', 160, 1200)]),
+        sec('Link', [detailSelect]),
+      ]
       break
     case 'image_carousel':
-      form = [tableSelect, select('picture_field', 'Picture field', pictures), select('title_field', 'Caption field', fields, { none: true }),
-        <TextField key="limit" id={id('limit')} size="small" type="number" label={t('Maximum number of records')}
-          value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 100 } }}
-          onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        str('table') && <RecordPicker key="records" multiple table={str('table')} labelField={str('title_field')} label="Records (empty = the first ones)"
-          value={Array.isArray(c.records) ? (c.records as string[]) : []} onChange={(ids) => set({ records: ids })} />,
-        filterRows(), detailSelect]
+      form = [
+        sec('Data', [tableSelect, pickRecords, num('limit', 'Maximum number of records', 1, 100), filterRows()]),
+        sec('Picture', [select('picture_field', 'Picture field', pictures), select('title_field', 'Caption field', fields, { none: true })]),
+        sec('Link', [detailSelect]),
+      ]
       break
     case 'event_booking':
     case 'appointment_booking':
       form = [
-        <TextField key="event_id" id={id('event_id')} select size="small" label={t('Event')} value={str('event_id')}
-          onChange={(e) => set({ event_id: e.target.value })}>
-          <MenuItem value="">{t('The event in the URL')}</MenuItem>
-          {events.map((ev) => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
-        </TextField>,
-        <Typography key="hint" variant="body2" color="text.secondary">
-          {t('The block shows once the event is published.')}
-        </Typography>,
-        <FormControlLabel key="login_required" label={t('Login required')}
-          control={<Switch size="small" checked={c.login_required === true} onChange={(e) => set({ login_required: e.target.checked })} />} />,
-        c.login_required === true && <TextField key="after_login_slug" id={id('after_login_slug')} select size="small" label={t('After login, go to')}
-          value={str('after_login_slug')} onChange={(e) => set({ after_login_slug: e.target.value })}>
-          <MenuItem value="">{t('This page')}</MenuItem>
-          {pages.map((p) => <MenuItem key={p.slug} value={p.slug}>{p.title} (/{p.slug}){p.published ? '' : ` — ${t('not published')}`}</MenuItem>)}
-          {str('after_login_slug') && !pages.some((p) => p.slug === str('after_login_slug')) &&
-            <MenuItem value={str('after_login_slug')}>{str('after_login_slug')} — {t('page not found')}</MenuItem>}
-        </TextField>,
-        !str('event_id') && <Typography key="url-hint" variant="body2" color="text.secondary">
-          {t('Left on the event in the URL, this page can serve every event: pick it as the Event page of an Event list block.')}
-        </Typography>,
+        sec('Event', [
+          <TextField key="event_id" id={id('event_id')} select size="small" label={t('Event')} value={str('event_id')}
+            onChange={(e) => set({ event_id: e.target.value })}>
+            <MenuItem value="">{t('The event in the URL')}</MenuItem>
+            {events.map((ev) => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
+          </TextField>,
+          <Typography key="hint" variant="caption" color="text.secondary">
+            {t('The block shows once the event is published.')}
+            {!str('event_id') && <> {t('Left on the event in the URL, this page can serve every event: pick it as the Event page of an Event list block.')}</>}
+          </Typography>,
+        ]),
+        sec('Access', [
+          <FormControlLabel key="login_required" label={t('Login required')}
+            control={<Switch size="small" checked={c.login_required === true} onChange={(e) => set({ login_required: e.target.checked })} />} />,
+          c.login_required === true && <TextField key="after_login_slug" id={id('after_login_slug')} select size="small" label={t('After login, go to')}
+            value={str('after_login_slug')} onChange={(e) => set({ after_login_slug: e.target.value })}>
+            <MenuItem value="">{t('This page')}</MenuItem>
+            {pages.map((p) => <MenuItem key={p.slug} value={p.slug}>{p.title} (/{p.slug}){p.published ? '' : ` — ${t('not published')}`}</MenuItem>)}
+            {str('after_login_slug') && !pages.some((p) => p.slug === str('after_login_slug')) &&
+              <MenuItem value={str('after_login_slug')}>{str('after_login_slug')} — {t('page not found')}</MenuItem>}
+          </TextField>,
+        ]),
       ]
       break
     case 'event_list':
       form = [
-        select('display', 'Display', ['cards', 'list'], { labels: { cards: 'Cards', list: 'List' } }),
-        <TextField key="limit" id={id('limit')} size="small" type="number" label={t('Maximum number of events')}
-          value={typeof c.limit === 'number' ? c.limit : ''} slotProps={{ htmlInput: { min: 1, max: 50 } }}
-          onChange={(e) => set({ limit: e.target.value === '' ? undefined : Number(e.target.value) })} />,
-        check('nearest', "Nearest to me (asks the visitor's location)"),
-        ...(c.nearest === true ? [
-          <Typography key="nearest-hint" variant="caption" color="text.secondary">
-            {t("Distances need the event table's map position (geo_location) published under Settings → Website → Published data.")}
-          </Typography>,
-        ] : []),
-        detailSelect,
-        <Typography key="hint" variant="body2" color="text.secondary">
-          {t('Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location.')}
-        </Typography>,
+        sec('Display', [
+          select('display', 'Display', ['cards', 'list'], { labels: { cards: 'Cards', list: 'List' } }),
+          num('limit', 'Maximum number of events', 1, 50),
+          check('nearest', "Nearest to me (asks the visitor's location)"),
+          ...(c.nearest === true ? [
+            <Typography key="nearest-hint" variant="caption" color="text.secondary">
+              {t("Distances need the event table's map position (geo_location) published under Settings → Website → Published data.")}
+            </Typography>,
+          ] : []),
+        ], 'Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location.'),
+        sec('Link', [detailSelect]),
       ]
   }
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h6">{t(BLOCK_LABELS[block.type])}</Typography>
       {form}
       {current && <PublishFields table={current} used={usedFields(c)} onPublished={onPublished} />}
-      <Button color="error" variant="outlined" onClick={onDelete}>{t('Delete block')}</Button>
+      <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
+        <Button color="error" fullWidth onClick={onDelete} startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas.trash} />}>{t('Delete block')}</Button>
+      </Box>
     </Stack>
   )
 }
+
+/** Field checkboxes in two columns: a panel-width list of column names stays scannable. */
+const FIELD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 1, '& .MuiFormControlLabel-label': { overflowWrap: 'anywhere', fontSize: '0.8125rem', lineHeight: 1.3 } } as const
+
+/** A column name that may wrap after its underscores (`booking_horizon_days`), never mid-word. */
+const breakable = (name: string) => name.split('_').flatMap((part, i) => (i ? [<wbr key={i} />, `_${part}`] : [part]))
 
 /** Every column a block config reads: shown fields, title/picture/image field, filter columns. */
 function usedFields(c: Config): string[] {

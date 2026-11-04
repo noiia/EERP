@@ -56,7 +56,7 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
           onChange={(e) => { setSize(Number(e.target.value)); setPage(1) }}>
           {sizes.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
         </TextField>
-        <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v) => v && setView(v)}>
+        <ToggleButtonGroup size="small" exclusive value={view} aria-label={t('Display')} onChange={(_, v) => v && setView(v)}>
           <ToggleButton value="grid">{t('Grid')}</ToggleButton>
           <ToggleButton value="list">{t('List')}</ToggleButton>
         </ToggleButtonGroup>

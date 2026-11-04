@@ -34,18 +34,20 @@ export function HeroContent({ config, color }: { config: HeroConfig; color?: str
       textAlign: align, p: PADDING[config.padding ?? 'normal'], boxSizing: 'border-box', color,
     }}>
       {config.title && (
-        <Typography variant="h3" component="h1" sx={{ fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1, overflowWrap: 'anywhere', textWrap: 'balance' }}>
+        <Typography variant="h1" sx={{ overflowWrap: 'anywhere' }}>
           {config.title}
         </Typography>
       )}
       {config.subtitle && (
-        <Typography variant="h6" component="p" sx={{ fontWeight: 400, opacity: color ? 0.9 : 1, color: color ? 'inherit' : 'text.secondary', maxWidth: '60ch', overflowWrap: 'anywhere' }}>
+        <Typography variant="subtitle1" component="p" sx={{ fontWeight: 400, fontSize: { xs: '1.0625rem', md: '1.25rem' }, opacity: color ? 0.9 : 1, color: color ? 'inherit' : 'text.secondary', maxWidth: '60ch', overflowWrap: 'anywhere' }}>
           {config.subtitle}
         </Typography>
       )}
       {config.cta_label && href && (
         <Button variant="contained" disableElevation href={href} size={config.button_size ?? 'large'} fullWidth={full}
-          sx={{ mt: config.title || config.subtitle ? 1.5 : 0, maxWidth: '100%', whiteSpace: 'normal', borderRadius: 999, px: 3.5, fontWeight: 700, textTransform: 'none' }}>
+          // Over a picture or a dark band (`color` set) the button turns white so it reads.
+          sx={{ mt: config.title || config.subtitle ? 1.5 : 0, maxWidth: '100%', whiteSpace: 'normal', borderRadius: 999, px: 3.5, fontWeight: 700,
+            ...(color === '#fff' && { bgcolor: '#fff', color: 'text.primary', '&:hover': { bgcolor: 'rgba(255,255,255,0.88)' } }) }}>
           {config.cta_label}
         </Button>
       )}

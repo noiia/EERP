@@ -30,7 +30,7 @@ describe('PageEditor', () => {
   it('adds a block from the palette', () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: /add block/i }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /text/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /^text/i }))
     expect(screen.getAllByTestId(/^editor-block-/)).toHaveLength(3)
   })
 

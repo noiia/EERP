@@ -20,12 +20,12 @@ export default async function WorkflowsPage() {
   const canEdit = hasPermission(permissions, 'website_page:website_page:write')
   const canArrange = hasPermission(permissions, 'settings:website:write')
   return (
-    <Container maxWidth={false} sx={{ py: 4 }}>
-      <Stack spacing={3}>
+    <Container maxWidth={false} sx={{ py: 3 }}>
+      <Stack spacing={2}>
         <Stack spacing={0.5}>
           <Typography variant="h4" component="h1"><T text="Workflows" /></Typography>
           <Typography color="text.secondary">
-            <T text="Click a page to open it in the builder. Drag a box to move it, drag from the dot on its right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it." />
+            <T text="Every page of the site and the buttons and links between them." />
           </Typography>
         </Stack>
         <LazyWorkflowMap pages={pages} positions={positions} canEdit={canEdit} canArrange={canArrange} />

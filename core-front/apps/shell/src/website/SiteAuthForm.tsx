@@ -58,7 +58,7 @@ export function SiteAuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: 
   const login = mode === 'login'
   return (
     <Stack component="form" spacing={2} onSubmit={onSubmit}>
-      <Typography variant="h4" component="h1">{login ? t('Log in') : t('Sign up')}</Typography>
+      <Typography variant="h2" component="h1">{login ? t('Log in') : t('Sign up')}</Typography>
       {error && <ViewBanner status="error">{error}</ViewBanner>}
       {!login && (
         <TextField id="site-name" label={t('Name')} autoComplete="name" value={form.name} onChange={set('name')} required />

@@ -5,12 +5,14 @@ export function TextBlock({ config }: { config: TextConfig }) {
   return (
     <div style={{ textAlign: config.align }}>
       {config.heading && (
-        <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 700, letterSpacing: '-0.01em', textWrap: 'balance' }}>
+        <Typography variant="h2" gutterBottom>
           {config.heading}
         </Typography>
       )}
       {(config.body ?? '').split(/\n\s*\n/).filter(Boolean).map((p, i) => (
-        <Typography key={i} component="p" sx={{ mb: 2, lineHeight: 1.75, whiteSpace: 'pre-line' }}>{p}</Typography>
+        // ~70 characters a line: centered/right text keeps its column, aligned to its side.
+        <Typography key={i} component="p" sx={{ mb: 2, lineHeight: 1.75, whiteSpace: 'pre-line', maxWidth: '70ch',
+          mx: config.align === 'center' ? 'auto' : undefined, ml: config.align === 'right' ? 'auto' : undefined }}>{p}</Typography>
       ))}
     </div>
   )

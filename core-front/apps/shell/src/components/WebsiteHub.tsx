@@ -1,43 +1,64 @@
 'use client'
+import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Container from '@mui/material/Container'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { T, erpPath, IntentLink } from '@eerp/core-front'
+import { erpPath, IntentLink, useT } from '@eerp/core-front'
 
 // Client Component: `CardActionArea component={IntentLink}` can't cross the Server/Client
 // boundary as a prop from the page (Next: "Functions cannot be passed directly to
-// Client Components"), same reason as AppsList.
-const PAGES = [
-  { path: '/settings/website/published', title: 'Published data', description: 'Which tables and columns the public website may read.' },
-  { path: '/settings/website/localization', title: 'Language & currency', description: 'The default language and currency, and the currencies visitors can pick.' },
-  { path: '/settings/website/routing', title: 'Routing', description: 'Serve the website from a path or its own domain.' },
-  { path: '/settings/website/legal', title: 'Legal notice', description: 'The publisher and host details shown on the website and in the ERP.' },
-  { path: '/settings/website/security-txt', title: 'security.txt', description: 'How security researchers can reach you (RFC 9116).' },
-  { path: '/settings/website/robots-txt', title: 'robots.txt', description: 'What search engines may crawl.' },
-  { path: '/settings/website/users', title: 'Website users', description: 'Visitor accounts registered on the website.' },
-  { path: '/settings/website/outbox', title: 'Outgoing emails', description: 'Booking and account emails, their delivery status, and retries.' },
+// Client Components"), same reason as AppsList. Same card grid as the Settings hub,
+// grouped by what an admin is doing.
+const GROUPS = [
+  {
+    title: 'Content',
+    pages: [
+      { path: '/settings/website/published', title: 'Published data', description: 'Which tables and columns the public website may read.' },
+      { path: '/settings/website/localization', title: 'Language & currency', description: 'The default language and currency, and the currencies visitors can pick.' },
+      { path: '/settings/website/legal', title: 'Legal notice', description: 'The publisher and host details shown on the website and in the ERP.' },
+    ],
+  },
+  {
+    title: 'Domain and search engines',
+    pages: [
+      { path: '/settings/website/routing', title: 'Routing', description: 'Serve the website from a path or its own domain.' },
+      { path: '/settings/website/robots-txt', title: 'robots.txt', description: 'What search engines may crawl.' },
+      { path: '/settings/website/security-txt', title: 'security.txt', description: 'How security researchers can reach you (RFC 9116).' },
+    ],
+  },
+  {
+    title: 'Visitors',
+    pages: [
+      { path: '/settings/website/users', title: 'Website users', description: 'Visitor accounts registered on the website.' },
+      { path: '/settings/website/outbox', title: 'Outgoing emails', description: 'Booking and account emails, their delivery status, and retries.' },
+    ],
+  },
 ] as const
 
 export default function WebsiteHub() {
+  const t = useT()
   return (
-    <Container maxWidth={false} sx={{ py: 4 }}>
-      <Stack spacing={3}>
-        <Typography variant="h4" component="h1">
-          <T text="Website" />
-        </Typography>
-        {PAGES.map((p) => (
-          <Card key={p.path} variant="outlined">
-            <CardActionArea component={IntentLink} href={erpPath(p.path)} sx={{ p: 2 }}>
-              <Typography variant="subtitle1">
-                <T text={p.title} />
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                <T text={p.description} />
-              </Typography>
-            </CardActionArea>
-          </Card>
+    <Container maxWidth={false} sx={{ py: 6 }}>
+      <Typography variant="h4" component="h1" sx={{ mb: 4 }}>{t('Website')}</Typography>
+      <Stack spacing={4}>
+        {GROUPS.map((g, gi) => (
+          <Box component="section" key={g.title} aria-labelledby={`website-hub-${gi}`}>
+            <Typography id={`website-hub-${gi}`} variant="subtitle2" component="h2" color="text.secondary" sx={{ mb: 1.5 }}>{t(g.title)}</Typography>
+            <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' } }}>
+              {g.pages.map((p) => (
+                <Card key={p.path} variant="outlined">
+                  <CardActionArea component={IntentLink} href={erpPath(p.path)} sx={{ p: 2, height: '100%' }}>
+                    <Stack spacing={1}>
+                      <Typography variant="subtitle1">{t(p.title)}</Typography>
+                      <Typography variant="body2" color="text.secondary">{t(p.description)}</Typography>
+                    </Stack>
+                  </CardActionArea>
+                </Card>
+              ))}
+            </Box>
+          </Box>
         ))}
       </Stack>
     </Container>

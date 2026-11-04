@@ -9,9 +9,10 @@ import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { byPrefixAndName, FontAwesomeIcon, useT } from '@eerp/core-front'
 import { listEditorPages, listFormTargets } from '@/website/editor-actions'
 import { addPreset, addressPrefixes, MAX_FORM_TARGETS, newFieldId, removeTarget, typeableColumns, usedColumns, type FormPreset } from '@/website/form-config'
+import { InspectorSection } from './Inspector'
 import { FORM_FIELD_TYPES, type FormConfig, type FormField, type FormFieldType, type FormTargetSpec } from '@/website/types'
 
 const TYPE_LABELS: Record<FormFieldType, string> = {
@@ -21,7 +22,10 @@ const TYPE_LABELS: Record<FormFieldType, string> = {
 const PRESETS: { key: FormPreset; label: string }[] = [
   { key: 'user', label: 'User data' }, { key: 'address', label: 'Address' }, { key: 'message', label: 'Message' },
 ]
-const box = { border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 } as const
+// One repeated item (a target, a field): a quiet tinted card, so a list of them reads as items.
+const box = { border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5, bgcolor: 'action.hover' } as const
+const xmark = <FontAwesomeIcon icon={byPrefixAndName.fas.xmark} />
+const plus = <FontAwesomeIcon icon={byPrefixAndName.fas.plus} />
 
 type Target = { table: string; columns: string[] }
 type Page = { slug: string; title: string; published: boolean }
@@ -65,7 +69,7 @@ export function FormSettings({ blockId, config, onChange }: { blockId: string; c
       <Stack key={i} data-testid={`form-target-${i}`} spacing={1} sx={box}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Typography variant="body2" sx={{ fontWeight: 600, flex: 1 }}>{n('Target {n}', i)}</Typography>
-          {c.targets.length > 1 && <IconButton size="small" aria-label={n('Remove target {n}', i)} onClick={() => onChange(removeTarget(c, i))}>×</IconButton>}
+          {c.targets.length > 1 && <IconButton size="small" aria-label={n('Remove target {n}', i)} onClick={() => onChange(removeTarget(c, i))}>{xmark}</IconButton>}
         </Stack>
         {/* A new table: its links and fixed values go, and its fields need a new column. */}
         <TextField id={id(`target-${i}-table`)} select size="small" label={t('Table')} value={registry.some((r) => r.table === tg.table) ? tg.table : ''}
@@ -93,11 +97,11 @@ export function FormSettings({ blockId, config, onChange }: { blockId: string; c
               {[col, ...free].map((o) => <MenuItem key={o} value={o}>{o}</MenuItem>)}
             </TextField>
             <TextField size="small" label={t('Fixed value')} value={v} onChange={(e) => putFixed(fixed.map((r, j) => (j === k ? [r[0], e.target.value] : r)))} />
-            <IconButton aria-label={t('Remove fixed value')} onClick={() => putFixed(fixed.filter((_, j) => j !== k))}>×</IconButton>
+            <IconButton size="small" aria-label={t('Remove fixed value')} onClick={() => putFixed(fixed.filter((_, j) => j !== k))} sx={{ alignSelf: 'center' }}>{xmark}</IconButton>
           </Stack>
         ))}
         {free.length > 0 && (
-          <Button size="small" sx={{ alignSelf: 'flex-start' }} onClick={() => putFixed([...fixed, [free[0], '']])}>{t('Add fixed value')}</Button>
+          <Button size="small" sx={{ alignSelf: 'flex-start' }} startIcon={plus} onClick={() => putFixed([...fixed, [free[0], '']])}>{t('Add fixed value')}</Button>
         )}
       </Stack>
     )
@@ -110,9 +114,9 @@ export function FormSettings({ blockId, config, onChange }: { blockId: string; c
       <Stack key={i} data-testid={`form-field-${i}`} spacing={1} sx={box}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <TextField id={id(`field-${i}-label`)} size="small" label={t('Label')} value={f.label} sx={{ flex: 1 }} onChange={(e) => setField(i, { label: e.target.value })} />
-          <IconButton size="small" aria-label={t('Remove field')} onClick={() => set({ fields: c.fields.filter((_, j) => j !== i) })}>×</IconButton>
+          <IconButton size="small" aria-label={t('Remove field')} onClick={() => set({ fields: c.fields.filter((_, j) => j !== i) })}>{xmark}</IconButton>
         </Stack>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: 'wrap', '& > *': { minWidth: 120 } }}>
           {/* Switching to or from an address changes what the column means (a prefix): pick it again. */}
           <TextField id={id(`field-${i}-type`)} select size="small" label={t('Type')} value={f.type} sx={{ flex: 1 }}
             onChange={(e) => {
@@ -144,45 +148,47 @@ export function FormSettings({ blockId, config, onChange }: { blockId: string; c
 
   return (
     <Stack spacing={2}>
-      <Typography variant="subtitle2">{t('Saved into')}</Typography>
-      <Typography variant="caption" color="text.secondary">
-        {t('Each submission creates one record per target, in order. Only tables and columns a module allows are offered.')}
-      </Typography>
-      {c.targets.map(targetBox)}
-      {c.targets.length < MAX_FORM_TARGETS && registry.length > 0 && (
-        <Button size="small" sx={{ alignSelf: 'flex-start' }} onClick={() => set({ targets: [...c.targets, { table: registry[0].table }] })}>{t('Add target')}</Button>
-      )}
+      <InspectorSection title={t('Saved into')} hint={t('Each submission creates one record per target, in order. Only tables and columns a module allows are offered.')}>
+        {c.targets.map(targetBox)}
+        {c.targets.length < MAX_FORM_TARGETS && registry.length > 0 && (
+          <Button size="small" sx={{ alignSelf: 'flex-start' }} startIcon={plus} onClick={() => set({ targets: [...c.targets, { table: registry[0].table }] })}>{t('Add target')}</Button>
+        )}
+      </InspectorSection>
 
-      <Typography variant="subtitle2">{t('Fields')}</Typography>
-      <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: 'wrap' }}>
-        {PRESETS.map((p) => {
-          const next = addPreset(c, p.key)
-          return <Button key={p.key} size="small" variant="outlined" disabled={!next} onClick={() => next && onChange(next)}>{t(p.label)}</Button>
-        })}
-      </Stack>
-      {c.fields.map(fieldBox)}
-      <Button size="small" sx={{ alignSelf: 'flex-start' }}
-        onClick={() => set({ fields: [...c.fields, { id: newFieldId(c), label: '', type: 'text', column: '', target: 0 }] })}>{t('Add field')}</Button>
-      <TextField id={id('submit_label')} size="small" label={t('Button label')} placeholder={t('Send')} value={c.submit_label ?? ''}
-        onChange={(e) => set({ submit_label: e.target.value })} />
+      <InspectorSection title={t('Fields')}>
+        <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: 'wrap' }}>
+          {PRESETS.map((p) => {
+            const next = addPreset(c, p.key)
+            return <Button key={p.key} size="small" variant="outlined" startIcon={plus} disabled={!next} onClick={() => next && onChange(next)}>{t(p.label)}</Button>
+          })}
+        </Stack>
+        {c.fields.map(fieldBox)}
+        <Button size="small" sx={{ alignSelf: 'flex-start' }} startIcon={plus}
+          onClick={() => set({ fields: [...c.fields, { id: newFieldId(c), label: '', type: 'text', column: '', target: 0 }] })}>{t('Add field')}</Button>
+        <TextField id={id('submit_label')} size="small" label={t('Button label')} placeholder={t('Send')} value={c.submit_label ?? ''}
+          onChange={(e) => set({ submit_label: e.target.value })} />
+      </InspectorSection>
 
-      <Typography variant="subtitle2">{t('After submit')}</Typography>
-      <TextField id={id('after-kind')} select size="small" label={t('Then')} value={c.after?.kind ?? 'message'}
-        onChange={(e) => set({ after: { ...c.after, kind: e.target.value as 'message' | 'page' } })}>
-        <MenuItem value="message">{t('Show a message')}</MenuItem>
-        <MenuItem value="page">{t('Go to a page')}</MenuItem>
-      </TextField>
-      {(c.after?.kind ?? 'message') === 'message'
-        ? <TextField id={id('after-message')} size="small" multiline minRows={2} label={t('Message')} placeholder={t('Thank you — your answers were sent.')}
-          value={c.after?.message ?? ''} onChange={(e) => set({ after: { ...c.after, message: e.target.value } })} />
-        : pagePicker('after-slug', 'Page', c.after?.slug ?? '', (slug) => set({ after: { ...c.after, slug } }), 'None')}
+      <InspectorSection title={t('After submit')}>
+        <TextField id={id('after-kind')} select size="small" label={t('Then')} value={c.after?.kind ?? 'message'}
+          onChange={(e) => set({ after: { ...c.after, kind: e.target.value as 'message' | 'page' } })}>
+          <MenuItem value="message">{t('Show a message')}</MenuItem>
+          <MenuItem value="page">{t('Go to a page')}</MenuItem>
+        </TextField>
+        {(c.after?.kind ?? 'message') === 'message'
+          ? <TextField id={id('after-message')} size="small" multiline minRows={2} label={t('Message')} placeholder={t('Thank you — your answers were sent.')}
+            value={c.after?.message ?? ''} onChange={(e) => set({ after: { ...c.after, message: e.target.value } })} />
+          : pagePicker('after-slug', 'Page', c.after?.slug ?? '', (slug) => set({ after: { ...c.after, slug } }), 'None')}
+      </InspectorSection>
 
-      <FormControlLabel label={t('Login required')}
-        control={<Switch checked={!!c.login_required} onChange={(e) => set({ login_required: e.target.checked })} />} />
-      {c.login_required
-        ? pagePicker('after_login_slug', 'After login, go to', c.after_login_slug ?? '', (slug) => set({ after_login_slug: slug }), 'This page')
-        : <FormControlLabel label={t('Allow account creation')}
-          control={<Switch checked={!!c.allow_signup} onChange={(e) => set({ allow_signup: e.target.checked })} />} />}
+      <InspectorSection title={t('Access')}>
+        <FormControlLabel label={t('Login required')}
+          control={<Switch checked={!!c.login_required} onChange={(e) => set({ login_required: e.target.checked })} />} />
+        {c.login_required
+          ? pagePicker('after_login_slug', 'After login, go to', c.after_login_slug ?? '', (slug) => set({ after_login_slug: slug }), 'This page')
+          : <FormControlLabel label={t('Allow account creation')}
+            control={<Switch checked={!!c.allow_signup} onChange={(e) => set({ allow_signup: e.target.checked })} />} />}
+      </InspectorSection>
     </Stack>
   )
 }

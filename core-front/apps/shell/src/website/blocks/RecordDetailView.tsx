@@ -39,7 +39,7 @@ export function RecordDetailView({ config, rec, related }: { config: RecordDetai
       )}
       <div>
         <Stack spacing={1}>
-          <Typography variant="h4" component="h2">{String(rec[config.title_field] ?? '')}</Typography>
+          <Typography variant="h2">{String(rec[config.title_field] ?? '')}</Typography>
           <FieldLines record={rec} fields={config.fields} skip={config.title_field} />
           {rel && related.length > 0 && (
             <>

@@ -7,10 +7,11 @@ import { pictureUrl } from '../urls'
 import type { RecordCarouselConfig, RecordListConfig } from '../types'
 import { FieldLines, hasPicture } from './fields'
 
-/** The site's card look (record and event cards): soft border, rounded, lifts on hover. */
+/** The site's card look (record and event cards): hairline border, the border darkens
+ * and a soft shadow appears under a linked card's pointer — feedback, not decoration. */
 export const CARD_SX = {
-  height: '100%', borderRadius: 3, border: 1, borderColor: 'divider', boxShadow: 'none', transition: 'box-shadow .2s, transform .2s',
-  '&:hover': { boxShadow: 6, transform: 'translateY(-2px)' },
+  height: '100%', borderRadius: 2, border: 1, borderColor: 'divider', boxShadow: 'none', transition: 'border-color .15s, box-shadow .15s',
+  '&:has(a:hover), &:has(a:focus-visible)': { borderColor: 'text.secondary', boxShadow: '0 6px 20px -8px rgba(28,31,36,0.25)' },
 } as const
 /** A picture on top of a card: 4:3, cropped to fill. */
 export const CARD_PICTURE_SX = { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block' } as const
@@ -35,7 +36,7 @@ export function RecordCard({ config, rec }: { config: CardConfig; rec: Record<st
     <Box sx={{ display: 'flex', flexDirection: side ? (pos === 'right' ? 'row-reverse' : 'row') : 'column', height: '100%' }}>
       {picture}
       <CardContent sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
-        <Typography variant="h6" component="h3" sx={{ fontWeight: 600, lineHeight: 1.3, mb: 0.5 }}>{String(rec[config.title_field] ?? '')}</Typography>
+        <Typography variant="h5" component="h3" sx={{ mb: 0.75 }}>{String(rec[config.title_field] ?? '')}</Typography>
         <FieldLines record={rec} fields={config.fields} skip={config.title_field} />
       </CardContent>
     </Box>

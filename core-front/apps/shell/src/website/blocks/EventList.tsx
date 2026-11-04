@@ -89,7 +89,7 @@ export function EventList({ config, events: initial }: { config: EventListConfig
           <>
             {ev.picture && <Box component="img" src={pictureUrl('event', ev.id, 'picture')} alt="" loading="lazy" sx={CARD_PICTURE_SX} />}
             <CardContent>
-              <Typography variant="h6" component="h3" sx={{ fontWeight: 600, lineHeight: 1.3, mb: 0.5 }}>{ev.name}</Typography>
+              <Typography variant="h5" component="h3" sx={{ mb: 0.75 }}>{ev.name}</Typography>
               {ev.location && <Typography color="text.secondary">{ev.location}</Typography>}
               <Typography variant="body2">{when(ev)}</Typography>
             </CardContent>

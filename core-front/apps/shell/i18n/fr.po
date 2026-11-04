@@ -2219,3 +2219,162 @@ msgstr "Utilisé quand la place manque, comme la liste de réservation du site s
 
 msgid "How numbers and short dates display across the workspace, for everyone."
 msgstr "L'affichage des nombres et des dates courtes dans tout l'espace de travail, pour tout le monde."
+
+msgid "Main"
+msgstr "Principal"
+
+msgid "A heading and paragraphs."
+msgstr "Un titre et des paragraphes."
+
+msgid "A picture from a record, with optional text and a button over it."
+msgstr "Une image d’un enregistrement, avec un texte et un bouton facultatifs par-dessus."
+
+msgid "A large title, a subtitle and a button."
+msgstr "Un grand titre, un sous-titre et un bouton."
+
+msgid "Records as a grid of cards or a table."
+msgstr "Des enregistrements en grille de cartes ou en tableau."
+
+msgid "One record: its picture and fields."
+msgstr "Un enregistrement : son image et ses champs."
+
+msgid "A row of record cards that scrolls sideways."
+msgstr "Une rangée de cartes qui défile horizontalement."
+
+msgid "Pictures one at a time, with arrows and swipe."
+msgstr "Des images une par une, avec flèches et balayage."
+
+msgid "An event’s sessions, booked by visitors."
+msgstr "Les séances d’un événement, réservées par les visiteurs."
+
+msgid "Free time slots of an appointment event."
+msgstr "Les créneaux libres d’un événement sur rendez-vous."
+
+msgid "Upcoming events, soonest first."
+msgstr "Les prochains événements, les plus proches en premier."
+
+msgid "A colored or picture band other blocks sit on."
+msgstr "Une bande colorée ou illustrée sur laquelle se posent d’autres blocs."
+
+msgid "Fields visitors fill in, saved into records."
+msgstr "Des champs remplis par les visiteurs, enregistrés dans des fiches."
+
+msgid "Layout and content"
+msgstr "Mise en page et contenu"
+
+msgid "Records"
+msgstr "Enregistrements"
+
+msgid "Events"
+msgstr "Événements"
+
+msgid "Visitors"
+msgstr "Visiteurs"
+
+msgid "Close (Esc)"
+msgstr "Fermer (Échap)"
+
+msgid "Blocks"
+msgstr "Blocs"
+
+msgid "Select a block on the page or in this list to configure it."
+msgstr "Sélectionnez un bloc sur la page ou dans cette liste pour le configurer."
+
+msgid "No blocks yet."
+msgstr "Aucun bloc pour le moment."
+
+msgid "Ctrl+S saves the page. Esc closes the block settings."
+msgstr "Ctrl+S enregistre la page. Échap ferme les réglages du bloc."
+
+msgid "This page has no blocks yet"
+msgstr "Cette page n’a pas encore de bloc"
+
+msgid "Add a hero, a text or any other block, then drag it into place and resize it from its corner."
+msgstr "Ajoutez une bannière, un texte ou tout autre bloc, puis faites-le glisser à sa place et redimensionnez-le par son coin."
+
+msgid "Back to the page form"
+msgstr "Retour à la fiche de la page"
+
+msgid "Unsaved changes"
+msgstr "Modifications non enregistrées"
+
+msgid "All changes saved"
+msgstr "Toutes les modifications sont enregistrées"
+
+msgid "Preview width"
+msgstr "Largeur de l’aperçu"
+
+msgid "Desktop"
+msgstr "Ordinateur"
+
+msgid "Desktop: drag and resize blocks"
+msgstr "Ordinateur : déplacer et redimensionner les blocs"
+
+msgid "Phone: blocks stacked as visitors see them"
+msgstr "Téléphone : blocs empilés comme les voient les visiteurs"
+
+msgid "Layout"
+msgstr "Mise en page"
+
+msgid "Picture"
+msgstr "Image"
+
+msgid "Background"
+msgstr "Arrière-plan"
+
+msgid "Data"
+msgstr "Données"
+
+msgid "Card"
+msgstr "Carte"
+
+msgid "Access"
+msgstr "Accès"
+
+msgid "Leave an empty line between paragraphs."
+msgstr "Laissez une ligne vide entre les paragraphes."
+
+msgid "Fields shown on each record."
+msgstr "Les champs affichés sur chaque enregistrement."
+
+msgid "The default view: visitors can switch between grid and list."
+msgstr "L’affichage par défaut : les visiteurs peuvent passer de la grille à la liste."
+
+msgid "Pick a table first."
+msgstr "Choisissez d’abord une table."
+
+msgid "Optional: rows of another table linked to this record, e.g. product variants."
+msgstr "Facultatif : les lignes d’une autre table liées à cet enregistrement, par exemple les variantes d’un produit."
+
+msgid "Map details"
+msgstr "Détails de la carte"
+
+msgid "Legend"
+msgstr "Légende"
+
+msgid "A page of the site"
+msgstr "Une page du site"
+
+msgid "Login, sign-up, account, or another site"
+msgstr "Connexion, inscription, compte ou autre site"
+
+msgid "Needs attention"
+msgstr "À vérifier"
+
+msgid "Broken"
+msgstr "Cassé"
+
+msgid "Click a page to open it in the builder."
+msgstr "Cliquez sur une page pour l’ouvrir dans l’éditeur."
+
+msgid "Drag a box to move it."
+msgstr "Faites glisser une boîte pour la déplacer."
+
+msgid "Drag from the dot on a page’s right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it."
+msgstr "Faites glisser le point à droite d’une page vers une autre page pour ajouter un lien, ou l’extrémité d’une flèche pour changer sa destination. Sélectionnez une flèche pour la supprimer."
+
+msgid "Every page of the site and the buttons and links between them."
+msgstr "Toutes les pages du site, et les boutons et liens qui les relient."
+
+msgid "Domain and search engines"
+msgstr "Domaine et moteurs de recherche"

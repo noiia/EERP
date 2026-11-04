@@ -1,3 +1,4 @@
+import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 
 /** Whether a record's picture_field can point at a picture: an anchor field (no value in
@@ -12,6 +13,8 @@ export const label = (k: string) => k.replace(/_/g, ' ').replace(/^./, (c) => c.
  * no one-line text form. */
 export function FieldLines({ record, fields, skip }: { record: Record<string, unknown>; fields: string[]; skip: string }) {
   return fields.filter((f) => f !== skip && record[f] != null && typeof record[f] !== 'object').map((f) => (
-    <Typography key={f} variant="body2" color="text.secondary">{label(f)}: {String(record[f])}</Typography>
+    <Typography key={f} variant="body2">
+      <Box component="span" sx={{ color: 'text.secondary' }}>{label(f)}:</Box> {String(record[f])}
+    </Typography>
   ))
 }

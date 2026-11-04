@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const router = vi.hoisted(() => ({ refresh: vi.fn(), push: vi.fn() }))
-vi.mock('next/navigation', () => ({ useRouter: () => router }))
+vi.mock('next/navigation', () => ({ useRouter: () => router, usePathname: () => '/shop' }))
 const saveProfile = vi.hoisted(() => vi.fn())
 vi.mock('./account-actions', () => ({ saveProfile }))
 const fetchSlots = vi.hoisted(() => vi.fn())
@@ -31,6 +31,9 @@ describe('SiteHeader', () => {
     expect(screen.getAllByRole('link', { name: 'Shop' })[0].getAttribute('href')).toBe('/shop')
     expect(screen.getByRole('link', { name: 'My account' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'ERP' })).toBeTruthy()
+    // The page being shown is marked for assistive tech, the others aren't.
+    expect(screen.getAllByRole('link', { name: 'Shop' })[0].getAttribute('aria-current')).toBe('page')
+    expect(screen.getAllByRole('link', { name: 'Home' })[0].getAttribute('aria-current')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Home' }))
   })

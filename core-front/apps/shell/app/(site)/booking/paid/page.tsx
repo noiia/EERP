@@ -10,7 +10,7 @@ export default function PaidPage() {
   return (
     <Container maxWidth="sm" sx={{ py: 6 }}>
       <Stack spacing={3}>
-        <Typography variant="h4" component="h1"><T text="Thank you" /></Typography>
+        <Typography variant="h2" component="h1"><T text="Thank you" /></Typography>
         <Banner status="info">
           <T text="Your payment is being confirmed. Your booking confirmation will arrive by email in a moment." />
         </Banner>
