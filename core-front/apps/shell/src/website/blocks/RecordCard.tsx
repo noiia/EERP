@@ -5,7 +5,9 @@ import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import { pictureUrl } from '../urls'
 import type { RecordCarouselConfig, RecordListConfig } from '../types'
-import { FieldLines, hasPicture } from './fields'
+import type { PresentedFields } from '../present'
+import { FieldLines } from './FieldValue'
+import { hasPicture } from './fields'
 
 /** The site's card look (record and event cards): hairline border, the border darkens
  * and a soft shadow appears under a linked card's pointer — feedback, not decoration. */
@@ -20,8 +22,9 @@ type CardConfig = Pick<RecordListConfig, 'table' | 'fields' | 'title_field' | 'p
   Pick<RecordCarouselConfig, 'picture_position' | 'picture_width'>
 
 /** One record as a card (picture, title, field lines), linking to its detail page
- * when a detail slug is set. Shared by the list and carousel blocks. */
-export function RecordCard({ config, rec }: { config: CardConfig; rec: Record<string, unknown> }) {
+ * when a detail slug is set. Shared by the list and carousel blocks. `shown`: the
+ * block's fields, presented server-side (present.ts). */
+export function RecordCard({ config, rec, shown }: { config: CardConfig; rec: Record<string, unknown>; shown: PresentedFields }) {
   const id = String(rec.id)
   const pos = config.picture_position ?? 'top'
   const side = pos !== 'top'
@@ -37,7 +40,7 @@ export function RecordCard({ config, rec }: { config: CardConfig; rec: Record<st
       {picture}
       <CardContent sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
         <Typography variant="h5" component="h3" sx={{ mb: 0.75 }}>{String(rec[config.title_field] ?? '')}</Typography>
-        <FieldLines record={rec} fields={config.fields} skip={config.title_field} />
+        <FieldLines columns={shown.columns} values={shown.values[id]} />
       </CardContent>
     </Box>
   )

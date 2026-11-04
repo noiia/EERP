@@ -2384,3 +2384,195 @@ msgstr "Passer en mode sombre"
 
 msgid "Switch to light mode"
 msgstr "Passer en mode clair"
+
+msgid "A sample value: no published record has one yet."
+msgstr "Valeur d’exemple : aucun enregistrement publié n’en a encore."
+
+msgid "After the value"
+msgstr "Après la valeur"
+
+msgid "Amount"
+msgstr "Montant"
+
+msgid "Apply"
+msgstr "Appliquer"
+
+msgid "Automatic"
+msgstr "Automatique"
+
+msgid "Before the value"
+msgstr "Avant la valeur"
+
+msgid "Choice"
+msgstr "Choix"
+
+msgid "Color"
+msgstr "Couleur"
+
+msgid "Country of numbers without a +prefix"
+msgstr "Pays des numéros sans préfixe +"
+
+msgid "Currency from a column"
+msgstr "Devise lue dans une colonne"
+
+msgid "Custom label"
+msgstr "Libellé personnalisé"
+
+msgid "Date and time"
+msgstr "Date et heure"
+
+msgid "Date style"
+msgstr "Format de date"
+
+msgid "Decimal number"
+msgstr "Nombre décimal"
+
+msgid "Decimals"
+msgstr "Décimales"
+
+msgid "Display settings"
+msgstr "Réglages d’affichage"
+
+msgid "Duration"
+msgstr "Durée"
+
+msgid "Empty: automatic."
+msgstr "Vide : automatique."
+
+msgid "Empty: the column name."
+msgstr "Vide : le nom de la colonne."
+
+msgid "Empty: the country of the site’s default language. Numbers of another country are written internationally."
+msgstr "Vide : le pays de la langue par défaut du site. Les numéros d’un autre pays s’écrivent au format international."
+
+msgid "Empty: the server’s. The zone is always shown next to the time."
+msgstr "Vide : celui du serveur. Le fuseau est toujours affiché après l’heure."
+
+msgid "Empty: the workspace currency, converted for visitors who pick another one."
+msgstr "Vide : la devise de l’espace de travail, convertie pour les visiteurs qui en choisissent une autre."
+
+msgid "Field display"
+msgstr "Affichage du champ"
+
+msgid "Font Awesome Free icons. The icon is decorative: the label and value carry the meaning."
+msgstr "Icônes Font Awesome Free. L’icône est décorative : le libellé et la valeur portent le sens."
+
+msgid "For records that each store their own currency code."
+msgstr "Pour les enregistrements qui stockent chacun leur code de devise."
+
+msgid "Format"
+msgstr "Format"
+
+msgid "Hide the label"
+msgstr "Masquer le libellé"
+
+msgid "How each field shows"
+msgstr "Affichage de chaque champ"
+
+msgid "Icons"
+msgstr "Icônes"
+
+msgid "In the ERP:"
+msgstr "Dans l’ERP :"
+
+msgid "Label hidden"
+msgstr "Libellé masqué"
+
+msgid "Like the text"
+msgstr "Comme le texte"
+
+msgid "Link color"
+msgstr "Couleur des liens"
+
+msgid "Linked record"
+msgstr "Enregistrement lié"
+
+msgid "Long (March 1, 2026)"
+msgstr "Long (1 mars 2026)"
+
+msgid "Loose"
+msgstr "Large"
+
+msgid "Medium (Mar 1, 2026)"
+msgstr "Moyen (1 mars 2026)"
+
+msgid "Muted"
+msgstr "Atténuée"
+
+msgid "No icon"
+msgstr "Aucune icône"
+
+msgid "No icon matches."
+msgstr "Aucune icône ne correspond."
+
+msgid "Not a country code (two letters, e.g. FR, US)."
+msgstr "Code pays invalide (deux lettres, par ex. FR, US)."
+
+msgid "Nothing to show for this field."
+msgstr "Rien à afficher pour ce champ."
+
+msgid "Only the value shows. Screen readers still announce the label."
+msgstr "Seule la valeur s’affiche. Les lecteurs d’écran annoncent toujours le libellé."
+
+msgid "Percentage"
+msgstr "Pourcentage"
+
+msgid "Position"
+msgstr "Position"
+
+msgid "Rating"
+msgstr "Note"
+
+msgid "Reset to automatic"
+msgstr "Revenir à l’automatique"
+
+msgid "Search icons"
+msgstr "Rechercher une icône"
+
+msgid "Search icons (phone, mail, instagram…)"
+msgstr "Rechercher une icône (phone, mail, instagram…)"
+
+msgid "Short (03/01/2026)"
+msgstr "Court (01/03/2026)"
+
+msgid "Show as"
+msgstr "Afficher comme"
+
+msgid "Spacing"
+msgstr "Espacement"
+
+msgid "Tight"
+msgstr "Serré"
+
+msgid "Time zone"
+msgstr "Fuseau horaire"
+
+msgid "Web address"
+msgstr "Adresse web"
+
+msgid "When no"
+msgstr "Si non"
+
+msgid "When yes"
+msgstr "Si oui"
+
+msgid "Whole number"
+msgstr "Nombre entier"
+
+msgid "Yes / no"
+msgstr "Oui / non"
+
+msgid "with an icon"
+msgstr "avec une icône"
+
+msgid "{n} out of {max}"
+msgstr "{n} sur {max}"
+
+msgid "Solid"
+msgstr "Plein"
+
+msgid "Regular"
+msgstr "Contour"
+
+msgid "Brands"
+msgstr "Marques"

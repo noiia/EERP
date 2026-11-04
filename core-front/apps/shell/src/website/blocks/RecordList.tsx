@@ -12,7 +12,9 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import { useT } from '@eerp/core-front'
 import { rowsPx } from '../layout-ops'
 import { pictureUrl } from '../urls'
+import type { PresentedFields } from '../present'
 import type { RecordListConfig } from '../types'
+import { FieldValue, VISUALLY_HIDDEN } from './FieldValue'
 import { hasPicture, label } from './fields'
 import { RecordCard } from './RecordCard'
 
@@ -37,7 +39,7 @@ const SIZES = [10, 25, 50]
 
 /** Visitor-facing record list: grid/list toggle, page size, pagination. `h` is the
  * block's height in grid rows: the grid scrolls inside it instead of growing the page. */
-export function RecordList({ config, records, h }: { config: RecordListConfig; records: Record<string, unknown>[]; h: number }) {
+export function RecordList({ config, records, presented, h }: { config: RecordListConfig; records: Record<string, unknown>[]; presented: PresentedFields; h: number }) {
   const t = useT()
   const sizes = [...new Set([...SIZES, config.page_size ?? 10])].sort((a, b) => a - b)
   const [view, setView] = useState(config.display ?? 'grid')
@@ -46,7 +48,7 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
   const shown = records.slice((page - 1) * size, page * size)
   const pages = Math.ceil(records.length / size)
   const href = (id: string) => config.detail_slug ? `/${encodeURIComponent(config.detail_slug)}/${encodeURIComponent(id)}` : undefined
-  const cols = config.fields.filter((f) => f !== config.title_field)
+  const cols = presented.columns
   const pic = config.picture_field
 
   return (
@@ -66,7 +68,7 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
         <Box sx={{ display: 'grid', gap: 2, overflowY: 'auto', maxHeight: Math.max(rowsPx(h) - 128, 240), p: 1,
           // Columns follow the block's own width, not the viewport: as many 220px+ cards as fit.
           gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))' }}>
-          {shown.map((rec) => <RecordCard key={String(rec.id)} config={config} rec={rec} />)}
+          {shown.map((rec) => <RecordCard key={String(rec.id)} config={config} rec={rec} shown={presented} />)}
         </Box>
       ) : (
         // The table follows the block's own width: field columns drop off right to left as it narrows.
@@ -76,7 +78,7 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
               <tr>
                 {pic && <th />}
                 <th>{label(config.title_field)}</th>
-                {cols.map((f, i) => <th key={f} className={`col-${i}`}>{label(f)}</th>)}
+                {cols.map((c, i) => <th key={c.name} className={`col-${i}`}>{c.label ?? <Box component="span" sx={VISUALLY_HIDDEN}>{c.spoken}</Box>}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -87,7 +89,10 @@ export function RecordList({ config, records, h }: { config: RecordListConfig; r
                   <tr key={id}>
                     {pic && <td style={{ width: 56 }}>{hasPicture(rec, pic) && <Box component="img" src={pictureUrl(config.table, id, pic)} alt="" loading="lazy" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, display: 'block' }} />}</td>}
                     <td>{href(id) ? <Link href={href(id)}>{title}</Link> : title}</td>
-                    {cols.map((f, i) => <td key={f} className={`col-${i}`}>{rec[f] != null && typeof rec[f] !== 'object' ? String(rec[f]) : ''}</td>)}
+                    {cols.map((c, i) => {
+                      const v = presented.values[id]?.[c.name]
+                      return <td key={c.name} className={`col-${i}`}>{v && <FieldValue column={c} value={v} />}</td>
+                    })}
                   </tr>
                 )
               })}

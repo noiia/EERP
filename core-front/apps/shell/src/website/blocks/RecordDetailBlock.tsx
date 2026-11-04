@@ -1,3 +1,4 @@
+import { presentFields, siteFormatContext } from '../present'
 import type { PublicDataSource, RecordDetailConfig } from '../types'
 import { RecordDetailView } from './RecordDetailView'
 
@@ -11,5 +12,10 @@ export async function RecordDetailBlock({ config, source, id }: { config: Record
   const related = rel?.table && rel.link_field
     ? (await source.list(rel.table, { filter: { [rel.link_field]: id }, page_size: 100 }))?.records ?? []
     : []
-  return <RecordDetailView config={config} rec={rec} related={related} />
+  const ctx = await siteFormatContext()
+  const [shown, relatedShown] = await Promise.all([
+    presentFields({ table: config.table, fields: config.fields, skip: config.title_field, records: [rec], displays: config.field_display, source, ctx }),
+    rel?.table ? presentFields({ table: rel.table, fields: rel.fields ?? [], skip: rel.title_field, records: related, displays: rel.field_display, source, ctx }) : null,
+  ])
+  return <RecordDetailView config={config} rec={rec} related={related} shown={shown} relatedShown={relatedShown} />
 }

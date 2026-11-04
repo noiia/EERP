@@ -2248,3 +2248,198 @@ msgstr ""
 
 msgid "Switch to light mode"
 msgstr ""
+
+msgid "A sample value: no published record has one yet."
+msgstr ""
+
+msgid "After the value"
+msgstr ""
+
+msgid "Amount"
+msgstr ""
+
+msgid "Apply"
+msgstr ""
+
+msgid "Automatic"
+msgstr ""
+
+msgid "Before the value"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Choice"
+msgstr ""
+
+msgid "Color"
+msgstr ""
+
+msgid "Country of numbers without a +prefix"
+msgstr ""
+
+msgid "Currency from a column"
+msgstr ""
+
+msgid "Custom label"
+msgstr ""
+
+msgid "Date and time"
+msgstr ""
+
+msgid "Date style"
+msgstr ""
+
+msgid "Decimal number"
+msgstr ""
+
+msgid "Decimals"
+msgstr ""
+
+msgid "Display settings"
+msgstr ""
+
+msgid "Duration"
+msgstr ""
+
+msgid "Empty: automatic."
+msgstr ""
+
+msgid "Empty: the column name."
+msgstr ""
+
+msgid "Empty: the country of the site’s default language. Numbers of another country are written internationally."
+msgstr ""
+
+msgid "Empty: the server’s. The zone is always shown next to the time."
+msgstr ""
+
+msgid "Empty: the workspace currency, converted for visitors who pick another one."
+msgstr ""
+
+msgid "Field display"
+msgstr ""
+
+msgid "Font Awesome Free icons. The icon is decorative: the label and value carry the meaning."
+msgstr ""
+
+msgid "For records that each store their own currency code."
+msgstr ""
+
+msgid "Format"
+msgstr ""
+
+msgid "Hide the label"
+msgstr ""
+
+msgid "How each field shows"
+msgstr ""
+
+msgid "Icons"
+msgstr ""
+
+msgid "In the ERP:"
+msgstr ""
+
+msgid "Label hidden"
+msgstr ""
+
+msgid "Like the text"
+msgstr ""
+
+msgid "Link color"
+msgstr ""
+
+msgid "Linked record"
+msgstr ""
+
+msgid "Long (March 1, 2026)"
+msgstr ""
+
+msgid "Loose"
+msgstr ""
+
+msgid "Medium (Mar 1, 2026)"
+msgstr ""
+
+msgid "Muted"
+msgstr ""
+
+msgid "No icon"
+msgstr ""
+
+msgid "No icon matches."
+msgstr ""
+
+msgid "Not a country code (two letters, e.g. FR, US)."
+msgstr ""
+
+msgid "Nothing to show for this field."
+msgstr ""
+
+msgid "Only the value shows. Screen readers still announce the label."
+msgstr ""
+
+msgid "Percentage"
+msgstr ""
+
+msgid "Position"
+msgstr ""
+
+msgid "Rating"
+msgstr ""
+
+msgid "Reset to automatic"
+msgstr ""
+
+msgid "Search icons"
+msgstr ""
+
+msgid "Search icons (phone, mail, instagram…)"
+msgstr ""
+
+msgid "Short (03/01/2026)"
+msgstr ""
+
+msgid "Show as"
+msgstr ""
+
+msgid "Spacing"
+msgstr ""
+
+msgid "Tight"
+msgstr ""
+
+msgid "Time zone"
+msgstr ""
+
+msgid "Web address"
+msgstr ""
+
+msgid "When no"
+msgstr ""
+
+msgid "When yes"
+msgstr ""
+
+msgid "Whole number"
+msgstr ""
+
+msgid "Yes / no"
+msgstr ""
+
+msgid "with an icon"
+msgstr ""
+
+msgid "{n} out of {max}"
+msgstr ""
+
+msgid "Solid"
+msgstr ""
+
+msgid "Regular"
+msgstr ""
+
+msgid "Brands"
+msgstr ""

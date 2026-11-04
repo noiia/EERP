@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+
+// The visitor's formatting context: English, prices stored in euros.
+vi.mock('@/website/site-preferences', () => ({
+  getSitePreferences: async () => ({
+    prefs: { locale: null, currency: 'EUR' },
+    localization: { default_locale: 'fr', default_currency: 'EUR', base: 'EUR', rates: {}, currencies: ['EUR'], date_format: '' },
+    locales: [],
+  }),
+}))
 import { BlockView } from './BlockView'
 import { sectionOf, stackOrder, type Block, type PublicDataSource } from '../types'
 
@@ -185,9 +194,9 @@ describe('blocks', () => {
     }
     await renderBlock(block('record_detail', { table: 'product', fields: ['name'], title_field: 'name', picture_field: 'picture',
       related: { table: 'product_variant', link_field: 'product_id', fields: ['unit_price'], title_field: 'name', picture_field: 'picture' } }), s, { id: '7' })
-    expect(screen.getByText(fieldLine('Unit price: 10'))).toBeTruthy() // first variant picked by default
+    expect(screen.getByText(fieldLine('Unit price: €10.00'))).toBeTruthy() // first variant picked by default
     fireEvent.click(screen.getByRole('button', { name: 'Blue' }))
-    expect(screen.getByText(fieldLine('Unit price: 12'))).toBeTruthy()
+    expect(screen.getByText(fieldLine('Unit price: €12.00'))).toBeTruthy()
     expect(screen.getByRole('img').getAttribute('src')).toBe('/api/v1/public/product_variant/v2/picture/picture')
   })
 

@@ -1,3 +1,4 @@
+import type { FieldDisplays } from './field-display'
 // Keep in sync with core/modules/website/validate.go BlockTypes.
 export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking', 'event_list', 'section', 'form'] as const
 export type BlockType = (typeof BLOCK_TYPES)[number]
@@ -47,6 +48,8 @@ export interface SectionConfig extends HeroConfig {
 export interface RecordListConfig {
   table: string; fields: string[]; title_field: string; filter?: Record<string, string>
   page_size?: number; display?: 'grid' | 'list'; detail_slug?: string; picture_field?: string
+  /** How each shown field reads: label, format, icon (ADR-036; absent = defaults). */
+  field_display?: FieldDisplays
 }
 /** event_booking / appointment_booking: the event to book; unset = the id from the URL
  * (/<slug>/<id>, what an event_list's `detail_slug` links to). */
@@ -65,10 +68,11 @@ export interface EventListConfig { display?: 'cards' | 'list'; limit?: number; d
 export interface RecordDetailConfig {
   table: string; fields: string[]; title_field: string; picture_field?: string; record?: string
   related?: RelatedConfig
+  field_display?: FieldDisplays
 }
 /** A table whose rows point at the detail's record (`link_field` holds its id), shown
  * as a picker on the detail — e.g. product_variant by product_id. */
-interface RelatedConfig { table: string; link_field: string; fields: string[]; title_field: string; picture_field?: string }
+interface RelatedConfig { table: string; link_field: string; fields: string[]; title_field: string; picture_field?: string; field_display?: FieldDisplays }
 /** Pictures of hand-picked records (in order) or the table's first ones, capped at `limit`. */
 export interface ImageCarouselConfig {
   table: string; picture_field: string; title_field?: string; detail_slug?: string
@@ -82,6 +86,7 @@ export interface RecordCarouselConfig {
   picture_position?: 'top' | 'left' | 'right'; picture_width?: number
   /** Card width in px on the row (default 280). */
   card_width?: number
+  field_display?: FieldDisplays
 }
 
 /** form: mirrors Go's formtarget.FormConfig (ADR-033). Each submission writes one record

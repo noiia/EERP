@@ -14,7 +14,9 @@ import Typography from '@mui/material/Typography'
 import { byPrefixAndName, FontAwesomeIcon, useT, ViewBanner } from '@eerp/core-front'
 import { savePublished, type PublishedTable } from '@/lib/website-settings'
 import { listEditorEvents, listEditorPages } from '@/website/editor-actions'
+import type { FieldDisplays } from '@/website/field-display'
 import type { Block, FormConfig } from '@/website/types'
+import { FieldDisplayList } from './FieldDisplaySettings'
 import { FormSettings } from './FormSettings'
 import { InspectorSection } from './Inspector'
 import { LinkPicker } from './LinkPicker'
@@ -132,6 +134,14 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
       ))}
     </FormGroup>
   )
+  // The shown fields' display settings (label, format, icon — ADR-036), in their order.
+  const fieldDisplay = (
+    <Stack key="field-display" spacing={0.5}>
+      {chosen.some((f) => f !== str('title_field')) && <Typography variant="body2" sx={{ fontWeight: 600 }}>{t('How each field shows')}</Typography>}
+      <FieldDisplayList table={str('table')} fields={chosen.filter((f) => f !== str('title_field'))} columns={fields}
+        displays={c.field_display as FieldDisplays | undefined} onChange={(field_display) => set({ field_display })} />
+    </Stack>
+  )
   const filterRows = () => {
     const rows = Object.entries((c.filter ?? {}) as Record<string, string>)
     const put = (next: [string, string][]) => set({ filter: Object.fromEntries(next) })
@@ -201,6 +211,8 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
             } />
           ))}
         </FormGroup>
+        <FieldDisplayList table={relStr('table')} fields={relChosen.filter((f) => f !== relStr('title_field'))} columns={relFields}
+          displays={rel.field_display as FieldDisplays | undefined} onChange={(field_display) => setRel({ field_display })} />
         <PublishFields table={relTable} used={[...usedFields(rel), ...(relStr('link_field') ? [relStr('link_field')] : [])]} onPublished={onPublished} />
       </>}
     </InspectorSection>
@@ -250,7 +262,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
     case 'record_list':
       form = [
         sec('Data', [tableSelect, filterRows()]),
-        sec('Card', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true })], 'Fields shown on each record.'),
+        sec('Card', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }), fieldDisplay], 'Fields shown on each record.'),
         sec('Display', [select('display', 'Display', ['grid', 'list'], { labels: { grid: 'Grid', list: 'List' } }), num('page_size', 'Records per page', 1, 100)],
           'The default view: visitors can switch between grid and list.'),
         sec('Link', [detailSelect]),
@@ -261,7 +273,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         sec('Data', [tableSelect,
           str('table') && <RecordPicker key="record" table={str('table')} labelField={str('title_field')} label="Record (empty = the one in the URL)"
             value={str('record') ? [str('record')] : []} onChange={(ids) => set({ record: ids[0] ?? '' })} />]),
-        sec('Content', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true })]),
+        sec('Content', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }), fieldDisplay]),
         relatedForm,
       ]
       break
@@ -270,7 +282,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         sec('Data', [tableSelect, pickRecords, num('limit', 'Maximum number of records', 1, 100)]),
         sec('Card', [fieldBoxes, select('title_field', 'Title field', fields), select('picture_field', 'Picture field', pictures, { none: true }),
           select('picture_position', 'Picture position', ['top', 'left', 'right'], { labels: { top: 'Top', left: 'Left', right: 'Right' } }),
-          num('picture_width', 'Picture width beside the text (%)', 10, 90), num('card_width', 'Card width (px)', 160, 1200)]),
+          num('picture_width', 'Picture width beside the text (%)', 10, 90), num('card_width', 'Card width (px)', 160, 1200), fieldDisplay]),
         sec('Link', [detailSelect]),
       ]
       break

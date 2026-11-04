@@ -1,5 +1,6 @@
 import Box from '@mui/material/Box'
 import type { PublicDataSource, RecordCarouselConfig } from '../types'
+import { presentFields } from '../present'
 import { RecordCard } from './RecordCard'
 
 /** Hand-picked records (in the chosen order) or the table's first ones, capped at
@@ -15,12 +16,13 @@ export async function RecordCarouselBlock({ config, source }: { config: RecordCa
     records = (await source.list(config.table, { filter: config.filter, page_size: limit }))?.records ?? []
   }
   if (records.length === 0) return null
+  const shown = await presentFields({ table: config.table, fields: config.fields, skip: config.title_field, records, displays: config.field_display, source })
   const cardWidth = Math.min(Math.max(config.card_width ?? (config.picture_position && config.picture_position !== 'top' ? 480 : 280), 160), 1200)
   return (
     <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', scrollSnapType: 'x mandatory', pb: 1 }}>
       {records.map((rec) => (
         <Box key={String(rec.id)} sx={{ flex: `0 0 min(${cardWidth}px, 85%)`, scrollSnapAlign: 'start' }}>
-          <RecordCard config={config} rec={rec} />
+          <RecordCard config={config} rec={rec} shown={shown} />
         </Box>
       ))}
     </Box>

@@ -7,7 +7,9 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { pictureUrl } from '../urls'
 import type { RecordDetailConfig } from '../types'
-import { FieldLines, hasPicture } from './fields'
+import type { PresentedFields } from '../present'
+import { FieldLines } from './FieldValue'
+import { hasPicture } from './fields'
 import { ImageCarousel } from './ImageCarousel'
 
 type Rec = Record<string, unknown>
@@ -15,7 +17,11 @@ type Rec = Record<string, unknown>
 /** Record detail: pictures (the record's, then each related row's) in a carousel, the
  * record's fields, and the related rows as a picker; picking one shows its fields and
  * moves the carousel to its picture. */
-export function RecordDetailView({ config, rec, related }: { config: RecordDetailConfig; rec: Rec; related: Rec[] }) {
+export function RecordDetailView({ config, rec, related, shown, relatedShown }: {
+  config: RecordDetailConfig; rec: Rec; related: Rec[]
+  /** The record's and the related rows' fields, presented server-side (present.ts). */
+  shown: PresentedFields; relatedShown: PresentedFields | null
+}) {
   const rel = config.related
   const [picked, setPicked] = useState<string | null>(related[0] ? String(related[0].id) : null)
   const [index, setIndex] = useState(0)
@@ -40,13 +46,13 @@ export function RecordDetailView({ config, rec, related }: { config: RecordDetai
       <div>
         <Stack spacing={1}>
           <Typography variant="h2">{String(rec[config.title_field] ?? '')}</Typography>
-          <FieldLines record={rec} fields={config.fields} skip={config.title_field} />
+          <FieldLines columns={shown.columns} values={shown.values[String(rec.id)]} />
           {rel && related.length > 0 && (
             <>
               <ToggleButtonGroup exclusive size="small" value={picked} onChange={(_, v) => pick(v)} sx={{ flexWrap: 'wrap' }}>
                 {related.map((r) => <ToggleButton key={String(r.id)} value={String(r.id)}>{String(r[rel.title_field] ?? r.id)}</ToggleButton>)}
               </ToggleButtonGroup>
-              {current && <FieldLines record={current} fields={rel.fields} skip={rel.title_field} />}
+              {current && relatedShown && <FieldLines columns={relatedShown.columns} values={relatedShown.values[String(current.id)]} />}
             </>
           )}
         </Stack>
