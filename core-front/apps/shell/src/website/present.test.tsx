@@ -9,6 +9,8 @@ vi.mock('@/website/site-preferences', () => ({
   }),
 }))
 
+import type { ViewDescriptor } from '@eerp/core-front'
+import { moduleRegistry } from '@eerp/core-front/server'
 import { FieldLines } from './blocks/FieldValue'
 import { presentFields } from './present'
 import type { PublicDataSource } from './types'
@@ -55,7 +57,12 @@ describe('presentFields', () => {
   })
 
   it('shows a linked record by its label, never its id; nothing when unpublished', async () => {
-    // invoice.customer_id is declared by the sale module as a many2one to contact (label: name).
+    // invoice.customer_id as the sale module declares it: a many2one to contact (label: name).
+    // Declared here rather than read from the generated module manifest, which is empty
+    // wherever no eerp-config.json is reachable (the CI's frontend job).
+    const spy = vi.spyOn(moduleRegistry, 'formDescriptorFor').mockImplementation((table: string) => (table === 'invoice'
+      ? { fields: [{ name: 'customer_id', label: 'Customer', type: 'relation', relation: { kind: 'many2one', entity: 'contact', labelField: 'name' } }] } as unknown as ViewDescriptor
+      : null))
     const rows = [{ id: 'a', customer_id: 'c1' }, { id: 'b', customer_id: 'c2' }, { id: 'c', customer_id: 'c1' }]
     const get = vi.fn(async (table: string, id: string) => (table === 'contact' && id === 'c1' ? { id: 'c1', name: 'Ada' } : null))
     const p = await presentFields({ table: 'invoice', fields: ['customer_id'], records: rows, source: { list: async () => null, get } })
@@ -63,6 +70,7 @@ describe('presentFields', () => {
     expect(p.values.c.customer_id).toEqual({ text: 'Ada' })
     expect(p.values.b.customer_id).toBeNull() // c2 isn't published
     expect(get).toHaveBeenCalledTimes(2) // one lookup per distinct id
+    spy.mockRestore()
   })
 
   it('shows nothing for a forced relation it can’t resolve (no declared target)', async () => {

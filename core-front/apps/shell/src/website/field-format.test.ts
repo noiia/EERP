@@ -13,12 +13,16 @@ describe('formatMoney', () => {
     [1250, 'EUR', 'de', '1.250,00 €'],
     [1250, 'USD', 'en-US', '$1,250.00'],
     [1250, 'GBP', 'en-GB', '£1,250.00'],
-    [1250, 'CHF', 'fr-CH', '1 250.00 CHF'], // Swiss French: a point before the cents
     [1250, 'CHF', 'de-CH', "CHF 1'250.00"],
     [1250, 'JPY', 'ja', '￥1,250'], // no minor unit
     [1250.5, 'BHD', 'en', 'BHD 1,250.500'], // three decimals
   ])('%d %s in %s → %s', (amount, currency, locale, expected) => {
     expect(plain(formatMoney(amount, currency, locale))).toBe(expected)
+  })
+
+  it('uses Swiss French grouping, a point before the cents', () => {
+    // The group separator differs between ICU versions (a space, or an apostrophe).
+    expect(plain(formatMoney(1250, 'CHF', 'fr-CH'))).toMatch(/^1[ '’]250\.00 CHF$/)
   })
 
   it('takes a fixed number of decimals when asked', () => {
