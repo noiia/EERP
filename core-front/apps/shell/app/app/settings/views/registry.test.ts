@@ -48,6 +48,27 @@ const routes = new Map([
       permission: undefined,
     },
   ],
+  // A second tree path on the same entity (hierarchical + flat): the first wins.
+  ['/crm/flat', { module: 'crm', descriptor: { entity: 'crm', viewType: 'tree', fields: [] }, permission: undefined }],
+  [
+    '/quote/:id',
+    {
+      module: 'sale',
+      descriptor: {
+        entity: 'quote',
+        viewType: 'form',
+        statusBar: { field: 'status' },
+        fields: [
+          { name: 'status', label: 'Status', type: 'selection', selection: { options: ['draft', 'sent'] } },
+          { name: 'kind', type: 'selection', selection: { options: ['a'] } },
+          { name: 'empty', label: 'Empty', type: 'selection', selection: { options: [] } },
+          { name: 'name', label: 'Name', type: 'text' },
+        ],
+      },
+      permission: undefined,
+    },
+  ],
+  ['/quote/:id/copy', { module: 'sale', descriptor: { entity: 'quote', viewType: 'form', fields: [] }, permission: undefined }],
 ])
 vi.mock('@eerp/core-front/server', () => ({
   moduleRegistry: { buildRegistry: () => routes },
@@ -91,7 +112,7 @@ describe('treeViewEntities', () => {
 describe('formViewEntities', () => {
   it('lists only form-view entities, not tree/other viewTypes', () => {
     const entities = formViewEntities().map((e) => e.entity)
-    expect(entities).toEqual(['crm', 'modules'])
+    expect(entities).toEqual(['crm', 'modules', 'quote'])
   })
 
   it('carries the owning module and the module\'s own showChatter default', () => {
@@ -101,5 +122,21 @@ describe('formViewEntities', () => {
     expect(crm?.showChatterDefault).toBeUndefined()
     expect(modules?.module).toBe('appstore')
     expect(modules?.showChatterDefault).toBe(false)
+  })
+})
+
+describe('formViewEntities status bar', () => {
+  it("carries the breadcrumb field and the form's selection fields that have options", () => {
+    const quote = formViewEntities().find((e) => e.entity === 'quote')
+    expect(quote?.statusBarField).toBe('status')
+    expect(quote?.selectionFields).toEqual([
+      { name: 'status', label: 'Status', options: ['draft', 'sent'] },
+      { name: 'kind', label: 'kind', options: ['a'] }, // no label: its name
+    ])
+    expect(formViewEntities().find((e) => e.entity === 'crm')?.statusBarField).toBeUndefined()
+  })
+
+  it('keeps the first tree path of an entity', () => {
+    expect(treeViewEntities().find((e) => e.entity === 'crm')?.kanbanFields.map((f) => f.name)).toEqual(['status'])
   })
 })

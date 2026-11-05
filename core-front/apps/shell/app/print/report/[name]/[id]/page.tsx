@@ -54,11 +54,9 @@ import '@/generated/generated-translations'
 //
 // Being a plain async Server Component IS the `data-report-ready` guarantee:
 // nothing below is returned to the caller until every await has resolved, so
-// the marker's presence on the returned tree is never premature. That's also
-// why this file has no test of its own — same reasoning
-// apps/shell/app/app/page.test.tsx documents for not testing an async Server
-// Component's own gating logic directly; the pure, testable surface is
-// ReportRenderer itself (packages/core-front/src/views/report-renderer.test.tsx).
+// the marker's presence on the returned tree is never premature. page.test.tsx
+// awaits the component and renders what it returns, ReportRenderer stubbed (its
+// own tests are packages/core-front/src/views/report-renderer.test.tsx).
 
 interface PrintReportPageProps {
   params: Promise<{ name: string; id: string }>

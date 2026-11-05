@@ -15,8 +15,8 @@ P2 landed after P3: its DB tests use P3's `core/internal/testdb`.
 | | Before (`dev`) | After | Gate |
 | --- | --- | --- | --- |
 | Go coverage, as CI measures it (`-coverpkg=./...`, fresh DB) | 35.2 % | **81.3 %** | `.github/.testcoverage.yml` `total: 80` |
-| Shell (`apps/shell`) coverage, lines | 66.1 % | **85.0 %** | vitest thresholds 80 (branches 70) |
-| Engine (`packages/core-front`) coverage, lines | 92.3 % | 92.3 % | vitest thresholds 80 (branches 75 — baseline 79.9) |
+| Shell (`apps/shell`) coverage, lines | 66.1 % | **85.0 %** | vitest thresholds 80 on every metric |
+| Engine (`packages/core-front`) coverage, lines | 92.3 % | 92.3 % | vitest thresholds 80 on every metric |
 | Unreachable Go functions (`deadcode`) | 35 | public ORM API + test support only | CI diff vs `.github/deadcode-allowlist.txt` |
 | Backend image | 1.39 GB | **289 MB** | — |
 | Incremental backend image rebuild | full recompile | **~7 s** | — |

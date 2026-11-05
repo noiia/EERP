@@ -29,9 +29,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'json-summary'],
-      // Branches sit just under 80 today (79.9%): floor them at 75 so the gate blocks
-      // regressions without failing on the current baseline.
-      thresholds: { statements: 80, lines: 80, functions: 80, branches: 75 },
+      // Every metric is floored at 80% (CLAUDE.md "Before pushing").
+      thresholds: { statements: 80, lines: 80, functions: 80, branches: 80 },
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', '**/*.d.ts'],
     },

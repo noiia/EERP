@@ -40,12 +40,12 @@ export default defineConfig({
     },
     // Coverage mirrors the backend's go-test-coverage step (see the engine vitest
     // config). Generated artefacts and the BFF test stubs are excluded. The
-    // thresholds fail `pnpm test:coverage` (CI) on a regression below 80%; branches
-    // sit lower until the untested page components grow tests.
+    // thresholds fail `pnpm test:coverage` (CI, `make test`) on a regression below
+    // 80% on any metric — the floor CLAUDE.md's "Before pushing" rule names.
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'json-summary'],
-      thresholds: { statements: 80, lines: 80, functions: 80, branches: 70 },
+      thresholds: { statements: 80, lines: 80, functions: 80, branches: 80 },
       include: ['app/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
       exclude: [
         '**/*.{test,spec}.{ts,tsx}',
