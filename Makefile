@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode test run-front-dev garage-init logs run-docker-prod bootstrap bootstrap-prod renew-certs-prod
+.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode run-coverage-gate test run-front-dev garage-init logs run-docker-prod bootstrap bootstrap-prod renew-certs-prod
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -67,20 +67,36 @@ run-deadcode:
 # corepack shim can't get in the way); override with PNPM=pnpm. The engine is
 # built first: the shell and the modules import its dist/, as in CI.
 PNPM ?= npx -y pnpm@12.4.2
+# FRONT_TEST=test:coverage (what `make test` passes) also enforces each package's
+# vitest coverage thresholds, as CI does.
+FRONT_TEST ?= test
 run-front-tests:
 	cd $(root)/core-front && $(PNPM) install --frozen-lockfile && \
 		$(PNPM) --filter @eerp/core-front build && \
-		$(PNPM) lint && $(PNPM) typecheck && $(PNPM) test
+		$(PNPM) lint && $(PNPM) typecheck && $(PNPM) $(FRONT_TEST)
 
-# Every check the CI runs: Go backend (+ the Redis-backed cache tests), the dead
-# code gate, pdf-service, then the frontend's lint, typecheck and tests. Stops at
-# the first failing suite.
+# The Go coverage gate CI applies (vladopajic/go-test-coverage, same config files):
+# COVER_CONFIG names the .testcoverage*.yml whose `profile` was just written.
+GO_TEST_COVERAGE_VERSION ?= v2.21.0
+COVER_CONFIG ?= .github/.testcoverage.yml
+run-coverage-gate:
+	cd $(root) && go run github.com/vladopajic/go-test-coverage/v2@$(GO_TEST_COVERAGE_VERSION) --config=$(COVER_CONFIG)
+
+# Every check the CI runs, coverage gates included — what must pass before a push
+# (CLAUDE.md "Before pushing"): Go backend (+ the Redis-backed cache tests) and its
+# total coverage floor, the dead code gate, pdf-service and its floor, then the
+# frontend's lint, typecheck and tests with each package's vitest thresholds.
+# Stops at the first failure. Pitfall: the Go figure is measured against your dev
+# database; CI uses a fresh one (see .github/.testcoverage.yml).
+GO_COVER_ARGS := -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 test:
 	$(COMPOSE) up -d --wait redis
-	REDIS_URL=redis://127.0.0.1:6379/0 $(MAKE) --no-print-directory run-back-tests ARGS="-timeout 30m $(ARGS)"
+	REDIS_URL=redis://127.0.0.1:6379/0 $(MAKE) --no-print-directory run-back-tests ARGS="-timeout 30m $(GO_COVER_ARGS) $(ARGS)"
+	$(MAKE) --no-print-directory run-coverage-gate COVER_CONFIG=.github/.testcoverage.yml
 	$(MAKE) --no-print-directory run-deadcode
-	$(MAKE) --no-print-directory run-pdf-tests
-	$(MAKE) --no-print-directory run-front-tests
+	$(MAKE) --no-print-directory run-pdf-tests ARGS="$(GO_COVER_ARGS) $(ARGS)"
+	$(MAKE) --no-print-directory run-coverage-gate COVER_CONFIG=.github/.testcoverage-pdf-service.yml
+	$(MAKE) --no-print-directory run-front-tests FRONT_TEST=test:coverage
 
 run-front-dev:
 	cd $(root)/core-front && npm run dev -- --host 0.0.0.0

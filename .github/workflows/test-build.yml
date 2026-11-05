@@ -81,6 +81,41 @@ jobs:
   test:
     uses: ./.github/workflows/test-check.yml
 
+  # 1b. README coverage badges: once every check has passed on a push to main,
+  # rewrite the badges with the figures this run measured and commit them
+  # (.github/scripts/update-coverage-badges.py). main only: GitHub shows main's
+  # README, and badge commits on dev too would make every dev → main merge conflict
+  # on the same lines. A push made with
+  # GITHUB_TOKEN triggers no workflow, so this never loops. A concurrent push to the
+  # branch is rebased over; if the push still loses the race, the next run catches up.
+  coverage-badges:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: coverage-badges-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+      - name: rewrite the badges
+        run: |
+          python3 .github/scripts/update-coverage-badges.py README.md \
+            "core=${{ needs.test.outputs.core-coverage }}" \
+            "pdf-service=${{ needs.test.outputs.pdf-service-coverage }}" \
+            "front-shell=${{ needs.test.outputs.front-shell-coverage }}" \
+            "front-engine=${{ needs.test.outputs.front-engine-coverage }}"
+      - name: commit
+        run: |
+          git diff --quiet README.md && { echo "Badges unchanged."; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs(readme): update coverage badges [skip ci]" README.md
+          git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}"
+
   # 2. Version of this build (.github/scripts/next-version.sh): the latest vX.Y.Z
   # tag with its minor bumped, 0.101.0 at the earliest. Only when an image will be
   # built — a run that builds nothing consumes no version. On a push / manual run

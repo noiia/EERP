@@ -39,8 +39,10 @@ make run-back
 # Frontend dev server only (host-native Next.js)
 make run-front-dev
 
-# Run every check the CI runs: Go backend (with Redis), the dead code gate,
-# pdf-service, then frontend lint + typecheck + tests. Stops at the first failure.
+# Run every check the CI runs, coverage gates included (required before every push,
+# see "Before pushing"): Go backend (with Redis) + its coverage floor, the dead code
+# gate, pdf-service + its floor, then frontend lint + typecheck + tests with each
+# package's vitest thresholds. Stops at the first failure.
 make test
 
 # The CI's dead code gate alone: any Go function unreachable from main that isn't
@@ -297,6 +299,23 @@ set, since setting it names real intent (see `internal/reports/` above and
 - Interfaces defined at the call site, not the implementation
 - Table-driven tests with subtests (`t.Run`)
 - `depguard` blocks direct use of `fmt` and `log` packages (use `go.uber.org/zap` via `common.Logger`)
+
+## Before pushing (default rule)
+
+Nothing is pushed until the tests pass **and** every service still meets the coverage floor CI enforces. CI (`.github/workflows/test-check.yml`) gates every image build on these, so a push that skips them only moves the failure to CI.
+
+- Run **`make test`** before every `git push`. It runs exactly what CI runs, coverage gates included, and stops at the first failure:
+
+  | Service | Floor (source of truth) |
+  |---|---|
+  | core (Go) | total ≥ the `threshold.total` in `.github/.testcoverage.yml` (85%), via `go-test-coverage` |
+  | pdf-service (Go) | `.github/.testcoverage-pdf-service.yml` (no floor set yet) |
+  | frontend shell | `coverage.thresholds` in `core-front/apps/shell/vitest.config.ts` (80% statements, lines, functions and branches) |
+  | frontend engine | `coverage.thresholds` in `core-front/packages/core-front/vitest.config.ts` (80% each) |
+
+- A red test or a figure under its floor blocks the push. Fix it by adding tests. Never lower a threshold, skip a test or exclude a file to get under the bar. New code ships with the tests that keep its service above the floor.
+- The README's coverage badges are **written by CI**, not by hand: after a green run on `main`, test-build.yml's `coverage-badges` job rewrites the block between `<!-- coverage-badges:start -->` and `<!-- coverage-badges:end -->` from the figures that run measured (`.github/scripts/update-coverage-badges.py`) and commits it. `main` only, because badge commits on `dev` too would conflict on every `dev` → `main` merge. Adding a service with coverage means a `workflow_call` output in test-check.yml, a `name=<output>` argument in the `coverage-badges` job and a `LINKS` entry in the script.
+- Pitfall: the Go figure is measured against your dev database, while CI uses a fresh one, and it varies with the Go version (`.github/.testcoverage.yml` explains why). A local run just above the floor can still fail in CI.
 
 # Documentation Rules
 

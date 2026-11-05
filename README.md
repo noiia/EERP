@@ -1,9 +1,15 @@
 # EERP
 
-<!-- Static badges: refresh by hand when versions or coverage move. Coverage/test
-     counts come from the same commands CI runs (.github/workflows/test-check.yml). -->
-[![coverage/back](https://img.shields.io/badge/coverage%2Fback-75.2%25-yellow)](.github/.testcoverage.yml)
-[![coverage/front](https://img.shields.io/badge/coverage%2Ffront-88.4%25-brightgreen)](core-front/apps/shell/vitest.config.ts)
+<!-- Coverage badges are rewritten by CI after every successful test run on main
+     (the `coverage-badges` job of .github/workflows/test-build.yml,
+     .github/scripts/update-coverage-badges.py) — don't edit them by hand. The other
+     badges are static: refresh them by hand when versions or test counts move. -->
+<!-- coverage-badges:start -->
+[![coverage/core](https://img.shields.io/badge/coverage%2Fcore-82.3%25-brightgreen)](.github/.testcoverage.yml)
+[![coverage/pdf-service](https://img.shields.io/badge/coverage%2Fpdf--service-42.4%25-red)](.github/.testcoverage-pdf-service.yml)
+[![coverage/front-shell](https://img.shields.io/badge/coverage%2Ffront--shell-88.1%25-brightgreen)](core-front/apps/shell/vitest.config.ts)
+[![coverage/front-engine](https://img.shields.io/badge/coverage%2Ffront--engine-90.0%25-brightgreen)](core-front/packages/core-front/vitest.config.ts)
+<!-- coverage-badges:end -->
 [![tests](https://img.shields.io/badge/tests-2315%20(go%20916%20%2B%20vitest%201399)-blue)](.github/workflows/test-check.yml)
 [![go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](core/go.mod)
 [![echo](https://img.shields.io/badge/echo-v5.4.0-00ADD8)](https://echo.labstack.com)

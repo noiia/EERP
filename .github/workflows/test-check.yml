@@ -5,10 +5,23 @@ name: Test check
 # checks without duplicating them.
 on:
   workflow_call:
+    # Each service's measured coverage (percent, statements), read by test-build.yml's
+    # coverage-badges job to rewrite the README badges once every check has passed.
+    outputs:
+      core-coverage:
+        value: ${{ jobs.core-test-and-coverage.outputs.coverage }}
+      pdf-service-coverage:
+        value: ${{ jobs.pdf-service-test-and-coverage.outputs.coverage }}
+      front-shell-coverage:
+        value: ${{ jobs.core-front-test-and-coverage.outputs.shell }}
+      front-engine-coverage:
+        value: ${{ jobs.core-front-test-and-coverage.outputs.engine }}
 
 jobs:
     core-test-and-coverage:
         runs-on: ubuntu-latest
+        outputs:
+            coverage: ${{ steps.coverage.outputs.total-coverage }}
         services:
             postgres:
                 image: postgis/postgis:18-3.6
@@ -69,12 +82,15 @@ jobs:
               test ! -s /tmp/new-dead.txt
 
           - name: analyse coverage
+            id: coverage
             uses: vladopajic/go-test-coverage@v2
             with:
                 config: .github/.testcoverage.yml
 
     pdf-service-test-and-coverage:
         runs-on: ubuntu-latest
+        outputs:
+            coverage: ${{ steps.coverage.outputs.total-coverage }}
         steps:
           - uses: actions/checkout@v6
           - uses: actions/setup-go@v6
@@ -87,12 +103,16 @@ jobs:
             run: cd ./tools/pdf-service/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
           - name: analyse coverage
+            id: coverage
             uses: vladopajic/go-test-coverage@v2
             with:
                 config: .github/.testcoverage-pdf-service.yml
 
     core-front-test-and-coverage:
         runs-on: ubuntu-latest
+        outputs:
+            shell: ${{ steps.summary.outputs.shell }}
+            engine: ${{ steps.summary.outputs.engine }}
         defaults:
           run:
             working-directory: ./core-front
@@ -125,6 +145,14 @@ jobs:
             # vitest (v8 provider) runs the analysis itself — the frontend analog of
             # the backend's go-test-coverage step. lcov is emitted for tooling.
             run: pnpm test:coverage
+          - name: coverage figures
+            # Statement coverage of each package, from vitest's json-summary reporter.
+            id: summary
+            run: |
+              for pkg in shell:apps/shell engine:packages/core-front; do
+                pct=$(jq -r '.total.statements.pct' "${pkg#*:}/coverage/coverage-summary.json")
+                echo "${pkg%%:*}=$pct" >> "$GITHUB_OUTPUT"
+              done
           - name: upload coverage report
             if: always()
             uses: actions/upload-artifact@v4
