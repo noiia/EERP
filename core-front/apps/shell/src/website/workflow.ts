@@ -13,7 +13,7 @@ export interface WfPage { id: string; slug: string; title: string; published: bo
 export const BLOCK_LABELS: Record<string, string> = {
   text: 'Text', image: 'Image', hero: 'Hero', record_list: 'Record list', record_detail: 'Record detail',
   record_carousel: 'Record carousel', image_carousel: 'Image carousel', event_booking: 'Event booking',
-  appointment_booking: 'Appointment booking', event_list: 'Event list', section: 'Section', form: 'Form',
+  appointment_booking: 'Appointment booking', event_list: 'Event list', section: 'Section', form: 'Form', search: 'Search bar',
 }
 const SYS_NODES = { '/login': 'sys:login', '/signup': 'sys:signup', '/account': 'sys:account' } as const
 const SYS_LABELS = { 'sys:login': 'Login', 'sys:signup': 'Sign up', 'sys:account': 'Account' } as const

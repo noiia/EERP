@@ -22,6 +22,7 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   event_list: 'Event list',
   section: 'Background section',
   form: 'Form',
+  search: 'Search bar',
 }
 
 /** What each block does, in the visitor's terms — shown under its name in the palette. */
@@ -38,6 +39,7 @@ export const BLOCK_DESCRIPTIONS: Record<BlockType, string> = {
   event_list: 'Upcoming events, soonest first.',
   section: 'A colored or picture band other blocks sit on.',
   form: 'Fields visitors fill in, saved into records.',
+  search: 'A search bar over the tables you pick.',
 }
 
 // Icon names resolved through `byPrefixAndName.fas` (see packages/core-front/src/views/icons.ts).
@@ -54,6 +56,7 @@ export const BLOCK_ICONS: Record<BlockType, string> = {
   event_list: 'calendar-days',
   section: 'square',
   form: 'rectangle-list',
+  search: 'magnifying-glass',
 }
 
 /** The palette's groups, by what a block is for. Every block type is in exactly one. */
@@ -61,7 +64,7 @@ export const BLOCK_GROUPS: { label: string; types: BlockType[] }[] = [
   { label: 'Layout and content', types: ['hero', 'text', 'image', 'section', 'image_carousel'] },
   { label: 'Records', types: ['record_list', 'record_carousel', 'record_detail'] },
   { label: 'Events', types: ['event_list', 'event_booking', 'appointment_booking'] },
-  { label: 'Visitors', types: ['form'] },
+  { label: 'Visitors', types: ['form', 'search'] },
 ]
 
 /** A short text telling apart two blocks of the same type: its own title, heading or button, else its table. */

@@ -1,6 +1,6 @@
 import type { FieldDisplays } from './field-display'
 // Keep in sync with core/modules/website/validate.go BlockTypes.
-export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking', 'event_list', 'section', 'form'] as const
+export const BLOCK_TYPES = ['text', 'image', 'hero', 'record_list', 'record_detail', 'record_carousel', 'image_carousel', 'event_booking', 'appointment_booking', 'event_list', 'section', 'form', 'search'] as const
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 export interface Block {
@@ -87,6 +87,22 @@ export interface RecordCarouselConfig {
   /** Card width in px on the row (default 280). */
   card_width?: number
   field_display?: FieldDisplays
+}
+
+/** One table a search block looks in: rows whose `search_fields` (default: the title
+ * field) contain the visitor's text, shown under `label` (default: the table name) and
+ * linking to `/<detail_slug>/<id>` when set. Every column used must be published. */
+export interface SearchTarget {
+  table: string; title_field: string; label?: string
+  search_fields?: string[]; picture_field?: string; detail_slug?: string
+}
+/** search: a search bar over several published tables. The site's /api/site-search
+ * route reads this definition from the stored, published page, never from the browser. */
+export interface SearchConfig {
+  targets: SearchTarget[]
+  placeholder?: string
+  /** Results per table (1–20, default 5). */
+  limit?: number
 }
 
 /** form: mirrors Go's formtarget.FormConfig (ADR-033). Each submission writes one record

@@ -2443,3 +2443,51 @@ msgstr ""
 
 msgid "Brands"
 msgstr ""
+
+msgid "Search bar"
+msgstr ""
+
+msgid "A search bar over the tables you pick."
+msgstr ""
+
+msgid "Type at least 2 characters"
+msgstr ""
+
+msgid "No results"
+msgstr ""
+
+msgid "Searching…"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Placeholder"
+msgstr ""
+
+msgid "Results per table"
+msgstr ""
+
+msgid "Searched tables"
+msgstr ""
+
+msgid "Results are grouped by table, in this order."
+msgstr ""
+
+msgid "Add a table to search in."
+msgstr ""
+
+msgid "Move up"
+msgstr ""
+
+msgid "Remove table"
+msgstr ""
+
+msgid "Section label"
+msgstr ""
+
+msgid "Search in"
+msgstr ""
+
+msgid "Add table"
+msgstr ""

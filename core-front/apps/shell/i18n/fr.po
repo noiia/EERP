@@ -2576,3 +2576,51 @@ msgstr "Contour"
 
 msgid "Brands"
 msgstr "Marques"
+
+msgid "Search bar"
+msgstr "Barre de recherche"
+
+msgid "A search bar over the tables you pick."
+msgstr "Une barre de recherche sur les tables choisies."
+
+msgid "Type at least 2 characters"
+msgstr "Saisissez au moins 2 caractères"
+
+msgid "No results"
+msgstr "Aucun résultat"
+
+msgid "Searching…"
+msgstr "Recherche…"
+
+msgid "Search"
+msgstr "Rechercher"
+
+msgid "Placeholder"
+msgstr "Texte indicatif"
+
+msgid "Results per table"
+msgstr "Résultats par table"
+
+msgid "Searched tables"
+msgstr "Tables recherchées"
+
+msgid "Results are grouped by table, in this order."
+msgstr "Les résultats sont regroupés par table, dans cet ordre."
+
+msgid "Add a table to search in."
+msgstr "Ajoutez une table dans laquelle chercher."
+
+msgid "Move up"
+msgstr "Monter"
+
+msgid "Remove table"
+msgstr "Retirer la table"
+
+msgid "Section label"
+msgstr "Libellé de la section"
+
+msgid "Search in"
+msgstr "Chercher dans"
+
+msgid "Add table"
+msgstr "Ajouter une table"

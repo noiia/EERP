@@ -15,12 +15,13 @@ import { byPrefixAndName, FontAwesomeIcon, useT, ViewBanner } from '@eerp/core-f
 import { savePublished, type PublishedTable } from '@/lib/website-settings'
 import { listEditorEvents, listEditorPages } from '@/website/editor-actions'
 import type { FieldDisplays } from '@/website/field-display'
-import type { Block, FormConfig } from '@/website/types'
+import type { Block, FormConfig, SearchConfig } from '@/website/types'
 import { FieldDisplayList } from './FieldDisplaySettings'
 import { FormSettings } from './FormSettings'
 import { InspectorSection } from './Inspector'
 import { LinkPicker } from './LinkPicker'
 import { RecordPicker } from './RecordPicker'
+import { SearchSettings } from './SearchSettings'
 
 type Config = Record<string, unknown>
 
@@ -50,7 +51,7 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
   useEffect(() => {
     if (bookingKind) void listEditorEvents(bookingKind).then(setEvents)
   }, [bookingKind])
-  const links = bookingKind !== null || block.type === 'record_list' || block.type === 'record_carousel' || block.type === 'image_carousel' || block.type === 'event_list'
+  const links = bookingKind !== null || block.type === 'record_list' || block.type === 'record_carousel' || block.type === 'image_carousel' || block.type === 'event_list' || block.type === 'search'
   const [pages, setPages] = useState<{ slug: string; title: string; published: boolean }[]>([])
   useEffect(() => {
     if (links) void listEditorPages().then(setPages)
@@ -334,6 +335,14 @@ export function BlockSettings({ block, published, onPublished, onChange, onDelet
         ], 'Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location.'),
         sec('Link', [detailSelect]),
       ]
+      break
+    case 'search':
+      form = [<SearchSettings key="search" blockId={block.id} config={c as unknown as SearchConfig} tables={tables} pages={pages}
+        onChange={(next) => onChange(next as unknown as Config)}
+        renderPublish={(table, used) => <PublishFields table={table} used={used} onPublished={onPublished} />} />]
+      break
+    default:
+      form = []
   }
 
   return (

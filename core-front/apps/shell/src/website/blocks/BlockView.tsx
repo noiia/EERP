@@ -1,4 +1,4 @@
-import type { Block, BookingConfig, FormConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, RecordListConfig, SectionConfig, TextConfig } from '../types'
+import type { Block, BookingConfig, FormConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, SearchConfig, RecordListConfig, SectionConfig, TextConfig } from '../types'
 import { AppointmentBookingBlock } from './AppointmentBookingBlock'
 import { EventBookingBlock } from './EventBookingBlock'
 import { EventListBlock } from './EventListBlock'
@@ -9,6 +9,7 @@ import { ImageCarouselBlock } from './ImageCarouselBlock'
 import { RecordCarouselBlock } from './RecordCarouselBlock'
 import { RecordDetailBlock } from './RecordDetailBlock'
 import { RecordListBlock } from './RecordListBlock'
+import { SearchBlock } from './SearchBlock'
 import { SectionBlock } from './SectionBlock'
 import { TextBlock } from './TextBlock'
 
@@ -40,6 +41,7 @@ export async function BlockView({ block, source, params }: { block: Block; sourc
     }
     case 'event_list': return EventListBlock({ config: c as unknown as EventListConfig })
     case 'form': return FormBlock({ config: c as unknown as FormConfig, pageId: params.pageId ?? '', blockId: block.id, path: params.path ?? '/' })
+    case 'search': return <SearchBlock config={c as unknown as SearchConfig} pageId={params.pageId} blockId={block.id} />
     default: return null
   }
 }
