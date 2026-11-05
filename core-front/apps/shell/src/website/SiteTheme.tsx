@@ -116,6 +116,11 @@ export function SiteTheme({ children, sx, initialMode = 'light', switchable = fa
       <ScopedCssBaseline sx={[{
         colorScheme: mode, bgcolor: 'background.default', color: 'text.primary',
         '& :focus-visible': { outline: `2px solid ${PALETTES[mode].link}`, outlineOffset: 2 },
+        // The baseline's `& * { box-sizing: inherit }` ties MUI's own `content-box` on
+        // inputs (same specificity), so whichever class was inserted last wins: once
+        // this sx changes (the editor's Phone toggle, the visitor's dark toggle) the
+        // baseline is re-inserted after the inputs and squeezes them to their padding.
+        '& .MuiInputBase-input': { boxSizing: 'content-box' },
       }, ...(Array.isArray(sx) ? sx : [sx])]}>
         {children}
       </ScopedCssBaseline>

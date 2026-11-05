@@ -38,7 +38,13 @@ export function formatChoice(start: string, timeZone: string, locale: string | n
   }
 }
 
-/** One choice's label. sm and up: the full text date, " — " separated. A phone: the
+/** The form's width below which it takes the phone layout. A container query, not a
+ * viewport breakpoint: the page editor previews a phone inside a wide window, and on
+ * desktop the block may sit in a narrow grid cell. */
+const COMPACT = '@container (max-width: 479.95px)'
+const WIDE = '@container (min-width: 480px)'
+
+/** One choice's label. Wide: the full text date, " — " separated. A phone: the
  * workspace short date, the seats left as a seat icon and count, the price with its
  * currency symbol. A price shown in another currency than the stored one is a
  * conversion (prefixed ≈); the booking is still charged in the stored currency. */
@@ -56,12 +62,12 @@ function ChoiceLabel({ c, kind, timeZone, currency }: { c: BookingChoice; kind: 
   const full = c.seatsLeft <= 0
   return (
     <span suppressHydrationWarning>
-      <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+      <Box component="span" sx={{ display: 'inline', [COMPACT]: { display: 'none' } }}>
         {formatChoice(c.start, timeZone, locale)}
         {paid ? ` — ${approx}${formatPrice(amount, unit, locale)}` : ''}
         {full ? ` — ${kind === 'session' ? t('Full — join the waiting list') : t('Full')}` : ` — ${c.seatsLeft === 1 ? t('1 seat left') : `${c.seatsLeft} ${t('seats left')}`}`}
       </Box>
-      <Box component="span" sx={{ display: { xs: 'inline-flex', sm: 'none' }, alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap' }}>
+      <Box component="span" sx={{ display: 'none', [COMPACT]: { display: 'inline-flex' }, alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap' }}>
         <span>{formatDatePattern(c.start, site.dateFormat, { timeZone, locale: tag, time: true })}</span>
         <Box component="span" title={full ? t('Full') : t('seats left')} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: full ? 'error.main' : 'text.secondary' }}>
           <FontAwesomeIcon icon={byPrefixAndName.fas.chair} aria-label={t('seats left')} />
@@ -169,20 +175,24 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, c
   if (choices.length === 0) {
     return <Typography color="text.secondary">{t('No dates available right now.')}</Typography>
   }
+  // Wide: the times in columns and the contact fields two by two, so the block stays short.
   return (
+    <Box sx={{ containerType: 'inline-size' }}>
     <Stack component="form" spacing={2} onSubmit={(e) => void submit(e)}>
       {status.kind === 'error' && <ViewBanner status="error">{status.message}</ViewBanner>}
-      <RadioGroup name="choice" value={choice} onChange={(e) => { setChoice(e.target.value); setSeats(1) }}>
+      <RadioGroup name="choice" value={choice}
+        sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', columnGap: 2 }} onChange={(e) => { setChoice(e.target.value); setSeats(1) }}>
         {choices.map((c) => (
           <FormControlLabel
             key={c.id}
             value={c.id}
             disabled={c.seatsLeft <= 0 && kind !== 'session'}
-            control={<Radio required />}
+            control={<Radio required size="small" />}
             label={<ChoiceLabel c={c} kind={kind} timeZone={timeZone} currency={currency} />}
           />
         ))}
       </RadioGroup>
+      <Box sx={{ display: 'grid', gap: 2, [WIDE]: { gridTemplateColumns: '1fr 1fr' } }}>
       <TextField
         name="seats"
         label={t('Seats')}
@@ -190,14 +200,17 @@ export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, c
         value={seats}
         onChange={(e) => setSeats(Math.max(1, Math.min(cap, Number(e.target.value) || 1)))}
         slotProps={{ htmlInput: { min: 1, max: cap } }}
-        sx={{ maxWidth: 120 }}
+        size="small"
+        sx={{ maxWidth: 120, [WIDE]: { maxWidth: 'none' } }}
       />
-      <TextField name="name" label={t('Name')} required defaultValue={defaults?.name} slotProps={{ htmlInput: { maxLength: 200 } }} />
-      <TextField name="email" label={t('Email')} type="email" required defaultValue={defaults?.email} />
-      <TextField name="phone" label={t('Phone')} type="tel" slotProps={{ htmlInput: { maxLength: 50 } }} />
+      <TextField name="name" label={t('Name')} size="small" required defaultValue={defaults?.name} slotProps={{ htmlInput: { maxLength: 200 } }} />
+      <TextField name="email" label={t('Email')} size="small" type="email" required defaultValue={defaults?.email} />
+      <TextField name="phone" label={t('Phone')} size="small" type="tel" slotProps={{ htmlInput: { maxLength: 50 } }} />
+      </Box>
       <Button type="submit" variant="contained" disabled={!choice || status.kind === 'submitting'} sx={{ alignSelf: 'flex-start' }}>
         {waitlist ? t('Join the waiting list') : t('Book')}
       </Button>
     </Stack>
+    </Box>
   )
 }
