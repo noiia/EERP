@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { clampLimit, findSearchBlock, runSearch, type PublicList } from './search'
+import { clampLimit, findSearchBlock, runSearch, searchPageHref, searchRecords, type PublicList } from './search'
 import type { Block } from './types'
 
 const rows: Record<string, Record<string, unknown>[]> = {
@@ -58,5 +58,20 @@ describe('findSearchBlock', () => {
     expect(findSearchBlock(layout, 's')).toEqual({ targets: [] })
     expect(findSearchBlock(layout, 'a')).toBeNull()
     expect(findSearchBlock(null, 's')).toBeNull()
+  })
+})
+
+describe('searchRecords', () => {
+  it("returns raw rows per table, past the block's own limit when asked", async () => {
+    const list = vi.fn<PublicList>(async () => [{ id: 'b', name: 'Bed' }, { id: 'a', name: 'Armchair' }])
+    const groups = await searchRecords({ limit: 1, targets: [{ table: 'product', title_field: 'name' }] }, 'ar', list, 100)
+    expect(groups).toEqual([{ target: { table: 'product', title_field: 'name' }, label: 'product', records: [{ id: 'a', name: 'Armchair' }, { id: 'b', name: 'Bed' }] }])
+    expect(list.mock.calls[0][0]).toContain('page_size=100')
+  })
+})
+
+describe('searchPageHref', () => {
+  it('names the page, block and trimmed text', () => {
+    expect(searchPageHref('p 1', 's1', ' red chair ')).toBe('/search?q=red+chair&page=p+1&block=s1')
   })
 })

@@ -37,4 +37,25 @@ describe('SearchBlock', () => {
     rerender(<SearchBlock config={{ targets: [] }} blockId="s1" />)
     expect(screen.getByRole('combobox')).toBeDisabled()
   })
+
+  it('Enter on typed text opens the full results page; Enter on a highlighted result opens it', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      groups: [{ table: 'product', label: 'Products', hits: [{ id: 'p1', title: 'Chair', href: '/item/p1' }] }],
+    }))))
+    render(<SearchBlock config={{ targets: [] }} pageId="pg" blockId="s1" />)
+    const input = screen.getByRole('combobox')
+    fireEvent.change(input, { target: { value: 'red ch' } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS) })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(push).toHaveBeenLastCalledWith('/search?q=red+ch&page=pg&block=s1')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(push).toHaveBeenLastCalledWith('/item/p1')
+  })
+
+  it('starts from the given text (the results page)', () => {
+    render(<SearchBlock config={{ targets: [] }} pageId="pg" blockId="s1" initialText="lamp" />)
+    expect(screen.getByRole('combobox')).toHaveValue('lamp')
+  })
 })

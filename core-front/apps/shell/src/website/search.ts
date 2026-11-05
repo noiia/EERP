@@ -30,7 +30,9 @@ const seg = encodeURIComponent
 const hasPicture = (rec: Record<string, unknown>, field?: string): field is string =>
   !!field && (rec[field] === undefined || rec[field] === true)
 
-async function searchTarget(t: SearchTarget, q: string, limit: number, list: PublicList): Promise<SearchHit[]> {
+/** A target's matching rows: one request per searched column, merged by id, sorted by
+ * title, at most `limit`. */
+async function searchRows(t: SearchTarget, q: string, limit: number, list: PublicList): Promise<Record<string, unknown>[]> {
   const cols = [...new Set((t.search_fields?.length ? t.search_fields : [t.title_field]).filter(Boolean))]
   const pages = await Promise.all(cols.map((col) => {
     const p = new URLSearchParams({ page_size: String(limit), order: t.title_field })
@@ -39,8 +41,33 @@ async function searchTarget(t: SearchTarget, q: string, limit: number, list: Pub
   }))
   const seen = new Map<string, Record<string, unknown>>()
   for (const rows of pages) for (const r of rows ?? []) if (typeof r.id === 'string' && !seen.has(r.id)) seen.set(r.id, r)
-  return [...seen.values()]
-    .map((r) => {
+  const title = (r: Record<string, unknown>) => String(r[t.title_field] ?? '')
+  return [...seen.values()].sort((a, b) => title(a).localeCompare(title(b))).slice(0, limit)
+}
+
+/** One searched table's rows, for the full results page. */
+export interface SearchRecords { target: SearchTarget; label: string; records: Record<string, unknown>[] }
+
+/** Runs `q` over the config's targets, in their order, `limit` rows each (default: the
+ * block's own limit); tables with no hit are left out. */
+export async function searchRecords(config: SearchConfig, q: string, list: PublicList, limit = clampLimit(config.limit)): Promise<SearchRecords[]> {
+  const text = q.trim().slice(0, MAX_QUERY)
+  if (text.length < MIN_QUERY) return []
+  const targets = (config.targets ?? []).filter((t) => t?.table && t.title_field).slice(0, MAX_TARGETS)
+  const groups = await Promise.all(targets.map(async (t) => ({
+    target: t,
+    label: t.label?.trim() || t.table,
+    records: await searchRows(t, text, limit, list),
+  })))
+  return groups.filter((g) => g.records.length > 0)
+}
+
+/** The search bar's autocomplete: the block's own limit per table, as titled hits. */
+export async function runSearch(config: SearchConfig, q: string, list: PublicList): Promise<SearchGroup[]> {
+  return (await searchRecords(config, q, list)).map(({ target: t, label, records }) => ({
+    table: t.table,
+    label,
+    hits: records.map((r) => {
       const id = r.id as string
       return {
         id,
@@ -48,21 +75,10 @@ async function searchTarget(t: SearchTarget, q: string, limit: number, list: Pub
         href: t.detail_slug ? `/${seg(t.detail_slug)}/${seg(id)}` : undefined,
         picture: hasPicture(r, t.picture_field) ? `/api/v1/public/${seg(t.table)}/${seg(id)}/picture/${seg(t.picture_field)}` : undefined,
       }
-    })
-    .sort((a, b) => a.title.localeCompare(b.title))
-    .slice(0, limit)
+    }),
+  }))
 }
 
-/** Runs `q` over the config's targets, in their order; tables with no hit are left out. */
-export async function runSearch(config: SearchConfig, q: string, list: PublicList): Promise<SearchGroup[]> {
-  const text = q.trim().slice(0, MAX_QUERY)
-  if (text.length < MIN_QUERY) return []
-  const limit = clampLimit(config.limit)
-  const targets = (config.targets ?? []).filter((t) => t?.table && t.title_field).slice(0, MAX_TARGETS)
-  const groups = await Promise.all(targets.map(async (t) => ({
-    table: t.table,
-    label: t.label?.trim() || t.table,
-    hits: await searchTarget(t, text, limit, list),
-  })))
-  return groups.filter((g) => g.hits.length > 0)
-}
+/** The full results page for a search block's text (Enter without picking a result). */
+export const searchPageHref = (pageId: string, blockId: string, q: string) =>
+  `/search?${new URLSearchParams({ q: q.trim(), page: pageId, block: blockId })}`

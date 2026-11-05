@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -7,7 +7,7 @@ import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { FontAwesomeIcon, byPrefixAndName, useT } from '@eerp/core-front'
-import type { SearchGroup, SearchHit } from '../search'
+import { searchPageHref, type SearchGroup, type SearchHit } from '../search'
 import type { SearchConfig } from '../types'
 import { safeHref } from '../urls'
 
@@ -18,12 +18,14 @@ type Option = SearchHit & { group: string }
 
 /** Visitor-facing search bar: results from every table the block names, grouped by
  * table, fetched as the visitor types from /api/site-search/:page/:block (the BFF reads
- * the tables from the published page). Picking a result opens its detail page. Without
- * a page id (the editor preview) the field is shown but inert. */
-export function SearchBlock({ config, pageId, blockId }: { config: SearchConfig; pageId?: string; blockId: string }) {
+ * the tables from the published page). Picking a result opens its detail page; Enter
+ * without one highlighted opens /search, every result as one record list per table.
+ * Without a page id (the editor preview) the field is shown but inert. */
+export function SearchBlock({ config, pageId, blockId, initialText = '' }: { config: SearchConfig; pageId?: string; blockId: string; initialText?: string }) {
   const t = useT()
   const router = useRouter()
-  const [text, setText] = useState('')
+  const [text, setText] = useState(initialText)
+  const highlighted = useRef<Option | null>(null)
   const [groups, setGroups] = useState<SearchGroup[]>([])
   const [loading, setLoading] = useState(false)
   const query = text.trim()
@@ -54,6 +56,14 @@ export function SearchBlock({ config, pageId, blockId }: { config: SearchConfig;
         getOptionKey={(o) => `${o.group}:${o.id}`}
         inputValue={text} onInputChange={(_, v, reason) => { if (reason !== 'reset') setText(v) }}
         value={null} blurOnSelect clearOnBlur={false}
+        onHighlightChange={(_, o) => { highlighted.current = o }}
+        onKeyDown={(e) => {
+          // Enter on typed text (no suggestion highlighted): the full results page.
+          if (e.key !== 'Enter' || highlighted.current || !pageId || query.length < MIN_QUERY) return
+          e.preventDefault()
+          ;(e as typeof e & { defaultMuiPrevented?: boolean }).defaultMuiPrevented = true
+          router.push(searchPageHref(pageId, blockId, query))
+        }}
         noOptionsText={noOptions} loadingText={t('Searching…')}
         onChange={(_, o) => {
           const href = o ? safeHref(o.href) : undefined

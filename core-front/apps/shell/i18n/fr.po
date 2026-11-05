@@ -2624,3 +2624,6 @@ msgstr "Chercher dans"
 
 msgid "Add table"
 msgstr "Ajouter une table"
+
+msgid "Search results"
+msgstr "Résultats de recherche"
