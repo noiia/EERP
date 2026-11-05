@@ -263,7 +263,8 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
       <BannerSlot />
       <ViewBanner status="error" open={error !== null} onClose={() => setError(null)}>{error}</ViewBanner>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'stretch' }}>
-        <Paper variant="outlined" sx={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 320, height: { xs: '70dvh', md: '75vh' } }}>
+        {/* flex only in the row layout: stacked, `flex: 1` zeroes the flex-basis, the height stops being definite and React Flow's 100% collapses to nothing. */}
+        <Paper variant="outlined" sx={{ position: 'relative', flex: { md: 1 }, minWidth: 0, minHeight: 320, height: { xs: '70dvh', md: '75vh' } }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
