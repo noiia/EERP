@@ -253,6 +253,8 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
   }
 
   const focusedEdge = wf.edges.find((e) => e.id === focus.edgeId)
+  const showRemove = !!focusedEdge && canEdit && removable(focusedEdge.key)
+  const showArrange = canArrange && Object.keys(positions).length > 0
   const addingPage = adding && pages.find((p) => p.id === adding.pageId)
   const addingTo = adding && nodeOf(adding.to)
 
@@ -261,7 +263,7 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
       <BannerSlot />
       <ViewBanner status="error" open={error !== null} onClose={() => setError(null)}>{error}</ViewBanner>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'stretch' }}>
-        <Paper variant="outlined" sx={{ flex: 1, minWidth: 0, height: { xs: '60vh', md: '75vh' } }}>
+        <Paper variant="outlined" sx={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 320, height: { xs: '70dvh', md: '75vh' } }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -285,28 +287,33 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
             }}
             colorMode={theme.palette.mode}
             fitView
+            // A phone is narrower than a few columns of boxes: zoom out far enough to show them all.
+            minZoom={0.1}
+            fitViewOptions={{ padding: 0.1 }}
             proOptions={{ hideAttribution: true }}
           >
             <Background />
             <Controls showInteractive={false} />
           </ReactFlow>
-        </Paper>
-        <Stack component="aside" spacing={2.5} aria-label={t('Map details')} sx={{ width: { md: 320 }, flexShrink: 0 }}>
-          {(focusedEdge && canEdit && removable(focusedEdge.key)) || (canArrange && Object.keys(positions).length > 0) ? (
-            <Stack spacing={1}>
-              {focusedEdge && canEdit && removable(focusedEdge.key) && (
-                <Button color="error" variant="outlined" size="small" fullWidth onClick={() => setRemoving(focusedEdge)}
-                  startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas.trash} />}>
+          {/* On the map, not in the side panel: under md the panel sits below the map, out of sight. */}
+          {(showRemove || showArrange) && (
+            <Stack direction="row" spacing={1} sx={{ position: 'absolute', top: 8, right: 8, zIndex: 5, flexWrap: 'wrap', justifyContent: 'flex-end', gap: 1, maxWidth: 'calc(100% - 16px)' }}>
+              {showRemove && focusedEdge && (
+                <Button color="error" variant="outlined" size="small" onClick={() => setRemoving(focusedEdge)}
+                  startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas.trash} />} sx={{ bgcolor: 'background.paper', '&:hover': { bgcolor: 'background.paper' } }}>
                   {t('Remove link')}
                 </Button>
               )}
-              {canArrange && Object.keys(positions).length > 0 && (
-                <Button variant="text" size="small" fullWidth onClick={() => void arrangeAutomatically()}>
+              {showArrange && (
+                <Button variant="outlined" size="small" onClick={() => void arrangeAutomatically()} sx={{ bgcolor: 'background.paper', '&:hover': { bgcolor: 'background.paper' } }}>
                   {t('Arrange automatically')}
                 </Button>
               )}
             </Stack>
-          ) : null}
+          )}
+        </Paper>
+        <Box component="aside" aria-label={t('Map details')}
+          sx={{ display: 'grid', gap: 2.5, alignContent: 'start', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))', md: 'minmax(0, 1fr)' }, width: { md: 320 }, flexShrink: 0 }}>
           <Box>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
               <Typography variant="subtitle2" component="h2">{t('Problems')}</Typography>
@@ -338,7 +345,7 @@ export function WorkflowMap({ pages: initial, positions: savedPositions = {}, ca
             )}
           </Box>
           <MapLegend canEdit={canEdit} canArrange={canArrange} />
-        </Stack>
+        </Box>
       </Stack>
       {addingPage && addingTo && (
         <NewLinkDialog page={addingPage} to={addingTo} pages={pages} onCancel={() => setAdding(null)} onSave={saveNewLink} />

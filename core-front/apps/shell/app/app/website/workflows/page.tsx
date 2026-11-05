@@ -20,10 +20,10 @@ export default async function WorkflowsPage() {
   const canEdit = hasPermission(permissions, 'website_page:website_page:write')
   const canArrange = hasPermission(permissions, 'settings:website:write')
   return (
-    <Container maxWidth={false} sx={{ py: 3 }}>
+    <Container maxWidth={false} sx={{ py: { xs: 2, md: 3 } }}>
       <Stack spacing={2}>
         <Stack spacing={0.5}>
-          <Typography variant="h4" component="h1"><T text="Workflows" /></Typography>
+          <Typography variant="h4" component="h1" sx={{ fontSize: { xs: '1.5rem', sm: '2.125rem' } }}><T text="Workflows" /></Typography>
           <Typography color="text.secondary">
             <T text="Every page of the site and the buttons and links between them." />
           </Typography>
