@@ -1,8 +1,4 @@
 {
-  "enabledPlugins": {
-    "ponytail@ponytail": true,
-    "superpowers@claude-plugins-official": true
-  },
   "hooks": {
     "PreToolUse": [
       {
@@ -26,5 +22,10 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "ponytail@ponytail": true,
+    "superpowers@claude-plugins-official": true,
+    "frontend-design@anthropic-plugin-directory": true
   }
 }
