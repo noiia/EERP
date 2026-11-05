@@ -9,6 +9,7 @@ core/internal/auth/providers.Handler.SetDirectory
 core/internal/module.ensureSchema
 core/internal/module.EnsureSchema
 core/internal/module.MigrateModules
+core/internal/testdb.Closed
 core/internal/testdb.Config
 core/internal/testdb.DSN
 core/internal/testdb.findConfig

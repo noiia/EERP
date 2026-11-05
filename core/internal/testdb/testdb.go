@@ -94,6 +94,19 @@ func Open(t testing.TB) *orm.App {
 	return app
 }
 
+// Closed returns an orm.App whose pool is already closed: every query on it fails.
+// It drives a handler's database-error paths (a 500, never a silent success)
+// without needing a real outage.
+func Closed(t testing.TB) *orm.App {
+	t.Helper()
+	app, err := orm.New(orm.Config{DSN: DSN(t)}, nil)
+	if err != nil {
+		t.Fatalf("testdb: open: %v", err)
+	}
+	_ = app.Close()
+	return app
+}
+
 // Migrate ensures each registered table exists with its current columns, so a
 // test works on a fresh database (CI) as well as on a migrated dev one.
 // Tables must be registered first (a module's Register(), or orm.Register).

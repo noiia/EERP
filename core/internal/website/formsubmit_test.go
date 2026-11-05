@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"core/internal/website/formtarget"
+
+	"github.com/google/uuid"
 )
 
 func init() {
@@ -127,4 +129,75 @@ func TestParseSubmission(t *testing.T) {
 			t.Fatalf("err = %v, want errFormUnusable", err)
 		}
 	})
+}
+
+// toColumn / coerce: every conversion a column type accepts, and the ones it refuses.
+func TestToColumn(t *testing.T) {
+	day := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	id := "3f2b1c4e-0000-4000-8000-000000000001"
+	tests := []struct {
+		goType  string
+		in      any
+		want    any
+		wantErr bool
+	}{
+		{"string", true, "true", false},
+		{"", day, "2026-11-02", false},
+		{"*string", 2.5, "2.5", false},
+		{"string", []int{1}, nil, true},
+		{"int64", float64(1 << 40), int64(1 << 40), false},
+		{"int", "12", int64(12), false},
+		{"int", "x", nil, true},
+		{"int", true, nil, true},
+		{"float64", "1.5", 1.5, false},
+		{"float32", "nan", nil, true},
+		{"float64", true, nil, true},
+		{"bool", true, true, false},
+		{"*bool", "false", false, false},
+		{"bool", "maybe", nil, true},
+		{"time.Time", day, day, false},
+		{"*time.Time", "2026-11-02", day, false},
+		{"time.Time", "tomorrow", nil, true},
+		{"uuid.UUID", id, uuid.MustParse(id), false},
+		{"uuid.UUID", "not-a-uuid", nil, true},
+		{"uuid.UUID", 3.0, nil, true},
+		{"[]byte", "x", nil, true},
+	}
+	for _, tc := range tests {
+		got, err := toColumn(tc.goType, tc.in)
+		if (err != nil) != tc.wantErr || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("toColumn(%q, %#v) = %#v, %v; want %#v (err %v)", tc.goType, tc.in, got, err, tc.want, tc.wantErr)
+		}
+	}
+	if v, err := coerce("*int", "30"); err != nil || v != int64(30) {
+		t.Errorf("coerce(*int, 30) = %#v, %v", v, err)
+	}
+}
+
+func TestParseFieldValue_MoreCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		field   formtarget.FormField
+		raw     string
+		wantErr bool
+	}{
+		{"unknown field type", formtarget.FormField{Type: "colour", Column: "name"}, `"red"`, true},
+		{"required empty date", formtarget.FormField{Type: "date", Column: "born", Required: true}, `"  "`, true},
+		{"optional empty date", formtarget.FormField{Type: "date", Column: "born"}, `"  "`, false},
+		{"date not a string", formtarget.FormField{Type: "date", Column: "born"}, `5`, true},
+		{"number into a date column", formtarget.FormField{Type: "number", Column: "born"}, `5`, true},
+		{"infinite number", formtarget.FormField{Type: "number", Column: "score"}, `"Inf"`, true},
+		{"email too long", formtarget.FormField{Type: "email", Column: "email"}, `"` + strings.Repeat("a", 300) + `@b.io"`, true},
+		{"address number not whole", formtarget.FormField{Type: "address", Column: "home"}, `{"number":2.5}`, true},
+		{"address text too long", formtarget.FormField{Type: "address", Column: "home"}, `{"city":"` + strings.Repeat("a", 300) + `"}`, true},
+		{"address text not a string", formtarget.FormField{Type: "address", Column: "home"}, `{"city":5}`, true},
+		{"address null", formtarget.FormField{Type: "address", Column: "home"}, `{"number":null,"city":"Paris"}`, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, err := parseFieldValue(tc.field, json.RawMessage(tc.raw), fsColType); (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
 }

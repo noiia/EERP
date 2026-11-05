@@ -64,6 +64,10 @@ make run-back-tests ARGS="-v -run TestMyFunc"
 # module's real schema — blank-import its package) or testdb.Migrate(t, app, tables...).
 # They may run against the live dev DB: seed under a fresh uuid.New() tenant and
 # clean up only those rows — never a blanket DELETE FROM <table>.
+# testdb.Closed(t) is an orm.App whose pool is already closed: every query fails,
+# so a handler's database-error paths can be tested (a 500, never a silent 2xx).
+# A test migrating a module lists its dependencies first: MigrateModules runs them
+# in the order given (settings needs company, warehouse needs auth's users table).
 
 # Build WASM modules (Go source, cross-compiled to WASI)
 make build
