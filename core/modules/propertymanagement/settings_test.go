@@ -11,6 +11,7 @@ import (
 	"core/internal/auth"
 	"core/internal/settings"
 	"core/internal/testdb"
+	_ "core/modules/company" // registered for MigrateModules
 	_ "core/modules/settings"
 	"core/orm"
 
@@ -41,7 +42,8 @@ func serveSettings(t *testing.T, h echo.HandlerFunc, method, body string, identi
 func TestDisplayTaxesOnReport(t *testing.T) {
 	ctx := context.Background()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "settings", "propertymanagement")
+	// company before settings: settings' Migrate backfills company_id through company's table and index.
+	testdb.MigrateModules(t, app, "company", "settings", "propertymanagement")
 	tenant, other := uuid.New(), uuid.New()
 	t.Cleanup(func() {
 		for _, table := range []string{"app_settings", "property_management_rent_receipt"} {

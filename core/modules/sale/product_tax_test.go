@@ -15,7 +15,8 @@ import (
 func TestMigrateProductTaxRates(t *testing.T) {
 	ctx := context.Background()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "warehouse", "sale")
+	// auth first: warehouse's Migrate reads users.
+	testdb.MigrateModules(t, app, "auth", "warehouse", "sale")
 	var legacy bool
 	must(t, app.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
 		WHERE table_schema = current_schema() AND table_name = 'product' AND column_name = 'tax_rate')`).Scan(&legacy))

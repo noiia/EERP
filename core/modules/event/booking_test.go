@@ -33,7 +33,10 @@ type fixture struct {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "auth", "chatter", "contact", "mail", "settings", "company", "warehouse", "sale", "event")
+	// company before settings: settings' Migrate backfills company_id through
+	// company's partial unique index, which company's own Migrate creates (on a
+	// fresh database nothing else has created it yet).
+	testdb.MigrateModules(t, app, "auth", "chatter", "contact", "mail", "company", "settings", "warehouse", "sale", "event")
 	tenant := uuid.New()
 	t.Cleanup(func() {
 		ctx := context.Background()

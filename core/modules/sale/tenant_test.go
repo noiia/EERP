@@ -10,6 +10,7 @@ import (
 	"core/internal/auth"
 	"core/internal/settings"
 	"core/internal/testdb"
+	_ "core/modules/company" // registered for MigrateModules
 	_ "core/modules/settings"
 	"core/modules/warehouse"
 	"core/orm"
@@ -44,7 +45,8 @@ func serveAs(t *testing.T, h echo.HandlerFunc, method, body string, identity aut
 func TestLineOverrides_AreTenantScoped(t *testing.T) {
 	ctx := context.Background()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "settings", "warehouse", "sale")
+	// auth and company first: warehouse's Migrate reads users, settings' backfills company_id through company's index.
+	testdb.MigrateModules(t, app, "auth", "company", "settings", "warehouse", "sale")
 	owner, intruder := uuid.New(), uuid.New()
 	t.Cleanup(func() {
 		for _, table := range []string{

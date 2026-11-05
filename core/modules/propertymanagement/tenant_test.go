@@ -8,6 +8,7 @@ import (
 	"core/internal/auth"
 	"core/internal/settings"
 	"core/internal/testdb"
+	_ "core/modules/company" // registered for MigrateModules
 	"core/modules/sale"
 	"core/modules/warehouse"
 	"core/orm"
@@ -23,7 +24,8 @@ import (
 func TestOverrides_AreTenantScoped(t *testing.T) {
 	ctx := context.Background()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "settings", "sale", "propertymanagement")
+	// company before settings: settings' Migrate backfills company_id through company's table and index.
+	testdb.MigrateModules(t, app, "company", "settings", "sale", "propertymanagement")
 	owner, intruder := uuid.New(), uuid.New()
 	t.Cleanup(func() {
 		for _, table := range []string{
