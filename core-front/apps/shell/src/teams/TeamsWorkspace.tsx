@@ -9,6 +9,8 @@ import { layout, onChatFrame, T, useSessionStore, useT } from '@eerp/core-front'
 import { getTeam, listChannels, listDirect, listMembers, listShared, type Channel, type DirectChat, type Member, type Team } from './client'
 import { useChatStore, type ChatMessageFrame, type ChatReactionFrame } from './chat-store'
 import { ChatPane } from './ChatPane'
+import { FilesPane } from './FilesPane'
+import { SharedPane } from './SharedPane'
 import { Sidebar, type WorkspaceView } from './Sidebar'
 
 // The shell's top bar is a dense MUI Toolbar (AppTopBar.tsx), 48px tall.
@@ -82,8 +84,10 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
         readOnly={view.kind === 'channel' && team?.role === 'guest'}
       />
     )
-  } else if (view.kind === 'files' || view.kind === 'shared') {
-    main = <Box data-testid={`teams-${view.kind}-pane`} sx={{ p: 2 }} /> // replaced by the file manager / shares panes
+  } else if (view.kind === 'files' && teamId) {
+    main = <FilesPane teamId={teamId} folderId={view.id} role={team?.role} />
+  } else if (view.kind === 'shared') {
+    main = <SharedPane />
   } else {
     main = (
       <Typography color="text.secondary" sx={{ p: 3 }}>

@@ -16,6 +16,8 @@ vi.mock('@/teams/TeamsWorkspace', () => ({ TeamsWorkspace: () => null }))
 import TeamPage from './[id]/page'
 import DirectPage from './direct/page'
 import TeamChannelPage from './[id]/channels/[channel]/page'
+import FilesPage from './[id]/files/page'
+import SharedPage from './shared/page'
 import DirectChannelPage from './direct/[channel]/page'
 
 describe('teams pages', () => {
@@ -49,5 +51,13 @@ describe('teams pages', () => {
     active.mockResolvedValue(new Set(['teams']))
     await expect(TeamChannelPage({ params: Promise.resolve({ id: 't1', channel: 'c1' }) })).resolves.toBeTruthy()
     await expect(DirectChannelPage({ params: Promise.resolve({ channel: 'd1' }) })).resolves.toBeTruthy()
+  })
+
+  it('files and shares pages are a 404 while the module is inactive', async () => {
+    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }), searchParams: Promise.resolve({ folder: 'f1' }) })).resolves.toBeTruthy()
+    await expect(SharedPage()).resolves.toBeTruthy()
+    active.mockResolvedValue(new Set())
+    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }), searchParams: Promise.resolve({}) })).rejects.toThrow('NOT_FOUND')
+    await expect(SharedPage()).rejects.toThrow('NOT_FOUND')
   })
 })
