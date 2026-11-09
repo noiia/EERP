@@ -33,8 +33,9 @@ flowchart LR
 ```
 
 - **Off the generic CRUD surface.** Every table (`team`, `team_member`, `chat_channel`,
-  `chat_channel_member`, `chat_message`, `chat_attachment`, `chat_reaction`, `team_folder`,
-  `team_file`, `team_file_share`) is registered with `orm.WithExcluded()`. The unique indexes (one
+  `chat_channel_member`, `chat_message`, `chat_attachment`, `chat_message_file`, `chat_reaction`,
+  `chat_channel_access`, `team_group`, `team_group_member`, `team_folder`, `team_file`,
+  `team_file_share`) is registered with `orm.WithExcluded()`. The unique indexes (one
   live membership per user and team, one direct conversation per pair of users, one reaction per
   user and emoji) are hand-written in the module's `Migrate()`.
 - **JWT only, then team roles.** The `/api/v1/teams` group has `jwtMw` and no `permMw`, like
@@ -61,6 +62,52 @@ flowchart LR
   exempt prefixes include `/api/v1/teams/*/files`, so `BodyLimitExempt` gained a `*` segment
   wildcard.
 
+### v2: private conversations, linked folders, per-user order
+
+People wanted to talk with part of a team, keep a conversation's files with it, and arrange their
+own sidebar ([v2 design](../superpowers/specs/2026-11-09-teams-v2-design.md)).
+
+- **Private conversations.** A team channel carries an explicit `restricted` flag and an access
+  list (`chat_channel_access`: users and **team groups**). Owners manage both with
+  `GET|PUT /teams/:id/channels/:channel/access {user_ids, group_ids}` (the whole list); groups are
+  per team, made by owners from team members (`GET|POST /teams/:id/groups`,
+  `PUT|DELETE /teams/:id/groups/:group`). **One rule decides visibility everywhere** — listing,
+  messages, read cursor, reactions, attachments, unread counts, mention audience, live-frame
+  audience: an owner, or the channel isn't restricted, or the caller is listed directly or through a
+  group. Anything else is a 404.
+- **Only an access save changes privacy.** A non-empty save makes the channel private; deleting a
+  group or a listed user leaving the team (which removes them from its groups and lists) never
+  reopens it — an emptied private list leaves the channel **owners-only**. Reopening needs an owner
+  to save an empty list and confirm "Open to the whole team".
+- **Linked folder.** A team channel may link one folder (`chat_channel.folder_id`, one channel per
+  folder), set by owners through `PUT /teams/:id/channels/:channel {folder_id}` (`""` unlinks; 422
+  for another team's or an already-linked folder). Deleting the folder unlinks it; deleting the
+  channel keeps the folder — files outlive the chat.
+- **Files sent in a team channel are team files.** Each lands in the linked folder; with none, the
+  first file creates `<conversation name>` at the team root (`<name> (n)` on a collision, the name
+  trimmed so the suffix fits 200 characters) and links it, in the same transaction. The message
+  points at its files through `chat_message_file`; their wire attachments have `kind: "file"` and
+  read as deleted once the file is gone. Filenames over 200 characters are refused (422). Direct
+  messages keep plain `chat_attachment`s. Images (JPEG, PNG, GIF, WebP — never SVG, which can carry
+  scripts) show inline, loaded from the same authorized download route.
+- **Folder privacy follows the channel.** A folder linked to a private channel, and everything below
+  it, is visible only to people who can see that channel: listing, download (an explicit file share
+  still passes), move targets on both sides, breadcrumbs and the Shares view. A file sent in a
+  channel whose folder a reader can't see is **redacted for that reader** as a deleted file — in
+  message lists and in live frames, which are built per viewer. A non-owner can't delete a folder
+  whose subtree holds folders hidden from them (409), so nobody destroys what they can't see.
+- **Per-user order.** `chat_channel_member.position` stores each user's own sidebar order:
+  `PUT /teams/:id/channels/order` and `PUT /teams/direct/order {ids}` (422 for an id the caller can't
+  see). Lists sort by position, nulls last.
+
+```mermaid
+flowchart TD
+  Q{"Can user see channel?"} -->|team owner| Y[yes]
+  Q -->|"not restricted"| Y
+  Q -->|"listed, or in a listed group"| Y
+  Q -->|otherwise| N["no: 404, no frames, no unread, files redacted"]
+```
+
 ## Consequences
 
 - Teams has no admin override: an administrator who isn't a member can't read a team. Recovering a
@@ -78,4 +125,7 @@ flowchart LR
 - A new upload route under `/api/v1/teams` must match a `BodyLimitExempt` entry and take the upload
   limit, or it stays capped at `request_body_limit`.
 - Every new handler must start with the role check; the route group itself authorizes nothing
-  beyond "signed-in staff".
+  beyond "signed-in staff". A channel or folder route must also apply the visibility rule, and a new
+  chat frame must be built per viewer (a hidden file is redacted), not once for the audience.
+- Don't infer privacy from the access list's size: read `restricted`. An empty list on a restricted
+  channel means owners-only, not open.

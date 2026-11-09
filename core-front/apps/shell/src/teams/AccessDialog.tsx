@@ -38,7 +38,7 @@ export function AccessDialog({ open, teamId, channel, members, onClose, onSaved 
     Promise.all([getAccess(teamId, channel.id), listGroups(teamId)])
       .then(([a, g]) => { setUsers(a.user_ids); setGroupIds(a.group_ids); setGroups(g); setLoaded(true) })
       .catch((e: unknown) => setError(e instanceof Error && e.message ? e.message : t('The change could not be saved.')))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes identity per render
+    // `t` is left out of the deps: it changes identity per render
   }, [open, teamId, channel.id])
 
   const empty = users.length === 0 && groupIds.length === 0
