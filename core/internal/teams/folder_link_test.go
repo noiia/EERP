@@ -3,6 +3,7 @@ package teams_test
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -362,5 +363,104 @@ func TestRestrictedFolder_Nested(t *testing.T) {
 		if c := serveReq(t, f.h.ListFiles, req, f.as(u.id), f.teamP()).Code; c != u.want {
 			t.Fatalf("%s: got %d want %d", u.id, c, u.want)
 		}
+	}
+}
+
+// A public channel whose folder sits inside a private folder: readers who can't
+// see the folder get its files redacted, in the list and in the live frame.
+func TestRedactedFileWire(t *testing.T) {
+	f := newPrivFixture(t)
+	secret := f.linked(t, f.secret)
+	sub := f.folder(t, f.member, f.team, `{"name":"sub","parent_id":"`+secret.String()+`"}`)
+	if c := f.call(t, f.h.RenameChannel, "PUT", `{"folder_id":"`+sub.String()+`"}`, f.owner, f.chanP(f.general)); c != 200 {
+		t.Fatalf("link: %d", c)
+	}
+	f.hub.frames = nil
+	code, m := f.sendFile(t, f.member, f.general, "plan.txt", "x")
+	if code != 201 || m.Attachments[0].Filename != "plan.txt" {
+		t.Fatalf("send: %d %+v", code, m)
+	}
+	file := m.Attachments[0].ID
+	framed := map[uuid.UUID]map[string]any{}
+	for _, fr := range f.hub.frames {
+		if fr.payload["type"] != "chat_message" {
+			continue
+		}
+		att := fr.payload["message"].(map[string]any)["attachments"].([]any)[0].(map[string]any)
+		for _, u := range fr.users {
+			framed[u] = att
+		}
+	}
+	for _, u := range []struct {
+		id      uuid.UUID
+		visible bool
+	}{{f.owner, true}, {f.member, true}, {f.staff, true}, {f.unlisted, false}, {f.guest, false}} {
+		att := framed[u.id]
+		if att == nil || (att["filename"] == "plan.txt") != u.visible || (att["deleted"] == true) == u.visible {
+			t.Fatalf("frame for %s: %v", u.id, att)
+		}
+		rec := serve(t, f.h.ListMessages, "GET", "", f.as(u.id), map[string]string{"channel": f.general.String()})
+		var page struct{ Data []wireMsg }
+		if err := jsonDecode(rec, &page); err != nil || len(page.Data) == 0 {
+			t.Fatalf("list: %s", rec.Body)
+		}
+		a := page.Data[0].Attachments[0]
+		if a.ID != file || (a.Filename == "plan.txt") != u.visible || a.Deleted == u.visible {
+			t.Fatalf("list for %s: %+v", u.id, a)
+		}
+	}
+	// an explicit share lifts the redaction for that viewer
+	if c := f.call(t, f.h.PutShares, "PUT", `{"user_ids":["`+f.unlisted.String()+`"]}`, f.member, map[string]string{"file": file.String()}); c != 200 {
+		t.Fatalf("share: %d", c)
+	}
+	rec := serve(t, f.h.ListMessages, "GET", "", f.as(f.unlisted), map[string]string{"channel": f.general.String()})
+	var page struct{ Data []wireMsg }
+	if err := jsonDecode(rec, &page); err != nil || page.Data[0].Attachments[0].Filename != "plan.txt" {
+		t.Fatalf("shared list: %s", rec.Body)
+	}
+}
+
+func TestDeleteFolder_HiddenDescendant409(t *testing.T) {
+	f := newPrivFixture(t)
+	secret := f.linked(t, f.secret)
+	projects := f.folder(t, f.unlisted, f.team, `{"name":"Projects"}`)
+	if c := f.call(t, f.h.UpdateFolder, "PUT", `{"parent_id":"`+projects.String()+`"}`, f.owner,
+		map[string]string{"id": f.team.String(), "folder": secret.String()}); c != 200 {
+		t.Fatalf("move: %d", c)
+	}
+	p := map[string]string{"id": f.team.String(), "folder": projects.String()}
+	if c := f.call(t, f.h.DeleteFolder, "DELETE", "", f.unlisted, p); c != 409 {
+		t.Fatalf("member delete: %d", c)
+	}
+	if n := f.countRows(t, `SELECT count(*) FROM team_folder WHERE team_id=$1`, f.team); n != 2 {
+		t.Fatalf("folders after refusal: %d", n)
+	}
+	if c := f.call(t, f.h.DeleteFolder, "DELETE", "", f.owner, p); c != 204 {
+		t.Fatalf("owner delete: %d", c)
+	}
+}
+
+func TestSendFiles_LongNames(t *testing.T) {
+	f := newChatFixture(t, true)
+	ctx := context.Background()
+	long := strings.Repeat("a", 200)
+	ch, err := f.repo.CreateChannel(ctx, f.tenant, f.team, long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.folder(t, f.owner, f.team, `{"name":"`+long+`"}`)
+	if code, _ := f.sendFile(t, f.member, ch.ID, "a.txt", "x"); code != 201 {
+		t.Fatalf("send: %d", code)
+	}
+	fo, err := f.repo.FindFolder(ctx, f.tenant, *f.linked(t, ch.ID))
+	if err != nil || len([]rune(fo.Name)) > 200 || !strings.HasSuffix(fo.Name, " (2)") {
+		t.Fatalf("folder name %q (%d) %v", fo.Name, len([]rune(fo.Name)), err)
+	}
+	objs := len(f.store.objs)
+	if code, _ := f.sendFile(t, f.member, f.general, strings.Repeat("b", 201), "x"); code != 422 {
+		t.Fatalf("long filename: %d", code)
+	}
+	if len(f.store.objs) != objs || f.countMessages(t, f.general) != 0 {
+		t.Fatalf("stored anyway: %d objects, %d messages", len(f.store.objs), f.countMessages(t, f.general))
 	}
 }

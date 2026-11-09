@@ -42,29 +42,97 @@ func (r *Repository) RestrictingChannel(ctx context.Context, tenant, folder uuid
 	return &ch, nil
 }
 
-// folderVisible: folder (nil = root) is visible when the user sees every private
-// channel linked to it or to one of its ancestors.
-func (h *Handler) folderVisible(c *echo.Context, tenant, team, user uuid.UUID, role string, folder *uuid.UUID) (bool, error) {
-	ctx := c.Request().Context()
-	for folder != nil && role != RoleOwner {
-		ch, err := h.repo.RestrictingChannel(ctx, tenant, *folder)
+// restrictingChain returns every private channel linked to folder or one of its
+// ancestors, nearest first: a viewer must see all of them.
+func (r *Repository) restrictingChain(ctx context.Context, tenant uuid.UUID, folder *uuid.UUID) ([]Channel, error) {
+	var chain []Channel
+	for folder != nil && len(chain) < 1000 { // bound: a corrupted cycle can't spin forever
+		ch, err := r.RestrictingChannel(ctx, tenant, *folder)
 		if err != nil || ch == nil {
-			return err == nil, err
+			return chain, err
 		}
-		if ch.TeamID == nil || *ch.TeamID != team {
-			return false, nil
-		}
-		if ok, err := h.repo.CanSeeChannel(ctx, tenant, *ch, user, role); err != nil || !ok {
-			return false, err
-		}
-		// nested private folders: the ones above must pass too
-		f, err := h.repo.FindFolder(ctx, tenant, *ch.FolderID)
+		chain = append(chain, *ch)
+		f, err := r.FindFolder(ctx, tenant, *ch.FolderID)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 		folder = f.ParentID
 	}
+	return chain, nil
+}
+
+// folderVisible: folder (nil = root) is visible when the user sees every private
+// channel linked to it or to one of its ancestors.
+func (h *Handler) folderVisible(c *echo.Context, tenant, team, user uuid.UUID, role string, folder *uuid.UUID) (bool, error) {
+	return h.visibleFolder(c.Request().Context(), tenant, team, user, role, folder)
+}
+
+func (h *Handler) visibleFolder(ctx context.Context, tenant, team, user uuid.UUID, role string, folder *uuid.UUID) (bool, error) {
+	if role == RoleOwner {
+		return true, nil
+	}
+	chain, err := h.repo.restrictingChain(ctx, tenant, folder)
+	if err != nil {
+		return false, err
+	}
+	for _, ch := range chain {
+		if ch.TeamID == nil || *ch.TeamID != team {
+			return false, nil
+		}
+		if ok, err := h.repo.CanSeeChannel(ctx, tenant, ch, user, role); err != nil || !ok {
+			return false, err
+		}
+	}
 	return true, nil
+}
+
+// splitByFolder splits users into those who see folder and those who don't
+// (the intersection of every restricting channel's audience).
+func (h *Handler) splitByFolder(ctx context.Context, tenant uuid.UUID, folder *uuid.UUID, users []uuid.UUID) (see, hidden []uuid.UUID, err error) {
+	chain, err := h.repo.restrictingChain(ctx, tenant, folder)
+	if err != nil {
+		return nil, nil, err
+	}
+	ok := map[uuid.UUID]bool{}
+	for _, u := range users {
+		ok[u] = true
+	}
+	for _, ch := range chain {
+		aud, err := h.repo.ChannelAudience(ctx, tenant, ch)
+		if err != nil {
+			return nil, nil, err
+		}
+		in := map[uuid.UUID]bool{}
+		for _, u := range aud {
+			in[u] = true
+		}
+		for u := range ok {
+			ok[u] = ok[u] && in[u]
+		}
+	}
+	for _, u := range users {
+		if ok[u] {
+			see = append(see, u)
+		} else {
+			hidden = append(hidden, u)
+		}
+	}
+	return see, hidden, nil
+}
+
+// HasHiddenDescendant reports whether a folder below folder is linked to a
+// private channel user can't see (folder itself already passed folderVisible).
+func (r *Repository) HasHiddenDescendant(ctx context.Context, tenant, folder, user uuid.UUID) (bool, error) {
+	var hidden bool
+	err := r.db.QueryRow(ctx, `WITH RECURSIVE tree AS (
+			SELECT id FROM team_folder WHERE tenant_id = $1 AND parent_id = $2
+			UNION SELECT f.id FROM team_folder f JOIN tree t ON f.parent_id = t.id WHERE f.tenant_id = $1)
+		SELECT EXISTS (SELECT 1 FROM chat_channel c WHERE c.tenant_id = $1 AND c.folder_id IN (SELECT id FROM tree)
+			AND c.deleted_at IS NULL AND NOT `+sees("$3")+`)`, tenant, folder, user).Scan(&hidden)
+	if err != nil {
+		return false, fmt.Errorf("teams: hidden descendant: %w", err)
+	}
+	return hidden, nil
 }
 
 // LinkFolder sets (folder nil: clears) the team channel's linked folder; the
@@ -111,7 +179,10 @@ func (r *Repository) CreateFileMessage(ctx context.Context, m Message, team uuid
 			}
 			pick := name
 			for i := 2; taken[pick]; i++ {
-				pick = name + " (" + strconv.Itoa(i) + ")"
+				suffix := " (" + strconv.Itoa(i) + ")"
+				base := []rune(name)
+				base = base[:min(len(base), 200-len(suffix))] // "<base> (n)" stays a valid name
+				pick = string(base) + suffix
 			}
 			f, err := r.folders.WithTx(tx).Create(ctx, Folder{TenantID: m.TenantID, TeamID: team, Name: pick, CreatedBy: m.AuthorID})
 			if err != nil {
@@ -148,11 +219,13 @@ func (r *Repository) CreateFileMessage(ctx context.Context, m Message, team uuid
 
 // messageFile is one file sent with a message; Deleted once the team file is gone.
 type messageFile struct {
-	FileID  uuid.UUID
-	Name    string
-	Mime    string
-	Size    int64
-	Deleted bool
+	FileID   uuid.UUID
+	Name     string
+	Mime     string
+	Size     int64
+	Deleted  bool
+	FolderID *uuid.UUID
+	TeamID   *uuid.UUID
 }
 
 // MessageFilesOf groups the messages' sent files by message id, in send order.
@@ -161,7 +234,7 @@ func (r *Repository) MessageFilesOf(ctx context.Context, tenant uuid.UUID, messa
 	if len(messages) == 0 {
 		return out, nil
 	}
-	rows, err := r.db.Query(ctx, `SELECT mf.message_id, mf.file_id, coalesce(f.name, ''), coalesce(f.mime, ''), coalesce(f.size, 0), f.id IS NULL
+	rows, err := r.db.Query(ctx, `SELECT mf.message_id, mf.file_id, coalesce(f.name, ''), coalesce(f.mime, ''), coalesce(f.size, 0), f.id IS NULL, f.folder_id, f.team_id
 		FROM chat_message_file mf LEFT JOIN team_file f ON f.id = mf.file_id AND f.tenant_id = $1 AND f.deleted_at IS NULL
 		WHERE mf.tenant_id = $1 AND mf.message_id = ANY($2) AND mf.deleted_at IS NULL
 		ORDER BY mf.created_at, mf.id`, tenant, messages)
@@ -172,7 +245,7 @@ func (r *Repository) MessageFilesOf(ctx context.Context, tenant uuid.UUID, messa
 	for rows.Next() {
 		var id uuid.UUID
 		var f messageFile
-		if err := rows.Scan(&id, &f.FileID, &f.Name, &f.Mime, &f.Size, &f.Deleted); err != nil {
+		if err := rows.Scan(&id, &f.FileID, &f.Name, &f.Mime, &f.Size, &f.Deleted, &f.FolderID, &f.TeamID); err != nil {
 			return nil, fmt.Errorf("teams: message files: %w", err)
 		}
 		out[id] = append(out[id], f)

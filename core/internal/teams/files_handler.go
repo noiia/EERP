@@ -260,6 +260,15 @@ func (h *Handler) DeleteFolder(c *echo.Context) error {
 	if !CanEditItem(role, f.CreatedBy, id.UserID) {
 		return forbidden(c)
 	}
+	if role != RoleOwner {
+		hidden, err := h.repo.HasHiddenDescendant(ctx, id.TenantID, f.ID, id.UserID)
+		if err != nil {
+			return err
+		}
+		if hidden {
+			return errorJSON(c, http.StatusConflict, "CONFLICT", "This folder contains folders you can't see.")
+		}
+	}
 	keys, err := h.repo.DeleteFolderTree(ctx, id.TenantID, f.ID)
 	if errors.Is(err, orm.ErrNotFound) {
 		return notFound(c, "folder")

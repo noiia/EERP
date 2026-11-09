@@ -36,6 +36,14 @@ type attachmentJSON struct {
 	Mime     string    `json:"mime"`
 	Size     int64     `json:"size"`
 	Deleted  bool      `json:"deleted,omitempty"`
+	// where a live file sits, for the per-viewer redaction (never serialized)
+	folder *uuid.UUID
+	team   uuid.UUID
+}
+
+// redacted is how a file the viewer can't see goes out: like a deleted one.
+func (a attachmentJSON) redacted() attachmentJSON {
+	return attachmentJSON{ID: a.ID, Kind: "file", Deleted: true}
 }
 
 type reactionJSON struct {
@@ -187,10 +195,14 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 		w := messageJSON{ID: m.ID, ChannelID: m.ChannelID, AuthorID: m.AuthorID, AuthorName: displayName(users[m.AuthorID]), AuthorHasAvatar: hasAvatar(users[m.AuthorID]),
 			Body: m.Body, CreatedAt: m.CreatedAt, Attachments: []attachmentJSON{}, Reactions: []reactionJSON{}}
 		for _, a := range atts[m.ID] {
-			w.Attachments = append(w.Attachments, attachmentJSON{a.ID, "attachment", a.Filename, a.Mime, a.Size, false})
+			w.Attachments = append(w.Attachments, attachmentJSON{ID: a.ID, Kind: "attachment", Filename: a.Filename, Mime: a.Mime, Size: a.Size})
 		}
 		for _, f := range sent[m.ID] {
-			w.Attachments = append(w.Attachments, attachmentJSON{f.FileID, "file", f.Name, f.Mime, f.Size, f.Deleted})
+			a := attachmentJSON{ID: f.FileID, Kind: "file", Filename: f.Name, Mime: f.Mime, Size: f.Size, Deleted: f.Deleted, folder: f.FolderID}
+			if f.TeamID != nil {
+				a.team = *f.TeamID
+			}
+			w.Attachments = append(w.Attachments, a)
 		}
 		for _, r := range reacts[m.ID] {
 			w.Reactions = append(w.Reactions, reactionJSON(r))
@@ -198,6 +210,78 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 		out[i] = w
 	}
 	return out, nil
+}
+
+// redact blanks, for viewer (holding role in the channel's team), every sent file
+// in a folder they can't see unless it is shared with them explicitly.
+func (h *Handler) redact(ctx context.Context, tenant, viewer uuid.UUID, role string, msgs []messageJSON) error {
+	seen := map[uuid.UUID]bool{} // folder → visible
+	for i := range msgs {
+		for j, a := range msgs[i].Attachments {
+			if a.Kind != "file" || a.Deleted || a.folder == nil {
+				continue
+			}
+			ok, known := seen[*a.folder]
+			if !known {
+				var err error
+				if ok, err = h.visibleFolder(ctx, tenant, a.team, viewer, role, a.folder); err != nil {
+					return err
+				}
+				seen[*a.folder] = ok
+			}
+			if ok {
+				continue
+			}
+			shared, err := h.repo.IsSharedWith(ctx, tenant, a.ID, viewer)
+			if err != nil {
+				return err
+			}
+			if !shared {
+				msgs[i].Attachments[j] = a.redacted()
+			}
+		}
+	}
+	return nil
+}
+
+// pushMessage sends the chat_message frame: readers who can't see the folder
+// of the message's files get them redacted (new files have no shares yet, and
+// they all sit in the channel's one folder). On a lookup error everyone gets the
+// redacted form: the message is already stored, so this fails closed, not the request.
+func (h *Handler) pushMessage(ctx context.Context, tenant uuid.UUID, ch Channel, audience []uuid.UUID, m messageJSON) {
+	frame := messageFrame{Type: "chat_message", ChannelID: ch.ID, TeamID: ch.TeamID, Message: m}
+	var folder *uuid.UUID
+	for _, a := range m.Attachments {
+		if a.Kind == "file" && !a.Deleted && a.folder != nil {
+			folder = a.folder
+		}
+	}
+	if folder == nil {
+		h.push(tenant, audience, frame)
+		return
+	}
+	see, hidden, err := h.splitByFolder(ctx, tenant, folder, audience)
+	if err != nil {
+		see, hidden = nil, audience
+		if common.Logger != nil {
+			common.Logger.Warn("teams: frame audience split failed", zap.Error(err))
+		}
+	}
+	if len(see) > 0 {
+		h.push(tenant, see, frame)
+	}
+	if len(hidden) > 0 {
+		r := m
+		r.Attachments = make([]attachmentJSON, len(m.Attachments))
+		for i, a := range m.Attachments {
+			if a.Kind == "file" && a.folder != nil && *a.folder == *folder {
+				a = a.redacted()
+			}
+			r.Attachments[i] = a
+		}
+		frame.Message = r
+		h.push(tenant, hidden, frame)
+	}
 }
 
 func (h *Handler) push(tenant uuid.UUID, users []uuid.UUID, frame any) {
@@ -238,6 +322,9 @@ func (h *Handler) ListMessages(c *echo.Context) error {
 	}
 	out, err := h.wire(ctx, id.TenantID, id.UserID, msgs)
 	if err != nil {
+		return err
+	}
+	if err := h.redact(ctx, id.TenantID, id.UserID, role, out); err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]any{"data": out})
@@ -291,6 +378,9 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 		if f.Filename == "" {
 			return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "Every uploaded file needs a name.")
 		}
+		if _, err := validName(f.Filename); err != nil && ch.TeamID != nil {
+			return badName(c) // they become team files: same rule as uploads into folders
+		}
 	}
 
 	ctx := c.Request().Context()
@@ -317,7 +407,10 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	h.push(id.TenantID, audience, messageFrame{Type: "chat_message", ChannelID: ch.ID, TeamID: ch.TeamID, Message: out[0]})
+	h.pushMessage(ctx, id.TenantID, ch, audience, out[0])
+	if err := h.redact(ctx, id.TenantID, id.UserID, role, out); err != nil {
+		return err
+	}
 	h.notifyMentions(ctx, id, ch, audience, b.Mentions, out[0])
 	return c.JSON(http.StatusCreated, out[0])
 }
