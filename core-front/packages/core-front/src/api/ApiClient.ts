@@ -650,6 +650,13 @@ export async function streamPicture(id: string, tokenOverride?: string): Promise
   return res
 }
 
+/** A user's avatar from Go (404 when none); the raw Response, like streamPicture. */
+export async function streamAvatar(userId: string): Promise<Response> {
+  const res = await fetchWithRefresh('GET', `/avatars/${encodeURIComponent(userId)}`, null)
+  if (!res.ok) throw await parseError(res)
+  return res
+}
+
 /**
  * Resolve a picture anchor straight to a `data:` URL, or null when the field
  * has no picture — the print route's own need (docs/adr/ADR-011): a

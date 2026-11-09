@@ -1582,6 +1582,10 @@ msgid "Groups attribute"
 msgstr ""
 
 #: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Photo attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
 msgid "Group search base"
 msgstr ""
 

@@ -73,6 +73,16 @@ it('LLDAP defaults fills the preset', () => {
   expect((screen.getByLabelText('Email attribute') as HTMLInputElement).value).toBe('mail')
   expect((screen.getByLabelText('Name attribute') as HTMLInputElement).value).toBe('cn')
   expect((screen.getByLabelText('Groups attribute') as HTMLInputElement).value).toBe('memberOf')
+  expect((screen.getByLabelText('Photo attribute') as HTMLInputElement).value).toBe('jpegPhoto')
+})
+
+it('saves the photo attribute', async () => {
+  render(<AuthSettingsForm initial={base} roles={roles} />)
+  fireEvent.click(screen.getByRole('button', { name: 'LLDAP defaults' }))
+  fireEvent.change(screen.getByLabelText('Photo attribute'), { target: { value: 'thumbnailPhoto' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
+  expect(saveAuthSettings.mock.calls[0][0].ldap.photo_attr).toBe('thumbnailPhoto')
 })
 
 it('keeps a stored secret write-only and submits it empty, stripping has_* and callback_url', async () => {

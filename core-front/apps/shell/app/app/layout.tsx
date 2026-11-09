@@ -109,6 +109,7 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
           identity={identity}
           headerMenus={headerMenus}
           email={preferences?.email}
+          hasAvatar={preferences?.has_avatar}
           activeCompany={preferences?.active_company ?? null}
           companies={companies}
         />

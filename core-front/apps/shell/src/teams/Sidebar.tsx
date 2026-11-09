@@ -19,7 +19,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { erpPath, IntentLink, PresenceDot, T, usePresenceStore, useSessionStore, useT } from '@eerp/core-front'
+import { AvatarWithPresence, avatarUrl, erpPath, IntentLink, T, useSessionStore, useT } from '@eerp/core-front'
 import {
   createChannel, deleteChannel, deleteTeam, listFiles, openDirect, removeMember, renameChannel, updateTeam,
   type Channel, type DirectChat, type DirectoryUser, type Folder, type Member, type Role, type Team,
@@ -96,7 +96,6 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
   const [menu, setMenu] = useState<{ anchor: HTMLElement; channel?: Channel } | null>(null)
   const [action, setAction] = useState<Action | null>(null)
   const [newName, setNewName] = useState('')
-  const statuses = usePresenceStore((s) => s.statuses)
   // null = no file storage (Go doesn't mount the files routes without S3): the section is hidden.
   const [folders, setFolders] = useState<Folder[] | null>(null)
   const [newChannel, setNewChannel] = useState<string | null>(null)
@@ -178,7 +177,7 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
           <Section title={t('Members')}>
             {members.map((m) => (
               <ListItem key={m.user_id} dense sx={{ gap: 1 }}>
-                <PresenceDot status={statuses[m.user_id] ?? 'offline'} size={10} />
+                <AvatarWithPresence userId={m.user_id} label={m.display_name} size={24} src={avatarUrl(m.user_id, m.has_avatar)} />
                 <ListItemText primary={m.display_name || t('Disabled user')} />
               </ListItem>
             ))}
@@ -219,7 +218,10 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
       }>
         {directs.map((d) => (
           <NavItem key={d.id} href={`/teams/direct/${d.id}`} selected={view.kind === 'direct' && view.id === d.id} unread={unread[d.id] ?? d.unread}>
-            {d.other_user.display_name}
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+              <AvatarWithPresence userId={d.other_user.id} label={d.other_user.display_name} size={24} src={avatarUrl(d.other_user.id, d.other_user.has_avatar)} />
+              {d.other_user.display_name}
+            </Box>
           </NavItem>
         ))}
       </Section>

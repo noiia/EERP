@@ -23,6 +23,7 @@ const LLDAP = {
   email_attr: 'mail',
   name_attr: 'cn',
   groups_attr: 'memberOf',
+  photo_attr: 'jpegPhoto',
 }
 
 const EMPTY_LDAP: LDAPSettings = {
@@ -326,6 +327,11 @@ export default function AuthSettingsForm({
               label={t('Groups attribute')}
               value={ldap.groups_attr}
               onChange={(e) => setLdap({ groups_attr: e.target.value })}
+            />
+            <TextField
+              label={t('Photo attribute')}
+              value={ldap.photo_attr ?? ''}
+              onChange={(e) => setLdap({ photo_attr: e.target.value })}
             />
             <TextField
               label={t('Group search base')}

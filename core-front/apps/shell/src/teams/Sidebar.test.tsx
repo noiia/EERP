@@ -54,6 +54,19 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: /general/ })).not.toHaveTextContent(/\d/)
   })
 
+  it('shows a member photo and a direct chat photo', () => {
+    const p = props('member')
+    const { container } = render(
+      <Sidebar
+        {...p}
+        members={[{ user_id: 'u1', display_name: 'Alice', email: 'a@x', role: 'owner' as Role, has_avatar: true }]}
+        directs={[{ id: 'd1', other_user: { id: 'u2', display_name: 'Bob', email: 'b@x', has_avatar: true }, unread: 0, last_message_at: null }]}
+      />,
+    )
+    const srcs = Array.from(container.querySelectorAll('img')).map((i) => i.getAttribute('src'))
+    expect(srcs).toEqual(['/api/avatars/u1', '/api/avatars/u2'])
+  })
+
   it('lists members and links Shares', () => {
     render(<Sidebar {...props('member')} />)
     expect(screen.getByText('Alice')).toBeInTheDocument()

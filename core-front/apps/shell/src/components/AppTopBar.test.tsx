@@ -491,6 +491,15 @@ describe('AppTopBar', () => {
     expect(screen.getByText(/signed in as/i)).toHaveTextContent('Signed in as ada@example.test')
   })
 
+  it('shows the caller photo when preferences say they have one', () => {
+    pathnameMock.mockReturnValue('/app/crm/contacts')
+    render(<AppTopBar identity={identity} email="ada@example.test" hasAvatar />)
+    expect(screen.getByRole('button', { name: /account menu/i }).querySelector('img')).toHaveAttribute(
+      'src',
+      `/api/avatars/${identity.userId}`,
+    )
+  })
+
   it('falls back to the raw user id when email has not resolved yet', () => {
     pathnameMock.mockReturnValue('/app/crm/contacts')
     render(<AppTopBar identity={identity} />)

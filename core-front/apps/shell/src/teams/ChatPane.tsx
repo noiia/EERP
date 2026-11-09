@@ -7,7 +7,7 @@ import Link from '@mui/material/Link'
 import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { T, useT } from '@eerp/core-front'
+import { AvatarWithPresence, avatarUrl, T, useT } from '@eerp/core-front'
 import { postMessage, toggleReaction, type Message } from './client'
 import { useChatStore } from './chat-store'
 import { Composer, type MentionCandidate } from './Composer'
@@ -20,7 +20,8 @@ function MessageItem({ m, onReact }: { m: Message; onReact: (emoji: string) => v
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   return (
     <Box component="article" sx={{ py: 0.75 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <AvatarWithPresence userId={m.author_id} label={m.author_name} size={24} src={avatarUrl(m.author_id, m.author_has_avatar)} />
         <Typography variant="subtitle2" component="span">{m.author_name}</Typography>
         <Typography variant="caption" color="text.secondary">{new Date(m.created_at).toLocaleString()}</Typography>
       </Stack>

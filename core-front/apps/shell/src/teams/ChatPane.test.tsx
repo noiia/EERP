@@ -39,6 +39,13 @@ describe('ChatPane', () => {
     expect(items.map((i) => within(i).getByText(/^body/).textContent)).toEqual(['body m1', 'body m2'])
   })
 
+  it('shows the author photo when the author has one', async () => {
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T10:00:00Z', { author_has_avatar: true })])
+    const { container } = renderPane()
+    await screen.findByRole('article')
+    expect(container.querySelector('img')).toHaveAttribute('src', '/api/avatars/u1')
+  })
+
   it('links attachments to the BFF download route', async () => {
     renderPane()
     expect(await screen.findByRole('link', { name: /plan\.pdf/ })).toHaveAttribute('href', '/api/teams/attachments/att1')

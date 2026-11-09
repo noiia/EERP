@@ -1761,6 +1761,9 @@ msgstr "Attribut nom"
 msgid "Groups attribute"
 msgstr "Attribut groupes"
 
+msgid "Photo attribute"
+msgstr "Attribut photo"
+
 msgid "Group search base"
 msgstr "Base de recherche des groupes"
 

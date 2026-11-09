@@ -43,6 +43,8 @@ export interface LocalePreferences {
   /** The caller's own account email — the closest thing to a "display name"
    * this schema has (Users carries no separate name field). */
   email?: string
+  /** The caller has a photo (GET /avatars/:user serves it). */
+  has_avatar?: boolean
   preferred_locale: string | null
   default_locale: string | null
   number_format?: NumberFormatPreference | null

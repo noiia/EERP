@@ -22,6 +22,14 @@ describe('PresenceDot', () => {
 })
 
 describe('AvatarWithPresence', () => {
+  it('renders an img when src is given, the initial otherwise', () => {
+    const { container, rerender } = render(<AvatarWithPresence userId="u1" label="alice" src="/api/avatars/u1" />)
+    expect(container.querySelector('img')).toHaveAttribute('src', '/api/avatars/u1')
+    rerender(<AvatarWithPresence userId="u1" label="alice" />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
+
   it('shows the initial letter of the label', () => {
     render(<AvatarWithPresence userId="u1" label="alice@example.com" />)
     expect(screen.getByText('A')).toBeInTheDocument()

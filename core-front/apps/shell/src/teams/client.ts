@@ -16,11 +16,13 @@ export interface Member {
   display_name: string
   email: string
   role: Role
+  has_avatar?: boolean
 }
 export interface DirectoryUser {
   id: string
   display_name: string
   email: string
+  has_avatar?: boolean
 }
 export interface Channel {
   id: string
@@ -51,6 +53,7 @@ export interface Message {
   channel_id: string
   author_id: string
   author_name: string
+  author_has_avatar?: boolean
   body: string
   created_at: string
   attachments: Attachment[]

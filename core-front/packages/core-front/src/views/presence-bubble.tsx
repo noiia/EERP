@@ -63,11 +63,14 @@ export function AvatarWithPresence({
   userId,
   label,
   size = 32,
+  src,
 }: {
   userId: string
   /** Used for the fallback initial letter when no picture is wired up. */
   label?: string
   size?: number
+  /** Photo URL (avatarUrl); the initial shows when absent or failing to load. */
+  src?: string
 }) {
   const status = usePresenceStore((s) => s.statuses[userId] ?? 'offline')
   const initial = (label ?? '').trim().charAt(0).toUpperCase() || '?'
@@ -75,7 +78,7 @@ export function AvatarWithPresence({
 
   return (
     <Box sx={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
-      <Avatar sx={{ width: size, height: size, bgcolor: 'primary.main', fontSize: size * 0.4 }}>
+      <Avatar src={src} sx={{ width: size, height: size, bgcolor: 'primary.main', fontSize: size * 0.4 }}>
         {initial}
       </Avatar>
       <Box sx={{ position: 'absolute', bottom: -1, right: -1 }}>

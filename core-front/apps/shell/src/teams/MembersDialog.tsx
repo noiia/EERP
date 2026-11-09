@@ -8,11 +8,12 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
+import ListItemAvatar from '@mui/material/ListItemAvatar'
 import ListItemText from '@mui/material/ListItemText'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { T, useT } from '@eerp/core-front'
+import { AvatarWithPresence, avatarUrl, T, useT } from '@eerp/core-front'
 import { addMember, directory, removeMember, setMemberRole, type DirectoryUser, type Member, type Role } from './client'
 
 const ROLES: Role[] = ['owner', 'member', 'guest']
@@ -91,6 +92,9 @@ export function MembersDialog({ open, teamId, members, onClose, onChanged }: {
                   <Button color="error" onClick={() => run(removeMember(teamId, m.user_id))}><T text="Remove" /></Button>
                 </Stack>
               }>
+              <ListItemAvatar>
+                <AvatarWithPresence userId={m.user_id} label={m.display_name} size={32} src={avatarUrl(m.user_id, m.has_avatar)} />
+              </ListItemAvatar>
               <ListItemText primary={m.display_name || t('Disabled user')} secondary={m.email} />
             </ListItem>
           ))}

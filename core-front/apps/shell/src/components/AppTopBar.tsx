@@ -17,6 +17,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import {
   AppHeaderMenuBar,
   AvatarWithPresence,
+  avatarUrl,
   byPrefixAndName,
   ERP_BASE,
   erpPath,
@@ -318,7 +319,7 @@ const STATUS_OPTIONS: { value: 'online' | 'busy' | 'do_not_disturb'; label: stri
   { value: 'do_not_disturb', label: 'Do not disturb' },
 ]
 
-function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
+function UserMenu({ identity, email, hasAvatar }: { identity: Identity; email?: string; hasAvatar?: boolean }) {
   const t = useT()
   const router = useRouter()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
@@ -356,7 +357,7 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
         aria-expanded={open}
         color="inherit"
       >
-        <AvatarWithPresence userId={identity.userId} label={displayName} size={32} />
+        <AvatarWithPresence userId={identity.userId} label={displayName} size={32} src={avatarUrl(identity.userId, hasAvatar)} />
       </IconButton>
       <Menu
         anchorEl={anchorEl}
@@ -515,6 +516,7 @@ export function AppTopBar({
   identity,
   headerMenus = [],
   email,
+  hasAvatar,
   activeCompany = null,
   companies = [],
 }: {
@@ -524,6 +526,7 @@ export function AppTopBar({
   headerMenus?: ModuleHeaderMenus[]
   /** The caller's own account email — see UserMenu's displayName note. */
   email?: string
+  hasAvatar?: boolean
   /** The caller's current company (multi-company) — null while unresolved
    * (e.g. an identity-less render) or genuinely absent (the preferences
    * read failed upstream); the switcher just doesn't render either way. */
@@ -554,7 +557,7 @@ export function AppTopBar({
           <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />
           <NotificationBell />
           {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
-          <UserMenu identity={identity} email={email} />
+          <UserMenu identity={identity} email={email} hasAvatar={hasAvatar} />
         </Toolbar>
       </AppBar>
       {/* Reserves the AppBar's height in normal document flow — position: fixed takes

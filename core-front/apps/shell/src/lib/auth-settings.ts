@@ -21,6 +21,8 @@ export interface LDAPSettings {
   email_attr: string
   name_attr: string
   groups_attr: string
+  /** Directory attribute holding the user's photo (jpegPhoto); empty = no photo sync. */
+  photo_attr?: string
   group_search_base: string
   group_filter: string
   /** Granted to an LDAP user none of whose groups is mapped; null = refuse. */
