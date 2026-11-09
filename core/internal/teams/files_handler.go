@@ -473,7 +473,8 @@ func (h *Handler) PutShares(c *echo.Context) error {
 	if !ok {
 		return err
 	}
-	if !CanWrite(role) {
+	// same rule as rename/delete: an owner shares any file, a member only their own uploads
+	if !CanEditItem(role, f.UploadedBy, auth.MustIdentity(c.Request().Context()).UserID) {
 		return forbidden(c)
 	}
 	var b struct {

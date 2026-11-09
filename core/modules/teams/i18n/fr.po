@@ -190,3 +190,36 @@ msgstr "Cette action est irréversible."
 
 msgid "File storage is not configured."
 msgstr "Le stockage de fichiers n'est pas configuré."
+
+msgid "Team options"
+msgstr "Options de l'équipe"
+
+msgid "Channel options"
+msgstr "Options du canal"
+
+msgid "Rename team"
+msgstr "Renommer l'équipe"
+
+msgid "Delete team"
+msgstr "Supprimer l'équipe"
+
+msgid "Leave team"
+msgstr "Quitter l'équipe"
+
+msgid "Rename channel"
+msgstr "Renommer le canal"
+
+msgid "Delete channel"
+msgstr "Supprimer le canal"
+
+msgid "Are you sure?"
+msgstr "Êtes-vous sûr ?"
+
+msgid "Confirm"
+msgstr "Confirmer"
+
+msgid "Disabled user"
+msgstr "Utilisateur désactivé"
+
+msgid "This folder no longer exists."
+msgstr "Ce dossier n'existe plus."

@@ -235,10 +235,13 @@ func (r *Repository) ListMembers(ctx context.Context, tenant, team uuid.UUID) ([
 }
 
 func (r *Repository) AddMember(ctx context.Context, tenant, team, user uuid.UUID, role string) (Member, error) {
-	if _, err := r.RoleOf(ctx, tenant, team, user); err == nil {
+	// uq_team_member decides, so two concurrent adds can't both succeed or 500.
+	m, err := r.members.Create(ctx, Member{TenantID: tenant, TeamID: team, UserID: user, Role: role})
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return Member{}, ErrExists
 	}
-	return r.members.Create(ctx, Member{TenantID: tenant, TeamID: team, UserID: user, Role: role})
+	return m, err
 }
 
 // changeMember changes (or, with newRole "", removes) a member inside a transaction that holds

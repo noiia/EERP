@@ -252,3 +252,16 @@ func TestFolderOtherTeam_422(t *testing.T) {
 		t.Fatalf("move file to other team's folder: %d", c)
 	}
 }
+
+func TestShare_OnlyOwnerOrUploader(t *testing.T) {
+	f := newChatFixture(t, true)
+	_, ownerFile := f.upload(t, f.owner, "", "owner.txt", "o")
+	_, memberFile := f.upload(t, f.member, "", "member.txt", "m")
+	body := `{"user_ids":["` + f.staff.String() + `"]}`
+	if c := f.call(t, f.h.PutShares, "PUT", body, f.member, map[string]string{"file": ownerFile.String()}); c != 403 {
+		t.Fatalf("member sharing someone else's file: %d", c)
+	}
+	if c := f.call(t, f.h.PutShares, "PUT", body, f.owner, map[string]string{"file": memberFile.String()}); c != 200 {
+		t.Fatalf("owner sharing a member's file: %d", c)
+	}
+}

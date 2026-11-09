@@ -189,3 +189,36 @@ msgstr ""
 
 msgid "File storage is not configured."
 msgstr ""
+
+msgid "Team options"
+msgstr ""
+
+msgid "Channel options"
+msgstr ""
+
+msgid "Rename team"
+msgstr ""
+
+msgid "Delete team"
+msgstr ""
+
+msgid "Leave team"
+msgstr ""
+
+msgid "Rename channel"
+msgstr ""
+
+msgid "Delete channel"
+msgstr ""
+
+msgid "Are you sure?"
+msgstr ""
+
+msgid "Confirm"
+msgstr ""
+
+msgid "Disabled user"
+msgstr ""
+
+msgid "This folder no longer exists."
+msgstr ""

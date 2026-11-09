@@ -40,7 +40,7 @@ flowchart LR
 - **JWT only, then team roles.** The `/api/v1/teams` group has `jwtMw` and no `permMw`, like
   notifications: every staff user may use Teams and create teams, and website tokens are refused
   by the JWT audience check. Each handler then resolves the caller's role in the team:
-  *guest* reads and downloads; *member* also posts, reacts, uploads and shares, and renames, moves
+  *guest* reads and downloads; *member* also posts, reacts and uploads, and shares, renames, moves
   or deletes only what they created; *owner* does everything, including members, roles, channels
   and deleting the team. A team always keeps at least one owner (409). A non-member gets **404,
   never 403**, so team ids can't be probed. A file share lets its recipient see and download that
