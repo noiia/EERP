@@ -317,12 +317,13 @@ func (h *Handler) RemoveMember(c *echo.Context) error {
 }
 
 type channelJSON struct {
-	ID      uuid.UUID `json:"id"`
-	TeamID  uuid.UUID `json:"team_id"`
-	Kind    string    `json:"kind"`
-	Name    string    `json:"name"`
-	Unread  int       `json:"unread"`
-	Private bool      `json:"private"`
+	ID       uuid.UUID  `json:"id"`
+	TeamID   uuid.UUID  `json:"team_id"`
+	Kind     string     `json:"kind"`
+	Name     string     `json:"name"`
+	Unread   int        `json:"unread"`
+	Private  bool       `json:"private"`
+	FolderID *uuid.UUID `json:"folder_id"`
 }
 
 func toChannelJSON(ch Channel) channelJSON {
@@ -330,7 +331,7 @@ func toChannelJSON(ch Channel) channelJSON {
 	if ch.TeamID != nil {
 		t = *ch.TeamID
 	}
-	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0, ch.Restricted}
+	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0, ch.Restricted, ch.FolderID}
 }
 
 func (h *Handler) ListChannels(c *echo.Context) error {
@@ -397,12 +398,17 @@ func (h *Handler) channelParam(c *echo.Context) (uuid.UUID, error) {
 	return ch, nil
 }
 
+// RenameChannel serves PUT /:id/channels/:channel {name?, folder_id?} (owners):
+// rename and/or link a folder of the team ("" unlinks).
 func (h *Handler) RenameChannel(c *echo.Context) error {
 	team, role, err := h.access(c, CanManage)
 	if role == "" {
 		return err
 	}
-	var b teamBody
+	var b struct {
+		Name     *string `json:"name"`
+		FolderID *string `json:"folder_id"`
+	}
 	if err := c.Bind(&b); err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
@@ -411,16 +417,55 @@ func (h *Handler) RenameChannel(c *echo.Context) error {
 		return err
 	}
 	ctx := c.Request().Context()
-	ch, err := h.repo.RenameChannel(ctx, auth.MustIdentity(ctx).TenantID, team, chID, b.Name)
+	id := auth.MustIdentity(ctx)
+	if b.Name != nil {
+		if _, err := validName(*b.Name); err != nil {
+			return badName(c) // before linking, so a bad name changes nothing
+		}
+	}
+	if b.FolderID != nil {
+		folder, ok, err := h.targetFolder(c, id.TenantID, team, role, *b.FolderID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return invalid(c, "folder_id is not a folder of this team.")
+		}
+		err = h.repo.LinkFolder(ctx, id.TenantID, team, chID, folder)
+		if errors.Is(err, ErrFolderLinked) {
+			return invalid(c, "This folder is already linked to another conversation.")
+		}
+		if err != nil {
+			return h.channelResult(c, err)
+		}
+	}
+	var ch Channel
+	if b.Name != nil || b.FolderID == nil {
+		ch, err = h.repo.RenameChannel(ctx, id.TenantID, team, chID, deref(b.Name))
+	} else {
+		ch, err = h.repo.FindChannel(ctx, id.TenantID, chID)
+	}
+	if err != nil {
+		return h.channelResult(c, err)
+	}
+	return c.JSON(http.StatusOK, toChannelJSON(ch))
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func (h *Handler) channelResult(c *echo.Context, err error) error {
 	switch {
 	case errors.Is(err, ErrInvalidName):
 		return badName(c)
 	case errors.Is(err, orm.ErrNotFound):
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such channel.")
-	case err != nil:
-		return err
 	}
-	return c.JSON(http.StatusOK, toChannelJSON(ch))
+	return err
 }
 
 func (h *Handler) DeleteChannel(c *echo.Context) error {

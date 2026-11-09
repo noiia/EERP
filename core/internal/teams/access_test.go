@@ -13,7 +13,7 @@ import (
 )
 
 // privFixture: a private channel "secret" listing f.member directly and f.staff through
-// group "Ops"; unlisted is a plain team member; it holds one message with an attachment.
+// group "Ops"; unlisted is a plain team member; it holds one message with a file (in its auto-created, so private, folder).
 type privFixture struct {
 	chatFixture
 	secret, unlisted, group uuid.UUID
@@ -66,9 +66,6 @@ func newPrivFixture(t *testing.T) privFixture {
 }
 
 func (f privFixture) teamP() map[string]string { return map[string]string{"id": f.team.String()} }
-func (f privFixture) chanP(ch uuid.UUID) map[string]string {
-	return map[string]string{"id": f.team.String(), "channel": ch.String()}
-}
 
 type channelRow struct {
 	ID      uuid.UUID
@@ -112,8 +109,8 @@ func TestPrivateChannel_Matrix(t *testing.T) {
 		{"reaction", 200, func(as uuid.UUID) int {
 			return serve(t, f.h.ToggleReaction, "POST", `{"emoji":"👍"}`, f.as(as), map[string]string{"message": f.msg.String()}).Code
 		}},
-		{"attachment", 200, func(as uuid.UUID) int {
-			return serve(t, f.h.GetAttachment, "GET", "", f.as(as), map[string]string{"id": f.att.String()}).Code
+		{"file sent in it", 200, func(as uuid.UUID) int {
+			return serve(t, f.h.DownloadFile, "GET", "", f.as(as), map[string]string{"file": f.att.String()}).Code
 		}},
 	}
 	for _, u := range users {

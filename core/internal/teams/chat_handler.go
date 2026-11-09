@@ -27,11 +27,15 @@ const (
 	maxEmojiLen  = 16 // bytes
 )
 
+// attachmentJSON is a direct-message attachment (kind "attachment", /attachments/:id)
+// or a team file sent in a channel (kind "file", /files/:id/download; Deleted once it's gone).
 type attachmentJSON struct {
 	ID       uuid.UUID `json:"id"`
+	Kind     string    `json:"kind"`
 	Filename string    `json:"filename"`
 	Mime     string    `json:"mime"`
 	Size     int64     `json:"size"`
+	Deleted  bool      `json:"deleted,omitempty"`
 }
 
 type reactionJSON struct {
@@ -166,6 +170,10 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 	if err != nil {
 		return nil, err
 	}
+	sent, err := h.repo.MessageFilesOf(ctx, tenant, ids)
+	if err != nil {
+		return nil, err
+	}
 	reacts, err := h.repo.ReactionsOf(ctx, tenant, viewer, ids)
 	if err != nil {
 		return nil, err
@@ -179,7 +187,10 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 		w := messageJSON{ID: m.ID, ChannelID: m.ChannelID, AuthorID: m.AuthorID, AuthorName: displayName(users[m.AuthorID]), AuthorHasAvatar: hasAvatar(users[m.AuthorID]),
 			Body: m.Body, CreatedAt: m.CreatedAt, Attachments: []attachmentJSON{}, Reactions: []reactionJSON{}}
 		for _, a := range atts[m.ID] {
-			w.Attachments = append(w.Attachments, attachmentJSON{a.ID, a.Filename, a.Mime, a.Size})
+			w.Attachments = append(w.Attachments, attachmentJSON{a.ID, "attachment", a.Filename, a.Mime, a.Size, false})
+		}
+		for _, f := range sent[m.ID] {
+			w.Attachments = append(w.Attachments, attachmentJSON{f.FileID, "file", f.Name, f.Mime, f.Size, f.Deleted})
 		}
 		for _, r := range reacts[m.ID] {
 			w.Reactions = append(w.Reactions, reactionJSON(r))
@@ -292,7 +303,12 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 	for i, a := range stored {
 		keys[i] = a.ObjectKey
 	}
-	m, _, err := h.repo.CreateMessage(ctx, Message{TenantID: id.TenantID, ChannelID: ch.ID, AuthorID: id.UserID, Body: b.Body}, stored)
+	m := Message{TenantID: id.TenantID, ChannelID: ch.ID, AuthorID: id.UserID, Body: b.Body}
+	if ch.TeamID != nil && len(stored) > 0 {
+		m, err = h.repo.CreateFileMessage(ctx, m, *ch.TeamID, stored)
+	} else {
+		m, _, err = h.repo.CreateMessage(ctx, m, stored)
+	}
 	if err != nil {
 		h.deleteObjects(ctx, keys, "failed message insert")
 		return err

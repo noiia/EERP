@@ -368,7 +368,7 @@ func multipartReq(t *testing.T, body string, files map[string]string) (*bytes.Bu
 	return &buf, w.FormDataContentType()
 }
 
-func TestPostMessage_MultipartAttachment(t *testing.T) {
+func TestPostMessage_MultipartFile(t *testing.T) {
 	f := newChatFixture(t, true)
 	buf, ct := multipartReq(t, "", map[string]string{"notes.txt": "hello file"})
 	req := httptest.NewRequest("POST", "/", buf)
@@ -380,11 +380,13 @@ func TestPostMessage_MultipartAttachment(t *testing.T) {
 	var m struct {
 		Attachments []struct {
 			ID       uuid.UUID
+			Kind     string
 			Filename string
 			Size     int64
 		}
 	}
-	if err := jsonDecode(rec, &m); err != nil || len(m.Attachments) != 1 || m.Attachments[0].Filename != "notes.txt" || m.Attachments[0].Size != 10 {
+	if err := jsonDecode(rec, &m); err != nil || len(m.Attachments) != 1 || m.Attachments[0].Kind != "file" ||
+		m.Attachments[0].Filename != "notes.txt" || m.Attachments[0].Size != 10 {
 		t.Fatalf("wire: %s", rec.Body)
 	}
 	for k := range f.store.objs {
@@ -392,23 +394,26 @@ func TestPostMessage_MultipartAttachment(t *testing.T) {
 			t.Fatalf("key %q", k)
 		}
 	}
-	p := map[string]string{"id": m.Attachments[0].ID.String()}
-	rec = serve(t, f.h.GetAttachment, "GET", "", f.as(f.guest), p)
+	p := map[string]string{"file": m.Attachments[0].ID.String()}
+	rec = serve(t, f.h.DownloadFile, "GET", "", f.as(f.guest), p)
 	if rec.Code != 200 || rec.Body.String() != "hello file" || !strings.Contains(rec.Header().Get("Content-Disposition"), `filename=notes.txt`) {
 		t.Fatalf("download: %d %q %q", rec.Code, rec.Body, rec.Header().Get("Content-Disposition"))
 	}
-	if rec := serve(t, f.h.GetAttachment, "GET", "", f.as(f.outside), p); rec.Code != 404 {
+	if rec := serve(t, f.h.DownloadFile, "GET", "", f.as(f.outside), p); rec.Code != 404 {
 		t.Fatalf("outsider download: %d", rec.Code)
 	}
-	// deleting the channel removes its messages and objects
+	// deleting the channel removes its messages but the files outlive the chat
 	if _, err := f.repo.CreateChannel(context.Background(), f.tenant, f.team, "other"); err != nil {
 		t.Fatal(err)
 	}
 	if rec := serve(t, f.h.DeleteChannel, "DELETE", "", f.as(f.owner), map[string]string{"id": f.team.String(), "channel": f.general.String()}); rec.Code != 204 {
 		t.Fatalf("delete channel: %d", rec.Code)
 	}
-	if len(f.store.objs) != 0 || f.countMessages(t, f.general) != 0 {
-		t.Fatalf("leftovers: %d objects, %d messages", len(f.store.objs), f.countMessages(t, f.general))
+	if len(f.store.objs) != 1 || f.countMessages(t, f.general) != 0 {
+		t.Fatalf("after delete: %d objects, %d messages", len(f.store.objs), f.countMessages(t, f.general))
+	}
+	if rec := serve(t, f.h.DownloadFile, "GET", "", f.as(f.guest), p); rec.Code != 200 {
+		t.Fatalf("download after channel delete: %d", rec.Code)
 	}
 }
 

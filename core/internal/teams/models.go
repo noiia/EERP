@@ -43,6 +43,8 @@ type Channel struct {
 	// Restricted: only owners and the access list see the channel. Set only by an
 	// explicit access-list PUT, so an access list emptied by a side effect stays private.
 	Restricted bool `db:"restricted"`
+	// FolderID: the team folder files sent here go into (one channel per folder; team channels only).
+	FolderID *uuid.UUID `db:"folder_id"`
 }
 
 type ChannelMember struct {
@@ -71,6 +73,14 @@ type Attachment struct {
 	Mime      string    `db:"mime"`
 	Size      int64     `db:"size"`
 	ObjectKey string    `db:"object_key"`
+}
+
+// MessageFile links a team-channel message to a team_file sent with it.
+type MessageFile struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id,index"`
+	MessageID uuid.UUID `db:"message_id,index"`
+	FileID    uuid.UUID `db:"file_id,index"`
 }
 
 type Reaction struct {
@@ -142,6 +152,7 @@ func (ChannelMember) TableName() string { return "chat_channel_member" }
 func (Message) TableName() string       { return "chat_message" }
 func (Attachment) TableName() string    { return "chat_attachment" }
 func (Reaction) TableName() string      { return "chat_reaction" }
+func (MessageFile) TableName() string   { return "chat_message_file" }
 func (Folder) TableName() string        { return "team_folder" }
 func (File) TableName() string          { return "team_file" }
 func (Share) TableName() string         { return "team_file_share" }

@@ -1,7 +1,6 @@
 package teams
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"mime"
@@ -51,8 +50,8 @@ func invalid(c *echo.Context, msg string) error {
 }
 
 // targetFolder resolves a folder id from a request body: "" is the root (nil).
-// ok is false when the id isn't a folder of team.
-func (h *Handler) targetFolder(ctx context.Context, tenant, team uuid.UUID, s string) (folder *uuid.UUID, ok bool, err error) {
+// ok is false when the id isn't a folder of team the caller (holding role) can see.
+func (h *Handler) targetFolder(c *echo.Context, tenant, team uuid.UUID, role, s string) (folder *uuid.UUID, ok bool, err error) {
 	if s == "" {
 		return nil, true, nil
 	}
@@ -60,27 +59,34 @@ func (h *Handler) targetFolder(ctx context.Context, tenant, team uuid.UUID, s st
 	if err != nil {
 		return nil, false, nil
 	}
-	f, err := h.repo.FindFolder(ctx, tenant, id)
+	f, err := h.repo.FindFolder(c.Request().Context(), tenant, id)
 	if errors.Is(err, orm.ErrNotFound) || (err == nil && f.TeamID != team) {
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
 	}
+	if ok, err = h.folderVisible(c, tenant, team, auth.MustIdentity(c.Request().Context()).UserID, role, &f.ID); !ok {
+		return nil, false, err
+	}
 	return &f.ID, true, nil
 }
 
-// teamFolder resolves the :folder param of the :id team (404 when absent; the
-// response is then written and ok false).
-func (h *Handler) teamFolder(c *echo.Context, tenant, team uuid.UUID) (Folder, bool, error) {
+// teamFolder resolves the :folder param of the :id team (404 when absent or
+// hidden from the caller; the response is then written and ok false).
+func (h *Handler) teamFolder(c *echo.Context, tenant, team uuid.UUID, role string) (Folder, bool, error) {
 	id, err := echo.PathParam[uuid.UUID](c, "folder")
 	if err != nil {
 		return Folder{}, false, notFound(c, "folder")
 	}
-	f, err := h.repo.FindFolder(c.Request().Context(), tenant, id)
-	if errors.Is(err, orm.ErrNotFound) || (err == nil && f.TeamID != team) {
-		return Folder{}, false, notFound(c, "folder")
+	_, ok, err := h.targetFolder(c, tenant, team, role, id.String())
+	if err != nil || !ok {
+		if err == nil {
+			err = notFound(c, "folder")
+		}
+		return Folder{}, false, err
 	}
+	f, err := h.repo.FindFolder(c.Request().Context(), tenant, id)
 	return f, err == nil, err
 }
 
@@ -93,7 +99,7 @@ func (h *Handler) ListFiles(c *echo.Context) error {
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
 	out := map[string]any{"folder": nil, "path": []crumbJSON{}}
-	folder, ok, err := h.targetFolder(ctx, id.TenantID, team, c.QueryParam("folder"))
+	folder, ok, err := h.targetFolder(c, id.TenantID, team, role, c.QueryParam("folder"))
 	if err != nil {
 		return err
 	}
@@ -112,9 +118,20 @@ func (h *Handler) ListFiles(c *echo.Context) error {
 		out["folder"] = map[string]any{"id": chain[0].ID, "name": chain[0].Name, "parent_id": chain[0].ParentID}
 		out["path"] = path
 	}
-	folders, files, err := h.repo.ListFolder(ctx, id.TenantID, team, folder)
+	all, files, err := h.repo.ListFolder(ctx, id.TenantID, team, folder)
 	if err != nil {
 		return err
+	}
+	// shortcut: one visibility walk per subfolder; batch it if folders with many subfolders get slow.
+	folders := make([]Folder, 0, len(all))
+	for _, f := range all {
+		ok, err := h.folderVisible(c, id.TenantID, team, id.UserID, role, &f.ID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			folders = append(folders, f)
+		}
 	}
 	ids := make([]uuid.UUID, len(files))
 	for i, f := range files {
@@ -155,7 +172,7 @@ func (h *Handler) CreateFolder(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
-	parent, ok, err := h.targetFolder(ctx, id.TenantID, team, b.ParentID)
+	parent, ok, err := h.targetFolder(c, id.TenantID, team, role, b.ParentID)
 	if err != nil {
 		return err
 	}
@@ -180,7 +197,7 @@ func (h *Handler) UpdateFolder(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
-	f, ok, err := h.teamFolder(c, id.TenantID, team)
+	f, ok, err := h.teamFolder(c, id.TenantID, team, role)
 	if !ok {
 		return err
 	}
@@ -198,7 +215,7 @@ func (h *Handler) UpdateFolder(c *echo.Context) error {
 		f.Name = *b.Name
 	}
 	if b.ParentID != nil {
-		parent, ok, err := h.targetFolder(ctx, id.TenantID, team, *b.ParentID)
+		parent, ok, err := h.targetFolder(c, id.TenantID, team, role, *b.ParentID)
 		if err != nil {
 			return err
 		}
@@ -236,7 +253,7 @@ func (h *Handler) DeleteFolder(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
-	f, ok, err := h.teamFolder(c, id.TenantID, team)
+	f, ok, err := h.teamFolder(c, id.TenantID, team, role)
 	if !ok {
 		return err
 	}
@@ -269,7 +286,7 @@ func (h *Handler) UploadFile(c *echo.Context) error {
 	if _, err := validName(fh.Filename); err != nil {
 		return badName(c)
 	}
-	folder, ok, err := h.targetFolder(ctx, id.TenantID, team, c.FormValue("folder_id"))
+	folder, ok, err := h.targetFolder(c, id.TenantID, team, role, c.FormValue("folder_id"))
 	if err != nil {
 		return err
 	}
@@ -294,34 +311,41 @@ func (h *Handler) UploadFile(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, h.toFileJSON(f, users, 0))
 }
 
-// teamFile resolves the :file param of the :id team and checks CanEditItem.
-func (h *Handler) teamFile(c *echo.Context) (File, bool, error) {
+// teamFile resolves the :file param of the :id team (404 when its folder is
+// hidden from the caller) and checks CanEditItem.
+func (h *Handler) teamFile(c *echo.Context) (File, string, bool, error) {
 	team, role, err := h.access(c, CanRead)
 	if role == "" {
-		return File{}, false, err
+		return File{}, "", false, err
 	}
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
 	fid, err := echo.PathParam[uuid.UUID](c, "file")
 	if err != nil {
-		return File{}, false, notFound(c, "file")
+		return File{}, "", false, notFound(c, "file")
 	}
 	f, err := h.repo.FindFile(ctx, id.TenantID, fid)
 	if errors.Is(err, orm.ErrNotFound) || (err == nil && f.TeamID != team) {
-		return File{}, false, notFound(c, "file")
+		return File{}, "", false, notFound(c, "file")
 	}
 	if err != nil {
-		return File{}, false, err
+		return File{}, "", false, err
+	}
+	if ok, err := h.folderVisible(c, id.TenantID, team, id.UserID, role, f.FolderID); err != nil || !ok {
+		if err == nil {
+			err = notFound(c, "file")
+		}
+		return File{}, "", false, err
 	}
 	if !CanEditItem(role, f.UploadedBy, id.UserID) {
-		return File{}, false, forbidden(c)
+		return File{}, "", false, forbidden(c)
 	}
-	return f, true, nil
+	return f, role, true, nil
 }
 
 // UpdateFile serves PUT /:id/files/:file {name?, folder_id?}: rename and/or move.
 func (h *Handler) UpdateFile(c *echo.Context) error {
-	f, ok, err := h.teamFile(c)
+	f, role, ok, err := h.teamFile(c)
 	if !ok {
 		return err
 	}
@@ -338,7 +362,7 @@ func (h *Handler) UpdateFile(c *echo.Context) error {
 		f.Name = *b.Name
 	}
 	if b.FolderID != nil {
-		folder, ok, err := h.targetFolder(ctx, id.TenantID, f.TeamID, *b.FolderID)
+		folder, ok, err := h.targetFolder(c, id.TenantID, f.TeamID, role, *b.FolderID)
 		if err != nil {
 			return err
 		}
@@ -367,7 +391,7 @@ func (h *Handler) UpdateFile(c *echo.Context) error {
 
 // DeleteFile serves DELETE /:id/files/:file.
 func (h *Handler) DeleteFile(c *echo.Context) error {
-	f, ok, err := h.teamFile(c)
+	f, _, ok, err := h.teamFile(c)
 	if !ok {
 		return err
 	}
@@ -384,8 +408,8 @@ func (h *Handler) DeleteFile(c *echo.Context) error {
 }
 
 // fileRole resolves the :file param and the caller's role in its team; a
-// non-member gets a 404 unless shared is set and the file is shared with them
-// (role is then ""). ok false means the response is written.
+// non-member, or a member its folder is hidden from, gets a 404 unless shared is
+// set and the file is shared with them (role is then ""). ok false means the response is written.
 func (h *Handler) fileRole(c *echo.Context, shared bool) (f File, role string, ok bool, err error) {
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
@@ -400,9 +424,14 @@ func (h *Handler) fileRole(c *echo.Context, shared bool) (f File, role string, o
 	}
 	role, err = h.repo.RoleOf(ctx, id.TenantID, f.TeamID, id.UserID)
 	if err == nil {
-		return f, role, true, nil
-	}
-	if !errors.Is(err, orm.ErrNotFound) {
+		visible, err := h.folderVisible(c, id.TenantID, f.TeamID, id.UserID, role, f.FolderID)
+		if err != nil {
+			return File{}, "", false, err
+		}
+		if visible {
+			return f, role, true, nil
+		}
+	} else if !errors.Is(err, orm.ErrNotFound) {
 		return File{}, "", false, err
 	}
 	if shared {

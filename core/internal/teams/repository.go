@@ -215,6 +215,7 @@ func (r *Repository) DeleteTeam(ctx context.Context, tenant, team uuid.UUID) ([]
 			`DELETE FROM team_file_share WHERE file_id IN (SELECT id FROM team_file WHERE tenant_id=$1 AND team_id=$2)`,
 			`DELETE FROM chat_reaction WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_attachment WHERE message_id IN ` + msgs,
+			`DELETE FROM chat_message_file WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_message WHERE channel_id IN ` + chans,
 			`DELETE FROM chat_channel_member WHERE channel_id IN ` + chans,
 			`DELETE FROM chat_channel_access WHERE channel_id IN ` + chans,
@@ -358,7 +359,7 @@ func (r *Repository) RenameChannel(ctx context.Context, tenant, team, id uuid.UU
 }
 
 // DeleteChannel removes the channel with its messages, attachments, reactions
-// and read cursors in one transaction, returning the attachment object keys
+// and read cursors in one transaction (its linked folder and files stay), returning the attachment object keys
 // the caller must remove from storage.
 func (r *Repository) DeleteChannel(ctx context.Context, tenant, team, id uuid.UUID) ([]string, error) {
 	if _, err := r.findChannel(ctx, tenant, team, id); err != nil {
@@ -390,6 +391,7 @@ func (r *Repository) DeleteChannel(ctx context.Context, tenant, team, id uuid.UU
 		for _, q := range []string{
 			`DELETE FROM chat_reaction WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_attachment WHERE message_id IN ` + msgs,
+			`DELETE FROM chat_message_file WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_message WHERE tenant_id=$1 AND channel_id=$2`,
 			`DELETE FROM chat_channel_member WHERE tenant_id=$1 AND channel_id=$2`,
 			`DELETE FROM chat_channel_access WHERE tenant_id=$1 AND channel_id=$2`,
@@ -782,7 +784,7 @@ func (r *Repository) DeleteFile(ctx context.Context, tenant, id uuid.UUID) (stri
 }
 
 // DeleteFolderTree removes the folder, its subfolders, their files and shares in
-// one transaction, returning the files' object keys for the caller to delete.
+// one transaction, unlinking the channels linked to any of them, returning the files' object keys for the caller to delete.
 func (r *Repository) DeleteFolderTree(ctx context.Context, tenant, folder uuid.UUID) ([]string, error) {
 	var keys []string
 	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
@@ -799,6 +801,11 @@ func (r *Repository) DeleteFolderTree(ctx context.Context, tenant, folder uuid.U
 		}
 		if len(ids) == 0 {
 			return orm.ErrNotFound
+		}
+		// Unlink first: this waits on a concurrent send's channel lock, so the file it adds is deleted below.
+		if _, err := tx.Exec(ctx, `UPDATE chat_channel SET folder_id = NULL, updated_at = now()
+			WHERE tenant_id=$1 AND folder_id = ANY($2)`, tenant, ids); err != nil {
+			return err
 		}
 		if rows, err = tx.Query(ctx, `SELECT object_key FROM team_file WHERE tenant_id=$1 AND folder_id = ANY($2)`, tenant, ids); err != nil {
 			return err

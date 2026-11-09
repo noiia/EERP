@@ -29,6 +29,7 @@ func (m *teamsModule) Register() error {
 		orm.Register[teams.Message](orm.WithTableName("chat_message"), orm.WithExcluded()),
 		orm.Register[teams.Attachment](orm.WithTableName("chat_attachment"), orm.WithExcluded()),
 		orm.Register[teams.Reaction](orm.WithTableName("chat_reaction"), orm.WithExcluded()),
+		orm.Register[teams.MessageFile](orm.WithTableName("chat_message_file"), orm.WithExcluded()),
 		orm.Register[teams.Folder](orm.WithTableName("team_folder"), orm.WithExcluded()),
 		orm.Register[teams.File](orm.WithTableName("team_file"), orm.WithExcluded()),
 		orm.Register[teams.Share](orm.WithTableName("team_file_share"), orm.WithExcluded()),
@@ -64,6 +65,9 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 				ALTER TABLE chat_channel_access ADD CONSTRAINT ck_chat_channel_access_one CHECK ((user_id IS NULL) <> (group_id IS NULL));
 			END IF;
 		END $$`,
+		`ALTER TABLE chat_channel ADD COLUMN IF NOT EXISTS folder_id uuid`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_folder ON chat_channel (folder_id) WHERE folder_id IS NOT NULL AND deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_message_file ON chat_message_file (message_id, file_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_message_channel_created ON chat_message (channel_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_team_file_team_folder ON team_file (team_id, folder_id)`,
 	} {
