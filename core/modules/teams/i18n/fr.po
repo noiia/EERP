@@ -247,3 +247,30 @@ msgstr "Télécharger"
 
 msgid "Back"
 msgstr "Retour"
+
+msgid "Manage access"
+msgstr "Gérer l'accès"
+
+msgid "Groups"
+msgstr "Groupes"
+
+msgid "Private"
+msgstr "Privé"
+
+msgid "Open to the whole team"
+msgstr "Ouvert à toute l'équipe"
+
+msgid "Only owners can see this conversation."
+msgstr "Seuls les propriétaires voient cette conversation."
+
+msgid "People"
+msgstr "Personnes"
+
+msgid "Group name"
+msgstr "Nom du groupe"
+
+msgid "New group"
+msgstr "Nouveau groupe"
+
+msgid "Delete group"
+msgstr "Supprimer le groupe"

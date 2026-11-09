@@ -19,7 +19,7 @@ describe('ImageAttachments', () => {
   it('renders an svg as a chip, never inline', () => {
     render(<ImageAttachments attachments={[a({ id: 's1', filename: 'logo.svg', mime: 'image/svg+xml', kind: 'file' })]} />)
     expect(screen.queryByRole('img')).toBeNull()
-    expect(screen.getByRole('link', { name: 'logo.svg' })).toHaveAttribute('href', '/api/teams/files/s1/download')
+    expect(screen.getByRole('link', { name: 'logo.svg (1 B)' })).toHaveAttribute('href', '/api/teams/files/s1/download')
   })
 
   it('opens a viewer with a download link on click', async () => {
@@ -34,5 +34,10 @@ describe('ImageAttachments', () => {
     render(<ImageAttachments attachments={[a({ id: 'f1', filename: '', kind: 'file', deleted: true })]} />)
     expect(screen.getByText('File deleted')).toBeInTheDocument()
     expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('shows a file chip with its name and size', () => {
+    render(<ImageAttachments attachments={[a({ id: 'p1', filename: 'plan.pdf', size: 2048, kind: 'attachment' })]} />)
+    expect(screen.getByRole('link', { name: 'plan.pdf (2 KB)' })).toBeInTheDocument()
   })
 })

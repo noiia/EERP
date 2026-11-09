@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }) }))
 const listDirect = vi.fn()
@@ -104,5 +104,15 @@ describe('TeamsWorkspace', () => {
     render(<TeamsWorkspace view={{ kind: 'direct' }} />)
     expect(screen.getByText(/start a conversation/i)).toBeInTheDocument()
     await waitFor(() => expect(listDirect).toHaveBeenCalled())
+  })
+
+  it('cancels a file drop the pane does not accept, so the browser never opens the file', async () => {
+    const { container } = render(<TeamsWorkspace teamId="t1" view={{ kind: 'channel', id: 'c1' }} />)
+    await screen.findByRole('heading', { name: '# general' })
+    const dataTransfer = { types: ['Files'], files: [] }
+    // guest: the chat pane is not droppable; the sidebar is outside it altogether
+    expect(fireEvent.dragOver(screen.getByTestId('teams-chat-pane'), { dataTransfer })).toBe(false)
+    expect(fireEvent.drop(container.querySelector('nav') as HTMLElement, { dataTransfer })).toBe(false)
+    expect(fireEvent.dragOver(container.querySelector('nav') as HTMLElement, { dataTransfer: { types: ['text/plain'], files: [] } })).toBe(true)
   })
 })

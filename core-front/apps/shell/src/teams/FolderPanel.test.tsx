@@ -4,9 +4,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }) }))
 const listFiles = vi.fn()
 const linkFolder = vi.fn()
+const createFolder = vi.fn()
 vi.mock('./client', () => ({
   listFiles: (...a: unknown[]) => listFiles(...a),
   linkFolder: (...a: unknown[]) => linkFolder(...a),
+  createFolder: (...a: unknown[]) => createFolder(...a),
 }))
 
 import { FolderPanel } from './FolderPanel'
@@ -51,5 +53,15 @@ describe('FolderPanel', () => {
     render(<FolderPanel teamId="t1" channelId="c1" folderId={null} role="member" onLinked={() => {}} />)
     expect(screen.getByText('No folder yet. Files sent here will create one.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Link a folder' })).toBeNull()
+  })
+
+  it('signals a folder created in the panel so the sidebar tree refreshes', async () => {
+    createFolder.mockResolvedValue({ id: 'f2' })
+    const onFoldersChanged = vi.fn()
+    render(<FolderPanel teamId="t1" channelId="c1" folderId="f1" role="owner" onLinked={() => {}} onFoldersChanged={onFoldersChanged} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'New folder' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Sub' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onFoldersChanged).toHaveBeenCalledTimes(1))
   })
 })

@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Drawer from '@mui/material/Drawer'
@@ -28,7 +28,9 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   const [directs, setDirects] = useState<DirectChat[]>([])
   // Attachments need file storage; Go mounts /shared only when S3 is configured.
   const [canAttach, setCanAttach] = useState(false)
+  // foldersRev reloads the sidebar's folder tree; panelRev also remounts the chat's folder panel.
   const [foldersRev, setFoldersRev] = useState(0)
+  const [panelRev, setPanelRev] = useState(0)
   const [folderName, setFolderName] = useState<string | null>(null)
   const unread = useChatStore((s) => s.unread)
   const directIds = useRef(new Set<string>())
@@ -57,6 +59,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   const folderChanged = useCallback(() => {
     reload()
     setFoldersRev((n) => n + 1)
+    setPanelRev((n) => n + 1)
   }, [reload])
   useEffect(() => {
     listShared().then(() => setCanAttach(true), () => setCanAttach(false))
@@ -101,6 +104,13 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
     return () => useRecordLabelStore.getState().setLabel(crumbKey, null)
   }, [crumbKey, crumbLabel])
 
+  // A file dropped where nothing accepts it must not make the browser open it and leave the app;
+  // the chat pane (and the files pane) handle the drops they do accept first.
+  const cancelFileDrop = {
+    onDragOver: (e: DragEvent) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() },
+    onDrop: (e: DragEvent) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() },
+  }
+
   let main
   if ((view.kind === 'channel' || view.kind === 'direct') && view.id) {
     main = (
@@ -114,8 +124,9 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
         teamId={channel ? teamId : undefined}
         folderId={channel?.folder_id}
         role={team?.role}
-        foldersRev={foldersRev}
+        foldersRev={panelRev}
         onFolderChanged={folderChanged}
+        onFoldersChanged={() => setFoldersRev((n) => n + 1)}
       />
     )
   } else if (view.kind === 'files' && teamId) {
@@ -142,7 +153,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
       height: `calc(100dvh - ${TOP_BAR}px)`,
       display: 'flex',
       flexDirection: phone ? 'column' : 'row',
-    }}>
+    }} {...cancelFileDrop}>
       {phone ? (
         <>
           <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}>

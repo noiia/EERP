@@ -25,7 +25,7 @@ vi.mock('./client', () => ({
 
 import { useBreadcrumbStore, useSessionStore } from '@eerp/core-front'
 import { Sidebar } from './Sidebar'
-import type { Role } from './client'
+import type { Channel, Role } from './client'
 
 const props = (role: Role) => ({
   teamId: 't1',
@@ -159,7 +159,7 @@ describe('Sidebar team management', () => {
     const { unmount } = render(<Sidebar {...props('owner')} />)
     expect(screen.getAllByRole('button', { name: /channel options/i })).toHaveLength(2)
     let list = await menu(/team options/i)
-    expect(within(list).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Rename team', 'Delete team', 'Leave team'])
+    expect(within(list).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Rename team', 'Groups', 'Delete team', 'Leave team'])
     unmount()
     render(<Sidebar {...props('member')} />)
     expect(screen.queryByRole('button', { name: /channel options/i })).toBeNull()
@@ -289,5 +289,26 @@ describe('Sidebar team management', () => {
       fireEvent.keyDown(screen.getByRole('link', { name: /Cy/ }), { key: 'ArrowUp', altKey: true })
       expect(orderDirect).toHaveBeenCalledWith(['d2', 'd1'])
     })
+  })
+
+  it('marks private channels with an accessible lock', () => {
+    const p = props('member')
+    p.channels = [{ ...p.channels[0], private: true } as Channel, p.channels[1]]
+    render(<Sidebar {...p} />)
+    expect(within(screen.getByRole('link', { name: /general/ })).getByLabelText('Private')).toBeInTheDocument()
+    expect(within(screen.getByRole('link', { name: /random/ })).queryByLabelText('Private')).toBeNull()
+  })
+
+  it('offers Manage access and Groups to owners only', () => {
+    const { unmount } = render(<Sidebar {...props('owner')} />)
+    fireEvent.click(screen.getByRole('button', { name: /channel options #general/i }))
+    expect(screen.getByRole('menuitem', { name: 'Manage access' })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Team options' }))
+    expect(screen.getByRole('menuitem', { name: 'Groups' })).toBeInTheDocument()
+    unmount()
+    render(<Sidebar {...props('member')} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Team options' }))
+    expect(screen.queryByRole('menuitem', { name: 'Groups' })).toBeNull()
   })
 })

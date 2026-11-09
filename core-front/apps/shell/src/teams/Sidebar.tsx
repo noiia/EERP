@@ -19,11 +19,13 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { AvatarWithPresence, avatarUrl, erpPath, IntentLink, T, useBreadcrumbStore, useSessionStore, useT } from '@eerp/core-front'
+import { AvatarWithPresence, avatarUrl, byPrefixAndName, erpPath, FontAwesomeIcon, IntentLink, T, useBreadcrumbStore, useSessionStore, useT } from '@eerp/core-front'
 import {
   createChannel, deleteChannel, deleteTeam, listFiles, openDirect, orderChannels, orderDirect, removeMember, renameChannel, updateTeam,
   type Channel, type DirectChat, type DirectoryUser, type Folder, type Member, type Role, type Team,
 } from './client'
+import { AccessDialog } from './AccessDialog'
+import { GroupsDialog } from './GroupsDialog'
 import { DirectoryPicker, MembersDialog } from './MembersDialog'
 
 export type WorkspaceView = { kind: 'channel' | 'direct' | 'files' | 'shared'; id?: string }
@@ -136,6 +138,8 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
   const [newDirect, setNewDirect] = useState(false)
   const [dmUser, setDmUser] = useState<DirectoryUser | null>(null)
   const [managing, setManaging] = useState(false)
+  const [groupsOpen, setGroupsOpen] = useState(false)
+  const [accessFor, setAccessFor] = useState<Channel | null>(null)
   const [dialogError, setDialogError] = useState('')
   const fail = (e: unknown) => setDialogError(e instanceof Error && e.message ? e.message : t('The change could not be saved.'))
   const owner = role === 'owner'
@@ -234,6 +238,7 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <NavItem href={`/teams/${teamId}/channels/${c.id}`} selected={view.kind === 'channel' && view.id === c.id} unread={unread[c.id] ?? c.unread}>
                     # {c.name}
+                    {c.private && <FontAwesomeIcon icon={byPrefixAndName.fas['lock']} aria-label={t('Private')} role="img" size="xs" style={{ marginLeft: 6 }} />}
                   </NavItem>
                 </Box>
                 {owner && (
@@ -292,10 +297,12 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
       <Menu anchorEl={menu?.anchor} open={!!menu} onClose={() => setMenu(null)}>
         {menu?.channel ? [
           <MenuItem key="rename" onClick={() => pick({ kind: 'renameChannel', channel: menu.channel! }, menu.channel!.name)}><T text="Rename channel" /></MenuItem>,
+          <MenuItem key="access" onClick={() => { setAccessFor(menu.channel!); setMenu(null) }}><T text="Manage access" /></MenuItem>,
           <MenuItem key="delete" onClick={() => pick({ kind: 'deleteChannel', channel: menu.channel! })}><T text="Delete channel" /></MenuItem>,
         ] : [
           ...(owner ? [
             <MenuItem key="rename" onClick={() => pick({ kind: 'renameTeam' }, team?.name ?? '')}><T text="Rename team" /></MenuItem>,
+            <MenuItem key="groups" onClick={() => { setGroupsOpen(true); setMenu(null) }}><T text="Groups" /></MenuItem>,
             <MenuItem key="delete" onClick={() => pick({ kind: 'deleteTeam' })}><T text="Delete team" /></MenuItem>,
           ] : []),
           <MenuItem key="leave" onClick={() => pick({ kind: 'leaveTeam' })}><T text="Leave team" /></MenuItem>,
@@ -318,6 +325,12 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
       </Dialog>
       {teamId && owner && (
         <MembersDialog open={managing} teamId={teamId} members={members} onClose={() => setManaging(false)} onChanged={onChanged} />
+      )}
+      {teamId && owner && (
+        <GroupsDialog open={groupsOpen} teamId={teamId} members={members} onClose={() => setGroupsOpen(false)} />
+      )}
+      {teamId && owner && accessFor && (
+        <AccessDialog open teamId={teamId} channel={accessFor} members={members} onClose={() => setAccessFor(null)} onSaved={() => { setAccessFor(null); onChanged() }} />
       )}
     </Box>
   )

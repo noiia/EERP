@@ -12,6 +12,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { T } from '@eerp/core-front'
 import type { Attachment } from './client'
+import { formatSize } from './FilesPane'
 
 // Raster types only: an SVG can carry script, so it is never inlined.
 const INLINE = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
@@ -39,7 +40,7 @@ export function ImageAttachments({ attachments }: { attachments: Attachment[] })
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 0.5 }}>
           {others.map((a) => a.deleted
             ? <Typography key={a.id} variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}><T text="File deleted" /></Typography>
-            : <Chip key={a.id} component="a" href={attachmentUrl(a)} clickable size="small" label={a.filename} />)}
+            : <Chip key={a.id} component="a" href={attachmentUrl(a)} clickable size="small" label={`${a.filename} (${formatSize(a.size)})`} />)}
         </Stack>
       )}
       <Dialog open={viewing !== null} onClose={() => setViewing(null)} maxWidth="lg">

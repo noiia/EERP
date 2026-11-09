@@ -246,3 +246,30 @@ msgstr ""
 
 msgid "Back"
 msgstr ""
+
+msgid "Manage access"
+msgstr ""
+
+msgid "Groups"
+msgstr ""
+
+msgid "Private"
+msgstr ""
+
+msgid "Open to the whole team"
+msgstr ""
+
+msgid "Only owners can see this conversation."
+msgstr ""
+
+msgid "People"
+msgstr ""
+
+msgid "Group name"
+msgstr ""
+
+msgid "New group"
+msgstr ""
+
+msgid "Delete group"
+msgstr ""

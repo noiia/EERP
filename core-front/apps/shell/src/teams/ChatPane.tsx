@@ -70,6 +70,7 @@ export function ChatPane({
   role,
   foldersRev = 0,
   onFolderChanged,
+  onFoldersChanged,
 }: {
   channelId: string
   title: string
@@ -83,6 +84,8 @@ export function ChatPane({
   foldersRev?: number
   /** The channel's folder may have changed: linked, or created/filled by files just sent. */
   onFolderChanged?: () => void
+  /** A subfolder was created/renamed/deleted in the panel: the sidebar's folder tree reloads. */
+  onFoldersChanged?: () => void
 }) {
   const t = useT()
   const narrow = useMediaQuery(useTheme().breakpoints.down('md'))
@@ -162,7 +165,7 @@ export function ChatPane({
   }
 
   const folderPanel = teamId && panel && (
-    <FolderPanel key={`${folderId}:${foldersRev}`} teamId={teamId} channelId={channelId} folderId={folderId} role={role} onLinked={() => onFolderChanged?.()} />
+    <FolderPanel key={`${folderId}:${foldersRev}`} teamId={teamId} channelId={channelId} folderId={folderId} role={role} onLinked={() => onFolderChanged?.()} onFoldersChanged={onFoldersChanged} />
   )
 
   return (

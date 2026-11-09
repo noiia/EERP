@@ -9,11 +9,11 @@ import { FilesPane } from './FilesPane'
 import { FolderPicker } from './FolderPicker'
 
 /** The right panel of a team conversation: its linked folder, or a way to link one. */
-export function FolderPanel({ teamId, channelId, folderId, role, onLinked }: { teamId: string; channelId: string; folderId?: string | null; role?: Role; onLinked: () => void }) {
+export function FolderPanel({ teamId, channelId, folderId, role, onLinked, onFoldersChanged }: { teamId: string; channelId: string; folderId?: string | null; role?: Role; onLinked: () => void; onFoldersChanged?: () => void }) {
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState('')
 
-  if (folderId) return <FilesPane teamId={teamId} rootFolderId={folderId} role={role} compact />
+  if (folderId) return <FilesPane teamId={teamId} rootFolderId={folderId} role={role} compact onFoldersChanged={onFoldersChanged} />
 
   const link = (folder: string) => {
     setError('')

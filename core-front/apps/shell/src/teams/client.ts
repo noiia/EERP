@@ -31,6 +31,17 @@ export interface Channel {
   name: string
   unread: number
   folder_id?: string | null
+  /** Owners-only conversation (an access list was set). */
+  private?: boolean
+}
+export interface Group {
+  id: string
+  name: string
+  user_ids: string[]
+}
+export interface Access {
+  user_ids: string[]
+  group_ids: string[]
 }
 export interface DirectChat {
   id: string
@@ -196,3 +207,11 @@ export const getShares = (file: string) => list<Share>(`/files/${file}/shares`)
 export const setShares = async (file: string, userIds: string[]) =>
   (await call<{ data: Share[] }>('PUT', `/files/${file}/shares`, { user_ids: userIds })).data
 export const listShared = () => list<SharedFile>('/shared')
+
+// Team groups and conversation access (owners)
+export const listGroups = (team: string) => list<Group>(`/${team}/groups`)
+export const createGroup = (team: string, g: { name: string; user_ids: string[] }) => call<Group>('POST', `/${team}/groups`, g)
+export const updateGroup = (team: string, id: string, g: { name: string; user_ids: string[] }) => call<Group>('PUT', `/${team}/groups/${id}`, g)
+export const deleteGroup = (team: string, id: string) => call<void>('DELETE', `/${team}/groups/${id}`)
+export const getAccess = (team: string, channel: string) => call<Access>('GET', `/${team}/channels/${channel}/access`)
+export const setAccess = (team: string, channel: string, a: Access) => call<Access>('PUT', `/${team}/channels/${channel}/access`, a)
