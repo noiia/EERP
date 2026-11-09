@@ -222,3 +222,6 @@ msgstr ""
 
 msgid "This folder no longer exists."
 msgstr ""
+
+msgid "Files"
+msgstr ""

@@ -19,7 +19,7 @@ vi.mock('./client', () => ({
   directory: () => Promise.resolve([]),
 }))
 
-import { handleChatFrame, notifyLiveReconnect } from '@eerp/core-front'
+import { handleChatFrame, notifyLiveReconnect, useRecordLabelStore } from '@eerp/core-front'
 import { TeamsWorkspace } from './TeamsWorkspace'
 import { useChatStore } from './chat-store'
 
@@ -45,6 +45,24 @@ describe('TeamsWorkspace', () => {
     await waitFor(() => expect(listMessages).toHaveBeenCalledTimes(2))
     expect(listMessages).toHaveBeenLastCalledWith('c1', undefined, 50)
     expect(await screen.findByText('hey')).toBeInTheDocument()
+  })
+
+  it('names the breadcrumb after the team and channel, not their ids', async () => {
+    const { unmount } = render(<TeamsWorkspace teamId="t1" view={{ kind: 'channel', id: 'c1' }} />)
+    await waitFor(() => expect(useRecordLabelStore.getState()).toMatchObject({ id: 'c1', label: 'Sales / # general' }))
+    unmount()
+    expect(useRecordLabelStore.getState().label).toBeNull()
+  })
+
+  it('names a direct conversation after the other person', async () => {
+    listDirect.mockResolvedValue([{ id: 'd1', other_user: { id: 'u2', display_name: 'Bob', email: 'b@x' }, unread: 0, last_message_at: null }])
+    render(<TeamsWorkspace view={{ kind: 'direct', id: 'd1' }} />)
+    await waitFor(() => expect(useRecordLabelStore.getState()).toMatchObject({ id: 'd1', label: 'Bob' }))
+  })
+
+  it('names the files page after the team', async () => {
+    render(<TeamsWorkspace teamId="t1" view={{ kind: 'files' }} />)
+    await waitFor(() => expect(useRecordLabelStore.getState()).toMatchObject({ id: 'files', label: 'Sales / Files' }))
   })
 
   it('opens the channel read-only for a guest, without attachments', async () => {

@@ -5,7 +5,7 @@ import Button from '@mui/material/Button'
 import Drawer from '@mui/material/Drawer'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { layout, onChatFrame, onLiveReconnect, T, useSessionStore, useT } from '@eerp/core-front'
+import { layout, onChatFrame, onLiveReconnect, T, useRecordLabelStore, useSessionStore, useT } from '@eerp/core-front'
 import { getTeam, listChannels, listDirect, listMembers, listShared, type Channel, type DirectChat, type Member, type Team } from './client'
 import { useChatStore, type ChatMessageFrame, type ChatReactionFrame } from './chat-store'
 import { ChatPane } from './ChatPane'
@@ -79,6 +79,21 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   const channel = view.kind === 'channel' ? channels.find((c) => c.id === view.id) : undefined
   const candidates = (direct ? [{ user_id: direct.other_user.id, display_name: direct.other_user.display_name }] : members)
     .filter((m) => m.user_id !== me)
+
+  // The breadcrumb's last crumb is the URL's last segment (a channel id, or "files") unless a
+  // label is reported for it — the same store a record form reports its title to.
+  const crumbKey = view.kind === 'files' ? 'files' : view.id
+  const crumbLabel = direct
+    ? direct.other_user.display_name || t('Disabled user')
+    : !team ? null
+    : channel ? `${team.name} / # ${channel.name}`
+    : view.kind === 'files' ? `${team.name} / ${t('Files')}`
+    : null
+  useEffect(() => {
+    if (!crumbKey || !crumbLabel) return
+    useRecordLabelStore.getState().setLabel(crumbKey, crumbLabel)
+    return () => useRecordLabelStore.getState().setLabel(crumbKey, null)
+  }, [crumbKey, crumbLabel])
 
   let main
   if ((view.kind === 'channel' || view.kind === 'direct') && view.id) {

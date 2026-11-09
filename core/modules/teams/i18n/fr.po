@@ -223,3 +223,6 @@ msgstr "Utilisateur désactivé"
 
 msgid "This folder no longer exists."
 msgstr "Ce dossier n'existe plus."
+
+msgid "Files"
+msgstr "Fichiers"
