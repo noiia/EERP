@@ -32,6 +32,12 @@ describe('palette', () => {
 })
 
 describe('buildAppTheme', () => {
+  it('falls back to the default for a cleared or half-typed color instead of throwing', () => {
+    const theme = buildAppTheme({ ...DEFAULT_PALETTE, goBlue: '', deepOcean: '#12' }, 'dark')
+    expect(theme.palette.secondary.main).toBe(DEFAULT_PALETTE.deepOcean)
+    expect(buildAppTheme({ ...DEFAULT_PALETTE, goBlue: '' }).palette.primary.main).toBe(DEFAULT_PALETTE.goBlue)
+  })
+
   it('maps brand colors onto the MUI palette (light)', () => {
     const theme = buildAppTheme(DEFAULT_PALETTE, 'light')
     expect(theme.palette.mode).toBe('light')

@@ -1,7 +1,7 @@
 'use client'
 import Grow from '@mui/material/Grow'
 import { createTheme, getContrastRatio, lighten, type Theme } from '@mui/material/styles'
-import { DEFAULT_PALETTE, type ThemePalette } from './palette'
+import { DEFAULT_PALETTE, isHexColor, type BrandColorKey, type ThemePalette } from './palette'
 import type { ThemeMode } from './ui-store'
 import {
   elevation,
@@ -40,10 +40,18 @@ function readablePrimary(primary: string, paper: string): string {
 }
 
 export function buildAppTheme(
-  palette: ThemePalette = DEFAULT_PALETTE,
+  editedPalette: ThemePalette = DEFAULT_PALETTE,
   mode: ThemeMode = 'light',
 ): Theme {
   const isLight = mode === 'light'
+  // A slot being typed in Settings (empty, "#12"…) would make createTheme throw and
+  // take every page down: it falls back to its default until it's a valid hex again.
+  const palette = Object.fromEntries(
+    (Object.keys(DEFAULT_PALETTE) as BrandColorKey[]).map((k) => [
+      k,
+      isHexColor(editedPalette[k] ?? '') ? editedPalette[k] : DEFAULT_PALETTE[k],
+    ]),
+  ) as ThemePalette
 
   const theme = createTheme({
     // Raise the contrast threshold so MUI picks the higher-contrast text on each palette
