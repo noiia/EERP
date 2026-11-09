@@ -40,6 +40,9 @@ type Channel struct {
 	Kind      string     `db:"kind"`
 	Name      string     `db:"name"`
 	DirectKey string     `db:"direct_key"`
+	// Restricted: only owners and the access list see the channel. Set only by an
+	// explicit access-list PUT, so an access list emptied by a side effect stays private.
+	Restricted bool `db:"restricted"`
 }
 
 type ChannelMember struct {

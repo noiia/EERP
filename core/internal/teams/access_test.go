@@ -347,3 +347,52 @@ func TestAccess_ReplaceAndOpen(t *testing.T) {
 		}
 	}
 }
+
+// assertStaysPrivate: u (an unlisted member) can't reach the emptied channel in any way, owners still see it as private.
+func (f privFixture) assertStaysPrivate(t *testing.T, u uuid.UUID) {
+	t.Helper()
+	if rec := serve(t, f.h.ListMessages, "GET", "", f.as(u), map[string]string{"channel": f.secret.String()}); rec.Code != 404 {
+		t.Fatalf("messages: %d", rec.Code)
+	}
+	if _, sees := f.seesInList(t, u); sees {
+		t.Fatal("channel in the unlisted member's list")
+	}
+	f.post(t, f.owner, f.secret, `{"body":"still private","mentions":["`+u.String()+`"]}`)
+	if fr := f.hub.frames[len(f.hub.frames)-1]; slices.Contains(fr.users, u) {
+		t.Fatalf("in audience: %v", fr.users)
+	}
+	for _, n := range f.notes.sent {
+		if n.user == u {
+			t.Fatal("mention reached the unlisted member")
+		}
+	}
+	if b := serve(t, f.h.ListTeams, "GET", "", f.as(u), nil).Body.String(); !strings.Contains(b, `"unread":0`) {
+		t.Fatalf("unread: %s", b)
+	}
+	_, rows := f.channels(t, f.owner)
+	if !slices.ContainsFunc(rows, func(r channelRow) bool { return r.ID == f.secret && r.Private }) {
+		t.Fatalf("owner row: %+v", rows)
+	}
+}
+
+func TestPrivateChannel_DeletingLastGroupKeepsItPrivate(t *testing.T) {
+	f := newPrivFixture(t)
+	if rec := serve(t, f.h.PutChannelAccess, "PUT", `{"user_ids":[],"group_ids":["`+f.group.String()+`"]}`, f.as(f.owner), f.chanP(f.secret)); rec.Code != 200 {
+		t.Fatalf("access: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.DeleteGroup, "DELETE", "", f.as(f.owner), map[string]string{"id": f.team.String(), "group": f.group.String()}); rec.Code != 204 {
+		t.Fatalf("delete group: %d", rec.Code)
+	}
+	f.assertStaysPrivate(t, f.unlisted)
+}
+
+func TestPrivateChannel_LastListedUserLeavingKeepsItPrivate(t *testing.T) {
+	f := newPrivFixture(t)
+	if rec := serve(t, f.h.PutChannelAccess, "PUT", `{"user_ids":["`+f.member.String()+`"],"group_ids":[]}`, f.as(f.owner), f.chanP(f.secret)); rec.Code != 200 {
+		t.Fatalf("access: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.RemoveMember, "DELETE", "", f.as(f.member), map[string]string{"id": f.team.String(), "user": f.member.String()}); rec.Code != 204 {
+		t.Fatalf("leave: %d", rec.Code)
+	}
+	f.assertStaysPrivate(t, f.unlisted)
+}

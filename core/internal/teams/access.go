@@ -18,10 +18,10 @@ var (
 	ErrGroupExists = errors.New("teams: a group with this name already exists")
 )
 
-// sees is THE visibility rule's SQL (owners aside): channel c is open (empty access
-// list) or lists user directly or through a group. user is a SQL expression.
+// sees is THE visibility rule's SQL (owners aside): channel c isn't restricted or
+// lists user directly or through a group. user is a SQL expression.
 func sees(user string) string {
-	return `(NOT EXISTS (SELECT 1 FROM chat_channel_access a WHERE a.channel_id = c.id AND a.deleted_at IS NULL)
+	return `(NOT c.restricted
 		OR EXISTS (SELECT 1 FROM chat_channel_access a WHERE a.channel_id = c.id AND a.deleted_at IS NULL
 			AND (a.user_id = ` + user + ` OR a.group_id IN (SELECT gm.group_id FROM team_group_member gm
 				WHERE gm.user_id = ` + user + ` AND gm.deleted_at IS NULL))))`
@@ -72,21 +72,6 @@ func (r *Repository) ChannelAudience(ctx context.Context, tenant uuid.UUID, ch C
 		return nil, fmt.Errorf("teams: channel audience: %w", err)
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
-}
-
-// privateChannels reports which of the channels have a non-empty access list.
-func (r *Repository) privateChannels(ctx context.Context, tenant uuid.UUID, channels []uuid.UUID) (map[uuid.UUID]bool, error) {
-	rows, err := r.db.Query(ctx, `SELECT DISTINCT channel_id FROM chat_channel_access
-		WHERE tenant_id = $1 AND channel_id = ANY($2) AND deleted_at IS NULL`, tenant, channels)
-	if err != nil {
-		return nil, fmt.Errorf("teams: private channels: %w", err)
-	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
-	out := make(map[uuid.UUID]bool, len(ids))
-	for _, id := range ids {
-		out[id] = true
-	}
-	return out, err
 }
 
 // GroupView is a group with its members, also the wire shape.
@@ -237,7 +222,8 @@ func (r *Repository) AccessList(ctx context.Context, tenant, channel uuid.UUID) 
 }
 
 // SetAccessList replaces the team channel's whole access list; users must be team
-// members and groups the team's own.
+// members and groups the team's own. It is the only writer of restricted: an
+// explicit empty list is what reopens a channel.
 func (r *Repository) SetAccessList(ctx context.Context, tenant, team, channel uuid.UUID, users, groups []uuid.UUID) error {
 	if users == nil {
 		users = []uuid.UUID{}
@@ -259,6 +245,10 @@ func (r *Repository) SetAccessList(ctx context.Context, tenant, team, channel uu
 		}
 		if missing {
 			return ErrOutsideTeam
+		}
+		if _, err := tx.Exec(ctx, `UPDATE chat_channel SET restricted = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+			tenant, channel, len(users)+len(groups) > 0); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM chat_channel_access WHERE tenant_id = $1 AND channel_id = $2`, tenant, channel); err != nil {
 			return err

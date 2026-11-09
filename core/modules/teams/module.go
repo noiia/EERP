@@ -55,6 +55,15 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_group_member ON team_group_member (group_id, user_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_access_user ON chat_channel_access (channel_id, user_id) WHERE user_id IS NOT NULL AND deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_access_group ON chat_channel_access (channel_id, group_id) WHERE group_id IS NOT NULL AND deleted_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_team_group_member_user ON team_group_member (user_id)`,
+		`ALTER TABLE chat_channel ADD COLUMN IF NOT EXISTS restricted boolean`,
+		`UPDATE chat_channel SET restricted = false WHERE restricted IS NULL`,
+		`ALTER TABLE chat_channel ALTER COLUMN restricted SET DEFAULT false, ALTER COLUMN restricted SET NOT NULL`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_chat_channel_access_one') THEN
+				ALTER TABLE chat_channel_access ADD CONSTRAINT ck_chat_channel_access_one CHECK ((user_id IS NULL) <> (group_id IS NULL));
+			END IF;
+		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_message_channel_created ON chat_message (channel_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_team_file_team_folder ON team_file (team_id, folder_id)`,
 	} {

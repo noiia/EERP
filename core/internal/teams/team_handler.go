@@ -330,7 +330,7 @@ func toChannelJSON(ch Channel) channelJSON {
 	if ch.TeamID != nil {
 		t = *ch.TeamID
 	}
-	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0, false}
+	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0, ch.Restricted}
 }
 
 func (h *Handler) ListChannels(c *echo.Context) error {
@@ -358,15 +358,11 @@ func (h *Handler) ListChannels(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	private, err := h.repo.privateChannels(ctx, id.TenantID, ids)
-	if err != nil {
-		return err
-	}
 	out := make([]channelJSON, 0, len(ids))
 	for _, ch := range all {
 		if visible[ch.ID] {
 			j := toChannelJSON(ch)
-			j.Unread, j.Private = unread[ch.ID], private[ch.ID]
+			j.Unread = unread[ch.ID]
 			out = append(out, j)
 		}
 	}
@@ -424,13 +420,7 @@ func (h *Handler) RenameChannel(c *echo.Context) error {
 	case err != nil:
 		return err
 	}
-	private, err := h.repo.privateChannels(ctx, auth.MustIdentity(ctx).TenantID, []uuid.UUID{ch.ID})
-	if err != nil {
-		return err
-	}
-	j := toChannelJSON(ch)
-	j.Private = private[ch.ID]
-	return c.JSON(http.StatusOK, j)
+	return c.JSON(http.StatusOK, toChannelJSON(ch))
 }
 
 func (h *Handler) DeleteChannel(c *echo.Context) error {

@@ -346,12 +346,15 @@ func (r *Repository) RenameChannel(ctx context.Context, tenant, team, id uuid.UU
 	if err != nil {
 		return Channel{}, err
 	}
-	ch, err := r.findChannel(ctx, tenant, team, id)
-	if err != nil {
+	if _, err := r.findChannel(ctx, tenant, team, id); err != nil {
 		return Channel{}, err
 	}
-	ch.Name = name
-	return r.channels.Update(ctx, ch, id)
+	// Name only: a full-row update could write back a stale restricted.
+	if _, err := r.channels.UpdateQuery().Set("name", name).Set("updated_at", time.Now()).
+		Where(orm.Cond("tenant_id = $1", tenant)).Where(orm.Cond("id = $1", id)).Exec(ctx, r.db); err != nil {
+		return Channel{}, err
+	}
+	return r.findChannel(ctx, tenant, team, id)
 }
 
 // DeleteChannel removes the channel with its messages, attachments, reactions
