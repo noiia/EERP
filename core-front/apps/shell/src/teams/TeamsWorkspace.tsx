@@ -5,7 +5,7 @@ import Button from '@mui/material/Button'
 import Drawer from '@mui/material/Drawer'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { layout, onChatFrame, T, useSessionStore, useT } from '@eerp/core-front'
+import { layout, onChatFrame, onLiveReconnect, T, useSessionStore, useT } from '@eerp/core-front'
 import { getTeam, listChannels, listDirect, listMembers, listShared, type Channel, type DirectChat, type Member, type Team } from './client'
 import { useChatStore, type ChatMessageFrame, type ChatReactionFrame } from './chat-store'
 import { ChatPane } from './ChatPane'
@@ -28,6 +28,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   const [directs, setDirects] = useState<DirectChat[]>([])
   // Attachments need file storage; Go mounts /shared only when S3 is configured.
   const [canAttach, setCanAttach] = useState(false)
+  const [foldersRev, setFoldersRev] = useState(0)
   const unread = useChatStore((s) => s.unread)
   const directIds = useRef(new Set<string>())
 
@@ -64,6 +65,13 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
     if (!frame.team_id && !directIds.current.has(frame.channel_id)) reloadDirects()
   }), [reloadDirects])
 
+  // Frames sent while the socket was down are not replayed: re-read the sidebar and the open channel.
+  useEffect(() => onLiveReconnect(() => {
+    reload()
+    const open = useChatStore.getState().open
+    if (open) useChatStore.getState().load(open).catch(() => {})
+  }), [reload])
+
   // Close the drawer after navigating from it.
   useEffect(() => setDrawer(false), [view.kind, view.id])
 
@@ -85,7 +93,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
       />
     )
   } else if (view.kind === 'files' && teamId) {
-    main = <FilesPane teamId={teamId} folderId={view.id} role={team?.role} />
+    main = <FilesPane teamId={teamId} folderId={view.id} role={team?.role} onFoldersChanged={() => setFoldersRev((n) => n + 1)} />
   } else if (view.kind === 'shared') {
     main = <SharedPane />
   } else {
@@ -97,7 +105,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   }
 
   const sidebar = (
-    <Sidebar teamId={teamId} role={team?.role} members={members} channels={channels} directs={directs} unread={unread} view={view} onChanged={reload} />
+    <Sidebar teamId={teamId} team={team} role={team?.role} foldersRev={foldersRev} members={members} channels={channels} directs={directs} unread={unread} view={view} onChanged={reload} />
   )
 
   return (

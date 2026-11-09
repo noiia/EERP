@@ -93,6 +93,35 @@ describe('chat-store', () => {
     expect(useChatStore.getState().hasMore.c1).toBe(false)
   })
 
+  it('returning to a channel that kept receiving shows the fresh page in order', async () => {
+    listMessages.mockResolvedValueOnce([msg('m2', '2026-01-02T00:00:00.5Z'), msg('m1', '2026-01-01T00:00:00Z')])
+    await useChatStore.getState().load('c1')
+    useChatStore.getState().close('c1')
+    useChatStore.getState().receive(frame(msg('m3', '2026-01-03T00:00:00Z')))
+    // the fresh page no longer includes m1; a frame lands mid-load with a trimmed fraction
+    let resolve!: (v: unknown) => void
+    listMessages.mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    const loading = useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m4', '2026-01-03T00:00:00.1Z')))
+    resolve([msg('m3', '2026-01-03T00:00:00.000Z'), msg('m2', '2026-01-02T00:00:00.5Z')])
+    await loading
+    expect(useChatStore.getState().messages.c1.map((m) => m.id)).toEqual(['m2', 'm3', 'm4'])
+  })
+
+  it('switching away after loadOlder and back drops the older pages', async () => {
+    listMessages.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => msg(`n${49 - i}`, `2026-02-01T00:00:${String(49 - i).padStart(2, '0')}Z`)))
+    await useChatStore.getState().load('c1')
+    listMessages.mockResolvedValueOnce([msg('o1', '2026-01-01T00:00:00Z')])
+    await useChatStore.getState().loadOlder('c1')
+    useChatStore.getState().close('c1')
+    listMessages.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => msg(`n${49 - i}`, `2026-02-01T00:00:${String(49 - i).padStart(2, '0')}Z`)))
+    await useChatStore.getState().load('c1')
+    const ids = useChatStore.getState().messages.c1.map((m) => m.id)
+    expect(ids[0]).toBe('n0')
+    expect(ids).toHaveLength(50)
+    expect(useChatStore.getState().hasMore.c1).toBe(true)
+  })
+
   it('a reaction frame replaces counts while keeping mine', async () => {
     listMessages.mockResolvedValue([msg('m1', '2026-01-01T00:00:00Z', { reactions: [{ emoji: '👍', count: 1, mine: true }] })])
     await useChatStore.getState().load('c1')

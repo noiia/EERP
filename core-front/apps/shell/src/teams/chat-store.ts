@@ -53,9 +53,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ open: channel, unread: { ...get().unread, [channel]: 0 } })
     void markRead(channel).catch(() => {})
     const page = (await listMessages(channel, undefined, PAGE)).reverse()
-    // Frames that arrived while the page was loading are kept.
+    // Keep only cached messages newer than the page (frames that landed mid-load): older
+    // cached ones would render below it. Date.parse, since Go trims trailing fractional zeros.
+    const newest = page.length ? Date.parse(page[page.length - 1].created_at) : -Infinity
+    const fresh = (get().messages[channel] ?? []).filter((m) => Date.parse(m.created_at) >= newest)
     set({
-      messages: { ...get().messages, [channel]: merge(page, get().messages[channel] ?? []) },
+      messages: { ...get().messages, [channel]: merge(page, fresh) },
       hasMore: { ...get().hasMore, [channel]: page.length === PAGE },
     })
   },

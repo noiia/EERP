@@ -84,14 +84,14 @@ export function MembersDialog({ open, teamId, members, onClose, onChanged }: {
         {error && <Typography color="error" variant="body2" sx={{ mt: 1 }}>{error}</Typography>}
         <List>
           {members.map((m) => (
-            <ListItem key={m.user_id} aria-label={m.display_name} disableGutters
+            <ListItem key={m.user_id} aria-label={m.display_name || t('Disabled user')} disableGutters
               secondaryAction={
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                   <RoleSelect value={m.role} onChange={(r) => run(setMemberRole(teamId, m.user_id, r))} />
                   <Button color="error" onClick={() => run(removeMember(teamId, m.user_id))}><T text="Remove" /></Button>
                 </Stack>
               }>
-              <ListItemText primary={m.display_name} secondary={m.email} />
+              <ListItemText primary={m.display_name || t('Disabled user')} secondary={m.email} />
             </ListItem>
           ))}
         </List>

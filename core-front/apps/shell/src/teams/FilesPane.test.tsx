@@ -119,4 +119,28 @@ describe('FilesPane', () => {
     render(<FilesPane teamId="t1" role="owner" />)
     expect(await screen.findByText(/not configured/i)).toBeInTheDocument()
   })
+
+  it('says a stale folder no longer exists, with a link to the root', async () => {
+    c.listFiles.mockRejectedValue(Object.assign(new Error('No such folder.'), { status: 404, code: 'NOT_FOUND' }))
+    render(<FilesPane teamId="t1" folderId="gone" role="owner" />)
+    expect(await screen.findByText('This folder no longer exists.')).toBeInTheDocument()
+    expect(screen.queryByText(/not configured/i)).toBeNull()
+    expect(screen.getByRole('link', { name: 'All files' })).toHaveAttribute('href', expect.stringMatching(/\/teams\/t1\/files$/))
+  })
+
+  it('signals folder changes but not file ones', async () => {
+    const onFoldersChanged = vi.fn()
+    c.createFolder.mockResolvedValue({ id: 'f9' })
+    render(<FilesPane teamId="t1" role="owner" onFoldersChanged={onFoldersChanged} />)
+    const row = (await screen.findByText('theirs.pdf')).closest('tr') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(c.deleteFile).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(onFoldersChanged).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Plans' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onFoldersChanged).toHaveBeenCalledTimes(1))
+  })
 })

@@ -1,23 +1,31 @@
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, prefetch: vi.fn() }) }))
 const listFiles = vi.fn<(team: string, folder?: string) => Promise<unknown>>(() => Promise.reject(Object.assign(new Error(''), { status: 404 })))
 const createChannel = vi.fn()
 const openDirect = vi.fn()
+const m = { updateTeam: vi.fn(), deleteTeam: vi.fn(), removeMember: vi.fn(), renameChannel: vi.fn(), deleteChannel: vi.fn() }
 vi.mock('./client', () => ({
+  updateTeam: (...a: unknown[]) => m.updateTeam(...a),
+  deleteTeam: (...a: unknown[]) => m.deleteTeam(...a),
+  removeMember: (...a: unknown[]) => m.removeMember(...a),
+  renameChannel: (...a: unknown[]) => m.renameChannel(...a),
+  deleteChannel: (...a: unknown[]) => m.deleteChannel(...a),
   listFiles: (t: string, f?: string) => listFiles(t, f),
   directory: () => Promise.resolve([{ id: 'u2', display_name: 'Bob', email: 'b@x' }]),
   createChannel: (...a: unknown[]) => createChannel(...a),
   openDirect: (...a: unknown[]) => openDirect(...a),
 }))
 
+import { useSessionStore } from '@eerp/core-front'
 import { Sidebar } from './Sidebar'
 import type { Role } from './client'
 
 const props = (role: Role) => ({
   teamId: 't1',
+  team: { id: 't1', name: 'Sales', description: 'desk', role, member_count: 1, unread: 0 },
   role,
   members: [{ user_id: 'u1', display_name: 'Alice', email: 'a@x', role: 'owner' as Role }],
   channels: [
@@ -116,5 +124,104 @@ describe('Sidebar actions', () => {
     fireEvent.click(await screen.findByRole('option', { name: /Bob/ }))
     fireEvent.click(screen.getByRole('button', { name: /^start$/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Unknown user')
+  })
+})
+
+describe('Sidebar team management', () => {
+  beforeEach(() => {
+    for (const f of Object.values(m)) f.mockReset().mockResolvedValue(undefined)
+    push.mockReset()
+    useSessionStore.setState({ identity: { userId: 'me' } } as never)
+  })
+  const menu = async (button: RegExp) => {
+    fireEvent.click(screen.getByRole('button', { name: button }))
+    return screen.findByRole('menu')
+  }
+
+  it('offers rename/delete and channel menus to owners, only leave to others', async () => {
+    const { unmount } = render(<Sidebar {...props('owner')} />)
+    expect(screen.getAllByRole('button', { name: /channel options/i })).toHaveLength(2)
+    let list = await menu(/team options/i)
+    expect(within(list).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Rename team', 'Delete team', 'Leave team'])
+    unmount()
+    render(<Sidebar {...props('member')} />)
+    expect(screen.queryByRole('button', { name: /channel options/i })).toBeNull()
+    list = await menu(/team options/i)
+    expect(within(list).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Leave team'])
+  })
+
+  it('renames the team, keeping its description', async () => {
+    const p = props('owner')
+    render(<Sidebar {...p} />)
+    fireEvent.click(within(await menu(/team options/i)).getByText('Rename team'))
+    const dialog = await screen.findByRole('dialog', { name: 'Rename team' })
+    fireEvent.change(within(dialog).getByLabelText(/name/i), { target: { value: ' Ops ' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(m.updateTeam).toHaveBeenCalledWith('t1', 'Ops', 'desk'))
+    expect(p.onChanged).toHaveBeenCalled()
+  })
+
+  it('shows Go\'s refusal when the last owner tries to leave', async () => {
+    m.removeMember.mockRejectedValue(Object.assign(new Error('A team needs at least one owner.'), { status: 409, code: 'LAST_OWNER' }))
+    render(<Sidebar {...props('owner')} />)
+    fireEvent.click(within(await menu(/team options/i)).getByText('Leave team'))
+    const dialog = await screen.findByRole('dialog', { name: 'Leave team' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('A team needs at least one owner.')
+    expect(m.removeMember).toHaveBeenCalledWith('t1', 'me')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('leaves the team and goes back to the dashboard', async () => {
+    render(<Sidebar {...props('member')} />)
+    fireEvent.click(within(await menu(/team options/i)).getByText('Leave team'))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/app/teams'))
+  })
+
+  it('deletes the team after confirmation and goes back to the dashboard', async () => {
+    render(<Sidebar {...props('owner')} />)
+    fireEvent.click(within(await menu(/team options/i)).getByText('Delete team'))
+    expect(m.deleteTeam).not.toHaveBeenCalled()
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Delete team' })).getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/app/teams'))
+    expect(m.deleteTeam).toHaveBeenCalledWith('t1')
+  })
+
+  it('renames a channel and shows the last-channel refusal on delete', async () => {
+    m.deleteChannel.mockRejectedValue(Object.assign(new Error('A team needs at least one channel.'), { status: 409, code: 'LAST_CHANNEL' }))
+    const p = props('owner')
+    render(<Sidebar {...p} />)
+    fireEvent.click(within(await menu(/channel options #random/i)).getByText('Rename channel'))
+    let dialog = await screen.findByRole('dialog', { name: 'Rename channel' })
+    fireEvent.change(within(dialog).getByLabelText(/name/i), { target: { value: 'misc' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(m.renameChannel).toHaveBeenCalledWith('t1', 'c2', 'misc'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(within(await menu(/channel options #general/i)).getByText('Delete channel'))
+    dialog = await screen.findByRole('dialog', { name: 'Delete channel' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('A team needs at least one channel.')
+  })
+
+  it('leaves the deleted open channel for the team page', async () => {
+    render(<Sidebar {...props('owner')} />)
+    fireEvent.click(within(await menu(/channel options #general/i)).getByText('Delete channel'))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/app/teams/t1'))
+    expect(m.deleteChannel).toHaveBeenCalledWith('t1', 'c1')
+  })
+
+  it('names a disabled member and reloads the folder tree when the files pane changes folders', async () => {
+    listFiles.mockResolvedValue({ folders: [{ id: 'f1', name: 'Docs', parent_id: null, created_by: 'u1' }] })
+    const p = { ...props('member'), members: [{ user_id: 'u9', display_name: '', email: '', role: 'member' as Role }] }
+    const { rerender } = render(<Sidebar {...p} />)
+    expect(screen.getByText('Disabled user')).toBeInTheDocument()
+    await screen.findByRole('link', { name: 'Docs' })
+    const before = listFiles.mock.calls.length
+    listFiles.mockResolvedValue({ folders: [{ id: 'f1', name: 'Docs', parent_id: null, created_by: 'u1' }, { id: 'f3', name: 'Plans', parent_id: null, created_by: 'u1' }] })
+    rerender(<Sidebar {...p} foldersRev={1} />)
+    expect(await screen.findByRole('link', { name: 'Plans' })).toBeInTheDocument()
+    expect(listFiles.mock.calls.length).toBe(before + 1)
   })
 })

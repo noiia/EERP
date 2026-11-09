@@ -41,5 +41,11 @@ describe('teams client', () => {
     fetchMock.mockImplementation(async () => new Response('{"message":"Not Found"}', { status: 404 }))
     await expect(listFiles('t1')).rejects.toMatchObject({ status: 404 })
     await expect(listFiles('t1')).rejects.toBeInstanceOf(TeamsApiError)
+    await expect(listFiles('t1')).rejects.toMatchObject({ code: undefined })
+  })
+
+  it('carries the Go error code', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'No such folder.' } }), { status: 404 }))
+    await expect(listFiles('t1', 'f9')).rejects.toMatchObject({ status: 404, code: 'NOT_FOUND', message: 'No such folder.' })
   })
 })

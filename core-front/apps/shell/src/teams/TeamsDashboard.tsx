@@ -47,7 +47,7 @@ export function TeamsDashboard() {
         <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' } }}>
           <Tile href="/teams/direct" title={t('Direct messages')} />
           {teams.map((x) => (
-            <Tile key={x.id} href={`/teams/${x.id}`} title={x.name} subtitle={String(x.member_count)} unread={x.unread} />
+            <Tile key={x.id} href={`/teams/${x.id}`} title={x.name} subtitle={`${t('Members')}: ${x.member_count}`} unread={x.unread} />
           ))}
         </Box>
       </Stack>

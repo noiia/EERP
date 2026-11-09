@@ -35,38 +35,49 @@ type Dlg =
   | { kind: 'share'; id: string }
 
 /** The team's file manager: a folder listing with upload, rename, move, share and delete. */
-export function FilesPane({ teamId, folderId, role }: { teamId: string; folderId?: string; role?: Role }) {
+export function FilesPane({ teamId, folderId, role, onFoldersChanged }: { teamId: string; folderId?: string; role?: Role; onFoldersChanged?: () => void }) {
   const t = useT()
   const me = useSessionStore((s) => s.identity?.userId)
   const [listing, setListing] = useState<FolderListing | null>(null)
   const [missing, setMissing] = useState(false)
+  const [gone, setGone] = useState(false)
   const [error, setError] = useState('')
   const [dlg, setDlg] = useState<Dlg | null>(null)
   const [name, setName] = useState('')
   const input = useRef<HTMLInputElement>(null)
 
   const reload = useCallback(() => {
-    listFiles(teamId, folderId).then((l) => { setListing(l); setMissing(false) }).catch((e: unknown) => {
-      // Go mounts the files routes only when S3 is configured.
-      if ((e as { status?: number }).status === 404) setMissing(true)
+    listFiles(teamId, folderId).then((l) => { setListing(l); setMissing(false); setGone(false) }).catch((e: unknown) => {
+      const { status, code } = e as { status?: number; code?: string }
+      // Go mounts the files routes only when S3 is configured: an unmounted route's 404 has no Go error code.
+      if (status === 404 && !code) setMissing(true)
+      else if (status === 404) setGone(true)
       else setError(e instanceof Error ? e.message : t('The change could not be saved.'))
     })
   }, [teamId, folderId, t])
   useEffect(reload, [reload])
 
-  const run = (p: Promise<unknown>) => {
+  const run = (p: Promise<unknown>, folders = false) => {
     setError('')
-    p.then(() => { setDlg(null); reload() }).catch((e: unknown) => setError(e instanceof Error ? e.message : t('The change could not be saved.')))
+    p.then(() => { setDlg(null); reload(); if (folders) onFoldersChanged?.() }).catch((e: unknown) => setError(e instanceof Error ? e.message : t('The change could not be saved.')))
   }
   const canEdit = (owner: string) => role === 'owner' || (role === 'member' && owner === me)
   const canWrite = role === 'owner' || role === 'member'
 
   if (missing) return <Typography color="text.secondary" sx={{ p: 3 }} data-testid="teams-files-pane"><T text="File storage is not configured." /></Typography>
+  if (gone) {
+    return (
+      <Box sx={{ p: 3 }} data-testid="teams-files-pane">
+        <Typography color="text.secondary"><T text="This folder no longer exists." /></Typography>
+        <Link component={IntentLink} href={erpPath(`/teams/${teamId}/files`)} underline="hover"><T text="All files" /></Link>
+      </Box>
+    )
+  }
 
   const submitName = () => {
     if (!dlg || !name.trim()) return
-    if (dlg.kind === 'newFolder') run(createFolder(teamId, name.trim(), folderId))
-    else if (dlg.kind === 'rename') run(dlg.target === 'file' ? updateFile(teamId, dlg.id, { name: name.trim() }) : updateFolder(teamId, dlg.id, { name: name.trim() }))
+    if (dlg.kind === 'newFolder') run(createFolder(teamId, name.trim(), folderId), true)
+    else if (dlg.kind === 'rename') run(dlg.target === 'file' ? updateFile(teamId, dlg.id, { name: name.trim() }) : updateFolder(teamId, dlg.id, { name: name.trim() }), dlg.target === 'folder')
   }
   const openName = (d: Dlg, initial = '') => { setName(initial); setDlg(d) }
 
@@ -149,7 +160,7 @@ export function FilesPane({ teamId, folderId, role }: { teamId: string; folderId
         <DialogActions>
           <Button onClick={() => setDlg(null)}><T text="Cancel" /></Button>
           <Button color="error" variant="contained" onClick={() => {
-            if (dlg?.kind === 'delete') run(dlg.target === 'file' ? deleteFile(teamId, dlg.id) : deleteFolder(teamId, dlg.id))
+            if (dlg?.kind === 'delete') run(dlg.target === 'file' ? deleteFile(teamId, dlg.id) : deleteFolder(teamId, dlg.id), dlg.target === 'folder')
           }}><T text="Delete" /></Button>
         </DialogActions>
       </Dialog>
@@ -157,7 +168,7 @@ export function FilesPane({ teamId, folderId, role }: { teamId: string; folderId
       <FolderPicker open={dlg?.kind === 'move'} teamId={teamId} moveError={dlg?.kind === 'move' ? error : undefined} exclude={dlg?.kind === 'move' && dlg.target === 'folder' ? dlg.id : undefined} onClose={() => setDlg(null)}
         onPick={(folder) => {
           if (dlg?.kind !== 'move') return
-          run(dlg.target === 'file' ? updateFile(teamId, dlg.id, { folder_id: folder }) : updateFolder(teamId, dlg.id, { parent_id: folder }))
+          run(dlg.target === 'file' ? updateFile(teamId, dlg.id, { folder_id: folder }) : updateFolder(teamId, dlg.id, { parent_id: folder }), dlg.target === 'folder')
         }} />
       <ShareDialog open={dlg?.kind === 'share'} fileId={dlg?.kind === 'share' ? dlg.id : ''} onClose={() => setDlg(null)} onSaved={reload} />
     </Box>

@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }) }))
 const listDirect = vi.fn()
+const listMessages = vi.fn()
 vi.mock('./client', () => ({
   getTeam: () => Promise.resolve({ id: 't1', name: 'Sales', description: '', role: 'guest', member_count: 1, unread: 0 }),
   listMembers: () => Promise.resolve([{ user_id: 'u1', display_name: 'Alice', email: 'a@x', role: 'owner' }]),
@@ -13,12 +14,12 @@ vi.mock('./client', () => ({
   listDirect: () => listDirect(),
   listShared: () => Promise.reject(Object.assign(new Error(''), { status: 404 })),
   listFiles: () => Promise.reject(Object.assign(new Error(''), { status: 404 })),
-  listMessages: () => Promise.resolve([]),
+  listMessages: (...a: unknown[]) => listMessages(...a),
   markRead: () => Promise.resolve(),
   directory: () => Promise.resolve([]),
 }))
 
-import { handleChatFrame } from '@eerp/core-front'
+import { handleChatFrame, notifyLiveReconnect } from '@eerp/core-front'
 import { TeamsWorkspace } from './TeamsWorkspace'
 import { useChatStore } from './chat-store'
 
@@ -30,6 +31,20 @@ describe('TeamsWorkspace', () => {
   beforeEach(() => {
     useChatStore.setState({ open: null, messages: {}, hasMore: {}, unread: {} })
     listDirect.mockReset().mockResolvedValue([])
+    listMessages.mockReset().mockResolvedValue([])
+  })
+
+  it('re-reads the sidebar and the open channel when the live socket reconnects', async () => {
+    render(<TeamsWorkspace teamId="t1" view={{ kind: 'channel', id: 'c1' }} />)
+    await screen.findByRole('heading', { name: '# general' })
+    await waitFor(() => expect(listMessages).toHaveBeenCalledTimes(1))
+    const directs = listDirect.mock.calls.length
+    listMessages.mockResolvedValueOnce([message('m9', 'c1')])
+    act(() => notifyLiveReconnect())
+    await waitFor(() => expect(listDirect).toHaveBeenCalledTimes(directs + 1))
+    await waitFor(() => expect(listMessages).toHaveBeenCalledTimes(2))
+    expect(listMessages).toHaveBeenLastCalledWith('c1', undefined, 50)
+    expect(await screen.findByText('hey')).toBeInTheDocument()
   })
 
   it('opens the channel read-only for a guest, without attachments', async () => {

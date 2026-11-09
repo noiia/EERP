@@ -23,7 +23,7 @@ describe('TeamsDashboard', () => {
     render(<TeamsDashboard />)
     const sales = await screen.findByRole('link', { name: /Sales/ })
     expect(sales).toHaveAttribute('href', '/app/teams/t1')
-    expect(sales).toHaveTextContent('3')
+    expect(sales).toHaveTextContent('Members: 3')
     expect(sales).toHaveTextContent('4')
     const ops = screen.getByRole('link', { name: /Ops/ })
     expect(ops).toHaveAttribute('href', '/app/teams/t2')

@@ -95,9 +95,10 @@ export interface SharedFile {
   created_at: string
 }
 
-/** An HTTP failure; `status` lets callers tell 404 (e.g. file storage not mounted) from the rest. */
+/** An HTTP failure. `code` is Go's own error code (NOT_FOUND, LAST_OWNER…): a 404 without one
+ * is an unmounted route (e.g. file storage not configured), not a missing record. */
 export class TeamsApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message)
   }
 }
@@ -110,8 +111,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     ...(body === undefined || isForm ? {} : { headers: { 'Content-Type': 'application/json' } }),
   })
   if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
-    throw new TeamsApiError(res.status, err?.error?.message ?? res.statusText)
+    const err = (await res.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null
+    throw new TeamsApiError(res.status, err?.error?.message ?? res.statusText, err?.error?.code)
   }
   const text = res.status === 204 ? '' : await res.text()
   return (text ? JSON.parse(text) : undefined) as T
