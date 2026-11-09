@@ -160,6 +160,9 @@ func TestValidate_ManagerOnly(t *testing.T) {
 	stage := f.stage(p, "In progress")
 	member := f.member(p, uuid.New())
 	f.exec(`UPDATE project_member SET deleted_at = now() WHERE id = $1`, member)
+	other := f.project(m.UserID, "everyone")
+	live := f.member(p, uuid.New())
+	milestone := f.milestone(p)
 
 	f.run(t, []writeCase{
 		{"non-manager edits the project", u, http.MethodPut, "project/" + p.String(), map[string]any{"name": "X"}, 403},
@@ -175,6 +178,10 @@ func TestValidate_ManagerOnly(t *testing.T) {
 		{"non-manager deletes a stage", u, http.MethodDelete, "project_stage/" + stage.String(), nil, 403},
 		{"non-manager deletes the project", u, http.MethodDelete, "project/" + p.String(), nil, 403},
 		{"manager renames a stage", m, http.MethodPut, "project_stage/" + stage.String(), map[string]any{"name": "Doing"}, 200},
+		{"stage moved to another project", m, http.MethodPut, "project_stage/" + stage.String(), map[string]any{"project_id": other}, 422},
+		{"member moved to another project", m, http.MethodPut, "project_member/" + live.String(), map[string]any{"project_id": other}, 422},
+		{"milestone moved to another project", m, http.MethodPut, "project_milestone/" + milestone.String(), map[string]any{"project_id": other}, 422},
+		{"milestone keeps its project", m, http.MethodPut, "project_milestone/" + milestone.String(), map[string]any{"project_id": p, "name": "M2"}, 200},
 	})
 
 	t.Run("a new stage goes last", func(t *testing.T) {

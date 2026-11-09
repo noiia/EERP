@@ -319,18 +319,26 @@ func projectRules(r *request) error {
 	return r.requireManage(r.id) // edit, delete, restore
 }
 
+// fixedProject refuses moving a member, stage or milestone to another
+// project: the tasks pointing at it would leave the same-project invariant.
+func fixedProject(r *request) error {
+	if r.op == opUpdate && r.changed("project_id") {
+		return invalid("project_id", "project_id can't change: create the row in the other project instead")
+	}
+	return nil
+}
+
 // managedChildRules: members and stages, written by the manager or an admin.
 func managedChildRules(extra func(*request, uuid.UUID) error) func(*request) error {
 	return func(r *request) error {
+		if err := fixedProject(r); err != nil {
+			return err
+		}
 		pid, err := r.visibleRef("project", "project_id", true)
 		if err != nil {
 			return err
 		}
-		pids := []uuid.UUID{pid}
-		if old := r.storedRef("project_id"); old != uuid.Nil && old != pid {
-			pids = append(pids, old)
-		}
-		if err := r.requireManage(pids...); err != nil {
+		if err := r.requireManage(pid); err != nil {
 			return err
 		}
 		if extra != nil {
@@ -514,6 +522,9 @@ var timesheetRules = taskLinkRules(func(r *request, pid uuid.UUID) error {
 func milestoneRules(r *request) error {
 	if r.op == opDelete {
 		return nil
+	}
+	if err := fixedProject(r); err != nil {
+		return err
 	}
 	if _, err := r.visibleRef("project", "project_id", true); err != nil {
 		return err

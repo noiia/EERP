@@ -189,14 +189,24 @@ func TestApp_Routes(t *testing.T) {
 func TestApp_ProjectFlow(t *testing.T) {
 	f := newFlow(t)
 	project := f.createAt("/api/v1/project", "project", map[string]any{"name": "App test project"})
+	// createAt hard-deletes each row it created by id; this also removes the
+	// rows the project's triggers and writes created around them, by project id.
+	var task string
 	t.Cleanup(func() {
-		_, _ = f.a.db.DB.Exec(context.Background(), `DELETE FROM project_stage WHERE project_id = $1`, project)
+		ctx := context.Background()
+		_, _ = f.a.db.DB.Exec(ctx, `DELETE FROM chatter_message WHERE (table_name = 'project' AND record_id::text = $1)
+			OR (table_name = 'project_task' AND record_id::text = $2)`, project, task)
+		for _, table := range []string{"project_timesheet", "project_task_user", "project_task_tag", "project_task_dependency",
+			"project_task", "project_milestone", "project_member", "project_stage"} {
+			_, _ = f.a.db.DB.Exec(ctx, `DELETE FROM `+table+` WHERE project_id = $1`, project)
+		}
+		_, _ = f.a.db.DB.Exec(ctx, `DELETE FROM project WHERE id = $1`, project)
 	})
 	body := f.expect(http.MethodGet, "/api/v1/project/"+project+"/can_manage", nil, http.StatusOK)
 	if decode(t, body)["can_manage"] != true {
 		t.Errorf("admin can_manage: %s", body)
 	}
-	task := f.createAt("/api/v1/project_task", "project_task", map[string]any{"project_id": project, "name": "T"})
+	task = f.createAt("/api/v1/project_task", "project_task", map[string]any{"project_id": project, "name": "T"})
 	f.createAt("/api/v1/project_timesheet", "project_timesheet", map[string]any{"task_id": task, "hours": 2, "date": "2026-11-10"})
 	f.expect(http.MethodPut, "/api/v1/project_task/"+task, map[string]any{"name": "Renamed"}, http.StatusOK)
 	f.expect(http.MethodPost, "/api/v1/project_timesheet", map[string]any{"task_id": task, "hours": 0, "date": "2026-11-10"}, http.StatusUnprocessableEntity)
