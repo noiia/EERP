@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"core/internal/auth"
+	"core/orm"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -45,11 +46,29 @@ type chatterStore interface {
 type Handler struct {
 	store chatterStore
 	users userStore
+	scope orm.Executor
 }
 
 // NewHandler constructs the chatter Handler from its dependencies (interfaces, so tests can pass fakes).
 func NewHandler(store chatterStore, users userStore) *Handler {
 	return &Handler{store: store, users: users}
+}
+
+// WithRowScope makes the handler answer 404 for anchors the caller's row scope
+// hides (ADR-038). Unset (unit tests with fakes), no anchor check is made.
+func (h *Handler) WithRowScope(db orm.Executor) *Handler {
+	h.scope = db
+	return h
+}
+
+// hidden reports whether the anchor record is invisible to the caller; a
+// scope error is returned as is (a 500 — fail closed, never a 404).
+func (h *Handler) hidden(ctx context.Context, table string, id uuid.UUID) (bool, error) {
+	if h.scope == nil {
+		return false, nil
+	}
+	ok, err := orm.CanSeeRecord(ctx, h.scope, table, id)
+	return !ok && err == nil, err
 }
 
 type messageResponse struct {
@@ -91,6 +110,12 @@ func (h *Handler) List(c *echo.Context) error {
 	recordID, err := uuid.Parse(c.QueryParam("record"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("chatter: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	messages, err := h.store.ListByAnchor(c.Request().Context(), identity.TenantID, table, recordID)
@@ -137,6 +162,12 @@ func (h *Handler) Create(c *echo.Context) error {
 	}
 	if len(body) > maxBodyLen {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", fmt.Sprintf("body exceeds %d characters.", maxBodyLen))
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), req.TableName, recordID); err != nil {
+		return fmt.Errorf("chatter: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	author, err := h.users.FindByID(c.Request().Context(), identity.UserID)

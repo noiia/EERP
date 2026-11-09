@@ -504,7 +504,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 			c.Response().Header().Set("Cache-Control", "public, max-age=300")
 			return c.Stream(http.StatusOK, ctype, body)
 		}
-		picturesHandler := pictures.NewHandler(picRepo, objects)
+		picturesHandler := pictures.NewHandler(picRepo, objects).WithRowScope(app.DB)
 		picturesGroup := srv.Echo().Group("/api/v1/pictures", uploadLimit, jwtMw, permMw)
 		picturesGroup.POST("", picturesHandler.Upload)
 		picturesGroup.GET("", picturesHandler.Find)
@@ -530,7 +530,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		if err != nil {
 			return fmt.Errorf("Error building S3 object store for attachments: %w", err)
 		}
-		attachmentsHandler := attachments.NewHandler(attachments.NewRepository(app.DB), attachmentObjects)
+		attachmentsHandler := attachments.NewHandler(attachments.NewRepository(app.DB), attachmentObjects).WithRowScope(app.DB)
 		attachmentsGroup := srv.Echo().Group("/api/v1/attachments", uploadLimit, jwtMw, permMw)
 		attachmentsGroup.POST("", attachmentsHandler.Upload)
 		attachmentsGroup.GET("", attachmentsHandler.Find)
@@ -623,7 +623,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// dependency to gate on, so — unlike pictures — this mounts unconditionally.
 	// The permission middleware derives notebook_pages:notebook_pages:read|write|delete
 	// from the route.
-	notebookHandler := notebook.NewHandler(notebook.NewRepository(app.DB))
+	notebookHandler := notebook.NewHandler(notebook.NewRepository(app.DB)).WithRowScope(app.DB)
 	notebookGroup := srv.Echo().Group("/api/v1/notebook_pages", jwtMw, permMw)
 	notebookGroup.GET("", notebookHandler.List)
 	notebookGroup.POST("", notebookHandler.Create)
@@ -691,7 +691,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// reads wrong if entries can change after the fact). No external dependency
 	// to gate on, so this mounts unconditionally. The permission middleware
 	// derives chatter_messages:chatter_messages:read|write from the route.
-	chatterHandler := chatter.NewHandler(chatter.NewRepository(app.DB), userRepo)
+	chatterHandler := chatter.NewHandler(chatter.NewRepository(app.DB), userRepo).WithRowScope(app.DB)
 	chatterGroup := srv.Echo().Group("/api/v1/chatter_messages", jwtMw, permMw)
 	chatterGroup.GET("", chatterHandler.List)
 	chatterGroup.POST("", chatterHandler.Create)

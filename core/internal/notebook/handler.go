@@ -41,11 +41,29 @@ type notebookStore interface {
 
 type Handler struct {
 	store notebookStore
+	scope orm.Executor
 }
 
 // NewHandler constructs the notebook Handler from its dependencies (interfaces, so tests can pass fakes).
 func NewHandler(store notebookStore) *Handler {
 	return &Handler{store: store}
+}
+
+// WithRowScope makes the handler answer 404 for anchors the caller's row scope
+// hides (ADR-038). Unset (unit tests with fakes), no anchor check is made.
+func (h *Handler) WithRowScope(db orm.Executor) *Handler {
+	h.scope = db
+	return h
+}
+
+// hidden reports whether the anchor record is invisible to the caller; a
+// scope error is returned as is (a 500 — fail closed, never a 404).
+func (h *Handler) hidden(ctx context.Context, table string, id uuid.UUID) (bool, error) {
+	if h.scope == nil {
+		return false, nil
+	}
+	ok, err := orm.CanSeeRecord(ctx, h.scope, table, id)
+	return !ok && err == nil, err
 }
 
 type pageResponse struct {
@@ -89,6 +107,12 @@ func (h *Handler) List(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record must be a UUID.")
 	}
 
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("notebook: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
+	}
+
 	pages, err := h.store.ListByAnchor(c.Request().Context(), identity.TenantID, table, recordID)
 	if err != nil {
 		return fmt.Errorf("notebook: list: %w", err)
@@ -126,6 +150,12 @@ func (h *Handler) Create(c *echo.Context) error {
 	title := strings.TrimSpace(req.Title)
 	if msg := validateTitle(title); msg != "" {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), req.TableName, recordID); err != nil {
+		return fmt.Errorf("notebook: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	existing, err := h.store.ListByAnchor(c.Request().Context(), identity.TenantID, req.TableName, recordID)
@@ -171,6 +201,11 @@ func (h *Handler) Update(c *echo.Context) error {
 		}
 		return fmt.Errorf("notebook: update: find: %w", err)
 	}
+	if hide, err := h.hidden(c.Request().Context(), existing.TableName, existing.RecordID); err != nil {
+		return fmt.Errorf("notebook: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such page.")
+	}
 	existing.Title = title
 	existing.Content = req.Content
 
@@ -188,6 +223,20 @@ func (h *Handler) Delete(c *echo.Context) error {
 	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
+	}
+	if h.scope != nil {
+		page, err := h.store.FindInTenant(c.Request().Context(), identity.TenantID, id)
+		if err != nil {
+			if errors.Is(err, orm.ErrNotFound) {
+				return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such page.")
+			}
+			return fmt.Errorf("notebook: delete: find: %w", err)
+		}
+		if hide, err := h.hidden(c.Request().Context(), page.TableName, page.RecordID); err != nil {
+			return fmt.Errorf("notebook: row scope: %w", err)
+		} else if hide {
+			return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such page.")
+		}
 	}
 	if err := h.store.Delete(c.Request().Context(), identity.TenantID, id); err != nil {
 		if errors.Is(err, orm.ErrNotFound) {

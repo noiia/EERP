@@ -51,11 +51,29 @@ type pictureStore interface {
 type Handler struct {
 	store   pictureStore
 	objects ObjectStore
+	scope   orm.Executor
 }
 
 // NewHandler constructs the pictures Handler from its dependencies (interfaces, so tests can pass fakes).
 func NewHandler(store pictureStore, objects ObjectStore) *Handler {
 	return &Handler{store: store, objects: objects}
+}
+
+// WithRowScope makes the handler answer 404 for anchors the caller's row scope
+// hides (ADR-038). Unset (unit tests with fakes), no anchor check is made.
+func (h *Handler) WithRowScope(db orm.Executor) *Handler {
+	h.scope = db
+	return h
+}
+
+// hidden reports whether the anchor record is invisible to the caller; a
+// scope error is returned as is (a 500 — fail closed, never a 404).
+func (h *Handler) hidden(ctx context.Context, table string, id uuid.UUID) (bool, error) {
+	if h.scope == nil {
+		return false, nil
+	}
+	ok, err := orm.CanSeeRecord(ctx, h.scope, table, id)
+	return !ok && err == nil, err
 }
 
 type pictureResponse struct {
@@ -94,6 +112,12 @@ func (h *Handler) Upload(c *echo.Context) error {
 	recordID, err := uuid.Parse(c.FormValue("record_id"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record_id must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	fileHeader, err := c.FormFile("file")
@@ -167,6 +191,11 @@ func (h *Handler) Get(c *echo.Context) error {
 		}
 		return fmt.Errorf("pictures: find: %w", err)
 	}
+	if hide, err := h.hidden(c.Request().Context(), picture.TableName, picture.RecordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such picture.")
+	}
 
 	body, contentType, err := h.objects.Get(c.Request().Context(), picture.ObjectKey)
 	if err != nil {
@@ -196,6 +225,12 @@ func (h *Handler) Find(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record must be a UUID.")
 	}
 
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
+	}
+
 	picture, err := h.store.FindByAnchor(c.Request().Context(), identity.TenantID, table, recordID, field)
 	if err != nil {
 		if errors.Is(err, orm.ErrNotFound) {
@@ -222,6 +257,11 @@ func (h *Handler) Delete(c *echo.Context) error {
 			return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such picture.")
 		}
 		return fmt.Errorf("pictures: find: %w", err)
+	}
+	if hide, err := h.hidden(c.Request().Context(), picture.TableName, picture.RecordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such picture.")
 	}
 	if reservedAnchor(picture.TableName, picture.Field) {
 		return reservedErr(c)
