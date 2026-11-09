@@ -38,7 +38,9 @@ func newFixture(t *testing.T) *fixture {
 	testdb.MigrateModules(t, app, "auth", "project")
 	SetPermissions(auth.NewPermissionRepository(app.DB))
 	s := ormserver.New(app, ormserver.Config{})
-	s.RegisterRoutes(ormserver.BuildHandlers(app), nil)
+	handlers := ormserver.BuildHandlers(app)
+	s.RegisterRoutes(handlers, nil)
+	NewHandler(app.DB, auth.NewPermissionRepository(app.DB)).Mount(s.Echo(), func(t string) Generic { return handlers[t] })
 	f := &fixture{t: t, app: app, e: s.Echo(), tenant: uuid.New()}
 	t.Cleanup(func() {
 		for _, table := range projectTables {

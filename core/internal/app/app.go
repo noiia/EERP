@@ -879,6 +879,12 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	srv.Echo().PUT("/api/v1/event_session/:id", sessionH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventmodule.ValidateSessionBody, eventH.GuardSessionUpdate)
 	srv.Echo().DELETE("/api/v1/event_session/:id", eventH.DeleteSession, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
+	// project tables: visible same-project references, manager-only project/
+	// member/stage writes, timesheet authorship, delete guards, task move,
+	// and GET /project/:id/can_manage (project:project:read).
+	projectmodule.NewHandler(app.DB, permRepo).Mount(srv.Echo(),
+		func(t string) projectmodule.Generic { return handlers[t] }, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver
 	// because ActiveGateMiddleware keys on the first path segment ("public").

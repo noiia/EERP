@@ -85,7 +85,8 @@ var migrations = slices.Concat(
 			FROM (SELECT
 				(SELECT count(*) FROM project_task t WHERE t.project_id = pid AND t.deleted_at IS NULL)::int AS n,
 				COALESCE((SELECT sum(t.planned_hours) FROM project_task t WHERE t.project_id = pid AND t.deleted_at IS NULL), 0) AS planned,
-				COALESCE((SELECT sum(ts.hours) FROM project_timesheet ts WHERE ts.project_id = pid AND ts.deleted_at IS NULL), 0) AS spent) v
+				COALESCE((SELECT sum(ts.hours) FROM project_timesheet ts JOIN project_task t ON t.id = ts.task_id
+					WHERE ts.project_id = pid AND ts.deleted_at IS NULL AND t.deleted_at IS NULL), 0) AS spent) v
 			WHERE p.id = pid AND (p.task_count, p.planned_hours, p.spent_hours) IS DISTINCT FROM (v.n, v.planned, v.spent);
 		END $$`,
 		`CREATE OR REPLACE FUNCTION project_milestone_refresh(mid uuid) RETURNS void LANGUAGE plpgsql AS $$
@@ -113,13 +114,14 @@ var migrations = slices.Concat(
 			NEW.closed := COALESCE((SELECT s.closed FROM project_stage s WHERE s.id = NEW.stage_id), false);
 			RETURN NEW;
 		END $$`,
-		// A parent cycle would otherwise recurse forever: stop deep cascades.
+		// A parent cycle would otherwise recurse forever: fail the write rather
+		// than store stale totals (ValidateTaskBody refuses cycles first).
 		`CREATE OR REPLACE FUNCTION project_task_changed() RETURNS trigger LANGUAGE plpgsql AS $$
 		DECLARE
 			me uuid;
 			dep uuid;
 		BEGIN
-			IF pg_trigger_depth() > 32 THEN RETURN NULL; END IF;
+			IF pg_trigger_depth() > 32 THEN RAISE EXCEPTION 'project: task cascade too deep (parent cycle?)'; END IF;
 			IF TG_OP <> 'INSERT' THEN
 				me := OLD.id;
 				PERFORM project_task_refresh(OLD.parent_id);

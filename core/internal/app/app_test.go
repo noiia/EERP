@@ -14,6 +14,8 @@ import (
 	"core/internal/common"
 	"core/internal/testdb"
 	"core/internal/types"
+
+	"github.com/google/uuid"
 )
 
 func TestMain(m *testing.M) {
@@ -179,4 +181,92 @@ func TestApp_Routes(t *testing.T) {
 			t.Errorf("status = %d, want 401", code)
 		}
 	})
+}
+
+// TestApp_ProjectFlow drives the project overrides through the real routes:
+// creation defaults, can_manage, the task's first stage, a timesheet, a
+// refused then accepted project delete.
+func TestApp_ProjectFlow(t *testing.T) {
+	f := newFlow(t)
+	project := f.createAt("/api/v1/project", "project", map[string]any{"name": "App test project"})
+	t.Cleanup(func() {
+		_, _ = f.a.db.DB.Exec(context.Background(), `DELETE FROM project_stage WHERE project_id = $1`, project)
+	})
+	body := f.expect(http.MethodGet, "/api/v1/project/"+project+"/can_manage", nil, http.StatusOK)
+	if decode(t, body)["can_manage"] != true {
+		t.Errorf("admin can_manage: %s", body)
+	}
+	task := f.createAt("/api/v1/project_task", "project_task", map[string]any{"project_id": project, "name": "T"})
+	f.createAt("/api/v1/project_timesheet", "project_timesheet", map[string]any{"task_id": task, "hours": 2, "date": "2026-11-10"})
+	f.expect(http.MethodPut, "/api/v1/project_task/"+task, map[string]any{"name": "Renamed"}, http.StatusOK)
+	f.expect(http.MethodPost, "/api/v1/project_timesheet", map[string]any{"task_id": task, "hours": 0, "date": "2026-11-10"}, http.StatusUnprocessableEntity)
+	f.expect(http.MethodDelete, "/api/v1/project/"+project, nil, http.StatusConflict)
+	f.expect(http.MethodDelete, "/api/v1/project_task/"+task, nil, http.StatusNoContent)
+	f.expect(http.MethodDelete, "/api/v1/project/"+project, nil, http.StatusNoContent)
+}
+
+// TestApp_ProjectChatterHidden: the chatter of a task in a members-only
+// project answers 404 to a staff user who isn't a member (the record-anchored
+// services check the row scope), and 200 on a public project's task.
+func TestApp_ProjectChatterHidden(t *testing.T) {
+	f := newFlow(t)
+	ctx := context.Background()
+	db := f.a.db.DB
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	const code = "chatter_messages:chatter_messages:read"
+	var permID uuid.UUID
+	if err := db.QueryRow(ctx, `SELECT id FROM permissions WHERE code = $1 AND deleted_at IS NULL LIMIT 1`, code).Scan(&permID); err != nil {
+		if err := db.QueryRow(ctx, `INSERT INTO permissions (code) VALUES ($1) RETURNING id`, code).Scan(&permID); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = db.Exec(ctx, `DELETE FROM permissions WHERE id = $1`, permID) })
+	}
+	role := "app-test-chatter-" + uuid.NewString()
+	var roleID uuid.UUID
+	if err := db.QueryRow(ctx, `INSERT INTO roles (tenant_id, name) VALUES ($1, $2) RETURNING id`, auth.DevTenantID, role).Scan(&roleID); err != nil {
+		t.Fatal(err)
+	}
+	exec(`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)`, roleID, permID)
+	t.Cleanup(func() {
+		_, _ = db.Exec(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID)
+		_, _ = db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, roleID)
+	})
+
+	taskIn := func(visibility string) string {
+		var project, task string
+		if err := db.QueryRow(ctx, `INSERT INTO project (tenant_id, name, manager_id, visibility) VALUES ($1, 'App test', $2, $3)
+			RETURNING id`, auth.DevTenantID, uuid.New(), visibility).Scan(&project); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRow(ctx, `INSERT INTO project_task (tenant_id, project_id, name) VALUES ($1, $2, 'T') RETURNING id`,
+			auth.DevTenantID, project).Scan(&task); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			for _, table := range []string{"project_task", "project_stage"} {
+				_, _ = db.Exec(ctx, `DELETE FROM `+table+` WHERE project_id = $1`, project)
+			}
+			_, _ = db.Exec(ctx, `DELETE FROM project WHERE id = $1`, project)
+		})
+		return task
+	}
+	hidden, public := taskIn("members"), taskIn("everyone")
+
+	user := auth.Users{TenantID: auth.DevTenantID}
+	user.ID = uuid.New()
+	token, err := auth.NewTokenService(testdb.Config(t)).IssueAccess(user, []string{role}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staff := &client{t: t, h: f.h, token: token}
+	for task, want := range map[string]int{hidden: http.StatusNotFound, public: http.StatusOK} {
+		if code, body := staff.do(http.MethodGet, "/api/v1/chatter_messages?table=project_task&record="+task, nil); code != want {
+			t.Errorf("chatter of %s: %d, want %d: %s", task, code, want, body)
+		}
+	}
 }

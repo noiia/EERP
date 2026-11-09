@@ -46,21 +46,23 @@ func IsAdmin(ctx context.Context, perms *auth.PermissionRepository) bool {
 	return err == nil && has
 }
 
-// visibleProjects selects the ids of the live projects the caller ($1) may
-// see: public ones, the ones they manage, the ones they're a live member of.
-const visibleProjects = `SELECT p.id FROM project p WHERE p.deleted_at IS NULL AND (
+// visibleProjects selects the ids of the live projects of the caller's
+// tenant ($2) the caller ($1) may see: public ones, the ones they manage, the
+// ones they're a live member of. The tenant predicate is defense in depth:
+// the generic repository already pins the outer table's tenant.
+const visibleProjects = `SELECT p.id FROM project p WHERE p.deleted_at IS NULL AND p.tenant_id = $2 AND (
 	p.visibility = 'everyone' OR p.manager_id = $1 OR EXISTS (
 		SELECT 1 FROM project_member pm
 		WHERE pm.project_id = p.id AND pm.user_id = $1 AND pm.deleted_at IS NULL))`
 
 // assignedTasks selects the ids of the tasks the caller ($1) is assigned to.
-const assignedTasks = `SELECT tu.task_id FROM project_task_user tu WHERE tu.user_id = $1 AND tu.deleted_at IS NULL`
+const assignedTasks = `SELECT tu.task_id FROM project_task_user tu WHERE tu.user_id = $1 AND tu.tenant_id = $2 AND tu.deleted_at IS NULL`
 
 // The scope conditions, applied to the unaliased table of each query.
 const (
-	projectSQL = `(visibility = 'everyone' OR manager_id = $1 OR EXISTS (
+	projectSQL = `(project.tenant_id = $2 AND (visibility = 'everyone' OR manager_id = $1 OR EXISTS (
 		SELECT 1 FROM project_member pm
-		WHERE pm.project_id = project.id AND pm.user_id = $1 AND pm.deleted_at IS NULL))`
+		WHERE pm.project_id = project.id AND pm.user_id = $1 AND pm.deleted_at IS NULL)))`
 	childSQL     = `(project_id IN (` + visibleProjects + `))`
 	taskSQL      = `(project_id IN (` + visibleProjects + `) OR project_task.id IN (` + assignedTasks + `))`
 	taskChildSQL = `(project_id IN (` + visibleProjects + `) OR task_id IN (` + assignedTasks + `))`
@@ -69,7 +71,7 @@ const (
 		WHERE t.deleted_at IS NULL AND t.id IN (` + assignedTasks + `)))`
 )
 
-// scope builds a row scope binding the caller's user id as $1. Admins are
+// scope builds a row scope binding the caller's user id as $1 and tenant as $2. Admins are
 // unrestricted; no permission repository or no caller fails closed.
 func scope(perms func() *auth.PermissionRepository, sql string) orm.RowScopeFunc {
 	return func(ctx context.Context) (orm.Condition, bool, error) {
@@ -84,7 +86,7 @@ func scope(perms func() *auth.PermissionRepository, sql string) orm.RowScopeFunc
 		if IsAdmin(ctx, p) {
 			return orm.Condition{}, false, nil
 		}
-		return orm.Cond(sql, id.UserID), true, nil
+		return orm.Cond(sql, id.UserID, id.TenantID), true, nil
 	}
 }
 
