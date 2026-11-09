@@ -1672,6 +1672,9 @@ msgstr ""
 msgid "Demo data seeding"
 msgstr ""
 
+msgid "Teams"
+msgstr ""
+
 msgid "Seeding demo data"
 msgstr ""
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -18,13 +19,18 @@ import (
 
 func serve(t *testing.T, h echo.HandlerFunc, method, body string, id auth.Identity, params map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
-	e := echo.New()
 	var rd io.Reader
 	if body != "" {
 		rd = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, "/", rd)
 	req.Header.Set("Content-Type", "application/json")
+	return serveReq(t, h, req, id, params)
+}
+
+func serveReq(t *testing.T, h echo.HandlerFunc, req *http.Request, id auth.Identity, params map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	e := echo.New()
 	req = req.WithContext(auth.SetIdentity(req.Context(), id))
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
@@ -39,6 +45,7 @@ func serve(t *testing.T, h echo.HandlerFunc, method, body string, id auth.Identi
 
 type fixture struct {
 	h              *teams.Handler
+	repo           *teams.Repository
 	app            *orm.App
 	tenant         uuid.UUID
 	team           uuid.UUID
@@ -54,7 +61,7 @@ func newFixture(t *testing.T) fixture {
 	t.Helper()
 	r, app := setup(t)
 	ctx := context.Background()
-	f := fixture{app: app, tenant: uuid.New(), owner: uuid.New(), member: uuid.New(), guest: uuid.New(),
+	f := fixture{repo: r, app: app, tenant: uuid.New(), owner: uuid.New(), member: uuid.New(), guest: uuid.New(),
 		outside: uuid.New(), staff: uuid.New(), website: uuid.New()}
 	for _, u := range []struct {
 		id   uuid.UUID

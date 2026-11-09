@@ -92,7 +92,9 @@ func (h *Handler) access(c *echo.Context, ok func(string) bool) (team uuid.UUID,
 	return team, role, err
 }
 
-func Mount(g *echo.Group, h *Handler) {
+// Mount registers the routes. upload caps the /channels/... routes: that prefix
+// is exempt from the global request body limit since the message POST carries files.
+func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 	g.GET("", h.ListTeams)
 	g.POST("", h.CreateTeam)
 	g.GET("/directory", h.Directory)
@@ -107,4 +109,11 @@ func Mount(g *echo.Group, h *Handler) {
 	g.POST("/:id/channels", h.CreateChannel)
 	g.PUT("/:id/channels/:channel", h.RenameChannel)
 	g.DELETE("/:id/channels/:channel", h.DeleteChannel)
+	g.GET("/direct", h.ListDirect)
+	g.POST("/direct", h.OpenDirect)
+	g.GET("/channels/:channel/messages", h.ListMessages)
+	g.POST("/channels/:channel/messages", h.PostMessage, upload)
+	g.POST("/channels/:channel/read", h.MarkRead, upload)
+	g.POST("/messages/:message/reactions", h.ToggleReaction)
+	g.GET("/attachments/:id", h.GetAttachment)
 }

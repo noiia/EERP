@@ -303,7 +303,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		BodyLimit:    configContent.RequestBodyLimit,
 		// File uploads get their own, larger cap (uploadLimit below) instead of
 		// raising request_body_limit for every JSON route.
-		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", dbRestorePath},
+		// /api/v1/teams/channels holds only the chat message routes; the POST gets uploadLimit.
+		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", dbRestorePath},
 	}
 	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {
@@ -682,7 +683,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	chatterGroup.POST("", chatterHandler.Create)
 
 	// ── Teams ─────────────────────────────────────────────────────────────────
-	// Teams, members, channels and the staff directory: role checks live in the
+	// Teams, members, channels, chat and the staff directory: role checks live in the
 	// handlers (a non-member gets a 404), so only JWT + the module's active gate
 	// here. Object storage is optional (nil without s3_*).
 	var teamsObjects pictures.ObjectStore
@@ -692,7 +693,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		}
 	}
 	teamsHandler := teams.NewHandler(teams.NewRepository(app.DB), userRepo, presenceHub, notifySvc, teamsObjects)
-	teams.Mount(srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler)
+	teams.Mount(srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler, uploadLimit)
 
 	// ── Presence ──────────────────────────────────────────────────────────────
 	// Live user status (online/absent/offline/busy/do_not_disturb) over a

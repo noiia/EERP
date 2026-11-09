@@ -1833,6 +1833,9 @@ msgstr "Actions planifiées"
 msgid "Demo data seeding"
 msgstr "Génération de données de démonstration"
 
+msgid "Teams"
+msgstr "Teams"
+
 msgid "Seeding demo data"
 msgstr "Génération des données de démonstration"
 

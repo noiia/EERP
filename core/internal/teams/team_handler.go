@@ -1,6 +1,7 @@
 package teams
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sort"
@@ -38,6 +39,18 @@ func list[T any](c *echo.Context, rows []T) error {
 		rows = []T{}
 	}
 	return c.JSON(http.StatusOK, listJSON[T]{rows, len(rows)})
+}
+
+// deleteObjects removes stored objects best-effort: an orphan is a storage leak, not an integrity bug.
+func (h *Handler) deleteObjects(ctx context.Context, keys []string, after string) {
+	if h.objects == nil {
+		return
+	}
+	for _, k := range keys {
+		if err := h.objects.Delete(ctx, k); err != nil && common.Logger != nil {
+			common.Logger.Warn("teams: orphaned object after "+after, zap.String("key", k), zap.Error(err))
+		}
+	}
 }
 
 func badName(c *echo.Context) error {
@@ -137,13 +150,7 @@ func (h *Handler) DeleteTeam(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if h.objects != nil {
-		for _, k := range keys {
-			if err := h.objects.Delete(ctx, k); err != nil && common.Logger != nil {
-				common.Logger.Warn("teams: orphaned object after team delete", zap.String("key", k), zap.Error(err))
-			}
-		}
-	}
+	h.deleteObjects(ctx, keys, "team delete")
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -327,13 +334,23 @@ func (h *Handler) ListChannels(c *echo.Context) error {
 		return err
 	}
 	ctx := c.Request().Context()
-	chs, err := h.repo.ListChannels(ctx, auth.MustIdentity(ctx).TenantID, team)
+	id := auth.MustIdentity(ctx)
+	chs, err := h.repo.ListChannels(ctx, id.TenantID, team)
+	if err != nil {
+		return err
+	}
+	ids := make([]uuid.UUID, len(chs))
+	for i, ch := range chs {
+		ids[i] = ch.ID
+	}
+	unread, err := h.repo.UnreadCounts(ctx, id.TenantID, id.UserID, ids)
 	if err != nil {
 		return err
 	}
 	out := make([]channelJSON, len(chs))
 	for i, ch := range chs {
 		out[i] = toChannelJSON(ch)
+		out[i].Unread = unread[ch.ID]
 	}
 	return list(c, out)
 }
@@ -402,7 +419,8 @@ func (h *Handler) DeleteChannel(c *echo.Context) error {
 		return err
 	}
 	ctx := c.Request().Context()
-	switch err := h.repo.DeleteChannel(ctx, auth.MustIdentity(ctx).TenantID, team, chID); {
+	keys, err := h.repo.DeleteChannel(ctx, auth.MustIdentity(ctx).TenantID, team, chID)
+	switch {
 	case errors.Is(err, ErrLastChannel):
 		return errorJSON(c, http.StatusConflict, "LAST_CHANNEL", "A team needs at least one channel.")
 	case errors.Is(err, orm.ErrNotFound):
@@ -410,5 +428,6 @@ func (h *Handler) DeleteChannel(c *echo.Context) error {
 	case err != nil:
 		return err
 	}
+	h.deleteObjects(ctx, keys, "channel delete")
 	return c.NoContent(http.StatusNoContent)
 }
