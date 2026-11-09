@@ -13,15 +13,16 @@ import { T } from '@eerp/core-front'
 import { listFiles, type FolderListing } from './client'
 
 /** Browse the team's folders and pick a destination; onPick('') means the root. */
-export function FolderPicker({ open, teamId, onPick, onClose }: { open: boolean; teamId: string; onPick: (folderId: string) => void; onClose: () => void }) {
+export function FolderPicker({ open, teamId, exclude, moveError, onPick, onClose }: { open: boolean; teamId: string; exclude?: string; moveError?: string; onPick: (folderId: string) => void; onClose: () => void }) {
   const [current, setCurrent] = useState<string | undefined>()
   const [listing, setListing] = useState<FolderListing | null>(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (open) setCurrent(undefined)
   }, [open])
   useEffect(() => {
-    if (open) listFiles(teamId, current).then(setListing).catch(() => setListing(null))
+    if (open) listFiles(teamId, current).then((l) => { setListing(l); setError('') }).catch((e: unknown) => { setListing(null); setError(e instanceof Error ? e.message : '') })
   }, [open, teamId, current])
 
   return (
@@ -29,16 +30,17 @@ export function FolderPicker({ open, teamId, onPick, onClose }: { open: boolean;
       <DialogTitle><T text="Move to" /></DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary">/ {listing?.path.map((p) => p.name).join(' / ')}</Typography>
+        {(error || moveError) && <Typography color="error" variant="body2">{error || moveError}</Typography>}
         <List dense>
           {current && <ListItemButton onClick={() => setCurrent(listing?.folder?.parent_id ?? undefined)}><ListItemText primary=".." /></ListItemButton>}
-          {listing?.folders.map((f) => (
+          {listing?.folders.filter((f) => f.id !== exclude).map((f) => (
             <ListItemButton key={f.id} onClick={() => setCurrent(f.id)}><ListItemText primary={f.name} /></ListItemButton>
           ))}
         </List>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}><T text="Cancel" /></Button>
-        <Button variant="contained" onClick={() => onPick(current ?? '')}><T text="Move here" /></Button>
+        <Button variant="contained" disabled={!listing} onClick={() => onPick(current ?? '')}><T text="Move here" /></Button>
       </DialogActions>
     </Dialog>
   )

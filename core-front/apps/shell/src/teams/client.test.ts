@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listMessages, postMessage, setShares } from './client'
+import { listFiles, TeamsApiError, listMessages, postMessage, setShares } from './client'
 
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
@@ -35,5 +35,11 @@ describe('teams client', () => {
   it('throws the Go error message', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: { message: 'Nope.' } }), { status: 403 }))
     await expect(postMessage('c1', 'x')).rejects.toThrow('Nope.')
+  })
+
+  it('throws an error carrying the HTTP status, even with no error body or statusText', async () => {
+    fetchMock.mockImplementation(async () => new Response('{"message":"Not Found"}', { status: 404 }))
+    await expect(listFiles('t1')).rejects.toMatchObject({ status: 404 })
+    await expect(listFiles('t1')).rejects.toBeInstanceOf(TeamsApiError)
   })
 })

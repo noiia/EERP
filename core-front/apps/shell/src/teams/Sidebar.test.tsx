@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, prefetch: vi.fn() }) }))
-const listFiles = vi.fn<(team: string, folder?: string) => Promise<unknown>>(() => Promise.reject(new Error('Not Found')))
+const listFiles = vi.fn<(team: string, folder?: string) => Promise<unknown>>(() => Promise.reject(Object.assign(new Error(''), { status: 404 })))
 const createChannel = vi.fn()
 const openDirect = vi.fn()
 vi.mock('./client', () => ({

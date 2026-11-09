@@ -31,7 +31,7 @@ type Dlg =
   | { kind: 'newFolder' }
   | { kind: 'rename'; target: 'file' | 'folder'; id: string; name: string }
   | { kind: 'delete'; target: 'file' | 'folder'; id: string; name: string }
-  | { kind: 'move'; id: string }
+  | { kind: 'move'; target: 'file' | 'folder'; id: string }
   | { kind: 'share'; id: string }
 
 /** The team's file manager: a folder listing with upload, rename, move, share and delete. */
@@ -48,7 +48,7 @@ export function FilesPane({ teamId, folderId, role }: { teamId: string; folderId
   const reload = useCallback(() => {
     listFiles(teamId, folderId).then((l) => { setListing(l); setMissing(false) }).catch((e: unknown) => {
       // Go mounts the files routes only when S3 is configured.
-      if (e instanceof Error && e.message === 'Not Found') setMissing(true)
+      if ((e as { status?: number }).status === 404) setMissing(true)
       else setError(e instanceof Error ? e.message : t('The change could not be saved.'))
     })
   }, [teamId, folderId, t])
@@ -73,7 +73,7 @@ export function FilesPane({ teamId, folderId, role }: { teamId: string; folderId
   const actions = (kind: 'file' | 'folder', id: string, label: string, owner: string) => canEdit(owner) && (
     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
       {kind === 'file' && <Button size="small" onClick={() => setDlg({ kind: 'share', id })}><T text="Share" /></Button>}
-      {kind === 'file' && <Button size="small" onClick={() => setDlg({ kind: 'move', id })}><T text="Move" /></Button>}
+      <Button size="small" onClick={() => setDlg({ kind: 'move', target: kind, id })}><T text="Move" /></Button>
       <Button size="small" onClick={() => openName({ kind: 'rename', target: kind, id, name: label }, label)}><T text="Rename" /></Button>
       <Button size="small" color="error" onClick={() => setDlg({ kind: 'delete', target: kind, id, name: label })}><T text="Delete" /></Button>
     </Stack>
@@ -154,8 +154,11 @@ export function FilesPane({ teamId, folderId, role }: { teamId: string; folderId
         </DialogActions>
       </Dialog>
 
-      <FolderPicker open={dlg?.kind === 'move'} teamId={teamId} onClose={() => setDlg(null)}
-        onPick={(folder) => { if (dlg?.kind === 'move') run(updateFile(teamId, dlg.id, { folder_id: folder })) }} />
+      <FolderPicker open={dlg?.kind === 'move'} teamId={teamId} moveError={dlg?.kind === 'move' ? error : undefined} exclude={dlg?.kind === 'move' && dlg.target === 'folder' ? dlg.id : undefined} onClose={() => setDlg(null)}
+        onPick={(folder) => {
+          if (dlg?.kind !== 'move') return
+          run(dlg.target === 'file' ? updateFile(teamId, dlg.id, { folder_id: folder }) : updateFolder(teamId, dlg.id, { parent_id: folder }))
+        }} />
       <ShareDialog open={dlg?.kind === 'share'} fileId={dlg?.kind === 'share' ? dlg.id : ''} onClose={() => setDlg(null)} onSaved={reload} />
     </Box>
   )

@@ -95,6 +95,13 @@ export interface SharedFile {
   created_at: string
 }
 
+/** An HTTP failure; `status` lets callers tell 404 (e.g. file storage not mounted) from the rest. */
+export class TeamsApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+  }
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData
   const res = await fetch(`/api/teams${path}`, {
@@ -104,7 +111,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   })
   if (!res.ok) {
     const err = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
-    throw new Error(err?.error?.message ?? res.statusText)
+    throw new TeamsApiError(res.status, err?.error?.message ?? res.statusText)
   }
   const text = res.status === 204 ? '' : await res.text()
   return (text ? JSON.parse(text) : undefined) as T

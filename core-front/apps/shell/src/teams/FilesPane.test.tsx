@@ -80,6 +80,31 @@ describe('FilesPane', () => {
     await waitFor(() => expect(c.updateFile).toHaveBeenCalledWith('t1', 'a', { folder_id: '' }))
   })
 
+  it('moves a file into a subfolder', async () => {
+    render(<FilesPane teamId="t1" role="owner" />)
+    const row = (await screen.findByText('mine.pdf')).closest('tr') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Move' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByText('Specs'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Move here' }))
+    await waitFor(() => expect(c.updateFile).toHaveBeenCalledWith('t1', 'a', { folder_id: 'f2' }))
+  })
+
+  it('moves a folder, hides it from the picker and shows the server refusal', async () => {
+    c.listFiles.mockResolvedValue({ ...listing, folders: [...listing.folders, { id: 'f3', name: 'Other', parent_id: 'f1', created_by: 'me' }] })
+    c.updateFolder.mockRejectedValue(new Error('cannot move a folder into itself'))
+    render(<FilesPane teamId="t1" role="owner" />)
+    const row = (await screen.findByText('Specs')).closest('tr') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Move' }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('Other')
+    expect(within(dialog).queryByText('Specs')).toBeNull()
+    fireEvent.click(within(dialog).getByText('Other'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Move here' }))
+    await waitFor(() => expect(c.updateFolder).toHaveBeenCalledWith('t1', 'f2', { parent_id: 'f3' }))
+    expect(await within(dialog).findByText('cannot move a folder into itself')).toBeInTheDocument()
+  })
+
   it('uploads several files into the current folder', async () => {
     render(<FilesPane teamId="t1" folderId="f1" role="member" />)
     await screen.findByText('mine.pdf')
@@ -90,7 +115,7 @@ describe('FilesPane', () => {
   })
 
   it('says so when file storage is not configured', async () => {
-    c.listFiles.mockRejectedValue(new Error('Not Found'))
+    c.listFiles.mockRejectedValue(Object.assign(new Error(''), { status: 404 }))
     render(<FilesPane teamId="t1" role="owner" />)
     expect(await screen.findByText(/not configured/i)).toBeInTheDocument()
   })
