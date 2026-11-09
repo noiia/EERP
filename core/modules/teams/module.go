@@ -32,6 +32,9 @@ func (m *teamsModule) Register() error {
 		orm.Register[teams.Folder](orm.WithTableName("team_folder"), orm.WithExcluded()),
 		orm.Register[teams.File](orm.WithTableName("team_file"), orm.WithExcluded()),
 		orm.Register[teams.Share](orm.WithTableName("team_file_share"), orm.WithExcluded()),
+		orm.Register[teams.Group](orm.WithTableName("team_group"), orm.WithExcluded()),
+		orm.Register[teams.GroupMember](orm.WithTableName("team_group_member"), orm.WithExcluded()),
+		orm.Register[teams.ChannelAccess](orm.WithTableName("chat_channel_access"), orm.WithExcluded()),
 	} {
 		if err != nil {
 			return err
@@ -48,6 +51,10 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_member ON chat_channel_member (channel_id, user_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_reaction ON chat_reaction (message_id, user_id, emoji) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_file_share ON team_file_share (file_id, user_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_group_name ON team_group (team_id, lower(name)) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_group_member ON team_group_member (group_id, user_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_access_user ON chat_channel_access (channel_id, user_id) WHERE user_id IS NOT NULL AND deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_access_group ON chat_channel_access (channel_id, group_id) WHERE group_id IS NOT NULL AND deleted_at IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_message_channel_created ON chat_message (channel_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_team_file_team_folder ON team_file (team_id, folder_id)`,
 	} {

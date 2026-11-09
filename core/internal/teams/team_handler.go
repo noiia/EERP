@@ -317,11 +317,12 @@ func (h *Handler) RemoveMember(c *echo.Context) error {
 }
 
 type channelJSON struct {
-	ID     uuid.UUID `json:"id"`
-	TeamID uuid.UUID `json:"team_id"`
-	Kind   string    `json:"kind"`
-	Name   string    `json:"name"`
-	Unread int       `json:"unread"`
+	ID      uuid.UUID `json:"id"`
+	TeamID  uuid.UUID `json:"team_id"`
+	Kind    string    `json:"kind"`
+	Name    string    `json:"name"`
+	Unread  int       `json:"unread"`
+	Private bool      `json:"private"`
 }
 
 func toChannelJSON(ch Channel) channelJSON {
@@ -329,7 +330,7 @@ func toChannelJSON(ch Channel) channelJSON {
 	if ch.TeamID != nil {
 		t = *ch.TeamID
 	}
-	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0}
+	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0, false}
 }
 
 func (h *Handler) ListChannels(c *echo.Context) error {
@@ -339,22 +340,35 @@ func (h *Handler) ListChannels(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
-	chs, err := h.repo.ListChannelsFor(ctx, id.TenantID, team, id.UserID)
+	all, err := h.repo.ListChannelsFor(ctx, id.TenantID, team, id.UserID)
 	if err != nil {
 		return err
 	}
-	ids := make([]uuid.UUID, len(chs))
-	for i, ch := range chs {
-		ids[i] = ch.ID
+	visible, err := h.repo.VisibleChannelIDs(ctx, id.TenantID, team, id.UserID, role)
+	if err != nil {
+		return err
+	}
+	var ids []uuid.UUID
+	for _, ch := range all {
+		if visible[ch.ID] {
+			ids = append(ids, ch.ID)
+		}
 	}
 	unread, err := h.repo.UnreadCounts(ctx, id.TenantID, id.UserID, ids)
 	if err != nil {
 		return err
 	}
-	out := make([]channelJSON, len(chs))
-	for i, ch := range chs {
-		out[i] = toChannelJSON(ch)
-		out[i].Unread = unread[ch.ID]
+	private, err := h.repo.privateChannels(ctx, id.TenantID, ids)
+	if err != nil {
+		return err
+	}
+	out := make([]channelJSON, 0, len(ids))
+	for _, ch := range all {
+		if visible[ch.ID] {
+			j := toChannelJSON(ch)
+			j.Unread, j.Private = unread[ch.ID], private[ch.ID]
+			out = append(out, j)
+		}
 	}
 	return list(c, out)
 }
@@ -410,7 +424,13 @@ func (h *Handler) RenameChannel(c *echo.Context) error {
 	case err != nil:
 		return err
 	}
-	return c.JSON(http.StatusOK, toChannelJSON(ch))
+	private, err := h.repo.privateChannels(ctx, auth.MustIdentity(ctx).TenantID, []uuid.UUID{ch.ID})
+	if err != nil {
+		return err
+	}
+	j := toChannelJSON(ch)
+	j.Private = private[ch.ID]
+	return c.JSON(http.StatusOK, j)
 }
 
 func (h *Handler) DeleteChannel(c *echo.Context) error {
@@ -442,18 +462,14 @@ type orderBody struct {
 }
 
 // setOrder validates body ids against the conversations the caller can see
-// (visible) and stores their positions; an unknown id is a 422.
-func (h *Handler) setOrder(c *echo.Context, visible []uuid.UUID) error {
+// (visible) and stores their positions; an unknown or invisible id is a 422.
+func (h *Handler) setOrder(c *echo.Context, visible map[uuid.UUID]bool) error {
 	var b orderBody
 	if err := c.Bind(&b); err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
-	ok := make(map[uuid.UUID]bool, len(visible))
-	for _, v := range visible {
-		ok[v] = true
-	}
 	for _, i := range b.IDs {
-		if !ok[i] {
+		if !visible[i] {
 			return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "ids must be conversations you can see.")
 		}
 	}
@@ -471,13 +487,9 @@ func (h *Handler) SetChannelOrder(c *echo.Context) error {
 		return err
 	}
 	id := auth.MustIdentity(c.Request().Context())
-	chs, err := h.repo.ListChannels(c.Request().Context(), id.TenantID, team)
+	visible, err := h.repo.VisibleChannelIDs(c.Request().Context(), id.TenantID, team, id.UserID, role)
 	if err != nil {
 		return err
 	}
-	ids := make([]uuid.UUID, len(chs))
-	for i, ch := range chs {
-		ids[i] = ch.ID
-	}
-	return h.setOrder(c, ids)
+	return h.setOrder(c, visible)
 }

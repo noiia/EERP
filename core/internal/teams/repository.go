@@ -117,9 +117,14 @@ func (r *Repository) ListMyTeams(ctx context.Context, tenant, user uuid.UUID) ([
 	for _, m := range all {
 		counts[m.TeamID]++
 	}
-	chans, err := r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.In("team_id", ids),
-		orm.Cond("kind = $1", KindChannel)) // each condition's placeholders are rebased
-
+	// Only the channels the user can see count (the visibility rule, across all their teams at once).
+	rows, err := r.db.Query(ctx, `SELECT c.id, c.team_id FROM chat_channel c
+		JOIN team_member m ON m.team_id = c.team_id AND m.user_id = $2 AND m.tenant_id = $1 AND m.deleted_at IS NULL
+		WHERE c.tenant_id = $1 AND c.kind = 'channel' AND c.deleted_at IS NULL AND (m.role = 'owner' OR `+sees("$2")+`)`, tenant, user)
+	if err != nil {
+		return nil, fmt.Errorf("teams: list channels: %w", err)
+	}
+	chans, err := pgx.CollectRows(rows, pgx.RowToStructByPos[struct{ ID, TeamID uuid.UUID }])
 	if err != nil {
 		return nil, fmt.Errorf("teams: list channels: %w", err)
 	}
@@ -133,7 +138,7 @@ func (r *Repository) ListMyTeams(ctx context.Context, tenant, user uuid.UUID) ([
 	}
 	perTeam := map[uuid.UUID]int{}
 	for _, ch := range chans {
-		perTeam[*ch.TeamID] += unread[ch.ID]
+		perTeam[ch.TeamID] += unread[ch.ID]
 	}
 	out := make([]TeamSummary, len(teams))
 	for i, t := range teams {
@@ -212,7 +217,10 @@ func (r *Repository) DeleteTeam(ctx context.Context, tenant, team uuid.UUID) ([]
 			`DELETE FROM chat_attachment WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_message WHERE channel_id IN ` + chans,
 			`DELETE FROM chat_channel_member WHERE channel_id IN ` + chans,
+			`DELETE FROM chat_channel_access WHERE channel_id IN ` + chans,
 			`DELETE FROM chat_channel WHERE tenant_id=$1 AND team_id=$2`,
+			`DELETE FROM team_group_member WHERE group_id IN (SELECT id FROM team_group WHERE tenant_id=$1 AND team_id=$2)`,
+			`DELETE FROM team_group WHERE tenant_id=$1 AND team_id=$2`,
 			`DELETE FROM team_file WHERE tenant_id=$1 AND team_id=$2`,
 			`DELETE FROM team_folder WHERE tenant_id=$1 AND team_id=$2`,
 			`DELETE FROM team_member WHERE tenant_id=$1 AND team_id=$2`,
@@ -273,8 +281,21 @@ func (r *Repository) changeMember(ctx context.Context, tenant, team, user uuid.U
 			return ErrLastOwner
 		}
 		if newRole == "" {
-			_, err = ms.Delete(ctx, target.ID)
-			return err
+			if _, err = ms.Delete(ctx, target.ID); err != nil {
+				return err
+			}
+			// A former member leaves the team's groups and channel access lists with it.
+			for _, q := range []string{
+				`DELETE FROM team_group_member WHERE tenant_id=$1 AND user_id=$3
+					AND group_id IN (SELECT id FROM team_group WHERE tenant_id=$1 AND team_id=$2)`,
+				`DELETE FROM chat_channel_access WHERE tenant_id=$1 AND user_id=$3
+					AND channel_id IN (SELECT id FROM chat_channel WHERE tenant_id=$1 AND team_id=$2)`,
+			} {
+				if _, err := tx.Exec(ctx, q, tenant, team, user); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		target.Role = newRole
 		_, err = ms.Update(ctx, *target, target.ID)
@@ -368,6 +389,7 @@ func (r *Repository) DeleteChannel(ctx context.Context, tenant, team, id uuid.UU
 			`DELETE FROM chat_attachment WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_message WHERE tenant_id=$1 AND channel_id=$2`,
 			`DELETE FROM chat_channel_member WHERE tenant_id=$1 AND channel_id=$2`,
+			`DELETE FROM chat_channel_access WHERE tenant_id=$1 AND channel_id=$2`,
 			`DELETE FROM chat_channel WHERE tenant_id=$1 AND id=$2`,
 		} {
 			if _, err := tx.Exec(ctx, q, tenant, id); err != nil {

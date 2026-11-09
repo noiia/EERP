@@ -88,8 +88,9 @@ func participants(key string) []uuid.UUID {
 }
 
 // channelAccess resolves the caller's role in a channel and the users who read
-// it: a team channel's members, or a direct conversation's two participants
-// (role member). Anyone else gets a 404 (already written; role is then empty).
+// it: a team channel's audience (CanSeeChannel / ChannelAudience), or a direct
+// conversation's two participants (role member). Anyone else, including a team
+// member the channel's access list leaves out, gets a 404 (already written; role is then empty).
 func (h *Handler) channelAccess(c *echo.Context, channel uuid.UUID) (Channel, string, []uuid.UUID, error) {
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
@@ -116,13 +117,16 @@ func (h *Handler) channelAccess(c *echo.Context, channel uuid.UUID) (Channel, st
 	if err != nil {
 		return Channel{}, "", nil, err
 	}
-	ms, err := h.repo.ListMembers(ctx, id.TenantID, *ch.TeamID)
+	ok, err := h.repo.CanSeeChannel(ctx, id.TenantID, ch, id.UserID, role)
 	if err != nil {
 		return Channel{}, "", nil, err
 	}
-	audience := make([]uuid.UUID, len(ms))
-	for i, m := range ms {
-		audience[i] = m.UserID
+	if !ok {
+		return Channel{}, "", nil, notFound(c, "channel")
+	}
+	audience, err := h.repo.ChannelAudience(ctx, id.TenantID, ch)
+	if err != nil {
+		return Channel{}, "", nil, err
 	}
 	return ch, role, audience, nil
 }
@@ -556,9 +560,9 @@ func (h *Handler) SetDirectOrder(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	ids := make([]uuid.UUID, len(ds))
-	for i, d := range ds {
-		ids[i] = d.Channel.ID
+	ids := make(map[uuid.UUID]bool, len(ds))
+	for _, d := range ds {
+		ids[d.Channel.ID] = true
 	}
 	return h.setOrder(c, ids)
 }

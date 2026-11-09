@@ -106,6 +106,31 @@ type Share struct {
 	UserID   uuid.UUID `db:"user_id,index"`
 }
 
+// Group is a team's hand-managed set of members, used in channel access lists.
+type Group struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id,index"`
+	TeamID   uuid.UUID `db:"team_id,index"`
+	Name     string    `db:"name"`
+}
+
+type GroupMember struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id,index"`
+	GroupID  uuid.UUID `db:"group_id,index"`
+	UserID   uuid.UUID `db:"user_id,index"`
+}
+
+// ChannelAccess is one entry of a channel's access list: exactly one of UserID/GroupID is set.
+// A channel with no entry is open to the whole team.
+type ChannelAccess struct {
+	model.BaseModel
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	ChannelID uuid.UUID  `db:"channel_id,index"`
+	UserID    *uuid.UUID `db:"user_id"`
+	GroupID   *uuid.UUID `db:"group_id"`
+}
+
 // Table names: the repository derives them from these, matching modules/teams' registration.
 func (Team) TableName() string          { return "team" }
 func (Member) TableName() string        { return "team_member" }
@@ -117,3 +142,6 @@ func (Reaction) TableName() string      { return "chat_reaction" }
 func (Folder) TableName() string        { return "team_folder" }
 func (File) TableName() string          { return "team_file" }
 func (Share) TableName() string         { return "team_file_share" }
+func (Group) TableName() string         { return "team_group" }
+func (GroupMember) TableName() string   { return "team_group_member" }
+func (ChannelAccess) TableName() string { return "chat_channel_access" }
