@@ -90,6 +90,20 @@ it('keeps a stored secret write-only and submits it empty, stripping has_* and c
   expect(body).not.toHaveProperty('callback_url')
 })
 
+it('offers an unencrypted connection only for plain ldap:// without StartTLS, with a warning', async () => {
+  render(<AuthSettingsForm initial={base} roles={roles} />)
+  const allow = screen.getByLabelText(/Allow an unencrypted connection/)
+  expect(screen.queryByText(/cross the network in clear/)).toBeNull()
+  fireEvent.click(allow)
+  expect(screen.getByText(/cross the network in clear/)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(saveAuthSettings).toHaveBeenCalled())
+  expect(saveAuthSettings.mock.calls[0][0].ldap.allow_plaintext).toBe(true)
+
+  fireEvent.click(screen.getByLabelText('Use StartTLS'))
+  expect(screen.queryByLabelText(/Allow an unencrypted connection/)).toBeNull()
+})
+
 it('shows the callback URL read-only', () => {
   render(<AuthSettingsForm initial={base} roles={roles} />)
   const cb = screen.getByLabelText('Callback URL') as HTMLInputElement

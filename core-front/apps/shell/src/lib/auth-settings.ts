@@ -12,6 +12,8 @@ export interface LDAPSettings {
   label: string
   url: string
   start_tls: boolean
+  /** Explicit opt-in to plain ldap:// without StartTLS on a remote host (passwords in clear). */
+  allow_plaintext?: boolean
   bind_dn: string
   bind_password?: string
   base_dn: string

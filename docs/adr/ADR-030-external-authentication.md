@@ -39,7 +39,12 @@ SAML, no password change from the ERP, no background directory sync (roles are s
 4. **LDAP** (`POST /api/v1/auth/ldap/login {username, password}`): service-account bind, search
    with the configured filter (`{username}` escaped per RFC 4515), exactly one entry required, then
    bind as that entry; the entry DN is the subject. `ldaps://`, or `ldap://` + StartTLS; plain
-   `ldap://` is refused outside loopback. LLDAP defaults are a preset, not a special case.
+   `ldap://` is refused outside loopback unless the admin ticks **Allow an unencrypted connection
+   (danger)** (`ldap.allow_plaintext`). That opt-in exists because some directories (LLDAP) have no
+   StartTLS and an `ldaps://` certificate is not always available. With it on, the bind password
+   and every user's password cross the network in clear, so it belongs only on a trusted network.
+   The certificate of `ldaps://` / StartTLS is verified against the system trust store and the URL's
+   host name (an IP URL needs an IP SAN). LLDAP defaults are a preset, not a special case.
 5. **OIDC** — authorization code + PKCE (S256) + nonce, bouncing through the Next BFF; the ID
    token is verified by `go-oidc` (signature, `iss`, `aud`, `exp`, nonce). Several providers can be
    configured. The redirect URI is built **server-side** from the setting `erp_url` (a bare https

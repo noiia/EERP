@@ -37,6 +37,7 @@ func TestMethodsValidate(t *testing.T) {
 		{"duplicate provider id", Methods{OIDC: []OIDCProvider{okOIDC, okOIDC}, ERPURL: "https://erp"}, false},
 		{"issuer must be https", Methods{OIDC: []OIDCProvider{{ID: "a", Issuer: "http://x", ClientID: "c"}}, ERPURL: "https://erp"}, false},
 		{"plain ldap remote", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldap://ldap.example.com", BindDN: "cn=svc", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, false},
+		{"plain ldap remote, plaintext allowed", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldap://192.168.2.27:3890", AllowPlaintext: true, BindDN: "cn=svc", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, true},
 		{"plain ldap loopback", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldap://127.0.0.1:3890", BindDN: "cn=svc", BaseDN: "dc=x", UserFilter: "(uid={username})"}}, true},
 		{"filter needs placeholder", Methods{Default: "ldap", LDAP: &LDAPConfig{URL: "ldaps://x", BindDN: "cn=svc", BaseDN: "dc=x", UserFilter: "(uid=bob)"}}, false},
 		{"mapped role exists", Methods{RoleMapping: []RoleMapping{{Group: "erp-admins", RoleID: admin}}}, true},

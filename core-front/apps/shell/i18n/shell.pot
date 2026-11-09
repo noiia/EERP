@@ -1547,6 +1547,12 @@ msgstr ""
 msgid "Use StartTLS"
 msgstr ""
 
+msgid "Allow an unencrypted connection (danger)"
+msgstr ""
+
+msgid "The bind password and every user's password cross the network in clear. Use it only on a network you trust; prefer ldaps:// when the directory supports it."
+msgstr ""
+
 #: app/settings/authentication/AuthSettingsForm.tsx
 msgid "Bind DN"
 msgstr ""

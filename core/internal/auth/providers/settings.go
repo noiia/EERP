@@ -32,9 +32,13 @@ type Methods struct {
 }
 
 type LDAPConfig struct {
-	Label           string `json:"label"`
-	URL             string `json:"url"`
-	StartTLS        bool   `json:"start_tls"`
+	Label    string `json:"label"`
+	URL      string `json:"url"`
+	StartTLS bool   `json:"start_tls"`
+	// AllowPlaintext is an explicit admin opt-in to plain ldap:// without StartTLS on a
+	// non-loopback host (e.g. lldap, which has no StartTLS): the bind password and every
+	// user's password then cross the network in clear.
+	AllowPlaintext  bool   `json:"allow_plaintext"`
 	BindDN          string `json:"bind_dn"`
 	BindPassword    string `json:"bind_password,omitempty"`
 	BaseDN          string `json:"base_dn"`
@@ -180,8 +184,8 @@ func (m Methods) Validate(roleExists func(uuid.UUID) bool) error {
 		if err != nil || (u.Scheme != "ldap" && u.Scheme != "ldaps") || u.Host == "" {
 			return invalid("ldap url must be ldap:// or ldaps://")
 		}
-		if u.Scheme == "ldap" && !l.StartTLS && !isLoopback(u.Hostname()) {
-			return invalid("plain ldap:// needs StartTLS outside loopback")
+		if u.Scheme == "ldap" && !l.StartTLS && !l.AllowPlaintext && !isLoopback(u.Hostname()) {
+			return invalid("plain ldap:// needs StartTLS outside loopback (or explicitly allow an unencrypted connection)")
 		}
 		if l.BaseDN == "" || !strings.Contains(l.UserFilter, "{username}") {
 			return invalid("ldap needs a base DN and a user filter containing {username}")

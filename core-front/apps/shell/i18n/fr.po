@@ -1734,6 +1734,12 @@ msgstr "URL du serveur"
 msgid "Use StartTLS"
 msgstr "Utiliser StartTLS"
 
+msgid "Allow an unencrypted connection (danger)"
+msgstr "Autoriser une connexion non chiffrée (danger)"
+
+msgid "The bind password and every user's password cross the network in clear. Use it only on a network you trust; prefer ldaps:// when the directory supports it."
+msgstr "Le mot de passe du compte de service et celui de chaque utilisateur circulent en clair sur le réseau. À n'utiliser que sur un réseau de confiance ; préférez ldaps:// si l'annuaire le permet."
+
 msgid "Bind DN"
 msgstr "DN de liaison"
 

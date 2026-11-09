@@ -7,7 +7,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useT, ViewBanner } from '@eerp/core-front'
+import { Banner, useT, ViewBanner } from '@eerp/core-front'
 import {
   saveAuthSettings,
   testAuthMethod,
@@ -272,6 +272,23 @@ export default function AuthSettingsForm({
                 />
               }
             />
+            {ldap.url.trim().toLowerCase().startsWith('ldap://') && !ldap.start_tls && (
+              <FormControlLabel
+                label={t('Allow an unencrypted connection (danger)')}
+                control={
+                  <Checkbox
+                    color="error"
+                    checked={ldap.allow_plaintext ?? false}
+                    onChange={(e) => setLdap({ allow_plaintext: e.target.checked })}
+                  />
+                }
+              />
+            )}
+            {ldap.allow_plaintext && ldap.url.trim().toLowerCase().startsWith('ldap://') && !ldap.start_tls && (
+              <Banner status="warning">
+                {t('The bind password and every user\'s password cross the network in clear. Use it only on a network you trust; prefer ldaps:// when the directory supports it.')}
+              </Banner>
+            )}
             <TextField
               label={t('Bind DN')}
               value={ldap.bind_dn}
