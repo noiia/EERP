@@ -225,3 +225,24 @@ msgstr ""
 
 msgid "Files"
 msgstr ""
+
+msgid "Folder"
+msgstr ""
+
+msgid "Link a folder"
+msgstr ""
+
+msgid "Link this folder"
+msgstr ""
+
+msgid "No folder yet. Files sent here will create one."
+msgstr ""
+
+msgid "File deleted"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Back"
+msgstr ""

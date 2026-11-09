@@ -226,3 +226,24 @@ msgstr "Ce dossier n'existe plus."
 
 msgid "Files"
 msgstr "Fichiers"
+
+msgid "Folder"
+msgstr "Dossier"
+
+msgid "Link a folder"
+msgstr "Lier un dossier"
+
+msgid "Link this folder"
+msgstr "Lier ce dossier"
+
+msgid "No folder yet. Files sent here will create one."
+msgstr "Pas encore de dossier. Les fichiers envoyés ici en créeront un."
+
+msgid "File deleted"
+msgstr "Fichier supprimé"
+
+msgid "Download"
+msgstr "Télécharger"
+
+msgid "Back"
+msgstr "Retour"

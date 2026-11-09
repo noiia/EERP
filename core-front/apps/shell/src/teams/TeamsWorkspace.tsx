@@ -53,6 +53,11 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   }, [teamId, reloadDirects])
 
   useEffect(reload, [reload])
+  // A linked folder, or one Go created for files sent: re-read folder_id and the sidebar's folder tree.
+  const folderChanged = useCallback(() => {
+    reload()
+    setFoldersRev((n) => n + 1)
+  }, [reload])
   useEffect(() => {
     listShared().then(() => setCanAttach(true), () => setCanAttach(false))
   }, [])
@@ -106,6 +111,11 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
         members={candidates}
         canAttach={canAttach}
         readOnly={view.kind === 'channel' && team?.role === 'guest'}
+        teamId={channel ? teamId : undefined}
+        folderId={channel?.folder_id}
+        role={team?.role}
+        foldersRev={foldersRev}
+        onFolderChanged={folderChanged}
       />
     )
   } else if (view.kind === 'files' && teamId) {

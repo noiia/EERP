@@ -30,6 +30,7 @@ export interface Channel {
   kind: string
   name: string
   unread: number
+  folder_id?: string | null
 }
 export interface DirectChat {
   id: string
@@ -37,11 +38,14 @@ export interface DirectChat {
   unread: number
   last_message_at: string | null
 }
+/** kind "file" is a team file (/files/:id/download); deleted = gone or in a folder the viewer can't see. */
 export interface Attachment {
   id: string
   filename: string
   mime: string
   size: number
+  kind?: 'attachment' | 'file'
+  deleted?: boolean
 }
 export interface Reaction {
   emoji: string
@@ -147,6 +151,9 @@ export const listChannels = (team: string) => list<Channel>(`/${team}/channels`)
 export const createChannel = (team: string, name: string) => call<Channel>('POST', `/${team}/channels`, { name })
 export const renameChannel = (team: string, channel: string, name: string) => call<Channel>('PUT', `/${team}/channels/${channel}`, { name })
 export const deleteChannel = (team: string, channel: string) => call<void>('DELETE', `/${team}/channels/${channel}`)
+/** folderId '' unlinks. */
+export const linkFolder = (team: string, channel: string, folderId: string) =>
+  call<Channel>('PUT', `/${team}/channels/${channel}`, { folder_id: folderId })
 export const listDirect = () => list<DirectChat>('/direct')
 export const orderChannels = (team: string, ids: string[]) => call<void>('PUT', `/${team}/channels/order`, { ids })
 export const orderDirect = (ids: string[]) => call<void>('PUT', '/direct/order', { ids })

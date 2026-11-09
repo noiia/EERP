@@ -75,6 +75,27 @@ describe('ChatPane', () => {
     expect(await screen.findByText('body m3')).toBeInTheDocument()
   })
 
+  it('sends dropped files through postMessage', async () => {
+    postMessage.mockResolvedValue(msg('m3', '2026-01-03T10:00:00Z'))
+    const onFolderChanged = vi.fn()
+    render(<ChatPane channelId="c1" title="general" members={[]} canAttach readOnly={false} teamId="t1" onFolderChanged={onFolderChanged} />)
+    await screen.findAllByRole('article')
+    const file = new File(['x'], 'drop.png', { type: 'image/png' })
+    fireEvent.drop(screen.getByTestId('teams-chat-pane'), { dataTransfer: { files: [file], types: ['Files'] } })
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith('c1', '', [], [file]))
+    await waitFor(() => expect(onFolderChanged).toHaveBeenCalled())
+  })
+
+  it('has a Folder toggle in a team channel only', async () => {
+    const { unmount } = render(<ChatPane channelId="c1" title="general" members={[]} canAttach readOnly={false} teamId="t1" role="member" folderId={null} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Folder' }))
+    expect(await screen.findByText('No folder yet. Files sent here will create one.')).toBeInTheDocument()
+    unmount()
+    renderPane()
+    await screen.findAllByRole('article')
+    expect(screen.queryByRole('button', { name: 'Folder' })).toBeNull()
+  })
+
   it('loads older messages when scrolled to the top', async () => {
     listMessages.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => msg(`n${i}`, `2026-02-01T00:00:${String(59 - i).padStart(2, '0')}Z`)))
     renderPane()

@@ -44,6 +44,18 @@ describe('FilesPane', () => {
     expect(c.listFiles).toHaveBeenCalledWith('t1', 'f1')
   })
 
+  it('starts the breadcrumb at rootFolderId, without All files', async () => {
+    c.listFiles.mockResolvedValue({ ...listing, folder: { id: 'f2', name: 'Specs', parent_id: 'f1' }, path: [{ id: 'f1', name: 'Docs' }, { id: 'f2', name: 'Specs' }], folders: [{ id: 'f3', name: 'Drafts', parent_id: 'f2', created_by: 'me' }] })
+    render(<FilesPane teamId="t1" rootFolderId="f2" role="owner" compact />)
+    const crumbs = within(await screen.findByRole('navigation', { name: 'Path' }))
+    await crumbs.findByText('Specs')
+    expect(crumbs.queryByText('Docs')).toBeNull()
+    expect(crumbs.queryByText('All files')).toBeNull()
+    expect(c.listFiles).toHaveBeenCalledWith('t1', 'f2')
+    fireEvent.click(screen.getByText('Drafts'))
+    await waitFor(() => expect(c.listFiles).toHaveBeenLastCalledWith('t1', 'f3'))
+  })
+
   it('hides New folder and Upload for a guest, and any row actions', async () => {
     render(<FilesPane teamId="t1" role="guest" />)
     await screen.findByText('mine.pdf')

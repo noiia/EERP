@@ -34,9 +34,15 @@ type Dlg =
   | { kind: 'move'; target: 'file' | 'folder'; id: string }
   | { kind: 'share'; id: string }
 
-/** The team's file manager: a folder listing with upload, rename, move, share and delete. */
-export function FilesPane({ teamId, folderId, role, onFoldersChanged, onFolderName }: { teamId: string; folderId?: string; role?: Role; onFoldersChanged?: () => void; onFolderName?: (name: string | null) => void }) {
+/** The team's file manager: a folder listing with upload, rename, move, share and delete.
+ * With rootFolderId it browses below that folder only, in place (no URL change): a conversation's folder panel. */
+export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact = false, role, onFoldersChanged, onFolderName }: {
+  teamId: string; folderId?: string; rootFolderId?: string; compact?: boolean; role?: Role
+  onFoldersChanged?: () => void; onFolderName?: (name: string | null) => void
+}) {
   const t = useT()
+  const [inPanel, setInPanel] = useState<string | undefined>()
+  const folderId = rootFolderId ? inPanel ?? rootFolderId : urlFolder
   const me = useSessionStore((s) => s.identity?.userId)
   const [listing, setListing] = useState<FolderListing | null>(null)
   const [missing, setMissing] = useState(false)
@@ -71,7 +77,9 @@ export function FilesPane({ teamId, folderId, role, onFoldersChanged, onFolderNa
     return (
       <Box sx={{ p: 3 }} data-testid="teams-files-pane">
         <Typography color="text.secondary"><T text="This folder no longer exists." /></Typography>
-        <Link component={IntentLink} href={erpPath(`/teams/${teamId}/files`)} underline="hover"><T text="All files" /></Link>
+        {rootFolderId
+          ? inPanel && <Link component="button" onClick={() => setInPanel(undefined)} underline="hover"><T text="Back" /></Link>
+          : <Link component={IntentLink} href={erpPath(`/teams/${teamId}/files`)} underline="hover"><T text="All files" /></Link>}
       </Box>
     )
   }
@@ -83,6 +91,12 @@ export function FilesPane({ teamId, folderId, role, onFoldersChanged, onFolderNa
   }
   const openName = (d: Dlg, initial = '') => { setName(initial); setDlg(d) }
 
+  const folderLink = (id: string, label: string) => rootFolderId
+    ? <Link key={id} component="button" onClick={() => setInPanel(id)} underline="hover" sx={{ verticalAlign: 'baseline' }}>{label}</Link>
+    : <Link key={id} component={IntentLink} href={erpPath(`/teams/${teamId}/files?folder=${id}`)} underline="hover">{label}</Link>
+  // Rooted: the crumbs above the root are hidden, even when the viewer could see them.
+  const crumbs = rootFolderId ? listing?.path.slice(Math.max(0, listing.path.findIndex((p) => p.id === rootFolderId))) : listing?.path
+
   const actions = (kind: 'file' | 'folder', id: string, label: string, owner: string) => canEdit(owner) && (
     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
       {kind === 'file' && <Button size="small" onClick={() => setDlg({ kind: 'share', id })}><T text="Share" /></Button>}
@@ -93,13 +107,11 @@ export function FilesPane({ teamId, folderId, role, onFoldersChanged, onFolderNa
   )
 
   return (
-    <Box data-testid="teams-files-pane" sx={{ p: 2, overflow: 'auto', height: '100%' }}>
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+    <Box data-testid="teams-files-pane" sx={{ p: compact ? 1 : 2, overflow: 'auto', height: '100%' }}>
+      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
         <Breadcrumbs aria-label={t('Path')}>
-          <Link component={IntentLink} href={erpPath(`/teams/${teamId}/files`)} underline="hover"><T text="All files" /></Link>
-          {listing?.path.map((p) => (
-            <Link key={p.id} component={IntentLink} href={erpPath(`/teams/${teamId}/files?folder=${p.id}`)} underline="hover">{p.name}</Link>
-          ))}
+          {!rootFolderId && <Link component={IntentLink} href={erpPath(`/teams/${teamId}/files`)} underline="hover"><T text="All files" /></Link>}
+          {crumbs?.map((p) => folderLink(p.id, p.name))}
         </Breadcrumbs>
         {canWrite && (
           <Stack direction="row" spacing={1}>
@@ -118,25 +130,23 @@ export function FilesPane({ teamId, folderId, role, onFoldersChanged, onFolderNa
         <TableHead>
           <TableRow>
             <TableCell><T text="Name" /></TableCell>
-            <TableCell><T text="Size" /></TableCell>
-            <TableCell><T text="Uploaded by" /></TableCell>
+            {!compact && <TableCell><T text="Size" /></TableCell>}
+            {!compact && <TableCell><T text="Uploaded by" /></TableCell>}
             <TableCell />
           </TableRow>
         </TableHead>
         <TableBody>
           {listing?.folders.map((f) => (
             <TableRow key={f.id}>
-              <TableCell colSpan={3}>
-                <Link component={IntentLink} href={erpPath(`/teams/${teamId}/files?folder=${f.id}`)} underline="hover">{f.name}</Link>
-              </TableCell>
+              <TableCell colSpan={compact ? 1 : 3}>{folderLink(f.id, f.name)}</TableCell>
               <TableCell>{actions('folder', f.id, f.name, f.created_by)}</TableCell>
             </TableRow>
           ))}
           {listing?.files.map((f) => (
             <TableRow key={f.id}>
               <TableCell><Link href={`/api/teams/files/${f.id}/download`}>{f.name}</Link></TableCell>
-              <TableCell>{formatSize(f.size)}</TableCell>
-              <TableCell>{f.uploaded_by_name}</TableCell>
+              {!compact && <TableCell>{formatSize(f.size)}</TableCell>}
+              {!compact && <TableCell>{f.uploaded_by_name}</TableCell>}
               <TableCell>{actions('file', f.id, f.name, f.uploaded_by)}</TableCell>
             </TableRow>
           ))}
