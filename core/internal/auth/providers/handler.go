@@ -23,6 +23,7 @@ type Deps struct {
 	Provisioner *Provisioner
 	Sessions    SessionIssuer
 	OIDC        *OIDCClient
+	Photos      PhotoSyncer // nil = no LDAP photo sync (no object storage)
 	Logger      *zap.Logger // nil = silent
 }
 
@@ -212,6 +213,9 @@ func (h *Handler) LDAPLogin(c *echo.Context) error {
 			return unauthorized(c, msg)
 		}
 		return err
+	}
+	if h.deps.Photos != nil && m.LDAP.PhotoAttr != "" { // no attribute = no sync, not "clear"
+		h.deps.Photos.Sync(ctx, h.deps.Tenant, userID, id.Photo)
 	}
 	return h.deps.Sessions.IssueSessionForUser(c, userID)
 }

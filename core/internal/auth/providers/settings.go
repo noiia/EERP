@@ -48,6 +48,9 @@ type LDAPConfig struct {
 	GroupsAttr      string `json:"groups_attr"`
 	GroupSearchBase string `json:"group_search_base"`
 	GroupFilter     string `json:"group_filter"`
+	// PhotoAttr is the entry's photo attribute (LLDAP: jpegPhoto), synced into
+	// the user's avatar at each sign-in; "" = no photo sync.
+	PhotoAttr string `json:"photo_attr"`
 	// DefaultRoleID is granted to an LDAP user none of whose groups is mapped
 	// (nil = refuse such users unless they hold a manual role).
 	DefaultRoleID *uuid.UUID `json:"default_role_id"`

@@ -14,6 +14,7 @@ type ExternalIdentity struct {
 	EmailVerified bool
 	DisplayName   string
 	Groups        []string
+	Photo         []byte // raw directory photo (LDAP only); nil = none
 }
 
 // AuthIdentity links an ERP user to a (provider, subject). Off the generic

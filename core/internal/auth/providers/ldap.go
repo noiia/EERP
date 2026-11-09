@@ -78,7 +78,7 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 		return ExternalIdentity{}, fmt.Errorf("ldap: service bind: %w", err)
 	}
 	attrs := []string{"dn", "displayName"}
-	for _, a := range []string{cfg.EmailAttr, cfg.NameAttr} {
+	for _, a := range []string{cfg.EmailAttr, cfg.NameAttr, cfg.PhotoAttr} {
 		if a != "" {
 			attrs = append(attrs, a)
 		}
@@ -108,6 +108,10 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 	if name == "" {
 		name = entry.GetAttributeValue("displayName")
 	}
+	var photo []byte
+	if cfg.PhotoAttr != "" {
+		photo = entry.GetRawAttributeValue(cfg.PhotoAttr) // binary: never the string getter
+	}
 	groups := groupNames(entry.GetAttributeValues(cfg.GroupsAttr))
 	if cfg.GroupSearchBase != "" && cfg.GroupFilter != "" {
 		if err := conn.Bind(cfg.BindDN, cfg.BindPassword); err != nil {
@@ -124,7 +128,7 @@ func (d LDAPDirectory) Authenticate(_ context.Context, cfg LDAPConfig, username,
 	}
 	return ExternalIdentity{
 		Provider: "ldap", Subject: entry.DN, Email: entry.GetAttributeValue(cfg.EmailAttr),
-		EmailVerified: true, DisplayName: name, Groups: groups,
+		EmailVerified: true, DisplayName: name, Groups: groups, Photo: photo,
 	}, nil
 }
 

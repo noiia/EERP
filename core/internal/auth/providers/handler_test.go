@@ -282,3 +282,73 @@ func TestIssuerChangeUnlinksProvider(t *testing.T) {
 		t.Errorf("unlinked = %v, want [oidc:corp]", unlinked)
 	}
 }
+
+type fakePhotos struct {
+	calls int
+	user  uuid.UUID
+	photo []byte
+}
+
+func (f *fakePhotos) Sync(_ context.Context, _, user uuid.UUID, photo []byte) {
+	f.calls++
+	f.user, f.photo = user, photo
+}
+
+func TestLDAPLogin_SyncsPhoto(t *testing.T) {
+	h, dir, sessions, user, ldap := ldapTestHandler(t)
+	alice := dir.users["alice"]
+	alice.id.Photo = []byte("jpeg")
+	dir.users["alice"] = alice
+	photos := &fakePhotos{}
+	h.deps.Photos = photos
+
+	// No photo_attr configured: nothing syncs (an empty photo would clear the avatar).
+	if rec := call(t, h, h.LDAPLogin, http.MethodPost, `{"username":"alice","password":"pw"}`); rec.Code != http.StatusOK || photos.calls != 0 {
+		t.Fatalf("without photo_attr = %d, syncs %d", rec.Code, photos.calls)
+	}
+	ldap.PhotoAttr = "jpegPhoto"
+	if err := h.deps.Store.Save(context.Background(), h.deps.Tenant, Methods{Default: "ldap", LDAP: &ldap}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call(t, h, h.LDAPLogin, http.MethodPost, `{"username":"alice","password":"pw"}`); rec.Code != http.StatusOK || sessions.issued != user {
+		t.Fatalf("login = %d %s", rec.Code, rec.Body.String())
+	}
+	if photos.calls != 1 || photos.user != user || string(photos.photo) != "jpeg" {
+		t.Errorf("sync = %+v", photos)
+	}
+}
+
+// failingPhotos stands for a sync whose storage failed: PhotoSyncer has no
+// error to return, so the sign-in goes on.
+type failingPhotos struct{ calls int }
+
+func (f *failingPhotos) Sync(context.Context, uuid.UUID, uuid.UUID, []byte) { f.calls++ }
+
+func TestLDAPLogin_SucceedsWhenSyncFails(t *testing.T) {
+	h, _, sessions, user, ldap := ldapTestHandler(t)
+	ldap.PhotoAttr = "jpegPhoto"
+	if err := h.deps.Store.Save(context.Background(), h.deps.Tenant, Methods{Default: "ldap", LDAP: &ldap}); err != nil {
+		t.Fatal(err)
+	}
+	photos := &failingPhotos{}
+	h.deps.Photos = photos
+	if rec := call(t, h, h.LDAPLogin, http.MethodPost, `{"username":"alice","password":"pw"}`); rec.Code != http.StatusOK || sessions.issued != user || photos.calls != 1 {
+		t.Fatalf("login = %d, issued %v, syncs %d", rec.Code, sessions.issued, photos.calls)
+	}
+}
+
+func TestLDAPPhotoAttrRoundTrips(t *testing.T) {
+	h, _, _, _, ldap := ldapTestHandler(t)
+	ldap.PhotoAttr = "jpegPhoto"
+	if err := h.deps.Store.Save(context.Background(), h.deps.Tenant, Methods{Default: "ldap", LDAP: &ldap}); err != nil {
+		t.Fatal(err)
+	}
+	m, err := h.deps.Store.Load(context.Background(), h.deps.Tenant)
+	if err != nil || m.LDAP == nil || m.LDAP.PhotoAttr != "jpegPhoto" {
+		t.Fatalf("loaded = %+v, %v", m.LDAP, err)
+	}
+	b, _ := json.Marshal(ldap)
+	if !strings.Contains(string(b), `"photo_attr":"jpegPhoto"`) {
+		t.Errorf("json = %s", b)
+	}
+}

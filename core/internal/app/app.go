@@ -396,6 +396,15 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		return fmt.Errorf("auth secrets: %w", err)
 	}
 	roleRepo := auth.NewRoleRepository(app.DB)
+	var ldapPhotos providers.PhotoSyncer // LDAP photos → avatars; needs object storage
+	if pictures.S3Configured(configContent) {
+		photoObjects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			return fmt.Errorf("Error building S3 object store: %w", err)
+		}
+		photoRepo := pictures.NewRepository(app.DB)
+		ldapPhotos = providers.NewPhotoSync(photoRepo, photoObjects, photoRepo)
+	}
 	a.extAuth = providers.NewHandler(providers.Deps{
 		Store:  providers.NewStore(settings.NewRepository(app.DB), secretBox),
 		Tenant: siteTenant,
@@ -413,6 +422,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		Directory:   providers.LDAPDirectory{},
 		OIDC:        providers.NewOIDCClient(nil),
 		Provisioner: providers.NewProvisioner(app.DB),
+		Photos:      ldapPhotos,
 		Sessions:    authHandler,
 		Logger:      common.Logger,
 	})
@@ -500,6 +510,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		picturesGroup.GET("", picturesHandler.Find)
 		picturesGroup.GET("/:id", picturesHandler.Get)
 		picturesGroup.DELETE("/:id", picturesHandler.Delete)
+		// A colleague's avatar (users.avatar anchor): JWT only, like notifications —
+		// any staff user may see it; the handler pins the tenant and staff kind.
+		srv.Echo().GET("/api/v1/avatars/:user", pictures.NewAvatarHandler(picRepo, objects, userRepo).Get, jwtMw)
 	} else {
 		common.Logger.Warn("⚠️  s3_* not configured — picture endpoints disabled")
 	}

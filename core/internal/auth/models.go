@@ -63,6 +63,9 @@ type Users struct {
 	// freshly-created default admin in production mode; cleared the moment any
 	// password change goes through UpdateProfile, regardless of who performed it.
 	MustChangePassword bool `db:"must_change_password"`
+	// Avatar is the picture flag of the (users, id, avatar) anchor — true while
+	// an LDAP-synced photo exists. Nullable so existing databases gain it.
+	Avatar *bool `db:"avatar"`
 	// Kind separates ERP staff ("" — internal, the column default) from
 	// self-registered website visitors ("website", ADR-024). A website user's
 	// token carries aud=website and is refused by every ERP route.
