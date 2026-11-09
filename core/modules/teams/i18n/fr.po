@@ -1,0 +1,192 @@
+# Teams module — French. Locale = this file's basename ('fr').
+msgid ""
+msgstr ""
+"Project-Id-Version: teams 0.0.1\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Teams"
+msgstr "Teams"
+
+msgid "All teams"
+msgstr "Toutes les équipes"
+
+msgid "Create team"
+msgstr "Créer une équipe"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "Create"
+msgstr "Créer"
+
+msgid "Members"
+msgstr "Membres"
+
+msgid "Channels"
+msgstr "Canaux"
+
+msgid "Add channel"
+msgstr "Ajouter un canal"
+
+msgid "New channel"
+msgstr "Nouveau canal"
+
+msgid "Folders"
+msgstr "Dossiers"
+
+msgid "All files"
+msgstr "Tous les fichiers"
+
+msgid "Shares"
+msgstr "Partages"
+
+msgid "Direct messages"
+msgstr "Messages directs"
+
+msgid "New conversation"
+msgstr "Nouvelle conversation"
+
+msgid "Person"
+msgstr "Personne"
+
+msgid "Start"
+msgstr "Démarrer"
+
+msgid "Open the sidebar"
+msgstr "Ouvrir le panneau latéral"
+
+msgid "Collapse"
+msgstr "Réduire"
+
+msgid "Expand"
+msgstr "Développer"
+
+msgid "Start a conversation with the + next to Direct messages."
+msgstr "Démarrez une conversation avec le + à côté de Messages directs."
+
+msgid "This team has no channel yet."
+msgstr "Cette équipe n'a encore aucun canal."
+
+msgid "Guests have read only access to this channel."
+msgstr "Les invités ont un accès en lecture seule à ce canal."
+
+msgid "The message could not be sent."
+msgstr "Le message n'a pas pu être envoyé."
+
+msgid "Mention someone"
+msgstr "Mentionner quelqu'un"
+
+msgid "Attach files"
+msgstr "Joindre des fichiers"
+
+msgid "Write a message"
+msgstr "Écrire un message"
+
+msgid "Message"
+msgstr "Message"
+
+msgid "Send"
+msgstr "Envoyer"
+
+msgid "Add reaction"
+msgstr "Ajouter une réaction"
+
+msgid "No messages yet."
+msgstr "Aucun message pour l'instant."
+
+msgid "Role"
+msgstr "Rôle"
+
+msgid "Owner"
+msgstr "Propriétaire"
+
+msgid "Member"
+msgstr "Membre"
+
+msgid "Guest"
+msgstr "Invité"
+
+msgid "Add a person"
+msgstr "Ajouter une personne"
+
+msgid "Manage members"
+msgstr "Gérer les membres"
+
+msgid "Add"
+msgstr "Ajouter"
+
+msgid "Remove"
+msgstr "Retirer"
+
+msgid "Close"
+msgstr "Fermer"
+
+msgid "The change could not be saved."
+msgstr "La modification n'a pas pu être enregistrée."
+
+msgid "Share file"
+msgstr "Partager le fichier"
+
+msgid "Share with"
+msgstr "Partager avec"
+
+msgid "Move to"
+msgstr "Déplacer vers"
+
+msgid "Move here"
+msgstr "Déplacer ici"
+
+msgid "Shared with me"
+msgstr "Partagés avec moi"
+
+msgid "Nothing has been shared with you yet."
+msgstr "Rien n'a encore été partagé avec vous."
+
+msgid "Team"
+msgstr "Équipe"
+
+msgid "Shared by"
+msgstr "Partagé par"
+
+msgid "Size"
+msgstr "Taille"
+
+msgid "Uploaded by"
+msgstr "Déposé par"
+
+msgid "Path"
+msgstr "Chemin"
+
+msgid "New folder"
+msgstr "Nouveau dossier"
+
+msgid "Upload"
+msgstr "Déposer"
+
+msgid "Share"
+msgstr "Partager"
+
+msgid "Move"
+msgstr "Déplacer"
+
+msgid "Rename"
+msgstr "Renommer"
+
+msgid "Delete"
+msgstr "Supprimer"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+msgid "This cannot be undone."
+msgstr "Cette action est irréversible."
+
+msgid "File storage is not configured."
+msgstr "Le stockage de fichiers n'est pas configuré."

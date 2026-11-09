@@ -1,0 +1,191 @@
+# Teams module — translation template. Copy to <locale>.po per language.
+msgid ""
+msgstr ""
+"Project-Id-Version: teams 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Teams"
+msgstr ""
+
+msgid "All teams"
+msgstr ""
+
+msgid "Create team"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Create"
+msgstr ""
+
+msgid "Members"
+msgstr ""
+
+msgid "Channels"
+msgstr ""
+
+msgid "Add channel"
+msgstr ""
+
+msgid "New channel"
+msgstr ""
+
+msgid "Folders"
+msgstr ""
+
+msgid "All files"
+msgstr ""
+
+msgid "Shares"
+msgstr ""
+
+msgid "Direct messages"
+msgstr ""
+
+msgid "New conversation"
+msgstr ""
+
+msgid "Person"
+msgstr ""
+
+msgid "Start"
+msgstr ""
+
+msgid "Open the sidebar"
+msgstr ""
+
+msgid "Collapse"
+msgstr ""
+
+msgid "Expand"
+msgstr ""
+
+msgid "Start a conversation with the + next to Direct messages."
+msgstr ""
+
+msgid "This team has no channel yet."
+msgstr ""
+
+msgid "Guests have read only access to this channel."
+msgstr ""
+
+msgid "The message could not be sent."
+msgstr ""
+
+msgid "Mention someone"
+msgstr ""
+
+msgid "Attach files"
+msgstr ""
+
+msgid "Write a message"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "Add reaction"
+msgstr ""
+
+msgid "No messages yet."
+msgstr ""
+
+msgid "Role"
+msgstr ""
+
+msgid "Owner"
+msgstr ""
+
+msgid "Member"
+msgstr ""
+
+msgid "Guest"
+msgstr ""
+
+msgid "Add a person"
+msgstr ""
+
+msgid "Manage members"
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "The change could not be saved."
+msgstr ""
+
+msgid "Share file"
+msgstr ""
+
+msgid "Share with"
+msgstr ""
+
+msgid "Move to"
+msgstr ""
+
+msgid "Move here"
+msgstr ""
+
+msgid "Shared with me"
+msgstr ""
+
+msgid "Nothing has been shared with you yet."
+msgstr ""
+
+msgid "Team"
+msgstr ""
+
+msgid "Shared by"
+msgstr ""
+
+msgid "Size"
+msgstr ""
+
+msgid "Uploaded by"
+msgstr ""
+
+msgid "Path"
+msgstr ""
+
+msgid "New folder"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Share"
+msgstr ""
+
+msgid "Move"
+msgstr ""
+
+msgid "Rename"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "This cannot be undone."
+msgstr ""
+
+msgid "File storage is not configured."
+msgstr ""
