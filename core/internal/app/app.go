@@ -37,6 +37,7 @@ import (
 	"core/internal/savedfilter"
 	"core/internal/searchindex"
 	"core/internal/settings"
+	"core/internal/teams"
 	"core/internal/types"
 	"core/internal/version"
 	"core/internal/website"
@@ -679,6 +680,19 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	chatterGroup := srv.Echo().Group("/api/v1/chatter_messages", jwtMw, permMw)
 	chatterGroup.GET("", chatterHandler.List)
 	chatterGroup.POST("", chatterHandler.Create)
+
+	// ── Teams ─────────────────────────────────────────────────────────────────
+	// Teams, members, channels and the staff directory: role checks live in the
+	// handlers (a non-member gets a 404), so only JWT + the module's active gate
+	// here. Object storage is optional (nil without s3_*).
+	var teamsObjects pictures.ObjectStore
+	if pictures.S3Configured(configContent) {
+		if teamsObjects, err = pictures.NewS3Store(configContent); err != nil {
+			return fmt.Errorf("Error building S3 object store for teams: %w", err)
+		}
+	}
+	teamsHandler := teams.NewHandler(teams.NewRepository(app.DB), userRepo, presenceHub, notifySvc, teamsObjects)
+	teams.Mount(srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler)
 
 	// ── Presence ──────────────────────────────────────────────────────────────
 	// Live user status (online/absent/offline/busy/do_not_disturb) over a

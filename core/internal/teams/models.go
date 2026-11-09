@@ -11,6 +11,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	KindChannel = "channel"
+	KindDirect  = "direct"
+)
+
 type Team struct {
 	model.BaseModel
 	TenantID    uuid.UUID `db:"tenant_id,index"`
