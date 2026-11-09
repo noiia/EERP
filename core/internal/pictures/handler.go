@@ -88,6 +88,9 @@ func (h *Handler) Upload(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
 			"table_name and field must be lowercase identifiers.")
 	}
+	if reservedAnchor(table, field) {
+		return reservedErr(c)
+	}
 	recordID, err := uuid.Parse(c.FormValue("record_id"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record_id must be a UUID.")
@@ -139,6 +142,14 @@ func (h *Handler) Upload(c *echo.Context) error {
 	default:
 		return fmt.Errorf("pictures: find anchor: %w", err)
 	}
+}
+
+// reservedAnchor: (users, *, avatar) is written only by LDAP photo sync, never
+// through the generic routes (anyone with pictures:write could replace a colleague's avatar).
+func reservedAnchor(table, field string) bool { return table == "users" && field == "avatar" }
+
+func reservedErr(c *echo.Context) error {
+	return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "User avatars are synced from the directory.")
 }
 
 // Get handles GET /api/v1/pictures/:id — streams the image bytes.
@@ -211,6 +222,9 @@ func (h *Handler) Delete(c *echo.Context) error {
 			return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such picture.")
 		}
 		return fmt.Errorf("pictures: find: %w", err)
+	}
+	if reservedAnchor(picture.TableName, picture.Field) {
+		return reservedErr(c)
 	}
 
 	if err := h.store.Delete(c.Request().Context(), identity.TenantID, id); err != nil {

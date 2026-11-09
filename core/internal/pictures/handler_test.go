@@ -458,3 +458,28 @@ func TestDelete(t *testing.T) {
 		}
 	})
 }
+
+// The (users, *, avatar) anchor belongs to LDAP photo sync: the generic routes refuse it.
+func TestReservedAvatarAnchor(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	t.Run("upload is 403", func(t *testing.T) {
+		store := &stubPictures{anchorErr: orm.ErrNotFound}
+		objects := &stubObjects{}
+		body, ct := multipartUpload(t, map[string]string{"table_name": "users", "record_id": uuid.NewString(), "field": "avatar"}, "image/png", []byte("x"))
+		rec := serve(t, NewHandler(store, objects).Upload, http.MethodPost, "/api/v1/pictures", ct, body, identity, nil)
+		if rec.Code != http.StatusForbidden || len(objects.putKeys) != 0 || store.created != nil {
+			t.Fatalf("status = %d, puts %v, created %v", rec.Code, objects.putKeys, store.created)
+		}
+	})
+	t.Run("delete is 403", func(t *testing.T) {
+		row := Picture{ObjectKey: "k/a", TableName: "users", Field: "avatar"}
+		row.ID = uuid.New()
+		store := &stubPictures{found: row}
+		objects := &stubObjects{}
+		rec := serve(t, NewHandler(store, objects).Delete, http.MethodDelete, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
+			map[string]string{"id": row.ID.String()})
+		if rec.Code != http.StatusForbidden || store.deletedID != uuid.Nil || len(objects.deletedKeys) != 0 {
+			t.Fatalf("status = %d, deleted %s %v", rec.Code, store.deletedID, objects.deletedKeys)
+		}
+	})
+}
