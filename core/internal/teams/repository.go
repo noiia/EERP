@@ -70,7 +70,7 @@ func (r *Repository) CreateTeam(ctx context.Context, t Team, owner uuid.UUID) (T
 // RoleOf returns the user's role in the team, orm.ErrNotFound when not a member.
 func (r *Repository) RoleOf(ctx context.Context, tenant, team, user uuid.UUID) (string, error) {
 	rows, err := r.members.FindAll(ctx,
-		orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $2", team), orm.Cond("user_id = $3", user))
+		orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team), orm.Cond("user_id = $1", user))
 	if err != nil {
 		return "", fmt.Errorf("teams: role of: %w", err)
 	}
@@ -89,7 +89,7 @@ type TeamSummary struct {
 
 // ListMyTeams returns the teams the user belongs to, by name.
 func (r *Repository) ListMyTeams(ctx context.Context, tenant, user uuid.UUID) ([]TeamSummary, error) {
-	mine, err := r.members.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("user_id = $2", user))
+	mine, err := r.members.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("user_id = $1", user))
 	if err != nil {
 		return nil, fmt.Errorf("teams: list mine: %w", err)
 	}
@@ -146,7 +146,7 @@ var (
 )
 
 func (r *Repository) GetTeam(ctx context.Context, tenant, id uuid.UUID) (Team, error) {
-	rows, err := r.teams.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $2", id))
+	rows, err := r.teams.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id))
 	if err != nil {
 		return Team{}, fmt.Errorf("teams: get: %w", err)
 	}
@@ -227,7 +227,7 @@ func (r *Repository) DeleteTeam(ctx context.Context, tenant, team uuid.UUID) ([]
 }
 
 func (r *Repository) ListMembers(ctx context.Context, tenant, team uuid.UUID) ([]Member, error) {
-	return r.members.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $2", team))
+	return r.members.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team))
 }
 
 func (r *Repository) AddMember(ctx context.Context, tenant, team, user uuid.UUID, role string) (Member, error) {
@@ -245,7 +245,7 @@ func (r *Repository) changeMember(ctx context.Context, tenant, team, user uuid.U
 			return err
 		}
 		ms := r.members.WithTx(tx)
-		rows, err := ms.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $2", team))
+		rows, err := ms.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team))
 		if err != nil {
 			return err
 		}
@@ -284,8 +284,8 @@ func (r *Repository) RemoveMember(ctx context.Context, tenant, team, user uuid.U
 }
 
 func (r *Repository) ListChannels(ctx context.Context, tenant, team uuid.UUID) ([]Channel, error) {
-	rows, err := r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $2", team),
-		orm.Cond("kind = $3", KindChannel))
+	rows, err := r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team),
+		orm.Cond("kind = $1", KindChannel))
 	if err != nil {
 		return nil, fmt.Errorf("teams: list channels: %w", err)
 	}
@@ -302,8 +302,8 @@ func (r *Repository) CreateChannel(ctx context.Context, tenant, team uuid.UUID, 
 }
 
 func (r *Repository) findChannel(ctx context.Context, tenant, team, id uuid.UUID) (Channel, error) {
-	rows, err := r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $2", team),
-		orm.Cond("id = $3", id), orm.Cond("kind = $4", KindChannel))
+	rows, err := r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team),
+		orm.Cond("id = $1", id), orm.Cond("kind = $1", KindChannel))
 	if err != nil {
 		return Channel{}, err
 	}
@@ -333,15 +333,20 @@ func (r *Repository) DeleteChannel(ctx context.Context, tenant, team, id uuid.UU
 	if _, err := r.findChannel(ctx, tenant, team, id); err != nil {
 		return nil, err
 	}
-	all, err := r.ListChannels(ctx, tenant, team)
-	if err != nil {
-		return nil, err
-	}
-	if len(all) <= 1 {
-		return nil, ErrLastChannel
-	}
 	var keys []string
-	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		// The team row lock serializes concurrent deletes, so two can't both pass the last-channel check.
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM team WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, team, tenant); err != nil {
+			return err
+		}
+		var n int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM chat_channel WHERE tenant_id=$1 AND team_id=$2 AND kind='channel'
+			AND deleted_at IS NULL`, tenant, team).Scan(&n); err != nil {
+			return err
+		}
+		if n <= 1 {
+			return ErrLastChannel
+		}
 		rows, err := tx.Query(ctx, `SELECT a.object_key FROM chat_attachment a JOIN chat_message m ON m.id=a.message_id
 			WHERE m.tenant_id=$1 AND m.channel_id=$2`, tenant, id)
 		if err != nil {
@@ -372,7 +377,7 @@ func (r *Repository) DeleteChannel(ctx context.Context, tenant, team, id uuid.UU
 
 // FindChannel returns any live channel of the tenant, team or direct.
 func (r *Repository) FindChannel(ctx context.Context, tenant, id uuid.UUID) (Channel, error) {
-	rows, err := r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $2", id))
+	rows, err := r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id))
 	if err != nil {
 		return Channel{}, fmt.Errorf("teams: find channel: %w", err)
 	}
@@ -388,8 +393,8 @@ func (r *Repository) FindChannel(ctx context.Context, tenant, id uuid.UUID) (Cha
 func (r *Repository) GetOrCreateDirect(ctx context.Context, tenant, a, b uuid.UUID) (Channel, error) {
 	key := DirectKey(a, b)
 	find := func() ([]Channel, error) {
-		return r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("kind = $2", KindDirect),
-			orm.Cond("direct_key = $3", key))
+		return r.channels.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("kind = $1", KindDirect),
+			orm.Cond("direct_key = $1", key))
 	}
 	if rows, err := find(); err != nil || len(rows) > 0 {
 		if err != nil {
@@ -508,9 +513,9 @@ func (r *Repository) CreateMessage(ctx context.Context, m Message, atts []Attach
 // ListMessages returns up to limit messages of the channel older than before (when set), newest first.
 func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID, before *time.Time, limit int) ([]Message, error) {
 	q := orm.Select[Message](r.messages.Meta()).Where(orm.Cond("tenant_id = $1", tenant)).
-		Where(orm.Cond("channel_id = $2", channel)).Where(orm.Cond("deleted_at IS NULL"))
+		Where(orm.Cond("channel_id = $1", channel)).Where(orm.Cond("deleted_at IS NULL"))
 	if before != nil {
-		q = q.Where(orm.Cond("created_at < $3", *before))
+		q = q.Where(orm.Cond("created_at < $1", *before))
 	}
 	rows, err := q.OrderBy("created_at DESC, id DESC").Limit(limit).All(ctx, r.db)
 	if err != nil {
@@ -520,7 +525,7 @@ func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID
 }
 
 func (r *Repository) FindMessage(ctx context.Context, tenant, id uuid.UUID) (Message, error) {
-	rows, err := r.messages.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $2", id))
+	rows, err := r.messages.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id))
 	if err != nil {
 		return Message{}, fmt.Errorf("teams: find message: %w", err)
 	}
@@ -531,7 +536,7 @@ func (r *Repository) FindMessage(ctx context.Context, tenant, id uuid.UUID) (Mes
 }
 
 func (r *Repository) FindAttachment(ctx context.Context, tenant, id uuid.UUID) (Attachment, error) {
-	rows, err := r.atts.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $2", id))
+	rows, err := r.atts.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id))
 	if err != nil {
 		return Attachment{}, fmt.Errorf("teams: find attachment: %w", err)
 	}

@@ -279,16 +279,16 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
-	atts, err := h.storeFiles(ctx, id.TenantID, files)
+	stored, err := h.storeFiles(ctx, id.TenantID, files)
 	if err != nil {
 		return err
 	}
-	m, atts, err := h.repo.CreateMessage(ctx, Message{TenantID: id.TenantID, ChannelID: ch.ID, AuthorID: id.UserID, Body: b.Body}, atts)
+	keys := make([]string, len(stored)) // kept apart: CreateMessage returns nil attachments on failure
+	for i, a := range stored {
+		keys[i] = a.ObjectKey
+	}
+	m, _, err := h.repo.CreateMessage(ctx, Message{TenantID: id.TenantID, ChannelID: ch.ID, AuthorID: id.UserID, Body: b.Body}, stored)
 	if err != nil {
-		keys := make([]string, len(atts))
-		for i, a := range atts {
-			keys[i] = a.ObjectKey
-		}
 		h.deleteObjects(ctx, keys, "failed message insert")
 		return err
 	}
