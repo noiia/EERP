@@ -27,6 +27,7 @@ import (
 	_ "core/modules/sale"
 	_ "core/modules/savedfilter"
 	_ "core/modules/settings"
+	_ "core/modules/teams"
 	_ "core/modules/warehouse"
 	_ "core/modules/website"
 )
