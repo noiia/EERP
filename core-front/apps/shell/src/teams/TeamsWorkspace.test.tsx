@@ -13,7 +13,9 @@ vi.mock('./client', () => ({
   ]),
   listDirect: () => listDirect(),
   listShared: () => Promise.reject(Object.assign(new Error(''), { status: 404 })),
-  listFiles: () => Promise.reject(Object.assign(new Error(''), { status: 404 })),
+  listFiles: (_t: string, folder?: string) => folder
+    ? Promise.resolve({ folder: { id: folder, name: 'Contracts', parent_id: null }, path: [], folders: [], files: [] })
+    : Promise.reject(Object.assign(new Error(''), { status: 404 })),
   listMessages: (...a: unknown[]) => listMessages(...a),
   markRead: () => Promise.resolve(),
   directory: () => Promise.resolve([]),
@@ -63,6 +65,11 @@ describe('TeamsWorkspace', () => {
   it('names the files page after the team', async () => {
     render(<TeamsWorkspace teamId="t1" view={{ kind: 'files' }} />)
     await waitFor(() => expect(useRecordLabelStore.getState()).toMatchObject({ id: 'files', label: 'Sales / Files' }))
+  })
+
+  it('adds the open folder to the files crumb', async () => {
+    render(<TeamsWorkspace teamId="t1" view={{ kind: 'files', id: 'f1' }} />)
+    await waitFor(() => expect(useRecordLabelStore.getState()).toMatchObject({ id: 'files', label: 'Sales / Files / Contracts' }))
   })
 
   it('opens the channel read-only for a guest, without attachments', async () => {

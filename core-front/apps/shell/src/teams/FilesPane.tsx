@@ -35,7 +35,7 @@ type Dlg =
   | { kind: 'share'; id: string }
 
 /** The team's file manager: a folder listing with upload, rename, move, share and delete. */
-export function FilesPane({ teamId, folderId, role, onFoldersChanged }: { teamId: string; folderId?: string; role?: Role; onFoldersChanged?: () => void }) {
+export function FilesPane({ teamId, folderId, role, onFoldersChanged, onFolderName }: { teamId: string; folderId?: string; role?: Role; onFoldersChanged?: () => void; onFolderName?: (name: string | null) => void }) {
   const t = useT()
   const me = useSessionStore((s) => s.identity?.userId)
   const [listing, setListing] = useState<FolderListing | null>(null)
@@ -56,6 +56,8 @@ export function FilesPane({ teamId, folderId, role, onFoldersChanged }: { teamId
     })
   }, [teamId, folderId, t])
   useEffect(reload, [reload])
+  const folderName = folderId ? listing?.folder?.name ?? null : null
+  useEffect(() => onFolderName?.(folderName), [folderName, onFolderName])
 
   const run = (p: Promise<unknown>, folders = false) => {
     setError('')

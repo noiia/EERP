@@ -43,6 +43,12 @@ export function nextBreadcrumbTrail(trail: Crumb[], current: Crumb | null): Crum
   return [...trail, current]
 }
 
+/** A Teams sub-page reached with an empty trail (the sidebar resets it) still shows "Teams" as its root. */
+export function withTeamsRoot(trail: Crumb[], pathname: string, label = 'Teams'): Crumb[] {
+  if (trail.length === 0 && /^(\/app)?\/teams\/./.test(pathname)) return [{ label, href: '/teams' }]
+  return trail
+}
+
 export interface BreadcrumbState {
   trail: Crumb[]
   /** Feed the current pathname's own single crumb into the trail — also how
@@ -61,10 +67,13 @@ export interface BreadcrumbState {
    * SAME slot instead — net effect: replace, not grow. Synchronous, so it's
    * always applied before the route change reaches PathBreadcrumbs' effect. */
   dropLast: () => void
+  /** Empty the trail (the Teams sidebar: its navigation is not a drill-down). */
+  reset: () => void
 }
 
 export const useBreadcrumbStore = create<BreadcrumbState>((set) => ({
   trail: [],
   visit: (current) => set((s) => ({ trail: nextBreadcrumbTrail(s.trail, current) })),
   dropLast: () => set((s) => ({ trail: s.trail.slice(0, -1) })),
+  reset: () => set({ trail: [] }),
 }))

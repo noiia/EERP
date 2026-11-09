@@ -154,6 +154,14 @@ describe('AppTopBar', () => {
     expect(breadcrumb.getByText('Quote - List')).toBeInTheDocument()
   })
 
+  it('roots a Teams sub-page under "Teams" when the trail is empty', () => {
+    useBreadcrumbStore.getState().reset()
+    pathnameMock.mockReturnValue('/app/teams/t1/channels/c1')
+    render(<AppTopBar identity={identity} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByRole('link', { name: 'Teams' })).toHaveAttribute('href', '/app/teams')
+  })
+
   it('the trail is exactly the sequence of pages actually visited — a deep jump straight to a nested form shows only that form, an earlier real visit is remembered', () => {
     pathnameMock.mockReturnValue('/app/sale/orders/quote/99')
     const { rerender } = render(<AppTopBar identity={identity} />)

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Alert from '@mui/material/Alert'
 import Badge from '@mui/material/Badge'
@@ -19,9 +19,9 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { AvatarWithPresence, avatarUrl, erpPath, IntentLink, T, useSessionStore, useT } from '@eerp/core-front'
+import { AvatarWithPresence, avatarUrl, erpPath, IntentLink, T, useBreadcrumbStore, useSessionStore, useT } from '@eerp/core-front'
 import {
-  createChannel, deleteChannel, deleteTeam, listFiles, openDirect, removeMember, renameChannel, updateTeam,
+  createChannel, deleteChannel, deleteTeam, listFiles, openDirect, orderChannels, orderDirect, removeMember, renameChannel, updateTeam,
   type Channel, type DirectChat, type DirectoryUser, type Folder, type Member, type Role, type Team,
 } from './client'
 import { DirectoryPicker, MembersDialog } from './MembersDialog'
@@ -35,11 +35,45 @@ type Action =
 
 function NavItem({ href, selected, unread = 0, children, indent = 0 }: { href: string; selected?: boolean; unread?: number; children: ReactNode; indent?: number }) {
   return (
-    <ListItemButton component={IntentLink} href={erpPath(href)} selected={selected} dense sx={{ pl: 2 + indent * 2 }}>
+    <ListItemButton component={IntentLink} href={erpPath(href)} selected={selected} onClick={() => useBreadcrumbStore.getState().reset()} dense sx={{ pl: 2 + indent * 2 }}>
       <ListItemText primary={children} />
       {unread > 0 && <Badge badgeContent={unread} color="primary" sx={{ mr: 1.5 }} />}
     </ListItemButton>
   )
+}
+
+// Locally ordered list: HTML5 drag-and-drop (as the Kanban renderer) or Alt+ArrowUp/Down on a
+// focused item reorders at once, then saves; a rejected save puts the old order back.
+function useReorder<T extends { id: string }>(items: T[], save: (ids: string[]) => Promise<unknown>, onError: (e: unknown) => void) {
+  const [list, setList] = useState(items)
+  useEffect(() => setList(items), [items])
+  const dragged = useRef<string | null>(null)
+  const moveTo = (id: string, to: number) => {
+    const from = list.findIndex((x) => x.id === id)
+    if (from < 0 || to < 0 || to >= list.length || from === to) return
+    const next = [...list]
+    next.splice(to, 0, next.splice(from, 1)[0])
+    const prev = list
+    setList(next)
+    save(next.map((x) => x.id)).catch((e: unknown) => { setList(prev); onError(e) })
+  }
+  const itemProps = (id: string) => ({
+    draggable: true,
+    onDragStart: () => { dragged.current = id },
+    onDragOver: (e: DragEvent) => e.preventDefault(),
+    onDrop: (e: DragEvent) => {
+      e.preventDefault()
+      const from = dragged.current
+      dragged.current = null
+      if (from) moveTo(from, list.findIndex((x) => x.id === id))
+    },
+    onKeyDown: (e: KeyboardEvent) => {
+      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+      e.preventDefault()
+      moveTo(id, list.findIndex((x) => x.id === id) + (e.key === 'ArrowUp' ? -1 : 1))
+    },
+  })
+  return { list, itemProps }
 }
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
@@ -105,6 +139,10 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
   const [dialogError, setDialogError] = useState('')
   const fail = (e: unknown) => setDialogError(e instanceof Error && e.message ? e.message : t('The change could not be saved.'))
   const owner = role === 'owner'
+  const [orderError, setOrderError] = useState('')
+  const orderFail = (e: unknown) => setOrderError(e instanceof Error && e.message ? e.message : t('The change could not be saved.'))
+  const chans = useReorder(channels, (ids) => orderChannels(teamId ?? '', ids), orderFail)
+  const dms = useReorder(directs, (ids) => orderDirect(ids), orderFail)
 
   useEffect(() => {
     if (!teamId) return
@@ -168,6 +206,7 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
   return (
     <Box component="nav" aria-label={t('Teams')} sx={{ overflowY: 'auto', height: '100%', py: 1 }}>
       <NavItem href="/teams"><T text="All teams" /></NavItem>
+      {orderError && <Alert severity="error" onClose={() => setOrderError('')} sx={{ mx: 1, my: 0.5 }}>{orderError}</Alert>}
       {teamId && (
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', px: 2, pt: 1 }}>
@@ -190,8 +229,8 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
           <Section title={t('Channels')} action={owner && (
             <IconButton size="small" aria-label={t('Add channel')} onClick={() => { setDialogError(''); setNewChannel('') }}>+</IconButton>
           )}>
-            {channels.map((c) => (
-              <Box key={c.id} sx={{ display: 'flex', alignItems: 'center' }}>
+            {chans.list.map((c) => (
+              <Box key={c.id} {...chans.itemProps(c.id)} sx={{ display: 'flex', alignItems: 'center' }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <NavItem href={`/teams/${teamId}/channels/${c.id}`} selected={view.kind === 'channel' && view.id === c.id} unread={unread[c.id] ?? c.unread}>
                     # {c.name}
@@ -216,13 +255,15 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
       <Section title={t('Direct messages')} action={
         <IconButton size="small" aria-label={t('New conversation')} onClick={() => { setDialogError(''); setNewDirect(true) }}>+</IconButton>
       }>
-        {directs.map((d) => (
-          <NavItem key={d.id} href={`/teams/direct/${d.id}`} selected={view.kind === 'direct' && view.id === d.id} unread={unread[d.id] ?? d.unread}>
+        {dms.list.map((d) => (
+          <Box key={d.id} {...dms.itemProps(d.id)}>
+          <NavItem href={`/teams/direct/${d.id}`} selected={view.kind === 'direct' && view.id === d.id} unread={unread[d.id] ?? d.unread}>
             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
               <AvatarWithPresence userId={d.other_user.id} label={d.other_user.display_name} size={24} src={avatarUrl(d.other_user.id, d.other_user.has_avatar)} />
               {d.other_user.display_name}
             </Box>
           </NavItem>
+          </Box>
         ))}
       </Section>
 

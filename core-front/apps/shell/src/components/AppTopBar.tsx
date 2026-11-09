@@ -26,6 +26,7 @@ import {
   layout,
   moduleRegistry,
   nextBreadcrumbTrail,
+  withTeamsRoot,
   PresenceDot,
   setPresenceStatus,
   useBreadcrumbStore,
@@ -147,7 +148,8 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
   // computed here (not just inside the effect below) so the FIRST render
   // after a navigation already shows the merged trail with no one-frame
   // flash of the stale one.
-  const storedTrail = useBreadcrumbStore((s) => s.trail)
+  const rawTrail = useBreadcrumbStore((s) => s.trail)
+  const storedTrail = useMemo(() => withTeamsRoot(rawTrail, pathname), [rawTrail, pathname])
   const trail = useMemo(
     () => nextBreadcrumbTrail(storedTrail, currentCrumb),
     [storedTrail, currentCrumb],
@@ -156,6 +158,9 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
     // Also re-fires once recordLabel resolves (asynchronously, shortly after
     // a form route mounts) so the already-visited entry gets its baked-in
     // friendly name too, not just crumbs visited from here on.
+    const stored = useBreadcrumbStore.getState().trail
+    const rooted = withTeamsRoot(stored, pathname)
+    if (rooted !== stored) useBreadcrumbStore.getState().visit(rooted[0])
     useBreadcrumbStore.getState().visit(currentCrumb)
   }, [pathname, recordLabel])
   const narrow = useMediaQuery(`(max-width:${layout.topBarCompactWidth}px)`)

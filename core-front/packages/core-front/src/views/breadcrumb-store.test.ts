@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { nextBreadcrumbTrail, useBreadcrumbStore, type Crumb } from './breadcrumb-store'
+import { nextBreadcrumbTrail, withTeamsRoot, useBreadcrumbStore, type Crumb } from './breadcrumb-store'
 
 const sale: Crumb = { label: 'Sale', href: '/sale' }
 const products: Crumb = { label: 'Products', href: '/sale/products' }
@@ -78,5 +78,23 @@ describe('useBreadcrumbStore', () => {
   it('dropLast on an empty trail is a no-op', () => {
     useBreadcrumbStore.getState().dropLast()
     expect(useBreadcrumbStore.getState().trail).toEqual([])
+  })
+})
+
+describe('reset and withTeamsRoot', () => {
+  it('reset empties the trail', () => {
+    useBreadcrumbStore.setState({ trail: [{ label: 'A', href: '/a' }] })
+    useBreadcrumbStore.getState().reset()
+    expect(useBreadcrumbStore.getState().trail).toEqual([])
+  })
+
+  it('roots an empty trail under Teams on a Teams sub-page only', () => {
+    expect(withTeamsRoot([], '/teams/t/channels/c')).toEqual([{ label: 'Teams', href: '/teams' }])
+    expect(withTeamsRoot([], '/app/teams/t/files')).toEqual([{ label: 'Teams', href: '/teams' }])
+    expect(withTeamsRoot([], '/teams')).toEqual([])
+    expect(withTeamsRoot([], '/app/teams')).toEqual([])
+    expect(withTeamsRoot([], '/contacts/1')).toEqual([])
+    const trail = [{ label: 'A', href: '/a' }]
+    expect(withTeamsRoot(trail, '/teams/t/files')).toBe(trail)
   })
 })

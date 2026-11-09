@@ -6,6 +6,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push, prefetch: vi.fn() 
 const listFiles = vi.fn<(team: string, folder?: string) => Promise<unknown>>(() => Promise.reject(Object.assign(new Error(''), { status: 404 })))
 const createChannel = vi.fn()
 const openDirect = vi.fn()
+const orderChannels = vi.fn()
+const orderDirect = vi.fn()
 const m = { updateTeam: vi.fn(), deleteTeam: vi.fn(), removeMember: vi.fn(), renameChannel: vi.fn(), deleteChannel: vi.fn() }
 vi.mock('./client', () => ({
   updateTeam: (...a: unknown[]) => m.updateTeam(...a),
@@ -17,9 +19,11 @@ vi.mock('./client', () => ({
   directory: () => Promise.resolve([{ id: 'u2', display_name: 'Bob', email: 'b@x' }]),
   createChannel: (...a: unknown[]) => createChannel(...a),
   openDirect: (...a: unknown[]) => openDirect(...a),
+  orderChannels: (...a: unknown[]) => orderChannels(...a),
+  orderDirect: (...a: unknown[]) => orderDirect(...a),
 }))
 
-import { useSessionStore } from '@eerp/core-front'
+import { useBreadcrumbStore, useSessionStore } from '@eerp/core-front'
 import { Sidebar } from './Sidebar'
 import type { Role } from './client'
 
@@ -236,5 +240,54 @@ describe('Sidebar team management', () => {
     rerender(<Sidebar {...p} foldersRev={1} />)
     expect(await screen.findByRole('link', { name: 'Plans' })).toBeInTheDocument()
     expect(listFiles.mock.calls.length).toBe(before + 1)
+  })
+
+  describe('order and breadcrumb', () => {
+    const names = () => screen.getAllByRole('link').map((l) => l.textContent).filter((x) => /# /.test(x ?? '')).map((x) => x!.replace(/\d+$/, ''))
+    const directs = [
+      { id: 'd1', other_user: { id: 'u2', display_name: 'Bob', email: 'b@x' }, unread: 0, last_message_at: null },
+      { id: 'd2', other_user: { id: 'u3', display_name: 'Cy', email: 'c@x' }, unread: 0, last_message_at: null },
+    ]
+    beforeEach(() => { orderChannels.mockReset().mockResolvedValue(undefined); orderDirect.mockReset().mockResolvedValue(undefined) })
+
+    it('resets the breadcrumb trail when a channel is clicked', () => {
+      const reset = vi.spyOn(useBreadcrumbStore.getState(), 'reset')
+      useBreadcrumbStore.setState({ reset })
+      render(<Sidebar {...props('member')} />)
+      fireEvent.click(screen.getByRole('link', { name: /random/ }))
+      expect(reset).toHaveBeenCalled()
+    })
+
+    it('reorders channels on drop and saves the order', async () => {
+      render(<Sidebar {...props('member')} />)
+      const item = (n: RegExp) => screen.getByRole('link', { name: n }).closest('[draggable]')!
+      fireEvent.dragStart(item(/random/))
+      fireEvent.drop(item(/general/))
+      expect(names()).toEqual(['# random', '# general'])
+      expect(orderChannels).toHaveBeenCalledWith('t1', ['c2', 'c1'])
+    })
+
+    it('reverts and shows the error when the save is rejected', async () => {
+      orderChannels.mockRejectedValue(new Error('not yours'))
+      render(<Sidebar {...props('member')} />)
+      const item = (n: RegExp) => screen.getByRole('link', { name: n }).closest('[draggable]')!
+      fireEvent.dragStart(item(/random/))
+      fireEvent.drop(item(/general/))
+      expect(await screen.findByText('not yours')).toBeInTheDocument()
+      expect(names()).toEqual(['# general', '# random'])
+    })
+
+    it('moves the focused channel with Alt+ArrowUp', () => {
+      render(<Sidebar {...props('member')} />)
+      fireEvent.keyDown(screen.getByRole('link', { name: /random/ }), { key: 'ArrowUp', altKey: true })
+      expect(names()).toEqual(['# random', '# general'])
+      expect(orderChannels).toHaveBeenCalledWith('t1', ['c2', 'c1'])
+    })
+
+    it('orders direct conversations the same way', () => {
+      render(<Sidebar {...props('member')} directs={directs} />)
+      fireEvent.keyDown(screen.getByRole('link', { name: /Cy/ }), { key: 'ArrowUp', altKey: true })
+      expect(orderDirect).toHaveBeenCalledWith(['d2', 'd1'])
+    })
   })
 })

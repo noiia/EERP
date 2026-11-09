@@ -29,6 +29,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   // Attachments need file storage; Go mounts /shared only when S3 is configured.
   const [canAttach, setCanAttach] = useState(false)
   const [foldersRev, setFoldersRev] = useState(0)
+  const [folderName, setFolderName] = useState<string | null>(null)
   const unread = useChatStore((s) => s.unread)
   const directIds = useRef(new Set<string>())
 
@@ -87,7 +88,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
     ? direct.other_user.display_name || t('Disabled user')
     : !team ? null
     : channel ? `${team.name} / # ${channel.name}`
-    : view.kind === 'files' ? `${team.name} / ${t('Files')}`
+    : view.kind === 'files' ? `${team.name} / ${t('Files')}${view.id && folderName ? ` / ${folderName}` : ''}`
     : null
   useEffect(() => {
     if (!crumbKey || !crumbLabel) return
@@ -108,7 +109,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
       />
     )
   } else if (view.kind === 'files' && teamId) {
-    main = <FilesPane teamId={teamId} folderId={view.id} role={team?.role} onFoldersChanged={() => setFoldersRev((n) => n + 1)} />
+    main = <FilesPane teamId={teamId} folderId={view.id} role={team?.role} onFoldersChanged={() => setFoldersRev((n) => n + 1)} onFolderName={setFolderName} />
   } else if (view.kind === 'shared') {
     main = <SharedPane />
   } else {

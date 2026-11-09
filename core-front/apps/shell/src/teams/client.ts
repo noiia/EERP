@@ -148,6 +148,8 @@ export const createChannel = (team: string, name: string) => call<Channel>('POST
 export const renameChannel = (team: string, channel: string, name: string) => call<Channel>('PUT', `/${team}/channels/${channel}`, { name })
 export const deleteChannel = (team: string, channel: string) => call<void>('DELETE', `/${team}/channels/${channel}`)
 export const listDirect = () => list<DirectChat>('/direct')
+export const orderChannels = (team: string, ids: string[]) => call<void>('PUT', `/${team}/channels/order`, { ids })
+export const orderDirect = (ids: string[]) => call<void>('PUT', '/direct/order', { ids })
 export const openDirect = (userId: string) => call<DirectChat>('POST', '/direct', { user_id: userId })
 
 // Messages (newest first; `before` is an RFC3339 timestamp)
