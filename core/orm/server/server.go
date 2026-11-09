@@ -28,7 +28,8 @@ type Config struct {
 	// BodyLimit caps request body size (e.g. "1M"). Empty defaults to "1M".
 	BodyLimit string
 	// BodyLimitExempt lists path prefixes the global BodyLimit skips (a prefix
-	// matches itself and anything under "<prefix>/"). Such routes must apply
+	// matches itself and anything under "<prefix>/"; a "*" segment matches any
+	// one segment, e.g. "/api/v1/teams/*/files"). Such routes must apply
 	// their own cap with BodyLimit(size) — e.g. file uploads.
 	BodyLimitExempt []string
 }
@@ -126,8 +127,20 @@ func BodyLimit(size string) echo.MiddlewareFunc {
 }
 
 func pathUnder(path string, prefixes []string) bool {
+	segs := strings.Split(path, "/")
 	for _, p := range prefixes {
-		if path == p || strings.HasPrefix(path, p+"/") {
+		want := strings.Split(p, "/")
+		if len(segs) < len(want) {
+			continue
+		}
+		match := true
+		for i, w := range want {
+			if segs[i] != w && (w != "*" || segs[i] == "") {
+				match = false
+				break
+			}
+		}
+		if match {
 			return true
 		}
 	}

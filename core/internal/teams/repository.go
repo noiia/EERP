@@ -27,6 +27,8 @@ type Repository struct {
 	cursors  *orm.Repository[ChannelMember]
 	messages *orm.Repository[Message]
 	atts     *orm.Repository[Attachment]
+	folders  *orm.Repository[Folder]
+	files    *orm.Repository[File]
 }
 
 func NewRepository(db *orm.DB) *Repository {
@@ -38,6 +40,8 @@ func NewRepository(db *orm.DB) *Repository {
 		cursors:  orm.MustRepo[ChannelMember](db),
 		messages: orm.MustRepo[Message](db),
 		atts:     orm.MustRepo[Attachment](db),
+		folders:  orm.MustRepo[Folder](db),
+		files:    orm.MustRepo[File](db),
 	}
 }
 
@@ -603,5 +607,231 @@ func (r *Repository) ToggleReaction(ctx context.Context, tenant, message, user u
 		_, err = tx.Exec(ctx, `INSERT INTO chat_reaction (tenant_id, message_id, user_id, emoji) VALUES ($1,$2,$3,$4)
 			ON CONFLICT (message_id, user_id, emoji) WHERE deleted_at IS NULL DO NOTHING`, tenant, message, user, emoji)
 		return err
+	})
+}
+
+func first[T any](rows []T, err error) (T, error) {
+	var zero T
+	if err != nil {
+		return zero, err
+	}
+	if len(rows) == 0 {
+		return zero, orm.ErrNotFound
+	}
+	return rows[0], nil
+}
+
+func (r *Repository) FindFolder(ctx context.Context, tenant, id uuid.UUID) (Folder, error) {
+	return first(r.folders.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id)))
+}
+
+func (r *Repository) FindFile(ctx context.Context, tenant, id uuid.UUID) (File, error) {
+	return first(r.files.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id)))
+}
+
+// ListFolder returns the folders and files directly inside folder (nil = the team root), by name.
+func (r *Repository) ListFolder(ctx context.Context, tenant, team uuid.UUID, folder *uuid.UUID) ([]Folder, []File, error) {
+	fs, err := r.folders.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team), orm.Cond("parent_id IS NOT DISTINCT FROM $1", folder))
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: list folders: %w", err)
+	}
+	files, err := r.files.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team), orm.Cond("folder_id IS NOT DISTINCT FROM $1", folder))
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: list files: %w", err)
+	}
+	sort.Slice(fs, func(i, j int) bool { return fs[i].Name < fs[j].Name })
+	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	return fs, files, nil
+}
+
+// Ancestors returns folder and its parents up to the root, nearest first.
+func (r *Repository) Ancestors(ctx context.Context, tenant, folder uuid.UUID) ([]Folder, error) {
+	var chain []Folder
+	for id := &folder; id != nil && len(chain) < 1000; { // bound: a corrupted cycle can't spin forever
+		f, err := r.FindFolder(ctx, tenant, *id)
+		if err != nil {
+			return nil, err
+		}
+		chain = append(chain, f)
+		id = f.ParentID
+	}
+	return chain, nil
+}
+
+func (r *Repository) CreateFolder(ctx context.Context, f Folder) (Folder, error) {
+	var err error
+	if f.Name, err = validName(f.Name); err != nil {
+		return Folder{}, err
+	}
+	return r.folders.Create(ctx, f)
+}
+
+func (r *Repository) UpdateFolder(ctx context.Context, f Folder) (Folder, error) {
+	var err error
+	if f.Name, err = validName(f.Name); err != nil {
+		return Folder{}, err
+	}
+	return r.folders.Update(ctx, f, f.ID)
+}
+
+func (r *Repository) CreateFile(ctx context.Context, f File) (File, error) {
+	var err error
+	if f.Name, err = validName(f.Name); err != nil {
+		return File{}, err
+	}
+	return r.files.Create(ctx, f)
+}
+
+func (r *Repository) UpdateFile(ctx context.Context, f File) (File, error) {
+	var err error
+	if f.Name, err = validName(f.Name); err != nil {
+		return File{}, err
+	}
+	return r.files.Update(ctx, f, f.ID)
+}
+
+// DeleteFile removes the file and its shares, returning its object key.
+func (r *Repository) DeleteFile(ctx context.Context, tenant, id uuid.UUID) (string, error) {
+	var key string
+	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM team_file_share WHERE tenant_id=$1 AND file_id=$2`, tenant, id); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `DELETE FROM team_file WHERE tenant_id=$1 AND id=$2 RETURNING object_key`, tenant, id).Scan(&key)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", orm.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("teams: delete file: %w", err)
+	}
+	return key, nil
+}
+
+// DeleteFolderTree removes the folder, its subfolders, their files and shares in
+// one transaction, returning the files' object keys for the caller to delete.
+func (r *Repository) DeleteFolderTree(ctx context.Context, tenant, folder uuid.UUID) ([]string, error) {
+	var keys []string
+	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		rows, err := tx.Query(ctx, `WITH RECURSIVE tree AS (
+				SELECT id FROM team_folder WHERE tenant_id=$1 AND id=$2
+				UNION SELECT f.id FROM team_folder f JOIN tree t ON f.parent_id = t.id WHERE f.tenant_id=$1)
+			SELECT id FROM tree`, tenant, folder)
+		if err != nil {
+			return err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return orm.ErrNotFound
+		}
+		if rows, err = tx.Query(ctx, `SELECT object_key FROM team_file WHERE tenant_id=$1 AND folder_id = ANY($2)`, tenant, ids); err != nil {
+			return err
+		}
+		if keys, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		for _, q := range []string{
+			`DELETE FROM team_file_share WHERE file_id IN (SELECT id FROM team_file WHERE tenant_id=$1 AND folder_id = ANY($2))`,
+			`DELETE FROM team_file WHERE tenant_id=$1 AND folder_id = ANY($2)`,
+			`DELETE FROM team_folder WHERE tenant_id=$1 AND id = ANY($2)`,
+		} {
+			if _, err := tx.Exec(ctx, q, tenant, ids); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("teams: delete folder tree: %w", err)
+	}
+	return keys, nil
+}
+
+// ShareCounts counts the recipients of each file.
+func (r *Repository) ShareCounts(ctx context.Context, tenant uuid.UUID, files []uuid.UUID) (map[uuid.UUID]int, error) {
+	out := map[uuid.UUID]int{}
+	if len(files) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.Query(ctx, `SELECT file_id, count(*) FROM team_file_share
+		WHERE tenant_id=$1 AND file_id = ANY($2) AND deleted_at IS NULL GROUP BY file_id`, tenant, files)
+	if err != nil {
+		return nil, fmt.Errorf("teams: share counts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("teams: share counts: %w", err)
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// Recipients returns the users the file is shared with.
+func (r *Repository) Recipients(ctx context.Context, tenant, file uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `SELECT user_id FROM team_file_share WHERE tenant_id=$1 AND file_id=$2 AND deleted_at IS NULL
+		ORDER BY created_at, user_id`, tenant, file)
+	if err != nil {
+		return nil, fmt.Errorf("teams: recipients: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+}
+
+// SetRecipients replaces the file's whole share list.
+func (r *Repository) SetRecipients(ctx context.Context, tenant, file uuid.UUID, users []uuid.UUID) error {
+	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM team_file_share WHERE tenant_id=$1 AND file_id=$2`, tenant, file); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO team_file_share (tenant_id, file_id, user_id)
+			SELECT $1, $2, u FROM unnest($3::uuid[]) AS u ON CONFLICT DO NOTHING`, tenant, file, users)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("teams: set recipients: %w", err)
+	}
+	return nil
+}
+
+// IsSharedWith reports whether file is shared with user.
+func (r *Repository) IsSharedWith(ctx context.Context, tenant, file, user uuid.UUID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM team_file_share
+		WHERE tenant_id=$1 AND file_id=$2 AND user_id=$3 AND deleted_at IS NULL)`, tenant, file, user).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("teams: is shared: %w", err)
+	}
+	return ok, nil
+}
+
+type SharedFile struct {
+	File     File
+	TeamName string
+	SharedAt time.Time
+}
+
+// SharedWith lists the files shared with user, most recently shared first.
+func (r *Repository) SharedWith(ctx context.Context, tenant, user uuid.UUID) ([]SharedFile, error) {
+	rows, err := r.db.Query(ctx, `SELECT f.id, f.team_id, f.name, f.mime, f.size, f.uploaded_by, t.name, s.created_at
+		FROM team_file_share s JOIN team_file f ON f.id = s.file_id AND f.deleted_at IS NULL
+		JOIN team t ON t.id = f.team_id
+		WHERE s.tenant_id=$1 AND s.user_id=$2 AND s.deleted_at IS NULL
+		ORDER BY s.created_at DESC, f.id`, tenant, user)
+	if err != nil {
+		return nil, fmt.Errorf("teams: shared with: %w", err)
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (SharedFile, error) {
+		s := SharedFile{File: File{TenantID: tenant}}
+		err := row.Scan(&s.File.ID, &s.File.TeamID, &s.File.Name, &s.File.Mime, &s.File.Size, &s.File.UploadedBy, &s.TeamName, &s.SharedAt)
+		return s, err
 	})
 }

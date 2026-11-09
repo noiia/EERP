@@ -92,8 +92,9 @@ func (h *Handler) access(c *echo.Context, ok func(string) bool) (team uuid.UUID,
 	return team, role, err
 }
 
-// Mount registers the routes. upload caps the /channels/... routes: that prefix
-// is exempt from the global request body limit since the message POST carries files.
+// Mount registers the routes. upload caps the /channels/... and /:id/files/...
+// routes: those prefixes are exempt from the global request body limit since
+// the message POST and the file upload carry files. File routes need S3.
 func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 	g.GET("", h.ListTeams)
 	g.POST("", h.CreateTeam)
@@ -116,4 +117,18 @@ func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 	g.POST("/channels/:channel/read", h.MarkRead, upload)
 	g.POST("/messages/:message/reactions", h.ToggleReaction)
 	g.GET("/attachments/:id", h.GetAttachment)
+	if h.objects == nil {
+		return
+	}
+	g.GET("/:id/files", h.ListFiles)
+	g.POST("/:id/files", h.UploadFile, upload)
+	g.PUT("/:id/files/:file", h.UpdateFile, upload)
+	g.DELETE("/:id/files/:file", h.DeleteFile)
+	g.POST("/:id/folders", h.CreateFolder)
+	g.PUT("/:id/folders/:folder", h.UpdateFolder)
+	g.DELETE("/:id/folders/:folder", h.DeleteFolder)
+	g.GET("/files/:file/download", h.DownloadFile)
+	g.GET("/files/:file/shares", h.GetShares)
+	g.PUT("/files/:file/shares", h.PutShares)
+	g.GET("/shared", h.ListShared)
 }

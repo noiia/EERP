@@ -303,8 +303,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		BodyLimit:    configContent.RequestBodyLimit,
 		// File uploads get their own, larger cap (uploadLimit below) instead of
 		// raising request_body_limit for every JSON route.
-		// /api/v1/teams/channels holds only the chat message routes; the POST gets uploadLimit.
-		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", dbRestorePath},
+		// /api/v1/teams/channels holds only the chat message routes and /api/v1/teams/<id>/files
+		// the team file routes; their body-reading routes get uploadLimit.
+		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", "/api/v1/teams/*/files", dbRestorePath},
 	}
 	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {

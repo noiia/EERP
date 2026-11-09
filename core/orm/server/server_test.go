@@ -360,9 +360,11 @@ func TestBodyLimit_ParsesConfigSize(t *testing.T) {
 // An exempt prefix skips the global cap and is bounded by its own BodyLimit;
 // a look-alike path ("/up-x") and everything else keep the global cap.
 func TestBodyLimit_ExemptPrefixUsesOwnLimit(t *testing.T) {
-	e := ormserver.New(nil, ormserver.Config{BodyLimit: "1K", BodyLimitExempt: []string{"/up"}}).Echo()
+	e := ormserver.New(nil, ormserver.Config{BodyLimit: "1K", BodyLimitExempt: []string{"/up", "/t/*/files"}}).Echo()
 	ok := func(c *echo.Context) error { return c.NoContent(http.StatusOK) }
 	e.Group("/up", ormserver.BodyLimit("4K")).POST("/file", ok)
+	e.POST("/t/:id/files", ok, ormserver.BodyLimit("4K"))
+	e.POST("/t/:id/other", ok)
 	e.POST("/up-x", ok)
 	e.POST("/json", ok)
 	for _, tc := range []struct {
@@ -375,6 +377,8 @@ func TestBodyLimit_ExemptPrefixUsesOwnLimit(t *testing.T) {
 		{"/up-x", 2048, http.StatusRequestEntityTooLarge},
 		{"/json", 2048, http.StatusRequestEntityTooLarge},
 		{"/json", 1024, http.StatusOK},
+		{"/t/abc/files", 2048, http.StatusOK}, // "*" matches one segment
+		{"/t/abc/other", 2048, http.StatusRequestEntityTooLarge},
 	} {
 		t.Run(fmt.Sprintf("%s/%d", tc.path, tc.size), func(t *testing.T) {
 			rec := httptest.NewRecorder()
