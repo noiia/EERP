@@ -48,6 +48,7 @@ import (
 	cronmodule "core/modules/cron"
 	eventmodule "core/modules/event"
 	paymentstripe "core/modules/payment_stripe"
+	projectmodule "core/modules/project"
 	"core/modules/propertymanagement"
 	"core/modules/sale"
 	"core/modules/warehouse"
@@ -282,6 +283,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		return err
 	}
 	permRepo := auth.NewPermissionRepository(app.DB)
+	// The Project app's row scopes need it to tell project admins (ADR-038).
+	projectmodule.SetPermissions(permRepo)
 	authHandler := auth.NewHandler(userRepo, tokenSvc, refreshStore, permRepo)
 
 	jwtMw := authmw.JWTMiddleware(tokenSvc)

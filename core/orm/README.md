@@ -480,13 +480,13 @@ caller's rows. Every generic read and write applies it (list and its total, `?di
 served from the read cache.
 
 ```go
-orm.Register[Project](orm.WithRowScope(func(ctx context.Context) (query.Condition, bool, error) {
+orm.Register[Project](orm.WithRowScope(func(ctx context.Context) (orm.Condition, bool, error) {
     user, ok := callerFromContext(ctx) // the module's own identity lookup
     if !ok {
-        return query.Condition{}, false, errors.New("no caller") // fail closed
+        return orm.Condition{}, false, errors.New("no caller") // fail closed
     }
     if user.IsAdmin {
-        return query.Condition{}, false, nil // ok=false: no restriction
+        return orm.Condition{}, false, nil // ok=false: no restriction
     }
     return orm.Cond("EXISTS (SELECT 1 FROM project_member m WHERE m.project_id = project.id AND m.user_id = $1)", user.ID), true, nil
 }))

@@ -1,0 +1,21 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "project",
+    "display_name": "Project",
+    "version": "0.0.1",
+    "author": "",
+    "description": "Projects, tasks, milestones and timesheets",
+    "depends": [
+        "auth"
+    ],
+    "static_files": {
+        "views": [
+            "project_views.ts"
+        ]
+    },
+    "is_service": false,
+    "auto_install": false,
+    "app_mode": true,
+    "menu_icon": "list-check"
+}

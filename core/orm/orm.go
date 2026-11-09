@@ -97,6 +97,10 @@ type Logger = log.Logger
 // LogEntry is the structured payload emitted on every query execution.
 type LogEntry = log.LogEntry
 
+// Condition is a WHERE fragment with its bound $n arguments (orm.Cond builds
+// one); a RowScopeFunc returns it.
+type Condition = query.Condition
+
 // Executor is the interface shared by *DB and *Tx.
 // Accept it in your own helpers so they work inside and outside transactions.
 type Executor = executor.Executor

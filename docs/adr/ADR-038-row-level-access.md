@@ -20,9 +20,9 @@ re-writing all of that by hand. Filtering in a module middleware wouldn't cover 
 A module declares a **row scope** when it registers a table:
 
 ```go
-type RowScopeFunc func(ctx context.Context) (cond query.Condition, ok bool, err error)
+type RowScopeFunc func(ctx context.Context) (cond orm.Condition, ok bool, err error)
 
-orm.Register[Task](orm.WithRowScope(func(ctx context.Context) (query.Condition, bool, error) { … }))
+orm.Register[Task](orm.WithRowScope(func(ctx context.Context) (orm.Condition, bool, error) { … }))
 ```
 
 Per request, the function returns the WHERE condition limiting the caller to the rows it may see.

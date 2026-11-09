@@ -161,6 +161,8 @@ func TestApp_Routes(t *testing.T) {
 		{http.MethodGet, "/api/v1/mail_outbox", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/chatter_messages?table=crm&record=00000000-0000-0000-0000-000000000001", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/teams", nil, http.StatusOK},
+		{http.MethodGet, "/api/v1/project", nil, http.StatusOK},
+		{http.MethodGet, "/api/v1/project_task", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/nope", nil, http.StatusNotFound},
 	}
 	for _, tt := range tests {
