@@ -28,10 +28,12 @@ export function AccessDialog({ open, teamId, channel, members, onClose, onSaved 
   const [groupIds, setGroupIds] = useState<string[]>([])
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setLoaded(false)
+    setConfirming(false)
     setError('')
     Promise.all([getAccess(teamId, channel.id), listGroups(teamId)])
       .then(([a, g]) => { setUsers(a.user_ids); setGroupIds(a.group_ids); setGroups(g); setLoaded(true) })
@@ -39,26 +41,30 @@ export function AccessDialog({ open, teamId, channel, members, onClose, onSaved 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes identity per render
   }, [open, teamId, channel.id])
 
+  const empty = users.length === 0 && groupIds.length === 0
+  // An empty list reopens the conversation to the whole team: never on a private one without a second, explicit click.
+  const needsConfirm = !!channel.private && empty
   const save = () => {
+    if (needsConfirm && !confirming) { setConfirming(true); return }
     setError('')
     setAccess(teamId, channel.id, { user_ids: users, group_ids: groupIds })
       .then(onSaved)
       .catch((e: unknown) => setError(e instanceof Error && e.message ? e.message : t('The change could not be saved.')))
   }
-  const empty = users.length === 0 && groupIds.length === 0
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle><T text="Manage access" /> # {channel.name}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
+        {confirming && <Alert severity="warning" sx={{ mb: 1 }}><T text="Saving an empty list opens this conversation to the whole team." /></Alert>}
         <Stack spacing={2} sx={{ mt: 1 }}>
           <Autocomplete
             multiple
             disabled={!loaded}
             options={members}
             value={members.filter((m) => users.includes(m.user_id))}
-            onChange={(_, v) => setUsers(v.map((m) => m.user_id))}
+            onChange={(_, v) => { setConfirming(false); setUsers(v.map((m) => m.user_id)) }}
             getOptionLabel={(m) => m.display_name || t('Disabled user')}
             isOptionEqualToValue={(a, b) => a.user_id === b.user_id}
             renderInput={(p) => <TextField {...p} label={t('People')} size="small" />}
@@ -68,7 +74,7 @@ export function AccessDialog({ open, teamId, channel, members, onClose, onSaved 
             disabled={!loaded}
             options={groups}
             value={groups.filter((g) => groupIds.includes(g.id))}
-            onChange={(_, v) => setGroupIds(v.map((g) => g.id))}
+            onChange={(_, v) => { setConfirming(false); setGroupIds(v.map((g) => g.id)) }}
             getOptionLabel={(g) => g.name}
             isOptionEqualToValue={(a, b) => a.id === b.id}
             renderInput={(p) => <TextField {...p} label={t('Groups')} size="small" />}
@@ -82,7 +88,7 @@ export function AccessDialog({ open, teamId, channel, members, onClose, onSaved 
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}><T text="Cancel" /></Button>
-        <Button variant="contained" disabled={!loaded} onClick={save}><T text="Save" /></Button>
+        <Button variant="contained" color={confirming ? 'warning' : 'primary'} disabled={!loaded} onClick={save}>{confirming ? <T text="Open to the whole team" /> : <T text="Save" />}</Button>
       </DialogActions>
     </Dialog>
   )

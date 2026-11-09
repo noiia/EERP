@@ -273,3 +273,6 @@ msgstr ""
 
 msgid "Delete group"
 msgstr ""
+
+msgid "Saving an empty list opens this conversation to the whole team."
+msgstr ""

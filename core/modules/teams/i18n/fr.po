@@ -274,3 +274,6 @@ msgstr "Nouveau groupe"
 
 msgid "Delete group"
 msgstr "Supprimer le groupe"
+
+msgid "Saving an empty list opens this conversation to the whole team."
+msgstr "Enregistrer une liste vide ouvre cette conversation à toute l'équipe."

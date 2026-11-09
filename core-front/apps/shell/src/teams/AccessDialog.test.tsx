@@ -64,4 +64,30 @@ describe('AccessDialog', () => {
     expect(await screen.findByText('user_ids and group_ids must belong to this team.')).toBeInTheDocument()
     expect(onSaved).not.toHaveBeenCalled()
   })
+
+  it('asks before opening a private conversation with an empty list', async () => {
+    getAccess.mockResolvedValue({ user_ids: [], group_ids: [] })
+    open(channel({ private: true }))
+    await screen.findByText('Only owners can see this conversation.')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Saving an empty list opens this conversation to the whole team.')).toBeInTheDocument()
+    expect(setAccess).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open to the whole team' }))
+    await waitFor(() => expect(setAccess).toHaveBeenCalledWith('t1', 'c1', { user_ids: [], group_ids: [] }))
+  })
+
+  it('saves an empty list at once on a conversation that is already open', async () => {
+    getAccess.mockResolvedValue({ user_ids: [], group_ids: [] })
+    open()
+    await screen.findByText('Open to the whole team')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(setAccess).toHaveBeenCalledWith('t1', 'c1', { user_ids: [], group_ids: [] }))
+  })
+
+  it('saves a private conversation with a selection at once', async () => {
+    open(channel({ private: true }))
+    await screen.findByText('Bob')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(setAccess).toHaveBeenCalledWith('t1', 'c1', { user_ids: ['u2'], group_ids: ['g1'] }))
+  })
 })
