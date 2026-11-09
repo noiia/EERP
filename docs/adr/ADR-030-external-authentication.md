@@ -53,7 +53,9 @@ SAML, no password change from the ERP, no background directory sync (roles are s
    warning. Sync runs **only when `photo_attr` is set** — an empty attribute means "no sync", never
    "clear every avatar" — and only with S3 configured. Its failures are logged and never block the
    sign-in. Avatars are served at `GET /api/v1/avatars/:user` (JWT, same tenant, staff only;
-   `Cache-Control: private, max-age=300`; 404 when none).
+   `Cache-Control: private, max-age=300`; 404 when none). The anchor is reserved to this sync:
+   the generic picture routes refuse to upload or delete it (403), so a holder of
+   `pictures:pictures:write` can't replace a colleague's avatar.
 5. **OIDC** — authorization code + PKCE (S256) + nonce, bouncing through the Next BFF; the ID
    token is verified by `go-oidc` (signature, `iss`, `aud`, `exp`, nonce). Several providers can be
    configured. The redirect URI is built **server-side** from the setting `erp_url` (a bare https

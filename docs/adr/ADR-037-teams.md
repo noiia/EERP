@@ -94,8 +94,17 @@ own sidebar ([v2 design](../superpowers/specs/2026-11-09-teams-v2-design.md)).
   it, is visible only to people who can see that channel: listing, download (an explicit file share
   still passes), move targets on both sides, breadcrumbs and the Shares view. A file sent in a
   channel whose folder a reader can't see is **redacted for that reader** as a deleted file — in
-  message lists and in live frames, which are built per viewer. A non-owner can't delete a folder
-  whose subtree holds folders hidden from them (409), so nobody destroys what they can't see.
+  message lists and in live frames, which are built per viewer. A non-owner can't delete or move a
+  folder whose subtree holds folders hidden from them (409), so nobody destroys what they can't see.
+- **A private folder never opens by losing its channel.** When a private channel stops guarding its
+  folder — the channel is deleted, unlinked, or relinked to another folder — that folder becomes
+  `owners_only` (`team_folder.owners_only`, set in the same transaction): it and everything below
+  it are visible to team owners only, exactly as if guarded by a private channel nobody else is
+  listed on (an explicit file share still lets its recipient download). Without this, every file
+  sent in a private conversation would become visible to the whole team the moment the
+  conversation goes. An owner makes it visible again by linking it to a conversation: linking
+  clears `owners_only` and the folder's privacy then follows that conversation (open channel →
+  the whole team).
 - **Per-user order.** `chat_channel_member.position` stores each user's own sidebar order:
   `PUT /teams/:id/channels/order` and `PUT /teams/direct/order {ids}` (422 for an id the caller can't
   see). Lists sort by position, nulls last.
@@ -122,6 +131,11 @@ flowchart TD
 ## Pitfalls
 
 - Never push a chat frame with `Hub.Broadcast` (tenant-wide); compute the audience.
+- Never full-row `Update` a `Channel` (it writes back a stale `restricted`) and never clear a
+  restricted channel's `folder_id` outside `LinkFolder`/`DeleteChannel`/`DeleteFolderTree`: the
+  previous folder must become `owners_only` or it opens to the team.
+- The `(users, <user>, avatar)` picture anchor is reserved to LDAP photo sync (ADR-030): the generic
+  `POST /api/v1/pictures` and `DELETE /api/v1/pictures/:id` answer 403 on it.
 - A new upload route under `/api/v1/teams` must match a `BodyLimitExempt` entry and take the upload
   limit, or it stays capped at `request_body_limit`.
 - Every new handler must start with the role check; the route group itself authorizes nothing
