@@ -325,6 +325,22 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@26.6.5)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.3)(msw@3.0.3(@types/node@26.6.5)(@typescript/typescript6@6.0.2)(vite@8.3.4(@types/node@26.6.5)))(vite@8.3.4(@types/node@26.6.5))
 
+  ../core/modules/teams:
+    dependencies:
+      '@eerp/core-front':
+        specifier: workspace:*
+        version: link:../../../core-front/packages/core-front
+    devDependencies:
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@26.6.5)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.3)(msw@3.0.3(@types/node@26.6.5)(@typescript/typescript6@6.0.2)(vite@8.3.4(@types/node@26.6.5)))(vite@8.3.4(@types/node@26.6.5))
+
   ../core/modules/warehouse:
     dependencies:
       '@eerp/core-front':

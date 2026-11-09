@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { handleChatFrame } from './chat-frames'
 import { handleNotificationFrame, notifyLiveReconnect } from './notification-store'
 
 // Live user presence — online/absent/offline/busy/do_not_disturb — pushed
@@ -69,6 +70,7 @@ export function connectPresenceSocket(): void {
     if (!msg || typeof msg !== 'object') return
     // The same socket carries notification frames (internal/notify).
     if (handleNotificationFrame(msg as Parameters<typeof handleNotificationFrame>[0])) return
+    if (handleChatFrame(msg as { type?: string })) return
     const m = msg as { type?: string; users?: { user_id: string; status: PresenceStatus }[]; user_id?: string; status?: PresenceStatus }
     if (m.type === 'snapshot' && m.users) {
       usePresenceStore.getState().setSnapshot(m.users)

@@ -705,6 +705,15 @@ export async function streamAttachment(id: string): Promise<Response> {
   return res
 }
 
+/**
+ * Teams BFF passthrough: forwards one call to /api/v1/teams<path> and returns the
+ * raw Response even when not OK, so the route relays Go's status, error envelope,
+ * streams and Content-Disposition untouched. Only a failed session refresh throws.
+ */
+export async function proxyTeams(method: Method, path: string, body?: unknown): Promise<Response> {
+  return fetchWithRefresh(method, `/teams${path}`, null, body)
+}
+
 export async function deleteAttachment(id: string): Promise<void> {
   const res = await fetchWithRefresh('DELETE', `/attachments/${id}`, null)
   if (!res.ok) throw await parseError(res)

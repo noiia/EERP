@@ -129,3 +129,12 @@ describe('connectPresenceSocket', () => {
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 })
+
+describe('chat frames on the presence socket', () => {
+  it('leaves presence statuses untouched', () => {
+    usePresenceStore.getState().setSnapshot([{ user_id: 'u1', status: 'online' }])
+    connectPresenceSocket()
+    MockWebSocket.instances[0]!.onmessage?.({ data: JSON.stringify({ type: 'chat_message', channel_id: 'c' }) })
+    expect(usePresenceStore.getState().statuses).toEqual({ u1: 'online' })
+  })
+})
