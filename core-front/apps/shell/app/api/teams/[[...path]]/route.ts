@@ -6,15 +6,15 @@ import { errorResponse } from '@/lib/route-errors'
 // Go owns validation and the error envelope.
 
 interface RouteContext {
-  params: Promise<{ path: string[] }>
+  params: Promise<{ path?: string[] }>
 }
 
 async function forward(request: Request, context: RouteContext): Promise<Response> {
-  const { path } = await context.params
-  if (path.some((s) => s === '..')) {
+  const { path = [] } = await context.params
+  if (path.some((s) => s === '.' || s === '..')) {
     return Response.json({ error: { code: 'BAD_REQUEST', message: 'Invalid path.' } }, { status: 400 })
   }
-  const target = `/${path.map(encodeURIComponent).join('/')}${new URL(request.url).search}`
+  const target = `${path.map((s) => `/${encodeURIComponent(s)}`).join('')}${new URL(request.url).search}`
   try {
     let body: unknown
     if (request.method === 'POST' || request.method === 'PUT') {

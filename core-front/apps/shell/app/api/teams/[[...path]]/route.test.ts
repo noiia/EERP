@@ -11,6 +11,20 @@ import { DELETE, GET, POST } from './route'
 
 const ctx = (...path: string[]) => ({ params: Promise.resolve({ path }) })
 
+describe('/api/teams (no path)', () => {
+  it('forwards the bare collection, with params.path undefined or empty', async () => {
+    proxyTeams.mockResolvedValue(new Response('{"data":[]}'))
+    await GET(new Request('http://x/api/teams'), { params: Promise.resolve({}) })
+    expect(proxyTeams).toHaveBeenLastCalledWith('GET', '', undefined)
+    await GET(new Request('http://x/api/teams?a=1'), ctx())
+    expect(proxyTeams).toHaveBeenLastCalledWith('GET', '?a=1', undefined)
+  })
+
+  it('rejects a lone . segment', async () => {
+    expect((await GET(new Request('http://x/api/teams/.'), ctx('.'))).status).toBe(400)
+  })
+})
+
 describe('/api/teams/[...path]', () => {
   it('forwards method, path and query', async () => {
     proxyTeams.mockResolvedValue(new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }))

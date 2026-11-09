@@ -106,7 +106,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     const err = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
     throw new Error(err?.error?.message ?? res.statusText)
   }
-  return res.status === 204 ? (undefined as T) : ((await res.json()) as T)
+  const text = res.status === 204 ? '' : await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 const list = async <T>(path: string): Promise<T[]> => (await call<{ data: T[] }>('GET', path)).data
