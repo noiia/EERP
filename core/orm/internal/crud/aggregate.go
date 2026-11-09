@@ -131,9 +131,11 @@ func (r *Repository) Aggregate(ctx context.Context, req AggregateRequest, f List
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 	pubConds, err := r.publicConditions(ctx)

@@ -471,6 +471,32 @@ orm.Register[Product](
 )
 ```
 
+### Row scope
+
+Tenant isolation is automatic; a per-caller restriction on top of it ("a project is visible to
+its members") is a **row scope**: a function returning, per request, the condition limiting the
+caller's rows. Every generic read and write applies it (list and its total, `?distinct=`,
+`?aggregate=`, get, update, restore, delete), so a row outside it is a 404. Such a table is never
+served from the read cache.
+
+```go
+orm.Register[Project](orm.WithRowScope(func(ctx context.Context) (query.Condition, bool, error) {
+    user, ok := callerFromContext(ctx) // the module's own identity lookup
+    if !ok {
+        return query.Condition{}, false, errors.New("no caller") // fail closed
+    }
+    if user.IsAdmin {
+        return query.Condition{}, false, nil // ok=false: no restriction
+    }
+    return orm.Cond("EXISTS (SELECT 1 FROM project_member m WHERE m.project_id = project.id AND m.user_id = $1)", user.ID), true, nil
+}))
+```
+
+Services anchored on another table's record check it with
+`orm.CanSeeRecord(ctx, db, "project", id)` (true for a table without a scope). Pitfalls: bind
+values as `$n` parameters; typed `Repository[T]` reads and raw SQL are **not** scoped. See
+[ADR-038](../../docs/adr/ADR-038-row-level-access.md).
+
 ### Extending another module's table
 
 A module adds columns to a table another module owns, without touching that module's

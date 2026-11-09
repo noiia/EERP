@@ -4,6 +4,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"sync"
 
 	"core/orm/internal/cache"
+	"core/orm/query"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -44,8 +46,11 @@ type TableMeta struct {
 	// Names are not validated against columns: a picture/attachment anchor
 	// field (e.g. "picture") is not a column but is publishable.
 	PublicFields []string
-	TypeRef      reflect.Type     // for instantiating values at runtime
-	StructMeta   cache.StructMeta // passed to query builders by the crud layer
+	// RowScope restricts every generic CRUD read/write to the rows the
+	// caller may see (ADR-038). nil = no row restriction. Set via WithRowScope.
+	RowScope   RowScopeFunc
+	TypeRef    reflect.Type     // for instantiating values at runtime
+	StructMeta cache.StructMeta // passed to query builders by the crud layer
 }
 
 // HasField returns true when the table has a column named col.
@@ -80,6 +85,7 @@ type regOptions struct {
 	excluded     bool
 	publicFields []string
 	fieldGroups  map[string][]string
+	rowScope     RowScopeFunc
 }
 
 // WithTableName overrides the table name derived from the struct name.
@@ -107,6 +113,18 @@ func WithExcludeFields(fields ...string) Option {
 // twin. See core/orm/internal/crud.BuildResponse for the enforcement.
 func WithFieldGroups(groups map[string][]string) Option {
 	return func(o *regOptions) { o.fieldGroups = groups }
+}
+
+// RowScopeFunc returns the WHERE condition limiting a request to the rows its
+// caller may see (ADR-038). ok=false means no restriction (e.g. an admin); an
+// error fails closed — the query is not run. The condition binds its values
+// as $n parameters, renumbered like every other query.Condition.
+type RowScopeFunc func(ctx context.Context) (cond query.Condition, ok bool, err error)
+
+// WithRowScope restricts every generic CRUD read and write on the table to
+// the rows fn allows for the request's caller. See ADR-038.
+func WithRowScope(fn RowScopeFunc) Option {
+	return func(o *regOptions) { o.rowScope = fn }
 }
 
 // AllPublicFields, passed to WithPublicFields, declares every API column of the
@@ -505,6 +523,7 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 		SoftDelete:   hasSoftDel,
 		Excluded:     o.excluded,
 		PublicFields: expandPublic(o.publicFields, fields, pkField.Column),
+		RowScope:     o.rowScope,
 		TypeRef:      t,
 		StructMeta:   sm,
 	}

@@ -78,6 +78,28 @@ func (r *Repository) tenantCondition(ctx context.Context) (query.Condition, bool
 	return query.NewCondition(tenantColumn+" = $1", tid), true, nil
 }
 
+// scopeConditions returns every per-request row restriction of a query: the
+// caller's tenant, then the table's row scope (ADR-038). Every generic read
+// and write applies it, so a row outside it reads as missing (404).
+func (r *Repository) scopeConditions(ctx context.Context) ([]query.Condition, error) {
+	var conds []query.Condition
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		conds = append(conds, cond)
+	}
+	if r.meta.RowScope != nil {
+		cond, ok, err := r.meta.RowScope(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("crud: row scope %s: %w", r.meta.TableName, err)
+		}
+		if ok {
+			conds = append(conds, cond)
+		}
+	}
+	return conds, nil
+}
+
 // publicConditions returns the forced row filter of a public-scoped request
 // (ADR-024), sorted for a deterministic SQL (the read cache keys on it). A
 // forced column the table lacks fails closed — it came from admin config.
@@ -251,9 +273,11 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, Total{}, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 	pubConds, err := r.publicConditions(ctx)
@@ -351,7 +375,8 @@ type cachingDB interface {
 // entries are invalidated by THIS table's generation only, so a read whose
 // result depends on another table can't be cached — see ListFilter.cacheable.
 func (r *Repository) lookup(ctx context.Context, cacheable bool, sql string, args []any, dst any) (string, bool) {
-	if !cacheable {
+	// A row-scoped result depends on who asks, which the key doesn't capture.
+	if !cacheable || r.meta.RowScope != nil {
 		return "", false
 	}
 	c, name := cacheFor(r.db)
@@ -413,9 +438,11 @@ func (r *Repository) DistinctValues(ctx context.Context, column string, f ListFi
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 	pubConds, err := r.publicConditions(ctx)
@@ -481,9 +508,11 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 	pubConds, err := r.publicConditions(ctx)
@@ -511,6 +540,23 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 		return nil, fmt.Errorf("crud: find by id %v: %w", id, ErrNotFound)
 	}
 	return results[0], nil
+}
+
+// CanSeeRecord reports whether the caller may see row id of table under its
+// row scope (ADR-038), for services anchored on another table's record. A
+// table that is unregistered or has no row scope answers true (no
+// restriction to apply); otherwise the row must be live, in the caller's
+// tenant and inside the scope.
+func CanSeeRecord(ctx context.Context, db executor.Executor, table string, id uuid.UUID) (bool, error) {
+	meta, ok := registry.Get(table)
+	if !ok || meta.RowScope == nil {
+		return true, nil
+	}
+	_, err := NewRepository(db, meta).FindByID(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // Create inserts a new row and returns it with all server-set columns populated
@@ -587,9 +633,11 @@ func (r *Repository) Update(ctx context.Context, id any, data map[string]any) (m
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 
@@ -631,9 +679,11 @@ func (r *Repository) Restore(ctx context.Context, id any) (map[string]any, error
 		Set("updated_at", time.Now()).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id)).
 		Returning("*")
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 
@@ -665,9 +715,11 @@ func (r *Repository) softDelete(ctx context.Context, id any) error {
 		Set("updated_at", time.Now()).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id)).
 		Where(query.NewCondition("deleted_at IS NULL"))
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 
@@ -689,9 +741,11 @@ func (r *Repository) softDelete(ctx context.Context, id any) error {
 func (r *Repository) hardDelete(ctx context.Context, id any) error {
 	b := query.Delete[struct{}](r.meta.StructMeta).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id))
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 

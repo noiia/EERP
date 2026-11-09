@@ -145,7 +145,8 @@ func resolveGeoRef(ctx context.Context, ref string, want geo.Kind, argOffset int
 		return "", nil, fmt.Errorf("%w: references are not available publicly", ErrGeoParam)
 	}
 	meta, ok := registry.Get(table)
-	if !ok || meta.Excluded || !access.CanRead(ctx, table) || (tableActive != nil && !tableActive(table)) {
+	// A row-scoped table is refused: the subquery would bypass its scope (ADR-038).
+	if !ok || meta.Excluded || meta.RowScope != nil || !access.CanRead(ctx, table) || (tableActive != nil && !tableActive(table)) {
 		return "", nil, ErrGeoRef
 	}
 	fm, ok := meta.FieldByColumn(col)

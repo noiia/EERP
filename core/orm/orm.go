@@ -59,6 +59,7 @@ import (
 	"core/orm/query"
 	"core/orm/repo"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -234,6 +235,14 @@ func Transact(ctx context.Context, db *db.DB, fn func(*tx.Tx) error) error {
 // both (ADR-029).
 func GeoDistance(ctx context.Context, db Executor, from, to string) (*float64, error) {
 	return crud.Distance(ctx, db, from, to)
+}
+
+// CanSeeRecord reports whether the caller may see row id of table under the
+// table's row scope (ADR-038) — for services anchored on another table's
+// record (chatter, attachments…). True when the table has no row scope or
+// isn't registered.
+func CanSeeRecord(ctx context.Context, db Executor, table string, id uuid.UUID) (bool, error) {
+	return crud.CanSeeRecord(ctx, db, table, id)
 }
 
 // ErrGeoParam (malformed geo parameter, 400) and ErrGeoRef (unusable

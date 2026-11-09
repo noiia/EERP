@@ -68,6 +68,14 @@ func LoadAPIConfig(path string) error {
 	return registry.LoadAPIConfig(path)
 }
 
+// RowScopeFunc limits a request to the rows its caller may see (ADR-038):
+// ok=false = no restriction, an error fails closed.
+type RowScopeFunc = registry.RowScopeFunc
+
+// WithRowScope restricts every generic CRUD read and write on the table to the
+// rows fn allows for the request's caller (ADR-038).
+func WithRowScope(fn RowScopeFunc) Option { return registry.WithRowScope(fn) }
+
 // AllPublicFields, as a WithPublicFields name, declares every eligible column
 // public-capable (see registry.AllPublicFields for what is never included).
 const AllPublicFields = registry.AllPublicFields
