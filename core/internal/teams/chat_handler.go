@@ -409,7 +409,15 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 	}
 	h.pushMessage(ctx, id.TenantID, ch, audience, out[0])
 	if err := h.redact(ctx, id.TenantID, id.UserID, role, out); err != nil {
-		return err
+		// the message is stored: fail closed on its files, not the request
+		if common.Logger != nil {
+			common.Logger.Warn("teams: response redaction failed", zap.Error(err))
+		}
+		for i, a := range out[0].Attachments {
+			if a.Kind == "file" {
+				out[0].Attachments[i] = a.redacted()
+			}
+		}
 	}
 	h.notifyMentions(ctx, id, ch, audience, b.Mentions, out[0])
 	return c.JSON(http.StatusCreated, out[0])

@@ -215,6 +215,9 @@ func (h *Handler) UpdateFolder(c *echo.Context) error {
 		f.Name = *b.Name
 	}
 	if b.ParentID != nil {
+		if hidden, err := h.hiddenBelow(c, f.ID, role); hidden || err != nil {
+			return err
+		}
 		parent, ok, err := h.targetFolder(c, id.TenantID, team, role, *b.ParentID)
 		if err != nil {
 			return err
@@ -245,6 +248,20 @@ func (h *Handler) UpdateFolder(c *echo.Context) error {
 	return c.JSON(http.StatusOK, toFolderJSON(f))
 }
 
+// hiddenBelow answers 409 (hidden true, response written) when a non-owner
+// would move or delete folders below folder they can't see.
+func (h *Handler) hiddenBelow(c *echo.Context, folder uuid.UUID, role string) (bool, error) {
+	if role == RoleOwner {
+		return false, nil
+	}
+	id := auth.MustIdentity(c.Request().Context())
+	hidden, err := h.repo.HasHiddenDescendant(c.Request().Context(), id.TenantID, folder, id.UserID)
+	if err != nil || !hidden {
+		return false, err
+	}
+	return true, errorJSON(c, http.StatusConflict, "CONFLICT", "This folder contains folders you can't see.")
+}
+
 // DeleteFolder serves DELETE /:id/folders/:folder: the whole subtree, then its objects.
 func (h *Handler) DeleteFolder(c *echo.Context) error {
 	team, role, err := h.access(c, CanRead)
@@ -260,14 +277,8 @@ func (h *Handler) DeleteFolder(c *echo.Context) error {
 	if !CanEditItem(role, f.CreatedBy, id.UserID) {
 		return forbidden(c)
 	}
-	if role != RoleOwner {
-		hidden, err := h.repo.HasHiddenDescendant(ctx, id.TenantID, f.ID, id.UserID)
-		if err != nil {
-			return err
-		}
-		if hidden {
-			return errorJSON(c, http.StatusConflict, "CONFLICT", "This folder contains folders you can't see.")
-		}
+	if hidden, err := h.hiddenBelow(c, f.ID, role); hidden || err != nil {
+		return err
 	}
 	keys, err := h.repo.DeleteFolderTree(ctx, id.TenantID, f.ID)
 	if errors.Is(err, orm.ErrNotFound) {

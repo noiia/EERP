@@ -359,7 +359,8 @@ func (r *Repository) RenameChannel(ctx context.Context, tenant, team, id uuid.UU
 }
 
 // DeleteChannel removes the channel with its messages, attachments, reactions
-// and read cursors in one transaction (its linked folder and files stay), returning the attachment object keys
+// and read cursors in one transaction (its linked folder and files stay — owners_only
+// when the channel was private), returning the attachment object keys
 // the caller must remove from storage.
 func (r *Repository) DeleteChannel(ctx context.Context, tenant, team, id uuid.UUID) ([]string, error) {
 	if _, err := r.findChannel(ctx, tenant, team, id); err != nil {
@@ -395,6 +396,9 @@ func (r *Repository) DeleteChannel(ctx context.Context, tenant, team, id uuid.UU
 			`DELETE FROM chat_message WHERE tenant_id=$1 AND channel_id=$2`,
 			`DELETE FROM chat_channel_member WHERE tenant_id=$1 AND channel_id=$2`,
 			`DELETE FROM chat_channel_access WHERE tenant_id=$1 AND channel_id=$2`,
+			// a private channel's folder must not open to the team once the channel is gone
+			`UPDATE team_folder SET owners_only = true, updated_at = now() WHERE tenant_id=$1
+				AND id = (SELECT folder_id FROM chat_channel WHERE tenant_id=$1 AND id=$2 AND restricted)`,
 			`DELETE FROM chat_channel WHERE tenant_id=$1 AND id=$2`,
 		} {
 			if _, err := tx.Exec(ctx, q, tenant, id); err != nil {

@@ -58,8 +58,10 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_access_group ON chat_channel_access (channel_id, group_id) WHERE group_id IS NOT NULL AND deleted_at IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_team_group_member_user ON team_group_member (user_id)`,
 		`ALTER TABLE chat_channel ADD COLUMN IF NOT EXISTS restricted boolean`,
-		`UPDATE chat_channel SET restricted = false WHERE restricted IS NULL`,
-		`ALTER TABLE chat_channel ALTER COLUMN restricted SET DEFAULT false, ALTER COLUMN restricted SET NOT NULL`,
+		notNullFalse("chat_channel", "restricted"),
+		// owners_only: the folder lost its private conversation; only team owners see it until relinked.
+		`ALTER TABLE team_folder ADD COLUMN IF NOT EXISTS owners_only boolean`,
+		notNullFalse("team_folder", "owners_only"),
 		`DO $$ BEGIN
 			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_chat_channel_access_one') THEN
 				ALTER TABLE chat_channel_access ADD CONSTRAINT ck_chat_channel_access_one CHECK ((user_id IS NULL) <> (group_id IS NULL));
@@ -76,4 +78,16 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		}
 	}
 	return nil
+}
+
+// notNullFalse makes a boolean column NOT NULL DEFAULT false, only when it isn't
+// yet: the ALTER takes an ACCESS EXCLUSIVE lock, not worth taking on every boot.
+func notNullFalse(table, column string) string {
+	return `DO $$ BEGIN
+		IF EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = '` + table + `'::regclass AND a.attname = '` + column + `'
+			AND (NOT a.attnotnull OR NOT a.atthasdef)) THEN
+			UPDATE ` + table + ` SET ` + column + ` = false WHERE ` + column + ` IS NULL;
+			ALTER TABLE ` + table + ` ALTER COLUMN ` + column + ` SET DEFAULT false, ALTER COLUMN ` + column + ` SET NOT NULL;
+		END IF;
+	END $$`
 }

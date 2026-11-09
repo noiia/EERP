@@ -52,6 +52,7 @@ describe('GroupsDialog', () => {
     await screen.findByDisplayValue('Sales')
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     expect(deleteGroup).not.toHaveBeenCalled()
+    expect(await screen.findByText('Conversations that only this group could see will be visible to owners only.')).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(deleteGroup).toHaveBeenCalledWith('t1', 'g1'))
   })

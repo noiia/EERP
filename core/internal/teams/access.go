@@ -63,11 +63,12 @@ func (r *Repository) CanSeeChannel(ctx context.Context, tenant uuid.UUID, ch Cha
 }
 
 // ChannelAudience returns the team members who can see the team channel: owners plus
-// everyone when the list is empty, else the listed users and group members.
+// everyone when the list is empty, else the listed users and group members
+// (owners only for RestrictingChannel's owners_only stand-in, whose ID matches no channel).
 func (r *Repository) ChannelAudience(ctx context.Context, tenant uuid.UUID, ch Channel) ([]uuid.UUID, error) {
-	rows, err := r.db.Query(ctx, `SELECT m.user_id FROM team_member m JOIN chat_channel c ON c.team_id = m.team_id
-		WHERE c.tenant_id = $1 AND c.id = $2 AND m.tenant_id = $1 AND m.deleted_at IS NULL
-		AND (m.role = 'owner' OR `+sees("m.user_id")+`)`, tenant, ch.ID)
+	rows, err := r.db.Query(ctx, `SELECT m.user_id FROM team_member m WHERE m.tenant_id = $1 AND m.team_id = $3 AND m.deleted_at IS NULL
+		AND (m.role = 'owner' OR EXISTS (SELECT 1 FROM chat_channel c WHERE c.tenant_id = $1 AND c.id = $2
+			AND `+sees("m.user_id")+`))`, tenant, ch.ID, ch.TeamID)
 	if err != nil {
 		return nil, fmt.Errorf("teams: channel audience: %w", err)
 	}

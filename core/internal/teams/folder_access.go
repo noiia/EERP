@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 
 	"core/orm"
 
@@ -20,22 +19,29 @@ var ErrFolderLinked = errors.New("teams: folder already linked to a conversation
 
 // RestrictingChannel returns the private channel linked to the nearest folder among
 // folder and its ancestors, nil when none is: that channel decides who sees the folder.
+// An owners_only folder (its private conversation is gone) counts as a private
+// channel nobody but owners sees: a Channel with a nil ID, the folder's team and FolderID.
 func (r *Repository) RestrictingChannel(ctx context.Context, tenant, folder uuid.UUID) (*Channel, error) {
-	var id uuid.UUID
+	var id *uuid.UUID
+	var at, team uuid.UUID
 	err := r.db.QueryRow(ctx, `WITH RECURSIVE up AS (
-			SELECT id, parent_id, 0 AS depth FROM team_folder WHERE tenant_id = $1 AND id = $2
-			UNION ALL SELECT f.id, f.parent_id, up.depth + 1 FROM team_folder f JOIN up ON f.id = up.parent_id
+			SELECT id, parent_id, team_id, owners_only, 0 AS depth FROM team_folder WHERE tenant_id = $1 AND id = $2
+			UNION ALL SELECT f.id, f.parent_id, f.team_id, f.owners_only, up.depth + 1 FROM team_folder f JOIN up ON f.id = up.parent_id
 				WHERE f.tenant_id = $1 AND up.depth < 1000)
-		SELECT c.id FROM up JOIN chat_channel c ON c.folder_id = up.id AND c.tenant_id = $1
+		SELECT c.id, up.id, up.team_id FROM up LEFT JOIN chat_channel c ON c.folder_id = up.id AND c.tenant_id = $1
 			AND c.restricted AND c.deleted_at IS NULL
-		ORDER BY up.depth LIMIT 1`, tenant, folder).Scan(&id)
+		WHERE c.id IS NOT NULL OR up.owners_only
+		ORDER BY up.depth LIMIT 1`, tenant, folder).Scan(&id, &at, &team)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("teams: restricting channel: %w", err)
 	}
-	ch, err := r.FindChannel(ctx, tenant, id)
+	if id == nil {
+		return &Channel{TenantID: tenant, TeamID: &team, Kind: KindChannel, Restricted: true, FolderID: &at}, nil
+	}
+	ch, err := r.FindChannel(ctx, tenant, *id)
 	if err != nil {
 		return nil, err
 	}
@@ -121,14 +127,16 @@ func (h *Handler) splitByFolder(ctx context.Context, tenant uuid.UUID, folder *u
 }
 
 // HasHiddenDescendant reports whether a folder below folder is linked to a
-// private channel user can't see (folder itself already passed folderVisible).
+// private channel user can't see, or is owners_only (folder itself already passed folderVisible).
 func (r *Repository) HasHiddenDescendant(ctx context.Context, tenant, folder, user uuid.UUID) (bool, error) {
 	var hidden bool
 	err := r.db.QueryRow(ctx, `WITH RECURSIVE tree AS (
 			SELECT id FROM team_folder WHERE tenant_id = $1 AND parent_id = $2
 			UNION SELECT f.id FROM team_folder f JOIN tree t ON f.parent_id = t.id WHERE f.tenant_id = $1)
 		SELECT EXISTS (SELECT 1 FROM chat_channel c WHERE c.tenant_id = $1 AND c.folder_id IN (SELECT id FROM tree)
-			AND c.deleted_at IS NULL AND NOT `+sees("$3")+`)`, tenant, folder, user).Scan(&hidden)
+			AND c.deleted_at IS NULL AND NOT `+sees("$3")+`)
+			OR EXISTS (SELECT 1 FROM team_folder f WHERE f.tenant_id = $1 AND f.id IN (SELECT id FROM tree) AND f.owners_only)`,
+		tenant, folder, user).Scan(&hidden)
 	if err != nil {
 		return false, fmt.Errorf("teams: hidden descendant: %w", err)
 	}
@@ -136,18 +144,45 @@ func (r *Repository) HasHiddenDescendant(ctx context.Context, tenant, folder, us
 }
 
 // LinkFolder sets (folder nil: clears) the team channel's linked folder; the
-// caller checked the folder is the team's. Only folder_id is written: a full-row
-// update could write back a stale restricted.
+// caller checked the folder is the team's. A private channel's previous folder
+// becomes owners_only (unlinking must not publish it to the team); the newly
+// linked folder stops being owners_only — its privacy follows the channel. Only
+// folder_id is written on the channel: a full-row update could write back a stale restricted.
 func (r *Repository) LinkFolder(ctx context.Context, tenant, team, channel uuid.UUID, folder *uuid.UUID) error {
 	if _, err := r.findChannel(ctx, tenant, team, channel); err != nil {
 		return err
 	}
-	_, err := r.channels.UpdateQuery().Set("folder_id", folder).Set("updated_at", time.Now()).
-		Where(orm.Cond("tenant_id = $1", tenant)).Where(orm.Cond("id = $1", channel)).Exec(ctx, r.db)
+	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		var old *uuid.UUID
+		var restricted bool
+		if err := tx.QueryRow(ctx, `SELECT folder_id, restricted FROM chat_channel WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+			tenant, channel).Scan(&old, &restricted); err != nil {
+			return err
+		}
+		if restricted && old != nil && (folder == nil || *folder != *old) {
+			if err := closeFolder(ctx, tx, tenant, *old); err != nil {
+				return err
+			}
+		}
+		if folder != nil {
+			if _, err := tx.Exec(ctx, `UPDATE team_folder SET owners_only = false, updated_at = now() WHERE tenant_id = $1 AND id = $2 AND owners_only`,
+				tenant, *folder); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Exec(ctx, `UPDATE chat_channel SET folder_id = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenant, channel, folder)
+		return err
+	})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return ErrFolderLinked
 	}
+	return err
+}
+
+// closeFolder makes folder owners_only: its private conversation no longer guards it.
+func closeFolder(ctx context.Context, tx *orm.Tx, tenant, folder uuid.UUID) error {
+	_, err := tx.Exec(ctx, `UPDATE team_folder SET owners_only = true, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenant, folder)
 	return err
 }
 

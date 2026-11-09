@@ -276,3 +276,6 @@ msgstr ""
 
 msgid "Saving an empty list opens this conversation to the whole team."
 msgstr ""
+
+msgid "Conversations that only this group could see will be visible to owners only."
+msgstr ""

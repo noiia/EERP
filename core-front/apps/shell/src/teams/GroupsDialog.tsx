@@ -77,7 +77,10 @@ export function GroupsDialog({ open, teamId, members, onClose }: { open: boolean
       </DialogActions>
       <Dialog open={!!deleting} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
         <DialogTitle><T text="Delete group" /></DialogTitle>
-        <DialogContent><T text="Are you sure?" /> {deleting?.name}</DialogContent>
+        <DialogContent>
+          <T text="Are you sure?" /> {deleting?.name}
+          <Box sx={{ mt: 1 }}><T text="Conversations that only this group could see will be visible to owners only." /></Box>
+        </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleting(null)}><T text="Cancel" /></Button>
           <Button variant="contained" color="error" onClick={() => {
