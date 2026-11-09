@@ -1,0 +1,79 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+
+const listMessages = vi.fn()
+const toggleReaction = vi.fn()
+const postMessage = vi.fn()
+vi.mock('./client', () => ({
+  listMessages: (...a: unknown[]) => listMessages(...a),
+  markRead: () => Promise.resolve(),
+  postMessage: (...a: unknown[]) => postMessage(...a),
+  toggleReaction: (...a: unknown[]) => toggleReaction(...a),
+}))
+
+import { ChatPane } from './ChatPane'
+import { useChatStore } from './chat-store'
+
+const msg = (id: string, created_at: string, over: object = {}) => ({
+  id, channel_id: 'c1', author_id: 'u1', author_name: 'Alice', body: `body ${id}`, created_at, attachments: [], reactions: [], ...over,
+})
+
+describe('ChatPane', () => {
+  beforeEach(() => {
+    useChatStore.setState({ open: null, messages: {}, hasMore: {}, unread: {} })
+    toggleReaction.mockReset().mockResolvedValue({ reactions: [{ emoji: '👍', count: 2, mine: true }] })
+    listMessages.mockReset().mockResolvedValue([
+      msg('m2', '2026-01-02T10:00:00Z', {
+        reactions: [{ emoji: '👍', count: 1, mine: false }],
+        attachments: [{ id: 'att1', filename: 'plan.pdf', mime: 'application/pdf', size: 10 }],
+      }),
+      msg('m1', '2026-01-01T10:00:00Z'),
+    ])
+  })
+
+  const renderPane = () => render(<ChatPane channelId="c1" title="general" members={[]} canAttach readOnly={false} />)
+
+  it('renders messages oldest at the top', async () => {
+    renderPane()
+    const items = await screen.findAllByRole('article')
+    expect(items.map((i) => within(i).getByText(/^body/).textContent)).toEqual(['body m1', 'body m2'])
+  })
+
+  it('links attachments to the BFF download route', async () => {
+    renderPane()
+    expect(await screen.findByRole('link', { name: /plan\.pdf/ })).toHaveAttribute('href', '/api/teams/attachments/att1')
+  })
+
+  it('clicking a reaction chip toggles it', async () => {
+    renderPane()
+    fireEvent.click(await screen.findByRole('button', { name: /👍 1/ }))
+    await waitFor(() => expect(toggleReaction).toHaveBeenCalledWith('m2', '👍'))
+    expect(await screen.findByRole('button', { name: /👍 2/ })).toBeInTheDocument()
+  })
+
+  it('reacts from the emoji popover', async () => {
+    renderPane()
+    fireEvent.click((await screen.findAllByRole('button', { name: /add reaction/i }))[0])
+    fireEvent.click(await screen.findByRole('button', { name: '🎉' }))
+    await waitFor(() => expect(toggleReaction).toHaveBeenCalledWith('m1', '🎉'))
+  })
+
+  it('sends a message and appends it', async () => {
+    postMessage.mockResolvedValue(msg('m3', '2026-01-03T10:00:00Z'))
+    renderPane()
+    await screen.findAllByRole('article')
+    fireEvent.change(screen.getByRole('textbox', { name: /message/i }), { target: { value: 'hello' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: /message/i }), { key: 'Enter' })
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith('c1', 'hello', [], []))
+    expect(await screen.findByText('body m3')).toBeInTheDocument()
+  })
+
+  it('loads older messages when scrolled to the top', async () => {
+    listMessages.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => msg(`n${i}`, `2026-02-01T00:00:${String(59 - i).padStart(2, '0')}Z`)))
+    renderPane()
+    await screen.findAllByRole('article')
+    listMessages.mockResolvedValueOnce([msg('old', '2026-01-01T00:00:00Z')])
+    fireEvent.scroll(screen.getAllByRole('article')[0].parentElement!, { target: { scrollTop: 0 } })
+    expect(await screen.findByText('body old')).toBeInTheDocument()
+  })
+})
