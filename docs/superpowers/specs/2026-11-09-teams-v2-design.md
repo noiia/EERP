@@ -82,7 +82,14 @@ Separately, people signing in through LDAP should carry their directory photo in
   3. Record the message with links to those files. A new `chat_message_file (message_id, file_id)` table holds them.
 - The wire `attachments` entries for those files point at `/files/:file/download` (`kind: "file"`, beside the existing `kind: "attachment"`).
 - Deleting a linked file later shows that message's entry as "File deleted".
-- Direct messages are unchanged.
+- Direct messages keep plain attachments.
+- **Images show as pictures, not files (user).**
+  - Any image sent in a conversation shows inline in the message as a picture: a team file or a direct-message attachment, with MIME type `image/jpeg`, `image/png`, `image/gif` or `image/webp`.
+  - The picture is a thumbnail capped at about 320×240 px that keeps its aspect ratio, lazy-loaded.
+  - Clicking it opens the full-size image in a viewer, with a download button.
+  - Several images in one message show as a small grid.
+  - Any other file, SVG included *(call: SVG can carry scripts when opened directly)*, stays a file chip with its name and size.
+  - The picture loads from the same authorized download route. An `<img>` renders regardless of `Content-Disposition`, so no new route is needed. The wire attachment entry already carries `mime`.
 
 ### Private conversations and groups
 
