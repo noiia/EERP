@@ -159,13 +159,17 @@ type memberJSON struct {
 	DisplayName string    `json:"display_name"`
 	Email       string    `json:"email"`
 	Role        string    `json:"role"`
+	HasAvatar   bool      `json:"has_avatar"`
 }
 
 type directoryJSON struct {
 	ID          uuid.UUID `json:"id"`
 	DisplayName string    `json:"display_name"`
 	Email       string    `json:"email"`
+	HasAvatar   bool      `json:"has_avatar"`
 }
+
+func hasAvatar(u auth.Users) bool { return u.Avatar != nil && *u.Avatar }
 
 func displayName(u auth.Users) string {
 	if n := strings.TrimSpace(u.DisplayName); n != "" {
@@ -183,7 +187,7 @@ func (h *Handler) Directory(c *echo.Context) error {
 	}
 	out := make([]directoryJSON, len(us))
 	for i, u := range us {
-		out[i] = directoryJSON{u.ID, displayName(u), u.Email}
+		out[i] = directoryJSON{u.ID, displayName(u), u.Email, hasAvatar(u)}
 	}
 	return list(c, out)
 }
@@ -210,7 +214,7 @@ func (h *Handler) ListMembers(c *echo.Context) error {
 	out := make([]memberJSON, 0, len(ms))
 	for _, m := range ms {
 		u := byID[m.UserID]
-		out = append(out, memberJSON{m.UserID, displayName(u), u.Email, m.Role})
+		out = append(out, memberJSON{m.UserID, displayName(u), u.Email, m.Role, hasAvatar(u)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].DisplayName < out[j].DisplayName })
 	return list(c, out)
@@ -253,7 +257,7 @@ func (h *Handler) AddMember(c *echo.Context) error {
 		}
 		return err
 	}
-	return c.JSON(http.StatusCreated, memberJSON{target.ID, displayName(*target), target.Email, b.Role})
+	return c.JSON(http.StatusCreated, memberJSON{target.ID, displayName(*target), target.Email, b.Role, hasAvatar(*target)})
 }
 
 func (h *Handler) memberUser(c *echo.Context) (uuid.UUID, error) {
@@ -335,7 +339,7 @@ func (h *Handler) ListChannels(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
-	chs, err := h.repo.ListChannels(ctx, id.TenantID, team)
+	chs, err := h.repo.ListChannelsFor(ctx, id.TenantID, team, id.UserID)
 	if err != nil {
 		return err
 	}
@@ -430,4 +434,50 @@ func (h *Handler) DeleteChannel(c *echo.Context) error {
 	}
 	h.deleteObjects(ctx, keys, "channel delete")
 	return c.NoContent(http.StatusNoContent)
+}
+
+// orderBody is the PUT .../order body: the conversation ids in the caller's wanted order.
+type orderBody struct {
+	IDs []uuid.UUID `json:"ids"`
+}
+
+// setOrder validates body ids against the conversations the caller can see
+// (visible) and stores their positions; an unknown id is a 422.
+func (h *Handler) setOrder(c *echo.Context, visible []uuid.UUID) error {
+	var b orderBody
+	if err := c.Bind(&b); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	ok := make(map[uuid.UUID]bool, len(visible))
+	for _, v := range visible {
+		ok[v] = true
+	}
+	for _, i := range b.IDs {
+		if !ok[i] {
+			return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "ids must be conversations you can see.")
+		}
+	}
+	id := auth.MustIdentity(c.Request().Context())
+	if err := h.repo.SetOrder(c.Request().Context(), id.TenantID, id.UserID, b.IDs); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// SetChannelOrder serves PUT /:id/channels/order: the caller's own channel order in a team.
+func (h *Handler) SetChannelOrder(c *echo.Context) error {
+	team, role, err := h.access(c, CanRead)
+	if role == "" {
+		return err
+	}
+	id := auth.MustIdentity(c.Request().Context())
+	chs, err := h.repo.ListChannels(c.Request().Context(), id.TenantID, team)
+	if err != nil {
+		return err
+	}
+	ids := make([]uuid.UUID, len(chs))
+	for i, ch := range chs {
+		ids[i] = ch.ID
+	}
+	return h.setOrder(c, ids)
 }

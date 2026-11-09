@@ -48,6 +48,8 @@ type ChannelMember struct {
 	ChannelID  uuid.UUID  `db:"channel_id,index"`
 	UserID     uuid.UUID  `db:"user_id,index"`
 	LastReadAt *time.Time `db:"last_read_at"`
+	// Position is the user's own sidebar order of the channel (nil = unordered, last).
+	Position *int `db:"position"`
 }
 
 type Message struct {

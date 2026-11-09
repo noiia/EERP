@@ -134,6 +134,8 @@ type preferencesResponse struct {
 	// distances (geo widgets, list Distance column) display in km or mi
 	// without a settings:units:read grant.
 	UnitSystem string `json:"unit_system"`
+	// HasAvatar: the caller has a profile picture (users.avatar).
+	HasAvatar bool `json:"has_avatar"`
 }
 
 // activeCompanyRef is the minimal company shape callers need to render a
@@ -194,6 +196,7 @@ func (h *Handler) GetMyPreferences(c *echo.Context) error {
 		PreferredLocale: user.PreferredLocale,
 		ActiveCompany:   &activeCompanyRef{ID: active.ID, Name: active.Name, Currency: active.Currency},
 		Environment:     h.environment,
+		HasAvatar:       user.Avatar != nil && *user.Avatar,
 	}
 	if ok && defaultLocale != "" {
 		resp.DefaultLocale = &defaultLocale

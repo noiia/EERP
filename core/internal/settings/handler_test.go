@@ -1997,3 +1997,22 @@ func TestAccountsSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestGetMyPreferences_HasAvatar(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	yes := true
+	for _, tc := range []struct {
+		avatar *bool
+		want   bool
+	}{{nil, false}, {&yes, true}} {
+		h := NewHandler(&stubUsers{user: auth.Users{Avatar: tc.avatar}}, &stubStore{}, &stubCompanies{}, "development")
+		rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp["has_avatar"] != tc.want {
+			t.Errorf("has_avatar = %v, want %v", resp["has_avatar"], tc.want)
+		}
+	}
+}

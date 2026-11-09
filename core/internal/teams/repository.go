@@ -441,13 +441,13 @@ type DirectSummary struct {
 	LastMessageAt *time.Time
 }
 
-// ListDirect returns the user's direct conversations, most recent activity first.
+// ListDirect returns the user's direct conversations, own order first, then most recent activity.
 func (r *Repository) ListDirect(ctx context.Context, tenant, user uuid.UUID) ([]DirectSummary, error) {
 	rows, err := r.db.Query(ctx, `SELECT c.id, c.direct_key, (SELECT max(m.created_at) FROM chat_message m
 			WHERE m.channel_id = c.id AND m.deleted_at IS NULL)
 		FROM chat_channel c JOIN chat_channel_member cm ON cm.channel_id = c.id AND cm.user_id = $2 AND cm.deleted_at IS NULL
 		WHERE c.tenant_id = $1 AND c.kind = 'direct' AND c.deleted_at IS NULL
-		ORDER BY 3 DESC NULLS LAST, c.id`, tenant, user)
+		ORDER BY cm.position ASC NULLS LAST, 3 DESC NULLS LAST, c.id`, tenant, user)
 	if err != nil {
 		return nil, fmt.Errorf("teams: list direct: %w", err)
 	}
@@ -455,6 +455,51 @@ func (r *Repository) ListDirect(ctx context.Context, tenant, user uuid.UUID) ([]
 		d := DirectSummary{Channel: Channel{TenantID: tenant, Kind: KindDirect}}
 		err := row.Scan(&d.Channel.ID, &d.Channel.DirectKey, &d.LastMessageAt)
 		return d, err
+	})
+}
+
+// ListChannelsFor is ListChannels in the user's own order: position ASC NULLS LAST, then name.
+func (r *Repository) ListChannelsFor(ctx context.Context, tenant, team, user uuid.UUID) ([]Channel, error) {
+	rows, err := r.ListChannels(ctx, tenant, team)
+	if err != nil || len(rows) == 0 {
+		return rows, err
+	}
+	ids := make([]uuid.UUID, len(rows))
+	for i, ch := range rows {
+		ids[i] = ch.ID
+	}
+	cms, err := r.cursors.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("user_id = $1", user), orm.In("channel_id", ids))
+	if err != nil {
+		return nil, fmt.Errorf("teams: channel positions: %w", err)
+	}
+	pos := make(map[uuid.UUID]int, len(cms))
+	for _, cm := range cms {
+		if cm.Position != nil {
+			pos[cm.ChannelID] = *cm.Position
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		pi, oi := pos[rows[i].ID]
+		pj, oj := pos[rows[j].ID]
+		if oi != oj {
+			return oi
+		}
+		return oi && pi < pj
+	})
+	return rows, nil
+}
+
+// SetOrder stores the user's own position (the index) of each channel, in one transaction.
+func (r *Repository) SetOrder(ctx context.Context, tenant, user uuid.UUID, channels []uuid.UUID) error {
+	return orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		for i, ch := range channels {
+			p := i
+			if _, err := r.cursors.WithTx(tx).UpsertPartial(ctx, ChannelMember{TenantID: tenant, ChannelID: ch, UserID: user, Position: &p},
+				[]string{"channel_id", "user_id"}, "deleted_at IS NULL", "position = EXCLUDED.position, updated_at = now()"); err != nil {
+				return fmt.Errorf("teams: set order: %w", err)
+			}
+		}
+		return nil
 	})
 }
 

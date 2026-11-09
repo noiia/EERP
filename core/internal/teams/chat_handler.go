@@ -47,14 +47,15 @@ type frameReaction struct {
 }
 
 type messageJSON struct {
-	ID          uuid.UUID        `json:"id"`
-	ChannelID   uuid.UUID        `json:"channel_id"`
-	AuthorID    uuid.UUID        `json:"author_id"`
-	AuthorName  string           `json:"author_name"`
-	Body        string           `json:"body"`
-	CreatedAt   time.Time        `json:"created_at"`
-	Attachments []attachmentJSON `json:"attachments"`
-	Reactions   []reactionJSON   `json:"reactions"`
+	ID              uuid.UUID        `json:"id"`
+	ChannelID       uuid.UUID        `json:"channel_id"`
+	AuthorID        uuid.UUID        `json:"author_id"`
+	AuthorName      string           `json:"author_name"`
+	AuthorHasAvatar bool             `json:"author_has_avatar"`
+	Body            string           `json:"body"`
+	CreatedAt       time.Time        `json:"created_at"`
+	Attachments     []attachmentJSON `json:"attachments"`
+	Reactions       []reactionJSON   `json:"reactions"`
 }
 
 type messageFrame struct {
@@ -171,7 +172,7 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 	}
 	out := make([]messageJSON, len(msgs))
 	for i, m := range msgs {
-		w := messageJSON{ID: m.ID, ChannelID: m.ChannelID, AuthorID: m.AuthorID, AuthorName: displayName(users[m.AuthorID]),
+		w := messageJSON{ID: m.ID, ChannelID: m.ChannelID, AuthorID: m.AuthorID, AuthorName: displayName(users[m.AuthorID]), AuthorHasAvatar: hasAvatar(users[m.AuthorID]),
 			Body: m.Body, CreatedAt: m.CreatedAt, Attachments: []attachmentJSON{}, Reactions: []reactionJSON{}}
 		for _, a := range atts[m.ID] {
 			w.Attachments = append(w.Attachments, attachmentJSON{a.ID, a.Filename, a.Mime, a.Size})
@@ -498,7 +499,7 @@ func (h *Handler) directEntries(ctx context.Context, id auth.Identity) ([]direct
 			}
 		}
 		u := users[other]
-		out[i] = directJSON{d.Channel.ID, directoryJSON{other, displayName(u), u.Email}, unread[d.Channel.ID], d.LastMessageAt}
+		out[i] = directJSON{d.Channel.ID, directoryJSON{other, displayName(u), u.Email, hasAvatar(u)}, unread[d.Channel.ID], d.LastMessageAt}
 	}
 	return out, nil
 }
@@ -546,4 +547,18 @@ func (h *Handler) OpenDirect(c *echo.Context) error {
 		}
 	}
 	return orm.ErrNotFound
+}
+
+// SetDirectOrder serves PUT /direct/order: the caller's own order of their conversations.
+func (h *Handler) SetDirectOrder(c *echo.Context) error {
+	id := auth.MustIdentity(c.Request().Context())
+	ds, err := h.repo.ListDirect(c.Request().Context(), id.TenantID, id.UserID)
+	if err != nil {
+		return err
+	}
+	ids := make([]uuid.UUID, len(ds))
+	for i, d := range ds {
+		ids[i] = d.Channel.ID
+	}
+	return h.setOrder(c, ids)
 }
