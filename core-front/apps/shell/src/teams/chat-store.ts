@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useSessionStore } from '@eerp/core-front'
 import { listMessages, markRead, type Message, type Reaction } from './client'
 
 // Live chat state keyed by channel id (team channels and direct conversations
@@ -75,11 +76,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const list = s.messages[channel]
     if (list?.some((m) => m.id === message.id)) return
     const isOpen = s.open === channel
+    // My own message (sent from another tab or device) is never unread.
+    const mine = message.author_id === useSessionStore.getState().identity?.userId
     if (isOpen) void markRead(channel).catch(() => {})
     set({
-      // A channel never loaded keeps no partial history: load() fetches it whole.
-      messages: list ? { ...s.messages, [channel]: [...list, message] } : s.messages,
-      unread: isOpen ? s.unread : { ...s.unread, [channel]: (s.unread[channel] ?? 0) + 1 },
+      // A closed channel never loaded keeps no partial history: load() fetches it whole.
+      // The open one keeps it even mid-load, and load()'s merge dedupes.
+      messages: list || isOpen ? { ...s.messages, [channel]: [...(list ?? []), message] } : s.messages,
+      unread: isOpen || mine ? s.unread : { ...s.unread, [channel]: (s.unread[channel] ?? 0) + 1 },
     })
   },
   applyReactions: ({ channel_id: channel, message_id, reactions }) => {

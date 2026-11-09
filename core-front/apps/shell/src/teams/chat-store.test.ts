@@ -7,6 +7,7 @@ vi.mock('./client', () => ({
   markRead: (...a: unknown[]) => markRead(...a),
 }))
 
+import { useSessionStore } from '@eerp/core-front'
 import { useChatStore } from './chat-store'
 
 const msg = (id: string, created_at: string, over: object = {}) => ({
@@ -19,6 +20,36 @@ describe('chat-store', () => {
     useChatStore.setState({ open: null, messages: {}, hasMore: {}, unread: {} })
     listMessages.mockReset()
     markRead.mockReset().mockResolvedValue(undefined)
+    useSessionStore.setState({ identity: null })
+  })
+
+  it('keeps a frame for the open channel that lands while its page is loading', async () => {
+    let resolve!: (v: unknown) => void
+    listMessages.mockReturnValue(new Promise((r) => { resolve = r }))
+    const loading = useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-02T00:00:00Z')))
+    resolve([msg('m2', '2026-01-02T00:00:00Z'), msg('m1', '2026-01-01T00:00:00Z')])
+    await loading
+    useChatStore.getState().receive(frame(msg('m3', '2026-01-03T00:00:00Z')))
+    expect(useChatStore.getState().messages.c1.map((m) => m.id)).toEqual(['m1', 'm2', 'm3'])
+    expect(useChatStore.getState().unread.c1).toBe(0)
+  })
+
+  it('keeps a mid-load frame the page did not include', async () => {
+    let resolve!: (v: unknown) => void
+    listMessages.mockReturnValue(new Promise((r) => { resolve = r }))
+    const loading = useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-02T00:00:00Z')))
+    resolve([msg('m1', '2026-01-01T00:00:00Z')])
+    await loading
+    expect(useChatStore.getState().messages.c1.map((m) => m.id)).toEqual(['m1', 'm2'])
+  })
+
+  it('a message of my own never counts as unread', () => {
+    useSessionStore.setState({ identity: { userId: 'me', tenantId: 't', roles: [], permissions: [] } })
+    useChatStore.getState().receive(frame(msg('m1', '2026-01-01T00:00:00Z', { channel_id: 'c2', author_id: 'me' })))
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-01T00:00:00Z', { channel_id: 'c2' })))
+    expect(useChatStore.getState().unread.c2).toBe(1)
   })
 
   it('load shows the newest page oldest-first, marks the channel read and zeroes its unread', async () => {

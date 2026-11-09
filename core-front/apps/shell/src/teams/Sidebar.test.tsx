@@ -95,4 +95,26 @@ describe('Sidebar actions', () => {
     fireEvent.click(screen.getByRole('button', { name: /manage members/i }))
     expect(await screen.findByRole('dialog', { name: /manage members/i })).toBeInTheDocument()
   })
+
+  it('shows why a channel could not be created and keeps the dialog open', async () => {
+    createChannel.mockRejectedValue(new Error('Name taken'))
+    render(<Sidebar {...props('owner')} />)
+    fireEvent.click(screen.getByRole('button', { name: /add channel/i }))
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'dev' } })
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Name taken')
+    expect(screen.getByRole('dialog', { name: /new channel/i })).toBeInTheDocument()
+  })
+
+  it('shows why a conversation could not be opened', async () => {
+    openDirect.mockRejectedValue(new Error('Unknown user'))
+    render(<Sidebar {...props('member')} />)
+    fireEvent.click(screen.getByRole('button', { name: /new conversation/i }))
+    const input = screen.getByRole('combobox', { name: /person/i })
+    fireEvent.mouseDown(input)
+    fireEvent.change(input, { target: { value: 'b' } })
+    fireEvent.click(await screen.findByRole('option', { name: /Bob/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^start$/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unknown user')
+  })
 })

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
+import Alert from '@mui/material/Alert'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -84,6 +85,8 @@ export function Sidebar({ teamId, role, members, channels, directs, unread, view
   const [newDirect, setNewDirect] = useState(false)
   const [dmUser, setDmUser] = useState<DirectoryUser | null>(null)
   const [managing, setManaging] = useState(false)
+  const [dialogError, setDialogError] = useState('')
+  const fail = (e: unknown) => setDialogError(e instanceof Error && e.message ? e.message : t('The change could not be saved.'))
   const owner = role === 'owner'
 
   useEffect(() => {
@@ -126,7 +129,7 @@ export function Sidebar({ teamId, role, members, channels, directs, unread, view
             )}
           </Section>
           <Section title={t('Channels')} action={owner && (
-            <IconButton size="small" aria-label={t('Add channel')} onClick={() => setNewChannel('')}>+</IconButton>
+            <IconButton size="small" aria-label={t('Add channel')} onClick={() => { setDialogError(''); setNewChannel('') }}>+</IconButton>
           )}>
             {channels.map((c) => (
               <NavItem key={c.id} href={`/teams/${teamId}/channels/${c.id}`} selected={view.kind === 'channel' && view.id === c.id} unread={unread[c.id] ?? c.unread}>
@@ -144,7 +147,7 @@ export function Sidebar({ teamId, role, members, channels, directs, unread, view
       )}
       <NavItem href="/teams/shared" selected={view.kind === 'shared'}><T text="Shares" /></NavItem>
       <Section title={t('Direct messages')} action={
-        <IconButton size="small" aria-label={t('New conversation')} onClick={() => setNewDirect(true)}>+</IconButton>
+        <IconButton size="small" aria-label={t('New conversation')} onClick={() => { setDialogError(''); setNewDirect(true) }}>+</IconButton>
       }>
         {directs.map((d) => (
           <NavItem key={d.id} href={`/teams/direct/${d.id}`} selected={view.kind === 'direct' && view.id === d.id} unread={unread[d.id] ?? d.unread}>
@@ -156,21 +159,23 @@ export function Sidebar({ teamId, role, members, channels, directs, unread, view
       <Dialog open={newChannel !== null} onClose={() => setNewChannel(null)} fullWidth maxWidth="xs">
         <DialogTitle><T text="New channel" /></DialogTitle>
         <DialogContent>
+          {dialogError && <Alert severity="error" sx={{ mb: 1 }}>{dialogError}</Alert>}
           <TextField autoFocus fullWidth label={t('Name')} value={newChannel ?? ''} onChange={(e) => setNewChannel(e.target.value)} sx={{ mt: 1 }} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setNewChannel(null)}><T text="Cancel" /></Button>
-          <Button variant="contained" disabled={!newChannel?.trim()} onClick={() => void addChannel().catch(() => {})}><T text="Create" /></Button>
+          <Button variant="contained" disabled={!newChannel?.trim()} onClick={() => void addChannel().catch(fail)}><T text="Create" /></Button>
         </DialogActions>
       </Dialog>
       <Dialog open={newDirect} onClose={() => setNewDirect(false)} fullWidth maxWidth="xs">
         <DialogTitle><T text="New conversation" /></DialogTitle>
         <DialogContent sx={{ pt: '8px !important' }}>
+          {dialogError && <Alert severity="error" sx={{ mb: 1 }}>{dialogError}</Alert>}
           <DirectoryPicker label={t('Person')} value={dmUser} onChange={setDmUser} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setNewDirect(false)}><T text="Cancel" /></Button>
-          <Button variant="contained" disabled={!dmUser} onClick={() => void startDirect().catch(() => {})}><T text="Start" /></Button>
+          <Button variant="contained" disabled={!dmUser} onClick={() => void startDirect().catch(fail)}><T text="Start" /></Button>
         </DialogActions>
       </Dialog>
       {teamId && owner && (
