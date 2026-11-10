@@ -185,7 +185,11 @@ export function GanttRenderer<T extends HasId>({
         const res = await listPage(descriptor.entity, { ...scoped, page })
         rows.push(...res.records)
         if (res.records.length < GANTT_PAGE_SIZE) return { rows, capped: false }
-        if (rows.length >= GANTT_RECORD_CAP) return { rows, capped: true }
+        if (rows.length >= GANTT_RECORD_CAP) {
+          // One probe row past the cap: exactly GANTT_RECORD_CAP matches isn't "more".
+          const probe = await listPage(descriptor.entity, { ...scoped, page: GANTT_RECORD_CAP + 1, pageSize: 1 })
+          return { rows, capped: probe.records.length > 0 }
+        }
       }
     }
     const unscheduled = (field: string) =>
@@ -271,6 +275,15 @@ export function GanttRenderer<T extends HasId>({
     const patch: Record<string, unknown> = {}
     if (d.mode !== 'end') patch[startField] = shiftValue(String(values[startField]), delta, startDatetime)
     if (d.mode !== 'start') patch[endField] = shiftValue(String(values[endField]), delta, endDatetime)
+    // Day-level clamping can still invert two instants on the same day: keep end >= start.
+    if (startDatetime && endDatetime) {
+      const s = String(patch[startField] ?? values[startField])
+      const e = String(patch[endField] ?? values[endField])
+      if (Date.parse(e) < Date.parse(s)) {
+        if (d.mode === 'start') patch[startField] = e
+        else patch[endField] = s
+      }
+    }
     void moveFields(d.id, patch)
   }
   const finishRef = useRef(finishDrag)
@@ -292,13 +305,18 @@ export function GanttRenderer<T extends HasId>({
       setDrag(next)
     }
     const onUp = () => finishRef.current()
+    // A cancelled pointer (scroll takeover, lost touch) drops the drag: no write.
+    const onCancel = () => {
+      dragRef.current = null
+      setDrag(null)
+    }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('pointercancel', onCancel)
     return () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('pointercancel', onCancel)
     }
   }, [dragging])
 

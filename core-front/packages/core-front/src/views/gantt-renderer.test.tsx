@@ -184,7 +184,18 @@ describe('GanttRenderer', () => {
       serverRender(listPage)
       expect(await screen.findByText(/1000 records shown/)).toBeInTheDocument()
       const rangeCalls = listPage.mock.calls.filter(([, o]) => !o?.empty)
-      expect(rangeCalls.map(([, o]) => o?.page)).toEqual([1, 2, 3, 4, 5])
+      expect(rangeCalls.map(([, o]) => [o?.page, o?.pageSize])).toEqual([[1, 200], [2, 200], [3, 200], [4, 200], [5, 200], [1001, 1]])
+    })
+
+    it('exactly the cap of matching records shows no "more records" caption', async () => {
+      const listPage = vi.fn<ListPage>(async (_e: string, o?: EntityListOptions) => {
+        if (o?.empty || o?.pageSize === 1) return { records: [], total: 1000 }
+        return { records: Array.from({ length: 200 }, (_, i) => ({ ...alpha, id: `r${o?.page}-${i}` })), total: 1000 }
+      })
+      serverRender(listPage)
+      await waitFor(() => expect(listPage).toHaveBeenCalledWith('task', expect.objectContaining({ page: 1001, pageSize: 1 })))
+      await screen.findAllByTestId(/^gantt-row-r1-/)
+      expect(screen.queryByText(/records shown/)).toBeNull()
     })
 
     it('stops paging at the first short page', async () => {
@@ -273,6 +284,42 @@ describe('GanttRenderer', () => {
       drag(screen.getByTestId('gantt-bar-1'), 300)
       expect(await screen.findByText('nope')).toBeInTheDocument()
       expect(screen.getByTestId('gantt-bar-1').style.left).toBe('0%')
+    })
+
+    it('a cancelled pointer drops the drag: no write, bar back in place', () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      const bar = screen.getByTestId('gantt-bar-1')
+      fireEvent.pointerDown(bar, { clientX: 500, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: 800, pointerId: 1 })
+      expect(screen.getByTestId('gantt-bar-1').style.left).not.toBe('0%')
+      fireEvent.pointerCancel(window, { pointerId: 1 })
+      fireEvent.pointerUp(window, { clientX: 800, pointerId: 1 })
+      expect(update).not.toHaveBeenCalled()
+      expect(screen.getByTestId('gantt-bar-1').style.left).toBe('0%')
+    })
+
+    describe('two datetime fields', () => {
+      const dt: ViewDescriptor<Task> = {
+        ...descriptor,
+        fields: descriptor.fields.map((f) => (f.name === 'name' ? f : { ...f, widget: 'datetime' })),
+      }
+      const start = new Date(2026, 2, 2, 9, 30).toISOString()
+      const end = new Date(2026, 2, 4, 8, 0).toISOString()
+
+      it('an end resized onto the start day never lands before the start instant', async () => {
+        renderGantt([{ ...alpha, date_start: start, deadline: end }], dt)
+        fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+        drag(screen.getByTestId('gantt-handle-end-1'), -200)
+        await waitFor(() => expect(update).toHaveBeenCalledWith('1', { deadline: start }))
+      })
+
+      it('a start resized onto the end day never lands after the end instant', async () => {
+        renderGantt([{ ...alpha, date_start: start, deadline: end }], dt)
+        fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+        drag(screen.getByTestId('gantt-handle-start-1'), 5000)
+        await waitFor(() => expect(update).toHaveBeenCalledWith('1', { date_start: end }))
+      })
     })
 
     it('is read-only without the write permission', () => {
