@@ -655,10 +655,19 @@ const PROJECT_DEMOS: { name: string; visibility: 'everyone' | 'members' }[] = [
   { name: 'Board reporting (private)', visibility: 'members' },
 ]
 
+/** Shared by every project; the first two color one task per project together (stripes). */
+const PROJECT_COLOR_DEMOS = [
+  { name: 'Customer-facing', color: '#e53935' },
+  { name: 'Internal', color: '#1e88e5' },
+  { name: 'Research', color: '#43a047' },
+  { name: 'Maintenance', color: '#fb8c00' },
+]
+
 /**
  * The Project app's demo: 3 projects (the manager, the signed-in admin, is
  * filled by Go; stages come from its insert trigger, so they are read back),
- * each with 2 milestones, 8 tasks of 2 subtasks, a dependency and timesheets.
+ * each with 2 milestones, 8 tasks of 2 subtasks, a dependency and timesheets,
+ * plus 4 color groups some tasks are put in.
  * Aggregates (hours, counts, blocked) belong to Go's triggers: never sent.
  */
 async function seedProjects(): Promise<SeedEntityResult[]> {
@@ -670,6 +679,8 @@ async function seedProjects(): Promise<SeedEntityResult[]> {
     PROJECT_DEMOS.map((p) => ({ name: p.name, visibility: p.visibility })),
   )
   add(projects.result)
+  const colors = await createMany<{ id: string }>('project_color', PROJECT_COLOR_DEMOS)
+  add(colors.result)
   const outcomes: Record<string, SeedEntityResult> = {}
   const track = (o: { result: SeedEntityResult }) => {
     const k = o.result.entity
@@ -736,6 +747,16 @@ async function seedProjects(): Promise<SeedEntityResult[]> {
           hours: 1 + (i % 4) * 0.5,
           description: 'Demo work',
         })),
+      ),
+    )
+    // Task 1: groups 1 + 2 (a striped bar), task 3: group 3, task 5: group 4.
+    const colorLinks: [number, number][] = [[0, 0], [0, 1], [2, 2], [4, 3]]
+    track(
+      await createMany(
+        'project_task_color',
+        colorLinks
+          .filter(([ti, ci]) => tasks.records[ti] && colors.records[ci])
+          .map(([ti, ci]) => ({ task_id: tasks.records[ti].id, color_id: colors.records[ci].id })),
       ),
     )
   }

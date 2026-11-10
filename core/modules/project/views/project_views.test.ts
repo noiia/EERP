@@ -43,6 +43,7 @@ describe('project views', () => {
       ganttStartField: 'date_start',
       ganttEndField: 'deadline',
       ganttDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+      colorTagsField: 'color_groups',
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)
@@ -99,5 +100,25 @@ describe('project views', () => {
     expect(yes.get).toHaveBeenCalledWith('project', 'p%2F1/can_manage')
     expect(await guard('p1', ops(false))).toBe(false)
     expect(await guard('p1', null)).toBe(false)
+  })
+
+  it('puts tasks in color groups, managed from the Configuration menu', () => {
+    const registry = new ModuleRegistry()
+    registry.register(mod, { appMode: true })
+    expect(field('/project/tasks/:id', 'color_groups')).toMatchObject({
+      widget: 'colortags',
+      relation: { entity: 'project_color', kind: 'many2many', via: 'project_task_color', viaFields: { own: 'task_id', related: 'color_id' }, labelField: 'name' },
+    })
+    // The lists color by it through the form's field (lists show no relation column).
+    expect(route('/project/tasks').descriptor.fields.map((f) => f.name)).not.toContain('color_groups')
+    expect(field('/project/colors', 'color')).toMatchObject({ type: 'text', widget: 'color', required: true })
+    expect(route('/project/colors').descriptor).toMatchObject({ entity: 'project_color', viewType: 'tree', hideFromTopBar: true, formPath: '/project/colors/:id' })
+    expect(route('/project/colors/:id').descriptor).toMatchObject({ entity: 'project_color', viewType: 'form' })
+    const menus = registry.headerMenus().find((m) => m.module === 'project')!.menus
+    expect(menus.map((m) => m.label)).not.toContain('Color groups')
+    const config = menus.find((m) => m.label === 'Configuration')!
+    expect(config.entries).toContainEqual(
+      expect.objectContaining({ kind: 'line', label: 'Color groups', path: '/project/colors', permission: 'project_color:project_color:read' }),
+    )
   })
 })

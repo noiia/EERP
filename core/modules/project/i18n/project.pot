@@ -138,3 +138,6 @@ msgstr ""
 
 msgid "members"
 msgstr ""
+
+msgid "Color groups"
+msgstr ""

@@ -139,3 +139,6 @@ msgstr "tout le monde"
 
 msgid "members"
 msgstr "membres uniquement"
+
+msgid "Color groups"
+msgstr "Groupes de couleurs"

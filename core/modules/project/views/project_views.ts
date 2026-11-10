@@ -2,6 +2,7 @@ import {
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerHeaderButtonAction,
+  registerHeaderMenu,
   registerKanbanColumnsGuard,
   type FrontModule,
   type HeaderButtonDescriptor,
@@ -152,6 +153,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   ganttStartField: 'date_start',
   ganttEndField: 'deadline',
   ganttDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+  // The task form's color_groups: colors the Gantt bars and the cards' ribbon.
+  colorTagsField: 'color_groups',
 }
 
 const taskFormFields: Fields = [
@@ -176,6 +179,13 @@ const taskFormFields: Fields = [
     label: 'Tags',
     type: 'relation',
     relation: { entity: 'project_tag', kind: 'many2many', via: 'project_task_tag', viaFields: { own: 'task_id', related: 'tag_id' }, labelField: 'name' },
+  },
+  {
+    name: 'color_groups',
+    label: 'Color groups',
+    type: 'relation',
+    widget: 'colortags',
+    relation: { entity: 'project_color', kind: 'many2many', via: 'project_task_color', viaFields: { own: 'task_id', related: 'color_id' }, labelField: 'name' },
   },
   { name: 'date_start', label: 'Start date', type: 'date' },
   { name: 'deadline', label: 'Deadline', type: 'date' },
@@ -290,6 +300,16 @@ const stageFields: Fields = [
 
 const tagFields: Fields = [{ name: 'name', label: 'Name', type: 'text', required: true }]
 
+const colorFields: Fields = [
+  { name: 'name', label: 'Name', type: 'text', required: true },
+  { name: 'color', label: 'Color', type: 'text', widget: 'color', required: true },
+]
+
+// Color groups are renamed, recolored and deleted from the Configuration menu.
+registerHeaderMenu('project', 'configuration', {
+  entries: [{ kind: 'line', label: 'Color groups', path: '/project/colors', permission: 'project_color:project_color:read' }],
+})
+
 // ── routes ────────────────────────────────────────────────────────────────────
 
 const perm = (table: string) => [`${table}:${table}:read`]
@@ -373,6 +393,23 @@ const routes: FrontModule['routes'] = [
   {
     path: '/project/stages/:id',
     descriptor: { entity: 'project_stage', viewType: 'form', fields: stageFields, permissions: perm('project_stage') },
+  },
+  {
+    path: '/project/colors',
+    descriptor: {
+      entity: 'project_color',
+      viewType: 'tree',
+      navLabel: 'Color groups',
+      hideFromTopBar: true,
+      fields: colorFields,
+      formPath: '/project/colors/:id',
+      createPermission: write('project_color'),
+      permissions: perm('project_color'),
+    },
+  },
+  {
+    path: '/project/colors/:id',
+    descriptor: { entity: 'project_color', viewType: 'form', fields: colorFields, permissions: perm('project_color') },
   },
   {
     path: '/project/tags/:id',

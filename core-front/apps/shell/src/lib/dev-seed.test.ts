@@ -196,11 +196,13 @@ describe('seedDemoData', () => {
       'quote_line',
       'quote status',
       'project',
+      'project_color',
       'project_milestone',
       'project_task',
       'project_task_dependency',
       'project_task_user',
       'project_timesheet',
+      'project_task_color',
       'report_page_format',
       'event',
       'event_session',
@@ -438,6 +440,20 @@ describe('seedDemoData — Project app', () => {
     expect(bodies('project_task_user').every((a) => a.user_id === 'admin-1')).toBe(true)
     expect(callsFor('project_timesheet')).toHaveLength(19)
     expect(bodies('project_timesheet').every((t) => Number(t.hours) > 0 && typeof t.date === 'string')).toBe(true)
+  })
+
+  it('seeds 4 color groups and puts some tasks in them, one task per project in two', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const groups = bodies('project_color')
+    expect(groups).toHaveLength(4)
+    expect(groups.every((g) => typeof g.name === 'string' && /^#[0-9a-f]{6}$/.test(String(g.color)))).toBe(true)
+    const links = bodies('project_task_color')
+    expect(links).toHaveLength(12)
+    expect(links.every((l) => String(l.color_id).startsWith('project_color-') && String(l.task_id).startsWith('project_task-'))).toBe(true)
+    const perTask = new Map<string, number>()
+    for (const l of links) perTask.set(String(l.task_id), (perTask.get(String(l.task_id)) ?? 0) + 1)
+    expect([...perTask.values()].filter((n) => n === 2)).toHaveLength(3)
   })
 
   it('assigns nothing without a signed-in identity', async () => {
