@@ -29,6 +29,8 @@ func (m *projectModule) Register() error {
 		orm.Register[ProjectTaskUser](orm.WithTableName("project_task_user"), orm.WithRowScope(TaskChildScope(p))),
 		orm.Register[ProjectTag](orm.WithTableName("project_tag")),
 		orm.Register[ProjectTaskTag](orm.WithTableName("project_task_tag"), orm.WithRowScope(TaskChildScope(p))),
+		orm.Register[ProjectColor](orm.WithTableName("project_color")),
+		orm.Register[ProjectTaskColor](orm.WithTableName("project_task_color"), orm.WithRowScope(TaskChildScope(p))),
 		orm.Register[ProjectTaskDependency](orm.WithTableName("project_task_dependency"), orm.WithRowScope(DependencyScope(p))),
 		orm.Register[ProjectMilestone](orm.WithTableName("project_milestone"), orm.WithRowScope(ChildScope(p)),
 			orm.WithReadOnlyFields("task_count", "task_done_count")),

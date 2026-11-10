@@ -28,8 +28,8 @@ type fixture struct {
 }
 
 var projectTables = []string{
-	"project_timesheet", "project_task_dependency", "project_task_tag", "project_task_user",
-	"project_task", "project_milestone", "project_stage", "project_member", "project", "project_tag",
+	"project_timesheet", "project_task_dependency", "project_task_tag", "project_task_color", "project_task_user",
+	"project_task", "project_milestone", "project_stage", "project_member", "project", "project_tag", "project_color",
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -202,6 +202,9 @@ func TestRowScope_AssigneeSeesOwnTaskOnly(t *testing.T) {
 	f.dependency(p, mine, other)
 	tag := f.id(`INSERT INTO project_tag (tenant_id, name) VALUES ($1, 'x') RETURNING id`, f.tenant)
 	f.exec(`INSERT INTO project_task_tag (tenant_id, project_id, task_id, tag_id) VALUES ($1, $2, $3, $4)`, f.tenant, p, mine, tag)
+	color := f.color()
+	f.exec(`INSERT INTO project_task_color (tenant_id, project_id, task_id, color_id) VALUES ($1, $2, $3, $4)`, f.tenant, p, mine, color)
+	f.exec(`INSERT INTO project_task_color (tenant_id, project_id, task_id, color_id) VALUES ($1, $2, $3, $4)`, f.tenant, p, other, color)
 
 	who := f.caller(u4)
 	want := map[string]int{
@@ -209,6 +212,8 @@ func TestRowScope_AssigneeSeesOwnTaskOnly(t *testing.T) {
 		"project_task": 1, "project_timesheet": 1, "project_task_user": 1, "project_task_tag": 1,
 		// mine's blocker `other` is hidden from the assignee, so the row is too.
 		"project_task_dependency": 0, "project_stage": 3, "project_tag": 1,
+		// Colors are shared like tags; a task's color links follow the task.
+		"project_color": 1, "project_task_color": 1,
 	}
 	for l, n := range want {
 		if got := f.total(who, l); got != n {

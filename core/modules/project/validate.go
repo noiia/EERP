@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -468,21 +469,54 @@ func taskLinkRules(extra func(*request, uuid.UUID) error) func(*request) error {
 
 var userLinkRules = taskLinkRules(nil)
 
-var tagLinkRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
-	tag, err := r.ref("tag_id")
-	if err != nil || !r.changed("tag_id") {
-		return err
+// sharedLinkRules: a task's link to a row of a shared (unscoped) table.
+func sharedLinkRules(table, k string) func(*request) error {
+	return taskLinkRules(func(r *request, _ uuid.UUID) error {
+		id, err := r.ref(k)
+		if err != nil || !r.changed(k) {
+			return err
+		}
+		if id == uuid.Nil {
+			return invalid(k, k+" is required")
+		}
+		var ok bool // no row scope: check the tenant
+		if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM `+table+`
+			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`, id, r.tenant).Scan(&ok); err != nil {
+			return err
+		}
+		if !ok {
+			return invalid(k, k+" not found")
+		}
+		return nil
+	})
+}
+
+var (
+	tagLinkRules   = sharedLinkRules("project_tag", "tag_id")
+	colorLinkRules = sharedLinkRules("project_color", "color_id")
+)
+
+var hexColor = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+
+// colorRules: a color group needs a name and a "#rrggbb" color, stored lowercase.
+func colorRules(r *request) error {
+	if r.op == opDelete {
+		return nil
 	}
-	var ok bool // project_tag has no row scope: check the tenant
-	if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM project_tag
-		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`, tag, r.tenant).Scan(&ok); err != nil {
-		return err
+	if name, _ := r.get("name").(string); strings.TrimSpace(name) == "" {
+		return invalid("name", "name is required")
 	}
-	if !ok {
-		return invalid("tag_id", "tag_id not found")
+	if _, set := r.body["color"]; !set && r.op == opUpdate {
+		return nil
 	}
+	color, _ := r.get("color").(string)
+	color = strings.ToLower(strings.TrimSpace(color))
+	if !hexColor.MatchString(color) {
+		return invalid("color", "color must be a #rrggbb hex color")
+	}
+	r.body["color"] = color
 	return nil
-})
+}
 
 var dependencyRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
 	on, err := r.visibleRef("project_task", "depends_on_id", true)
@@ -604,13 +638,21 @@ func (h *Handler) ValidateDependencyBody(next echo.HandlerFunc) echo.HandlerFunc
 	return h.guard("project_task_dependency", dependencyRules)(next)
 }
 
-// ValidateTaskLinkBody: an assignee (project_task_user) or tag
-// (project_task_tag) link of a visible task.
+// ValidateTaskLinkBody: an assignee (project_task_user), tag
+// (project_task_tag) or color group (project_task_color) link of a visible task.
 func (h *Handler) ValidateTaskLinkBody(table string) echo.MiddlewareFunc {
-	if table == "project_task_tag" {
+	switch table {
+	case "project_task_tag":
 		return h.guard(table, tagLinkRules)
+	case "project_task_color":
+		return h.guard(table, colorLinkRules)
 	}
 	return h.guard(table, userLinkRules)
+}
+
+// ValidateColorBody: a color group's name and lowercase #rrggbb color.
+func (h *Handler) ValidateColorBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_color", colorRules)(next)
 }
 
 // ValidateTimesheetBody: hours > 0, a date, the caller's own line unless

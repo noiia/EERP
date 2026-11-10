@@ -51,6 +51,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		"project_task_dependency": h.ValidateDependencyBody,
 		"project_task_user":       h.ValidateTaskLinkBody("project_task_user"),
 		"project_task_tag":        h.ValidateTaskLinkBody("project_task_tag"),
+		"project_color":           h.ValidateColorBody,
+		"project_task_color":      h.ValidateTaskLinkBody("project_task_color"),
 		"project_timesheet":       h.ValidateTimesheetBody,
 	}
 	for table, guard := range guards {
@@ -265,7 +267,7 @@ func moveTask(c *echo.Context, tx *orm.Tx, tenant, task, target uuid.UUID) error
 		WHERE t.id IN (SELECT id FROM tree)`, task, tenant, target); err != nil {
 		return err
 	}
-	for _, table := range []string{"project_timesheet", "project_task_user", "project_task_tag", "project_task_dependency"} {
+	for _, table := range []string{"project_timesheet", "project_task_user", "project_task_tag", "project_task_color", "project_task_dependency"} {
 		if _, err := tx.Exec(ctx, tree+`
 			UPDATE `+table+` SET project_id = $3, updated_at = now()
 			WHERE tenant_id = $2 AND task_id IN (SELECT id FROM tree)`, task, tenant, target); err != nil {

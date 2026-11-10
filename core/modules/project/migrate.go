@@ -47,6 +47,7 @@ var migrations = slices.Concat(
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_member_live ON project_member (project_id, user_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_user_live ON project_task_user (task_id, user_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_tag_live ON project_task_tag (task_id, tag_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_color_live ON project_task_color (task_id, color_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_dependency_live ON project_task_dependency (task_id, depends_on_id) WHERE deleted_at IS NULL`,
 		`ALTER TABLE project ALTER COLUMN visibility SET DEFAULT 'everyone'`,
 		`ALTER TABLE project ALTER COLUMN active SET DEFAULT true`,

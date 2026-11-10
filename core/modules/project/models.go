@@ -97,6 +97,24 @@ type ProjectTaskTag struct {
 	TagID     uuid.UUID `db:"tag_id,index" json:"tag_id"`
 }
 
+// ProjectColor is a color group shared by every project (no row scope):
+// color is a lowercase "#rrggbb" (validate.go).
+type ProjectColor struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id"`
+	Name     string    `db:"name" json:"name"`
+	Color    string    `db:"color" json:"color"`
+}
+
+// ProjectTaskColor puts a task in a color group. Unique live pair.
+type ProjectTaskColor struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id"`
+	ProjectID uuid.UUID `db:"project_id,index" json:"project_id"`
+	TaskID    uuid.UUID `db:"task_id,index" json:"task_id"`
+	ColorID   uuid.UUID `db:"color_id,index" json:"color_id"`
+}
+
 // ProjectTaskDependency: task_id is blocked until depends_on_id is closed.
 // project_id is task_id's (a dependency may cross projects).
 type ProjectTaskDependency struct {

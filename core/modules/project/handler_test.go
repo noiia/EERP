@@ -66,6 +66,7 @@ func TestUpdateTask_MoveCascades(t *testing.T) {
 	f.assign(p, grandchild, m.UserID)
 	other := f.task(p, nil, nil)
 	f.dependency(p, grandchild, other)
+	f.exec(`INSERT INTO project_task_color (tenant_id, project_id, task_id, color_id) VALUES ($1, $2, $3, $4)`, f.tenant, p, child, f.color())
 
 	code, body := f.do(m, http.MethodPut, "project_task/"+root.String(), map[string]any{"project_id": q, "name": "Moved", "milestone_id": milestone})
 	if code != http.StatusOK || body["name"] != "Moved" || body["project_id"] != q.String() {
@@ -83,7 +84,7 @@ func TestUpdateTask_MoveCascades(t *testing.T) {
 			t.Errorf("task %s: milestone %s, want cleared", task, got)
 		}
 	}
-	for _, table := range []string{"project_timesheet", "project_task_user", "project_task_dependency"} {
+	for _, table := range []string{"project_timesheet", "project_task_user", "project_task_dependency", "project_task_color"} {
 		if n := f.float(`SELECT count(*) FROM `+table+` WHERE project_id = $1`, p); n != 0 {
 			t.Errorf("%s: %v rows left in p", table, n)
 		}

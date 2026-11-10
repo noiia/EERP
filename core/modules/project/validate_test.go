@@ -61,6 +61,10 @@ func (f *fixture) tag() uuid.UUID {
 	return f.id(`INSERT INTO project_tag (tenant_id, name) VALUES ($1, 'tag') RETURNING id`, f.tenant)
 }
 
+func (f *fixture) color() uuid.UUID {
+	return f.id(`INSERT INTO project_color (tenant_id, name, color) VALUES ($1, 'c', '#123abc') RETURNING id`, f.tenant)
+}
+
 type writeCase struct {
 	name   string
 	who    auth.Identity
@@ -257,4 +261,46 @@ func TestValidate_MilestoneReachedAt(t *testing.T) {
 	if body["reached_at"] != nil {
 		t.Errorf("unreached: %v, want reached_at cleared", body)
 	}
+}
+
+func TestValidate_Colors(t *testing.T) {
+	f := newFixture(t)
+	other := f.sibling()
+	m := uuid.New()
+	me := f.caller(m)
+	p := f.project(m, "everyone")
+	hidden := f.project(uuid.New(), "members")
+	a, hiddenTask := f.task(p, nil, nil), f.task(hidden, nil, nil)
+	mine, foreign := f.color(), other.color()
+
+	f.run(t, []writeCase{
+		{"color without name", me, http.MethodPost, "project_color", map[string]any{"color": "#ff0000"}, 422},
+		{"blank name", me, http.MethodPost, "project_color", map[string]any{"name": "  ", "color": "#ff0000"}, 422},
+		{"color without color", me, http.MethodPost, "project_color", map[string]any{"name": "Red"}, 422},
+		{"short hex", me, http.MethodPost, "project_color", map[string]any{"name": "Red", "color": "#f00"}, 422},
+		{"named color", me, http.MethodPost, "project_color", map[string]any{"name": "Red", "color": "red"}, 422},
+		{"not a string", me, http.MethodPost, "project_color", map[string]any{"name": "Red", "color": 12}, 422},
+		{"bad color on edit", me, http.MethodPut, "project_color/" + mine.String(), map[string]any{"color": "#12345g"}, 422},
+		{"rename keeps the color", me, http.MethodPut, "project_color/" + mine.String(), map[string]any{"name": "Renamed"}, 200},
+		{"link to another tenant's color", me, http.MethodPost, "project_task_color", map[string]any{"task_id": a, "color_id": foreign}, 422},
+		{"link on a hidden task", me, http.MethodPost, "project_task_color", map[string]any{"task_id": hiddenTask, "color_id": f.color()}, 422},
+		{"link without color", me, http.MethodPost, "project_task_color", map[string]any{"task_id": a}, 422},
+	})
+
+	t.Run("uppercase is normalized", func(t *testing.T) {
+		code, body := f.do(me, http.MethodPost, "project_color", map[string]any{"name": "Sky", "color": " #1A2B3C "})
+		if code != http.StatusCreated || body["color"] != "#1a2b3c" {
+			t.Fatalf("%d %v, want 201 with #1a2b3c", code, body)
+		}
+	})
+	t.Run("a link takes its task's project, once per pair", func(t *testing.T) {
+		color := f.color()
+		code, body := f.do(me, http.MethodPost, "project_task_color", map[string]any{"task_id": a, "color_id": color, "project_id": hidden})
+		if code != http.StatusCreated || body["project_id"] != p.String() {
+			t.Fatalf("%d %v, want 201 in the task's project", code, body)
+		}
+		if code, body := f.do(me, http.MethodPost, "project_task_color", map[string]any{"task_id": a, "color_id": color}); code != http.StatusConflict {
+			t.Fatalf("duplicate link: %d %v, want 409", code, body)
+		}
+	})
 }
