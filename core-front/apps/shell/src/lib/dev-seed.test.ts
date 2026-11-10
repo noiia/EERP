@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@eerp/core-front/server'
 
 const createMock = vi.fn()
+const listMock = vi.fn(async (entity: string, o?: { filter?: Record<string, string> }) =>
+  entity === 'project_stage' ? [30, 10, 20].map((sequence) => ({ id: `stage-${o?.filter?.project_id}-${sequence}`, sequence })) : [],
+)
 const updateMock = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ id, ...body }))
 const apiRequestMock = vi.fn()
 const uploadPictureMock = vi.fn<(form: FormData) => Promise<{ id: string }>>(async () => ({ id: 'pic' }))
@@ -9,7 +12,7 @@ vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return {
     ...actual,
-    createServerApiClient: () => ({ create: createMock, update: updateMock }),
+    createServerApiClient: () => ({ create: createMock, update: updateMock, list: listMock }),
     uploadPicture: (form: FormData) => uploadPictureMock(form),
     apiRequest: (...args: unknown[]) => apiRequestMock(...args),
   }
@@ -188,6 +191,11 @@ describe('seedDemoData', () => {
       'quote',
       'quote_line',
       'quote status',
+      'project',
+      'project_milestone',
+      'project_task',
+      'project_task_dependency',
+      'project_timesheet',
       'report_page_format',
       'event',
       'event_session',
@@ -401,6 +409,30 @@ describe('seedDemoData events', () => {
   })
 })
 
+
+describe('seedDemoData — Project app', () => {
+  it('seeds 3 projects with milestones, tasks, subtasks, dependencies and timesheets', async () => {
+    const result = await seedDemoData()
+    expect(result.ok).toBe(true)
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    expect(callsFor('project')).toHaveLength(3)
+    expect(bodies('project').filter((p) => p.visibility === 'members')).toHaveLength(1)
+    expect(callsFor('project_milestone')).toHaveLength(6)
+    const tasks = bodies('project_task')
+    expect(tasks.filter((t) => !t.parent_id)).toHaveLength(24)
+    expect(tasks.filter((t) => t.parent_id)).toHaveLength(48)
+    expect(tasks.find((t) => !t.parent_id)?.stage_id).toMatch(/^stage-project-\d+-10$/)
+    expect(callsFor('project_task_dependency')).toHaveLength(3)
+    expect(callsFor('project_timesheet')).toHaveLength(19)
+    expect(bodies('project_timesheet').every((t) => Number(t.hours) > 0 && typeof t.date === 'string')).toBe(true)
+  })
+
+  it('still seeds tasks when the stages cannot be read', async () => {
+    listMock.mockRejectedValueOnce(new Error('boom'))
+    await seedDemoData()
+    expect(callsFor('project_task').length).toBeGreaterThan(0)
+  })
+})
 
 describe('seedDemoData — demo website', () => {
   it('publishes what the site reads and creates its pages, linked to each other by slug', async () => {

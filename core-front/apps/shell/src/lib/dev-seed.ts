@@ -648,6 +648,93 @@ async function seedWebsite(): Promise<SeedEntityResult[]> {
   return [publish, pages.result]
 }
 
+const PROJECT_DEMOS: { name: string; visibility: 'everyone' | 'members' }[] = [
+  { name: 'Website relaunch', visibility: 'everyone' },
+  { name: 'Mobile app', visibility: 'everyone' },
+  { name: 'Board reporting (private)', visibility: 'members' },
+]
+
+/**
+ * The Project app's demo: 3 projects (the manager, the signed-in admin, is
+ * filled by Go; stages come from its insert trigger, so they are read back),
+ * each with 2 milestones, 8 tasks of 2 subtasks, a dependency and timesheets.
+ * Aggregates (hours, counts, blocked) belong to Go's triggers: never sent.
+ */
+async function seedProjects(): Promise<SeedEntityResult[]> {
+  const results: SeedEntityResult[] = []
+  const add = (r: SeedEntityResult) => results.push(r)
+  const day = 86_400_000
+  const projects = await createMany<{ id: string }>(
+    'project',
+    PROJECT_DEMOS.map((p) => ({ name: p.name, visibility: p.visibility })),
+  )
+  add(projects.result)
+  const outcomes: Record<string, SeedEntityResult> = {}
+  const track = (o: { result: SeedEntityResult }) => {
+    const k = o.result.entity
+    const cur = (outcomes[k] ??= { entity: k, created: 0, failed: 0, errors: [] })
+    cur.created += o.result.created
+    cur.failed += o.result.failed
+    cur.errors.push(...o.result.errors)
+  }
+  const client = createServerApiClient()
+  for (const [pi, project] of projects.records.entries()) {
+    let stages: { id: string; sequence: number }[] = []
+    try {
+      stages = (await client.list<{ id: string; sequence: number }>('project_stage', { filter: { project_id: project.id } }))
+        .slice()
+        .sort((a, b) => a.sequence - b.sequence)
+    } catch {
+      // unreadable stages: tasks fall back to the server's first-stage default
+    }
+    const milestones = await createMany<{ id: string }>(
+      'project_milestone',
+      [1, 2].map((n) => ({ project_id: project.id, name: `Milestone ${n}`, deadline: new Date(Date.now() + n * 30 * day).toISOString() })),
+    )
+    track(milestones)
+    const tasks = await createMany<{ id: string }>(
+      'project_task',
+      Array.from({ length: 8 }, (_, i) => ({
+        project_id: project.id,
+        name: `Task ${pi + 1}.${i + 1}`,
+        priority: i % 4 === 0,
+        planned_hours: 4 + i,
+        ...(stages.length > 0 ? { stage_id: stages[i % stages.length].id } : {}),
+        ...(milestones.records.length > 0 ? { milestone_id: milestones.records[i % 2].id } : {}),
+        deadline: new Date(Date.now() + (i + 1) * 7 * day).toISOString(),
+      })),
+    )
+    track(tasks)
+    track(
+      await createMany(
+        'project_task',
+        tasks.records.flatMap((t, i) =>
+          [1, 2].map((n) => ({ project_id: project.id, parent_id: t.id, name: `Subtask ${pi + 1}.${i + 1}.${n}`, planned_hours: 2 })),
+        ),
+      ),
+    )
+    track(
+      await createMany(
+        'project_task_dependency',
+        tasks.records.length > 1 ? [{ task_id: tasks.records[1].id, depends_on_id: tasks.records[0].id }] : [],
+      ),
+    )
+    track(
+      await createMany(
+        'project_timesheet',
+        tasks.records.slice(0, pi === 0 ? 7 : 6).map((t, i) => ({
+          task_id: t.id,
+          date: new Date(Date.now() - i * day).toISOString(),
+          hours: 1 + (i % 4) * 0.5,
+          description: 'Demo work',
+        })),
+      ),
+    )
+  }
+  results.push(...Object.values(outcomes))
+  return results
+}
+
 /**
  * Seed the workspace with fake contacts, CRM opportunities, tags, warehouse
  * products (described, with named variants and generated pictures), sale invoices/quotes (with their line items), default report
@@ -728,6 +815,8 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
   )
   results.push(quoteLinesOutcome.result)
   results.push(await applyStatuses('quote', quotesOutcome))
+
+  results.push(...(await seedProjects()))
 
   const preferences = await getMyLocalePreferences()
   const pageFormatsOutcome = await createMany(
