@@ -15,6 +15,8 @@ describe('effectiveViewFields', () => {
       calendarColorField: null,
       kanbanColumns: null,
       kanbanBadgeField: null,
+      ganttStartField: null,
+      ganttEndField: null,
     })
   })
 
@@ -26,6 +28,8 @@ describe('effectiveViewFields', () => {
       calendarColorField: null,
       kanbanColumns: null,
       kanbanBadgeField: null,
+      ganttStartField: null,
+      ganttEndField: null,
     })
   })
 
@@ -42,6 +46,8 @@ describe('effectiveViewFields', () => {
       calendarColorField: null,
       kanbanColumns: null,
       kanbanBadgeField: null,
+      ganttStartField: null,
+      ganttEndField: null,
     })
   })
 
@@ -55,6 +61,8 @@ describe('effectiveViewFields', () => {
       calendarColorField: null,
       kanbanColumns: null,
       kanbanBadgeField: null,
+      ganttStartField: null,
+      ganttEndField: null,
     })
   })
 
@@ -82,8 +90,10 @@ describe('availableDisplayModes', () => {
         calendarColorField: null,
         kanbanColumns: null,
         kanbanBadgeField: null,
+        ganttStartField: null,
+        ganttEndField: null,
       }),
-    ).toEqual({ list: true, kanban: false, calendar: false, graph: false })
+    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false })
     expect(
       availableDisplayModes({
         kanbanStatusField: 'status',
@@ -92,7 +102,27 @@ describe('availableDisplayModes', () => {
         calendarColorField: null,
         kanbanColumns: null,
         kanbanBadgeField: null,
+        ganttStartField: null,
+        ganttEndField: null,
       }),
-    ).toEqual({ list: true, kanban: true, calendar: true, graph: true })
+    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false })
+  })
+
+  it('gantt needs BOTH a start and an end field', () => {
+    const base = effectiveViewFields(undefined, EMPTY_VIEW_FIELDS)
+    expect(availableDisplayModes({ ...base, ganttStartField: 'date_start' }).gantt).toBe(false)
+    expect(availableDisplayModes({ ...base, ganttEndField: 'deadline' }).gantt).toBe(false)
+    expect(availableDisplayModes({ ...base, ganttStartField: 'date_start', ganttEndField: 'deadline' }).gantt).toBe(true)
+  })
+})
+
+describe('effectiveViewFields gantt fields', () => {
+  it('inherit the module default and yield to a non-null override, field by field', () => {
+    expect(
+      effectiveViewFields(
+        { ganttStartField: 'date_start', ganttEndField: 'deadline' },
+        { ...EMPTY_VIEW_FIELDS, ganttEndField: 'due_date' },
+      ),
+    ).toMatchObject({ ganttStartField: 'date_start', ganttEndField: 'due_date' })
   })
 })

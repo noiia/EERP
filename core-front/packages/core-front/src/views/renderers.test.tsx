@@ -1317,6 +1317,35 @@ describe('EntityView', () => {
       expect(screen.getByRole('group', { name: 'open' })).toHaveTextContent('Ada')
     })
 
+    it('shows Gantt only once BOTH its start and end fields resolve, and renders the timeline', () => {
+      const taskDescriptor: ViewDescriptor<Contact & { start?: string | null; end?: string | null }> = {
+        entity: 'crm',
+        viewType: 'tree',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text' },
+          { name: 'start', label: 'Start', type: 'date' },
+          { name: 'end', label: 'End', type: 'date' },
+        ],
+        viewModeDefaults: { ganttStartField: 'start' },
+      }
+      const acts = noopActions as unknown as EntityActions<Contact & { start?: string | null; end?: string | null }>
+      const data = [{ id: '1', name: 'Ada', start: null, end: null }]
+      const { unmount } = render(<EntityView descriptor={taskDescriptor} initialData={data} actions={acts} />)
+      expect(screen.queryByRole('button', { name: 'Gantt' })).not.toBeInTheDocument()
+      unmount()
+      render(
+        <EntityView
+          descriptor={taskDescriptor}
+          initialData={data}
+          actions={acts}
+          viewFields={{ kanbanStatusField: null, calendarDateField: null, ganttEndField: 'end' }}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Gantt' }))
+      expect(screen.getByRole('button', { name: 'Day' })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Ada')
+    })
+
     it('switching to Calendar with a configured date field renders a real month grid, not a placeholder', () => {
       const taskDescriptor: ViewDescriptor<Contact & { due_date?: string | null }> = {
         entity: 'crm',

@@ -20,10 +20,11 @@ const DefaultLocaleKey = "i18n.default_locale"
 // Absent (or unparsable) means the frontend's built-in default (1,234.56).
 const NumberFormatKey = "format.number"
 
-// ViewFieldsKey returns the app_settings key holding entity's Kanban/Calendar
+// ViewFieldsKey returns the app_settings key holding entity's Kanban/Calendar/Gantt
 // field configuration plus its Graph mode override (docs/roadmaps/
 // list-view-modes.md), stored as JSON: {"kanban_status_field":"status",
-// "calendar_date_field":"due_date","enable_graphs":true}. One key per entity
+// "calendar_date_field":"due_date","enable_graphs":true,
+// "gantt_start_field":"date_start","gantt_end_field":"deadline"}. One key per entity
 // — unlike DefaultLocaleKey/NumberFormatKey, which are tenant-wide singletons,
 // this setting is inherently per-entity, so the key is computed rather than a
 // fixed constant. Absent (or a null field) means no workspace override for

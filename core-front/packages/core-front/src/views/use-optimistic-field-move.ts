@@ -21,6 +21,9 @@ export interface OptimisticFieldMove<T extends HasId> {
    * Save has, because this is a real write, not a display trick.
    */
   moveField: (id: string, value: unknown) => Promise<void>
+  /** moveField for several fields at once (one PATCH, one revert) — Gantt's
+   * bar move shifts its start and end together. */
+  moveFields: (id: string, patch: Record<string, unknown>) => Promise<void>
 }
 
 export function useOptimisticFieldMove<T extends HasId>(
@@ -38,16 +41,15 @@ export function useOptimisticFieldMove<T extends HasId>(
     setRecords(initialData)
   }, [initialData])
 
-  async function moveField(id: string, value: unknown) {
-    const record = records.find((r) => r.id === id)
+  async function moveFields(id: string, patch: Record<string, unknown>) {
+    const record = records.find((r) => r.id === id) as Record<string, unknown> | undefined
     if (!record) return
-    const current = (record as Record<string, unknown>)[field] ?? null
-    if (current === (value ?? null)) return
+    if (Object.entries(patch).every(([k, v]) => (record[k] ?? null) === (v ?? null))) return
     const previous = records
     setError(null)
-    setRecords((rs) => rs.map((r) => (r.id === id ? ({ ...r, [field]: value } as T) : r)))
+    setRecords((rs) => rs.map((r) => (r.id === id ? ({ ...r, ...patch } as T) : r)))
     try {
-      await actions.update(id, { [field]: value } as Partial<T>)
+      await actions.update(id, patch as Partial<T>)
     } catch (e) {
       setRecords(previous)
       const err = toApiError(e)
@@ -55,5 +57,7 @@ export function useOptimisticFieldMove<T extends HasId>(
     }
   }
 
-  return { records, error, moveField }
+  const moveField = (id: string, value: unknown) => moveFields(id, { [field]: value })
+
+  return { records, error, moveField, moveFields }
 }

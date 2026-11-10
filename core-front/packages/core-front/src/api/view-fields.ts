@@ -21,12 +21,17 @@ export interface ViewFieldsConfig {
   /** null = no override (inherit the module's default, or disabled if it
    * declared none); true/false forces Graph mode on/off either way. */
   enableGraphs?: boolean | null
+  /** Gantt bar start/end date fields; Gantt mode needs both to resolve. */
+  ganttStartField?: string | null
+  ganttEndField?: string | null
 }
 
 export const EMPTY_VIEW_FIELDS: ViewFieldsConfig = {
   kanbanStatusField: null,
   calendarDateField: null,
   enableGraphs: null,
+  ganttStartField: null,
+  ganttEndField: null,
 }
 
 /**
@@ -41,6 +46,8 @@ export interface ViewModeDefaults {
   kanbanStatusField?: string
   calendarDateField?: string
   enableGraphs?: boolean
+  ganttStartField?: string
+  ganttEndField?: string
   /**
    * Names a `type: 'boolean'` field: when a record's value is true, the
    * Calendar renderer highlights its card red (e.g. cron_history's `failed`
@@ -85,6 +92,8 @@ export interface EffectiveViewFields {
   calendarColorField: string | null
   kanbanColumns: KanbanColumnsConfig | null
   kanbanBadgeField: string | null
+  ganttStartField: string | null
+  ganttEndField: string | null
 }
 
 /**
@@ -103,13 +112,15 @@ export function effectiveViewFields(
     calendarColorField: defaults?.calendarColorField ?? null,
     kanbanColumns: defaults?.kanbanColumns ?? null,
     kanbanBadgeField: defaults?.kanbanBadgeField ?? null,
+    ganttStartField: config.ganttStartField ?? defaults?.ganttStartField ?? null,
+    ganttEndField: config.ganttEndField ?? defaults?.ganttEndField ?? null,
   }
 }
 
 /** The list view's display-mode switcher (top-right of the list). */
-export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph'
+export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt'
 
-export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph']
+export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt']
 
 /**
  * Which modes are usable right now for a given entity's EFFECTIVE (module
@@ -124,5 +135,6 @@ export function availableDisplayModes(effective: EffectiveViewFields): Record<Di
     kanban: effective.kanbanStatusField != null,
     calendar: effective.calendarDateField != null,
     graph: effective.enableGraphs,
+    gantt: effective.ganttStartField != null && effective.ganttEndField != null,
   }
 }

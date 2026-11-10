@@ -22,12 +22,16 @@ describe('getEntityViewFields', () => {
       kanban_status_field: 'status',
       calendar_date_field: null,
       enable_graphs: true,
+      gantt_start_field: 'date_start',
+      gantt_end_field: 'deadline',
     })
 
     await expect(getEntityViewFields('crm')).resolves.toEqual({
       kanbanStatusField: 'status',
       calendarDateField: null,
       enableGraphs: true,
+      ganttStartField: 'date_start',
+      ganttEndField: 'deadline',
     })
     expect(apiRequestMock).toHaveBeenCalledWith('GET', '/settings/views/crm/fields')
   })
@@ -38,6 +42,8 @@ describe('getEntityViewFields', () => {
       kanbanStatusField: null,
       calendarDateField: null,
       enableGraphs: null,
+      ganttStartField: null,
+      ganttEndField: null,
     })
   })
 })
@@ -47,12 +53,19 @@ describe('setEntityViewFields', () => {
     apiRequestMock.mockResolvedValue(undefined)
 
     await expect(
-      setEntityViewFields('crm', { kanbanStatusField: 'status', calendarDateField: null, enableGraphs: true }),
+      setEntityViewFields('crm', {
+        kanbanStatusField: 'status',
+        calendarDateField: null,
+        enableGraphs: true,
+        ganttStartField: 'date_start',
+      }),
     ).resolves.toEqual({ ok: true })
     expect(apiRequestMock).toHaveBeenCalledWith('PUT', '/settings/views/crm/fields', {
       kanban_status_field: 'status',
       calendar_date_field: null,
       enable_graphs: true,
+      gantt_start_field: 'date_start',
+      gantt_end_field: null,
     })
   })
 

@@ -2522,3 +2522,39 @@ msgstr ""
 
 msgid "This board has too many columns: only the first ones are shown."
 msgstr ""
+
+msgid "Gantt"
+msgstr ""
+
+msgid "Zoom"
+msgstr ""
+
+msgid "Day"
+msgstr ""
+
+msgid "Week"
+msgstr ""
+
+msgid "Month"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "Previous period"
+msgstr ""
+
+msgid "Next period"
+msgstr ""
+
+msgid "Gantt start"
+msgstr ""
+
+msgid "Gantt end"
+msgstr ""
+
+msgid "records shown — narrow the range or the filters to see the rest"
+msgstr ""
+
+msgid "Which field powers each list's Kanban, Calendar and Gantt display modes, and whether Graph mode is on."
+msgstr ""

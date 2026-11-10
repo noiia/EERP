@@ -2654,3 +2654,39 @@ msgstr "Aucune colonne nommée {name} n'existe pour cette carte."
 
 msgid "This board has too many columns: only the first ones are shown."
 msgstr "Ce tableau a trop de colonnes : seules les premières sont affichées."
+
+msgid "Gantt"
+msgstr "Gantt"
+
+msgid "Zoom"
+msgstr "Zoom"
+
+msgid "Day"
+msgstr "Jour"
+
+msgid "Week"
+msgstr "Semaine"
+
+msgid "Month"
+msgstr "Mois"
+
+msgid "Today"
+msgstr "Aujourd'hui"
+
+msgid "Previous period"
+msgstr "Période précédente"
+
+msgid "Next period"
+msgstr "Période suivante"
+
+msgid "Gantt start"
+msgstr "Début du Gantt"
+
+msgid "Gantt end"
+msgstr "Fin du Gantt"
+
+msgid "records shown — narrow the range or the filters to see the rest"
+msgstr "enregistrements affichés — réduisez la période ou les filtres pour voir le reste"
+
+msgid "Which field powers each list's Kanban, Calendar and Gantt display modes, and whether Graph mode is on."
+msgstr "Quel champ alimente les modes d'affichage Kanban, Calendrier et Gantt de chaque liste, et si le mode Graphique est activé."

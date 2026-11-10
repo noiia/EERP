@@ -376,6 +376,10 @@ type viewFieldsConfig struct {
 	// override (inherit the module's own default, or disabled if it declared
 	// none); non-nil forces Graph on or off regardless of that default.
 	EnableGraphs *bool `json:"enable_graphs"`
+	// GanttStartField/GanttEndField name the date fields a Gantt bar spans;
+	// Gantt mode needs both to resolve (override or module default).
+	GanttStartField *string `json:"gantt_start_field"`
+	GanttEndField   *string `json:"gantt_end_field"`
 }
 
 // GetViewFieldsSettings handles GET /api/v1/settings/views/:entity/fields —
@@ -432,9 +436,15 @@ func (h *Handler) PutViewFieldsSettings(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
 			"kanban_status_field must be a lowercase snake_case field name.")
 	}
-	if req.CalendarDateField != nil && !fieldNamePattern.MatchString(*req.CalendarDateField) {
-		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
-			"calendar_date_field must be a lowercase snake_case field name.")
+	for name, field := range map[string]*string{
+		"calendar_date_field": req.CalendarDateField,
+		"gantt_start_field":   req.GanttStartField,
+		"gantt_end_field":     req.GanttEndField,
+	} {
+		if field != nil && !fieldNamePattern.MatchString(*field) {
+			return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+				name+" must be a lowercase snake_case field name.")
+		}
 	}
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)

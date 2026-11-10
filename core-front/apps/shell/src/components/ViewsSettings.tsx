@@ -34,8 +34,8 @@ import {
 } from '@eerp/core-front'
 import { setEntityViewFields } from '@/lib/view-fields'
 
-// Settings → Views: which field powers each entity's Kanban status column and
-// Calendar date positioning, and whether Graph mode is on
+// Settings → Views: which field powers each entity's Kanban status column,
+// Calendar date positioning and Gantt bars (start + end), and whether Graph mode is on
 // (docs/roadmaps/list-view-modes.md, ADR-006 and its module-defaults
 // amendment). The durable value is server state (app_settings key
 // views.<entity>.fields, PUT /settings/views/:entity/fields, permission
@@ -56,6 +56,12 @@ export interface ViewEntityRow {
  * meaning both (mirrors FormatSettings' NONE_VALUE pattern). */
 const NONE_VALUE = '__none__'
 
+/** The two Gantt pickers: both offer the entity's date fields. */
+const GANTT_PICKERS = [
+  { key: 'ganttStartField', label: 'Gantt start' },
+  { key: 'ganttEndField', label: 'Gantt end' },
+] as const
+
 /** True once ANY field/flag the module hardcoded a default for is actively
  * overridden — the only state a "revert to module settings" action makes
  * sense in. */
@@ -64,7 +70,9 @@ function hasOverride(row: ViewEntityRow): boolean {
   return (
     (defaults.kanbanStatusField !== undefined && config.kanbanStatusField != null) ||
     (defaults.calendarDateField !== undefined && config.calendarDateField != null) ||
-    (defaults.enableGraphs !== undefined && config.enableGraphs != null)
+    (defaults.enableGraphs !== undefined && config.enableGraphs != null) ||
+    (defaults.ganttStartField !== undefined && config.ganttStartField != null) ||
+    (defaults.ganttEndField !== undefined && config.ganttEndField != null)
   )
 }
 
@@ -72,7 +80,9 @@ function hasAnyDefault(defaults: ViewModeDefaults): boolean {
   return (
     defaults.kanbanStatusField !== undefined ||
     defaults.calendarDateField !== undefined ||
-    defaults.enableGraphs !== undefined
+    defaults.enableGraphs !== undefined ||
+    defaults.ganttStartField !== undefined ||
+    defaults.ganttEndField !== undefined
   )
 }
 
@@ -133,6 +143,8 @@ export default function ViewsSettings({
     if (row.defaults.kanbanStatusField !== undefined) patch.kanbanStatusField = null
     if (row.defaults.calendarDateField !== undefined) patch.calendarDateField = null
     if (row.defaults.enableGraphs !== undefined) patch.enableGraphs = null
+    if (row.defaults.ganttStartField !== undefined) patch.ganttStartField = null
+    if (row.defaults.ganttEndField !== undefined) patch.ganttEndField = null
     void apply(row.entity, patch)
   }
 
@@ -144,7 +156,7 @@ export default function ViewsSettings({
             {t('Views')}
           </Typography>
           <Typography color="text.secondary">
-            {t("Which field powers each list's Kanban and Calendar display modes, and whether Graph mode is on.")}
+            {t("Which field powers each list's Kanban, Calendar and Gantt display modes, and whether Graph mode is on.")}
           </Typography>
         </Stack>
 
@@ -158,6 +170,7 @@ export default function ViewsSettings({
                 <TableCell>{t('Entity')}</TableCell>
                 <TableCell>{t('Kanban status field')}</TableCell>
                 <TableCell>{t('Calendar date field')}</TableCell>
+                <TableCell>{t('Gantt')}</TableCell>
                 <TableCell>{t('Graphs')}</TableCell>
               </TableRow>
             </TableHead>
@@ -242,6 +255,36 @@ export default function ViewsSettings({
                           ))}
                         </Select>
                       </FormControl>
+                    </TableCell>
+                    <TableCell>
+                      <Stack spacing={1}>
+                        {GANTT_PICKERS.map(({ key, label }) => (
+                          <FormControl
+                            key={key}
+                            size="small"
+                            sx={{ minWidth: 180 }}
+                            disabled={!canEdit || row.dateFields.length === 0}
+                          >
+                            <InputLabel id={`${key}-${row.entity}`}>{t(label)}</InputLabel>
+                            <Select
+                              labelId={`${key}-${row.entity}`}
+                              label={t(label)}
+                              value={effective[key] ?? NONE_VALUE}
+                              onChange={(e) => {
+                                const value = e.target.value === NONE_VALUE ? null : e.target.value
+                                requestChange(row, { [key]: value }, t(label), row.defaults[key])
+                              }}
+                            >
+                              <MenuItem value={NONE_VALUE}>{t('None')}</MenuItem>
+                              {row.dateFields.map((f) => (
+                                <MenuItem key={f.name} value={f.name}>
+                                  {t(fieldLabel(f))}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        ))}
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       <FormControlLabel

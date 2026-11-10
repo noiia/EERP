@@ -34,6 +34,7 @@ import { useT } from '../i18n/translate'
 import { moduleRegistry } from '../registry'
 import { useBreadcrumbStore } from './breadcrumb-store'
 import { CalendarRenderer } from './calendar-renderer'
+import { GanttRenderer } from './gantt-renderer'
 import { CatalogRenderer } from './catalog-renderer'
 import { ChatterPanel } from './chatter-panel'
 import { useChatterOps } from './chatter-ops'
@@ -869,11 +870,12 @@ const MODE_LABELS: Record<DisplayMode, string> = {
   kanban: 'Kanban',
   calendar: 'Calendar',
   graph: 'Graph',
+  gantt: 'Gantt',
 }
 
 /**
  * Top-right of the list content: switches between List (the DataGrid/tree
- * this renderer has always shown) and Kanban/Calendar/Graph (docs/roadmaps/
+ * this renderer has always shown) and Kanban/Calendar/Graph/Gantt (docs/roadmaps/
  * list-view-modes.md). Kanban/Calendar/Graph are each OMITTED entirely — not
  * rendered disabled — until their EFFECTIVE config (a module's own
  * `viewModeDefaults`, merged with any admin override from Settings -> Views;
@@ -1151,6 +1153,18 @@ function TreeRenderer<T extends HasId>({
         actions={actions}
         dateField={effective.calendarDateField}
         colorField={effective.calendarColorField ?? undefined}
+        onRecordsChange={setLiveRecords}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
+      />
+    )
+  } else if (mode === 'gantt' && effective.ganttStartField && effective.ganttEndField) {
+    content = (
+      <GanttRenderer
+        descriptor={descriptor}
+        initialData={liveRecords}
+        actions={actions}
+        startField={effective.ganttStartField}
+        endField={effective.ganttEndField}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

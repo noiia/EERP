@@ -397,7 +397,13 @@ describe('ServerApiClient', () => {
 
   it('reads Kanban/Calendar/Graph field config, never caching (tenant-wide settings)', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse(200, { kanban_status_field: 'status', calendar_date_field: null, enable_graphs: true }),
+      jsonResponse(200, {
+        kanban_status_field: 'status',
+        calendar_date_field: null,
+        enable_graphs: true,
+        gantt_start_field: 'date_start',
+        gantt_end_field: null,
+      }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -405,6 +411,8 @@ describe('ServerApiClient', () => {
       kanbanStatusField: 'status',
       calendarDateField: null,
       enableGraphs: true,
+      ganttStartField: 'date_start',
+      ganttEndField: null,
     })
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }]
     expect(url).toBe('http://api.test/api/v1/settings/views/crm/fields')

@@ -491,11 +491,15 @@ class ServerApiClientImpl implements ServerApiClient {
       kanban_status_field: string | null
       calendar_date_field: string | null
       enable_graphs: boolean | null
+      gantt_start_field?: string | null
+      gantt_end_field?: string | null
     }>('GET', `/settings/views/${entity}/fields`, null, undefined, this.tokenOverride)
     return {
       kanbanStatusField: raw.kanban_status_field ?? null,
       calendarDateField: raw.calendar_date_field ?? null,
       enableGraphs: raw.enable_graphs ?? null,
+      ganttStartField: raw.gantt_start_field ?? null,
+      ganttEndField: raw.gantt_end_field ?? null,
     }
   }
 
