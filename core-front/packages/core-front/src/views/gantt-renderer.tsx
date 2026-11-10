@@ -117,6 +117,15 @@ function shiftAnchor(zoom: Zoom, anchor: Date, dir: number): Date {
   return addDays(anchor, (zoom === 'day' ? 14 : 84) * dir)
 }
 
+/** Shift + wheel: `steps` of the smallest move the Monday-aligned range shows (a month, else a week). */
+function scrollAnchor(zoom: Zoom, anchor: Date, steps: number): Date {
+  if (zoom === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + steps, 1)
+  return addDays(anchor, 7 * steps)
+}
+
+/** Wheel distance (px) per timeline step: about one mouse notch. */
+const WHEEL_STEP_PX = 100
+
 function columnLabel(zoom: Zoom, d: Date): string {
   if (zoom === 'month') return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
   if (zoom === 'day') return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })
@@ -330,6 +339,27 @@ export function GanttRenderer<T extends HasId>({
 
   const trackRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  // Shift + wheel over the timeline moves it back and forth. Native listener:
+  // React's onWheel is passive, so it couldn't stop the page scrolling sideways.
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+    let pending = 0
+    const onWheel = (e: WheelEvent) => {
+      if (!e.shiftKey) return
+      // Browsers turn a shifted wheel into deltaX; some keep deltaY. Lines (Firefox) → px.
+      const delta = (e.deltaX || e.deltaY) * (e.deltaMode === 1 ? 16 : 1)
+      if (!delta) return
+      e.preventDefault()
+      pending += delta
+      const steps = Math.trunc(pending / WHEEL_STEP_PX)
+      if (steps === 0) return
+      pending -= steps * WHEEL_STEP_PX
+      setAnchor((a) => scrollAnchor(zoom, a, steps))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [zoom])
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
   // Records with a write in flight: no new move until it settles, so a late

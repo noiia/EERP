@@ -98,6 +98,28 @@ describe('GanttRenderer', () => {
     expect(screen.getByRole('button', { name: 'Week' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('Shift + wheel moves the timeline a week per notch (a month in Month zoom)', () => {
+    renderGantt()
+    const grid = screen.getByTestId('gantt-track').parentElement!
+    const range = () => screen.getByText(/–/).textContent
+    const start = range()
+    fireEvent.wheel(grid, { deltaY: 100, shiftKey: true })
+    expect(range()).toBe(`${new Date(2026, 2, 9).toLocaleDateString()} – ${new Date(2026, 4, 31).toLocaleDateString()}`)
+    fireEvent.wheel(grid, { deltaX: -100, shiftKey: true })
+    expect(range()).toBe(start)
+    // Small trackpad deltas add up; without Shift the wheel is left alone.
+    fireEvent.wheel(grid, { deltaY: 60, shiftKey: true })
+    expect(range()).toBe(start)
+    fireEvent.wheel(grid, { deltaY: 500 })
+    expect(range()).toBe(start)
+    fireEvent.wheel(grid, { deltaY: 60, shiftKey: true })
+    expect(range()).not.toBe(start)
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.wheel(grid, { deltaY: 100, shiftKey: true })
+    expect(range()).toBe(`${new Date(2026, 3, 1).toLocaleDateString()} – ${new Date(2026, 8, 30).toLocaleDateString()}`)
+  })
+
   it('marks today on the timeline only while today is in the visible range', () => {
     renderGantt()
     expect(screen.getByRole('img', { name: 'Today' })).toBeInTheDocument()
