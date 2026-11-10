@@ -64,6 +64,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 			del, restore = h.DeleteProject, h.RestoreProject(g.GetByID)
 		case "project_stage":
 			del = h.DeleteStage
+		case "project_color":
+			del, restore = h.DeleteColor, h.RestoreColor(g.GetByID)
 		case "project_task":
 			update = h.UpdateTask(g.Update, g.GetByID)
 		}
@@ -162,6 +164,70 @@ func (h *Handler) RestoreProject(get echo.HandlerFunc) echo.HandlerFunc {
 				}
 			}
 			return nil
+		})
+		if err != nil {
+			return respond(c, err)
+		}
+		return get(c)
+	}
+}
+
+// DeleteColor handles DELETE /api/v1/project_color/:id behind
+// ValidateColorBody (any writer: color groups have no manager): the color and
+// its live task links are soft-deleted in one transaction, so no task keeps
+// a link to a deleted group.
+func (h *Handler) DeleteColor(c *echo.Context) error {
+	ctx := c.Request().Context()
+	tenant, _ := access.TenantFromContext(ctx)
+	id, err := echo.PathParam[uuid.UUID](c, "id")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
+	}
+	err = orm.Transact(ctx, h.db, func(tx *orm.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE project_color SET deleted_at = now(), updated_at = now()
+			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errNotFound
+		}
+		// now() is the transaction's start: the links share the color's deleted_at.
+		_, err = tx.Exec(ctx, `UPDATE project_task_color SET deleted_at = now(), updated_at = now()
+			WHERE color_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
+		return err
+	})
+	if err != nil {
+		return respond(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// RestoreColor handles POST /api/v1/project_color/:id/restore behind
+// ValidateColorBody: the color and the links DeleteColor deleted with it
+// (same deleted_at) come back in one transaction; the answer is the color.
+func (h *Handler) RestoreColor(get echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		ctx := c.Request().Context()
+		tenant, _ := access.TenantFromContext(ctx)
+		id, err := echo.PathParam[uuid.UUID](c, "id")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
+		}
+		err = orm.Transact(ctx, h.db, func(tx *orm.Tx) error {
+			var at time.Time
+			if err := tx.QueryRow(ctx, `UPDATE project_color p SET deleted_at = NULL, updated_at = now()
+				FROM (SELECT deleted_at FROM project_color WHERE id = $1 AND tenant_id = $2 FOR UPDATE) old
+				WHERE p.id = $1 AND p.tenant_id = $2 AND p.deleted_at IS NOT NULL RETURNING old.deleted_at`,
+				id, tenant).Scan(&at); err != nil {
+				if errors.Is(err, orm.ErrNotFound) {
+					return errNotFound
+				}
+				return err
+			}
+			_, err := tx.Exec(ctx, `UPDATE project_task_color SET deleted_at = NULL, updated_at = now()
+				WHERE color_id = $1 AND tenant_id = $2 AND deleted_at = $3`, id, tenant, at)
+			return err
 		})
 		if err != nil {
 			return respond(c, err)

@@ -226,3 +226,47 @@ func TestTaskChildScope_HidesDeletedTasksRows(t *testing.T) {
 		t.Errorf("spent_hours %v, want 2", got)
 	}
 }
+
+func TestDeleteRestoreColor_TakesItsLinks(t *testing.T) {
+	f := newFixture(t)
+	someone := f.caller(uuid.New()) // any user: color groups have no manager
+	p := f.project(uuid.New(), "everyone")
+	a, b := f.task(p, nil, nil), f.task(p, nil, nil)
+	color, other := f.color(), f.color()
+	link := func(task, c uuid.UUID) uuid.UUID {
+		return f.id(`INSERT INTO project_task_color (tenant_id, project_id, task_id, color_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+			f.tenant, p, task, c)
+	}
+	link(a, color)
+	link(b, color)
+	kept := link(a, other)
+	old := link(b, other) // reused id slot: an earlier, separately deleted link of `color`
+	f.exec(`UPDATE project_task_color SET color_id = $2, deleted_at = now() - interval '1 day' WHERE id = $1`, old, color)
+	live := func(c uuid.UUID) float64 {
+		return f.float(`SELECT count(*) FROM project_task_color WHERE color_id = $1 AND deleted_at IS NULL`, c)
+	}
+
+	if code, body := f.do(someone, http.MethodDelete, "project_color/"+color.String(), nil); code != http.StatusNoContent {
+		t.Fatalf("delete: %d %v, want 204", code, body)
+	}
+	if n := live(color); n != 0 {
+		t.Errorf("%v live links left on the deleted color", n)
+	}
+	if n := f.float(`SELECT count(*) FROM project_task_color WHERE id = $1 AND deleted_at IS NULL`, kept); n != 1 {
+		t.Errorf("another color's link was deleted")
+	}
+
+	code, body := f.do(someone, http.MethodPost, "project_color/"+color.String()+"/restore", nil)
+	if code != http.StatusOK || body["id"] != color.String() {
+		t.Fatalf("restore: %d %v, want 200 with the color", code, body)
+	}
+	if n := live(color); n != 2 {
+		t.Errorf("%v live links after restore, want the 2 deleted with it", n)
+	}
+	if n := f.float(`SELECT count(*) FROM project_task_color WHERE id = $1 AND deleted_at IS NULL`, old); n != 0 {
+		t.Errorf("a link deleted earlier came back")
+	}
+	if code, _ := f.do(someone, http.MethodPost, "project_color/"+color.String()+"/restore", nil); code != http.StatusNotFound {
+		t.Errorf("restore a live color: %d, want 404", code)
+	}
+}
