@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -14,6 +14,7 @@ import { erpPath } from '../navigation'
 import { usePermission } from '../auth/Can'
 import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
+import type { GanttDependenciesConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
@@ -28,8 +29,11 @@ import { useOptimisticFieldMove } from './use-optimistic-field-move'
 // visible range (`lt[start] = range end`, `gte[end] = range start`), paging
 // until a short page, plus the records missing either date (`empty[]`) for
 // the Unscheduled panel. Dragging a bar shifts both dates by whole days, its
-// edge handles move one date; the write goes through the same optimistic
-// hook Kanban and Calendar use. Pointer events only: no keyboard drag (v1).
+// edge handles move one date, an Unscheduled card dropped on a day schedules
+// it there; the write goes through the same optimistic hook Kanban and
+// Calendar use. Bars also move from the keyboard (arrows, Shift/Alt + arrows
+// resize). A today line and, with `dependencies`, link arrows overlay the
+// timeline.
 
 type Zoom = 'day' | 'week' | 'month'
 
@@ -40,6 +44,12 @@ const GANTT_PAGE_SIZE = 200
 const GANTT_RECORD_CAP = 1000
 /** Unscheduled records loaded per missing date field. */
 const GANTT_UNSCHEDULED_LIMIT = 50
+/** Record ids per dependency-link request (`in[toField]`). */
+const GANTT_LINK_CHUNK = 100
+/** Timeline geometry (px), shared by the grid and the arrow overlay. */
+const HEADER_H = 24
+const ROW_H = 32
+const ROW_GAP = 4
 
 function addDays(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
@@ -111,14 +121,26 @@ function shiftValue(raw: string, days: number, datetime: boolean): string {
 const minBound = (user: string | undefined, ours: string) => (user && user < ours ? user : ours)
 const maxBound = (user: string | undefined, ours: string) => (user && user > ours ? user : ours)
 
-type DragMode = 'move' | 'start' | 'end'
+/** 'place' drags an Unscheduled card onto the timeline. */
+type DragMode = 'move' | 'start' | 'end' | 'place'
 interface Drag {
   id: string
   mode: DragMode
   originX: number
+  originY: number
+  /** Last pointer position. */
+  x: number
+  y: number
   pxPerDay: number
   delta: number
   moved: boolean
+}
+
+/** A whole-day delta clamped so the end never precedes the start. */
+function clampedDelta(mode: DragMode, delta: number, s: number, e: number): number {
+  if (mode === 'start') return Math.min(delta, e - s)
+  if (mode === 'end') return Math.max(delta, s - e)
+  return delta
 }
 
 export interface GanttRendererProps<T extends HasId> {
@@ -132,6 +154,8 @@ export interface GanttRendererProps<T extends HasId> {
   onRecordsChange?: (records: T[]) => void
   /** Set ⇒ fetch the visible range + unscheduled records from the server. */
   serverOptions?: EntityListOptions
+  /** Set ⇒ draw dependency arrows from this entity's link rows (needs RelationOps.listPage). */
+  dependencies?: GanttDependenciesConfig
 }
 
 export function GanttRenderer<T extends HasId>({
@@ -142,6 +166,7 @@ export function GanttRenderer<T extends HasId>({
   endField,
   onRecordsChange,
   serverOptions,
+  dependencies,
 }: GanttRendererProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -240,23 +265,61 @@ export function GanttRenderer<T extends HasId>({
   rows.sort((a, b) => a.s - b.s || a.e - b.e)
 
   const trackRef = useRef<HTMLDivElement>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
-
-  /** The drag's whole-day delta, clamped so the end never precedes the start. */
-  function clampedDelta(d: Drag, s: number, e: number): number {
-    if (d.mode === 'start') return Math.min(d.delta, e - s)
-    if (d.mode === 'end') return Math.max(d.delta, s - e)
-    return d.delta
-  }
+  // Bumped after each write: the dependency links are read again.
+  const [linkTick, setLinkTick] = useState(0)
 
   function startDrag(event: React.PointerEvent, id: string, mode: DragMode) {
     event.preventDefault()
     event.stopPropagation()
     const width = trackRef.current?.getBoundingClientRect().width ?? 0
-    const next = { id, mode, originX: event.clientX, pxPerDay: width / totalDays, delta: 0, moved: false }
+    const { clientX: x, clientY: y } = event
+    const next = { id, mode, originX: x, originY: y, x, y, pxPerDay: width / totalDays, delta: 0, moved: false }
     dragRef.current = next
     setDrag(next)
+  }
+
+  function commit(values: Record<string, unknown>, id: string, patch: Record<string, unknown>, startWins: boolean) {
+    // Day-level clamping can still invert two instants on the same day: keep end >= start.
+    if (startDatetime && endDatetime) {
+      const s = String(patch[startField] ?? values[startField])
+      const e = String(patch[endField] ?? values[endField])
+      if (Date.parse(e) < Date.parse(s)) {
+        if (startWins) patch[endField] = s
+        else patch[startField] = e
+      }
+    }
+    void moveFields(id, patch).then(() => setLinkTick((n) => n + 1))
+  }
+
+  /** Moves a bar (or one of its ends) by whole days, through the optimistic hook. */
+  function shiftRow(row: { record: T; s: number; e: number }, mode: DragMode, rawDelta: number) {
+    const delta = clampedDelta(mode, rawDelta, row.s, row.e)
+    if (delta === 0) return
+    const values = row.record as Record<string, unknown>
+    const patch: Record<string, unknown> = {}
+    if (mode !== 'end') patch[startField] = shiftValue(String(values[startField]), delta, startDatetime)
+    if (mode !== 'start') patch[endField] = shiftValue(String(values[endField]), delta, endDatetime)
+    commit(values, row.record.id, patch, mode !== 'start')
+  }
+
+  /** Schedules an Unscheduled record from `day`: its end is kept when not
+   * before that day, else the bar is one day long. */
+  function placeRecord(record: T, day: Date) {
+    const values = record as Record<string, unknown>
+    const rawStart = values[startField]
+    const oldStart = dayOf(rawStart, startDatetime)
+    const start = oldStart
+      ? shiftValue(String(rawStart), dayDiff(day, oldStart), startDatetime)
+      : startDatetime ? day.toISOString() : isoDate(day)
+    const patch: Record<string, unknown> = { [startField]: start }
+    const oldEnd = dayOf(values[endField], endDatetime)
+    if (!oldEnd || oldEnd < day) {
+      patch[endField] = !endDatetime ? isoDate(day) : startDatetime ? start : day.toISOString()
+    }
+    commit(values, record.id, patch, true)
   }
 
   function finishDrag() {
@@ -264,28 +327,72 @@ export function GanttRenderer<T extends HasId>({
     dragRef.current = null
     setDrag(null)
     if (!d) return
-    const row = rows.find((r) => r.record.id === d.id)
-    if (!row) return
-    const delta = clampedDelta(d, row.s, row.e)
-    if (delta === 0) {
-      if (d.mode === 'move' && !d.moved) openForm(row.record)
+    if (d.mode === 'place') {
+      const record = unscheduled.find((r) => r.id === d.id)
+      if (!record) return
+      if (!d.moved) return openForm(record)
+      const track = trackRef.current?.getBoundingClientRect()
+      const grid = gridRef.current?.getBoundingClientRect()
+      if (!track || !grid || track.width <= 0) return
+      if (d.x < track.left || d.x >= track.right || d.y < grid.top || d.y > grid.bottom) return
+      placeRecord(record, addDays(range.start, Math.floor(((d.x - track.left) / track.width) * totalDays)))
       return
     }
-    const values = row.record as Record<string, unknown>
-    const patch: Record<string, unknown> = {}
-    if (d.mode !== 'end') patch[startField] = shiftValue(String(values[startField]), delta, startDatetime)
-    if (d.mode !== 'start') patch[endField] = shiftValue(String(values[endField]), delta, endDatetime)
-    // Day-level clamping can still invert two instants on the same day: keep end >= start.
-    if (startDatetime && endDatetime) {
-      const s = String(patch[startField] ?? values[startField])
-      const e = String(patch[endField] ?? values[endField])
-      if (Date.parse(e) < Date.parse(s)) {
-        if (d.mode === 'start') patch[startField] = e
-        else patch[endField] = s
-      }
-    }
-    void moveFields(d.id, patch)
+    const row = rows.find((r) => r.record.id === d.id)
+    if (!row) return
+    if (d.mode === 'move' && !d.moved) return openForm(row.record)
+    shiftRow(row, d.mode, d.delta)
   }
+
+  function onBarKey(event: React.KeyboardEvent, row: { record: T; s: number; e: number }) {
+    if (event.key === 'Enter') return openForm(row.record)
+    if (!canWrite || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
+    event.preventDefault()
+    shiftRow(row, event.shiftKey ? 'end' : event.altKey ? 'start' : 'move', event.key === 'ArrowRight' ? 1 : -1)
+  }
+
+  // Dependency links touching the visible rows, read in id chunks.
+  const [links, setLinks] = useState<Record<string, unknown>[]>([])
+  const depKey = dependencies && relationOps?.listPage ? JSON.stringify(dependencies) : null
+  const rowIdsKey = rows.map((r) => r.record.id).join(',')
+  useEffect(() => {
+    const listPage = relationOps?.listPage
+    if (depKey == null || !listPage || rowIdsKey === '') {
+      setLinks([])
+      return
+    }
+    const dep = JSON.parse(depKey) as GanttDependenciesConfig
+    const ids = rowIdsKey.split(',')
+    let cancelled = false
+    const load = async () => {
+      const out: Record<string, unknown>[] = []
+      for (let i = 0; i < ids.length; i += GANTT_LINK_CHUNK) {
+        const chunk = ids.slice(i, i + GANTT_LINK_CHUNK)
+        for (let page = 1; ; page++) {
+          const res = await listPage(dep.entity, {
+            in: { [dep.toField]: chunk },
+            order: dep.toField,
+            page,
+            pageSize: GANTT_PAGE_SIZE,
+          })
+          out.push(...(res.records as Record<string, unknown>[]))
+          if (res.records.length < GANTT_PAGE_SIZE) break
+        }
+      }
+      return out
+    }
+    void load()
+      .then((rs) => {
+        if (!cancelled) setLinks(rs)
+      })
+      // Arrows are decoration: a refused read (no right on the link entity) just draws none.
+      .catch(() => {
+        if (!cancelled) setLinks([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [depKey, rowIdsKey, linkTick])
   const finishRef = useRef(finishDrag)
   finishRef.current = finishDrag
 
@@ -298,8 +405,10 @@ export function GanttRenderer<T extends HasId>({
       const dx = e.clientX - d.originX
       const next = {
         ...d,
+        x: e.clientX,
+        y: e.clientY,
         delta: d.pxPerDay > 0 ? Math.round(dx / d.pxPerDay) : 0,
-        moved: d.moved || Math.abs(dx) > 3,
+        moved: d.moved || Math.abs(dx) > 3 || Math.abs(e.clientY - d.originY) > 3,
       }
       dragRef.current = next
       setDrag(next)
@@ -323,10 +432,11 @@ export function GanttRenderer<T extends HasId>({
   const pct = (days: number) => `${(days / totalDays) * 100}%`
   const handleSx = { position: 'absolute', top: 0, bottom: 0, width: 8, cursor: 'ew-resize', touchAction: 'none' } as const
 
-  function bar({ record, s, e }: { record: T; s: number; e: number }) {
+  function bar(row: { record: T; s: number; e: number }) {
+    const { record, s, e } = row
     let [bs, be] = [s, e]
     if (drag?.id === record.id) {
-      const delta = clampedDelta(drag, s, e)
+      const delta = clampedDelta(drag.mode, drag.delta, s, e)
       if (drag.mode !== 'end') bs += delta
       if (drag.mode !== 'start') be += delta
     }
@@ -337,6 +447,10 @@ export function GanttRenderer<T extends HasId>({
       <Box
         data-testid={`gantt-bar-${record.id}`}
         title={label(record)}
+        role="button"
+        tabIndex={0}
+        aria-label={`${label(record)}: ${addDays(range.start, s).toLocaleDateString()} – ${addDays(range.start, e).toLocaleDateString()}`}
+        onKeyDown={(ev) => onBarKey(ev, row)}
         onPointerDown={canWrite ? (ev) => startDrag(ev, record.id, 'move') : undefined}
         onClick={canWrite ? undefined : () => openForm(record)}
         sx={{
@@ -367,6 +481,22 @@ export function GanttRenderer<T extends HasId>({
         ) : null}
       </Box>
     )
+  }
+
+  const now = new Date()
+  const todayIdx = dayDiff(new Date(now.getFullYear(), now.getMonth(), now.getDate()), range.start)
+  const markerId = useId()
+  const rowY = (i: number) => HEADER_H + ROW_GAP + i * (ROW_H + ROW_GAP) + ROW_H / 2
+  const rowIndex = new Map(rows.map((r, i) => [r.record.id, i]))
+  const clampX = (days: number) => pct(Math.min(Math.max(days, 0), totalDays))
+  const arrows: { id: string; x1: number; y1: number; x2: number; y2: number }[] = []
+  if (dependencies) {
+    for (const link of links) {
+      const from = rowIndex.get(String(link[dependencies.fromField]))
+      const to = rowIndex.get(String(link[dependencies.toField]))
+      if (from == null || to == null) continue
+      arrows.push({ id: String(link.id), x1: rows[from].e + 1, y1: rowY(from), x2: rows[to].s, y2: rowY(to) })
+    }
   }
 
   return (
@@ -407,9 +537,13 @@ export function GanttRenderer<T extends HasId>({
               </Typography>
             ) : null}
           </Box>
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(96px, 200px) minmax(0, 1fr)', rowGap: 0.5 }}>
-            <Box />
-            <Box ref={trackRef} data-testid="gantt-track" sx={{ position: 'relative', height: 24 }}>
+          <Box
+            ref={gridRef}
+            sx={{ display: 'grid', gridTemplateColumns: 'minmax(96px, 200px) minmax(0, 1fr)', rowGap: `${ROW_GAP}px` }}
+          >
+            {/* Every cell is placed explicitly so the overlay can share the timeline column. */}
+            <Box sx={{ gridColumn: 1, gridRow: 1 }} />
+            <Box ref={trackRef} data-testid="gantt-track" sx={{ gridColumn: 2, gridRow: 1, position: 'relative', height: HEADER_H }}>
               {range.columns.map((c) => (
                 <Typography
                   key={c.getTime()}
@@ -423,22 +557,67 @@ export function GanttRenderer<T extends HasId>({
                 </Typography>
               ))}
             </Box>
-            {rows.map((row) => (
+            {rows.map((row, i) => (
               <Box key={row.record.id} data-testid={`gantt-row-${row.record.id}`} sx={{ display: 'contents' }}>
                 <Button
                   size="small"
                   onClick={() => openForm(row.record)}
-                  sx={{ justifyContent: 'flex-start', textTransform: 'none', minWidth: 0, overflow: 'hidden' }}
+                  sx={{
+                    gridColumn: 1,
+                    gridRow: i + 2,
+                    height: ROW_H,
+                    justifyContent: 'flex-start',
+                    textTransform: 'none',
+                    minWidth: 0,
+                    overflow: 'hidden',
+                  }}
                 >
                   <Typography variant="body2" noWrap>
                     {label(row.record)}
                   </Typography>
                 </Button>
-                <Box sx={{ position: 'relative', height: 32, bgcolor: 'action.hover', borderRadius: 1 }}>
+                <Box
+                  sx={{ gridColumn: 2, gridRow: i + 2, position: 'relative', height: ROW_H, bgcolor: 'action.hover', borderRadius: 1 }}
+                >
                   {bar(row)}
                 </Box>
               </Box>
             ))}
+            <Box
+              sx={{ gridColumn: 2, gridRow: `1 / span ${rows.length + 1}`, position: 'relative', pointerEvents: 'none', zIndex: 1 }}
+            >
+              {todayIdx >= 0 && todayIdx < totalDays ? (
+                <Box
+                  role="img"
+                  aria-label={t('Today')}
+                  sx={{ position: 'absolute', top: 0, bottom: 0, width: 2, ml: '-1px', bgcolor: 'error.main' }}
+                  style={{ left: pct(todayIdx + 0.5) }}
+                />
+              ) : null}
+              {arrows.length > 0 ? (
+                <Box
+                  component="svg"
+                  aria-hidden
+                  sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', color: 'text.secondary' }}
+                >
+                  <defs>
+                    <marker id={markerId} viewBox="0 0 6 6" refX="6" refY="3" markerWidth="6" markerHeight="6" orient="auto">
+                      <path d="M0,0 L6,3 L0,6 z" fill="currentColor" />
+                    </marker>
+                  </defs>
+                  {arrows.map((a) => {
+                    const xm = clampX((a.x1 + a.x2) / 2)
+                    return (
+                      <g key={a.id} data-testid={`gantt-arrow-${a.id}`} stroke="currentColor" strokeWidth={1.5}>
+                        <line x1={clampX(a.x1)} y1={a.y1} x2={xm} y2={a.y1} />
+                        <line x1={xm} y1={a.y1} x2={xm} y2={a.y2} />
+                        <line x1={xm} y1={a.y2} x2={clampX(a.x2)} y2={a.y2} markerEnd={`url(#${markerId})`} />
+                      </g>
+                    )
+                  })}
+                </Box>
+              ) : null}
+            </Box>
           </Box>
         </Box>
 
@@ -455,10 +634,16 @@ export function GanttRenderer<T extends HasId>({
               {unscheduled.map((record) => (
                 <Card
                   key={record.id}
+                  data-testid={`gantt-unscheduled-${record.id}`}
                   className="erp-appear"
                   variant="outlined"
-                  onClick={formPath ? () => openForm(record) : undefined}
-                  sx={{ cursor: formPath ? 'pointer' : 'default' }}
+                  onPointerDown={canWrite ? (ev) => startDrag(ev, record.id, 'place') : undefined}
+                  onClick={!canWrite && formPath ? () => openForm(record) : undefined}
+                  sx={{
+                    cursor: canWrite ? 'grab' : formPath ? 'pointer' : 'default',
+                    touchAction: canWrite ? 'none' : undefined,
+                    opacity: drag?.id === record.id ? 0.5 : 1,
+                  }}
                 >
                   <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
                     <Typography variant="caption">{label(record)}</Typography>

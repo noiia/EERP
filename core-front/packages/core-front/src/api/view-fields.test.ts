@@ -17,6 +17,7 @@ describe('effectiveViewFields', () => {
       kanbanBadgeField: null,
       ganttStartField: null,
       ganttEndField: null,
+      ganttDependencies: null,
     })
   })
 
@@ -30,6 +31,7 @@ describe('effectiveViewFields', () => {
       kanbanBadgeField: null,
       ganttStartField: null,
       ganttEndField: null,
+      ganttDependencies: null,
     })
   })
 
@@ -48,6 +50,7 @@ describe('effectiveViewFields', () => {
       kanbanBadgeField: null,
       ganttStartField: null,
       ganttEndField: null,
+      ganttDependencies: null,
     })
   })
 
@@ -63,6 +66,7 @@ describe('effectiveViewFields', () => {
       kanbanBadgeField: null,
       ganttStartField: null,
       ganttEndField: null,
+      ganttDependencies: null,
     })
   })
 
@@ -70,6 +74,11 @@ describe('effectiveViewFields', () => {
     expect(
       effectiveViewFields({ calendarColorField: 'failed' }, EMPTY_VIEW_FIELDS).calendarColorField,
     ).toBe('failed')
+  })
+
+  it('ganttDependencies is module-declared only', () => {
+    const ganttDependencies = { entity: 'dep', fromField: 'depends_on_id', toField: 'task_id' }
+    expect(effectiveViewFields({ ganttDependencies }, EMPTY_VIEW_FIELDS).ganttDependencies).toEqual(ganttDependencies)
   })
 
   it('kanbanColumns and kanbanBadgeField are module-declared only', () => {
@@ -92,6 +101,7 @@ describe('availableDisplayModes', () => {
         kanbanBadgeField: null,
         ganttStartField: null,
         ganttEndField: null,
+        ganttDependencies: null,
       }),
     ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false })
     expect(
@@ -104,6 +114,7 @@ describe('availableDisplayModes', () => {
         kanbanBadgeField: null,
         ganttStartField: null,
         ganttEndField: null,
+        ganttDependencies: null,
       }),
     ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false })
   })

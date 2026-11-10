@@ -67,6 +67,18 @@ export interface ViewModeDefaults {
   /** Names a `type: 'boolean'` field: a Kanban card whose value is true shows
    * an error-colored chip labeled with that field's label. Module-declared only. */
   kanbanBadgeField?: string
+  /** Gantt dependency arrows, read from the rows of another entity.
+   * Module-declared only, like calendarColorField. */
+  ganttDependencies?: GanttDependenciesConfig
+}
+
+/** Rows of `entity` link record `fromField` (the blocker: the arrow leaves
+ * its bar's end) to record `toField` (the dependent: the arrow reaches its
+ * bar's start). */
+export interface GanttDependenciesConfig {
+  entity: string
+  fromField: string
+  toField: string
 }
 
 /** How a many2one status field's related records become Kanban columns. */
@@ -94,6 +106,7 @@ export interface EffectiveViewFields {
   kanbanBadgeField: string | null
   ganttStartField: string | null
   ganttEndField: string | null
+  ganttDependencies: GanttDependenciesConfig | null
 }
 
 /**
@@ -114,6 +127,7 @@ export function effectiveViewFields(
     kanbanBadgeField: defaults?.kanbanBadgeField ?? null,
     ganttStartField: config.ganttStartField ?? defaults?.ganttStartField ?? null,
     ganttEndField: config.ganttEndField ?? defaults?.ganttEndField ?? null,
+    ganttDependencies: defaults?.ganttDependencies ?? null,
   }
 }
 

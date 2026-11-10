@@ -83,6 +83,16 @@ describe('GanttRenderer', () => {
     )
   }
 
+  it('marks today on the timeline only while today is in the visible range', () => {
+    renderGantt()
+    expect(screen.getByRole('img', { name: 'Today' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+    // Day zoom: 14 days from Monday 2026-03-02, today (index 2) at the middle of its column.
+    expect(screen.getByRole('img', { name: 'Today' }).style.left).toBe(`${(2.5 / 14) * 100}%`)
+    fireEvent.click(screen.getByRole('button', { name: 'Next period' }))
+    expect(screen.queryByRole('img', { name: 'Today' })).toBeNull()
+  })
+
   it('draws one row per scheduled record with a bar spanning its dates, the rest as Unscheduled', () => {
     renderGantt()
     fireEvent.click(screen.getByRole('button', { name: 'Day' }))
@@ -331,5 +341,182 @@ describe('GanttRenderer', () => {
       drag(screen.getByTestId('gantt-bar-1'), 300)
       expect(update).not.toHaveBeenCalled()
     })
+  })
+
+  describe('dragging from Unscheduled', () => {
+    beforeEach(() => sizeTrack())
+
+    /** Drops the Unscheduled card of `id` at the pointer position x (Day zoom: 100px per day). */
+    function place(id: string, x: number, y = 10) {
+      const card = screen.getByTestId(`gantt-unscheduled-${id}`)
+      fireEvent.pointerDown(card, { clientX: 1500, clientY: 300, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: x, clientY: y, pointerId: 1 })
+      fireEvent.pointerUp(window, { clientX: x, clientY: y, pointerId: 1 })
+    }
+
+    it('dropping on a day sets the start there and keeps an end that is not before it', async () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      place('2', 250) // day 2 = 2026-03-04, before Beta's deadline 2026-03-05
+      await waitFor(() => expect(update).toHaveBeenCalledWith('2', { date_start: '2026-03-04' }))
+      expect(screen.getByTestId('gantt-bar-2').style.left).toBe(`${(2 / 14) * 100}%`)
+      expect(pushMock).not.toHaveBeenCalled()
+    })
+
+    it('an end before the dropped day becomes a one-day bar', async () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      place('2', 550) // day 5 = 2026-03-07, after the deadline
+      await waitFor(() => expect(update).toHaveBeenCalledWith('2', { date_start: '2026-03-07', deadline: '2026-03-07' }))
+    })
+
+    it('a record with no end gets end = start; a datetime start is written as an ISO instant', async () => {
+      const dt: ViewDescriptor<Task> = {
+        ...descriptor,
+        fields: descriptor.fields.map((f) => (f.name === 'date_start' ? { ...f, widget: 'datetime' } : f)),
+      }
+      renderGantt([alpha, { id: '4', name: 'Open', date_start: null, deadline: null }], dt)
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      place('4', 150)
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledWith('4', { date_start: new Date(2026, 2, 3).toISOString(), deadline: '2026-03-03' }),
+      )
+    })
+
+    it('a drop outside the timeline writes nothing', () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      place('2', 1500)
+      place('2', 250, 500)
+      expect(update).not.toHaveBeenCalled()
+    })
+
+    it('a card click without movement opens the form', () => {
+      renderGantt()
+      const card = screen.getByTestId('gantt-unscheduled-2')
+      fireEvent.pointerDown(card, { clientX: 1500, clientY: 300, pointerId: 1 })
+      fireEvent.pointerUp(window, { clientX: 1500, clientY: 300, pointerId: 1 })
+      expect(update).not.toHaveBeenCalled()
+      expect(pushMock).toHaveBeenCalledWith('/app/tasks/2')
+    })
+
+    it('a refused drop puts the record back in the panel and shows the error', async () => {
+      update.mockRejectedValueOnce(new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }))
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      place('2', 250)
+      expect(await screen.findByText('nope')).toBeInTheDocument()
+      expect(screen.queryByTestId('gantt-bar-2')).toBeNull()
+      expect(screen.getByTestId('gantt-unscheduled-2')).toBeInTheDocument()
+    })
+
+    it('is read-only without the write permission: a card only opens the form', () => {
+      grant(false)
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      place('2', 250)
+      expect(update).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByTestId('gantt-unscheduled-2'))
+      expect(pushMock).toHaveBeenCalledWith('/app/tasks/2')
+    })
+  })
+
+  describe('keyboard', () => {
+    const fmt = (y: number, m: number, d: number) => new Date(y, m - 1, d).toLocaleDateString()
+    const bar = () => screen.getByRole('button', { name: /^Alpha:/ })
+
+    it('each bar is a focusable button labeled with its dates', () => {
+      renderGantt()
+      expect(bar()).toHaveAttribute('tabindex', '0')
+      expect(bar()).toHaveAccessibleName(`Alpha: ${fmt(2026, 3, 2)} – ${fmt(2026, 3, 8)}`)
+    })
+
+    it('arrows move the bar, Shift resizes the end, Alt resizes the start', async () => {
+      renderGantt()
+      fireEvent.keyDown(bar(), { key: 'ArrowRight' })
+      await waitFor(() => expect(update).toHaveBeenCalledWith('1', { date_start: '2026-03-03', deadline: '2026-03-09' }))
+      expect(bar()).toHaveAccessibleName(`Alpha: ${fmt(2026, 3, 3)} – ${fmt(2026, 3, 9)}`)
+      fireEvent.keyDown(bar(), { key: 'ArrowLeft', shiftKey: true })
+      await waitFor(() => expect(update).toHaveBeenLastCalledWith('1', { deadline: '2026-03-08' }))
+      fireEvent.keyDown(bar(), { key: 'ArrowRight', altKey: true })
+      await waitFor(() => expect(update).toHaveBeenLastCalledWith('1', { date_start: '2026-03-04' }))
+      fireEvent.keyDown(bar(), { key: 'ArrowLeft' })
+      await waitFor(() => expect(update).toHaveBeenLastCalledWith('1', { date_start: '2026-03-03', deadline: '2026-03-07' }))
+    })
+
+    it('a resize never puts the end before the start', () => {
+      renderGantt([{ id: '1', name: 'Alpha', date_start: '2026-03-03', deadline: '2026-03-03' }])
+      fireEvent.keyDown(bar(), { key: 'ArrowLeft', shiftKey: true })
+      fireEvent.keyDown(bar(), { key: 'ArrowRight', altKey: true })
+      expect(update).not.toHaveBeenCalled()
+    })
+
+    it('a refused key move reverts and shows the error', async () => {
+      update.mockRejectedValueOnce(new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }))
+      renderGantt()
+      fireEvent.keyDown(bar(), { key: 'ArrowRight' })
+      expect(await screen.findByText('nope')).toBeInTheDocument()
+      expect(bar()).toHaveAccessibleName(`Alpha: ${fmt(2026, 3, 2)} – ${fmt(2026, 3, 8)}`)
+    })
+
+    it('Enter opens the form; read-only bars ignore arrows', () => {
+      grant(false)
+      renderGantt()
+      fireEvent.keyDown(bar(), { key: 'ArrowRight' })
+      fireEvent.keyDown(bar(), { key: 'ArrowLeft', shiftKey: true })
+      expect(update).not.toHaveBeenCalled()
+      fireEvent.keyDown(bar(), { key: 'Enter' })
+      expect(pushMock).toHaveBeenCalledWith('/app/tasks/1')
+    })
+  })
+
+  describe('dependency arrows', () => {
+    const deps = { entity: 'dep', fromField: 'depends_on_id', toField: 'task_id' }
+    const gamma: Task = { id: '3', name: 'Gamma', date_start: '2026-03-09', deadline: '2026-03-10' }
+
+    function depRender(data: Task[], listPage: ListPage) {
+      const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+      return render(
+        <RelationOpsProvider ops={ops}>
+          <GanttRenderer
+            descriptor={descriptor}
+            initialData={data}
+            actions={actions}
+            startField="date_start"
+            endField="deadline"
+            dependencies={deps}
+          />
+        </RelationOpsProvider>,
+      )
+    }
+
+    it('draws an arrow for each link whose two tasks are on the timeline', async () => {
+      const listPage = vi.fn<ListPage>(async () => ({
+        records: [
+          { id: 'd1', depends_on_id: '1', task_id: '3' },
+          { id: 'd2', depends_on_id: '99', task_id: '3' },
+        ],
+        total: 2,
+      }))
+      depRender([alpha, gamma, beta], listPage)
+      expect(await screen.findByTestId('gantt-arrow-d1')).toBeInTheDocument()
+      expect(screen.queryByTestId('gantt-arrow-d2')).toBeNull()
+      expect(listPage).toHaveBeenCalledWith('dep', expect.objectContaining({ in: { task_id: ['1', '3'] }, page: 1 }))
+    })
+
+    it('loads links in chunks of 100 ids, paging each until a short page, and again after a move', async () => {
+      const many = Array.from({ length: 150 }, (_, i) => ({ ...alpha, id: `t${i}` }))
+      const listPage = vi.fn<ListPage>(async (_e: string, o?: EntityListOptions) =>
+        o?.page === 1 && o.in?.task_id.length === 100
+          ? { records: Array.from({ length: 200 }, (_, i) => ({ id: `l${i}`, depends_on_id: 'x', task_id: 'y' })), total: 201 }
+          : { records: [], total: 0 },
+      )
+      depRender(many, listPage)
+      await waitFor(() => expect(listPage).toHaveBeenCalledTimes(3))
+      const calls = listPage.mock.calls.map(([, o]) => [o?.in?.task_id.length, o?.page])
+      expect(calls).toEqual(expect.arrayContaining([[100, 1], [100, 2], [50, 1]]))
+      fireEvent.keyDown(screen.getAllByRole('button', { name: /^Alpha:/ })[0], { key: 'ArrowRight' })
+      await waitFor(() => expect(listPage.mock.calls.length).toBeGreaterThan(3))
+    }, 20_000)
   })
 })

@@ -1165,6 +1165,7 @@ function TreeRenderer<T extends HasId>({
         actions={actions}
         startField={effective.ganttStartField}
         endField={effective.ganttEndField}
+        dependencies={effective.ganttDependencies ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
