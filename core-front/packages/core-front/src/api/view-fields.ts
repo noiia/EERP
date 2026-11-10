@@ -70,6 +70,10 @@ export interface ViewModeDefaults {
   /** Gantt dependency arrows, read from the rows of another entity.
    * Module-declared only, like calendarColorField. */
   ganttDependencies?: GanttDependenciesConfig
+  /** Names a many2many field (widget `colortags`) of the descriptor — else of
+   * the entity's form descriptor: its related records' colors paint the Gantt
+   * bars and a ribbon on Kanban/Calendar cards. Module-declared only. */
+  colorTagsField?: string
 }
 
 /** Rows of `entity` link record `fromField` (the blocker: the arrow leaves
@@ -107,6 +111,7 @@ export interface EffectiveViewFields {
   ganttStartField: string | null
   ganttEndField: string | null
   ganttDependencies: GanttDependenciesConfig | null
+  colorTagsField: string | null
 }
 
 /**
@@ -128,6 +133,7 @@ export function effectiveViewFields(
     ganttStartField: config.ganttStartField ?? defaults?.ganttStartField ?? null,
     ganttEndField: config.ganttEndField ?? defaults?.ganttEndField ?? null,
     ganttDependencies: defaults?.ganttDependencies ?? null,
+    colorTagsField: defaults?.colorTagsField ?? null,
   }
 }
 

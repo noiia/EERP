@@ -2558,3 +2558,6 @@ msgstr ""
 
 msgid "Which field powers each list's Kanban, Calendar and Gantt display modes, and whether Graph mode is on."
 msgstr ""
+
+msgid "Colors of"
+msgstr ""

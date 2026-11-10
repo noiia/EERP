@@ -1141,6 +1141,7 @@ function TreeRenderer<T extends HasId>({
         statusField={effective.kanbanStatusField}
         columnsConfig={effective.kanbanColumns ?? undefined}
         badgeField={effective.kanbanBadgeField ?? undefined}
+        colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
@@ -1153,6 +1154,7 @@ function TreeRenderer<T extends HasId>({
         actions={actions}
         dateField={effective.calendarDateField}
         colorField={effective.calendarColorField ?? undefined}
+        colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
@@ -1166,6 +1168,7 @@ function TreeRenderer<T extends HasId>({
         startField={effective.ganttStartField}
         endField={effective.ganttEndField}
         dependencies={effective.ganttDependencies ?? undefined}
+        colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

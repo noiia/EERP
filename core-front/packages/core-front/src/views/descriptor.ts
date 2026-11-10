@@ -108,7 +108,7 @@ export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   number: ['float', 'int', 'percent', 'stars', 'duration', 'phone', 'monetary'],
   boolean: ['switch', 'picture', 'signature', 'file', 'stars'],
   date: ['simple', 'datetime'],
-  relation: ['search', 'tags', 'list', 'carousel', 'summary'],
+  relation: ['search', 'tags', 'list', 'carousel', 'summary', 'colortags'],
   address: ['form'],
   selection: ['select', 'linked', 'radio'],
   totals: ['recap'],
@@ -141,7 +141,8 @@ export const RELATION_KIND_WIDGETS: Record<RelationKind, string> = {
 const RELATION_KIND_WIDGET_OVERRIDES: Record<RelationKind, readonly string[]> = {
   many2one: ['summary'],
   one2many: ['carousel'],
-  many2many: [],
+  // Chips with a color dot over related records carrying a color (colortags-widget).
+  many2many: ['colortags'],
 }
 
 /**

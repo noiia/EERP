@@ -32,7 +32,13 @@ import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { isHexColor } from './palette'
 import { BooleanFileWidget } from './file-widgets'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
-import { RelationListWidget, RelationSearchWidget, RelationTagsWidget, TaxTotalsWidget } from './relation-widgets'
+import {
+  RelationColorTagsWidget,
+  RelationListWidget,
+  RelationSearchWidget,
+  RelationTagsWidget,
+  TaxTotalsWidget,
+} from './relation-widgets'
 import { useNumberFormat } from './format-store'
 import { tabularNums } from './tokens'
 
@@ -944,6 +950,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'relation/tags': RelationTagsWidget,
   'relation/list': RelationListWidget,
   'relation/carousel': RelationCarouselWidget,
+  'relation/colortags': RelationColorTagsWidget,
   'relation/summary': RelationSummaryWidget,
   'totals/recap': TaxTotalsWidget,
   'address/form': AddressWidget,

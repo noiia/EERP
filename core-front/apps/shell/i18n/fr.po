@@ -2690,3 +2690,6 @@ msgstr "enregistrements affichés — réduisez la période ou les filtres pour 
 
 msgid "Which field powers each list's Kanban, Calendar and Gantt display modes, and whether Graph mode is on."
 msgstr "Quel champ alimente les modes d'affichage Kanban, Calendrier et Gantt de chaque liste, et si le mode Graphique est activé."
+
+msgid "Colors of"
+msgstr "Couleurs de"

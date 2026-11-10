@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const pushMock = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -546,5 +546,73 @@ describe('GanttRenderer', () => {
       await new Promise((r) => setTimeout(r, 50))
       expect(listPage).toHaveBeenCalledTimes(3)
     }, 20_000)
+  })
+
+  describe('color groups', () => {
+    const colorsField = {
+      name: 'color_groups',
+      label: 'Color groups',
+      type: 'relation' as const,
+      widget: 'colortags',
+      relation: { entity: 'color', kind: 'many2many' as const, via: 'task_color', viaFields: { own: 'task_id', related: 'color_id' }, labelField: 'name' },
+    }
+    const colored: ViewDescriptor<Task> = { ...descriptor, fields: [...descriptor.fields, colorsField] }
+    const gamma: Task = { id: '3', name: 'Gamma', date_start: '2026-03-03', deadline: '2026-03-04' }
+    const plain: Task = { id: '4', name: 'Plain', date_start: '2026-03-03', deadline: '2026-03-04' }
+
+    function colorRender() {
+      const list = vi.fn(async (entity: string) =>
+        entity === 'task_color'
+          ? [
+              { id: 'j1', task_id: '1', color_id: 'c1' },
+              { id: 'j2', task_id: '1', color_id: 'c2' },
+              { id: 'j3', task_id: '3', color_id: 'c1' },
+            ]
+          : [
+              { id: 'c1', name: 'Red', color: '#ff0000' },
+              { id: 'c2', name: 'Green', color: '#00ff00' },
+            ],
+      )
+      const ops: RelationOps = { list, get: vi.fn(), create: vi.fn(), remove: vi.fn() }
+      render(
+        <RelationOpsProvider ops={ops}>
+          <GanttRenderer
+            descriptor={colored}
+            initialData={[alpha, gamma, plain]}
+            actions={actions}
+            startField="date_start"
+            endField="deadline"
+            colorTagsField="color_groups"
+          />
+        </RelationOpsProvider>,
+      )
+      return list
+    }
+
+    it('fills a bar with its color, or equal hard stripes for several, and leaves an uncolored bar alone', async () => {
+      colorRender()
+      await waitFor(() => expect(screen.getByTestId('gantt-bar-3').style.background).toBe('rgb(255, 0, 0)'))
+      expect(screen.getByTestId('gantt-bar-1').style.background).toBe(
+        // Horizontal bands ('to bottom', the default jsdom drops), one per color, hard edges.
+        'linear-gradient(rgb(255, 0, 0) 0% 50%, rgb(0, 255, 0) 50% 100%)',
+      )
+      expect(screen.getByTestId('gantt-bar-4').style.background).toBe('')
+    })
+
+    it('the color button opens the color-tags picker for that record', async () => {
+      const list = colorRender()
+      fireEvent.click(screen.getByRole('button', { name: 'Colors of Alpha' }))
+      const picker = await screen.findByRole('dialog', { name: 'Colors of Alpha' })
+      expect(await within(picker).findByText('Green')).toBeInTheDocument()
+      expect(within(picker).getByRole('combobox')).toBeInTheDocument()
+      expect(list).toHaveBeenCalledWith('task_color', expect.objectContaining({ filter: { task_id: '1' } }))
+    })
+
+    it('read-only: colors show, no color button', async () => {
+      grant(false)
+      colorRender()
+      await waitFor(() => expect(screen.getByTestId('gantt-bar-3').style.background).toBe('rgb(255, 0, 0)'))
+      expect(screen.queryByRole('button', { name: 'Colors of Alpha' })).toBeNull()
+    })
   })
 })

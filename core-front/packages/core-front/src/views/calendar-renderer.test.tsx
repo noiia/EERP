@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({
 import { CalendarRenderer } from './calendar-renderer'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
+import { RelationOpsProvider as ColorOpsProvider, type RelationOps } from './relation-ops'
 import { useUndoToastStore } from './undo-toast'
 import { ApiError } from '../api/errors'
 
@@ -321,5 +322,58 @@ describe('CalendarRenderer', () => {
     )
     await waitFor(() => expect(screen.getByText(/1 \/ ≈ 20000/)).toBeInTheDocument())
     expect(screen.getByText('Unscheduled (≈ 15000)')).toBeInTheDocument()
+  })
+})
+
+const colorsField = {
+  name: 'color_groups',
+  label: 'Color groups',
+  type: 'relation' as const,
+  widget: 'colortags',
+  relation: { entity: 'color', kind: 'many2many' as const, via: 'rec_color', viaFields: { own: 'rec_id', related: 'color_id' }, labelField: 'name' },
+}
+
+/** Record 1 has red then green, record 3 red only, the rest none. */
+const colorOps: RelationOps = {
+  list: vi.fn(async (entity: string) =>
+    entity === 'rec_color'
+      ? [
+          { id: 'j1', rec_id: '1', color_id: 'c1' },
+          { id: 'j2', rec_id: '1', color_id: 'c2' },
+          { id: 'j3', rec_id: '3', color_id: 'c1' },
+        ]
+      : [
+          { id: 'c1', color: '#ff0000' },
+          { id: 'c2', color: '#00ff00' },
+        ],
+  ),
+  get: vi.fn(),
+  create: vi.fn(),
+  remove: vi.fn(),
+}
+
+const ribbonOf = (card: HTMLElement) => card.querySelector<HTMLElement>('[data-testid="color-ribbon"]')
+
+describe('color ribbon', () => {
+  it('draws a 1px ribbon in the card\'s color, equal segments for several, nothing without colors', async () => {
+    const actions = { create: vi.fn(), update: vi.fn() }
+    render(
+      <ColorOpsProvider ops={colorOps}>
+        <CalendarRenderer
+          descriptor={{ ...descriptor, fields: [...descriptor.fields, colorsField] }}
+          initialData={[...records, { id: '3', name: 'Gamma', due_date: day20 }]}
+          actions={actions}
+          dateField="due_date"
+          colorTagsField="color_groups"
+        />
+      </ColorOpsProvider>,
+    )
+    await waitFor(() => expect(ribbonOf(screen.getByTestId('calendar-card-3'))?.style.background).toBe('rgb(255, 0, 0)'))
+    const multi = ribbonOf(screen.getByTestId('calendar-card-1'))!
+    expect(multi.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0% 50%, rgb(0, 255, 0) 50% 100%)')
+    expect(multi.style.height).toBe('1px')
+    expect(ribbonOf(screen.getByTestId('calendar-card-2'))).toBeNull()
+    // The color field is not printed as a card field.
+    expect(screen.queryByText('Color groups')).toBeNull()
   })
 })

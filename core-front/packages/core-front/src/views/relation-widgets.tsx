@@ -34,6 +34,7 @@ import {
   type ViewDescriptor,
 } from './descriptor'
 import { useCompanyStore } from './company-store'
+import { ColorDot, ColorTagDialog, isHexColor } from './color-tags'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { serializeError } from '../api/errors'
@@ -199,15 +200,19 @@ function RelationTag({
   onUnlink,
   onNavigate,
   disabled,
+  color,
 }: {
   label: string
   onUnlink: () => void
   onNavigate?: () => void
   disabled?: boolean
+  /** relation/colortags: a dot in this color before the label. */
+  color?: string
 }) {
   return (
     <Chip
       label={label}
+      icon={color ? <ColorDot color={color} /> : undefined}
       size="small"
       onDelete={disabled ? undefined : onUnlink}
       onClick={onNavigate}
@@ -1030,9 +1035,12 @@ export async function resolveManyToManyLinks(
   relatedEntity: string,
   cols: { own: string; related: string },
   ownRecordId: string,
+  /** Junction sort, e.g. 'created_at' (link order); omitted = Go's order. */
+  order?: string,
 ): Promise<TagLink[]> {
   const junctions = await ops.list(via, {
     filter: { [cols.own]: ownRecordId },
+    ...(order ? { order } : {}),
     pageSize: EMBED_PAGE_SIZE,
   })
   const relatedIds = [
@@ -1089,6 +1097,15 @@ export async function loadSubRelation(
   return []
 }
 
+/** relation/colortags (many2many): the tags widget over records carrying a
+ * color (`widgetOptions.colorField`, default 'color') — chips with a color dot
+ * in link order, a create dialog asking only a name and a color, chips only
+ * when read-only. `onLinksChange` runs after each link/unlink (the Gantt's
+ * color picker reloads the bars' colors with it). */
+export function RelationColorTagsWidget(props: WidgetProps & { onLinksChange?: () => void }) {
+  return <RelationTagsWidget {...props} colors />
+}
+
 export function RelationTagsWidget({
   field,
   value,
@@ -1096,7 +1113,9 @@ export function RelationTagsWidget({
   disabled,
   entity,
   recordId,
-}: WidgetProps) {
+  colors = false,
+  onLinksChange,
+}: WidgetProps & { colors?: boolean; onLinksChange?: () => void }) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
@@ -1129,13 +1148,18 @@ export function RelationTagsWidget({
   // `links` once the post-commit reconcile wipes `pending` back to empty
   // (e.g. a just-removed tag reappearing). See entity-refresh-store.ts.
   const refreshSignal = useEntityRefreshStore((s) => s.bumps[via])
+  const colorField = typeof field.widgetOptions?.colorField === 'string' ? field.widgetOptions.colorField : 'color'
+  const colorOf = (r: RelationRecord) => {
+    const c = r[colorField]
+    return isHexColor(c) ? c : undefined
+  }
 
   // Links are junction rows: load them, then resolve their related records
   // in one batched call (resolveManyToManyLinks) rather than one per row.
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
-    resolveManyToManyLinks(ops, via, rel.entity, cols, recordId)
+    resolveManyToManyLinks(ops, via, rel.entity, cols, recordId, colors ? 'created_at' : undefined)
       .then((resolved) => {
         if (!cancelled) setLinks(resolved)
       })
@@ -1147,7 +1171,7 @@ export function RelationTagsWidget({
     }
     // Re-runs on the anchor OR a post-save refresh bump — links otherwise
     // evolve through add/unlink below.
-  }, [ops, via, recordId, rel.entity, cols.own, cols.related, refreshSignal])
+  }, [ops, via, recordId, rel.entity, cols.own, cols.related, refreshSignal, colors])
 
   // Publishes this field's live "has at least one link" state — existing
   // junction rows minus staged unlinks, plus staged links — for
@@ -1196,6 +1220,7 @@ export function RelationTagsWidget({
       .then((junction) => {
         setLinks((prev) => [...prev, { junctionId: junction.id, related: option }])
         setError(null)
+        onLinksChange?.()
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
@@ -1217,6 +1242,7 @@ export function RelationTagsWidget({
       .then(() => {
         setLinks((prev) => prev.filter((l) => l.junctionId !== link.junctionId))
         setError(null)
+        onLinksChange?.()
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
@@ -1245,6 +1271,7 @@ export function RelationTagsWidget({
               key={link.junctionId}
               label={labelOf(link.related, labelField)}
               disabled={disabled}
+              color={colors ? (colorOf(link.related) ?? 'transparent') : undefined}
               onUnlink={() => unlink(link)}
               onNavigate={
                 formPath
@@ -1253,64 +1280,80 @@ export function RelationTagsWidget({
               }
             />
           ))}
-          <Autocomplete<RelationRecord>
-            options={withCreateOption(options.filter((o) => !linkedIds.has(o.id)))}
-            filterOptions={(x) => x}
-            getOptionLabel={(o) =>
-              isCreateOption(o)
-                ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
-                : labelOf(o, labelField)
-            }
-            // See the m2o search widget: same primary-colored create row.
-            renderOption={(props, option) => {
-              const { key, ...optionProps } = props
-              return (
-                <li key={key} {...optionProps}>
-                  {isCreateOption(option) ? (
-                    <Typography component="span" color="primary">
-                      {t('Create a new')} {t(entityDisplayName(rel.entity))}
-                    </Typography>
-                  ) : (
-                    labelOf(option, labelField)
-                  )}
-                </li>
-              )
-            }}
-            isOptionEqualToValue={(o, v) => o.id === v.id}
-            onOpen={prefill}
-            onInputChange={(_e, text, reason) => {
-              // 'reset' (option selected) must not wipe the text the wizard reads.
-              if (reason === 'input') {
-                setInputText(text)
-                search(text)
+          {colors && disabled ? null : (
+            <Autocomplete<RelationRecord>
+              options={withCreateOption(options.filter((o) => !linkedIds.has(o.id)))}
+              filterOptions={(x) => x}
+              getOptionLabel={(o) =>
+                isCreateOption(o)
+                  ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
+                  : labelOf(o, labelField)
               }
-            }}
-            // Selection immediately becomes a junction row; the input clears for
-            // the next link (value stays null on purpose).
-            value={null}
-            onChange={(_e, option) => {
-              if (!option) return
-              if (isCreateOption(option)) setCreateOpen(true)
-              else add(option)
-            }}
-            disabled={disabled}
-            size="small"
-            sx={{ minWidth: 180, flexGrow: 1 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder={t('Add…')}
-                sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
-              />
-            )}
-          />
+              // See the m2o search widget: same primary-colored create row.
+              renderOption={(props, option) => {
+                const { key, ...optionProps } = props
+                return (
+                  <li key={key} {...optionProps}>
+                    {isCreateOption(option) ? (
+                      <Typography component="span" color="primary">
+                        {t('Create a new')} {t(entityDisplayName(rel.entity))}
+                      </Typography>
+                    ) : colors ? (
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <ColorDot color={colorOf(option) ?? 'transparent'} />
+                        <span>{labelOf(option, labelField)}</span>
+                      </Stack>
+                    ) : (
+                      labelOf(option, labelField)
+                    )}
+                  </li>
+                )
+              }}
+              isOptionEqualToValue={(o, v) => o.id === v.id}
+              onOpen={prefill}
+              onInputChange={(_e, text, reason) => {
+                // 'reset' (option selected) must not wipe the text the wizard reads.
+                if (reason === 'input') {
+                  setInputText(text)
+                  search(text)
+                }
+              }}
+              // Selection immediately becomes a junction row; the input clears for
+              // the next link (value stays null on purpose).
+              value={null}
+              onChange={(_e, option) => {
+                if (!option) return
+                if (isCreateOption(option)) setCreateOpen(true)
+                else add(option)
+              }}
+              disabled={disabled}
+              size="small"
+              sx={{ minWidth: 180, flexGrow: 1 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={t('Add…')}
+                  sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                />
+              )}
+            />
+          )}
         </Stack>
       </Box>
       {/* In the form's banner slot (banner.tsx), not under the field. */}
       <ViewBanner status="error" open={Boolean(error)}>
         {error}
       </ViewBanner>
-      {createOpen ? (
+      {createOpen && colors ? (
+        <ColorTagDialog
+          title={`${t('Create a new')} ${t(entityDisplayName(rel.entity))}`}
+          initialName={inputText}
+          onClose={() => setCreateOpen(false)}
+          onSubmit={async (name, color) => {
+            add(await ops.create(rel.entity, { [labelField]: name, [colorField]: color }))
+          }}
+        />
+      ) : createOpen ? (
         <RelationCreateWizard
           rel={rel}
           ops={ops}

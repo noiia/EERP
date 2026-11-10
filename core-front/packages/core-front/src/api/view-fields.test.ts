@@ -18,6 +18,7 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      colorTagsField: null,
     })
   })
 
@@ -32,6 +33,7 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      colorTagsField: null,
     })
   })
 
@@ -51,6 +53,7 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      colorTagsField: null,
     })
   })
 
@@ -67,6 +70,7 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      colorTagsField: null,
     })
   })
 
@@ -74,6 +78,10 @@ describe('effectiveViewFields', () => {
     expect(
       effectiveViewFields({ calendarColorField: 'failed' }, EMPTY_VIEW_FIELDS).calendarColorField,
     ).toBe('failed')
+  })
+
+  it('colorTagsField is module-declared only', () => {
+    expect(effectiveViewFields({ colorTagsField: 'color_groups' }, EMPTY_VIEW_FIELDS).colorTagsField).toBe('color_groups')
   })
 
   it('ganttDependencies is module-declared only', () => {
@@ -102,6 +110,7 @@ describe('availableDisplayModes', () => {
         ganttStartField: null,
         ganttEndField: null,
         ganttDependencies: null,
+      colorTagsField: null,
       }),
     ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false })
     expect(
@@ -115,6 +124,7 @@ describe('availableDisplayModes', () => {
         ganttStartField: null,
         ganttEndField: null,
         ganttDependencies: null,
+      colorTagsField: null,
       }),
     ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false })
   })

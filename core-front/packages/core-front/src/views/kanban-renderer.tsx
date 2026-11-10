@@ -30,6 +30,8 @@ import { formatTotal } from './total-format'
 import { useRelationOps, type RelationRecord } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
+import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
+import { ColorRibbon } from './color-tags'
 
 // Kanban display mode (docs/roadmaps/list-view-modes.md, Phase 2): columns from
 // the configured status field's declared selection.options, cards draggable
@@ -81,6 +83,9 @@ export interface KanbanRendererProps<T extends HasId> {
   columnsConfig?: KanbanColumnsConfig
   /** A boolean field: true ⇒ the card shows an error chip labeled with the field's label. */
   badgeField?: string
+  /** A color-tags many2many field (ViewModeDefaults.colorTagsField): a 1px ribbon
+   * in its colors along each card's top edge. */
+  colorTagsField?: string
 }
 
 export function KanbanRenderer<T extends HasId>({
@@ -92,6 +97,7 @@ export function KanbanRenderer<T extends HasId>({
   serverOptions,
   columnsConfig,
   badgeField,
+  colorTagsField,
 }: KanbanRendererProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -107,7 +113,10 @@ export function KanbanRenderer<T extends HasId>({
   const badgeDescriptor = badgeField ? descriptor.fields.find((f) => f.name === badgeField) : undefined
   // Label field + up to 3 more, skipping the status field itself (redundant
   // with the column a card is already sorted into) and the badge field (a chip).
-  const cardFields = orderedFields(descriptor, { exclude: badgeField ? [statusField, badgeField] : [statusField], limit: 4 })
+  const cardFields = orderedFields(descriptor, {
+    exclude: [statusField, ...(badgeField ? [badgeField] : []), ...(colorTagsField ? [colorTagsField] : [])],
+    limit: 4,
+  })
 
   // many2one columns: the related records, scoped when the list pins scopeField to one id.
   const scopeId = config?.scopeField ? (serverOptions ?? descriptor.listFilter)?.filter?.[config.scopeField] : undefined
@@ -235,6 +244,7 @@ export function KanbanRenderer<T extends HasId>({
   }, [serverKey, columnsKey, waitingForColumns, statusField, descriptor.entity])
 
   const { records, error, moveField } = useOptimisticFieldMove(server?.records ?? initialData, actions, statusField)
+  const { colors } = useRecordColors(descriptor.entity, colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField), records.map((r) => r.id))
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
@@ -439,8 +449,9 @@ export function KanbanRenderer<T extends HasId>({
                         // pointer moves past the drag threshold), so a plain click here is
                         // unambiguously "clicked, didn't drag" — no separate bookkeeping needed.
                         onClick={formPath ? () => router.push(erpPath(formPath.replace(':id', record.id))) : undefined}
-                        sx={{ cursor: formPath ? 'pointer' : 'grab' }}
+                        sx={{ cursor: formPath ? 'pointer' : 'grab', position: 'relative' }}
                       >
+                        <ColorRibbon colors={colors.get(record.id)} />
                         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                           {cardFields.map((f, i) => (
                             <Typography

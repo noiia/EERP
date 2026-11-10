@@ -6,6 +6,8 @@ import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Collapse from '@mui/material/Collapse'
+import IconButton from '@mui/material/IconButton'
+import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
@@ -17,11 +19,15 @@ import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import type { GanttDependenciesConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
+import { colorStripes } from './color-tags'
 import { ErrorAlert } from './error-alert'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { orderedFields } from './layout-fields'
 import { useRelationOps } from './relation-ops'
+import { RelationColorTagsWidget } from './relation-widgets'
 import type { EntityActions, HasId } from './stores'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
+import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
 
 // Gantt display mode: one row per record, a bar from its start date field to
 // its end date field on a Day / Week / Month timeline. With `serverOptions`
@@ -33,7 +39,9 @@ import { useOptimisticFieldMove } from './use-optimistic-field-move'
 // it there; the write goes through the same optimistic hook Kanban and
 // Calendar use. Bars also move from the keyboard (arrows, Shift/Alt + arrows
 // resize). A today line and, with `dependencies`, link arrows overlay the
-// timeline.
+// timeline. With `colorTagsField`, a bar is filled with its record's color
+// (equal horizontal stripes for several) and a button beside its name edits
+// them. Bars carry no text, so no color can make a label unreadable.
 
 type Zoom = 'day' | 'week' | 'month'
 
@@ -156,6 +164,8 @@ export interface GanttRendererProps<T extends HasId> {
   serverOptions?: EntityListOptions
   /** Set ⇒ draw dependency arrows from this entity's link rows (needs RelationOps.listPage). */
   dependencies?: GanttDependenciesConfig
+  /** A color-tags many2many field (ViewModeDefaults.colorTagsField): bars take its colors. */
+  colorTagsField?: string
 }
 
 export function GanttRenderer<T extends HasId>({
@@ -167,6 +177,7 @@ export function GanttRenderer<T extends HasId>({
   onRecordsChange,
   serverOptions,
   dependencies,
+  colorTagsField,
 }: GanttRendererProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -263,6 +274,10 @@ export function GanttRenderer<T extends HasId>({
     if (si < totalDays && ei >= 0) rows.push({ record, s: si, e: ei })
   }
   rows.sort((a, b) => a.s - b.s || a.e - b.e)
+
+  const colorsField = colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField)
+  const { colors, reload: reloadColors } = useRecordColors(descriptor.entity, colorsField, rows.map((r) => r.record.id))
+  const [colorPicker, setColorPicker] = useState<{ record: T; anchor: HTMLElement } | null>(null)
 
   const trackRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -471,7 +486,11 @@ export function GanttRenderer<T extends HasId>({
           touchAction: 'none',
           opacity: drag?.id === record.id ? 0.8 : 1,
         }}
-        style={{ left: pct(left), width: pct(right - left) }}
+        style={{
+          left: pct(left),
+          width: pct(right - left),
+          ...(colors.get(record.id) ? { background: colorStripes(colors.get(record.id)!, 'to bottom') } : {}),
+        }}
       >
         {canWrite ? (
           <>
@@ -567,23 +586,26 @@ export function GanttRenderer<T extends HasId>({
             </Box>
             {rows.map((row, i) => (
               <Box key={row.record.id} data-testid={`gantt-row-${row.record.id}`} sx={{ display: 'contents' }}>
-                <Button
-                  size="small"
-                  onClick={() => openForm(row.record)}
-                  sx={{
-                    gridColumn: 1,
-                    gridRow: i + 2,
-                    height: ROW_H,
-                    justifyContent: 'flex-start',
-                    textTransform: 'none',
-                    minWidth: 0,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <Typography variant="body2" noWrap>
-                    {label(row.record)}
-                  </Typography>
-                </Button>
+                <Box sx={{ gridColumn: 1, gridRow: i + 2, display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  <Button
+                    size="small"
+                    onClick={() => openForm(row.record)}
+                    sx={{ flex: 1, height: ROW_H, justifyContent: 'flex-start', textTransform: 'none', minWidth: 0, overflow: 'hidden' }}
+                  >
+                    <Typography variant="body2" noWrap>
+                      {label(row.record)}
+                    </Typography>
+                  </Button>
+                  {colorsField && canWrite ? (
+                    <IconButton
+                      size="small"
+                      aria-label={`${t('Colors of')} ${label(row.record)}`}
+                      onClick={(ev) => setColorPicker({ record: row.record, anchor: ev.currentTarget })}
+                    >
+                      <FontAwesomeIcon icon={byPrefixAndName.fas['palette']} size="xs" />
+                    </IconButton>
+                  ) : null}
+                </Box>
                 <Box
                   sx={{ gridColumn: 2, gridRow: i + 2, position: 'relative', height: ROW_H, bgcolor: 'action.hover', borderRadius: 1 }}
                 >
@@ -628,6 +650,27 @@ export function GanttRenderer<T extends HasId>({
             </Box>
           </Box>
         </Box>
+
+        {colorPicker && colorsField ? (
+          <Popover
+            open
+            anchorEl={colorPicker.anchor}
+            onClose={() => setColorPicker(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            slotProps={{
+              paper: { role: 'dialog', 'aria-label': `${t('Colors of')} ${label(colorPicker.record)}`, sx: { p: 2, width: 320 } },
+            }}
+          >
+            <RelationColorTagsWidget
+              field={colorsField}
+              value={undefined}
+              onChange={() => {}}
+              entity={descriptor.entity}
+              recordId={colorPicker.record.id}
+              onLinksChange={reloadColors}
+            />
+          </Popover>
+        ) : null}
 
         <Collapse in={unscheduled.length > 0} orientation="horizontal" unmountOnExit>
           <Box

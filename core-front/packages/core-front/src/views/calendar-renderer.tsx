@@ -20,6 +20,8 @@ import { useRelationOps } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
 import { useUndoToastStore } from './undo-toast'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
+import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
+import { ColorRibbon } from './color-tags'
 
 // Calendar display mode (docs/roadmaps/list-view-modes.md, Phase 3): a month
 // grid positioning records by their configured date field; records with no
@@ -79,6 +81,9 @@ export interface CalendarRendererProps<T extends HasId> {
   /** Set ⇒ fetch the visible month + unscheduled records from the server
    * (RelationOps.listPage) under these filters, instead of `initialData`. */
   serverOptions?: EntityListOptions
+  /** A color-tags many2many field (ViewModeDefaults.colorTagsField): a 1px ribbon
+   * in its colors along each card's top edge. */
+  colorTagsField?: string
 }
 
 export function CalendarRenderer<T extends HasId>({
@@ -89,6 +94,7 @@ export function CalendarRenderer<T extends HasId>({
   colorField,
   onRecordsChange,
   serverOptions,
+  colorTagsField,
 }: CalendarRendererProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -155,6 +161,7 @@ export function CalendarRenderer<T extends HasId>({
   }, [serverKey, cursor.year, cursor.month, dateField, descriptor.entity])
 
   const { records, error, moveField } = useOptimisticFieldMove(server?.records ?? initialData, actions, dateField)
+  const { colors } = useRecordColors(descriptor.entity, colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField), records.map((r) => r.id))
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
@@ -255,6 +262,7 @@ export function CalendarRenderer<T extends HasId>({
         onClick={formPath ? () => router.push(erpPath(formPath.replace(':id', record.id))) : undefined}
         sx={{
           cursor: formPath ? 'pointer' : 'grab',
+          position: 'relative',
           ...(flagged && {
             borderColor: 'error.main',
             borderLeftWidth: 3,
@@ -263,6 +271,7 @@ export function CalendarRenderer<T extends HasId>({
           }),
         }}
       >
+        <ColorRibbon colors={colors.get(record.id)} />
         <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
           <Typography variant="caption" sx={{ display: 'block' }}>
             {label(record)}
