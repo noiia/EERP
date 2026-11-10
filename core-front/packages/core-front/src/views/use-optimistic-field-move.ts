@@ -24,6 +24,8 @@ export interface OptimisticFieldMove<T extends HasId> {
   /** moveField for several fields at once (one PATCH, one revert) — Gantt's
    * bar move shifts its start and end together. */
   moveFields: (id: string, patch: Record<string, unknown>) => Promise<void>
+  /** Shows a record just created from the view (quick-create) without a reload. */
+  addRecord: (record: T) => void
 }
 
 export function useOptimisticFieldMove<T extends HasId>(
@@ -60,5 +62,8 @@ export function useOptimisticFieldMove<T extends HasId>(
 
   const moveField = (id: string, value: unknown) => moveFields(id, { [field]: value })
 
-  return { records, error, moveField, moveFields }
+  const addRecord = (record: T) =>
+    setRecords((rs) => (rs.some((r) => r.id === record.id) ? rs : [...rs, record]))
+
+  return { records, error, moveField, moveFields, addRecord }
 }

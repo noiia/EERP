@@ -19,6 +19,7 @@ import { formatTotal } from './total-format'
 import { useRelationOps } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
 import { useUndoToastStore } from './undo-toast'
+import { isEmptyZoneClick, useQuickCreate } from './quick-create'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
 import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
 import { ColorRibbon } from './color-tags'
@@ -115,6 +116,8 @@ export function CalendarRenderer<T extends HasId>({
   } | null>(null)
   const [loadError, setLoadError] = useState<SerializedError | null>(null)
   const serverKey = serverOptions && relationOps?.listPage ? JSON.stringify(serverOptions) : null
+  // Bumped after a quick create: the month is read again.
+  const [reloads, setReloads] = useState(0)
   useEffect(() => {
     const listPage = relationOps?.listPage
     if (serverKey == null || !listPage) {
@@ -158,9 +161,13 @@ export function CalendarRenderer<T extends HasId>({
     return () => {
       cancelled = true
     }
-  }, [serverKey, cursor.year, cursor.month, dateField, descriptor.entity])
+  }, [serverKey, cursor.year, cursor.month, dateField, descriptor.entity, reloads])
 
-  const { records, error, moveField } = useOptimisticFieldMove(server?.records ?? initialData, actions, dateField)
+  const { records, error, moveField, addRecord } = useOptimisticFieldMove(server?.records ?? initialData, actions, dateField)
+  const quick = useQuickCreate(descriptor.entity, serverOptions ?? descriptor.listFilter, (created) => {
+    addRecord(created as unknown as T)
+    setReloads((n) => n + 1)
+  })
   const { colors } = useRecordColors(descriptor.entity, colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField), records.map((r) => r.id))
   useEffect(() => {
     onRecordsChange?.(records)
@@ -289,6 +296,7 @@ export function CalendarRenderer<T extends HasId>({
     <Box>
       <ErrorAlert error={error} />
       <ErrorAlert error={loadError} />
+      {quick.dialog}
       <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
@@ -330,8 +338,13 @@ export function CalendarRenderer<T extends HasId>({
                     droppedRef.current = true
                     if (dragging) void moveField(dragging.id, iso)
                   }}
+                  // An empty spot of the day: create a record on it.
+                  onClick={(e) => {
+                    if (quick.canCreate && isEmptyZoneClick(e)) quick.open({ [dateField]: iso })
+                  }}
                   sx={{
                     minHeight: 72,
+                    cursor: quick.canCreate ? 'cell' : undefined,
                     bgcolor: 'action.hover',
                     borderRadius: 1,
                     p: 0.5,

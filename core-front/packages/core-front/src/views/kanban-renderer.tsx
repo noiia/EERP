@@ -30,6 +30,7 @@ import { useRelationLabels } from './use-relation-labels'
 import { formatTotal } from './total-format'
 import { useRelationOps, type RelationRecord } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
+import { isEmptyZoneClick, useQuickCreate } from './quick-create'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
 import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
 import { ColorRibbon } from './color-tags'
@@ -197,6 +198,8 @@ export function KanbanRenderer<T extends HasId>({
   const [server, setServer] = useState<{ records: T[]; counts: Record<string, number>; estimated: Record<string, boolean> } | null>(null)
   const [loadError, setLoadError] = useState<SerializedError | null>(null)
   const serverKey = serverOptions && relationOps?.listPage ? JSON.stringify(serverOptions) : null
+  // Bumped after a quick create: the columns' cards and counts are read again.
+  const [reloads, setReloads] = useState(0)
   // Ids per column, order-insensitive: renaming or reordering columns doesn't refetch cards.
   const columnsKey = columns.map((c) => `${c.key}:${c.stages.map((st) => st.id).join(',')}`).sort().join('\u0000')
   const waitingForColumns = Boolean(config) && stages == null
@@ -242,9 +245,21 @@ export function KanbanRenderer<T extends HasId>({
     return () => {
       cancelled = true
     }
-  }, [serverKey, columnsKey, waitingForColumns, statusField, descriptor.entity])
+  }, [serverKey, columnsKey, waitingForColumns, statusField, descriptor.entity, reloads])
 
-  const { records, error, moveField } = useOptimisticFieldMove(server?.records ?? initialData, actions, statusField)
+  const { records, error, moveField, addRecord } = useOptimisticFieldMove(server?.records ?? initialData, actions, statusField)
+  const quick = useQuickCreate(descriptor.entity, serverOptions ?? descriptor.listFilter, (created) => {
+    addRecord(created as unknown as T)
+    setReloads((n) => n + 1)
+  })
+
+  /** A click on a column's empty space: create a card in that column. A merged
+   * many2one column (several scopes' stages) leaves the status to the form. */
+  function onColumnClick(event: React.MouseEvent, column: KanbanColumn | null) {
+    if (!quick.canCreate || !isEmptyZoneClick(event)) return
+    const status = !column ? undefined : !config ? column.key : column.stages.length === 1 ? column.stages[0]!.id : undefined
+    quick.open(status === undefined ? {} : { [statusField]: status })
+  }
   const { colors } = useRecordColors(descriptor.entity, colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField), records.map((r) => r.id))
   const labelOf = useRelationLabels(
     cardFields,
@@ -355,6 +370,7 @@ export function KanbanRenderer<T extends HasId>({
     <Box>
       <ErrorAlert error={error} />
       <ErrorAlert error={loadError} />
+      {quick.dialog}
       <ErrorAlert error={columnError} />
       <Box
         sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1, alignItems: 'flex-start' }}
@@ -388,6 +404,7 @@ export function KanbanRenderer<T extends HasId>({
                   if (column) reorderColumns(draggingColumn, column.key)
                 } else dropCard(column)
               }}
+              onClick={folded ? undefined : (e) => onColumnClick(e, column)}
               sx={{
                 minWidth: folded ? 0 : 240,
                 flex: folded ? '0 0 auto' : '0 0 240px',

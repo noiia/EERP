@@ -28,6 +28,7 @@ import { orderedFields } from './layout-fields'
 import { useRelationOps } from './relation-ops'
 import { RelationColorTagsWidget } from './relation-widgets'
 import type { EntityActions, HasId } from './stores'
+import { isEmptyZoneClick, useQuickCreate } from './quick-create'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
 import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
 
@@ -222,6 +223,8 @@ export function GanttRenderer<T extends HasId>({
   const [server, setServer] = useState<{ records: T[]; capped: boolean } | null>(null)
   const [loadError, setLoadError] = useState<SerializedError | null>(null)
   const serverKey = serverOptions && relationOps?.listPage ? JSON.stringify(serverOptions) : null
+  // Bumped after a quick create: the visible range is read again.
+  const [reloads, setReloads] = useState(0)
   useEffect(() => {
     const listPage = relationOps?.listPage
     if (serverKey == null || !listPage) {
@@ -268,9 +271,29 @@ export function GanttRenderer<T extends HasId>({
     return () => {
       cancelled = true
     }
-  }, [serverKey, fromIso, untilIso, startField, endField, descriptor.entity])
+  }, [serverKey, fromIso, untilIso, startField, endField, descriptor.entity, reloads])
 
-  const { records, error, moveFields } = useOptimisticFieldMove(server?.records ?? initialData, actions, startField)
+  const { records, error, moveFields, addRecord } = useOptimisticFieldMove(server?.records ?? initialData, actions, startField)
+  const quick = useQuickCreate(descriptor.entity, serverOptions ?? descriptor.listFilter, (created) => {
+    addRecord(created as unknown as T)
+    setReloads((n) => n + 1)
+  })
+  // A drag ending over a row fires a click there: not a quick create.
+  const dragEndedAt = useRef(0)
+
+  /** A click on a row's empty track: create a record on that day. */
+  function onTrackClick(event: React.MouseEvent<HTMLElement>) {
+    if (!quick.canCreate || Date.now() - dragEndedAt.current < 300 || !isEmptyZoneClick(event)) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0) return
+    const idx = Math.floor(((event.clientX - rect.left) / rect.width) * totalDays)
+    if (idx < 0 || idx >= totalDays) return
+    const day = addDays(range.start, idx)
+    quick.open({
+      [startField]: startDatetime ? day.toISOString() : isoDate(day),
+      [endField]: endDatetime ? day.toISOString() : isoDate(day),
+    })
+  }
   const moveFieldsRef = useRef(moveFields)
   moveFieldsRef.current = moveFields
   useEffect(() => {
@@ -384,6 +407,7 @@ export function GanttRenderer<T extends HasId>({
     dragRef.current = null
     setDrag(null)
     if (!d) return
+    dragEndedAt.current = Date.now()
     const track = trackRef.current?.getBoundingClientRect()
     const grid = gridRef.current?.getBoundingClientRect()
     const onTimeline =
@@ -575,6 +599,7 @@ export function GanttRenderer<T extends HasId>({
     <Box>
       <ErrorAlert error={error} />
       <ErrorAlert error={loadError} />
+      {quick.dialog}
       <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -661,7 +686,17 @@ export function GanttRenderer<T extends HasId>({
                   ) : null}
                 </Box>
                 <Box
-                  sx={{ gridColumn: 2, gridRow: i + 2, position: 'relative', height: ROW_H, bgcolor: 'action.hover', borderRadius: 1 }}
+                  data-testid={`gantt-row-track-${row.record.id}`}
+                  onClick={onTrackClick}
+                  sx={{
+                    gridColumn: 2,
+                    gridRow: i + 2,
+                    position: 'relative',
+                    height: ROW_H,
+                    bgcolor: 'action.hover',
+                    borderRadius: 1,
+                    cursor: quick.canCreate ? 'cell' : undefined,
+                  }}
                 >
                   {bar(row)}
                 </Box>

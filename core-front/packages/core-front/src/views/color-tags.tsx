@@ -50,7 +50,7 @@ export function ColorRibbon({ colors }: { colors: string[] | undefined }) {
       data-testid="color-ribbon"
       aria-hidden
       sx={{ position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' }}
-      style={{ height: '1px', background: colorStripes(colors, 'to right') }}
+      style={{ height: '4px', background: colorStripes(colors, 'to right') }}
     />
   )
 }

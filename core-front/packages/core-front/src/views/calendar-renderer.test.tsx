@@ -355,7 +355,7 @@ const colorOps: RelationOps = {
 const ribbonOf = (card: HTMLElement) => card.querySelector<HTMLElement>('[data-testid="color-ribbon"]')
 
 describe('color ribbon', () => {
-  it('draws a 1px ribbon in the card\'s color, equal segments for several, nothing without colors', async () => {
+  it('draws a 4px ribbon in the card\'s color, equal segments for several, nothing without colors', async () => {
     const actions = { create: vi.fn(), update: vi.fn() }
     render(
       <ColorOpsProvider ops={colorOps}>
@@ -371,7 +371,7 @@ describe('color ribbon', () => {
     await waitFor(() => expect(ribbonOf(screen.getByTestId('calendar-card-3'))?.style.background).toBe('rgb(255, 0, 0)'))
     const multi = ribbonOf(screen.getByTestId('calendar-card-1'))!
     expect(multi.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0% 50%, rgb(0, 255, 0) 50% 100%)')
-    expect(multi.style.height).toBe('1px')
+    expect(multi.style.height).toBe('4px')
     expect(ribbonOf(screen.getByTestId('calendar-card-2'))).toBeNull()
     // The color field is not printed as a card field.
     expect(screen.queryByText('Color groups')).toBeNull()

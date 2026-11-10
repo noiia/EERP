@@ -395,7 +395,7 @@ function creationDescriptor(rel: RelationDescriptor): ViewDescriptor {
  * through RelationOps.update (required then). A loaded record runs computes
  * only, never on_change, like any form opening an existing record.
  */
-function RelationCreateWizard({
+export function RelationCreateWizard({
   rel,
   ops,
   preset = {},
