@@ -135,6 +135,7 @@ const taskListFields: Fields = [
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'project_id', label: 'Project', type: 'relation', required: true, relation: project },
   { name: 'stage_id', label: 'Stage', type: 'relation', relation: stage },
+  { name: 'date_start', label: 'Start date', type: 'date' },
   { name: 'deadline', label: 'Deadline', type: 'date' },
   { name: 'priority', label: 'Priority', type: 'boolean', widget: 'stars' },
   { name: 'planned_hours', label: 'Planned hours', type: 'number' },
@@ -148,6 +149,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   kanbanBadgeField: 'blocked',
   calendarDateField: 'deadline',
   enableGraphs: true,
+  ganttStartField: 'date_start',
+  ganttEndField: 'deadline',
 }
 
 const taskFormFields: Fields = [
@@ -173,6 +176,7 @@ const taskFormFields: Fields = [
     type: 'relation',
     relation: { entity: 'project_tag', kind: 'many2many', via: 'project_task_tag', viaFields: { own: 'task_id', related: 'tag_id' }, labelField: 'name' },
   },
+  { name: 'date_start', label: 'Start date', type: 'date' },
   { name: 'deadline', label: 'Deadline', type: 'date' },
   { name: 'priority', label: 'Priority', type: 'boolean', widget: 'stars' },
   { name: 'planned_hours', label: 'Planned hours', type: 'number' },

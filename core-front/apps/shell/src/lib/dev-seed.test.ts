@@ -427,6 +427,12 @@ describe('seedDemoData — Project app', () => {
     expect(tasks.filter((t) => !t.parent_id)).toHaveLength(24)
     expect(tasks.filter((t) => t.parent_id)).toHaveLength(48)
     expect(tasks.find((t) => !t.parent_id)?.stage_id).toMatch(/^stage-project-\d+-10$/)
+    // Each top-level task starts a few days before its deadline, so the Gantt draws bars.
+    for (const t of tasks.filter((x) => !x.parent_id)) {
+      const lead = Date.parse(String(t.deadline)) - Date.parse(String(t.date_start))
+      expect(lead).toBeGreaterThan(0)
+      expect(lead).toBeLessThanOrEqual(7 * 86_400_000)
+    }
     expect(callsFor('project_task_dependency')).toHaveLength(3)
     expect(bodies('project_task_user')).toHaveLength(6)
     expect(bodies('project_task_user').every((a) => a.user_id === 'admin-1')).toBe(true)

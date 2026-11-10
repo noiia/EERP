@@ -59,6 +59,7 @@ type ProjectTask struct {
 	Name             string     `db:"name" json:"name"`
 	Description      string     `db:"description" json:"description"`
 	Priority         bool       `db:"priority" json:"priority"`
+	DateStart        *time.Time `db:"date_start" json:"date_start"`
 	Deadline         *time.Time `db:"deadline" json:"deadline"`
 	PlannedHours     float64    `db:"planned_hours" json:"planned_hours"`
 	Sequence         int        `db:"sequence" json:"sequence"`

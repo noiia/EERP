@@ -40,6 +40,8 @@ describe('project views', () => {
       kanbanBadgeField: 'blocked',
       calendarDateField: 'deadline',
       enableGraphs: true,
+      ganttStartField: 'date_start',
+      ganttEndField: 'deadline',
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)
@@ -47,6 +49,9 @@ describe('project views', () => {
     expect(route('/project').descriptor.viewModeDefaults).toEqual({ kanbanStatusField: 'visibility' })
     expect(route('/project/timesheets').descriptor.viewModeDefaults?.enableGraphs).toBe(true)
     expect(field('/project/tasks', 'priority')).toMatchObject({ type: 'boolean', widget: 'stars' })
+    for (const path of ['/project/tasks', '/project/tasks/:id']) {
+      expect(field(path, 'date_start'), path).toMatchObject({ type: 'date', label: 'Start date' })
+    }
   })
 
   it('gives the task form its five notebook pages', () => {

@@ -703,6 +703,8 @@ async function seedProjects(): Promise<SeedEntityResult[]> {
         planned_hours: 4 + i,
         ...(stages.length > 0 ? { stage_id: stages[i % stages.length].id } : {}),
         ...(milestones.records.length > 0 ? { milestone_id: milestones.records[i % 2].id } : {}),
+        // 2–5 days before the deadline, so the task Gantt has bars.
+        date_start: new Date(Date.now() + (i + 1) * 7 * day - (2 + (i % 4)) * day).toISOString(),
         deadline: new Date(Date.now() + (i + 1) * 7 * day).toISOString(),
       })),
     )
