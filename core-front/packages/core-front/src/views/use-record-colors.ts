@@ -4,13 +4,16 @@ import { moduleRegistry } from '../registry'
 import { isHex6Color } from './color-tags'
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { useRelationOps, type RelationRecord } from './relation-ops'
+import { cachedColors, useRecordColorsStore } from './record-colors-store'
 import { junctionColumns } from './relation-widgets'
 
 // The colors of the records on screen, through a color-tags many2many field
 // (ViewModeDefaults.colorTagsField): junction rows `in[<own>]=<ids>` by chunks
 // of COLOR_CHUNK ids, each paged until a short page, sorted by creation (the
 // stripe order), then the related records `in[id]=` by chunks. Keyed on the
-// sorted id set, so moving or reordering records never refetches.
+// sorted id set, so moving or reordering records never refetches. The last
+// colors read are kept for the session (record-colors-store.ts) and drawn at
+// once on the next display while this read refreshes them.
 
 const COLOR_CHUNK = 100
 
@@ -54,6 +57,7 @@ export function useRecordColors(entity: string, field: FieldDescriptor | null, i
       setColors(new Map())
       return
     }
+    setColors(cachedColors(configKey, idsKey.split(',')))
     const [related, via, own, link, colorKey] = configKey.split('\u0000')
     let cancelled = false
     const load = async () => {
@@ -89,12 +93,11 @@ export function useRecordColors(entity: string, field: FieldDescriptor | null, i
     }
     void load()
       .then((out) => {
+        useRecordColorsStore.getState().put(configKey, idsKey.split(','), out)
         if (!cancelled) setColors(out)
       })
-      // Decoration only: a refused read (no right on the junction) shows no colors.
-      .catch(() => {
-        if (!cancelled) setColors(new Map())
-      })
+      // Decoration only: a refused read (no right on the junction) keeps what was cached.
+      .catch(() => {})
     return () => {
       cancelled = true
     }

@@ -1,10 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { EntityListOptions } from '../api/list-options'
 import type { FieldDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
+import { cachedColors, RECORD_COLORS_CAP, useRecordColorsStore } from './record-colors-store'
+import { useSessionStore } from './session-store'
 import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
+
+const signIn = (userId: string) =>
+  useSessionStore.setState({ identity: { userId, tenantId: 't1', roles: [], permissions: [] } })
+
+beforeEach(() => {
+  signIn('u1')
+  useRecordColorsStore.getState().clear()
+})
 
 const field: FieldDescriptor = {
   name: 'color_groups',
@@ -161,5 +171,45 @@ describe('colorTagsFieldOf', () => {
     expect(colorTagsFieldOf(d, 'name')).toBeNull()
     expect(colorTagsFieldOf(d, undefined)).toBeNull()
     expect(colorTagsFieldOf(d, 'missing')).toBeNull()
+  })
+})
+
+describe('record colors cache', () => {
+  const config = 'color\u0000task_color\u0000task_id\u0000color_id\u0000color'
+
+  it('draws the cached colors at once, then the fresh read replaces them', async () => {
+    const { ops } = stubOps()
+    const first = renderHook(() => useRecordColors('task', field, ['task-0']), { wrapper: wrapperFor(ops) })
+    await waitFor(() => expect(first.result.current.colors.get('task-0')).toEqual(['#00ff00', '#ff0000']))
+    first.unmount()
+
+    // The next display: the read never answers, the cached colors still show.
+    const pending: RelationOps = { ...ops, list: vi.fn(() => new Promise<RelationRecord[]>(() => {})) }
+    const second = renderHook(() => useRecordColors('task', field, ['task-0', 'task-9']), { wrapper: wrapperFor(pending) })
+    expect(second.result.current.colors.get('task-0')).toEqual(['#00ff00', '#ff0000'])
+    expect(second.result.current.colors.has('task-9')).toBe(false)
+    expect(pending.list).toHaveBeenCalled()
+  })
+
+  it('is per user and wiped on logout', () => {
+    useRecordColorsStore.getState().put(config, ['a'], new Map([['a', ['#123456']]]))
+    expect(cachedColors(config, ['a']).get('a')).toEqual(['#123456'])
+    signIn('u2')
+    expect(cachedColors(config, ['a']).size).toBe(0)
+    signIn('u1')
+    useRecordColorsStore.getState().put(config, ['a'], new Map([['a', ['#123456']]]))
+    act(() => useSessionStore.getState().clear())
+    expect(useRecordColorsStore.getState().entries).toEqual({})
+  })
+
+  it('records a record without colors as such and keeps at most the cap', () => {
+    const put = useRecordColorsStore.getState().put
+    put(config, ['none'], new Map())
+    expect(useRecordColorsStore.getState().entries[config]).toEqual({ none: [] })
+    const many = Array.from({ length: RECORD_COLORS_CAP + 1 }, (_, i) => `r${i}`)
+    put(config, many, new Map())
+    const kept = Object.keys(useRecordColorsStore.getState().entries[config]!)
+    expect(kept).toHaveLength(RECORD_COLORS_CAP)
+    expect(kept).not.toContain('none') // the oldest went first
   })
 })
