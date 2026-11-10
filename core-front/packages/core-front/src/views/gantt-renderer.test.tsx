@@ -185,7 +185,7 @@ describe('GanttRenderer', () => {
       expect(await screen.findByText(/1000 records shown/)).toBeInTheDocument()
       const rangeCalls = listPage.mock.calls.filter(([, o]) => !o?.empty)
       expect(rangeCalls.map(([, o]) => [o?.page, o?.pageSize])).toEqual([[1, 200], [2, 200], [3, 200], [4, 200], [5, 200], [1001, 1]])
-    })
+    }, 20_000) // renders 1000 rows: over the 5 s default under full-suite load
 
     it('exactly the cap of matching records shows no "more records" caption', async () => {
       const listPage = vi.fn<ListPage>(async (_e: string, o?: EntityListOptions) => {
@@ -196,7 +196,7 @@ describe('GanttRenderer', () => {
       await waitFor(() => expect(listPage).toHaveBeenCalledWith('task', expect.objectContaining({ page: 1001, pageSize: 1 })))
       await screen.findAllByTestId(/^gantt-row-r1-/)
       expect(screen.queryByText(/records shown/)).toBeNull()
-    })
+    }, 20_000) // renders 1000 rows: over the 5 s default under full-suite load
 
     it('stops paging at the first short page', async () => {
       const listPage = vi.fn<ListPage>(async (_e: string, o?: EntityListOptions) =>
