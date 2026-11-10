@@ -30,6 +30,9 @@ vi.mock('./preferences', () => ({
   getMyLocalePreferences: () => getMyLocalePreferencesMock(),
 }))
 
+const getIdentityMock = vi.fn()
+vi.mock('./session', () => ({ getIdentity: () => getIdentityMock() }))
+
 import { getSeedGroups, seedDemoData } from './dev-seed'
 import { seedingAllowed } from './dev-seed-allowed'
 
@@ -53,6 +56,7 @@ beforeEach(() => {
     id: `${entity}-${(idCounter += 1)}`,
     ...body,
   }))
+  getIdentityMock.mockResolvedValue({ userId: 'admin-1' })
   getMyLocalePreferencesMock.mockReset()
   // Backend's types.Config.Environment, echoed back on GET /me/preferences —
   // defaults to "development" so every seedDemoData test below (which isn't
@@ -195,6 +199,7 @@ describe('seedDemoData', () => {
       'project_milestone',
       'project_task',
       'project_task_dependency',
+      'project_task_user',
       'project_timesheet',
       'report_page_format',
       'event',
@@ -423,8 +428,16 @@ describe('seedDemoData — Project app', () => {
     expect(tasks.filter((t) => t.parent_id)).toHaveLength(48)
     expect(tasks.find((t) => !t.parent_id)?.stage_id).toMatch(/^stage-project-\d+-10$/)
     expect(callsFor('project_task_dependency')).toHaveLength(3)
+    expect(bodies('project_task_user')).toHaveLength(6)
+    expect(bodies('project_task_user').every((a) => a.user_id === 'admin-1')).toBe(true)
     expect(callsFor('project_timesheet')).toHaveLength(19)
     expect(bodies('project_timesheet').every((t) => Number(t.hours) > 0 && typeof t.date === 'string')).toBe(true)
+  })
+
+  it('assigns nothing without a signed-in identity', async () => {
+    getIdentityMock.mockResolvedValue(null)
+    await seedDemoData()
+    expect(callsFor('project_task_user')).toHaveLength(0)
   })
 
   it('still seeds tasks when the stages cannot be read', async () => {

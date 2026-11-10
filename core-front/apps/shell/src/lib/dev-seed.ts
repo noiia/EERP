@@ -5,6 +5,7 @@ import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
 import { DEMO_SITE_PAGES, DEMO_SITE_PUBLISHED } from './dev-seed-website'
 import { getMyLocalePreferences } from './preferences'
+import { getIdentity } from './session'
 import { PAPER_SIZE_PRESETS } from '../../app/app/settings/appearance/page-formats/descriptors'
 
 // Settings -> Developer: populates the workspace with realistic-looking demo
@@ -678,6 +679,7 @@ async function seedProjects(): Promise<SeedEntityResult[]> {
     cur.errors.push(...o.result.errors)
   }
   const client = createServerApiClient()
+  const me = (await getIdentity())?.userId
   for (const [pi, project] of projects.records.entries()) {
     let stages: { id: string; sequence: number }[] = []
     try {
@@ -719,6 +721,10 @@ async function seedProjects(): Promise<SeedEntityResult[]> {
         tasks.records.length > 1 ? [{ task_id: tasks.records[1].id, depends_on_id: tasks.records[0].id }] : [],
       ),
     )
+    // Assigned to the signed-in admin so "My tasks" is not empty (also in the members-only project).
+    if (me) {
+      track(await createMany('project_task_user', tasks.records.slice(0, 2).map((t) => ({ task_id: t.id, user_id: me }))))
+    }
     track(
       await createMany(
         'project_timesheet',
