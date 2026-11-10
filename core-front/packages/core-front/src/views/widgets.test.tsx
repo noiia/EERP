@@ -294,6 +294,15 @@ describe('number/stars', () => {
   })
 })
 
+describe('boolean/stars', () => {
+  it('is one star toggling the boolean (a priority flag)', () => {
+    const { onChange } = renderWidget({ name: 'priority', label: 'Priority', type: 'boolean', widget: 'stars' }, false)
+    expect(screen.queryByLabelText('2 Stars')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('1 Star'))
+    expect(onChange).toHaveBeenCalledWith(true)
+  })
+})
+
 describe('phone', () => {
   it('splits a stored E.164 value into country indicator + national digits', () => {
     renderWidget({ name: 'phone', label: 'Phone', type: 'text', widget: 'phone' }, '+33612345678')

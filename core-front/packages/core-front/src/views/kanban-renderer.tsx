@@ -146,13 +146,13 @@ export function KanbanRenderer<T extends HasId>({
       return
     }
     let cancelled = false
-    guard(scopeId)
+    guard(scopeId, relationOps)
       .then((ok) => !cancelled && setMayEdit(ok))
       .catch(() => !cancelled && setMayEdit(false))
     return () => {
       cancelled = true
     }
-  }, [config?.canEdit, scopeId])
+  }, [config?.canEdit, scopeId, relationOps])
   const canEditColumns = mayEdit && Boolean(relationOps?.update)
 
   const columns: KanbanColumn[] = useMemo(() => {

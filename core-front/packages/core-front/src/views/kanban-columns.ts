@@ -1,5 +1,5 @@
 import type { KanbanColumnsConfig } from '../api/view-fields'
-import type { RelationRecord } from './relation-ops'
+import type { RelationOps, RelationRecord } from './relation-ops'
 
 // Kanban columns built from many2one records (Odoo-style editable stages):
 // the pure grouping/drop-target logic behind KanbanRenderer's many2one path,
@@ -69,7 +69,8 @@ export function resolveDropTarget(column: KanbanColumn, cardScope: unknown, conf
   return column.stages.find((s) => s[config.scopeField!] === cardScope)?.id ?? null
 }
 
-type KanbanColumnsGuard = (scopeId: string) => Promise<boolean>
+/** Gets the board's RelationOps to ask the server (null without a provider). */
+type KanbanColumnsGuard = (scopeId: string, ops: RelationOps | null) => Promise<boolean>
 
 const guards = new Map<string, KanbanColumnsGuard>()
 

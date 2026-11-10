@@ -11,6 +11,7 @@ let mockPathname = '/app/crm/c1'
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, prefetch: prefetchMock }),
   usePathname: () => mockPathname,
+  useSearchParams: () => null,
 }))
 
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'

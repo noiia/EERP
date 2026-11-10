@@ -333,7 +333,8 @@ describe('KanbanRenderer with many2one columns', () => {
     stageStore = stageRows.map((s) => ({ ...s }))
     allow = true
     const { registerKanbanColumnsGuard } = await import('./kanban-columns')
-    registerKanbanColumnsGuard('test.stages', async () => allow)
+    // The guard is handed the board's RelationOps (to ask the server).
+    registerKanbanColumnsGuard('test.stages', async (_scope, guardOps) => allow && typeof guardOps?.get === 'function')
     const listPage = vi.fn(async (entity: string, o?: Opts) => {
       const rows = (entity === 'project_stage' ? stageStore : (tasks as unknown as Record<string, unknown>[])).filter((r) => matches(r, o))
       return { records: rows as import('./relation-ops').RelationRecord[], total: rows.length }

@@ -75,7 +75,7 @@ describe('resolveWidget', () => {
     const deny: Array<[FieldType, string]> = [
       ['text', 'stars'],
       ['number', 'long'],
-      ['boolean', 'stars'],
+      ['boolean', 'int'],
       ['date', 'phone'],
     ]
     for (const [type, widget] of deny) {

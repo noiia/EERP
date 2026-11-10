@@ -16,3 +16,126 @@ msgstr "En cours"
 
 msgid "Done"
 msgstr "Terminé"
+
+msgid "Active"
+msgstr "Actif"
+
+msgid "Assignees"
+msgstr "Assignés"
+
+msgid "Blocked"
+msgstr "Bloquée"
+
+msgid "Blocked by"
+msgstr "Bloquée par"
+
+msgid "Blocking"
+msgstr "Bloque"
+
+msgid "Closed"
+msgstr "Fermée"
+
+msgid "Date"
+msgstr "Date"
+
+msgid "Deadline"
+msgstr "Échéance"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Done subtasks"
+msgstr "Sous-tâches terminées"
+
+msgid "Done tasks"
+msgstr "Tâches terminées"
+
+msgid "End date"
+msgstr "Date de fin"
+
+msgid "Hours"
+msgstr "Heures"
+
+msgid "Manager"
+msgstr "Responsable"
+
+msgid "Members"
+msgstr "Membres"
+
+msgid "Milestone"
+msgstr "Jalon"
+
+msgid "Milestones"
+msgstr "Jalons"
+
+msgid "My tasks"
+msgstr "Mes tâches"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Parent task"
+msgstr "Tâche parente"
+
+msgid "Planned hours"
+msgstr "Heures prévues"
+
+msgid "Priority"
+msgstr "Priorité"
+
+msgid "Projects"
+msgstr "Projets"
+
+msgid "Reached"
+msgstr "Atteint"
+
+msgid "Reached on"
+msgstr "Atteint le"
+
+msgid "Remaining hours"
+msgstr "Heures restantes"
+
+msgid "Sequence"
+msgstr "Séquence"
+
+msgid "Spent hours"
+msgstr "Heures passées"
+
+msgid "Stage"
+msgstr "Étape"
+
+msgid "Stages"
+msgstr "Étapes"
+
+msgid "Start date"
+msgstr "Date de début"
+
+msgid "Subtask hours"
+msgstr "Heures des sous-tâches"
+
+msgid "Subtasks"
+msgstr "Sous-tâches"
+
+msgid "Tags"
+msgstr "Étiquettes"
+
+msgid "Task"
+msgstr "Tâche"
+
+msgid "Tasks"
+msgstr "Tâches"
+
+msgid "Timesheets"
+msgstr "Feuilles de temps"
+
+msgid "User"
+msgstr "Utilisateur"
+
+msgid "Visibility"
+msgstr "Visibilité"
+
+msgid "everyone"
+msgstr "tout le monde"
+
+msgid "members"
+msgstr "membres uniquement"

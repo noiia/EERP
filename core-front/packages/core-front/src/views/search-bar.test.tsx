@@ -7,11 +7,19 @@ import { SearchBar, toListOptions } from './search-bar'
 import { useSessionStore, type Identity } from './session-store'
 import { useUndoToastStore } from './undo-toast'
 
+// The page URL's query, as Next's useSearchParams serves it (null outside a router).
+const urlParams = vi.hoisted(() => ({ current: null as URLSearchParams | null }))
+vi.mock('next/navigation', async (orig) => ({
+  ...(await orig<typeof import('next/navigation')>()),
+  useSearchParams: () => urlParams.current,
+}))
+
 function identityWith(groups: string[]): Identity {
   return { userId: 'u1', tenantId: 't1', roles: ['tester'], permissions: [], groups }
 }
 
 beforeEach(() => {
+  urlParams.current = null
   useSessionStore.setState({ identity: null })
   useUndoToastStore.setState({ pending: null })
   vi.useRealTimers()
@@ -77,6 +85,12 @@ function renderBar(
 }
 
 describe('SearchBar', () => {
+  it('starts from the URL\'s filter[<field>]= values on filterable fields (a form\'s link to a filtered list)', async () => {
+    urlParams.current = new URLSearchParams('filter[status]=won&filter[secret]=x&filter[nope]=y')
+    const { onFiltersChange } = renderBar()
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { status: 'won' } }))
+  })
+
   it('opens the dropdown with Filters/Group by/Saved filters sections on click', () => {
     renderBar()
     fireEvent.click(screen.getByPlaceholderText('Search…'))

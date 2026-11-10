@@ -103,9 +103,27 @@ func ChildScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 
 // TaskScope: tasks of visible projects, plus the tasks the caller is
 // assigned to (not their subtasks).
+// With the My tasks flag (AssignedToMe) it is only the caller's assigned
+// tasks, admins included: an assigned task is always visible to its assignee.
 func TaskScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
-	return scope(perms, taskSQL)
+	visible := scope(perms, taskSQL)
+	return func(ctx context.Context) (orm.Condition, bool, error) {
+		if ctx.Value(assignedOnlyKey{}) == nil {
+			return visible(ctx)
+		}
+		id, ok := auth.IdentityFromContext(ctx)
+		if !ok {
+			return orm.Condition{}, false, errNoCaller
+		}
+		return orm.Cond(`(project_task.id IN (`+assignedTasks+`))`, id.UserID, id.TenantID), true, nil
+	}
 }
+
+// assigneeParam is the task list's My tasks filter; assignedOnlyKey marks
+// the request context that asked for it.
+const assigneeParam = "filter[assignee]"
+
+type assignedOnlyKey struct{}
 
 // TaskChildScope: rows of a task (timesheets, assignees, tags,
 // dependencies) of visible projects, plus those of the caller's own tasks.

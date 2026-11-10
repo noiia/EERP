@@ -15,3 +15,126 @@ msgstr ""
 
 msgid "Done"
 msgstr ""
+
+msgid "Active"
+msgstr ""
+
+msgid "Assignees"
+msgstr ""
+
+msgid "Blocked"
+msgstr ""
+
+msgid "Blocked by"
+msgstr ""
+
+msgid "Blocking"
+msgstr ""
+
+msgid "Closed"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Deadline"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Done subtasks"
+msgstr ""
+
+msgid "Done tasks"
+msgstr ""
+
+msgid "End date"
+msgstr ""
+
+msgid "Hours"
+msgstr ""
+
+msgid "Manager"
+msgstr ""
+
+msgid "Members"
+msgstr ""
+
+msgid "Milestone"
+msgstr ""
+
+msgid "Milestones"
+msgstr ""
+
+msgid "My tasks"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Parent task"
+msgstr ""
+
+msgid "Planned hours"
+msgstr ""
+
+msgid "Priority"
+msgstr ""
+
+msgid "Projects"
+msgstr ""
+
+msgid "Reached"
+msgstr ""
+
+msgid "Reached on"
+msgstr ""
+
+msgid "Remaining hours"
+msgstr ""
+
+msgid "Sequence"
+msgstr ""
+
+msgid "Spent hours"
+msgstr ""
+
+msgid "Stage"
+msgstr ""
+
+msgid "Stages"
+msgstr ""
+
+msgid "Start date"
+msgstr ""
+
+msgid "Subtask hours"
+msgstr ""
+
+msgid "Subtasks"
+msgstr ""
+
+msgid "Tags"
+msgstr ""
+
+msgid "Task"
+msgstr ""
+
+msgid "Tasks"
+msgstr ""
+
+msgid "Timesheets"
+msgstr ""
+
+msgid "User"
+msgstr ""
+
+msgid "Visibility"
+msgstr ""
+
+msgid "everyone"
+msgstr ""
+
+msgid "members"
+msgstr ""

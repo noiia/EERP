@@ -295,6 +295,39 @@ describe('relation/search (many2one)', () => {
     })
   })
 
+  describe('relation.filterFields — scope by a sibling field of the draft (project\'s stage_id by project_id)', () => {
+    const scopedField: FieldDescriptor = {
+      ...searchField,
+      relation: { ...searchField.relation!, filter: { kind: 'x' }, filterFields: { project_id: 'project_id' } },
+    }
+
+    it('adds the draft value to the static filter, on the dropdown and the wizard', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops, { draft: { project_id: 'p1' } })
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'ac' } })
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith('contact', expect.objectContaining({ filter: { kind: 'x', project_id: 'p1' } })),
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Open selection wizard' }))
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenLastCalledWith('contact', expect.objectContaining({ filter: { kind: 'x', project_id: 'p1' } })),
+      )
+    })
+
+    it('leaves the column out while the sibling field is empty', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops, { draft: { project_id: null } })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open selection wizard' }))
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith('contact', expect.objectContaining({ filter: { kind: 'x' } })),
+      )
+    })
+  })
+
   describe('click-to-navigate', () => {
     beforeEach(() => {
       pushMock.mockClear()

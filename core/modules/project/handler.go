@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -28,6 +29,7 @@ func NewHandler(db *orm.DB, perms *auth.PermissionRepository) *Handler {
 
 // Generic is the generic CRUD handler of one table (ormserver.BuildHandlers).
 type Generic interface {
+	List(*echo.Context) error
 	Create(*echo.Context) error
 	Update(*echo.Context) error
 	Delete(*echo.Context) error
@@ -68,7 +70,23 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		e.DELETE(base+"/:id", del, with...)
 		e.POST(base+"/:id/restore", g.Restore, with...)
 	}
+	e.GET("/api/v1/project_task", AssignedToMe(generic("project_task").List), mw...)
 	e.GET("/api/v1/project/:id/can_manage", h.CanManage, mw...)
+}
+
+// AssignedToMe serves the task list's filter[assignee]=me (the My tasks
+// page): assignees live in project_task_user, not on the task row, so the
+// param is taken off the query and TaskScope narrows to the caller's own
+// assignments. Any other value stays, and the generic list refuses it (400).
+func AssignedToMe(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		if q := c.QueryParams(); q.Get(assigneeParam) == "me" {
+			q.Del(assigneeParam) // QueryParams is the context's cached map
+			r := c.Request()
+			c.SetRequest(r.WithContext(context.WithValue(r.Context(), assignedOnlyKey{}, true)))
+		}
+		return next(c)
+	}
 }
 
 // conflict is a refused delete.

@@ -106,7 +106,7 @@ export type JsonValue =
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
   text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username', 'user-presence', 'html'],
   number: ['float', 'int', 'percent', 'stars', 'duration', 'phone', 'monetary'],
-  boolean: ['switch', 'picture', 'signature', 'file'],
+  boolean: ['switch', 'picture', 'signature', 'file', 'stars'],
   date: ['simple', 'datetime'],
   relation: ['search', 'tags', 'list', 'carousel', 'summary'],
   address: ['form'],
@@ -192,6 +192,13 @@ export interface RelationDescriptor {
    * unchanged.
    */
   filter?: Record<string, string>
+  /**
+   * many2one only: a scope read from THIS record's draft, as `{ <related
+   * column>: <own field name> }` — merged over `filter`, e.g. a task's
+   * `stage_id` offering only its own project's stages (`{ project_id:
+   * 'project_id' }`). A column whose own field is empty is left out.
+   */
+  filterFields?: Record<string, string>
 }
 
 /**

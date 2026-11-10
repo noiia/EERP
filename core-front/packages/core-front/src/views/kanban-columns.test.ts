@@ -72,7 +72,7 @@ describe('resolveDropTarget', () => {
 describe('kanban columns guard registry', () => {
   it('returns the registered guard by name, undefined otherwise', async () => {
     registerKanbanColumnsGuard('test.guard', async (scope) => scope === 'A')
-    await expect(kanbanColumnsGuard('test.guard')?.('A')).resolves.toBe(true)
+    await expect(kanbanColumnsGuard('test.guard')?.('A', null)).resolves.toBe(true)
     expect(kanbanColumnsGuard('missing')).toBeUndefined()
   })
 })

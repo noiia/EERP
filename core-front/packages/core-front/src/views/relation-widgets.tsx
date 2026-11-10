@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -111,6 +111,22 @@ export function relationOf(field: FieldDescriptor): RelationDescriptor {
   return field.relation as RelationDescriptor
 }
 
+/** `rel` with its `filterFields` resolved from the draft into `filter`
+ * (stable while the resolved values don't change, so reads aren't re-run). */
+function useScopedRelation(rel: RelationDescriptor, draft?: Record<string, unknown>): RelationDescriptor {
+  const scope: Record<string, string> = {}
+  for (const [column, own] of Object.entries(rel.filterFields ?? {})) {
+    const v = draft?.[own]
+    if (v != null && v !== '') scope[column] = String(v)
+  }
+  const key = JSON.stringify(scope)
+  return useMemo(
+    () => (key === '{}' ? rel : { ...rel, filter: { ...rel.filter, ...scope } }),
+    // `scope` is captured by `key`.
+    [rel, key],
+  )
+}
+
 /**
  * Debounced related-entity search, bound to one relation target.
  * `excludeId` (by design, on every relation field, no per-field opt-in —
@@ -135,6 +151,9 @@ function useRelationSearch(
     },
     [],
   )
+
+  // A new scope (filterFields) invalidates the options found under the old one.
+  useEffect(() => setOptions([]), [rel.filter])
 
   const search = (text: string) => {
     if (!ops) return
@@ -756,10 +775,11 @@ export function RelationSearchWidget({
   onChangeField,
   disabled,
   recordId,
+  draft,
 }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
-  const rel = relationOf(field)
+  const rel = useScopedRelation(relationOf(field), draft)
   const router = useRouter()
   const formPath = moduleRegistry.formPathFor(rel.entity)
   const { labelField, options, search, prefill } = useRelationSearch(ops, rel, recordId)

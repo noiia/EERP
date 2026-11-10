@@ -794,6 +794,21 @@ function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
   )
 }
 
+/** One star for a boolean (e.g. a task's priority): clicking it again clears it. */
+function BooleanStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  return (
+    <Box>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {t(fieldLabel(field))}
+        </Typography>
+      )}
+      <Rating max={1} readOnly={disabled} value={value === true ? 1 : 0} onChange={(_e, next) => onChange(next === 1)} />
+    </Box>
+  )
+}
+
 // ── phone (allowed on text — recommended — and number) ────────────────────────
 
 /**
@@ -916,6 +931,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'number/duration': NumberDurationWidget,
   'number/phone': PhoneWidget,
   'boolean/switch': BooleanSwitchWidget,
+  'boolean/stars': BooleanStarsWidget,
   'boolean/picture': BooleanPictureWidget,
   'boolean/file': BooleanFileWidget,
   'boolean/signature': BooleanSignatureWidget,

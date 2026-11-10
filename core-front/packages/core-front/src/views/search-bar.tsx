@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -341,6 +342,19 @@ export function SearchBar<T extends HasId>({
 
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (liveTimer.current) clearTimeout(liveTimer.current) }, [])
+
+  // The URL's filter[<field>]=<value> on a filterable field starts the bar
+  // with that exact-match filter (e.g. a project form's link to its tasks).
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    if (!searchParams) return
+    const seeded: FilterCondition[] = filterFields.flatMap((f) => {
+      const value = searchParams.get(`filter[${f.name}]`)
+      return value ? [{ field: f.name, op: 'eq' as const, value }] : []
+    })
+    if (seeded.length > 0) void applyFilters(seeded)
+    // Seeds on navigation only (applyFilters is deliberately not a dependency).
+  }, [searchParams, filterFields])
 
   function onQueryChange(text: string) {
     setQuery(text)

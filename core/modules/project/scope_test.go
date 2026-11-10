@@ -300,3 +300,44 @@ func TestIsAdmin_Permissions(t *testing.T) {
 		}
 	}
 }
+
+// My tasks: filter[assignee]=me keeps the caller's own assigned tasks, for
+// admins too; any other value is a 400.
+func TestRowScope_AssignedToMe(t *testing.T) {
+	f := newFixture(t)
+	manager, user, admin := uuid.New(), uuid.New(), uuid.New()
+	p := f.project(manager, "everyone")
+	mine, adminTask := f.task(p, nil, nil), f.task(p, nil, nil)
+	f.task(p, nil, nil)
+	f.assign(p, mine, user)
+	f.assign(p, adminTask, admin)
+
+	for name, tc := range map[string]struct {
+		who  auth.Identity
+		want string
+	}{
+		"user":  {f.caller(user), mine.String()},
+		"admin": {f.caller(admin, AdminGroup), adminTask.String()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			code, body := f.get(tc.who, "project_task?filter[assignee]=me")
+			data, _ := body["data"].([]any)
+			if code != http.StatusOK || len(data) != 1 || data[0].(map[string]any)["id"] != tc.want {
+				t.Fatalf("got %d %v, want only %s", code, body, tc.want)
+			}
+			if n := f.total(tc.who, "project_task?filter[assignee]=me&distinct=project_id"); n < 0 {
+				t.Fatal("distinct failed")
+			}
+		})
+	}
+	t.Run("unscoped list unchanged", func(t *testing.T) {
+		if n := f.total(f.caller(user), "project_task"); n != 3 {
+			t.Fatalf("total %d, want 3", n)
+		}
+	})
+	t.Run("other value refused", func(t *testing.T) {
+		if code, _ := f.get(f.caller(user), "project_task?filter[assignee]=someone"); code != http.StatusBadRequest {
+			t.Fatalf("got %d, want 400", code)
+		}
+	})
+}
