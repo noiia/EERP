@@ -18,6 +18,7 @@ import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import type { GanttDependenciesConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
+import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
 import { BannerScope, BannerSlot } from './banner'
 import { colorStripes } from './color-tags'
@@ -250,6 +251,8 @@ export function GanttRenderer<T extends HasId>({
   }, [serverKey, fromIso, untilIso, startField, endField, descriptor.entity])
 
   const { records, error, moveFields } = useOptimisticFieldMove(server?.records ?? initialData, actions, startField)
+  const moveFieldsRef = useRef(moveFields)
+  moveFieldsRef.current = moveFields
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
@@ -344,25 +347,39 @@ export function GanttRenderer<T extends HasId>({
     commit(values, record.id, patch, true)
   }
 
+  /** A bar dropped off the timeline: its start is cleared (the end, e.g. a
+   * deadline, is kept), so it returns to the Unscheduled panel — undoable. */
+  function unschedule(record: T) {
+    const start = (record as Record<string, unknown>)[startField]
+    commit(record as Record<string, unknown>, record.id, { [startField]: null }, true)
+    useUndoToastStore.getState().show({
+      message: `${t('Unscheduled')} "${label(record)}"`,
+      // The toast outlives this render: go through the ref to the latest moveFields.
+      onRecover: () => void moveFieldsRef.current(record.id, { [startField]: start }),
+    })
+  }
+
   function finishDrag() {
     const d = dragRef.current
     dragRef.current = null
     setDrag(null)
     if (!d) return
+    const track = trackRef.current?.getBoundingClientRect()
+    const grid = gridRef.current?.getBoundingClientRect()
+    const onTimeline =
+      !!track && !!grid && track.width > 0 && d.x >= track.left && d.x < track.right && d.y >= grid.top && d.y <= grid.bottom
     if (d.mode === 'place') {
       const record = unscheduled.find((r) => r.id === d.id)
       if (!record) return
       if (!d.moved) return openForm(record)
-      const track = trackRef.current?.getBoundingClientRect()
-      const grid = gridRef.current?.getBoundingClientRect()
-      if (!track || !grid || track.width <= 0) return
-      if (d.x < track.left || d.x >= track.right || d.y < grid.top || d.y > grid.bottom) return
+      if (!onTimeline) return
       placeRecord(record, addDays(range.start, Math.floor(((d.x - track.left) / track.width) * totalDays)))
       return
     }
     const row = rows.find((r) => r.record.id === d.id)
     if (!row) return
     if (d.mode === 'move' && !d.moved) return openForm(row.record)
+    if (d.mode === 'move' && !onTimeline) return unschedule(row.record)
     shiftRow(row, d.mode, d.delta)
   }
 

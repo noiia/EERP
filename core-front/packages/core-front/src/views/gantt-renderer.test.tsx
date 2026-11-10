@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const pushMock = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -7,6 +7,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { GanttRenderer } from './gantt-renderer'
+import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
 import { RelationOpsProvider, type RelationOps } from './relation-ops'
@@ -341,6 +342,36 @@ describe('GanttRenderer', () => {
       expect(screen.queryByTestId('gantt-handle-end-1')).toBeNull()
       drag(screen.getByTestId('gantt-bar-1'), 300)
       expect(update).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('dragging a bar off the timeline', () => {
+    beforeEach(() => sizeTrack())
+
+    it('clears its start, puts it back in Unscheduled, and Undo restores it', async () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      const bar = screen.getByTestId('gantt-bar-1')
+      fireEvent.pointerDown(bar, { clientX: 500, clientY: 10, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: 1600, clientY: 300, pointerId: 1 })
+      fireEvent.pointerUp(window, { clientX: 1600, clientY: 300, pointerId: 1 })
+      await waitFor(() => expect(update).toHaveBeenCalledWith('1', { date_start: null }))
+      expect(screen.getByTestId('gantt-unscheduled-1')).toBeInTheDocument()
+      expect(screen.queryByTestId('gantt-bar-1')).toBeNull()
+      expect(useUndoToastStore.getState().pending?.message).toBe('Unscheduled "Alpha"')
+      act(() => useUndoToastStore.getState().recover())
+      await waitFor(() => expect(update).toHaveBeenLastCalledWith('1', { date_start: alpha.date_start }))
+      expect(await screen.findByTestId('gantt-bar-1')).toBeInTheDocument()
+    })
+
+    it('an edge handle dragged off the timeline only resizes, never unschedules', async () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      fireEvent.pointerDown(screen.getByTestId('gantt-handle-end-1'), { clientX: 500, clientY: 10, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: 700, clientY: 300, pointerId: 1 })
+      fireEvent.pointerUp(window, { clientX: 700, clientY: 300, pointerId: 1 })
+      await waitFor(() => expect(update).toHaveBeenCalled())
+      expect(update.mock.calls[0][1]).not.toHaveProperty('date_start')
     })
   })
 
