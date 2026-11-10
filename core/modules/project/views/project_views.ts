@@ -151,6 +151,7 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   enableGraphs: true,
   ganttStartField: 'date_start',
   ganttEndField: 'deadline',
+  ganttDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
 }
 
 const taskFormFields: Fields = [

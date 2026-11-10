@@ -42,6 +42,7 @@ describe('project views', () => {
       enableGraphs: true,
       ganttStartField: 'date_start',
       ganttEndField: 'deadline',
+      ganttDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)
