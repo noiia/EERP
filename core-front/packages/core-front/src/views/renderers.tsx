@@ -1,7 +1,7 @@
 'use client'
 import { formatTotal } from './total-format'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { IntentLink } from '../intent-link'
 import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
@@ -174,7 +174,9 @@ export function EntityView<T extends HasId>(rawProps: EntityViewProps<T>) {
  * formPath and createPermission AND the session's role-derived permissions grant
  * it (the client mirror — display gating only, Go re-authorizes the POST).
  * Navigates to the empty form (formPath with ':id' → 'new'); the form store
- * creates on commit since the draft has no id.
+ * creates on commit since the draft has no id. The list URL's filter[<col>]
+ * params ride along, so the new form starts linked to the record the list is
+ * scoped to (newFormSeed).
  *
  * Exported so a host page can place it inline on its own title row (right
  * side) next to the tree view — most host pages (e.g. Settings -> Users)
@@ -191,10 +193,16 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
   const { formPath, createPermission } = descriptor
   // The hook runs unconditionally (rules of hooks); '' never matches a grant.
   const allowed = usePermission(createPermission ?? '')
+  const searchParams = useSearchParams()
   if (!formPath || !createPermission || !allowed) return null
+  const filters = new URLSearchParams()
+  searchParams?.forEach((value, key) => {
+    if (key.startsWith('filter[')) filters.append(key, value)
+  })
+  const query = filters.size > 0 ? `?${filters.toString()}` : ''
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-      <Button variant="contained" onClick={() => router.push(erpPath(formPath.replace(':id', 'new')))}>
+      <Button variant="contained" onClick={() => router.push(erpPath(formPath.replace(':id', 'new')) + query)}>
         {t('Create')}
       </Button>
     </Box>
@@ -202,6 +210,23 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
 }
 
 // --- form ---
+
+/**
+ * A new record's starting values from the URL's filter[<col>]=<id> (CreateBar
+ * forwards its list's): many2one fields only — an id is unambiguous, while
+ * other filters (`filter[active]=true`) are text that may not match the type.
+ */
+export function newFormSeed<T extends HasId>(
+  descriptor: ViewDescriptor<T>,
+  params: Pick<URLSearchParams, 'get'> | null,
+): Partial<T> {
+  const seed: Record<string, unknown> = {}
+  for (const f of descriptor.fields) {
+    const value = params?.get(`filter[${f.name}]`)
+    if (value && f.type === 'relation' && f.relation?.kind === 'many2one') seed[f.name] = value
+  }
+  return seed as Partial<T>
+}
 
 function displayValue(value: unknown): string {
   if (value == null || value === '') return '—'
@@ -378,7 +403,10 @@ function FormRenderer<T extends HasId>({
   const t = useT()
   const router = useRouter()
   const pathname = usePathname()
-  const [store] = useState(() => createFormStore(descriptor, actions, initialData[0] ?? {}))
+  const searchParams = useSearchParams()
+  const [store] = useState(() =>
+    createFormStore(descriptor, actions, initialData[0] ?? newFormSeed(descriptor, searchParams)),
+  )
   const draft = useFormDraft(store)
   const dirty = useFormDirty(store)
   const error = useFormError(store)

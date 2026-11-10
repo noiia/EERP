@@ -47,6 +47,26 @@ import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
 
 type Zoom = 'day' | 'week' | 'month'
 
+// The zoom is kept per entity for the browser tab's session, so going to a record and
+// back to the Gantt keeps the scale the user picked. Storage can throw (private mode).
+const zoomKey = (entity: string) => `eerp.gantt.zoom.${entity}`
+function readZoom(entity: string): Zoom {
+  try {
+    const v = sessionStorage.getItem(zoomKey(entity))
+    if (v === 'day' || v === 'week' || v === 'month') return v
+  } catch {
+    // no storage: default below
+  }
+  return 'week'
+}
+function writeZoom(entity: string, zoom: Zoom) {
+  try {
+    sessionStorage.setItem(zoomKey(entity), zoom)
+  } catch {
+    // not persisted, still applied
+  }
+}
+
 const DAY_MS = 86_400_000
 /** Rows per request while paging the visible range. */
 const GANTT_PAGE_SIZE = 200
@@ -188,7 +208,7 @@ export function GanttRenderer<T extends HasId>({
   const relationOps = useRelationOps()
   const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
   const { formPath } = descriptor
-  const [zoom, setZoom] = useState<Zoom>('week')
+  const [zoom, setZoom] = useState<Zoom>(() => readZoom(descriptor.entity))
   const [anchor, setAnchor] = useState(() => new Date())
   const range = viewRange(zoom, anchor)
   const totalDays = dayDiff(range.end, range.start)
@@ -563,7 +583,9 @@ export function GanttRenderer<T extends HasId>({
               exclusive
               value={zoom}
               onChange={(_e, next: Zoom | null) => {
-                if (next) setZoom(next)
+                if (!next) return
+                setZoom(next)
+                writeZoom(descriptor.entity, next)
               }}
               aria-label={t('Zoom')}
             >

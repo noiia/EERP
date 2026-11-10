@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const pushMock = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -72,6 +72,7 @@ describe('GanttRenderer', () => {
     actions = { create: vi.fn(async (b) => b as Task), update }
     pushMock.mockReset()
     grant(true)
+    sessionStorage.clear()
   })
 
   afterEach(() => {
@@ -84,6 +85,18 @@ describe('GanttRenderer', () => {
       <GanttRenderer descriptor={d} initialData={data} actions={actions} startField="date_start" endField="deadline" />,
     )
   }
+
+  it('keeps the chosen zoom per entity for the session', () => {
+    renderGantt()
+    expect(screen.getByRole('button', { name: 'Week' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }))
+    cleanup()
+    renderGantt()
+    expect(screen.getByRole('button', { name: 'Month' })).toHaveAttribute('aria-pressed', 'true')
+    cleanup()
+    renderGantt([alpha, beta], { ...descriptor, entity: 'other' })
+    expect(screen.getByRole('button', { name: 'Week' })).toHaveAttribute('aria-pressed', 'true')
+  })
 
   it('marks today on the timeline only while today is in the visible range', () => {
     renderGantt()

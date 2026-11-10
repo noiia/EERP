@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -147,7 +148,88 @@ func (h *AdminHandler) ListUsers(c *echo.Context) error {
 	for _, u := range users {
 		data = append(data, toUserResponse(u))
 	}
+	data, err = filterUsers(data, c.QueryParams())
+	if err != nil {
+		return adminErrorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+	}
 	return c.JSON(http.StatusOK, listEnvelope{Data: data, Total: len(data)})
+}
+
+// filterUsers applies the generic list's search[<col>] (case-insensitive
+// contains, ANDed) and in[id] params, so relation pickers search users and
+// resolve their labels like any other entity. An unknown column is a 400.
+// shortcut: filters in memory over the tenant's staff users; move to SQL if a tenant gets thousands.
+func filterUsers(data []adminUserResponse, q map[string][]string) ([]adminUserResponse, error) {
+	search := map[string]string{}
+	var ids map[string]bool
+	for key, values := range q {
+		if len(values) == 0 {
+			continue
+		}
+		switch {
+		case key == "in[id]":
+			ids = map[string]bool{}
+			for _, id := range strings.Split(values[0], ",") {
+				ids[strings.TrimSpace(id)] = true
+			}
+		case strings.HasPrefix(key, "search[") && strings.HasSuffix(key, "]"):
+			if text := strings.ToLower(values[0]); text != "" {
+				search[key[len("search["):len(key)-1]] = text
+			}
+		}
+	}
+	if len(search) == 0 && ids == nil {
+		return data, nil
+	}
+	out := make([]adminUserResponse, 0, len(data))
+	for _, u := range data {
+		if ids != nil && !ids[u.ID.String()] {
+			continue
+		}
+		row, err := userColumns(u)
+		if err != nil {
+			return nil, err
+		}
+		keep := true
+		for col, text := range search {
+			v, ok := row[col]
+			if !ok {
+				return nil, fmt.Errorf("unknown column %q", col)
+			}
+			if !strings.Contains(strings.ToLower(v), text) {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+// userColumns is a user's wire row as text per JSON column (null = "").
+func userColumns(u adminUserResponse) (map[string]string, error) {
+	raw, err := json.Marshal(u)
+	if err != nil {
+		return nil, fmt.Errorf("admin: encode user: %w", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, fmt.Errorf("admin: decode user: %w", err)
+	}
+	row := make(map[string]string, len(fields))
+	for k, v := range fields {
+		switch v := v.(type) {
+		case nil:
+			row[k] = ""
+		case string:
+			row[k] = v
+		default:
+			row[k] = fmt.Sprint(v)
+		}
+	}
+	return row, nil
 }
 
 // userWriteRequest is the wire shape CreateUser/UpdateUser bind — every

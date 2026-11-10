@@ -26,6 +26,7 @@ import {
 } from './kanban-columns'
 import { ErrorAlert } from './error-alert'
 import { orderedFields } from './layout-fields'
+import { useRelationLabels } from './use-relation-labels'
 import { formatTotal } from './total-format'
 import { useRelationOps, type RelationRecord } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
@@ -245,6 +246,10 @@ export function KanbanRenderer<T extends HasId>({
 
   const { records, error, moveField } = useOptimisticFieldMove(server?.records ?? initialData, actions, statusField)
   const { colors } = useRecordColors(descriptor.entity, colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField), records.map((r) => r.id))
+  const labelOf = useRelationLabels(
+    cardFields,
+    records.flatMap((r) => cardFields.map((f): [string, unknown] => [f.name, (r as Record<string, unknown>)[f.name]])),
+  )
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
@@ -459,7 +464,7 @@ export function KanbanRenderer<T extends HasId>({
                               variant={i === 0 ? 'body2' : 'caption'}
                               sx={{ display: 'block', fontWeight: i === 0 ? 600 : 400 }}
                             >
-                              {String((record as Record<string, unknown>)[f.name] ?? '')}
+                              {labelOf(f.name, (record as Record<string, unknown>)[f.name])}
                             </Typography>
                           ))}
                           {badgeDescriptor && (record as Record<string, unknown>)[badgeDescriptor.name] === true ? (

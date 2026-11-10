@@ -56,6 +56,34 @@ describe('KanbanRenderer', () => {
     pushMock.mockReset()
   })
 
+  it('shows a many2one value on a card by its record\'s label, never its id', async () => {
+    const withProject: ViewDescriptor<Deal & { project_id?: string }> = {
+      ...descriptor,
+      fields: [
+        ...descriptor.fields,
+        { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one', labelField: 'name' } },
+      ],
+    }
+    const ops: RelationOps = {
+      list: vi.fn(async () => [{ id: 'p-1', name: 'Apollo' }]),
+      get: vi.fn(),
+      create: vi.fn(),
+      remove: vi.fn(),
+    }
+    render(
+      <ColorOpsProvider ops={ops}>
+        <KanbanRenderer
+          descriptor={withProject}
+          initialData={[{ id: '1', name: 'Acme', status: 'open', project_id: 'p-1' }]}
+          actions={actions as EntityActions<Deal & { project_id?: string }>}
+          statusField="status"
+        />
+      </ColorOpsProvider>,
+    )
+    expect(await screen.findByText('Apollo')).toBeInTheDocument()
+    expect(screen.queryByText('p-1')).toBeNull()
+  })
+
   it('renders one column per declared selection option, in order, plus a trailing No status column', () => {
     render(
       <KanbanRenderer

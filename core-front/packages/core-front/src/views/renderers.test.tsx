@@ -8,10 +8,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 const pushMock = vi.fn()
 const prefetchMock = vi.fn()
 let mockPathname = '/app/crm/c1'
+let mockSearchParams: URLSearchParams | null = null
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, prefetch: prefetchMock }),
   usePathname: () => mockPathname,
-  useSearchParams: () => null,
+  useSearchParams: () => mockSearchParams,
 }))
 
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
@@ -23,7 +24,7 @@ import { moduleRegistry } from '../registry'
 import { menuActionRegistry, registerMenuAction } from './menu-actions'
 import { useRecordLabelStore } from './record-label-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
-import { CreateBar, EntityView } from './renderers'
+import { CreateBar, EntityView, newFormSeed } from './renderers'
 import { useSessionStore, type Identity } from './session-store'
 import { useUiStore } from './ui-store'
 import { useUndoToastStore } from './undo-toast'
@@ -37,6 +38,7 @@ function identityWith(permissions: string[]): Identity {
 beforeEach(() => {
   pushMock.mockClear()
   mockPathname = '/app/crm/c1'
+  mockSearchParams = null
   useSessionStore.setState({ identity: null })
   useUiStore.setState({ viewMode: {} })
   useRecordLabelStore.setState({ id: null, label: null })
@@ -1516,6 +1518,14 @@ describe('EntityView', () => {
       expect(pushMock).toHaveBeenCalledWith('/app/crm/new')
     })
 
+    it('carries the list\'s filter[] params to the new form', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:contacts:write']) })
+      mockSearchParams = new URLSearchParams('filter[project_id]=p1&page=2')
+      render(<CreateBar descriptor={creatableList} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+      expect(pushMock).toHaveBeenCalledWith('/app/crm/new?filter%5Bproject_id%5D=p1')
+    })
+
     it('honors role wildcards from the session mirror', () => {
       useSessionStore.setState({ identity: identityWith(['*:*:*']) })
       render(<CreateBar descriptor={creatableList} />)
@@ -1677,5 +1687,26 @@ describe('tree Distance column', () => {
     }
     render(<EntityView descriptor={withGeo} initialData={[{ id: '1', name: 'A' }]} actions={noopActions} />)
     expect(screen.queryByText('Map spot')).not.toBeInTheDocument()
+  })
+})
+
+describe('newFormSeed', () => {
+  const tasks: ViewDescriptor<{ id: string }> = {
+    entity: 'project_task',
+    viewType: 'form',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'active', label: 'Active', type: 'boolean' },
+      { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one' } },
+    ],
+  }
+
+  it('seeds many2one fields only from filter[] params', () => {
+    const params = new URLSearchParams('filter[project_id]=p1&filter[active]=true&filter[name]=x')
+    expect(newFormSeed(tasks, params)).toEqual({ project_id: 'p1' })
+  })
+
+  it('seeds nothing without params', () => {
+    expect(newFormSeed(tasks, null)).toEqual({})
   })
 })

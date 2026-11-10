@@ -445,6 +445,21 @@ describe('relation/tags (many2many)', () => {
     expect(await screen.findByText('Globex')).toBeInTheDocument()
   })
 
+  it('clears the typed text once a value is picked', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+    })
+    renderWidget(tagsField, ops)
+
+    const input = screen.getByRole('combobox') as HTMLInputElement
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'glo' } })
+    fireEvent.click(await screen.findByText('Globex'))
+
+    await waitFor(() => expect(ops.create).toHaveBeenCalled())
+    expect(input.value).toBe('')
+  })
+
   it('create-from-search: the last option creates the tag AND its junction row', async () => {
     const create = vi.fn(async (entity: string, body: Record<string, unknown>) =>
       entity === 'tag' ? { id: 't-new', ...body } : { id: 'j-new', ...body },

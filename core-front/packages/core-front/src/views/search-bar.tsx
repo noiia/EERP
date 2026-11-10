@@ -28,6 +28,7 @@ import {
 } from './descriptor'
 import { GeoCenterInput, ZoneRecordInput } from './geo-filter-inputs'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { useRelationLabels } from './use-relation-labels'
 import { useRelationOps } from './relation-ops'
 import { useSavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
 import { useSessionStore } from './session-store'
@@ -340,6 +341,14 @@ export function SearchBar<T extends HasId>({
     [descriptor, callerGroups],
   )
 
+  // Relation filters and group-by values carry ids: show their records' labels.
+  const labelOf = useRelationLabels(descriptor.fields, [
+    ...filters.flatMap((f): [string, unknown][] =>
+      (f.op === 'in' ? (f.values ?? []) : [f.value]).map((v) => [f.field, v]),
+    ),
+    ...(groupField ? (groupValues ?? []).map((v): [string, unknown] => [groupField, v.value]) : []),
+  ])
+
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (liveTimer.current) clearTimeout(liveTimer.current) }, [])
 
@@ -573,7 +582,7 @@ export function SearchBar<T extends HasId>({
                 label={
                   geoChipLabel(f, t)
                     ? `${fieldLabelOf(descriptor, f.field)}: ${geoChipLabel(f, t)}`
-                    : `${fieldLabelOf(descriptor, f.field)} ${t(OPERATOR_LABEL[f.op])} ${f.op === 'in' ? (f.values ?? []).join(', ') : f.value}`
+                    : `${fieldLabelOf(descriptor, f.field)} ${t(OPERATOR_LABEL[f.op])} ${f.op === 'in' ? (f.values ?? []).map((v) => labelOf(f.field, v)).join(', ') : labelOf(f.field, f.value)}`
                 }
                 onDelete={() => removeFilter(i)}
               />
@@ -683,7 +692,7 @@ export function SearchBar<T extends HasId>({
                   <Chip
                     key={v.value}
                     size="small"
-                    label={`${v.value || t('(none)')} (${v.total})`}
+                    label={`${(v.value && labelOf(groupField, v.value)) || t('(none)')} (${v.total})`}
                     onClick={() => applyGroupValue(groupField, v.value)}
                   />
                 ))}

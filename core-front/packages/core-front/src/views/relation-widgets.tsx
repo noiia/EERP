@@ -1210,6 +1210,11 @@ export function RelationTagsWidget({
     : links
   const linkedIds = new Set(visible.map((l) => l.related.id))
 
+  const clearInput = () => {
+    setInputText('')
+    search('')
+  }
+
   const add = (option: RelationRecord) => {
     if (deferred) {
       onChange({ ...pending, toLink: [...pending.toLink, option] })
@@ -1311,9 +1316,12 @@ export function RelationTagsWidget({
               }}
               isOptionEqualToValue={(o, v) => o.id === v.id}
               onOpen={prefill}
+              // Controlled: MUI keeps the typed text after a pick when the value
+              // stays null, so a pick clears it (and the search) itself.
+              inputValue={inputText}
               onInputChange={(_e, text, reason) => {
                 // 'reset' (option selected) must not wipe the text the wizard reads.
-                if (reason === 'input') {
+                if (reason === 'input' || reason === 'clear') {
                   setInputText(text)
                   search(text)
                 }
@@ -1323,8 +1331,12 @@ export function RelationTagsWidget({
               value={null}
               onChange={(_e, option) => {
                 if (!option) return
-                if (isCreateOption(option)) setCreateOpen(true)
-                else add(option)
+                if (isCreateOption(option)) {
+                  setCreateOpen(true)
+                  return
+                }
+                add(option)
+                clearInput()
               }}
               disabled={disabled}
               size="small"
@@ -1351,6 +1363,7 @@ export function RelationTagsWidget({
           onClose={() => setCreateOpen(false)}
           onSubmit={async (name, color) => {
             add(await ops.create(rel.entity, { [labelField]: name, [colorField]: color }))
+            clearInput()
           }}
         />
       ) : createOpen ? (
@@ -1360,7 +1373,10 @@ export function RelationTagsWidget({
           preset={inputText ? { [labelField]: inputText } : {}}
           onClose={() => setCreateOpen(false)}
           // The freshly created record links immediately: one junction row.
-          onCreated={add}
+          onCreated={(created) => {
+            add(created)
+            clearInput()
+          }}
         />
       ) : null}
     </Box>

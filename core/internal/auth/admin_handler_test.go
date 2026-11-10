@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -386,5 +387,52 @@ func TestAdminGetRole_NotFound(t *testing.T) {
 	rec := serveAdmin(t, h.GetRole, http.MethodGet, "/roles/"+uuid.NewString(), uuid.NewString(), "", identity)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminListUsers_SearchAndIDs(t *testing.T) {
+	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	ann, bob := uuid.New(), uuid.New()
+	users := &stubAdminUsers{users: []Users{
+		{BaseModel: model.BaseModel{ID: ann}, Email: "ann@x.io", DisplayName: "Ann Smith"},
+		{BaseModel: model.BaseModel{ID: bob}, Email: "bob@x.io", DisplayName: "Bob"},
+	}}
+	h := NewAdminHandler(users, &stubAdminRoles{})
+
+	emails := func(target string) ([]string, int) {
+		rec := serveAdmin(t, h.ListUsers, http.MethodGet, target, "", "", identity)
+		var resp struct {
+			Data []struct {
+				Email string `json:"email"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		out := []string{}
+		for _, d := range resp.Data {
+			out = append(out, d.Email)
+		}
+		return out, rec.Code
+	}
+
+	for _, tc := range []struct {
+		name, target string
+		want         []string
+		code         int
+	}{
+		{"search is case-insensitive contains", "/users?search%5Bemail%5D=ANN", []string{"ann@x.io"}, 200},
+		{"searches other columns", "/users?search%5Bdisplay_name%5D=smith", []string{"ann@x.io"}, 200},
+		{"in[id] keeps the listed ids", "/users?in%5Bid%5D=" + bob.String(), []string{"bob@x.io"}, 200},
+		{"no params lists everyone", "/users", []string{"ann@x.io", "bob@x.io"}, 200},
+		{"unknown column is a 400", "/users?search%5Bnope%5D=a", []string{}, 400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, code := emails(tc.target)
+			if code != tc.code {
+				t.Fatalf("status = %d, want %d", code, tc.code)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("emails = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

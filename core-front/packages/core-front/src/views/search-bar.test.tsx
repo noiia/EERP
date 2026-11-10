@@ -85,6 +85,27 @@ function renderBar(
 }
 
 describe('SearchBar', () => {
+  it('shows a relation filter by its record\'s label, never its id', async () => {
+    urlParams.current = new URLSearchParams('filter[project_id]=p-1')
+    const list = vi.fn(async (entity: string) => (entity === 'project' ? [{ id: 'p-1', name: 'Apollo' }] : []))
+    const ops: RelationOps = { list, get: vi.fn(), create: vi.fn(), remove: vi.fn() }
+    const withProject: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [
+        ...descriptor.fields,
+        { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one', labelField: 'name' } },
+      ],
+    }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <SearchBar descriptor={withProject} onResults={vi.fn()} fallback={fallback} />
+      </RelationOpsProvider>,
+    )
+    expect(await screen.findByText(/Project = Apollo/)).toBeInTheDocument()
+    expect(list).toHaveBeenCalledWith('project', { in: { id: ['p-1'] }, pageSize: 1 })
+    expect(screen.queryByText(/p-1/)).toBeNull()
+  })
+
   it('starts from the URL\'s filter[<field>]= values on filterable fields (a form\'s link to a filtered list)', async () => {
     urlParams.current = new URLSearchParams('filter[status]=won&filter[secret]=x&filter[nope]=y')
     const { onFiltersChange } = renderBar()
