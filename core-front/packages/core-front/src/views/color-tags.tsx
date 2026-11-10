@@ -29,10 +29,12 @@ export function colorStripes(colors: string[], direction: 'to right' | 'to botto
   return `linear-gradient(${direction}, ${stops.join(', ')})`
 }
 
-export function ColorDot({ color }: { color: string }) {
+// className: as a Chip icon, MUI passes MuiChip-icon, which carries the dot's left margin.
+export function ColorDot({ color, className }: { color: string; className?: string }) {
   return (
     <Box
       component="span"
+      className={className}
       data-testid="color-dot"
       sx={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, display: 'inline-block' }}
       style={{ background: color }}
