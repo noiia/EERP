@@ -207,7 +207,8 @@ func TestRowScope_AssigneeSeesOwnTaskOnly(t *testing.T) {
 	want := map[string]int{
 		"project": 0, "project_milestone": 0, "project_member": 0,
 		"project_task": 1, "project_timesheet": 1, "project_task_user": 1, "project_task_tag": 1,
-		"project_task_dependency": 1, "project_stage": 3, "project_tag": 1,
+		// mine's blocker `other` is hidden from the assignee, so the row is too.
+		"project_task_dependency": 0, "project_stage": 3, "project_tag": 1,
 	}
 	for l, n := range want {
 		if got := f.total(who, l); got != n {
@@ -340,4 +341,28 @@ func TestRowScope_AssignedToMe(t *testing.T) {
 			t.Fatalf("got %d, want 400", code)
 		}
 	})
+}
+
+// A dependency row is visible only when both of its tasks are: a blocker in
+// a project the viewer can't see is never listed (no id leaks as a chip).
+func TestRowScope_DependencyNeedsBothTasks(t *testing.T) {
+	f := newFixture(t)
+	viewer, other := uuid.New(), uuid.New()
+	open := f.project(other, "everyone")
+	hidden := f.project(other, "members")
+	a, b := f.task(open, nil, nil), f.task(open, nil, nil)
+	h := f.task(hidden, nil, nil)
+	f.dependency(open, a, h) // a blocked by a hidden task
+	f.dependency(open, b, a) // b blocked by a: both visible
+	who := f.caller(viewer)
+
+	if n := f.total(who, "project_task_dependency?filter[task_id]="+a.String()); n != 0 {
+		t.Errorf("Blocked by with a hidden blocker: total %d, want 0", n)
+	}
+	if n := f.total(who, "project_task_dependency?filter[depends_on_id]="+a.String()); n != 1 {
+		t.Errorf("Blocking side: total %d, want 1", n)
+	}
+	if n := f.total(f.caller(uuid.New(), AdminGroup), "project_task_dependency?filter[task_id]="+a.String()); n != 1 {
+		t.Errorf("admin: total %d, want 1", n)
+	}
 }

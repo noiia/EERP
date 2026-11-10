@@ -58,15 +58,20 @@ const visibleProjects = `SELECT p.id FROM project p WHERE p.deleted_at IS NULL A
 // assignedTasks selects the ids of the tasks the caller ($1) is assigned to.
 const assignedTasks = `SELECT tu.task_id FROM project_task_user tu WHERE tu.user_id = $1 AND tu.tenant_id = $2 AND tu.deleted_at IS NULL`
 
+// visibleTasks selects the ids of the live tasks the caller sees (TaskScope's rule).
+const visibleTasks = `SELECT t.id FROM project_task t WHERE t.deleted_at IS NULL AND t.tenant_id = $2 AND (
+	t.project_id IN (` + visibleProjects + `) OR t.id IN (` + assignedTasks + `))`
+
 // The scope conditions, applied to the unaliased table of each query.
 const (
 	projectSQL = `(project.tenant_id = $2 AND (visibility = 'everyone' OR manager_id = $1 OR EXISTS (
 		SELECT 1 FROM project_member pm
 		WHERE pm.project_id = project.id AND pm.user_id = $1 AND pm.deleted_at IS NULL)))`
-	childSQL     = `(project_id IN (` + visibleProjects + `))`
-	taskSQL      = `(project_id IN (` + visibleProjects + `) OR project_task.id IN (` + assignedTasks + `))`
-	taskChildSQL = `(project_id IN (` + visibleProjects + `) OR task_id IN (` + assignedTasks + `))`
-	stageSQL     = `(project_id IN (` + visibleProjects + `) OR project_id IN (
+	childSQL      = `(project_id IN (` + visibleProjects + `))`
+	taskSQL       = `(project_id IN (` + visibleProjects + `) OR project_task.id IN (` + assignedTasks + `))`
+	taskChildSQL  = `(project_id IN (` + visibleProjects + `) OR task_id IN (` + assignedTasks + `))`
+	dependencySQL = `(task_id IN (` + visibleTasks + `) AND depends_on_id IN (` + visibleTasks + `))`
+	stageSQL      = `(project_id IN (` + visibleProjects + `) OR project_id IN (
 		SELECT t.project_id FROM project_task t
 		WHERE t.deleted_at IS NULL AND t.id IN (` + assignedTasks + `)))`
 )
@@ -125,8 +130,7 @@ const assigneeParam = "filter[assignee]"
 
 type assignedOnlyKey struct{}
 
-// TaskChildScope: rows of a task (timesheets, assignees, tags,
-// dependencies) of visible projects, plus those of the caller's own tasks.
+// TaskChildScope: rows of a task (timesheets, assignees, tags) of visible projects, plus those of the caller's own tasks.
 func TaskChildScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 	return scope(perms, taskChildSQL)
 }
@@ -135,4 +139,10 @@ func TaskChildScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 // caller has a live assigned task in (their task's kanban columns).
 func StageScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 	return scope(perms, stageSQL)
+}
+
+// DependencyScope: a dependency is visible only when both its task and its
+// blocker are, so a hidden blocker never shows up (not even as an id).
+func DependencyScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
+	return scope(perms, dependencySQL)
 }

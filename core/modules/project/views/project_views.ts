@@ -217,9 +217,11 @@ const taskFormFields: Fields = [
     label: 'Timesheets',
     type: 'relation',
     relation: { entity: 'project_timesheet', kind: 'one2many', inverseField: 'task_id', labelField: 'date' },
+    // Date leads (labelField); the user column shows the raw id, like every o2m many2one cell.
     widgetOptions: {
       deletable: true,
       columns: [
+        { key: 'user_id', label: 'User' },
         { key: 'hours', label: 'Hours' },
         { key: 'description', label: 'Description' },
       ],

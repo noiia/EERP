@@ -53,7 +53,9 @@ describe('project views', () => {
       expect(notebook).toContain(`"title":"${title}"`)
     }
     expect(field('/project/tasks/:id', 'subtasks').relation).toMatchObject({ kind: 'one2many', inverseField: 'parent_id' })
-    expect(field('/project/tasks/:id', 'timesheets').relation).toMatchObject({ kind: 'one2many', inverseField: 'task_id' })
+    const timesheets = field('/project/tasks/:id', 'timesheets')
+    expect(timesheets.relation).toMatchObject({ kind: 'one2many', inverseField: 'task_id', labelField: 'date' })
+    expect((timesheets.widgetOptions!.columns as { key: string }[]).map((c) => c.key)).toEqual(['user_id', 'hours', 'description'])
     expect(field('/project/tasks/:id', 'blocked_by').relation).toMatchObject({ via: 'project_task_dependency', viaFields: { own: 'task_id', related: 'depends_on_id' } })
     expect(field('/project/tasks/:id', 'blocking')).toMatchObject({ readOnly: true, relation: { viaFields: { own: 'depends_on_id', related: 'task_id' } } })
   })
