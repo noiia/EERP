@@ -2507,3 +2507,15 @@ msgstr ""
 
 msgid "Search results"
 msgstr ""
+
+msgid "Add column"
+msgstr ""
+
+msgid "Rename column"
+msgstr ""
+
+msgid "Column name"
+msgstr ""
+
+msgid "This project has no stage named {name}."
+msgstr ""

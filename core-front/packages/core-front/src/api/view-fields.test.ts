@@ -13,6 +13,8 @@ describe('effectiveViewFields', () => {
       calendarDateField: 'due_date',
       enableGraphs: true,
       calendarColorField: null,
+      kanbanColumns: null,
+      kanbanBadgeField: null,
     })
   })
 
@@ -22,6 +24,8 @@ describe('effectiveViewFields', () => {
       calendarDateField: null,
       enableGraphs: false,
       calendarColorField: null,
+      kanbanColumns: null,
+      kanbanBadgeField: null,
     })
   })
 
@@ -36,6 +40,8 @@ describe('effectiveViewFields', () => {
       calendarDateField: 'due_date',
       enableGraphs: false,
       calendarColorField: null,
+      kanbanColumns: null,
+      kanbanBadgeField: null,
     })
   })
 
@@ -47,6 +53,8 @@ describe('effectiveViewFields', () => {
       calendarDateField: 'due_date',
       enableGraphs: false,
       calendarColorField: null,
+      kanbanColumns: null,
+      kanbanBadgeField: null,
     })
   })
 
@@ -54,6 +62,13 @@ describe('effectiveViewFields', () => {
     expect(
       effectiveViewFields({ calendarColorField: 'failed' }, EMPTY_VIEW_FIELDS).calendarColorField,
     ).toBe('failed')
+  })
+
+  it('kanbanColumns and kanbanBadgeField are module-declared only', () => {
+    const kanbanColumns = { orderField: 'sequence', labelField: 'name' }
+    expect(
+      effectiveViewFields({ kanbanColumns, kanbanBadgeField: 'blocked' }, EMPTY_VIEW_FIELDS),
+    ).toMatchObject({ kanbanColumns, kanbanBadgeField: 'blocked' })
   })
 })
 
@@ -65,6 +80,8 @@ describe('availableDisplayModes', () => {
         calendarDateField: null,
         enableGraphs: false,
         calendarColorField: null,
+        kanbanColumns: null,
+        kanbanBadgeField: null,
       }),
     ).toEqual({ list: true, kanban: false, calendar: false, graph: false })
     expect(
@@ -73,6 +90,8 @@ describe('availableDisplayModes', () => {
         calendarDateField: 'due_date',
         enableGraphs: true,
         calendarColorField: null,
+        kanbanColumns: null,
+        kanbanBadgeField: null,
       }),
     ).toEqual({ list: true, kanban: true, calendar: true, graph: true })
   })

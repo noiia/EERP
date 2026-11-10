@@ -274,3 +274,201 @@ describe('KanbanRenderer with serverOptions', () => {
     expect(screen.getByText('No status (7)')).toBeInTheDocument()
   })
 })
+
+describe('KanbanRenderer with many2one columns', () => {
+  interface Task {
+    id: string
+    name: string
+    stage_id?: string | null
+    project_id: string
+    blocked?: boolean
+  }
+  const taskDescriptor: ViewDescriptor<Task> = {
+    entity: 'task',
+    viewType: 'tree',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'stage_id', label: 'Stage', type: 'relation', relation: { entity: 'project_stage', kind: 'many2one' } },
+      { name: 'blocked', label: 'Blocked', type: 'boolean' },
+    ],
+    viewModeDefaults: {
+      kanbanStatusField: 'stage_id',
+      kanbanColumns: { orderField: 'sequence', labelField: 'name', foldField: 'closed', scopeField: 'project_id', canEdit: 'test.stages' },
+      kanbanBadgeField: 'blocked',
+    },
+  }
+  const columnsConfig = taskDescriptor.viewModeDefaults!.kanbanColumns!
+  const stageRows = [
+    { id: 'a-done', name: 'Done', sequence: 30, closed: true, project_id: 'A' },
+    { id: 'a-new', name: 'New', sequence: 10, closed: false, project_id: 'A' },
+    { id: 'a-doing', name: 'In progress', sequence: 20, closed: false, project_id: 'A' },
+    { id: 'b-new', name: 'New', sequence: 10, closed: false, project_id: 'B' },
+    { id: 'b-review', name: 'Review', sequence: 15, closed: false, project_id: 'B' },
+  ]
+  const tasks: Task[] = [
+    { id: 't1', name: 'Write spec', stage_id: 'a-new', project_id: 'A' },
+    { id: 't2', name: 'Ship it', stage_id: 'a-done', project_id: 'A', blocked: true },
+    { id: 't3', name: 'Loose end', stage_id: null, project_id: 'A' },
+    { id: 't4', name: 'Review it', stage_id: 'b-review', project_id: 'B' },
+  ]
+
+  type Opts = import('../api/list-options').EntityListOptions
+  function matches(row: Record<string, unknown>, o?: Opts): boolean {
+    for (const [k, v] of Object.entries(o?.filter ?? {})) if (String(row[k]) !== v) return false
+    for (const [k, v] of Object.entries(o?.in ?? {})) if (!v.includes(String(row[k]))) return false
+    for (const k of o?.empty ?? []) if (row[k] != null && row[k] !== '') return false
+    return true
+  }
+
+  let stageStore: Record<string, unknown>[]
+  let ops: import('./relation-ops').RelationOps & {
+    listPage: ReturnType<typeof vi.fn>
+    create: ReturnType<typeof vi.fn>
+    update: ReturnType<typeof vi.fn>
+  }
+  let taskUpdate: ReturnType<typeof vi.fn<(id: string, body: Partial<Task>) => Promise<Task>>>
+  let allow: boolean
+
+  beforeEach(async () => {
+    stageStore = stageRows.map((s) => ({ ...s }))
+    allow = true
+    const { registerKanbanColumnsGuard } = await import('./kanban-columns')
+    registerKanbanColumnsGuard('test.stages', async () => allow)
+    const listPage = vi.fn(async (entity: string, o?: Opts) => {
+      const rows = (entity === 'project_stage' ? stageStore : (tasks as unknown as Record<string, unknown>[])).filter((r) => matches(r, o))
+      return { records: rows as import('./relation-ops').RelationRecord[], total: rows.length }
+    })
+    const create = vi.fn(async (_entity: string, body: Record<string, unknown>) => {
+      const row = { id: `new-${stageStore.length}`, ...body }
+      stageStore.push(row)
+      return row as import('./relation-ops').RelationRecord
+    })
+    const update = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ id, ...body }))
+    ops = { list: vi.fn(), get: vi.fn(), remove: vi.fn(), listPage, create, update }
+    taskUpdate = vi.fn(async (id: string, body: Partial<Task>) => ({ id, ...body }) as Task)
+  })
+
+  async function renderBoard(props: { serverOptions?: Opts; initialData?: Task[] } = {}) {
+    const { RelationOpsProvider } = await import('./relation-ops')
+    render(
+      <RelationOpsProvider ops={ops}>
+        <KanbanRenderer
+          descriptor={taskDescriptor}
+          initialData={props.initialData ?? []}
+          actions={{ create: vi.fn(), update: taskUpdate }}
+          statusField="stage_id"
+          columnsConfig={columnsConfig}
+          badgeField="blocked"
+          serverOptions={props.serverOptions}
+        />
+      </RelationOpsProvider>,
+    )
+  }
+  const groupNames = () => screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))
+
+  it('builds columns from many2one records in orderField order', async () => {
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    await waitFor(() => expect(groupNames()).toEqual(['New', 'In progress', 'Done', 'No status']))
+    expect(ops.listPage).toHaveBeenCalledWith('project_stage', expect.objectContaining({ order: 'sequence', filter: { project_id: 'A' } }))
+    await waitFor(() => expect(screen.getByRole('group', { name: 'New' })).toHaveTextContent('Write spec'))
+    expect(ops.listPage).toHaveBeenCalledWith('task', expect.objectContaining({ filter: { project_id: 'A', stage_id: 'a-new' } }))
+  })
+
+  it('collapses fold columns', async () => {
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    const done = await screen.findByRole('group', { name: 'Done' })
+    await waitFor(() => expect(done).toHaveTextContent('Done (1)'))
+    expect(done).not.toHaveTextContent('Ship it')
+    fireEvent.click(screen.getByRole('button', { name: 'Done (1)' }))
+    expect(screen.getByRole('group', { name: 'Done' })).toHaveTextContent('Ship it')
+  })
+
+  it('keeps stage-less cards in the No status column', async () => {
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    await waitFor(() => expect(screen.getByRole('group', { name: 'No status' })).toHaveTextContent('Loose end'))
+    expect(ops.listPage).toHaveBeenCalledWith('task', expect.objectContaining({ empty: ['stage_id'] }))
+  })
+
+  it('merges same-label columns when unscoped and refuses a drop with no matching stage', async () => {
+    await renderBoard({ initialData: tasks })
+    await waitFor(() => expect(groupNames()).toEqual(['New', 'Review', 'In progress', 'Done', 'No status']))
+    // Project A's task into "New": the merged column resolves to A's own New.
+    drag('t3', 'New')
+    await waitFor(() => expect(taskUpdate).toHaveBeenCalledWith('t3', { stage_id: 'a-new' }))
+    // Project A has no "Review" stage: refused, card stays put.
+    drag('t1', 'Review')
+    await screen.findByText('This project has no stage named Review.')
+    expect(taskUpdate).not.toHaveBeenCalledWith('t1', expect.anything())
+    expect(screen.getByRole('group', { name: 'New' })).toHaveTextContent('Write spec')
+  })
+
+  it('queries a merged column with in[] over its ids', async () => {
+    await renderBoard({ serverOptions: {} })
+    await waitFor(() =>
+      expect(ops.listPage).toHaveBeenCalledWith('task', expect.objectContaining({ in: { stage_id: ['a-new', 'b-new'] } })),
+    )
+    expect(ops.listPage).toHaveBeenCalledWith('task', expect.objectContaining({ filter: { stage_id: 'b-review' } }))
+  })
+
+  it('shows column controls only when the guard allows', async () => {
+    allow = false
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    await screen.findByRole('group', { name: 'New' })
+    await waitFor(() => expect(ops.listPage).toHaveBeenCalledTimes(5))
+    expect(screen.queryByRole('textbox', { name: 'Add column' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rename column New' })).toBeNull()
+  })
+
+  it('hides column controls on an unscoped board even when the guard allows', async () => {
+    await renderBoard({ initialData: tasks })
+    await screen.findByRole('group', { name: 'Review' })
+    expect(screen.queryByRole('textbox', { name: 'Add column' })).toBeNull()
+  })
+
+  it('adds/renames/reorders columns through relationOps', async () => {
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    const add = await screen.findByRole('textbox', { name: 'Add column' })
+    fireEvent.change(add, { target: { value: 'Blocked' } })
+    fireEvent.keyDown(add, { key: 'Enter' })
+    await waitFor(() =>
+      expect(ops.create).toHaveBeenCalledWith('project_stage', { name: 'Blocked', sequence: 40, project_id: 'A' }),
+    )
+    await screen.findByRole('group', { name: 'Blocked' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename column New' }))
+    const rename = screen.getByRole('textbox', { name: 'Column name' })
+    fireEvent.change(rename, { target: { value: 'Todo' } })
+    fireEvent.keyDown(rename, { key: 'Enter' })
+    await waitFor(() => expect(ops.update).toHaveBeenCalledWith('project_stage', 'a-new', { name: 'Todo' }))
+    await screen.findByRole('group', { name: 'Todo' })
+
+    // Drag the Done header before Todo: every column gets 10, 20, ...
+    fireEvent.dragStart(screen.getByTestId('kanban-column-header-a-done'))
+    const todo = screen.getByRole('group', { name: 'Todo' })
+    fireEvent.dragOver(todo)
+    fireEvent.drop(todo)
+    await waitFor(() => expect(groupNames()).toEqual(['Done', 'Todo', 'In progress', 'Blocked', 'No status']))
+    expect(ops.update).toHaveBeenCalledWith('project_stage', 'a-done', { sequence: 10 })
+    expect(ops.update).toHaveBeenCalledWith('project_stage', 'a-new', { sequence: 20 })
+    expect(ops.update).toHaveBeenCalledWith('project_stage', 'a-doing', { sequence: 30 })
+    expect(taskUpdate).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a refused column write and reverts the reorder', async () => {
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    await screen.findByRole('textbox', { name: 'Add column' })
+    ops.update.mockRejectedValue(new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 }))
+    fireEvent.dragStart(screen.getByTestId('kanban-column-header-a-done'))
+    fireEvent.drop(screen.getByRole('group', { name: 'New' }))
+    await screen.findByText('FORBIDDEN')
+    expect(groupNames()).toEqual(['New', 'In progress', 'Done', 'No status'])
+  })
+
+  it('shows the badge chip when kanbanBadgeField is true', async () => {
+    await renderBoard({ initialData: tasks })
+    await screen.findByRole('group', { name: 'Done' })
+    fireEvent.click(screen.getByRole('button', { name: 'Done (1)' }))
+    expect(screen.getByTestId('kanban-card-t2')).toHaveTextContent('Blocked')
+    expect(screen.getByTestId('kanban-card-t1')).not.toHaveTextContent('Blocked')
+  })
+})

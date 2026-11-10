@@ -50,6 +50,30 @@ export interface ViewModeDefaults {
    * fixed semantic ("true means highlight"), not a workspace preference.
    */
   calendarColorField?: string
+  /**
+   * Builds the Kanban columns from the RECORDS of a many2one status field's
+   * related entity (Odoo-style editable stages) instead of selection options.
+   * Only used when the effective status field is a many2one relation.
+   * Module-declared only, like calendarColorField.
+   */
+  kanbanColumns?: KanbanColumnsConfig
+  /** Names a `type: 'boolean'` field: a Kanban card whose value is true shows
+   * an error-colored chip labeled with that field's label. Module-declared only. */
+  kanbanBadgeField?: string
+}
+
+/** How a many2one status field's related records become Kanban columns. */
+export interface KanbanColumnsConfig {
+  /** Column order, e.g. 'sequence'. */
+  orderField: string
+  /** Column title, e.g. 'name'. */
+  labelField: string
+  /** Truthy ⇒ the column renders collapsed, e.g. 'closed'. */
+  foldField?: string
+  /** Same column name on the card entity AND the column entity, e.g. 'project_id'. */
+  scopeField?: string
+  /** Name registered with registerKanbanColumnsGuard: may the caller edit this scope's columns? */
+  canEdit?: string
 }
 
 /** The fully-resolved (module default, then admin override) view-mode config
@@ -59,6 +83,8 @@ export interface EffectiveViewFields {
   calendarDateField: string | null
   enableGraphs: boolean
   calendarColorField: string | null
+  kanbanColumns: KanbanColumnsConfig | null
+  kanbanBadgeField: string | null
 }
 
 /**
@@ -75,6 +101,8 @@ export function effectiveViewFields(
     calendarDateField: config.calendarDateField ?? defaults?.calendarDateField ?? null,
     enableGraphs: config.enableGraphs ?? defaults?.enableGraphs ?? false,
     calendarColorField: defaults?.calendarColorField ?? null,
+    kanbanColumns: defaults?.kanbanColumns ?? null,
+    kanbanBadgeField: defaults?.kanbanBadgeField ?? null,
   }
 }
 

@@ -2639,3 +2639,15 @@ msgstr "Ajouter une table"
 
 msgid "Search results"
 msgstr "Résultats de recherche"
+
+msgid "Add column"
+msgstr "Ajouter une colonne"
+
+msgid "Rename column"
+msgstr "Renommer la colonne"
+
+msgid "Column name"
+msgstr "Nom de la colonne"
+
+msgid "This project has no stage named {name}."
+msgstr "Ce projet n'a pas d'étape nommée {name}."

@@ -1137,6 +1137,8 @@ function TreeRenderer<T extends HasId>({
         initialData={liveRecords}
         actions={actions}
         statusField={effective.kanbanStatusField}
+        columnsConfig={effective.kanbanColumns ?? undefined}
+        badgeField={effective.kanbanBadgeField ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

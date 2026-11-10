@@ -2,7 +2,8 @@ import { moduleRegistry } from '@eerp/core-front/server'
 import type { FieldDescriptor, ViewModeDefaults } from '@eerp/core-front'
 
 // Every entity with a registered tree (list) view, paired with the fields an
-// admin may pick as its Kanban status field (type 'selection') or Calendar
+// admin may pick as its Kanban status field (type 'selection', or a many2one
+// when the module declares kanbanColumns) or Calendar
 // date field (type 'date') — sourced from the already-registered descriptors
 // (no new backend introspection route needed; docs/roadmaps/list-view-modes.md).
 
@@ -31,7 +32,12 @@ export function treeViewEntities(): ViewEntityFields[] {
     seen.set(descriptor.entity, {
       entity: descriptor.entity,
       module,
-      kanbanFields: descriptor.fields.filter((f) => f.type === 'selection'),
+      // A many2one can power Kanban only when the module says how its records become columns.
+      kanbanFields: descriptor.fields.filter(
+        (f) =>
+          f.type === 'selection' ||
+          (f.type === 'relation' && f.relation?.kind === 'many2one' && descriptor.viewModeDefaults?.kanbanColumns != null),
+      ),
       dateFields: descriptor.fields.filter((f) => f.type === 'date'),
       defaults: descriptor.viewModeDefaults ?? {},
     })

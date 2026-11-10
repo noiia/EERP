@@ -14,6 +14,7 @@ const routes = new Map([
           { name: 'status', label: 'Status', type: 'selection', selection: { options: ['open'] } },
           { name: 'due_date', label: 'Due date', type: 'date' },
           { name: 'name', label: 'Name', type: 'text' },
+          { name: 'owner_id', label: 'Owner', type: 'relation', relation: { entity: 'users', kind: 'many2one' } },
         ],
         viewModeDefaults: { kanbanStatusField: 'status', enableGraphs: true },
       },
@@ -44,6 +45,22 @@ const routes = new Map([
         entity: 'roles',
         viewType: 'tree',
         fields: [{ name: 'name', label: 'Name', type: 'text' }],
+      },
+      permission: undefined,
+    },
+  ],
+  [
+    '/project/tasks',
+    {
+      module: 'project',
+      descriptor: {
+        entity: 'project_task',
+        viewType: 'tree',
+        fields: [
+          { name: 'stage_id', label: 'Stage', type: 'relation', relation: { entity: 'project_stage', kind: 'many2one' } },
+          { name: 'tag_ids', label: 'Tags', type: 'relation', relation: { entity: 'tag', kind: 'many2many' } },
+        ],
+        viewModeDefaults: { kanbanColumns: { orderField: 'sequence', labelField: 'name' } },
       },
       permission: undefined,
     },
@@ -79,13 +96,17 @@ import { formViewEntities, treeViewEntities } from './registry'
 describe('treeViewEntities', () => {
   it('lists only tree-view entities, not form/other viewTypes', () => {
     const entities = treeViewEntities().map((e) => e.entity)
-    expect(entities).toEqual(['crm', 'roles'])
+    expect(entities).toEqual(['crm', 'roles', 'project_task'])
   })
 
   it('splits fields into kanban (selection) and calendar (date) candidates', () => {
     const crm = treeViewEntities().find((e) => e.entity === 'crm')
     expect(crm?.kanbanFields.map((f) => f.name)).toEqual(['status'])
     expect(crm?.dateFields.map((f) => f.name)).toEqual(['due_date'])
+  })
+
+  it('offers many2one fields as kanban candidates only when the module declares kanbanColumns', () => {
+    expect(treeViewEntities().find((e) => e.entity === 'project_task')?.kanbanFields.map((f) => f.name)).toEqual(['stage_id'])
   })
 
   it('an entity with neither a selection nor a date field gets empty choice lists', () => {
