@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
@@ -108,6 +108,16 @@ export function KanbanRenderer<T extends HasId>({
   const [stages, setStages] = useState<RelationRecord[] | null>(null)
   const [stagesVersion, setStagesVersion] = useState(0)
   const [columnError, setColumnError] = useState<SerializedError | null>(null)
+  const [mayEdit, setMayEdit] = useState(false)
+  // Another scope (or entity): drop the previous one's columns and edit right during
+  // this very render, so nothing reads them under the new filter while it loads.
+  const scopeKey = `${relation?.entity ?? ''}\u0000${scopeId ?? ''}`
+  const [loadedScope, setLoadedScope] = useState(scopeKey)
+  if (loadedScope !== scopeKey) {
+    setLoadedScope(scopeKey)
+    setStages(null)
+    setMayEdit(false)
+  }
   useEffect(() => {
     const listPage = relationOps?.listPage
     if (!config || !relation || !listPage) {
@@ -129,7 +139,6 @@ export function KanbanRenderer<T extends HasId>({
   }, [relation?.entity, config?.orderField, config?.scopeField, scopeId, stagesVersion, Boolean(config)])
 
   // Column editing: scoped boards only, when the module's named guard says so.
-  const [mayEdit, setMayEdit] = useState(false)
   useEffect(() => {
     const guard = config?.canEdit ? kanbanColumnsGuard(config.canEdit) : undefined
     if (!guard || !scopeId) {
@@ -242,7 +251,7 @@ export function KanbanRenderer<T extends HasId>({
     const card = records.find((r) => r.id === draggingId) as Record<string, unknown> | undefined
     const target = resolveDropTarget(column, config.scopeField ? card?.[config.scopeField] : undefined, config)
     if (target == null) {
-      setColumnError({ code: 'VALIDATION_ERROR', message: t('This project has no stage named {name}.').replace('{name}', column.label) })
+      setColumnError({ code: 'VALIDATION_ERROR', message: t('No column named {name} exists for this card.').replace('{name}', column.label) })
       return
     }
     setColumnError(null)
@@ -261,7 +270,20 @@ export function KanbanRenderer<T extends HasId>({
       .catch(columnWriteFailed(stages))
   }
 
+  // Enter then blur, or Escape then blur, must not send (a second) PUT.
+  const renameSettled = useRef(false)
+  function startRename(key: string) {
+    renameSettled.current = false
+    setRenaming(key)
+  }
+  function cancelRename() {
+    renameSettled.current = true
+    setRenaming(null)
+  }
+
   function renameColumn(column: KanbanColumn, value: string) {
+    if (renameSettled.current) return
+    renameSettled.current = true
     setRenaming(null)
     const name = value.trim()
     if (!config || !relation || !relationOps?.update || !name || name === column.label) return
@@ -278,9 +300,14 @@ export function KanbanRenderer<T extends HasId>({
     const changed = columns.filter((c) => order.get(c.key) !== c.order)
     setColumnError(null)
     setStages((st) => (st ?? []).map((r) => (order.has(r.id) ? { ...r, [config.orderField]: order.get(r.id) } : r)))
-    void Promise.all(
+    const previous = stages
+    // allSettled: re-read only once every PUT has landed, or the re-read could miss some.
+    void Promise.allSettled(
       changed.map((c) => relationOps.update!(relation.entity, c.key, { [config.orderField]: order.get(c.key) })),
-    ).catch(columnWriteFailed(stages))
+    ).then((results) => {
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+      if (failed) columnWriteFailed(previous)(failed.reason)
+    })
   }
 
   /** The column's full count: the server total, shifted by any cards dragged
@@ -352,7 +379,7 @@ export function KanbanRenderer<T extends HasId>({
                     onBlur={(e) => renameColumn(column, e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') renameColumn(column, (e.target as HTMLInputElement).value)
-                      if (e.key === 'Escape') setRenaming(null)
+                      if (e.key === 'Escape') cancelRename()
                     }}
                   />
                 ) : column?.fold ? (
@@ -373,7 +400,7 @@ export function KanbanRenderer<T extends HasId>({
                   <Typography variant="subtitle2">{heading}</Typography>
                 )}
                 {canEditColumns && column && renaming !== key ? (
-                  <IconButton size="small" aria-label={`${t('Rename column')} ${column.label}`} onClick={() => setRenaming(key)}>
+                  <IconButton size="small" aria-label={`${t('Rename column')} ${column.label}`} onClick={() => startRename(key)}>
                     <FontAwesomeIcon icon={byPrefixAndName.fas['pen']} size="xs" />
                   </IconButton>
                 ) : null}

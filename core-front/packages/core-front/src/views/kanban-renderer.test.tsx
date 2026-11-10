@@ -350,19 +350,21 @@ describe('KanbanRenderer with many2one columns', () => {
 
   async function renderBoard(props: { serverOptions?: Opts; initialData?: Task[] } = {}) {
     const { RelationOpsProvider } = await import('./relation-ops')
-    render(
+    const board = (p: typeof props) => (
       <RelationOpsProvider ops={ops}>
         <KanbanRenderer
           descriptor={taskDescriptor}
-          initialData={props.initialData ?? []}
+          initialData={p.initialData ?? []}
           actions={{ create: vi.fn(), update: taskUpdate }}
           statusField="stage_id"
           columnsConfig={columnsConfig}
           badgeField="blocked"
-          serverOptions={props.serverOptions}
+          serverOptions={p.serverOptions}
         />
-      </RelationOpsProvider>,
+      </RelationOpsProvider>
     )
+    const view = render(board(props))
+    return { rerender: (next: typeof props) => view.rerender(board(next)) }
   }
   const groupNames = () => screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))
 
@@ -397,7 +399,7 @@ describe('KanbanRenderer with many2one columns', () => {
     await waitFor(() => expect(taskUpdate).toHaveBeenCalledWith('t3', { stage_id: 'a-new' }))
     // Project A has no "Review" stage: refused, card stays put.
     drag('t1', 'Review')
-    await screen.findByText('This project has no stage named Review.')
+    await screen.findByText('No column named Review exists for this card.')
     expect(taskUpdate).not.toHaveBeenCalledWith('t1', expect.anything())
     expect(screen.getByRole('group', { name: 'New' })).toHaveTextContent('Write spec')
   })
@@ -462,6 +464,67 @@ describe('KanbanRenderer with many2one columns', () => {
     fireEvent.drop(screen.getByRole('group', { name: 'New' }))
     await screen.findByText('FORBIDDEN')
     expect(groupNames()).toEqual(['New', 'In progress', 'Done', 'No status'])
+  })
+
+  it('drops the previous scope\'s columns and edit right as soon as the scope changes', async () => {
+    const { rerender } = await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    await screen.findByRole('textbox', { name: 'Add column' })
+    allow = false
+    ops.listPage.mockClear()
+    rerender({ serverOptions: { filter: { project_id: 'B' } } })
+    // Same render: A's columns and controls are gone before B's arrive.
+    expect(groupNames()).toEqual(['No status'])
+    expect(screen.queryByRole('textbox', { name: 'Add column' })).toBeNull()
+    await waitFor(() => expect(groupNames()).toEqual(['New', 'Review', 'No status']))
+    expect(screen.queryByRole('textbox', { name: 'Add column' })).toBeNull()
+    // No card query ever mixed B's filter with A's stage ids.
+    const aIds = ['a-new', 'a-doing', 'a-done']
+    for (const [entity, o] of ops.listPage.mock.calls as [string, Opts][]) {
+      if (entity !== 'task') continue
+      expect(aIds).not.toContain(o.filter?.stage_id)
+    }
+  })
+
+  it('re-reads the columns only once every reorder PUT has settled, and shows a partial failure', async () => {
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    await screen.findByRole('textbox', { name: 'Add column' })
+    let finishDone!: () => void
+    ops.update.mockImplementation(async (_e: string, id: string) => {
+      if (id === 'a-new') throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
+      if (id === 'a-done') await new Promise<void>((r) => (finishDone = r))
+      return { id }
+    })
+    const stageReads = () => ops.listPage.mock.calls.filter(([e]) => e === 'project_stage').length
+    const readsBefore = stageReads()
+    fireEvent.dragStart(screen.getByTestId('kanban-column-header-a-done'))
+    fireEvent.drop(screen.getByRole('group', { name: 'New' }))
+    await waitFor(() => expect(ops.update).toHaveBeenCalledTimes(3))
+    await new Promise((r) => setTimeout(r, 20))
+    // a-new already failed, a-done is still in flight: nothing reverted or re-read yet.
+    expect(screen.queryByText('FORBIDDEN')).toBeNull()
+    expect(stageReads()).toBe(readsBefore)
+    finishDone()
+    await screen.findByText('FORBIDDEN')
+    expect(groupNames()).toEqual(['New', 'In progress', 'Done', 'No status'])
+    await waitFor(() => expect(stageReads()).toBe(readsBefore + 1))
+  })
+
+  it('a cancelled or already-committed rename sends no (second) PUT', async () => {
+    await renderBoard({ serverOptions: { filter: { project_id: 'A' } } })
+    await screen.findByRole('textbox', { name: 'Add column' })
+    fireEvent.click(screen.getByRole('button', { name: 'Rename column New' }))
+    let input = screen.getByRole('textbox', { name: 'Column name' })
+    fireEvent.change(input, { target: { value: 'Nope' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    fireEvent.blur(input)
+    expect(ops.update).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename column New' }))
+    input = screen.getByRole('textbox', { name: 'Column name' })
+    fireEvent.change(input, { target: { value: 'Todo' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.blur(input)
+    await waitFor(() => expect(ops.update).toHaveBeenCalledTimes(1))
   })
 
   it('shows the badge chip when kanbanBadgeField is true', async () => {

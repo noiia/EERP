@@ -2517,5 +2517,5 @@ msgstr ""
 msgid "Column name"
 msgstr ""
 
-msgid "This project has no stage named {name}."
+msgid "No column named {name} exists for this card."
 msgstr ""

@@ -2649,5 +2649,5 @@ msgstr "Renommer la colonne"
 msgid "Column name"
 msgstr "Nom de la colonne"
 
-msgid "This project has no stage named {name}."
-msgstr "Ce projet n'a pas d'étape nommée {name}."
+msgid "No column named {name} exists for this card."
+msgstr "Aucune colonne nommée {name} n'existe pour cette carte."
