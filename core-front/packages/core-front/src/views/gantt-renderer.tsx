@@ -19,6 +19,7 @@ import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import type { GanttDependenciesConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
+import { BannerScope, BannerSlot } from './banner'
 import { colorStripes } from './color-tags'
 import { ErrorAlert } from './error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
@@ -661,14 +662,18 @@ export function GanttRenderer<T extends HasId>({
               paper: { role: 'dialog', 'aria-label': `${t('Colors of')} ${label(colorPicker.record)}`, sx: { p: 2, width: 320 } },
             }}
           >
-            <RelationColorTagsWidget
-              field={colorsField}
-              value={undefined}
-              onChange={() => {}}
-              entity={descriptor.entity}
-              recordId={colorPicker.record.id}
-              onLinksChange={reloadColors}
-            />
+            {/* Its own banner scope: a refused link/unlink shows here, not behind the popover. */}
+            <BannerScope>
+              <BannerSlot />
+              <RelationColorTagsWidget
+                field={colorsField}
+                value={undefined}
+                onChange={() => {}}
+                entity={descriptor.entity}
+                recordId={colorPicker.record.id}
+                onLinksChange={reloadColors}
+              />
+            </BannerScope>
           </Popover>
         ) : null}
 

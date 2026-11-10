@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+import { isHex6Color } from './color-tags'
 import { resolveWidget, type FieldDescriptor } from './descriptor'
+import { isHexColor } from './palette'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
 import { RelationColorTagsWidget } from './relation-widgets'
 import { fieldWidget, type WidgetProps } from './widgets'
@@ -176,5 +178,13 @@ describe('relation/colortags', () => {
 
   it('is the exported component the dispatch resolves', () => {
     expect(fieldWidget(colorsField)).toBe(RelationColorTagsWidget)
+  })
+
+  it('accepts only 6-digit hex colors, unlike the palette\'s 3-or-6-digit check', () => {
+    expect(isHex6Color('#A1b2C3')).toBe(true)
+    expect(isHex6Color('#fff')).toBe(false)
+    expect(isHexColor('#fff')).toBe(true)
+    expect(isHex6Color('url(x)')).toBe(false)
+    expect(isHex6Color(12)).toBe(false)
   })
 })

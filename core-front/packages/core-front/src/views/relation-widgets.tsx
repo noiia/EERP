@@ -34,7 +34,7 @@ import {
   type ViewDescriptor,
 } from './descriptor'
 import { useCompanyStore } from './company-store'
-import { ColorDot, ColorTagDialog, isHexColor } from './color-tags'
+import { ColorDot, ColorTagDialog, isHex6Color } from './color-tags'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { serializeError } from '../api/errors'
@@ -1151,7 +1151,7 @@ export function RelationTagsWidget({
   const colorField = typeof field.widgetOptions?.colorField === 'string' ? field.widgetOptions.colorField : 'color'
   const colorOf = (r: RelationRecord) => {
     const c = r[colorField]
-    return isHexColor(c) ? c : undefined
+    return isHex6Color(c) ? c : undefined
   }
 
   // Links are junction rows: load them, then resolve their related records

@@ -424,6 +424,31 @@ describe('EntityView', () => {
     expect(screen.getByText('Ada')).toBeInTheDocument()
   })
 
+  it('a text/color column shows a swatch beside the hex, and leaves a non-color value as plain text', () => {
+    type Group = { id: string; name: string; color: string }
+    const groups: ViewDescriptor<Group> = {
+      entity: 'project_color',
+      viewType: 'tree',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'color', label: 'Color', type: 'text', widget: 'color' },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={groups}
+        initialData={[
+          { id: '1', name: 'Red', color: '#ff0000' },
+          { id: '2', name: 'Odd', color: 'not-a-color' },
+        ]}
+        actions={noopActions as unknown as EntityActions<Group>}
+      />,
+    )
+    const cell = screen.getByText('#ff0000')
+    expect(cell.parentElement!.querySelector<HTMLElement>('[data-testid="color-dot"]')!.style.background).toBe('rgb(255, 0, 0)')
+    expect(screen.getByText('not-a-color').parentElement!.querySelector('[data-testid="color-dot"]')).toBeNull()
+  })
+
   it('server-pages a list: footer counts every row and a page change fetches that page', async () => {
     const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
     const firstPage = Array.from({ length: 20 }, (_, i) => ({ id: String(i), name: `Row ${i}` }))

@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { moduleRegistry } from '../registry'
-import { isHexColor } from './color-tags'
+import { isHex6Color } from './color-tags'
 import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { useRelationOps, type RelationRecord } from './relation-ops'
 import { junctionColumns } from './relation-widgets'
@@ -81,7 +81,7 @@ export function useRecordColors(entity: string, field: FieldDescriptor | null, i
       const out = new Map<string, string[]>()
       for (const j of junctions) {
         const color = byId.get(String(j[link]))
-        if (!isHexColor(color)) continue
+        if (!isHex6Color(color)) continue
         const key = String(j[own])
         out.set(key, [...(out.get(key) ?? []), color])
       }

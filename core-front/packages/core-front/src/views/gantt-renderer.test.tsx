@@ -10,6 +10,7 @@ import { GanttRenderer } from './gantt-renderer'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
 import { RelationOpsProvider, type RelationOps } from './relation-ops'
+import { BannerScope, BannerSlot } from './banner'
 import { useSessionStore } from './session-store'
 import { ApiError } from '../api/errors'
 import type { EntityListOptions } from '../api/list-options'
@@ -606,6 +607,40 @@ describe('GanttRenderer', () => {
       expect(await within(picker).findByText('Green')).toBeInTheDocument()
       expect(within(picker).getByRole('combobox')).toBeInTheDocument()
       expect(list).toHaveBeenCalledWith('task_color', expect.objectContaining({ filter: { task_id: '1' } }))
+    })
+
+    it('a refused unlink shows its error inside the picker, not in the list behind it', async () => {
+      const ops: RelationOps = {
+        list: vi.fn(async (entity: string) =>
+          entity === 'task_color' ? [{ id: 'j1', task_id: '1', color_id: 'c1' }] : [{ id: 'c1', name: 'Red', color: '#ff0000' }],
+        ),
+        get: vi.fn(),
+        create: vi.fn(),
+        remove: vi.fn(async () => Promise.reject(new Error('Refused by Go'))),
+      }
+      render(
+        <BannerScope>
+          <div data-testid="outer">
+            <BannerSlot />
+          </div>
+          <RelationOpsProvider ops={ops}>
+            <GanttRenderer
+              descriptor={colored}
+              initialData={[alpha]}
+              actions={actions}
+              startField="date_start"
+              endField="deadline"
+              colorTagsField="color_groups"
+            />
+          </RelationOpsProvider>
+        </BannerScope>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Colors of Alpha' }))
+      const picker = await screen.findByRole('dialog', { name: 'Colors of Alpha' })
+      const chip = (await within(picker).findByText('Red')).closest('.MuiChip-root')!
+      fireEvent.click(chip.querySelector('.MuiChip-deleteIcon')!)
+      expect(await within(picker).findByText('Refused by Go')).toBeInTheDocument()
+      expect(within(screen.getByTestId('outer')).queryByText('Refused by Go')).toBeNull()
     })
 
     it('read-only: colors show, no color button', async () => {

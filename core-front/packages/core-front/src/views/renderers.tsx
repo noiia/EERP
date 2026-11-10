@@ -72,6 +72,8 @@ import { FormContextProvider } from './form-context'
 import { resolveStatusBar, type StatusBarConfig } from '../api/status-bar-config'
 import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
+import { ColorDot } from './color-tags'
+import { isHexColor } from './palette'
 import { useUndoToastStore } from './undo-toast'
 import {
   createDashboardStore,
@@ -1207,6 +1209,15 @@ function TreeRenderer<T extends HasId>({
           // text DataGrid renders by default (Settings -> Users' first user).
           if (f.widget === 'datetime') {
             col.valueFormatter = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString() : '')
+          }
+          // text/color: a swatch beside the hex (an invalid value stays plain text).
+          if (f.type === 'text' && f.widget === 'color') {
+            col.renderCell = (params) => (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', height: '100%' }}>
+                {isHexColor(String(params.value ?? '')) ? <ColorDot color={String(params.value)} /> : null}
+                <span>{String(params.value ?? '')}</span>
+              </Stack>
+            )
           }
           if (f.widget === 'user-presence') {
             col.renderCell = (params) => (
