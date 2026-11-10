@@ -69,7 +69,8 @@ const (
 		WHERE pm.project_id = project.id AND pm.user_id = $1 AND pm.deleted_at IS NULL)))`
 	childSQL      = `(project_id IN (` + visibleProjects + `))`
 	taskSQL       = `(project_id IN (` + visibleProjects + `) OR project_task.id IN (` + assignedTasks + `))`
-	taskChildSQL  = `(project_id IN (` + visibleProjects + `) OR task_id IN (` + assignedTasks + `))`
+	taskChildSQL  = `((project_id IN (` + visibleProjects + `) OR task_id IN (` + assignedTasks + `))
+		AND task_id IN (SELECT t.id FROM project_task t WHERE t.deleted_at IS NULL AND t.tenant_id = $2))`
 	dependencySQL = `(task_id IN (` + visibleTasks + `) AND depends_on_id IN (` + visibleTasks + `))`
 	stageSQL      = `(project_id IN (` + visibleProjects + `) OR project_id IN (
 		SELECT t.project_id FROM project_task t
@@ -130,7 +131,9 @@ const assigneeParam = "filter[assignee]"
 
 type assignedOnlyKey struct{}
 
-// TaskChildScope: rows of a task (timesheets, assignees, tags) of visible projects, plus those of the caller's own tasks.
+// TaskChildScope: rows of a live task (timesheets, assignees, tags) of
+// visible projects, plus those of the caller's own tasks. A deleted task's
+// rows are hidden, as the project's spent_hours already excludes them.
 func TaskChildScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 	return scope(perms, taskChildSQL)
 }

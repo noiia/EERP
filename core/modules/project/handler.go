@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"core/internal/auth"
 	"core/orm"
@@ -55,10 +56,10 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 	for table, guard := range guards {
 		g := generic(table)
 		with := append(append([]echo.MiddlewareFunc{}, mw...), guard)
-		update, del := g.Update, g.Delete
+		update, del, restore := g.Update, g.Delete, g.Restore
 		switch table {
 		case "project":
-			del = h.DeleteProject
+			del, restore = h.DeleteProject, h.RestoreProject(g.GetByID)
 		case "project_stage":
 			del = h.DeleteStage
 		case "project_task":
@@ -68,7 +69,7 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		e.POST(base, g.Create, with...)
 		e.PUT(base+"/:id", update, with...)
 		e.DELETE(base+"/:id", del, with...)
-		e.POST(base+"/:id/restore", g.Restore, with...)
+		e.POST(base+"/:id/restore", restore, with...)
 	}
 	e.GET("/api/v1/project_task", AssignedToMe(generic("project_task").List), mw...)
 	e.GET("/api/v1/project/:id/can_manage", h.CanManage, mw...)
@@ -127,6 +128,44 @@ func (h *Handler) DeleteProject(c *echo.Context) error {
 		return respond(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// RestoreProject handles POST /api/v1/project/:id/restore behind
+// ValidateProjectBody (seen when deleted, manager or admin): the project and
+// the stages, milestones and members DeleteProject deleted with it (same
+// deleted_at) come back in one transaction; the answer is the project.
+func (h *Handler) RestoreProject(get echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		ctx := c.Request().Context()
+		tenant, _ := access.TenantFromContext(ctx)
+		id, err := echo.PathParam[uuid.UUID](c, "id")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
+		}
+		err = orm.Transact(ctx, h.db, func(tx *orm.Tx) error {
+			var at time.Time
+			if err := tx.QueryRow(ctx, `UPDATE project p SET deleted_at = NULL, updated_at = now()
+				FROM (SELECT deleted_at FROM project WHERE id = $1 AND tenant_id = $2 FOR UPDATE) old
+				WHERE p.id = $1 AND p.tenant_id = $2 AND p.deleted_at IS NOT NULL RETURNING old.deleted_at`,
+				id, tenant).Scan(&at); err != nil {
+				if errors.Is(err, orm.ErrNotFound) {
+					return errNotFound
+				}
+				return err
+			}
+			for _, table := range []string{"project_stage", "project_milestone", "project_member"} {
+				if _, err := tx.Exec(ctx, `UPDATE `+table+` SET deleted_at = NULL, updated_at = now()
+					WHERE project_id = $1 AND tenant_id = $2 AND deleted_at = $3`, id, tenant, at); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return respond(c, err)
+		}
+		return get(c)
+	}
 }
 
 // DeleteStage handles DELETE /api/v1/project_stage/:id behind

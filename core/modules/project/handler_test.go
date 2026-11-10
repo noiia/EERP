@@ -148,3 +148,80 @@ func TestCanManage(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateTask_AssigneeOnlyMoveRefused(t *testing.T) {
+	f := newFixture(t)
+	p := f.project(uuid.New(), "members")
+	q := f.project(uuid.New(), "everyone")
+	root := f.task(p, nil, nil)
+	child := f.task(p, &root, nil)
+	f.timesheet(p, child, 2)
+	a := f.caller(uuid.New())
+	f.assign(p, root, a.UserID)
+
+	if code, body := f.do(a, http.MethodPut, "project_task/"+root.String(), map[string]any{"project_id": q}); code != http.StatusNotFound {
+		t.Fatalf("assignee-only move: %d %v, want 404", code, body)
+	}
+	for _, task := range []uuid.UUID{root, child} {
+		if got := f.str(`SELECT project_id FROM project_task WHERE id = $1`, task); got != p.String() {
+			t.Errorf("task %s moved to %s, want it kept in p", task, got)
+		}
+	}
+	if n := f.float(`SELECT count(*) FROM project_timesheet WHERE project_id = $1`, q); n != 0 {
+		t.Errorf("%v timesheets moved to q", n)
+	}
+	// An edit that doesn't move still works for the assignee.
+	if code, body := f.do(a, http.MethodPut, "project_task/"+root.String(), map[string]any{"name": "Renamed"}); code != http.StatusOK {
+		t.Errorf("assignee edit: %d %v, want 200", code, body)
+	}
+}
+
+func TestRestoreProject(t *testing.T) {
+	f := newFixture(t)
+	m := f.caller(uuid.New())
+	p := f.project(m.UserID, "members")
+	old := f.milestone(p) // deleted before the project: stays deleted
+	f.exec(`UPDATE project_milestone SET deleted_at = now() - interval '1 day' WHERE id = $1`, old)
+	f.milestone(p)
+	member := f.caller(uuid.New())
+	f.member(p, member.UserID)
+	if code, body := f.do(m, http.MethodDelete, "project/"+p.String(), nil); code != http.StatusNoContent {
+		t.Fatalf("delete: %d %v", code, body)
+	}
+
+	f.run(t, []writeCase{
+		{"stranger", f.caller(uuid.New()), http.MethodPost, "project/" + p.String() + "/restore", nil, 404},
+		{"member, not manager", member, http.MethodPost, "project/" + p.String() + "/restore", nil, 403},
+	})
+	code, body := f.do(m, http.MethodPost, "project/"+p.String()+"/restore", nil)
+	if code != http.StatusOK || body["id"] != p.String() {
+		t.Fatalf("restore: %d %v, want 200 with the project", code, body)
+	}
+	for table, want := range map[string]float64{"project_stage": 3, "project_milestone": 1, "project_member": 1} {
+		if n := f.float(`SELECT count(*) FROM `+table+` WHERE project_id = $1 AND deleted_at IS NULL`, p); n != want {
+			t.Errorf("%s: %v live rows, want %v", table, n, want)
+		}
+	}
+	if n := f.float(`SELECT count(*) FROM project_milestone WHERE id = $1 AND deleted_at IS NULL`, old); n != 0 {
+		t.Errorf("a milestone deleted earlier came back")
+	}
+	if code, _ := f.do(m, http.MethodPost, "project/"+p.String()+"/restore", nil); code != http.StatusNotFound {
+		t.Errorf("restore a live project: %d, want 404", code)
+	}
+}
+
+func TestTaskChildScope_HidesDeletedTasksRows(t *testing.T) {
+	f := newFixture(t)
+	m := f.caller(uuid.New())
+	p := f.project(m.UserID, "everyone")
+	live, gone := f.task(p, nil, nil), f.task(p, nil, nil)
+	f.timesheet(p, live, 2)
+	f.timesheet(p, gone, 3)
+	f.exec(`UPDATE project_task SET deleted_at = now() WHERE id = $1`, gone)
+	if n := f.total(m, "project_timesheet?filter[project_id]="+p.String()); n != 1 {
+		t.Errorf("timesheets listed: %d, want 1 (the deleted task's hidden)", n)
+	}
+	if got := f.float(`SELECT spent_hours FROM project WHERE id = $1`, p); got != 2 {
+		t.Errorf("spent_hours %v, want 2", got)
+	}
+}

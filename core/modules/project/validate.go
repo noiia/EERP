@@ -316,8 +316,24 @@ func projectRules(r *request) error {
 		r.defaults(map[string]any{"description": "", "visibility": "everyone", "active": true})
 		return nil
 	}
+	if r.op == opCreate { // a restore: 404 unless the caller saw it when deleted
+		var seen bool
+		if err := r.h.db.QueryRow(r.ctx, `SELECT `+visibleWhenDeleted, r.id, r.tenant, r.user).Scan(&seen); err != nil {
+			return err
+		}
+		if !seen && !IsAdmin(r.ctx, r.h.perms) {
+			return errNotFound
+		}
+	}
 	return r.requireManage(r.id) // edit, delete, restore
 }
+
+// visibleWhenDeleted: the deleted project $1 of tenant $2 was visible to $3,
+// counting the members deleted with it.
+const visibleWhenDeleted = `EXISTS (SELECT 1 FROM project p WHERE p.id = $1 AND p.tenant_id = $2 AND (
+	p.visibility = 'everyone' OR p.manager_id = $3 OR EXISTS (
+		SELECT 1 FROM project_member pm WHERE pm.project_id = p.id AND pm.user_id = $3
+		AND (pm.deleted_at IS NULL OR pm.deleted_at = p.deleted_at))))`
 
 // fixedProject refuses moving a member, stage or milestone to another
 // project: the tasks pointing at it would leave the same-project invariant.
@@ -373,6 +389,15 @@ func taskRules(r *request) error {
 		return err
 	}
 	if r.stored != nil && r.changed("project_id") { // a move: UpdateTask does the rest
+		// An assignee-only caller can't see the source project: moving would
+		// expose its hidden subtasks and rows in the target.
+		ok, err := orm.CanSeeRecord(r.ctx, r.h.db, "project", r.storedRef("project_id"))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errNotFound
+		}
 		parent, err := r.ref("parent_id")
 		if err == nil && parent != uuid.Nil {
 			err = invalid("project_id", "a subtask can't change project: move its parent task, or clear parent_id first")
