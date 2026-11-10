@@ -498,7 +498,8 @@ describe('KanbanRenderer with many2one columns', () => {
     // No card query ever mixed B's filter with A's stage ids.
     const aIds = ['a-new', 'a-doing', 'a-done']
     for (const [entity, o] of ops.listPage.mock.calls as [string, Opts][]) {
-      if (entity !== 'task') continue
+      // A's own late card queries (A filter + A stages) are legitimate under load.
+      if (entity !== 'task' || o.filter?.project_id !== 'B') continue
       expect(aIds).not.toContain(o.filter?.stage_id)
     }
   })
