@@ -141,6 +141,8 @@ interface Drag {
   x: number
   y: number
   pxPerDay: number
+  /** The track's left edge at drag start: places the drop-day highlight. */
+  trackLeft: number
   delta: number
   moved: boolean
 }
@@ -292,9 +294,10 @@ export function GanttRenderer<T extends HasId>({
     event.preventDefault()
     event.stopPropagation()
     if (pendingRef.current.has(id)) return
-    const width = trackRef.current?.getBoundingClientRect().width ?? 0
+    const rect = trackRef.current?.getBoundingClientRect()
+    const width = rect?.width ?? 0
     const { clientX: x, clientY: y } = event
-    const next = { id, mode, originX: x, originY: y, x, y, pxPerDay: width / totalDays, delta: 0, moved: false }
+    const next = { id, mode, originX: x, originY: y, x, y, pxPerDay: width / totalDays, trackLeft: rect?.left ?? 0, delta: 0, moved: false }
     dragRef.current = next
     setDrag(next)
   }
@@ -454,6 +457,10 @@ export function GanttRenderer<T extends HasId>({
   }, [dragging])
 
   const pct = (days: number) => `${(days / totalDays) * 100}%`
+  // An Unscheduled card being dragged: its floating preview, and the day it would land on.
+  const placing = drag?.mode === 'place' && drag.moved ? (unscheduled.find((r) => r.id === drag.id) ?? null) : null
+  const hoverDay = placing && drag && drag.pxPerDay > 0 ? Math.floor((drag.x - drag.trackLeft) / drag.pxPerDay) : -1
+  const dropDay = hoverDay >= 0 && hoverDay < totalDays ? hoverDay : null
   const handleSx = { position: 'absolute', top: 0, bottom: 0, width: 8, cursor: 'ew-resize', touchAction: 'none' } as const
 
   function bar(row: { record: T; s: number; e: number }) {
@@ -567,7 +574,14 @@ export function GanttRenderer<T extends HasId>({
           </Box>
           <Box
             ref={gridRef}
-            sx={{ display: 'grid', gridTemplateColumns: 'minmax(96px, 200px) minmax(0, 1fr)', rowGap: `${ROW_GAP}px` }}
+            // minHeight: the whole timeline stays a drop target for Unscheduled cards, even with few rows.
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(96px, 200px) minmax(0, 1fr)',
+              gridAutoRows: 'min-content',
+              rowGap: `${ROW_GAP}px`,
+              minHeight: 240,
+            }}
           >
             {/* Every cell is placed explicitly so the overlay can share the timeline column. */}
             <Box sx={{ gridColumn: 1, gridRow: 1 }} />
@@ -614,6 +628,22 @@ export function GanttRenderer<T extends HasId>({
                 </Box>
               </Box>
             ))}
+            {rows.length === 0 && unscheduled.length > 0 && canWrite ? (
+              <Typography variant="body2" color="text.secondary" sx={{ gridColumn: 2, gridRow: 2, p: 2, textAlign: 'center' }}>
+                {t('Drag an unscheduled record onto the timeline to plan it.')}
+              </Typography>
+            ) : null}
+            {dropDay != null ? (
+              <Box
+                data-testid="gantt-drop-day"
+                sx={{ gridColumn: 2, gridRow: `1 / span ${rows.length + 1}`, position: 'relative', pointerEvents: 'none' }}
+              >
+                <Box
+                  sx={{ position: 'absolute', top: 0, bottom: 0, bgcolor: 'primary.main', opacity: 0.12 }}
+                  style={{ left: pct(dropDay), width: pct(1) }}
+                />
+              </Box>
+            ) : null}
             <Box
               sx={{ gridColumn: 2, gridRow: `1 / span ${rows.length + 1}`, position: 'relative', pointerEvents: 'none', zIndex: 1 }}
             >
@@ -675,6 +705,20 @@ export function GanttRenderer<T extends HasId>({
               />
             </BannerScope>
           </Popover>
+        ) : null}
+
+        {placing && drag ? (
+          <Card
+            data-testid="gantt-drag-preview"
+            aria-hidden
+            elevation={4}
+            sx={{ position: 'fixed', pointerEvents: 'none', zIndex: 'tooltip', px: 1, py: 0.5, maxWidth: 220 }}
+            style={{ left: drag.x + 12, top: drag.y + 12 }}
+          >
+            <Typography variant="caption" noWrap>
+              {label(placing)}
+            </Typography>
+          </Card>
         ) : null}
 
         <Collapse in={unscheduled.length > 0} orientation="horizontal" unmountOnExit>

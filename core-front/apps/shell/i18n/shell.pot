@@ -2561,3 +2561,6 @@ msgstr ""
 
 msgid "Colors of"
 msgstr ""
+
+msgid "Drag an unscheduled record onto the timeline to plan it."
+msgstr ""

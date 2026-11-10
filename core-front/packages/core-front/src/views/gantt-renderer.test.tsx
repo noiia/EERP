@@ -384,6 +384,37 @@ describe('GanttRenderer', () => {
       )
     })
 
+    it('while dragging, a preview follows the pointer and the target day is highlighted; both go on drop', async () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      const card = screen.getByTestId('gantt-unscheduled-2')
+      fireEvent.pointerDown(card, { clientX: 1500, clientY: 300, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: 250, clientY: 10, pointerId: 1 })
+      const preview = screen.getByTestId('gantt-drag-preview')
+      expect(preview).toHaveTextContent('Beta')
+      expect(preview.style.left).toBe('262px')
+      const highlight = screen.getByTestId('gantt-drop-day').firstElementChild as HTMLElement
+      expect(highlight.style.left).toBe(`${(2 / 14) * 100}%`)
+      fireEvent.pointerUp(window, { clientX: 250, clientY: 10, pointerId: 1 })
+      expect(screen.queryByTestId('gantt-drag-preview')).toBeNull()
+      expect(screen.queryByTestId('gantt-drop-day')).toBeNull()
+      await waitFor(() => expect(update).toHaveBeenCalledWith('2', { date_start: '2026-03-04' }))
+    })
+
+    it('no highlight while the pointer is off the timeline', () => {
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      fireEvent.pointerDown(screen.getByTestId('gantt-unscheduled-2'), { clientX: 1500, clientY: 300, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: 1600, clientY: 400, pointerId: 1 }) // right of the 1400px track
+      expect(screen.getByTestId('gantt-drag-preview')).toBeInTheDocument()
+      expect(screen.queryByTestId('gantt-drop-day')).toBeNull()
+    })
+
+    it('with nothing scheduled, the empty timeline invites a drop', () => {
+      renderGantt([{ id: '4', name: 'Open', date_start: null, deadline: null }])
+      expect(screen.getByText('Drag an unscheduled record onto the timeline to plan it.')).toBeInTheDocument()
+    })
+
     it('a drop outside the timeline writes nothing', () => {
       renderGantt()
       fireEvent.click(screen.getByRole('button', { name: 'Day' }))

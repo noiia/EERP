@@ -2693,3 +2693,6 @@ msgstr "Quel champ alimente les modes d'affichage Kanban, Calendrier et Gantt de
 
 msgid "Colors of"
 msgstr "Couleurs de"
+
+msgid "Drag an unscheduled record onto the timeline to plan it."
+msgstr "Glissez un élément non planifié sur la frise pour le planifier."
