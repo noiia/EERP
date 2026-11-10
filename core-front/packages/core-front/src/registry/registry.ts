@@ -388,7 +388,7 @@ export class ModuleRegistry {
         menus.push({
           name: route.path,
           label,
-          entries: [{ kind: 'line', label, path: route.path, permission }],
+          entries: [{ kind: 'line', label, path: route.path + (resolved.navQuery ?? ''), permission }],
         })
         autoNames.add(route.path)
       }

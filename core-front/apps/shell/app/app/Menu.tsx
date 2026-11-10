@@ -148,7 +148,7 @@ export default function Menu({ menu, icons = {} }: MenuProps) {
           return (
             <MenuTile
               key={module.name}
-              href={module.routes[0].path}
+              href={module.routes[0].path + (module.routes[0].descriptor.navQuery ?? '')}
               label={t(module.displayName || titleize(module.name))}
               icon={iconDef ? <FontAwesomeIcon icon={iconDef} /> : undefined}
             />

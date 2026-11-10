@@ -7,7 +7,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }))
 
-import { KanbanRenderer } from './kanban-renderer'
+import { KanbanRenderer, TOO_MANY_COLUMNS } from './kanban-renderer'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
 import { ApiError } from '../api/errors'
@@ -336,7 +336,8 @@ describe('KanbanRenderer with many2one columns', () => {
     // The guard is handed the board's RelationOps (to ask the server).
     registerKanbanColumnsGuard('test.stages', async (_scope, guardOps) => allow && typeof guardOps?.get === 'function')
     const listPage = vi.fn(async (entity: string, o?: Opts) => {
-      const rows = (entity === 'project_stage' ? stageStore : (tasks as unknown as Record<string, unknown>[])).filter((r) => matches(r, o))
+      let rows = (entity === 'project_stage' ? stageStore : (tasks as unknown as Record<string, unknown>[])).filter((r) => matches(r, o))
+      if (entity === 'project_stage' && o?.pageSize) rows = rows.slice(((o.page ?? 1) - 1) * o.pageSize, (o.page ?? 1) * o.pageSize)
       return { records: rows as import('./relation-ops').RelationRecord[], total: rows.length }
     })
     const create = vi.fn(async (_entity: string, body: Record<string, unknown>) => {
@@ -375,6 +376,22 @@ describe('KanbanRenderer with many2one columns', () => {
     expect(ops.listPage).toHaveBeenCalledWith('project_stage', expect.objectContaining({ order: 'sequence', filter: { project_id: 'A' } }))
     await waitFor(() => expect(screen.getByRole('group', { name: 'New' })).toHaveTextContent('Write spec'))
     expect(ops.listPage).toHaveBeenCalledWith('task', expect.objectContaining({ filter: { project_id: 'A', stage_id: 'a-new' } }))
+  })
+
+  it('pages the column records past one page instead of dropping them', async () => {
+    for (let i = 0; i < 250; i++) stageStore.push({ id: `x-${i}`, name: `Extra ${i}`, sequence: 100 + i, closed: false, project_id: 'X' })
+    await renderBoard({ serverOptions: {} })
+    await screen.findByRole('group', { name: 'Extra 249' })
+    const stageCalls = ops.listPage.mock.calls.filter(([e]) => e === 'project_stage')
+    expect(stageCalls.map(([, o]) => (o as Opts).page)).toEqual([1, 2])
+    expect(screen.queryByText(TOO_MANY_COLUMNS)).toBeNull()
+  })
+
+  it('stops at the ceiling and says so rather than silently dropping columns', async () => {
+    for (let i = 0; i < 2100; i++) stageStore.push({ id: `x-${i}`, name: 'Bulk', sequence: 100, closed: false, project_id: 'X' })
+    await renderBoard({ serverOptions: {} })
+    await screen.findByText(TOO_MANY_COLUMNS)
+    expect(ops.listPage.mock.calls.filter(([e]) => e === 'project_stage')).toHaveLength(10)
   })
 
   it('collapses fold columns', async () => {

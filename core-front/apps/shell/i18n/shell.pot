@@ -2519,3 +2519,6 @@ msgstr ""
 
 msgid "No column named {name} exists for this card."
 msgstr ""
+
+msgid "This board has too many columns: only the first ones are shown."
+msgstr ""

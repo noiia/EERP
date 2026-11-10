@@ -40,13 +40,13 @@ const projectListFields: Fields = [
   { name: 'task_count', label: 'Tasks', type: 'number', widget: 'int', readOnly: true },
   { name: 'planned_hours', label: 'Planned hours', type: 'number', readOnly: true },
   { name: 'spent_hours', label: 'Spent hours', type: 'number', readOnly: true },
+  { name: 'active', label: 'Active', type: 'boolean', widget: 'switch', default: true },
 ]
 
 const projectFormFields: Fields = [
   ...projectListFields,
   { name: 'date_start', label: 'Start date', type: 'date' },
   { name: 'date_end', label: 'End date', type: 'date' },
-  { name: 'active', label: 'Active', type: 'boolean', widget: 'switch', default: true },
   { name: 'description', label: 'Description', type: 'text', widget: 'long' },
   {
     name: 'members',
@@ -312,6 +312,8 @@ const routes: FrontModule['routes'] = [
       entity: 'project',
       viewType: 'tree',
       navLabel: 'Projects',
+      // Archived projects are hidden by default, as a filter the user can remove.
+      navQuery: '?filter[active]=true',
       fields: projectListFields,
       formPath: '/project/:id',
       createPermission: write('project'),

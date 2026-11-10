@@ -27,6 +27,10 @@ describe('project views', () => {
     }
     const menus = registry.headerMenus().find((m) => m.module === 'project')!.menus
     expect(menus.map((m) => m.label)).toEqual(['Projects', 'Tasks', 'My tasks', 'Milestones', 'Timesheets', 'Configuration'])
+    // Archived projects are hidden by a removable default filter, not a fixed listFilter.
+    expect(menus[0].entries[0]).toMatchObject({ path: '/project?filter[active]=true' })
+    expect(route('/project').descriptor.listFilter).toBeUndefined()
+    expect(route('/project').descriptor.fields.map((f) => f.name)).toContain('active')
   })
 
   it('boards tasks by their project stages, kanban/calendar/graph on', () => {

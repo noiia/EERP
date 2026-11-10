@@ -347,6 +347,13 @@ describe('ModuleRegistry.headerMenus', () => {
     ])
   })
 
+  it('appends a route\'s navQuery to its menu line', () => {
+    const menus = new ModuleRegistry()
+      .register({ name: 'crm', routes: [{ path: '/crm/list', descriptor: { ...treeDescriptor, navQuery: '?filter[active]=true' } }] })
+      .headerMenus()
+    expect(menus[0].menus[0].entries).toEqual([{ kind: 'line', label: 'Crm', path: '/crm/list?filter[active]=true' }])
+  })
+
   it('includes a catalog route and drops form routes (no :param, no plain routes either)', () => {
     const menus = new ModuleRegistry()
       .register({

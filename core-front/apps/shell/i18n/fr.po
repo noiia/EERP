@@ -2651,3 +2651,6 @@ msgstr "Nom de la colonne"
 
 msgid "No column named {name} exists for this card."
 msgstr "Aucune colonne nommée {name} n'existe pour cette carte."
+
+msgid "This board has too many columns: only the first ones are shown."
+msgstr "Ce tableau a trop de colonnes : seules les premières sont affichées."

@@ -1305,6 +1305,15 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    */
   navLabel?: string
   /**
+   * For `viewType: 'tree'`/`'catalog'`/`'dashboard'` only: a query string
+   * (`?…`) appended to this route's links — its top-bar header menu line and,
+   * for a module's first route, its app tile. The way to give a list a
+   * REMOVABLE default filter: a `filter[<field>]=<value>` here seeds the
+   * search bar (unlike `listFilter`, which the user can't take off), e.g.
+   * the Project app hiding archived projects (`?filter[active]=true`).
+   */
+  navQuery?: string
+  /**
    * For `viewType: 'tree'`/`'catalog'`/`'dashboard'` only: excludes this
    * route from `ModuleRegistry.headerMenus()`'s auto-generated top-bar
    * button — for a view a module wants reachable only through a hand-placed

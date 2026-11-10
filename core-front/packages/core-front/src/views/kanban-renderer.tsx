@@ -49,8 +49,14 @@ const NO_STATUS = '__no_status__'
 /** Cards loaded per column; the header still shows the column's full count. */
 const KANBAN_COLUMN_LIMIT = 50
 
-// shortcut: column records past this many are not shown; page them if a board ever needs more.
-const KANBAN_STAGE_LIMIT = 200
+/** Column records are read this many per page, until a short page. */
+const KANBAN_STAGE_PAGE = 200
+
+/** Safety stop: a board past this many column records shows the first ones and says so. */
+const KANBAN_STAGE_CEILING = 2000
+
+/** The message (a msgid) shown when a board hits KANBAN_STAGE_CEILING. */
+export const TOO_MANY_COLUMNS = 'This board has too many columns: only the first ones are shown.'
 
 /** Orders are rewritten 10, 20, … so a later insert fits between two columns. */
 const ORDER_STEP = 10
@@ -126,9 +132,21 @@ export function KanbanRenderer<T extends HasId>({
     }
     let cancelled = false
     const scope = scopeId && config.scopeField ? { filter: { [config.scopeField]: scopeId } } : {}
-    listPage(relation.entity, { ...scope, order: config.orderField, pageSize: KANBAN_STAGE_LIMIT })
-      .then((page) => {
-        if (!cancelled) setStages(page.records)
+    // Page until a short page: the total may be an estimate, never a loop bound.
+    const loadAll = async () => {
+      const all: RelationRecord[] = []
+      for (let page = 1; all.length < KANBAN_STAGE_CEILING; page++) {
+        const { records } = await listPage(relation.entity, { ...scope, order: config.orderField, page, pageSize: KANBAN_STAGE_PAGE })
+        all.push(...records)
+        if (records.length < KANBAN_STAGE_PAGE) return { all, truncated: false }
+      }
+      return { all, truncated: true }
+    }
+    loadAll()
+      .then(({ all, truncated }) => {
+        if (cancelled) return
+        setStages(all)
+        if (truncated) setColumnError({ code: 'TOO_MANY_COLUMNS', message: TOO_MANY_COLUMNS })
       })
       .catch((e: unknown) => {
         if (!cancelled) setColumnError(serializeError(toApiError(e)))

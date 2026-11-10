@@ -105,6 +105,13 @@ describe('ServerApiClient', () => {
     )
   })
 
+  it('get passes a sub-path id through unencoded (project/<id>/can_manage)', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { can_manage: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await createServerApiClient().get('project', 'p%2F1/can_manage')
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/v1/project/p%2F1/can_manage', expect.anything())
+  })
+
   it('listWithTotal surfaces the paginated envelope\'s total row count', async () => {
     vi.stubGlobal(
       'fetch',

@@ -35,6 +35,12 @@ describe('Menu', () => {
     expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/app/settings')
   })
 
+  it('appends the first route\'s navQuery to the tile link', () => {
+    const withQuery = [{ name: 'crm', routes: [{ path: '/crm', descriptor: { ...descriptor, navQuery: '?filter[active]=true' } }] }] as unknown as MenuModule[]
+    render(<Menu menu={withQuery} />)
+    expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/app/crm?filter[active]=true')
+  })
+
   it('renders with stable keys — no React key warning (the key sits on the mapped tile, not an inner child)', () => {
     render(<Menu menu={menu} />)
     const keyWarnings = errorSpy.mock.calls.filter((args: unknown[]) =>
