@@ -459,6 +459,31 @@ describe('GanttRenderer', () => {
       expect(bar()).toHaveAccessibleName(`Alpha: ${fmt(2026, 3, 2)} – ${fmt(2026, 3, 8)}`)
     })
 
+    it('ignores further moves of a bar while its write is pending; a failure restores the server state', async () => {
+      let fail!: (e: unknown) => void
+      update.mockImplementationOnce(() => new Promise<Task>((_, reject) => { fail = reject }))
+      renderGantt()
+      fireEvent.keyDown(bar(), { key: 'ArrowRight' })
+      fireEvent.keyDown(bar(), { key: 'ArrowRight' })
+      fireEvent.pointerDown(bar(), { clientX: 500, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: 2000, pointerId: 1 })
+      fireEvent.pointerUp(window, { clientX: 2000, pointerId: 1 })
+      expect(update).toHaveBeenCalledTimes(1)
+      fail(new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }))
+      expect(await screen.findByText('nope')).toBeInTheDocument()
+      expect(bar()).toHaveAccessibleName(`Alpha: ${fmt(2026, 3, 2)} – ${fmt(2026, 3, 8)}`)
+      // Settled: the bar moves again.
+      fireEvent.keyDown(bar(), { key: 'ArrowRight' })
+      await waitFor(() => expect(update).toHaveBeenCalledTimes(2))
+    })
+
+    it('leaves Ctrl/Meta + arrows to the browser', () => {
+      renderGantt()
+      fireEvent.keyDown(bar(), { key: 'ArrowRight', ctrlKey: true })
+      fireEvent.keyDown(bar(), { key: 'ArrowLeft', metaKey: true })
+      expect(update).not.toHaveBeenCalled()
+    })
+
     it('Enter opens the form; read-only bars ignore arrows', () => {
       grant(false)
       renderGantt()
@@ -504,7 +529,7 @@ describe('GanttRenderer', () => {
       expect(listPage).toHaveBeenCalledWith('dep', expect.objectContaining({ in: { task_id: ['1', '3'] }, page: 1 }))
     })
 
-    it('loads links in chunks of 100 ids, paging each until a short page, and again after a move', async () => {
+    it('loads links in chunks of 100 ids, paging each until a short page, never again on a move', async () => {
       const many = Array.from({ length: 150 }, (_, i) => ({ ...alpha, id: `t${i}` }))
       const listPage = vi.fn<ListPage>(async (_e: string, o?: EntityListOptions) =>
         o?.page === 1 && o.in?.task_id.length === 100
@@ -515,8 +540,11 @@ describe('GanttRenderer', () => {
       await waitFor(() => expect(listPage).toHaveBeenCalledTimes(3))
       const calls = listPage.mock.calls.map(([, o]) => [o?.in?.task_id.length, o?.page])
       expect(calls).toEqual(expect.arrayContaining([[100, 1], [100, 2], [50, 1]]))
+      // A move reorders the rows but keeps the same id set: no link reload.
       fireEvent.keyDown(screen.getAllByRole('button', { name: /^Alpha:/ })[0], { key: 'ArrowRight' })
-      await waitFor(() => expect(listPage.mock.calls.length).toBeGreaterThan(3))
+      await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+      await new Promise((r) => setTimeout(r, 50))
+      expect(listPage).toHaveBeenCalledTimes(3)
     }, 20_000)
   })
 })

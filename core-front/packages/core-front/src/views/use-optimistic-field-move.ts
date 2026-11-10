@@ -45,13 +45,14 @@ export function useOptimisticFieldMove<T extends HasId>(
     const record = records.find((r) => r.id === id) as Record<string, unknown> | undefined
     if (!record) return
     if (Object.entries(patch).every(([k, v]) => (record[k] ?? null) === (v ?? null))) return
-    const previous = records
+    // Restore only this record's patched fields: another record's concurrent write stays.
+    const previous = Object.fromEntries(Object.keys(patch).map((k) => [k, record[k]]))
     setError(null)
     setRecords((rs) => rs.map((r) => (r.id === id ? ({ ...r, ...patch } as T) : r)))
     try {
       await actions.update(id, patch as Partial<T>)
     } catch (e) {
-      setRecords(previous)
+      setRecords((rs) => rs.map((r) => (r.id === id ? ({ ...r, ...previous } as T) : r)))
       const err = toApiError(e)
       setError({ code: err.code, message: err.message, requestId: err.requestId })
     }

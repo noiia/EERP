@@ -46,7 +46,7 @@ const GANTT_RECORD_CAP = 1000
 const GANTT_UNSCHEDULED_LIMIT = 50
 /** Record ids per dependency-link request (`in[toField]`). */
 const GANTT_LINK_CHUNK = 100
-/** Timeline geometry (px), shared by the grid and the arrow overlay. */
+/** Timeline geometry (px): rows must stay exactly ROW_H tall, the today/arrow overlay is drawn from it. */
 const HEADER_H = 24
 const ROW_H = 32
 const ROW_GAP = 4
@@ -268,12 +268,14 @@ export function GanttRenderer<T extends HasId>({
   const gridRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
-  // Bumped after each write: the dependency links are read again.
-  const [linkTick, setLinkTick] = useState(0)
+  // Records with a write in flight: no new move until it settles, so a late
+  // failure can't revert over a newer move.
+  const pendingRef = useRef(new Set<string>())
 
   function startDrag(event: React.PointerEvent, id: string, mode: DragMode) {
     event.preventDefault()
     event.stopPropagation()
+    if (pendingRef.current.has(id)) return
     const width = trackRef.current?.getBoundingClientRect().width ?? 0
     const { clientX: x, clientY: y } = event
     const next = { id, mode, originX: x, originY: y, x, y, pxPerDay: width / totalDays, delta: 0, moved: false }
@@ -291,7 +293,8 @@ export function GanttRenderer<T extends HasId>({
         else patch[startField] = e
       }
     }
-    void moveFields(id, patch).then(() => setLinkTick((n) => n + 1))
+    pendingRef.current.add(id)
+    void moveFields(id, patch).finally(() => pendingRef.current.delete(id))
   }
 
   /** Moves a bar (or one of its ends) by whole days, through the optimistic hook. */
@@ -347,14 +350,19 @@ export function GanttRenderer<T extends HasId>({
   function onBarKey(event: React.KeyboardEvent, row: { record: T; s: number; e: number }) {
     if (event.key === 'Enter') return openForm(row.record)
     if (!canWrite || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
+    if (event.ctrlKey || event.metaKey || pendingRef.current.has(row.record.id)) return
     event.preventDefault()
     shiftRow(row, event.shiftKey ? 'end' : event.altKey ? 'start' : 'move', event.key === 'ArrowRight' ? 1 : -1)
   }
 
-  // Dependency links touching the visible rows, read in id chunks.
+  // Dependency links touching the visible rows, read in id chunks. Keyed on the
+  // id set (not the date order): a move never changes the links, arrows follow `rows`.
   const [links, setLinks] = useState<Record<string, unknown>[]>([])
   const depKey = dependencies && relationOps?.listPage ? JSON.stringify(dependencies) : null
-  const rowIdsKey = rows.map((r) => r.record.id).join(',')
+  const rowIdsKey = rows
+    .map((r) => r.record.id)
+    .sort()
+    .join(',')
   useEffect(() => {
     const listPage = relationOps?.listPage
     if (depKey == null || !listPage || rowIdsKey === '') {
@@ -392,7 +400,7 @@ export function GanttRenderer<T extends HasId>({
     return () => {
       cancelled = true
     }
-  }, [depKey, rowIdsKey, linkTick])
+  }, [depKey, rowIdsKey])
   const finishRef = useRef(finishDrag)
   finishRef.current = finishDrag
 

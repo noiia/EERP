@@ -37,6 +37,30 @@ describe('useOptimisticFieldMove', () => {
     expect(result.current.error).toBeNull()
   })
 
+  it("a failed write reverts only its own record's fields, keeping another record's concurrent success", async () => {
+    const initial: Item[] = [{ id: '1', status: 'open' }, { id: '2', status: 'open' }]
+    let fail!: (e: unknown) => void
+    const update = vi.fn((id: string, body: Partial<Item>) =>
+      id === '1'
+        ? new Promise<Item>((_, reject) => { fail = reject })
+        : Promise.resolve({ id, ...body } as Item),
+    )
+    const { result } = renderHook(() => useOptimisticFieldMove(initial, actionsWith(update), 'status'))
+    let first!: Promise<void>
+    act(() => {
+      first = result.current.moveField('1', 'won')
+    })
+    await act(async () => {
+      await result.current.moveField('2', 'lost')
+    })
+    await act(async () => {
+      fail(new ApiError({ code: 'BAD', message: 'nope', status: 400 }))
+      await first
+    })
+    expect(result.current.records).toEqual([{ id: '1', status: 'open' }, { id: '2', status: 'lost' }])
+    expect(result.current.error?.message).toBe('nope')
+  })
+
   it('is a no-op when the value is unchanged', async () => {
     const initial: Item[] = [{ id: '1', status: 'open' }]
     const update = vi.fn()
