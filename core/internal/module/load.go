@@ -10,7 +10,7 @@ import (
 	"core/internal/types"
 	"core/orm"
 
-	"github.com/bytecodealliance/wasmtime-go/v49"
+	"github.com/bytecodealliance/wasmtime-go/v50"
 	"go.uber.org/zap"
 )
 

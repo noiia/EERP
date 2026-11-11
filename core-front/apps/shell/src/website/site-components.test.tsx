@@ -36,7 +36,8 @@ describe('SiteHeader', () => {
     // The page being shown is marked for assistive tech, the others aren't.
     expect(screen.getAllByRole('link', { name: 'Shop' })[0].getAttribute('aria-current')).toBe('page')
     expect(screen.getAllByRole('link', { name: 'Home' })[0].getAttribute('aria-current')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
+    // mobile-only button, hidden by the md media query jsdom 31 applies to its 1024px window (no accessible name then)
+    fireEvent.click(screen.getByLabelText('Menu'))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Home' }))
   })
 

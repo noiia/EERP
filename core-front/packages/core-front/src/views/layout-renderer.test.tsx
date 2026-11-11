@@ -221,7 +221,7 @@ describe('LayoutForm', () => {
       (el) => getComputedStyle(el).containerType === 'inline-size',
     )
     expect(outer).toBeDefined()
-    expect(getComputedStyle(outer!).marginTop).toBe('0')
+    expect(parseFloat(getComputedStyle(outer!).marginTop)).toBe(0)
   })
 
   it('a row groups its fields — both render, side by side in the tree', () => {

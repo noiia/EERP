@@ -139,7 +139,11 @@ describe('NotificationBell: separators', () => {
     fireEvent.click(screen.getByRole('button', { name: /notifications/i }))
     const bars = screen.getAllByTestId('notification-separator')
     expect(bars).toHaveLength(2) // between three rows, none after the last
-    expect(bars[0]).toHaveStyle({ width: '70%', borderTopWidth: '0.5px', borderTopStyle: 'solid' })
+    expect(bars[0]).toHaveStyle({ width: '70%', borderTopStyle: 'solid' })
+    // jsdom 31 snaps a computed sub-pixel border to 1px (as browsers do at 1x), so read the declared rule.
+    const cls = [...bars[0].classList].find((c) => c.startsWith('css-'))
+    const css = [...document.querySelectorAll('style')].map((s) => s.textContent).join('')
+    expect(css).toMatch(new RegExp(`\\.${cls}\\{[^}]*border-top:0\\.5px solid`))
   })
 })
 

@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgis/postgis:18-3.6
+    image: postgis/postgis:18-3.7
     restart: always
     container_name: db
     environment:
@@ -39,7 +39,7 @@ services:
   # S3-compatible object storage for the picture service (see infra/garage/README.md).
   # Starts empty: `make bootstrap` (or `make garage-init`) creates the layout, key and bucket.
   garage:
-    image: dxflrs/garage:v2.4.0
+    image: dxflrs/garage:v2.5.0
     restart: always
     container_name: garage
     environment:

@@ -629,7 +629,7 @@ describe('color ribbon', () => {
     )
     await waitFor(() => expect(ribbonOf(screen.getByTestId('kanban-card-3'))?.style.background).toBe('rgb(255, 0, 0)'))
     const multi = ribbonOf(screen.getByTestId('kanban-card-1'))!
-    expect(multi.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0% 50%, rgb(0, 255, 0) 50% 100%)')
+    expect(multi.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0%, rgb(255, 0, 0) 50%, rgb(0, 255, 0) 50%, rgb(0, 255, 0) 100%)')
     expect(multi.style.height).toBe('4px')
     expect(ribbonOf(screen.getByTestId('kanban-card-2'))).toBeNull()
     // The color field is not printed as a card field.

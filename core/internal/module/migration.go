@@ -264,9 +264,24 @@ func withSchemaLock(ctx context.Context, db *orm.DB, fn func() error) error {
 // first geography column. Needs a role allowed to create extensions (the
 // compose `postgres` superuser); on a managed database, have an admin run
 // CREATE EXTENSION postgis once.
+//
+// After a database image upgrade (e.g. PostGIS 3.6 → 3.7) the installed
+// extension still carries the old version's SQL objects; when it lags the
+// version the server ships, postgis_extensions_upgrade() brings postgis and
+// its companions (topology, raster…) up to date. Up-to-date databases — and
+// managed ones whose provider upgrades them — never run it.
 func ensureExtensions(ctx context.Context, db orm.Executor) error {
 	if _, err := db.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS postgis`); err != nil {
 		return fmt.Errorf("create extension postgis: %w", err)
+	}
+	if _, err := db.Exec(ctx, `DO $$ BEGIN
+		IF EXISTS (SELECT 1 FROM pg_available_extensions
+		           WHERE name LIKE 'postgis%' AND installed_version IS NOT NULL
+		             AND installed_version <> default_version) THEN
+			PERFORM postgis_extensions_upgrade();
+		END IF;
+	END $$`); err != nil {
+		return fmt.Errorf("upgrade extension postgis: %w", err)
 	}
 	return nil
 }

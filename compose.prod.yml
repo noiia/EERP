@@ -27,7 +27,7 @@
 # Usage: docker compose -f compose.yml -f compose.prod.yml up -d
 services:
   db:
-    # The image is postgis/postgis:18-3.6 (inherited from compose.yml): Postgres 18
+    # The image is postgis/postgis:18-3.7 (inherited from compose.yml): Postgres 18
     # plus PostGIS, same data directory format, so the existing volume is reused —
     # pull and recreate the container; core-back creates the extension at boot.
     ports: !reset []
@@ -84,7 +84,7 @@ services:
   # `make renew-certs-prod` (cron, twice a day) renews it. install-cert.sh copies
   # the result into the gateway-certs volume nginx serves.
   certbot:
-    image: certbot/certbot:v2.11.0
+    image: certbot/certbot:v5.10.0
     profiles: ["certbot"]
     environment:
       CERT_NAME: ${ERP_HOST:-}

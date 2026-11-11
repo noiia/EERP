@@ -231,7 +231,7 @@ describe('CalendarRenderer', () => {
     useUndoToastStore.getState().recover()
 
     await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day15 }))
-    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+    await waitFor(() => expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha'))
   })
 
   it('dropping an already-unscheduled card outside the calendar does nothing (nothing to remove)', () => {
@@ -370,7 +370,7 @@ describe('color ribbon', () => {
     )
     await waitFor(() => expect(ribbonOf(screen.getByTestId('calendar-card-3'))?.style.background).toBe('rgb(255, 0, 0)'))
     const multi = ribbonOf(screen.getByTestId('calendar-card-1'))!
-    expect(multi.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0% 50%, rgb(0, 255, 0) 50% 100%)')
+    expect(multi.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0%, rgb(255, 0, 0) 50%, rgb(0, 255, 0) 50%, rgb(0, 255, 0) 100%)')
     expect(multi.style.height).toBe('4px')
     expect(ribbonOf(screen.getByTestId('calendar-card-2'))).toBeNull()
     // The color field is not printed as a card field.

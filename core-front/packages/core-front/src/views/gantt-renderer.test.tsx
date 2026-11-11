@@ -125,7 +125,7 @@ describe('GanttRenderer', () => {
     expect(screen.getByRole('img', { name: 'Today' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Day' }))
     // Day zoom: 14 days from Monday 2026-03-02, today (index 2) at the middle of its column.
-    expect(screen.getByRole('img', { name: 'Today' }).style.left).toBe(`${(2.5 / 14) * 100}%`)
+    expect(parseFloat(screen.getByRole('img', { name: 'Today' }).style.left)).toBeCloseTo((2.5 / 14) * 100, 3)
     fireEvent.click(screen.getByRole('button', { name: 'Next period' }))
     expect(screen.queryByRole('img', { name: 'Today' })).toBeNull()
   })
@@ -274,7 +274,7 @@ describe('GanttRenderer', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Day' }))
       drag(screen.getByTestId('gantt-bar-1'), 220) // 2.2 days → snaps to 2
       await waitFor(() => expect(update).toHaveBeenCalledWith('1', { date_start: '2026-03-04', deadline: '2026-03-10' }))
-      expect(screen.getByTestId('gantt-bar-1').style.left).toBe(`${(2 / 14) * 100}%`)
+      expect(parseFloat(screen.getByTestId('gantt-bar-1').style.left)).toBeCloseTo((2 / 14) * 100, 3)
       expect(pushMock).not.toHaveBeenCalled()
     })
 
@@ -426,7 +426,7 @@ describe('GanttRenderer', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Day' }))
       place('2', 250) // day 2 = 2026-03-04, before Beta's deadline 2026-03-05
       await waitFor(() => expect(update).toHaveBeenCalledWith('2', { date_start: '2026-03-04' }))
-      expect(screen.getByTestId('gantt-bar-2').style.left).toBe(`${(2 / 14) * 100}%`)
+      expect(parseFloat(screen.getByTestId('gantt-bar-2').style.left)).toBeCloseTo((2 / 14) * 100, 3)
       expect(pushMock).not.toHaveBeenCalled()
     })
 
@@ -460,7 +460,7 @@ describe('GanttRenderer', () => {
       expect(preview).toHaveTextContent('Beta')
       expect(preview.style.left).toBe('262px')
       const highlight = screen.getByTestId('gantt-drop-day').firstElementChild as HTMLElement
-      expect(highlight.style.left).toBe(`${(2 / 14) * 100}%`)
+      expect(parseFloat(highlight.style.left)).toBeCloseTo((2 / 14) * 100, 3)
       fireEvent.pointerUp(window, { clientX: 250, clientY: 10, pointerId: 1 })
       expect(screen.queryByTestId('gantt-drag-preview')).toBeNull()
       expect(screen.queryByTestId('gantt-drop-day')).toBeNull()
@@ -692,7 +692,7 @@ describe('GanttRenderer', () => {
       await waitFor(() => expect(screen.getByTestId('gantt-bar-3').style.background).toBe('rgb(255, 0, 0)'))
       expect(screen.getByTestId('gantt-bar-1').style.background).toBe(
         // Horizontal bands ('to bottom', the default jsdom drops), one per color, hard edges.
-        'linear-gradient(rgb(255, 0, 0) 0% 50%, rgb(0, 255, 0) 50% 100%)',
+        'linear-gradient(rgb(255, 0, 0) 0%, rgb(255, 0, 0) 50%, rgb(0, 255, 0) 50%, rgb(0, 255, 0) 100%)',
       )
       expect(screen.getByTestId('gantt-bar-4').style.background).toBe('')
     })

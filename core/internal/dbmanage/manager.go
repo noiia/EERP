@@ -9,7 +9,7 @@ import (
 	"core/internal/types"
 	"core/orm"
 
-	"github.com/bytecodealliance/wasmtime-go/v49"
+	"github.com/bytecodealliance/wasmtime-go/v50"
 )
 
 // Manager holds everything a database-management action needs: the live app

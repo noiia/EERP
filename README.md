@@ -11,9 +11,9 @@
 [![coverage/front-engine](https://img.shields.io/badge/coverage%2Ffront--engine-90.0%25-brightgreen)](core-front/packages/core-front/vitest.config.ts)
 <!-- coverage-badges:end -->
 [![tests](https://img.shields.io/badge/tests-2315%20(go%20916%20%2B%20vitest%201399)-blue)](.github/workflows/test-check.yml)
-[![go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](core/go.mod)
+[![go](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](core/go.mod)
 [![echo](https://img.shields.io/badge/echo-v5.4.0-00ADD8)](https://echo.labstack.com)
-[![pnpm](https://img.shields.io/badge/pnpm-12.4.2-F69220?logo=pnpm&logoColor=white)](core-front/package.json)
+[![pnpm](https://img.shields.io/badge/pnpm-12.18.0-F69220?logo=pnpm&logoColor=white)](core-front/package.json)
 [![react](https://img.shields.io/badge/react-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![mui](https://img.shields.io/badge/mui-9-007FFF?logo=mui&logoColor=white)](https://mui.com)
 [![next](https://img.shields.io/badge/next-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
@@ -35,7 +35,7 @@ stay current as the design evolves.
 ## 🧰 Requirements
 
 - Go **1.27+**
-- Node **22+** and pnpm (via `corepack enable`, pinned to `pnpm@12.4.2` in
+- Node **22+** and pnpm (via `corepack enable`, pinned to `pnpm@12.18.0` in
   `core-front/package.json`) — only needed for frontend work outside Docker
 - Docker + Docker Compose
 - Git

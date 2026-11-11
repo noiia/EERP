@@ -57,7 +57,7 @@ import (
 	"core/orm/access"
 	ormserver "core/orm/server"
 
-	"github.com/bytecodealliance/wasmtime-go/v49"
+	"github.com/bytecodealliance/wasmtime-go/v50"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/nats-io/nats.go"

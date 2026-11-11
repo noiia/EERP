@@ -66,7 +66,7 @@ run-deadcode:
 # pnpm pinned to the workspace's packageManager version through npx (a broken
 # corepack shim can't get in the way); override with PNPM=pnpm. The engine is
 # built first: the shell and the modules import its dist/, as in CI.
-PNPM ?= npx -y pnpm@12.4.2
+PNPM ?= npx -y pnpm@12.18.0
 # FRONT_TEST=test:coverage (what `make test` passes) also enforces each package's
 # vitest coverage thresholds, as CI does.
 FRONT_TEST ?= test

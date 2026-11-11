@@ -1,4 +1,6 @@
-FROM golang:1.27.1 AS builder
+# shortcut: Go 1.27.4+ rejects the LTO bitcode in wasmtime-go's libwasmtime.a (cmd/go cgo
+# security check); stay on 1.27.3 until a wasmtime-go release ships a non-LTO archive.
+FROM golang:1.27.3 AS builder
 
 WORKDIR /app
 
@@ -40,12 +42,12 @@ FROM debian:trixie-slim
 # not Debian's own (older) default, to match compose.yml's postgres:18
 # server exactly rather than hoping cross-major compatibility holds.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg \
+    ca-certificates curl gnupg \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
-        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" \
-        > /etc/apt/sources.list.d/pgdg.list \
+    > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
     && apt-get purge -y gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
