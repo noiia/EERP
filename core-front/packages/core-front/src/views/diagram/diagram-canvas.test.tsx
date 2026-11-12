@@ -7,8 +7,12 @@ import type { Node, NodeProps } from '@xyflow/react'
 // WorkflowMap tests, the stub keeps its props so the tests call the canvas's handlers
 // the way React Flow would.
 type RfNode = { id: string; position: { x: number; y: number }; measured?: { width: number; height: number } }
+type RfEdge = { id: string; source: string; target: string; selected?: boolean }
 type RfProps = {
   nodes: RfNode[]
+  edges: RfEdge[]
+  onEdgesChange?: (c: unknown[]) => void
+  onEdgesDelete?: (e: RfEdge[]) => void
   onNodesChange?: (c: unknown[]) => void
   onNodeDragStop?: (e: unknown, n: RfNode) => void
   onInit?: (i: { fitView: () => void }) => void
@@ -19,7 +23,10 @@ vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: RfProps) => {
     rf.props = props
     return (
-      <div data-testid="react-flow">
+      // React Flow's Delete key removes only the edges it was handed as selected.
+      <div data-testid="react-flow" tabIndex={0} onKeyDown={(e) => {
+        if (e.key === 'Delete') props.onEdgesDelete?.(props.edges.filter((x) => x.selected))
+      }}>
         <div className="react-flow__viewport" />
         {props.children}
       </div>
@@ -113,6 +120,49 @@ describe('DiagramCanvas', () => {
     expect(onNodeDrop).toHaveBeenCalledWith('a', 'b')
     act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(2000, 2000) }))
     expect(onNodeDrop).toHaveBeenLastCalledWith('a', null)
+  })
+
+  it('deletes the selected edge', async () => {
+    const onEdgesDelete = vi.fn()
+    const edges = [{ id: 'e1', source: 'a', target: 'b' }, { id: 'e2', source: 'b', target: 'a' }]
+    setup({ edges, onEdgesDelete })
+    await flush()
+    act(() => rf.props.onEdgesChange!([{ type: 'select', id: 'e1', selected: true }, { type: 'remove', id: 'e2' }]))
+    fireEvent.keyDown(screen.getByTestId('react-flow'), { key: 'Delete' })
+    expect(onEdgesDelete).toHaveBeenCalledWith([{ id: 'e1', source: 'a', target: 'b', selected: true }])
+    act(() => rf.props.onEdgesChange!([{ type: 'select', id: 'e1', selected: false }]))
+    expect(rf.props.edges.some((e) => e.selected)).toBe(false)
+  })
+
+  it('keeps saved folds the parent does not manage', async () => {
+    const { saveViewLayout } = setup({}, { positions: {}, folded: ['a'] })
+    await flush()
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    expect(saveViewLayout).not.toHaveBeenCalled()
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(0, 0) }))
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    expect(saveViewLayout).toHaveBeenCalledWith('project_task', 'wbs', expect.objectContaining({ folded: ['a'] }))
+  })
+
+  it('flushes a pending save on unmount and reloads on another entity', async () => {
+    const saveViewLayout = vi.fn(async () => {})
+    const getViewLayout = vi.fn(async () => ({ positions: {}, folded: [] }))
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), getViewLayout, saveViewLayout }
+    const ui = (entity: string) => (
+      <RelationOpsProvider ops={ops}>
+        <DiagramCanvas entity={entity} mode="pert" title="T" nodes={[node('a')]} edges={[]} autoLayout={() => ({ a: at(0, 0) })} legend={[]} />
+      </RelationOpsProvider>
+    )
+    const { rerender, unmount } = render(ui('one'))
+    await flush()
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(50, 0) }))
+    rerender(ui('two'))
+    expect(saveViewLayout).toHaveBeenCalledWith('one', 'pert', { positions: { a: at(50, 0) }, folded: [] })
+    await flush()
+    expect(getViewLayout).toHaveBeenLastCalledWith('two', 'pert')
+    expect(pos('a')).toEqual(at(0, 0))
+    unmount()
+    expect(saveViewLayout).toHaveBeenCalledTimes(1)
   })
 
   it('re-arrange resets positions and saves', async () => {
@@ -258,6 +308,27 @@ describe('TaskBox', () => {
     expect(data.onCommit).toHaveBeenCalledWith('name', 'New')
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Old'))
     expect(screen.getByText('refused')).toBeInTheDocument()
+  })
+
+  it('has a fixed size', () => {
+    box({})
+    const paper = screen.getByLabelText('Name').closest('.MuiPaper-root')!
+    expect(getComputedStyle(paper).width).toBe('240px')
+    expect(getComputedStyle(paper).height).toBe('300px')
+    expect(getComputedStyle(paper).overflow).toBe('auto')
+  })
+
+  it('commits an edit once, and not on Enter in a multiline field', () => {
+    const data = box({ fields: [...fields, { name: 'notes', label: 'Notes', type: 'text', widget: 'long' }], record: { id: '1', name: 'Old', notes: '' } })
+    const input = screen.getByLabelText('Name')
+    fireEvent.change(input, { target: { value: 'New' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.blur(input)
+    expect(data.onCommit).toHaveBeenCalledTimes(1)
+    const notes = screen.getByLabelText('Notes')
+    fireEvent.change(notes, { target: { value: 'line' } })
+    fireEvent.keyDown(notes, { key: 'Enter' })
+    expect(data.onCommit).toHaveBeenCalledTimes(1)
   })
 
   it('commits on enter, not when unchanged', async () => {

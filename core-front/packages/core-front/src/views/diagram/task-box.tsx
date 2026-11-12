@@ -1,9 +1,10 @@
 'use client'
-import { useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
+import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import { useT } from '../../i18n/translate'
@@ -16,8 +17,9 @@ import { fieldWidget } from '../widgets'
 // widgets, committed one field at a time on blur or Enter, reverted when the write is
 // refused. Double-click (outside a field) opens the record.
 
-/** The box's width, and the height the auto-layouts should assume for it. */
-export const TASK_BOX_SIZE = { w: 240, h: 160 }
+/** The box's fixed size (it scrolls inside past that), which the auto-layouts assume:
+ * room for five compact fields, a badge row and a footer line. */
+export const TASK_BOX_SIZE = { w: 240, h: 300 }
 
 export interface TaskBoxData extends Record<string, unknown> {
   record: Record<string, unknown>
@@ -33,13 +35,22 @@ export interface TaskBoxData extends Record<string, unknown> {
 
 export function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node<TaskBoxData>>) {
   const t = useT()
+  const outer = useTheme()
+  // The form's widgets, compact: they have no size prop of their own.
+  const compact = useMemo(() => createTheme(outer, {
+    components: {
+      MuiTextField: { defaultProps: { size: 'small' } },
+      MuiFormControl: { defaultProps: { size: 'small' } },
+      MuiAutocomplete: { defaultProps: { size: 'small' } },
+    },
+  }), [outer])
   const [error, setError] = useState<SerializedError | null>(null)
   const { record, chevron } = data
   const onDoubleClick = (e: MouseEvent) => {
     if (!(e.target as HTMLElement).closest('input, textarea, [role="combobox"]')) data.onOpen()
   }
   return (
-    <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ width: TASK_BOX_SIZE.w, p: 1 }}>
+    <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'auto', p: 1 }}>
       <Handle type="target" position={targetPosition ?? Position.Top} />
       <ErrorAlert error={error} />
       {chevron || data.badges ? (
@@ -52,11 +63,13 @@ export function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node
           {data.badges}
         </Stack>
       ) : null}
-      <Stack spacing={1}>
-        {data.fields.filter((f) => f.name in record).map((f) => (
-          <BoxField key={f.name} field={f} record={record} editable={data.editable} onCommit={data.onCommit} onError={setError} />
-        ))}
-      </Stack>
+      <ThemeProvider theme={compact}>
+        <Stack spacing={0.75} sx={{ pt: 0.75 }}>
+          {data.fields.filter((f) => f.name in record).map((f) => (
+            <BoxField key={f.name} field={f} record={record} editable={data.editable} onCommit={data.onCommit} onError={setError} />
+          ))}
+        </Stack>
+      </ThemeProvider>
       {data.footer}
       <Handle type="source" position={sourcePosition ?? Position.Bottom} />
     </Paper>
@@ -78,9 +91,12 @@ function BoxField({ field, record, editable, onCommit, onError }: {
     setSeen(current)
     setDraft(null)
   }
+  // The edit already sent: Enter then blur commits it once.
+  const sent = useRef<{ v: unknown } | null>(null)
   const Widget = fieldWidget(field)
   const commit = () => {
-    if (!draft || draft.v === current) return
+    if (!draft || draft.v === current || draft === sent.current) return
+    sent.current = draft
     onError(null)
     onCommit(field.name, draft.v).catch((e: unknown) => {
       setDraft(null)
@@ -91,7 +107,9 @@ function BoxField({ field, record, editable, onCommit, onError }: {
     if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) commit()
   }
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter') commit()
+    const target = e.target as HTMLElement
+    // Enter is a new line in a multiline field, and a pick in an open list.
+    if (e.key === 'Enter' && target.tagName !== 'TEXTAREA' && target.getAttribute('aria-expanded') !== 'true') commit()
   }
   return (
     <Box className="nodrag" onBlur={onBlur} onKeyDown={onKeyDown} sx={{ '& .MuiInputBase-root': { fontSize: '0.8rem' } }}>

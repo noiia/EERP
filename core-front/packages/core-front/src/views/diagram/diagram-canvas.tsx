@@ -12,6 +12,7 @@ import {
   ReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
   type NodeChange,
   type NodeTypes,
@@ -128,6 +129,11 @@ const nodeTypes: NodeTypes = { task: TaskBox }
 const size = (n?: Node) => ({ w: n?.measured?.width ?? TASK_BOX_SIZE.w, h: n?.measured?.height ?? TASK_BOX_SIZE.h })
 
 export function DiagramCanvas(props: DiagramCanvasProps) {
+  // Another entity or mode is another layout: start over (unmounting flushes a pending save).
+  return <Canvas key={`${props.entity}:${props.mode}`} {...props} />
+}
+
+function Canvas(props: DiagramCanvasProps) {
   const { entity, mode, title, nodes, edges, autoLayout, folded = [], onFoldedChange, onNodeDrop, legend } = props
   const t = useT()
   const ops = useRelationOps()
@@ -138,12 +144,17 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
   const [positions, setPositions] = useState<Record<string, Point>>({})
   const [live, setLive] = useState<Record<string, Point>>({})
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
+  // Edges are controlled: React Flow's Delete key only targets edges passed in as selected.
+  const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set())
   const [saveError, setSaveError] = useState<SerializedError | null>(null)
   const container = useRef<HTMLDivElement>(null)
   const instance = useRef<ReactFlowInstance | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // The folds last loaded or saved, so only a real change schedules a save.
-  const foldedKey = useRef(JSON.stringify(folded))
+  // Folds: the saved ones (kept as-is when the parent doesn't manage folds), the prop's
+  // last value, and the loaded value until the parent has echoed it back once.
+  const loadedFolded = useRef<string[]>([])
+  const prevFolded = useRef(JSON.stringify(folded))
+  const echo = useRef<string | null>(null)
 
   // Read through refs: the props are new functions on every parent render.
   const autoRef = useRef(autoLayout)
@@ -160,7 +171,8 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
       .then((layout) => {
         if (cancelled) return
         setPositions(layout.positions)
-        foldedKey.current = JSON.stringify(layout.folded)
+        loadedFolded.current = layout.folded
+        echo.current = JSON.stringify(layout.folded)
         foldedChangeRef.current?.(layout.folded)
       })
       .catch(() => {}) // fail-open: an unreadable layout is the empty one
@@ -170,8 +182,7 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
     return () => {
       cancelled = true
     }
-    // Loaded once per entity/mode.
-  }, [entity, mode])
+  }, [entity, mode, getViewLayout])
 
   const ids = nodes.map((n) => n.id)
   const idsKey = ids.join('\n')
@@ -185,9 +196,10 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
     )
   }, [idsKey, positions])
 
-  const latest = useRef({ placed, folded })
+  const savedFolded = onFoldedChange ? folded : loadedFolded.current
+  const latest = useRef({ placed, folded: savedFolded })
   useEffect(() => {
-    latest.current = { placed, folded }
+    latest.current = { placed, folded: savedFolded }
   })
 
   const save = (layout: { positions: Record<string, Point>; folded: string[] }) => {
@@ -197,24 +209,34 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
       (e: unknown) => setSaveError(serializeError(toApiError(e))),
     )
   }
+  const flush = () => {
+    timer.current = null
+    save({ positions: latest.current.placed, folded: latest.current.folded })
+  }
   const scheduleSave = () => {
     if (!saveViewLayout) return
     if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => {
-      timer.current = null
-      save({ positions: latest.current.placed, folded: latest.current.folded })
-    }, SAVE_DELAY_MS)
+    timer.current = setTimeout(flush, SAVE_DELAY_MS)
   }
+  const flushRef = useRef(flush)
+  useEffect(() => {
+    flushRef.current = flush
+  })
+  // Leaving with a save pending: send it now rather than drop the user's last move.
   useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current)
+    if (!timer.current) return
+    clearTimeout(timer.current)
+    flushRef.current()
   }, [])
 
-  // A fold change is part of the layout too — but not the one just loaded.
+  // A fold change by the user is part of the layout; the parent echoing the loaded folds isn't.
   const foldedNow = JSON.stringify(folded)
   useEffect(() => {
-    if (!loaded || foldedNow === foldedKey.current) return
-    foldedKey.current = foldedNow
-    scheduleSave()
+    if (foldedNow === prevFolded.current) return
+    prevFolded.current = foldedNow
+    const isEcho = foldedNow === echo.current
+    echo.current = null
+    if (loaded && !isEcho) scheduleSave()
   }, [foldedNow, loaded])
 
   const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -257,8 +279,23 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
     setPositions(next)
     setLive({})
     if (timer.current) clearTimeout(timer.current)
-    save({ positions: next, folded })
+    timer.current = null
+    save({ positions: next, folded: savedFolded })
   }
+
+  const onEdgesChange = (changes: EdgeChange[]) => {
+    const picks = changes.filter((c) => c.type === 'select')
+    if (!picks.length) return
+    setSelectedEdges((prev) => {
+      const next = new Set(prev)
+      for (const c of picks) {
+        if (c.selected) next.add(c.id)
+        else next.delete(c.id)
+      }
+      return next
+    })
+  }
+  const rfEdges = edges.map((e) => (selectedEdges.has(e.id) ? { ...e, selected: true } : e))
 
   const exportAs = async (kind: 'png' | 'pdf') => {
     const viewport = container.current?.querySelector<HTMLElement>('.react-flow__viewport')
@@ -288,7 +325,8 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
         {loaded ? (
           <ReactFlow
             nodes={rfNodes}
-            edges={edges}
+            edges={rfEdges}
+            onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onNodeDragStop={onNodeDragStop}
