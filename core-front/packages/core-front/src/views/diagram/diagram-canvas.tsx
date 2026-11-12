@@ -2,8 +2,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import { ThemeProvider, useTheme } from '@mui/material/styles'
 import {
   Background,
   Controls,
@@ -22,11 +24,10 @@ import { serializeError, toApiError, type SerializedError } from '../../api/erro
 import type { EntityListOptions } from '../../api/list-options'
 import { useT } from '../../i18n/translate'
 import { ErrorAlert } from '../error-alert'
-import { useRelationOps } from '../relation-ops'
+import { RelationOpsProvider, useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
 import type { HasId } from '../stores'
 import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
-import { exportPdf, exportPng } from './export'
-import { LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
+import { compactTheme, LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
 // (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
@@ -35,6 +36,8 @@ import { LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
 // the last drop. Nodes default to the `task` type (TaskBox).
 
 export const DIAGRAM_RECORD_CAP = 2000
+/** The server's limit on saved positions (and folded ids) per layout. */
+export const LAYOUT_POSITION_LIMIT = 5000
 const PAGE_SIZE = 200
 const SAVE_DELAY_MS = 500
 
@@ -101,9 +104,51 @@ export function DiagramCapNotice() {
   const t = useT()
   return (
     <Typography color="text.secondary" sx={{ p: 2 }}>
-      {t('More than')} {DIAGRAM_RECORD_CAP} {t('records match — narrow the filters to draw the diagram')}
+      {t('More than {n} records match — narrow the filters to draw the diagram').replace('{n}', String(DIAGRAM_RECORD_CAP))}
     </Typography>
   )
+}
+
+/** What a renderer shows while useDiagramRecords is still reading. */
+export function DiagramLoading() {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+      <CircularProgress size={24} />
+    </Box>
+  )
+}
+
+/** The positions to save: every known one, the drawn ones kept first when over `limit`
+ * (a folded branch or a narrower filter keeps its boxes' spots for later). */
+export function trimPositions(positions: Record<string, Point>, drawn: Set<string>, limit = LAYOUT_POSITION_LIMIT): Record<string, Point> {
+  const ids = Object.keys(positions)
+  if (ids.length <= limit) return positions
+  const kept = [...ids.filter((id) => drawn.has(id)), ...ids.filter((id) => !drawn.has(id))].slice(0, limit)
+  return Object.fromEntries(kept.map((id) => [id, positions[id]]))
+}
+
+function BoxOps({ ops, children }: { ops: RelationOps | null; children: ReactNode }) {
+  return ops ? <RelationOpsProvider ops={ops}>{children}</RelationOpsProvider> : <>{children}</>
+}
+
+/** RelationOps whose `get` is cached per entity:id (in-flight promises shared, failures
+ * forgotten): every box showing the same many2one resolves its label with one read. */
+function useCachedGet(ops: RelationOps | null): RelationOps | null {
+  return useMemo(() => {
+    if (!ops) return null
+    const cache = new Map<string, Promise<RelationRecord>>()
+    const get = (entity: string, id: string) => {
+      const key = `${entity}:${id}`
+      let p = cache.get(key)
+      if (!p) {
+        p = ops.get(entity, id)
+        p.catch(() => cache.delete(key))
+        cache.set(key, p)
+      }
+      return p
+    }
+    return { ...ops, get }
+  }, [ops])
 }
 
 export interface DiagramCanvasProps {
@@ -137,17 +182,22 @@ export function DiagramCanvas(props: DiagramCanvasProps) {
 function Canvas(props: DiagramCanvasProps) {
   const { entity, mode, title, nodes, edges, autoLayout, folded = [], onFoldedChange, onNodeDrop, legend } = props
   const t = useT()
+  const outer = useTheme()
   const ops = useRelationOps()
+  const boxOps = useCachedGet(ops)
+  const compact = useMemo(() => compactTheme(outer), [outer])
   const getViewLayout = ops?.getViewLayout
   const saveViewLayout = ops?.saveViewLayout
   const [loaded, setLoaded] = useState(!getViewLayout)
-  // Fixed positions: loaded, dropped or re-arranged. Ids no longer drawn just stay unused.
+  // Fixed positions: loaded, dropped or re-arranged. Ids not drawn now (folded, filtered
+  // out) keep theirs and are saved with the rest.
   const [positions, setPositions] = useState<Record<string, Point>>({})
   const [live, setLive] = useState<Record<string, Point>>({})
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
   // Edges are controlled: React Flow's Delete key only targets edges passed in as selected.
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set())
   const [saveError, setSaveError] = useState<SerializedError | null>(null)
+  const [exportError, setExportError] = useState<SerializedError | null>(null)
   const container = useRef<HTMLDivElement>(null)
   const instance = useRef<ReactFlowInstance | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -198,9 +248,11 @@ function Canvas(props: DiagramCanvasProps) {
   }, [idsKey, positions])
 
   const savedFolded = onFoldedChange ? folded : loadedFolded.current
-  const latest = useRef({ placed, folded: savedFolded })
+  const drawn = useMemo(() => new Set(ids), [idsKey])
+  const toSave = (all: Record<string, Point>) => trimPositions(all, drawn)
+  const latest = useRef({ positions, placed, drawn, folded: savedFolded })
   useEffect(() => {
-    latest.current = { placed, folded: savedFolded }
+    latest.current = { positions, placed, drawn, folded: savedFolded }
   })
 
   const save = (layout: { positions: Record<string, Point>; folded: string[] }) => {
@@ -212,7 +264,8 @@ function Canvas(props: DiagramCanvasProps) {
   }
   const flush = () => {
     timer.current = null
-    save({ positions: latest.current.placed, folded: latest.current.folded })
+    const l = latest.current
+    save({ positions: trimPositions({ ...l.positions, ...l.placed }, l.drawn), folded: l.folded })
   }
   const scheduleSave = () => {
     if (!saveViewLayout) return
@@ -243,15 +296,25 @@ function Canvas(props: DiagramCanvasProps) {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const sized = (id: string) => (sizes[id] ? { w: sizes[id].width, h: sizes[id].height } : size(byId.get(id)))
   const vertical = mode === 'wbs'
-  const rfNodes: Node[] = nodes.map((n) => ({
-    ...n,
-    type: n.type ?? 'task',
-    position: live[n.id] ?? placed[n.id],
-    deletable: false,
-    sourcePosition: vertical ? Position.Bottom : Position.Right,
-    targetPosition: vertical ? Position.Top : Position.Left,
-    ...(sizes[n.id] ? { measured: sizes[n.id] } : {}),
-  }))
+  // A drag frame re-renders only the canvas: every other box keeps its node object, so
+  // React Flow skips it (2000 boxes would otherwise all re-render per frame).
+  const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; node: Node }>())
+  const rfNodes: Node[] = nodes.map((n) => {
+    const position = live[n.id] ?? placed[n.id]
+    const prev = built.current.get(n.id)
+    if (prev && prev.src === n && prev.position === position && prev.size === sizes[n.id]) return prev.node
+    const node: Node = {
+      ...n,
+      type: n.type ?? 'task',
+      position,
+      deletable: false,
+      sourcePosition: vertical ? Position.Bottom : Position.Right,
+      targetPosition: vertical ? Position.Top : Position.Left,
+      ...(sizes[n.id] ? { measured: sizes[n.id] } : {}),
+    }
+    built.current.set(n.id, { src: n, position, size: sizes[n.id], node })
+    return node
+  })
 
   const onNodesChange = (changes: NodeChange[]) => {
     const moves = changes.flatMap((c) => (c.type === 'position' && c.position ? [[c.id, c.position] as const] : []))
@@ -269,7 +332,7 @@ function Canvas(props: DiagramCanvasProps) {
       setPositions((p) => ({ ...p, [node.id]: before }))
       scheduleSave()
     }
-    setPositions({ ...placed, [node.id]: freeSpot(rect, others) })
+    setPositions({ ...positions, ...placed, [node.id]: freeSpot(rect, others) })
     if (onNodeDrop) {
       const cx = rect.x + rect.w / 2
       const cy = rect.y + rect.h / 2
@@ -284,12 +347,13 @@ function Canvas(props: DiagramCanvasProps) {
 
   const rearrange = () => {
     const auto = autoRef.current()
-    const next = Object.fromEntries(ids.map((id) => [id, auto[id] ?? { x: 0, y: 0 }]))
+    // Only the drawn boxes are re-arranged; hidden ones keep their saved spot.
+    const next = { ...positions, ...Object.fromEntries(ids.map((id) => [id, auto[id] ?? { x: 0, y: 0 }])) }
     setPositions(next)
     setLive({})
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
-    save({ positions: next, folded: savedFolded })
+    save({ positions: toSave(next), folded: savedFolded })
   }
 
   const onEdgesChange = (changes: EdgeChange[]) => {
@@ -310,13 +374,20 @@ function Canvas(props: DiagramCanvasProps) {
     const viewport = container.current?.querySelector<HTMLElement>('.react-flow__viewport')
     if (!viewport) return
     const bounds = getNodesBounds(rfNodes)
-    if (kind === 'png') await exportPng(viewport, bounds, title)
-    else await exportPdf(viewport, bounds, { title, date: new Date(), legend }, title)
+    setExportError(null)
+    try {
+      // html-to-image and jspdf load on the first export, not with the diagram.
+      const { exportPdf, exportPng } = await import('./export')
+      if (kind === 'png') await exportPng(viewport, bounds, title)
+      else await exportPdf(viewport, bounds, { title, date: new Date(), legend }, title)
+    } catch (e: unknown) {
+      setExportError(serializeError(toApiError(e)))
+    }
   }
 
   return (
     <Box>
-      <ErrorAlert error={saveError} />
+      <ErrorAlert error={saveError ?? exportError} />
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
         <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>
         <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>
@@ -332,6 +403,8 @@ function Canvas(props: DiagramCanvasProps) {
       </Stack>
       <Box ref={container} sx={{ height: '70vh', border: 1, borderColor: 'divider', borderRadius: 1 }}>
         {loaded ? (
+          <BoxOps ops={boxOps}>
+          <ThemeProvider theme={compact}>
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
@@ -351,6 +424,8 @@ function Canvas(props: DiagramCanvasProps) {
             <Background />
             <Controls showInteractive={false} />
           </ReactFlow>
+          </ThemeProvider>
+          </BoxOps>
         ) : null}
       </Box>
     </Box>

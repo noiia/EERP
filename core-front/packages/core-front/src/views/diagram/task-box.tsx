@@ -1,18 +1,19 @@
 'use client'
-import { useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { memo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles'
+import { createTheme, type Theme } from '@mui/material/styles'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import { useT } from '../../i18n/translate'
-import type { FieldDescriptor } from '../descriptor'
+import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
 import { ErrorAlert } from '../error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { fieldWidget } from '../widgets'
+import { moduleRegistry } from '../../registry'
 
 // One task as a diagram box (WBS and PERT): its editable fields through the form's own
 // widgets, committed one field at a time on blur or Enter, reverted when the write is
@@ -34,17 +35,26 @@ export interface TaskBoxData extends Record<string, unknown> {
   chevron?: { folded: boolean; onToggle: () => void }
 }
 
-export function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node<TaskBoxData>>) {
+/** The form's widgets, compact (they have no size prop of their own). The canvas
+ * wraps all its boxes in one ThemeProvider of it, not one per box. */
+export const compactTheme = (outer: Theme) => createTheme(outer, {
+  components: {
+    MuiTextField: { defaultProps: { size: 'small' } },
+    MuiFormControl: { defaultProps: { size: 'small' } },
+    MuiAutocomplete: { defaultProps: { size: 'small' } },
+  },
+})
+
+/** A box field's definition: the FORM's first (its relation scoping, e.g. a picker
+ * filtered by the record's own project), else the list descriptor's. */
+export function boxFieldOf(descriptor: ViewDescriptor) {
+  const formFields = moduleRegistry.formDescriptorFor(descriptor.entity)?.fields ?? []
+  return (name: string): FieldDescriptor | undefined =>
+    formFields.find((f) => f.name === name) ?? descriptor.fields.find((f) => f.name === name)
+}
+
+export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node<TaskBoxData>>) {
   const t = useT()
-  const outer = useTheme()
-  // The form's widgets, compact: they have no size prop of their own.
-  const compact = useMemo(() => createTheme(outer, {
-    components: {
-      MuiTextField: { defaultProps: { size: 'small' } },
-      MuiFormControl: { defaultProps: { size: 'small' } },
-      MuiAutocomplete: { defaultProps: { size: 'small' } },
-    },
-  }), [outer])
   const [error, setError] = useState<SerializedError | null>(null)
   const { record, chevron } = data
   const onDoubleClick = (e: MouseEvent) => {
@@ -64,18 +74,16 @@ export function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node
           {data.badges}
         </Stack>
       ) : null}
-      <ThemeProvider theme={compact}>
-        <Stack spacing={0.75} sx={{ pt: 0.75 }}>
-          {data.fields.filter((f) => f.name in record).map((f) => (
-            <BoxField key={f.name} field={f} record={record} editable={data.editable} onCommit={data.onCommit} onError={setError} />
-          ))}
-        </Stack>
-      </ThemeProvider>
+      <Stack spacing={0.75} sx={{ pt: 0.75 }}>
+        {data.fields.filter((f) => f.name in record).map((f) => (
+          <BoxField key={f.name} field={f} record={record} editable={data.editable} onCommit={data.onCommit} onError={setError} />
+        ))}
+      </Stack>
       {data.footer}
       <Handle type="source" position={sourcePosition ?? Position.Bottom} />
     </Paper>
   )
-}
+})
 
 export interface LabelBoxData extends Record<string, unknown> {
   label: string
@@ -84,7 +92,7 @@ export interface LabelBoxData extends Record<string, unknown> {
 }
 
 /** A read-only box with just a title (a WBS group root), as wide as a TaskBox. */
-export function LabelBox({ data, sourcePosition, targetPosition }: NodeProps<Node<LabelBoxData>>) {
+export const LabelBox = memo(function LabelBox({ data, sourcePosition, targetPosition }: NodeProps<Node<LabelBoxData>>) {
   const t = useT()
   const { chevron } = data
   return (
@@ -102,7 +110,7 @@ export function LabelBox({ data, sourcePosition, targetPosition }: NodeProps<Nod
       <Handle type="source" position={sourcePosition ?? Position.Bottom} />
     </Paper>
   )
-}
+})
 
 function BoxField({ field, record, editable, onCommit, onError }: {
   field: FieldDescriptor

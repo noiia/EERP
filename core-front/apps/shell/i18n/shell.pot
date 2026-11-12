@@ -2583,10 +2583,7 @@ msgstr ""
 msgid "Fit view"
 msgstr ""
 
-msgid "More than"
-msgstr ""
-
-msgid "records match — narrow the filters to draw the diagram"
+msgid "More than {n} records match — narrow the filters to draw the diagram"
 msgstr ""
 
 msgid "Expand"
@@ -2626,6 +2623,9 @@ msgid "Critical path"
 msgstr ""
 
 msgid "Closed"
+msgstr ""
+
+msgid "1 hidden link"
 msgstr ""
 
 msgid "{n} hidden links"

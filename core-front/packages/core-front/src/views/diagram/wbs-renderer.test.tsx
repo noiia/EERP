@@ -38,12 +38,13 @@ vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn() }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
-import { WbsRenderer } from './wbs-renderer'
+import { WbsRenderer, type WbsRendererProps } from './wbs-renderer'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
 import type { ViewDescriptor } from '../descriptor'
 import type { EntityActions } from '../stores'
 import { useSessionStore } from '../session-store'
+import { moduleRegistry } from '../../registry'
 
 type Task = { id: string; name: string; parent_id: string | null; project_id: string; planned_hours: number }
 const descriptor: ViewDescriptor = {
@@ -65,7 +66,7 @@ const rows = (): Task[] => [
 ]
 const projects: Record<string, string> = { p1: 'Alpha', p2: 'Beta' }
 
-function setup(update?: EntityActions<Task>['update'], write = true) {
+function setup(update?: EntityActions<Task>['update'], write = true, extra: Partial<WbsRendererProps<Task>> = {}, opsOver: Partial<RelationOps> = {}) {
   useSessionStore.setState({
     identity: { userId: 'u1', tenantId: 't1', roles: [], permissions: write ? ['project_task:project_task:read', 'project_task:project_task:write'] : ['project_task:project_task:read'] },
   } as never)
@@ -77,6 +78,7 @@ function setup(update?: EntityActions<Task>['update'], write = true) {
     remove: vi.fn(),
     getViewLayout: async () => ({ positions: {}, folded: [] }),
     saveViewLayout,
+    ...opsOver,
   } as unknown as RelationOps
   const actions: EntityActions<Task> = {
     create: vi.fn(),
@@ -85,10 +87,10 @@ function setup(update?: EntityActions<Task>['update'], write = true) {
   const onRecordsChange = vi.fn()
   render(
     <RelationOpsProvider ops={ops}>
-      <WbsRenderer descriptor={descriptor} initialData={rows()} actions={actions} parentField="parent_id" groupField="project_id" hoursField="planned_hours" onRecordsChange={onRecordsChange} />
+      <WbsRenderer descriptor={descriptor} initialData={rows()} actions={actions} parentField="parent_id" groupField="project_id" hoursField="planned_hours" onRecordsChange={onRecordsChange} {...extra} />
     </RelationOpsProvider>,
   )
-  return { actions, onRecordsChange, saveViewLayout }
+  return { actions, onRecordsChange, saveViewLayout, ops }
 }
 const node = (id: string) => rf.props.nodes.find((n) => n.id === id)!
 const drop = (id: string, on: string) => act(() => rf.props.onNodeDragStop!(null, { ...node(id), position: node(on).position }))
@@ -186,6 +188,30 @@ describe('WbsRenderer', () => {
     drop('A', 'group:p1')
     expect(node('A').position).toEqual(a)
     expect(actions.update).not.toHaveBeenCalled()
+  })
+
+  it('resolves a many2one shown in many boxes with one read', async () => {
+    const get = vi.fn(async (_e: string, id: string) => ({ id, name: projects[id] }))
+    const { ops } = setup(undefined, true, { boxFields: ['name', 'project_id'] }, { get })
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2)) // p1 once for 3 boxes, p2 once
+    await act(() => new Promise((r) => setTimeout(r, 50)))
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(ops.get).toBe(get)
+  })
+
+  it('takes box fields from the form descriptor first (its relation scoping)', async () => {
+    const formStage = { name: 'project_id', label: 'Project', type: 'relation' as const, relation: { entity: 'project', kind: 'many2one' as const, filterFields: { company_id: 'name' } } }
+    const spy = vi.spyOn(moduleRegistry, 'formDescriptorFor').mockReturnValue({ ...descriptor, viewType: 'form', fields: [{ name: 'name', label: 'Title', type: 'text' }, formStage] })
+    setup(undefined, true, { boxFields: ['name'] })
+    expect(await screen.findAllByLabelText('Title')).toHaveLength(4)
+    expect(screen.queryByLabelText('Name')).toBeNull()
+    spy.mockRestore()
+  })
+
+  it('shows a spinner while the records load', async () => {
+    setup(undefined, true, { serverOptions: {} }, { listPage: vi.fn(() => new Promise<never>(() => {})) })
+    expect(await screen.findByRole('progressbar')).toBeInTheDocument()
+    expect(screen.queryByTestId('react-flow')).toBeNull()
   })
 
   it('is read-only without the write permission', async () => {

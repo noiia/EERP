@@ -2715,11 +2715,8 @@ msgstr "Exporter en PDF"
 msgid "Fit view"
 msgstr "Ajuster la vue"
 
-msgid "More than"
-msgstr "Plus de"
-
-msgid "records match — narrow the filters to draw the diagram"
-msgstr "éléments correspondent : affinez les filtres pour dessiner le diagramme"
+msgid "More than {n} records match — narrow the filters to draw the diagram"
+msgstr "Plus de {n} éléments correspondent : affinez les filtres pour dessiner le diagramme"
 
 msgid "Expand"
 msgstr "Déplier"
@@ -2737,16 +2734,16 @@ msgid "Folded branch"
 msgstr "Branche repliée"
 
 msgid "ES"
-msgstr "DT"
+msgstr "DPT"
 
 msgid "EF"
-msgstr "FT"
+msgstr "FPT"
 
 msgid "LS"
-msgstr "DTA"
+msgstr "DPA"
 
 msgid "LF"
-msgstr "FTA"
+msgstr "FPA"
 
 msgid "Slack: {n} d"
 msgstr "Marge : {n} j"
@@ -2759,6 +2756,9 @@ msgstr "Chemin critique"
 
 msgid "Closed"
 msgstr "Clôturée"
+
+msgid "1 hidden link"
+msgstr "1 lien masqué"
 
 msgid "{n} hidden links"
 msgstr "{n} liens masqués"

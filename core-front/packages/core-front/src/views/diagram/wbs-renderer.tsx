@@ -9,15 +9,14 @@ import type { EntityListOptions } from '../../api/list-options'
 import { usePermission } from '../../auth/Can'
 import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
-import { moduleRegistry } from '../../registry'
 import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
 import { ErrorAlert } from '../error-alert'
 import { useNumberFormat } from '../format-store'
 import type { EntityActions, HasId } from '../stores'
 import { useRelationLabels } from '../use-relation-labels'
 import { layoutWbs } from './auto-layout'
-import { DiagramCanvas, DiagramCapNotice, useDiagramRecords } from './diagram-canvas'
-import { TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
+import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
+import { boxFieldOf, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
 import { buildWbs, canReparent } from './wbs'
 
 // WBS display mode: the records as a top-down tree over `parentField`, under one
@@ -71,9 +70,7 @@ export function WbsRenderer<T extends HasId>({
   const [folded, setFolded] = useState<string[]>([])
   const [error, setError] = useState<SerializedError | null>(null)
 
-  const formFields = moduleRegistry.formDescriptorFor(entity)?.fields ?? []
-  const fieldOf = (name: string): FieldDescriptor | undefined =>
-    descriptor.fields.find((f) => f.name === name) ?? formFields.find((f) => f.name === name)
+  const fieldOf = boxFieldOf(descriptor)
   const fields = [...new Set(boxFields.filter((n): n is string => !!n))]
     .map(fieldOf)
     .filter((f): f is FieldDescriptor => !!f)
@@ -160,6 +157,7 @@ export function WbsRenderer<T extends HasId>({
   }
 
   if (loaded.capped) return <DiagramCapNotice />
+  if (loaded.loading) return <DiagramLoading />
   return (
     <>
       <ErrorAlert error={error ?? (loaded.error ? { code: 'INTERNAL_ERROR', message: loaded.error } : null)} />

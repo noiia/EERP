@@ -40,12 +40,19 @@ vi.mock('@xyflow/react', () => ({
 }))
 const exportPng = vi.hoisted(() => vi.fn(async () => {}))
 const exportPdf = vi.hoisted(() => vi.fn(async () => {}))
-vi.mock('./export', () => ({ exportPng, exportPdf }))
+// Counts module loads: the export code must load on the first click, not with the canvas.
+const exportLoads = vi.hoisted(() => ({ n: 0 }))
+vi.mock('./export', () => {
+  exportLoads.n++
+  return { exportPng, exportPdf }
+})
 
-import { DIAGRAM_RECORD_CAP, DiagramCanvas, DiagramCapNotice, useDiagramRecords, type DiagramCanvasProps } from './diagram-canvas'
-import { TaskBox, type TaskBoxData } from './task-box'
+import { DIAGRAM_RECORD_CAP, DiagramCanvas, DiagramCapNotice, trimPositions, useDiagramRecords, type DiagramCanvasProps } from './diagram-canvas'
+import { LabelBox, TaskBox, type TaskBoxData } from './task-box'
 import { RelationOpsProvider, type RelationOps, type ViewLayout } from '../relation-ops'
 import type { EntityListOptions } from '../../api/list-options'
+import { translationRegistry } from '../../i18n/registry'
+import { useI18nStore } from '../../i18n/i18n-store'
 
 type ListPage = NonNullable<RelationOps['listPage']>
 const at = (x: number, y: number) => ({ x, y })
@@ -72,7 +79,7 @@ function setup(over: Partial<DiagramCanvasProps> = {}, layout: ViewLayout = { po
       <DiagramCanvas {...props} />
     </RelationOpsProvider>,
   )
-  return { saveViewLayout, getViewLayout }
+  return { saveViewLayout, getViewLayout, props, ops }
 }
 
 beforeEach(() => vi.useFakeTimers())
@@ -83,6 +90,14 @@ afterEach(() => {
 })
 
 describe('DiagramCanvas', () => {
+  it('loads the export code only on the first export', async () => {
+    setup()
+    await flush()
+    expect(exportLoads.n).toBe(0)
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    expect(exportLoads.n).toBe(1)
+  })
+
   it('merges saved positions with auto layout', async () => {
     const { saveViewLayout, getViewLayout } = setup({}, { positions: { b: at(0, 0), stale: at(9, 9) }, folded: [] })
     await flush()
@@ -94,7 +109,47 @@ describe('DiagramCanvas', () => {
     await act(() => vi.advanceTimersByTimeAsync(500))
     expect(saveViewLayout).toHaveBeenCalledTimes(1)
     const [, , saved] = saveViewLayout.mock.calls[0] as unknown as [string, string, ViewLayout]
-    expect(Object.keys(saved.positions).sort()).toEqual(['a', 'b'])
+    // An id not drawn now keeps its saved spot.
+    expect(Object.keys(saved.positions).sort()).toEqual(['a', 'b', 'stale'])
+    expect(saved.positions.stale).toEqual(at(9, 9))
+  })
+
+  it('keeps the spots of boxes hidden since (folded or filtered out) when saving', async () => {
+    const saveViewLayout = vi.fn(async () => {})
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), getViewLayout: async () => ({ positions: {}, folded: [] }), saveViewLayout }
+    const ui = (ids: string[]) => (
+      <RelationOpsProvider ops={ops}>
+        <DiagramCanvas entity="e" mode="wbs" title="T" nodes={ids.map(node)} edges={[]} autoLayout={() => ({ a: at(0, 0), b: at(500, 0), c: at(1000, 0) })} legend={[]} />
+      </RelationOpsProvider>
+    )
+    const { rerender } = render(ui(['a', 'b', 'c']))
+    await flush()
+    act(() => rf.props.onNodeDragStop!(null, { id: 'c', position: at(1200, 300) }))
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    rerender(ui(['a', 'b'])) // c folded away
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(0, 900) }))
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    expect(saveViewLayout).toHaveBeenLastCalledWith('e', 'wbs', { positions: { a: at(0, 900), b: at(500, 0), c: at(1200, 300) }, folded: [] })
+    // Re-arrange resets only the drawn boxes.
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Re-arrange' })))
+    expect(saveViewLayout).toHaveBeenLastCalledWith('e', 'wbs', { positions: { a: at(0, 0), b: at(500, 0), c: at(1200, 300) }, folded: [] })
+  })
+
+  it('keeps unmoved nodes the same objects during a drag', async () => {
+    setup()
+    await flush()
+    const before = rf.props.nodes
+    act(() => rf.props.onNodesChange!([{ type: 'position', id: 'a', position: at(40, 40) }]))
+    expect(rf.props.nodes[1]).toBe(before[1])
+    expect(rf.props.nodes[0]).not.toBe(before[0])
+  })
+
+  it('shows an export failure', async () => {
+    exportPdf.mockRejectedValueOnce(new Error('canvas too big'))
+    setup()
+    await flush()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    expect(screen.getByText('canvas too big')).toBeInTheDocument()
   })
 
   it('saves debounced after a drag', async () => {
@@ -234,6 +289,28 @@ describe('DiagramCanvas', () => {
   })
 })
 
+describe('DiagramCapNotice', () => {
+  afterEach(() => {
+    translationRegistry.clear()
+    useI18nStore.setState({ locale: null })
+  })
+  it('translates as one sentence, with the cap in it', () => {
+    const msgid = 'More than {n} records match — narrow the filters to draw the diagram'
+    translationRegistry.register({ locale: 'fr', module: 'shell', entries: { [msgid]: 'Plus de {n} éléments' } })
+    useI18nStore.setState({ locale: 'fr' })
+    render(<DiagramCapNotice />)
+    expect(screen.getByText(`Plus de ${DIAGRAM_RECORD_CAP} éléments`)).toBeInTheDocument()
+  })
+})
+
+describe('trimPositions', () => {
+  it('keeps every position under the limit, else the drawn ones first', () => {
+    const all = { h1: at(1, 1), a: at(0, 0), h2: at(2, 2), b: at(3, 3) }
+    expect(trimPositions(all, new Set(['a', 'b']), 4)).toBe(all)
+    expect(Object.keys(trimPositions(all, new Set(['a', 'b']), 3)).sort()).toEqual(['a', 'b', 'h1'])
+  })
+})
+
 describe('useDiagramRecords', () => {
   beforeEach(() => vi.useRealTimers())
 
@@ -292,6 +369,10 @@ describe('useDiagramRecords', () => {
 
 describe('TaskBox', () => {
   beforeEach(() => vi.useRealTimers())
+  it('is memoized, like LabelBox', () => {
+    expect((TaskBox as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'))
+    expect((LabelBox as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'))
+  })
   const fields = [{ name: 'name', label: 'Name', type: 'text' as const }, { name: 'missing', label: 'Missing', type: 'text' as const }]
   function box(data: Partial<TaskBoxData>) {
     const full: TaskBoxData = { record: { id: '1', name: 'Old' }, editable: true, fields, onCommit: vi.fn(async () => {}), onOpen: vi.fn(), ...data }

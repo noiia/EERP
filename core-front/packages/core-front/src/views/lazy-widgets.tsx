@@ -35,7 +35,8 @@ export const GraphRenderer = lazyComponent<GraphRendererProps<HasId>>(() =>
   ),
 )
 
-// React Flow, jspdf and html-to-image (and React Flow's CSS) only load with WBS mode.
+// React Flow (and its CSS) only loads with the WBS/PERT modes; jspdf and html-to-image
+// load later still, on the first export (diagram-canvas.tsx).
 export const WbsRenderer = lazyComponent<WbsRendererProps<HasId>>(() =>
   import('./diagram/wbs-renderer').then(
     (m) => m.WbsRenderer as React.ComponentType<WbsRendererProps<HasId>>,
