@@ -21,6 +21,11 @@ vi.mock('./diagram/wbs-renderer', () => ({
     <div data-testid="wbs-renderer">{JSON.stringify([p.parentField, p.groupField, p.boxFields, p.hoursField])}</div>
   ),
 }))
+vi.mock('./diagram/pert-renderer', () => ({
+  PertRenderer: (p: { dependencies: unknown; startField?: string; endField?: string; hoursField?: string; boxFields?: unknown[] }) => (
+    <div data-testid="pert-renderer">{JSON.stringify([p.dependencies, p.startField, p.endField, p.hoursField, p.boxFields])}</div>
+  ),
+}))
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
 import { useBreadcrumbStore } from './breadcrumb-store'
 import type { ViewDescriptor } from './descriptor'
@@ -1430,6 +1435,22 @@ describe('EntityView', () => {
       expect(screen.queryByRole('grid')).not.toBeInTheDocument()
       expect(await screen.findByTestId('wbs-renderer')).toHaveTextContent(
         JSON.stringify(['parent_id', 'project_id', ['name', 'status', null, null, 'planned_hours'], 'planned_hours']),
+      )
+    })
+
+    it('switching to PERT hands the lazy PertRenderer the module defaults', async () => {
+      const dep = { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' }
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, viewModeDefaults: { pertDependencies: dep, pertHoursField: 'planned_hours', ganttStartField: 'date_start', ganttEndField: 'deadline' } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'PERT' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('pert-renderer')).toHaveTextContent(
+        JSON.stringify([dep, 'date_start', 'deadline', 'planned_hours', ['name', null, 'date_start', 'deadline', 'planned_hours']]),
       )
     })
 
