@@ -70,6 +70,15 @@ export interface ViewModeDefaults {
   /** Gantt dependency arrows, read from the rows of another entity.
    * Module-declared only, like calendarColorField. */
   ganttDependencies?: GanttDependenciesConfig
+  /** WBS mode: the self-referencing many2one that parents a record. Module-declared only. */
+  wbsParentField?: string
+  /** WBS mode: a many2one whose value groups/colors the boxes. Module-declared only. */
+  wbsGroupField?: string
+  /** PERT mode: the dependency rows (same shape as ganttDependencies). Module-declared only. */
+  pertDependencies?: GanttDependenciesConfig
+  /** PERT mode: the planned-hours number field read as a task's duration; dates reuse
+   * ganttStartField/ganttEndField. Module-declared only. */
+  pertHoursField?: string
   /** Names a many2many field (widget `colortags`) of the descriptor — else of
    * the entity's form descriptor: its related records' colors paint the Gantt
    * bars and a ribbon on Kanban/Calendar cards. Module-declared only. */
@@ -111,6 +120,10 @@ export interface EffectiveViewFields {
   ganttStartField: string | null
   ganttEndField: string | null
   ganttDependencies: GanttDependenciesConfig | null
+  wbsParentField: string | null
+  wbsGroupField: string | null
+  pertDependencies: GanttDependenciesConfig | null
+  pertHoursField: string | null
   colorTagsField: string | null
 }
 
@@ -133,14 +146,18 @@ export function effectiveViewFields(
     ganttStartField: config.ganttStartField ?? defaults?.ganttStartField ?? null,
     ganttEndField: config.ganttEndField ?? defaults?.ganttEndField ?? null,
     ganttDependencies: defaults?.ganttDependencies ?? null,
+    wbsParentField: defaults?.wbsParentField ?? null,
+    wbsGroupField: defaults?.wbsGroupField ?? null,
+    pertDependencies: defaults?.pertDependencies ?? null,
+    pertHoursField: defaults?.pertHoursField ?? null,
     colorTagsField: defaults?.colorTagsField ?? null,
   }
 }
 
 /** The list view's display-mode switcher (top-right of the list). */
-export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt'
+export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert'
 
-export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt']
+export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert']
 
 /**
  * Which modes are usable right now for a given entity's EFFECTIVE (module
@@ -156,5 +173,7 @@ export function availableDisplayModes(effective: EffectiveViewFields): Record<Di
     calendar: effective.calendarDateField != null,
     graph: effective.enableGraphs,
     gantt: effective.ganttStartField != null && effective.ganttEndField != null,
+    wbs: effective.wbsParentField != null,
+    pert: effective.pertDependencies != null,
   }
 }

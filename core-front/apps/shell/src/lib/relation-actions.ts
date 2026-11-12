@@ -1,11 +1,12 @@
 'use server'
 import {
+  apiRequest,
   createServerApiClient,
   settleAction,
   type ActionError,
   type EntityListOptions,
 } from '@eerp/core-front/server'
-import type { RelationRecord } from '@eerp/core-front'
+import type { RelationRecord, ViewLayout } from '@eerp/core-front'
 
 // Entity-generic Server Actions backing the engine's RelationOps: how relation
 // widgets (client) query and link OTHER entities — autocomplete search, o2m
@@ -56,4 +57,21 @@ export async function distinctValues(
   options?: EntityListOptions,
 ): Promise<{ value: string; total: number }[] | ActionError> {
   return settleAction(() => createServerApiClient().distinctValues(entity, column, options))
+}
+
+export async function getViewLayout(entity: string, mode: 'wbs' | 'pert'): Promise<ViewLayout> {
+  try {
+    const l = await apiRequest<Partial<ViewLayout>>('GET', `/me/view_layout/${encodeURIComponent(entity)}/${mode}`)
+    return { positions: l.positions ?? {}, folded: l.folded ?? [] }
+  } catch {
+    return { positions: {}, folded: [] }
+  }
+}
+
+export async function saveViewLayout(
+  entity: string,
+  mode: 'wbs' | 'pert',
+  layout: ViewLayout,
+): Promise<void | ActionError> {
+  return settleAction(() => apiRequest('PUT', `/me/view_layout/${encodeURIComponent(entity)}/${mode}`, layout))
 }

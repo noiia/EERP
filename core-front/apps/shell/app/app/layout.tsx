@@ -47,6 +47,8 @@ import {
   createRelationRecord,
   distinctValues,
   getRecord,
+  getViewLayout,
+  saveViewLayout,
   listRecords,
   listRecordsPage,
   removeRelationRecord,
@@ -126,6 +128,8 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
           remove: removeRelationRecord,
           distinctValues,
           listPage: listRecordsPage,
+          getViewLayout,
+          saveViewLayout,
         }}
       >
         {/* Graph mode's app-wide data path: entity-generic Server Action

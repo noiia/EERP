@@ -1,6 +1,7 @@
 'use client'
 import type { EntityListOptions } from '../api/list-options'
 import { createOpsContext } from './ops-context'
+import type { Point } from './diagram/collide'
 
 // How relation widgets reach OTHER entities' data. Kept apart from EntityActions on
 // purpose: those are the view's own entity, pre-bound; these are entity-generic, for
@@ -11,6 +12,12 @@ import { createOpsContext } from './ops-context'
 export interface RelationRecord {
   id: string
   [key: string]: unknown
+}
+
+/** A user's own saved WBS/PERT arrangement: box positions and folded node ids. */
+export interface ViewLayout {
+  positions: Record<string, Point>
+  folded: string[]
 }
 
 export interface RelationOps {
@@ -44,6 +51,9 @@ export interface RelationOps {
    * Optional, same fail-open posture as distinctValues: without it, views
    * fall back to the records the page was seeded with.
    */
+  getViewLayout?: (entity: string, mode: 'wbs' | 'pert') => Promise<ViewLayout>
+  /** Optional, fail-open: without both layout ops, positions just aren't saved. */
+  saveViewLayout?: (entity: string, mode: 'wbs' | 'pert', layout: ViewLayout) => Promise<void>
   listPage?: (entity: string, options?: EntityListOptions) => Promise<{ records: RelationRecord[]; total: number; totalEstimated?: true }>
 }
 

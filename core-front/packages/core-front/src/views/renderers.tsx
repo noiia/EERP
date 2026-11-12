@@ -901,6 +901,8 @@ const MODE_LABELS: Record<DisplayMode, string> = {
   calendar: 'Calendar',
   graph: 'Graph',
   gantt: 'Gantt',
+  wbs: 'WBS',
+  pert: 'PERT',
 }
 
 /**

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+const apiRequestMock = vi.fn()
 const client = {
   list: vi.fn(async () => [{ id: 'r1' }]),
   get: vi.fn(async () => ({ id: 'r1' })),
@@ -11,12 +12,15 @@ const client = {
 vi.mock('@eerp/core-front/server', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@eerp/core-front/server')>()),
   createServerApiClient: () => client,
+  apiRequest: (...a: unknown[]) => apiRequestMock(...a),
 }))
 
 import {
   createRelationRecord,
   distinctValues,
   getRecord,
+  getViewLayout,
+  saveViewLayout,
   listRecords,
   listRecordsPage,
   removeRelationRecord,
@@ -39,5 +43,21 @@ describe('relation actions', () => {
       { value: 'lead', total: 2 },
     ])
     expect(client.distinctValues).toHaveBeenCalledWith('crm', 'status', opts)
+  })
+})
+
+describe('view layout actions', () => {
+  it('GET returns the saved layout, the empty one when the request throws', async () => {
+    apiRequestMock.mockResolvedValueOnce({ positions: { a: { x: 1, y: 2 } }, folded: ['b'] })
+    await expect(getViewLayout('project_task', 'wbs')).resolves.toEqual({ positions: { a: { x: 1, y: 2 } }, folded: ['b'] })
+    expect(apiRequestMock).toHaveBeenCalledWith('GET', '/me/view_layout/project_task/wbs')
+    apiRequestMock.mockRejectedValueOnce(new Error('boom'))
+    await expect(getViewLayout('project_task', 'pert')).resolves.toEqual({ positions: {}, folded: [] })
+  })
+
+  it('PUT sends the layout', async () => {
+    apiRequestMock.mockResolvedValueOnce(undefined)
+    await saveViewLayout('project_task', 'pert', { positions: {}, folded: [] })
+    expect(apiRequestMock).toHaveBeenCalledWith('PUT', '/me/view_layout/project_task/pert', { positions: {}, folded: [] })
   })
 })

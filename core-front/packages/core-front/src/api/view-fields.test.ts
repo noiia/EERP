@@ -18,6 +18,10 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      wbsParentField: null,
+      wbsGroupField: null,
+      pertDependencies: null,
+      pertHoursField: null,
       colorTagsField: null,
     })
   })
@@ -33,6 +37,10 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      wbsParentField: null,
+      wbsGroupField: null,
+      pertDependencies: null,
+      pertHoursField: null,
       colorTagsField: null,
     })
   })
@@ -53,6 +61,10 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      wbsParentField: null,
+      wbsGroupField: null,
+      pertDependencies: null,
+      pertHoursField: null,
       colorTagsField: null,
     })
   })
@@ -70,6 +82,10 @@ describe('effectiveViewFields', () => {
       ganttStartField: null,
       ganttEndField: null,
       ganttDependencies: null,
+      wbsParentField: null,
+      wbsGroupField: null,
+      pertDependencies: null,
+      pertHoursField: null,
       colorTagsField: null,
     })
   })
@@ -110,9 +126,13 @@ describe('availableDisplayModes', () => {
         ganttStartField: null,
         ganttEndField: null,
         ganttDependencies: null,
+      wbsParentField: null,
+      wbsGroupField: null,
+      pertDependencies: null,
+      pertHoursField: null,
       colorTagsField: null,
       }),
-    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false })
+    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false })
     expect(
       availableDisplayModes({
         kanbanStatusField: 'status',
@@ -124,9 +144,13 @@ describe('availableDisplayModes', () => {
         ganttStartField: null,
         ganttEndField: null,
         ganttDependencies: null,
+      wbsParentField: null,
+      wbsGroupField: null,
+      pertDependencies: null,
+      pertHoursField: null,
       colorTagsField: null,
       }),
-    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false })
+    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false })
   })
 
   it('gantt needs BOTH a start and an end field', () => {
@@ -145,5 +169,28 @@ describe('effectiveViewFields gantt fields', () => {
         { ...EMPTY_VIEW_FIELDS, ganttEndField: 'due_date' },
       ),
     ).toMatchObject({ ganttStartField: 'date_start', ganttEndField: 'due_date' })
+  })
+})
+
+describe('wbs / pert modes', () => {
+  const dep = { entity: 'project_task_dependency', fromField: 'blocker_id', toField: 'task_id' }
+
+  it('wbs is available only with wbsParentField', () => {
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS)).wbs).toBe(false)
+    expect(availableDisplayModes(effectiveViewFields({ wbsParentField: 'parent_id' }, EMPTY_VIEW_FIELDS)).wbs).toBe(true)
+  })
+
+  it('pert is available only with pertDependencies', () => {
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS)).pert).toBe(false)
+    expect(availableDisplayModes(effectiveViewFields({ pertDependencies: dep }, EMPTY_VIEW_FIELDS)).pert).toBe(true)
+  })
+
+  it('carries the module defaults into the effective config', () => {
+    expect(
+      effectiveViewFields(
+        { wbsParentField: 'parent_id', wbsGroupField: 'stage_id', pertDependencies: dep, pertHoursField: 'planned_hours' },
+        EMPTY_VIEW_FIELDS,
+      ),
+    ).toMatchObject({ wbsParentField: 'parent_id', wbsGroupField: 'stage_id', pertDependencies: dep, pertHoursField: 'planned_hours' })
   })
 })
