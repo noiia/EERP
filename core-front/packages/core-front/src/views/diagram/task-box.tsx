@@ -22,6 +22,8 @@ import { moduleRegistry } from '../../registry'
 /** The box's fixed size (it scrolls inside past that), which the auto-layouts assume:
  * room for five compact fields, a badge row and a footer line. */
 export const TASK_BOX_SIZE = { w: 240, h: 300 }
+/** A WBS group root: a title and an optional fold summary, as wide as a task box. */
+export const LABEL_BOX_SIZE = { w: 240, h: 64 }
 
 export interface TaskBoxData extends Record<string, unknown> {
   record: Record<string, unknown>
@@ -96,7 +98,7 @@ export const LabelBox = memo(function LabelBox({ data, sourcePosition, targetPos
   const t = useT()
   const { chevron } = data
   return (
-    <Paper variant="outlined" sx={{ width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, bgcolor: 'action.hover' }}>
+    <Paper variant="outlined" sx={{ width: LABEL_BOX_SIZE.w, height: LABEL_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1, bgcolor: 'action.hover' }}>
       <Handle type="target" position={targetPosition ?? Position.Top} />
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
         {chevron ? (

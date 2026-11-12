@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from 'react'
 
 // React Flow stubbed as in diagram-canvas.test.tsx, but drawing each node through
 // its nodeTypes component so the boxes (chevrons, footers, labels) are on screen.
-type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number } }
+type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; height?: number }
 type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown }
 type RfProps = {
   nodes: RfNode[]
@@ -39,6 +39,7 @@ const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 import { WbsRenderer, type WbsRendererProps } from './wbs-renderer'
+import { LABEL_BOX_SIZE, TASK_BOX_SIZE } from './task-box'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
 import type { ViewDescriptor } from '../descriptor'
@@ -93,7 +94,13 @@ function setup(update?: EntityActions<Task>['update'], write = true, extra: Part
   return { actions, onRecordsChange, saveViewLayout, ops }
 }
 const node = (id: string) => rf.props.nodes.find((n) => n.id === id)!
-const drop = (id: string, on: string) => act(() => rf.props.onNodeDragStop!(null, { ...node(id), position: node(on).position }))
+// Drops `id` centered on `on`, as a user does (the canvas checks where the dropped box's center lands).
+const drop = (id: string, on: string) => {
+  const h = (n: RfNode) => n.height ?? TASK_BOX_SIZE.h
+  const target = node(on)
+  const position = { x: target.position.x, y: target.position.y + h(target) / 2 - h(node(id)) / 2 }
+  return act(() => rf.props.onNodeDragStop!(null, { ...node(id), position }))
+}
 
 afterEach(() => {
   cleanup()
@@ -101,6 +108,15 @@ afterEach(() => {
 })
 
 describe('WbsRenderer', () => {
+  it('spaces rows evenly under a short group root', async () => {
+    setup()
+    await screen.findByText('Alpha')
+    const at = (id: string) => rf.props.nodes.find((n) => n.id === id)!
+    const g = at('group:p1'), a = at('A'), b = at('B')
+    expect(g.height).toBe(LABEL_BOX_SIZE.h)
+    expect(a.position.y - (g.position.y + LABEL_BOX_SIZE.h)).toBe(b.position.y - (a.position.y + TASK_BOX_SIZE.h))
+  })
+
   it('renders one root per group and tasks under parents', async () => {
     setup()
     expect(await screen.findByText('Alpha')).toBeInTheDocument()

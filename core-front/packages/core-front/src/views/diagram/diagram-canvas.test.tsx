@@ -98,6 +98,16 @@ describe('DiagramCanvas', () => {
     expect(exportLoads.n).toBe(1)
   })
 
+  it('places a box by its own declared height (a short WBS group root)', async () => {
+    setup({
+      nodes: [{ ...node('g'), height: 60 }, node('t')],
+      autoLayout: () => ({ g: at(0, 0), t: at(0, 120) }),
+    })
+    await flush()
+    // Taken as a 300px box, g would overlap t and push it down.
+    expect(pos('t')).toEqual(at(0, 120))
+  })
+
   it('merges saved positions with auto layout', async () => {
     const { saveViewLayout, getViewLayout } = setup({}, { positions: { b: at(0, 0), stale: at(9, 9) }, folded: [] })
     await flush()
@@ -283,9 +293,9 @@ describe('DiagramCanvas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Fit view' }))
     expect(fitView).toHaveBeenCalled()
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
-    expect(exportPng).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, 'Plan')
+    expect(exportPng).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, 'Plan', '#fff')
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
-    expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, { title: 'Plan', date: expect.any(Date), legend: [{ color: '#ff0000', label: 'Critical' }] }, 'Plan')
+    expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, { title: 'Plan', date: expect.any(Date), legend: [{ color: '#ff0000', label: 'Critical' }], background: '#fff' }, 'Plan')
   })
 })
 

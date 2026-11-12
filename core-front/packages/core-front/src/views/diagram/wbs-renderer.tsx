@@ -16,7 +16,7 @@ import type { EntityActions, HasId } from '../stores'
 import { useRelationLabels } from '../use-relation-labels'
 import { layoutWbs } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
-import { boxFieldOf, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
+import { boxFieldOf, LABEL_BOX_SIZE, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
 import { buildWbs, canReparent } from './wbs'
 
 // WBS display mode: the records as a top-down tree over `parentField`, under one
@@ -111,7 +111,7 @@ export function WbsRenderer<T extends HasId>({
   const rfNodes: Node[] = visible.map((id) => {
     if (nodes[id].kind === 'group') {
       const data: LabelBoxData = { label: labelOf(groupField!, id.slice(GROUP.length)), chevron: chevron(id), footer: footer(id) }
-      return { id, type: 'label', position: { x: 0, y: 0 }, data }
+      return { id, type: 'label', position: { x: 0, y: 0 }, width: LABEL_BOX_SIZE.w, height: LABEL_BOX_SIZE.h, data }
     }
     const record = byId.get(id)!
     const data: TaskBoxData = {
@@ -167,7 +167,7 @@ export function WbsRenderer<T extends HasId>({
         title={t('WBS')}
         nodes={rfNodes}
         edges={edges}
-        autoLayout={() => layoutWbs(nodes, roots, visible, TASK_BOX_SIZE)}
+        autoLayout={() => layoutWbs(nodes, roots, visible, TASK_BOX_SIZE, (id) => (nodes[id].kind === 'group' ? LABEL_BOX_SIZE.h : TASK_BOX_SIZE.h))}
         folded={folded}
         onFoldedChange={setFolded}
         onNodeDrop={onNodeDrop}

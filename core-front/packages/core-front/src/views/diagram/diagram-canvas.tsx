@@ -172,7 +172,11 @@ export interface DiagramCanvasProps {
 }
 
 const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox }
-const size = (n?: Node) => ({ w: n?.measured?.width ?? TASK_BOX_SIZE.w, h: n?.measured?.height ?? TASK_BOX_SIZE.h })
+// Measured size, else the node's declared one (a WBS group root is shorter), else a task box.
+const size = (n?: Node) => ({
+  w: n?.measured?.width ?? n?.width ?? TASK_BOX_SIZE.w,
+  h: n?.measured?.height ?? n?.height ?? TASK_BOX_SIZE.h,
+})
 
 export function DiagramCanvas(props: DiagramCanvasProps) {
   // Another entity or mode is another layout: start over (unmounting flushes a pending save).
@@ -240,9 +244,10 @@ function Canvas(props: DiagramCanvasProps) {
   const placed = useMemo(() => {
     const auto = autoRef.current()
     return separateBoxes(
-      ids.map((id) => {
-        const p = positions[id] ?? auto[id] ?? { x: 0, y: 0 }
-        return { id, ...p, w: TASK_BOX_SIZE.w, h: TASK_BOX_SIZE.h, fixed: id in positions }
+      nodes.map((n) => {
+        const p = positions[n.id] ?? auto[n.id] ?? { x: 0, y: 0 }
+        const { w, h } = size({ ...n, measured: undefined })
+        return { id: n.id, ...p, w, h, fixed: n.id in positions }
       }),
     )
   }, [idsKey, positions])
@@ -378,8 +383,10 @@ function Canvas(props: DiagramCanvasProps) {
     try {
       // html-to-image and jspdf load on the first export, not with the diagram.
       const { exportPdf, exportPng } = await import('./export')
-      if (kind === 'png') await exportPng(viewport, bounds, title)
-      else await exportPdf(viewport, bounds, { title, date: new Date(), legend }, title)
+      // The diagram's own background: a dark theme's light text stays readable in the image.
+      const background = outer.palette.background.paper
+      if (kind === 'png') await exportPng(viewport, bounds, title, background)
+      else await exportPdf(viewport, bounds, { title, date: new Date(), legend, background }, title)
     } catch (e: unknown) {
       setExportError(serializeError(toApiError(e)))
     }

@@ -36,6 +36,20 @@ describe('layoutWbs', () => {
   })
 })
 
+describe('layoutWbs with a short group row', () => {
+  it('keeps the same gap under a short group box as between task rows', () => {
+    const rows = [
+      { id: 'a', parentId: null, groupId: 'p' },
+      { id: 'b', parentId: 'a', groupId: 'p' },
+    ]
+    const { nodes, roots, visible } = buildWbs(rows, new Set())
+    const heightOf = (id: string) => (nodes[id].kind === 'group' ? 60 : 300)
+    const pos = layoutWbs(nodes, roots, visible, { w: 240, h: 300 }, heightOf)
+    const g = roots[0]
+    expect(pos.a.y - (pos[g].y + 60)).toBe(pos.b.y - (pos.a.y + 300))
+  })
+})
+
 describe('layoutPert', () => {
   const rnd = mulberry32(11)
   const ids = Array.from({ length: 50 }, (_, i) => `n${i}`)

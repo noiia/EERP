@@ -9,7 +9,7 @@ vi.mock('jspdf', () => ({
 }))
 
 import { toPng } from 'html-to-image'
-import { diagramToPng, exportPdf, exportPng, pdfFormat } from './export'
+import { diagramToPng, exportPdf, exportPng, pdfColor, pdfFormat } from './export'
 
 const bounds = { x: 10, y: 20, width: 800, height: 400 }
 
@@ -38,6 +38,22 @@ describe('diagramToPng', () => {
   })
 })
 
+describe('pdfColor', () => {
+  it('turns CSS colors jsPDF refuses into hex, blending alpha over white', () => {
+    expect(pdfColor('#ff0000')).toBe('#ff0000')
+    expect(pdfColor('rgb(255, 0, 0)')).toBe('#ff0000')
+    expect(pdfColor('rgba(255, 255, 255, 0.3)')).toBe('#ffffff')
+    expect(pdfColor('rgba(0, 0, 0, 0.26)')).toBe('#bdbdbd')
+  })
+})
+
+describe('export background', () => {
+  it('paints the image with the given background (dark theme text stays readable)', async () => {
+    await diagramToPng(document.createElement('div'), bounds, '#121212')
+    expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ backgroundColor: '#121212' })
+  })
+})
+
 describe('exportPng', () => {
   it('downloads <filename>.png', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
@@ -52,13 +68,14 @@ describe('exportPdf', () => {
     await exportPdf(
       document.createElement('div'),
       bounds,
-      { title: 'Plan', date: new Date(2026, 10, 12), legend: [{ color: '#ff0000', label: 'Critical' }] },
+      { title: 'Plan', date: new Date(2026, 10, 12), legend: [{ color: '#ff0000', label: 'Critical' }, { color: 'rgba(0, 0, 0, 0.26)', label: 'Closed' }] },
       'plan',
     )
     expect(pdf.addImage).toHaveBeenCalledOnce()
     expect(pdf.text.mock.calls.map((c) => c[0])).toEqual(
       expect.arrayContaining(['Plan', new Date(2026, 10, 12).toLocaleDateString(), 'Critical']),
     )
+    expect(pdf.setFillColor.mock.calls.map((c) => c[0])).toEqual(['#ff0000', '#bdbdbd'])
     expect(pdf.save).toHaveBeenCalledWith('plan.pdf')
   })
 })

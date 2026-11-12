@@ -9,19 +9,31 @@ const WBS_GAP_Y = 60
 const PERT_GAP_X = 80
 const PERT_GAP_Y = 40
 
-/** Top-down tidy tree: leaves take consecutive x slots, a parent centers over its visible children. */
-export function layoutWbs(nodes: Record<string, WbsNode>, roots: string[], visible: string[], size: BoxSize): Record<string, Point> {
+/** Top-down tidy tree: leaves take consecutive x slots, a parent centers over its visible children.
+ * Each depth row is as tall as its tallest box (`heightOf`, default `size.h`), so a short row (WBS
+ * group roots) keeps the same gap below it as any other. */
+export function layoutWbs(
+  nodes: Record<string, WbsNode>,
+  roots: string[],
+  visible: string[],
+  size: BoxSize,
+  heightOf: (id: string) => number = () => size.h,
+): Record<string, Point> {
   const vis = new Set(visible)
+  const rowH: number[] = []
+  for (const id of visible) rowH[nodes[id].depth] = Math.max(rowH[nodes[id].depth] ?? 0, heightOf(id))
+  const rowY: number[] = []
+  for (let d = 0, y = 0; d < rowH.length; d++) { rowY[d] = y; y += (rowH[d] ?? 0) + WBS_GAP_Y }
   const pos: Record<string, Point> = {}
   let slot = 0
   const place = (id: string): void => {
     const kids = nodes[id].children.filter((c) => vis.has(c))
     kids.forEach(place)
     const x = kids.length ? (pos[kids[0]].x + pos[kids[kids.length - 1]].x) / 2 : slot++ * (size.w + WBS_GAP_X)
-    pos[id] = { x, y: nodes[id].depth * (size.h + WBS_GAP_Y) }
+    pos[id] = { x, y: rowY[nodes[id].depth] }
   }
   roots.filter((r) => vis.has(r)).forEach(place)
-  return finish(pos, size)
+  return finish(pos, size, heightOf)
 }
 
 /** Longest-path columns (blocker left of dependent), one barycenter sweep for rows. */
@@ -68,6 +80,6 @@ export function layoutPert(ids: string[], links: PertLink[], size: BoxSize): Rec
   return finish(pos, size)
 }
 
-function finish(pos: Record<string, Point>, size: BoxSize): Record<string, Point> {
-  return separateBoxes(Object.entries(pos).map(([id, p]) => ({ id, ...p, ...size })))
+function finish(pos: Record<string, Point>, size: BoxSize, heightOf: (id: string) => number = () => size.h): Record<string, Point> {
+  return separateBoxes(Object.entries(pos).map(([id, p]) => ({ id, ...p, w: size.w, h: heightOf(id) })))
 }
