@@ -43,6 +43,7 @@ import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
 import type { ViewDescriptor } from '../descriptor'
 import type { EntityActions } from '../stores'
+import { useSessionStore } from '../session-store'
 
 type Task = { id: string; name: string; parent_id: string | null; project_id: string; planned_hours: number }
 const descriptor: ViewDescriptor = {
@@ -60,10 +61,14 @@ const rows = (): Task[] => [
   { id: 'A', name: 'Design', parent_id: null, project_id: 'p1', planned_hours: 1 },
   { id: 'B', name: 'Mockups', parent_id: 'A', project_id: 'p1', planned_hours: 3 },
   { id: 'C', name: 'Ops', parent_id: null, project_id: 'p2', planned_hours: 2 },
+  { id: 'D', name: 'Review', parent_id: null, project_id: 'p1', planned_hours: 0.333 },
 ]
 const projects: Record<string, string> = { p1: 'Alpha', p2: 'Beta' }
 
-function setup(update?: EntityActions<Task>['update']) {
+function setup(update?: EntityActions<Task>['update'], write = true) {
+  useSessionStore.setState({
+    identity: { userId: 'u1', tenantId: 't1', roles: [], permissions: write ? ['project_task:project_task:read', 'project_task:project_task:write'] : ['project_task:project_task:read'] },
+  } as never)
   const saveViewLayout = vi.fn(async () => {})
   const ops: RelationOps = {
     list: vi.fn(async (_e: string, o?: { in?: Record<string, string[]> }) => (o?.in?.id ?? []).map((id) => ({ id, name: projects[id] }))),
@@ -98,12 +103,12 @@ describe('WbsRenderer', () => {
     setup()
     expect(await screen.findByText('Alpha')).toBeInTheDocument()
     expect(screen.getByText('Beta')).toBeInTheDocument()
-    expect(rf.props.nodes.map((n) => n.id)).toEqual(['group:p1', 'A', 'B', 'group:p2', 'C'])
-    expect(rf.props.edges.map((e) => [e.source, e.target])).toEqual([['group:p1', 'A'], ['A', 'B'], ['group:p2', 'C']])
+    expect(rf.props.nodes.map((n) => n.id)).toEqual(['group:p1', 'A', 'B', 'D', 'group:p2', 'C'])
+    expect(rf.props.edges.map((e) => [e.source, e.target])).toEqual([['group:p1', 'A'], ['A', 'B'], ['group:p1', 'D'], ['group:p2', 'C']])
     expect(rf.props.edges.every((e) => e.markerEnd === undefined)).toBe(true)
     expect(rf.props.onConnect).toBeUndefined()
     expect(rf.props.onEdgesDelete).toBeUndefined()
-    expect(screen.getAllByLabelText('Name').map((i) => (i as HTMLInputElement).value)).toEqual(['Design', 'Mockups', 'Ops'])
+    expect(screen.getAllByLabelText('Name').map((i) => (i as HTMLInputElement).value)).toEqual(['Design', 'Mockups', 'Review', 'Ops'])
     fireEvent.doubleClick(screen.getByTestId('node-A').firstElementChild!)
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/A'))
   })
@@ -113,10 +118,12 @@ describe('WbsRenderer', () => {
     await screen.findByTestId('node-A')
     fireEvent.click(screen.getAllByRole('button', { name: 'Collapse' })[1])
     expect(screen.queryByTestId('node-B')).toBeNull()
-    expect(screen.getByText('+1 tasks · 3 h')).toBeInTheDocument()
+    expect(screen.getByText('+1 task · 3 h')).toBeInTheDocument()
     await waitFor(() => expect(saveViewLayout).toHaveBeenCalledWith('project_task', 'wbs', expect.objectContaining({ folded: ['A'] })), { timeout: 2000 })
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     expect(screen.getByTestId('node-B')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Collapse' })[0])
+    expect(screen.getByText('+3 tasks · 4.33 h')).toBeInTheDocument()
   })
 
   it('edits a field in the box', async () => {
@@ -131,11 +138,11 @@ describe('WbsRenderer', () => {
 
   it('reparents on drop', async () => {
     const { actions, onRecordsChange } = setup()
-    await screen.findByTestId('node-C')
-    drop('C', 'B')
-    expect(actions.update).toHaveBeenCalledWith('C', { parent_id: 'B' })
-    await waitFor(() => expect(onRecordsChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'C', parent_id: 'B' })])))
-    expect(rf.props.edges.map((e) => [e.source, e.target])).toContainEqual(['B', 'C'])
+    await screen.findByTestId('node-D')
+    drop('D', 'B')
+    expect(actions.update).toHaveBeenCalledWith('D', { parent_id: 'B' })
+    await waitFor(() => expect(onRecordsChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'D', parent_id: 'B' })])))
+    expect(rf.props.edges.map((e) => [e.source, e.target])).toContainEqual(['B', 'D'])
   })
 
   it('drop on a group root clears the parent', async () => {
@@ -160,11 +167,34 @@ describe('WbsRenderer', () => {
       throw new ApiError({ code: 'VALIDATION_ERROR', message: 'cycle', status: 422 })
     })
     const { onRecordsChange } = setup(update)
-    await screen.findByTestId('node-C')
-    const before = node('C').position
-    drop('C', 'B')
+    await screen.findByTestId('node-D')
+    const before = node('D').position
+    drop('D', 'B')
     expect(await screen.findByText('cycle')).toBeInTheDocument()
-    expect(onRecordsChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'C', parent_id: null })]))
-    await waitFor(() => expect(node('C').position).toEqual(before))
+    expect(onRecordsChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'D', parent_id: null })]))
+    await waitFor(() => expect(node('D').position).toEqual(before))
+  })
+
+  it('refuses drops into another group, and on its own group root when already a root', async () => {
+    const { actions } = setup()
+    await screen.findByTestId('node-C')
+    const c = node('C').position
+    drop('C', 'B')
+    drop('C', 'group:p1')
+    expect(node('C').position).toEqual(c)
+    const a = node('A').position
+    drop('A', 'group:p1')
+    expect(node('A').position).toEqual(a)
+    expect(actions.update).not.toHaveBeenCalled()
+  })
+
+  it('is read-only without the write permission', async () => {
+    const { actions } = setup(undefined, false)
+    await screen.findByTestId('node-D')
+    expect(screen.getAllByLabelText('Name').every((i) => (i as HTMLInputElement).disabled)).toBe(true)
+    const before = node('D').position
+    drop('D', 'B')
+    expect(actions.update).not.toHaveBeenCalled()
+    expect(node('D').position).toEqual(before)
   })
 })

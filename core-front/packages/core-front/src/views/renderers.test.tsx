@@ -15,6 +15,12 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => mockSearchParams,
 }))
 
+// WBS mode's renderer is lazy (lazy-widgets.tsx); the stub shows what it was handed.
+vi.mock('./diagram/wbs-renderer', () => ({
+  WbsRenderer: (p: { parentField: string; groupField?: string; boxFields?: unknown[]; hoursField?: string }) => (
+    <div data-testid="wbs-renderer">{JSON.stringify([p.parentField, p.groupField, p.boxFields, p.hoursField])}</div>
+  ),
+}))
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
 import { useBreadcrumbStore } from './breadcrumb-store'
 import type { ViewDescriptor } from './descriptor'
@@ -1410,6 +1416,21 @@ describe('EntityView', () => {
       // posture RelationOps takes for a host with no relation wiring.
       expect(screen.getByText(/Graph layouts are not available/)).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Graph', pressed: true })).toBeInTheDocument()
+    })
+
+    it('switching to WBS hands the lazy WbsRenderer the module defaults', async () => {
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, viewModeDefaults: { wbsParentField: 'parent_id', wbsGroupField: 'project_id', pertHoursField: 'planned_hours', kanbanStatusField: 'status' } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'WBS' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('wbs-renderer')).toHaveTextContent(
+        JSON.stringify(['parent_id', 'project_id', ['name', 'status', null, null, 'planned_hours'], 'planned_hours']),
+      )
     })
 
     it('switching to Graph with a GraphOpsProvider renders the real canvas, not the placeholder', async () => {

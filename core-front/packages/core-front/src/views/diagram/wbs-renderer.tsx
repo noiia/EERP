@@ -6,11 +6,13 @@ import type { Edge, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { EntityListOptions } from '../../api/list-options'
+import { usePermission } from '../../auth/Can'
 import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
 import { moduleRegistry } from '../../registry'
 import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
 import { ErrorAlert } from '../error-alert'
+import { useNumberFormat } from '../format-store'
 import type { EntityActions, HasId } from '../stores'
 import { useRelationLabels } from '../use-relation-labels'
 import { layoutWbs } from './auto-layout'
@@ -53,7 +55,9 @@ export function WbsRenderer<T extends HasId>({
 }: WbsRendererProps<T>) {
   const t = useT()
   const router = useRouter()
+  const { format } = useNumberFormat()
   const { entity, formPath } = descriptor
+  const canWrite = usePermission(`${entity}:${entity}:write`)
   const loaded = useDiagramRecords(entity, serverOptions, initialData)
   const [rows, setRows] = useState(loaded.records)
   const [seen, setSeen] = useState(loaded.records)
@@ -98,7 +102,9 @@ export function WbsRenderer<T extends HasId>({
   const footer = (id: string) =>
     foldedSet.has(id) ? (
       <Typography variant="caption" sx={{ color: FOLDED_COLOR, display: 'block', mt: 0.5 }}>
-        {t('+{n} tasks · {h} h').replace('{n}', String(nodes[id].hiddenCount)).replace('{h}', String(nodes[id].hiddenHours))}
+        {(nodes[id].hiddenCount === 1 ? t('+1 task · {h} h') : t('+{n} tasks · {h} h'))
+          .replace('{n}', String(nodes[id].hiddenCount))
+          .replace('{h}', format(Math.round(nodes[id].hiddenHours * 100) / 100))}
       </Typography>
     ) : undefined
   const chevron = (id: string) =>
@@ -113,7 +119,7 @@ export function WbsRenderer<T extends HasId>({
     const record = byId.get(id)!
     const data: TaskBoxData = {
       record: values(record),
-      editable: !!actions.update,
+      editable: canWrite,
       fields,
       onCommit: async (field, value) => {
         replace(await actions.update(id, { [field]: value } as Partial<T>))
@@ -134,8 +140,12 @@ export function WbsRenderer<T extends HasId>({
 
   // false puts the box back where it was (DiagramCanvas.onNodeDrop).
   const onNodeDrop = (id: string, overId: string | null): boolean | Promise<boolean> => {
-    if (overId === null || overId === nodes[id]?.parentId) return true
-    if (!canReparent(nodes, id, overId)) return false
+    if (overId === null) return true
+    // Already there, read-only, or another group (moving between groups isn't a WBS drag).
+    if (!canWrite || overId === nodes[id]?.parentId || !canReparent(nodes, id, overId)) return false
+    const groupOf = (target: string) =>
+      target.startsWith(GROUP) ? target.slice(GROUP.length) : str(values(byId.get(target)!)[groupField!])
+    if (groupField && groupOf(overId) !== groupOf(id)) return false
     setError(null)
     return actions.update(id, { [parentField]: overId.startsWith(GROUP) ? null : overId } as Partial<T>).then(
       (updated) => {
