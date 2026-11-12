@@ -26,7 +26,7 @@ import { useRelationOps } from '../relation-ops'
 import type { HasId } from '../stores'
 import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
 import { exportPdf, exportPng } from './export'
-import { TASK_BOX_SIZE, TaskBox } from './task-box'
+import { LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
 // (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
@@ -119,13 +119,14 @@ export interface DiagramCanvasProps {
   onFoldedChange?: (folded: string[]) => void
   onConnect?: (c: Connection) => void
   onEdgesDelete?: (e: Edge[]) => void
-  /** WBS re-parent: the box under the dropped one. */
-  onNodeDrop?: (id: string, overId: string | null) => void
+  /** WBS re-parent: the box under the dropped one. `false` (now or once resolved)
+   * puts the box back where it was before the drag. */
+  onNodeDrop?: (id: string, overId: string | null) => boolean | void | Promise<boolean | void>
   legend: { color: string; label: string }[]
   toolbarExtra?: ReactNode
 }
 
-const nodeTypes: NodeTypes = { task: TaskBox }
+const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox }
 const size = (n?: Node) => ({ w: n?.measured?.width ?? TASK_BOX_SIZE.w, h: n?.measured?.height ?? TASK_BOX_SIZE.h })
 
 export function DiagramCanvas(props: DiagramCanvasProps) {
@@ -262,13 +263,21 @@ function Canvas(props: DiagramCanvasProps) {
   const onNodeDragStop = (_: unknown, node: Node) => {
     const rect: Rect = { ...node.position, ...sized(node.id) }
     const others = ids.filter((id) => id !== node.id).map((id) => ({ id, ...placed[id], ...sized(id) }))
+    const before = placed[node.id]
+    const putBack = (ok: boolean | void) => {
+      if (ok !== false || !before) return
+      setPositions((p) => ({ ...p, [node.id]: before }))
+      scheduleSave()
+    }
+    setPositions({ ...placed, [node.id]: freeSpot(rect, others) })
     if (onNodeDrop) {
       const cx = rect.x + rect.w / 2
       const cy = rect.y + rect.h / 2
       const over = others.find((o) => cx >= o.x && cx <= o.x + o.w && cy >= o.y && cy <= o.y + o.h)
-      onNodeDrop(node.id, over?.id ?? null)
+      const res = onNodeDrop(node.id, over?.id ?? null)
+      if (res instanceof Promise) void res.then(putBack, () => putBack(false))
+      else putBack(res)
     }
-    setPositions({ ...placed, [node.id]: freeSpot(rect, others) })
     setLive({})
     scheduleSave()
   }

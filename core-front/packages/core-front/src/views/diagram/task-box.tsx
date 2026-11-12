@@ -4,6 +4,7 @@ import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
 import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
@@ -70,6 +71,33 @@ export function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node
           ))}
         </Stack>
       </ThemeProvider>
+      {data.footer}
+      <Handle type="source" position={sourcePosition ?? Position.Bottom} />
+    </Paper>
+  )
+}
+
+export interface LabelBoxData extends Record<string, unknown> {
+  label: string
+  footer?: ReactNode
+  chevron?: TaskBoxData['chevron']
+}
+
+/** A read-only box with just a title (a WBS group root), as wide as a TaskBox. */
+export function LabelBox({ data, sourcePosition, targetPosition }: NodeProps<Node<LabelBoxData>>) {
+  const t = useT()
+  const { chevron } = data
+  return (
+    <Paper variant="outlined" sx={{ width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, bgcolor: 'action.hover' }}>
+      <Handle type="target" position={targetPosition ?? Position.Top} />
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+        {chevron ? (
+          <IconButton size="small" aria-label={chevron.folded ? t('Expand') : t('Collapse')} onClick={chevron.onToggle}>
+            <FontAwesomeIcon icon={byPrefixAndName.fas[chevron.folded ? 'chevron-right' : 'chevron-down']} />
+          </IconButton>
+        ) : null}
+        <Typography variant="subtitle2" noWrap>{data.label}</Typography>
+      </Stack>
       {data.footer}
       <Handle type="source" position={sourcePosition ?? Position.Bottom} />
     </Paper>

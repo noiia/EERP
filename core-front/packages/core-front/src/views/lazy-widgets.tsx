@@ -5,6 +5,7 @@ import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models
 import type { HasId } from './stores'
 import type { GraphRendererProps } from './graph-renderer'
 import type { HtmlEditorProps } from './html-editor'
+import type { WbsRendererProps } from './diagram/wbs-renderer'
 import { lazyComponent } from './lazy-component'
 
 // The engine's heavy widgets, each in its own chunk (see lazy-component.tsx).
@@ -30,5 +31,12 @@ export const HtmlEditor = lazyComponent<HtmlEditorProps>(() =>
 export const GraphRenderer = lazyComponent<GraphRendererProps<HasId>>(() =>
   import('./graph-renderer').then(
     (m) => m.GraphRenderer as React.ComponentType<GraphRendererProps<HasId>>,
+  ),
+)
+
+// React Flow, jspdf and html-to-image (and React Flow's CSS) only load with WBS mode.
+export const WbsRenderer = lazyComponent<WbsRendererProps<HasId>>(() =>
+  import('./diagram/wbs-renderer').then(
+    (m) => m.WbsRenderer as React.ComponentType<WbsRendererProps<HasId>>,
   ),
 )

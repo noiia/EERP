@@ -18,7 +18,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid'
-import { DataGrid, GraphRenderer, RichTreeView } from './lazy-widgets'
+import { DataGrid, GraphRenderer, RichTreeView, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
 import {
@@ -1202,6 +1202,20 @@ function TreeRenderer<T extends HasId>({
         dependencies={effective.ganttDependencies ?? undefined}
         colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
+      />
+    )
+  } else if (mode === 'wbs' && effective.wbsParentField) {
+    content = (
+      <WbsRenderer
+        descriptor={descriptor as ViewDescriptor}
+        initialData={liveRecords}
+        actions={actions as unknown as EntityActions<HasId>}
+        parentField={effective.wbsParentField}
+        groupField={effective.wbsGroupField ?? undefined}
+        boxFields={['name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
+        hoursField={effective.pertHoursField ?? undefined}
+        onRecordsChange={setLiveRecords as (r: HasId[]) => void}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
     )
