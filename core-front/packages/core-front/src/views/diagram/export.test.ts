@@ -29,6 +29,13 @@ describe('diagramToPng', () => {
     expect(await diagramToPng(el, bounds)).toBe('data:image/png;base64,AAA')
     expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ pixelRatio: 2 })
   })
+
+  it('drops to pixelRatio 1 past the canvas size limit', async () => {
+    const el = document.createElement('div')
+    await diagramToPng(el, { x: 0, y: 0, width: 9000, height: 400 })
+    await diagramToPng(el, { x: 0, y: 0, width: 400, height: 9000 })
+    expect(vi.mocked(toPng).mock.calls.map((c) => c[1]?.pixelRatio)).toEqual([1, 1])
+  })
 })
 
 describe('exportPng', () => {

@@ -6,6 +6,8 @@ export interface DiagramBounds { x: number; y: number; width: number; height: nu
 export interface LegendEntry { color: string; label: string }
 
 const PAD = 40
+// Browsers refuse canvases past about 16384 px a side: a huge diagram exports at 1×.
+const MAX_CANVAS_SIDE = 16000
 const BACKGROUND = '#ffffff'
 const size = (b: DiagramBounds) => ({ w: Math.ceil(b.width) + PAD * 2, h: Math.ceil(b.height) + PAD * 2 })
 
@@ -13,7 +15,8 @@ export function pdfFormat(width: number, height: number): 'a4' | 'a3' {
   return width / height > 2.2 || width > 3000 ? 'a3' : 'a4'
 }
 
-/** PNG data URL of the whole diagram (not just the visible part), via the xyflow export recipe. */
+/** PNG data URL of the whole diagram (not just the visible part), via the xyflow export recipe;
+ * at 2× unless that would pass the browsers' canvas size limit. */
 export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds): Promise<string> {
   const { w, h } = size(bounds)
   const v = getViewportForBounds(bounds, w, h, 0.1, 4, 0.05)
@@ -21,7 +24,7 @@ export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds)
     backgroundColor: BACKGROUND,
     width: w,
     height: h,
-    pixelRatio: 2,
+    pixelRatio: Math.max(w, h) * 2 > MAX_CANVAS_SIDE ? 1 : 2,
     style: { width: `${w}px`, height: `${h}px`, transform: `translate(${v.x}px, ${v.y}px) scale(${v.zoom})` },
   })
 }
