@@ -70,6 +70,6 @@ A diagram draws at most 2000 records; beyond that it shows a notice asking to na
 ## Pitfalls
 
 - A box drag only changes the user's layout; a re-parent or arrow change is a real record write and fails for a user without write permission.
-- The layout row is replaced whole on each PUT (≤ 2000 ids, finite coordinates within ±10⁶, else 400).
+- The layout row is replaced whole on each PUT (≤ 5000 ids, finite coordinates within ±10⁶, else 400).
 - Hidden-end links silently shrink the critical path; the hidden count is the only hint.
 - Export captures the DOM canvas, so it needs the diagram chunk loaded first.

@@ -102,8 +102,8 @@ func TestViewLayout_OwnRowOnly(t *testing.T) {
 func TestViewLayout_Limits(t *testing.T) {
 	app := layoutApp(t)
 	h := settings.NewViewLayoutHandler(app.DB)
-	ids := make([]string, 2001)
-	pos := make([]string, 2001)
+	ids := make([]string, 5001)
+	pos := make([]string, 5001)
 	for i := range ids {
 		ids[i] = fmt.Sprintf(`"id%d"`, i)
 		pos[i] = ids[i] + `:{"x":0,"y":0}`
@@ -117,6 +117,13 @@ func TestViewLayout_Limits(t *testing.T) {
 		{"overflow number", "project_task", "wbs", `{"positions":{"a":{"x":1e309,"y":0}}}`},
 		{"too many folded", "project_task", "wbs", `{"folded":[` + strings.Join(ids, ",") + `]}`},
 	}
+	// A WBS saves its group roots too: 2000 tasks plus their groups must fit.
+	t.Run("at the limit", func(t *testing.T) {
+		body := `{"positions":{` + strings.Join(pos[:5000], ",") + `},"folded":[` + strings.Join(ids[:5000], ",") + `]}`
+		if rec := layoutCall(t, h.Put, "PUT", "project_task", "wbs", body, newID()); rec.Code != 204 {
+			t.Fatalf("status %d %s, want 204", rec.Code, rec.Body)
+		}
+	})
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			id := newID()

@@ -29,7 +29,7 @@ type UserViewLayout struct {
 }
 
 const (
-	maxLayoutPositions = 2000
+	maxLayoutPositions = 5000
 	maxLayoutIDLen     = 300
 	maxLayoutCoord     = 1e6
 )
