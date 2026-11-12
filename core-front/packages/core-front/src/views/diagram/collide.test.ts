@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bezierPoint, freeSpot, labelSize, overlaps, placeLabels, separateBoxes, type Rect } from './workflow-collide'
+import { bezierPoint, freeSpot, labelSize, overlaps, placeLabels, separateBoxes, type Rect } from './collide'
 
 const r = (x: number, y: number, w = 100, h = 40): Rect => ({ x, y, w, h })
 

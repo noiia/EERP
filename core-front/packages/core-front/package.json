@@ -36,6 +36,9 @@
     "@tiptap/pm": "^3.33.1",
     "@tiptap/react": "^3.33.1",
     "@tiptap/starter-kit": "^3.33.1",
+    "@xyflow/react": "12.12.1",
+    "html-to-image": "1.11.13",
+    "jspdf": "4.2.1",
     "leaflet": "^1.9.4",
     "server-only": "^0.0.1",
     "zustand": "^5.1.0"
