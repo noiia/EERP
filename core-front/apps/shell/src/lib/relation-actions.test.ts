@@ -1,3 +1,4 @@
+import { ApiError, unwrapActionResult } from '@eerp/core-front/server'
 import { describe, expect, it, vi } from 'vitest'
 
 const apiRequestMock = vi.fn()
@@ -53,6 +54,20 @@ describe('view layout actions', () => {
     expect(apiRequestMock).toHaveBeenCalledWith('GET', '/me/view_layout/project_task/wbs')
     apiRequestMock.mockRejectedValueOnce(new Error('boom'))
     await expect(getViewLayout('project_task', 'pert')).resolves.toEqual({ positions: {}, folded: [] })
+  })
+
+  it('a failed PUT comes back as an ActionError value, never a silent success', async () => {
+    apiRequestMock.mockRejectedValueOnce(new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }))
+    const out = await saveViewLayout('project_task', 'wbs', { positions: {}, folded: [] })
+    expect(() => unwrapActionResult(out)).toThrow('nope')
+  })
+
+  it('refuses an unknown mode without calling Go', async () => {
+    apiRequestMock.mockClear()
+    await expect(getViewLayout('project_task', 'x' as 'wbs')).resolves.toEqual({ positions: {}, folded: [] })
+    const out = await saveViewLayout('project_task', 'x' as 'wbs', { positions: {}, folded: [] })
+    expect(() => unwrapActionResult(out)).toThrow()
+    expect(apiRequestMock).not.toHaveBeenCalled()
   })
 
   it('PUT sends the layout', async () => {

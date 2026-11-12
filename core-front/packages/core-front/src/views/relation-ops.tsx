@@ -51,10 +51,10 @@ export interface RelationOps {
    * Optional, same fail-open posture as distinctValues: without it, views
    * fall back to the records the page was seeded with.
    */
+  listPage?: (entity: string, options?: EntityListOptions) => Promise<{ records: RelationRecord[]; total: number; totalEstimated?: true }>
   getViewLayout?: (entity: string, mode: 'wbs' | 'pert') => Promise<ViewLayout>
   /** Optional, fail-open: without both layout ops, positions just aren't saved. */
   saveViewLayout?: (entity: string, mode: 'wbs' | 'pert', layout: ViewLayout) => Promise<void>
-  listPage?: (entity: string, options?: EntityListOptions) => Promise<{ records: RelationRecord[]; total: number; totalEstimated?: true }>
 }
 
 const relationOpsContext = createOpsContext<RelationOps>()

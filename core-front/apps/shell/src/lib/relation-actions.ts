@@ -1,5 +1,6 @@
 'use server'
 import {
+  ApiError,
   apiRequest,
   createServerApiClient,
   settleAction,
@@ -59,7 +60,11 @@ export async function distinctValues(
   return settleAction(() => createServerApiClient().distinctValues(entity, column, options))
 }
 
+// A Server Action can be called with any string.
+const isLayoutMode = (m: string) => m === 'wbs' || m === 'pert'
+
 export async function getViewLayout(entity: string, mode: 'wbs' | 'pert'): Promise<ViewLayout> {
+  if (!isLayoutMode(mode)) return { positions: {}, folded: [] }
   try {
     const l = await apiRequest<Partial<ViewLayout>>('GET', `/me/view_layout/${encodeURIComponent(entity)}/${mode}`)
     return { positions: l.positions ?? {}, folded: l.folded ?? [] }
@@ -73,5 +78,9 @@ export async function saveViewLayout(
   mode: 'wbs' | 'pert',
   layout: ViewLayout,
 ): Promise<void | ActionError> {
-  return settleAction(() => apiRequest('PUT', `/me/view_layout/${encodeURIComponent(entity)}/${mode}`, layout))
+  // settleAction's value is rethrown as an ApiError by RelationOpsProvider (unwrapActions).
+  return settleAction(async () => {
+    if (!isLayoutMode(mode)) throw new ApiError({ code: 'VALIDATION_ERROR', message: 'Unknown view mode.', status: 400 })
+    await apiRequest('PUT', `/me/view_layout/${encodeURIComponent(entity)}/${mode}`, layout)
+  })
 }
