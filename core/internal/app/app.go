@@ -334,6 +334,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	meGroup := srv.Echo().Group("/api/v1/me", jwtMw)
 	meGroup.GET("/preferences", settingsHandler.GetMyPreferences)
 	meGroup.PUT("/preferences", settingsHandler.PutMyPreferences)
+	viewLayouts := settings.NewViewLayoutHandler(app.DB)
+	meGroup.GET("/view_layout/:entity/:mode", viewLayouts.Get)
+	meGroup.PUT("/view_layout/:entity/:mode", viewLayouts.Put)
 	// Staff calendar feed (modules/event/feeds.go): the caller's own secret link.
 	eventFeeds := eventmodule.NewFeedHandler(app.DB, userRepo, permRepo)
 	meGroup.GET("/event_feed", eventFeeds.GetMine)

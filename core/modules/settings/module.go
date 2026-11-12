@@ -24,8 +24,15 @@ func (m *settingsModule) Register() error {
 	// Registered for schema migration but kept OFF the generic HTTP CRUD surface:
 	// settings are tenant-wide state written through dedicated, permission-gated
 	// endpoints (see internal/settings.Handler), never the auto-generated API.
-	return orm.Register[settings.AppSettings](
+	if err := orm.Register[settings.AppSettings](
 		orm.WithTableName("app_settings"),
+		orm.WithExcluded(),
+	); err != nil {
+		return err
+	}
+	// Per-user WBS/PERT layouts; only reachable through settings.ViewLayoutHandler.
+	return orm.Register[settings.UserViewLayout](
+		orm.WithTableName("user_view_layout"),
 		orm.WithExcluded(),
 	)
 }
@@ -53,6 +60,12 @@ func (m *settingsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		ON app_settings (tenant_id, company_id, key)
 	`); err != nil {
 		return fmt.Errorf("settings: create unique index: %w", err)
+	}
+	if _, err := db.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_user_view_layout_key
+		ON user_view_layout (tenant_id, user_id, entity, mode)
+	`); err != nil {
+		return fmt.Errorf("settings: create view layout unique index: %w", err)
 	}
 	if _, err := db.Exec(ctx, `
 		DROP INDEX IF EXISTS uq_app_settings_tenant_key
