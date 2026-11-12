@@ -2696,3 +2696,72 @@ msgstr "Couleurs de"
 
 msgid "Drag an unscheduled record onto the timeline to plan it."
 msgstr "Glissez un élément non planifié sur la frise pour le planifier."
+
+msgid "WBS"
+msgstr "WBS"
+
+msgid "PERT"
+msgstr "PERT"
+
+msgid "Re-arrange"
+msgstr "Réorganiser"
+
+msgid "Export PNG"
+msgstr "Exporter en PNG"
+
+msgid "Export PDF"
+msgstr "Exporter en PDF"
+
+msgid "Fit view"
+msgstr "Ajuster la vue"
+
+msgid "More than"
+msgstr "Plus de"
+
+msgid "records match — narrow the filters to draw the diagram"
+msgstr "éléments correspondent : affinez les filtres pour dessiner le diagramme"
+
+msgid "Expand"
+msgstr "Déplier"
+
+msgid "Collapse"
+msgstr "Replier"
+
+msgid "+1 task · {h} h"
+msgstr "+1 tâche · {h} h"
+
+msgid "+{n} tasks · {h} h"
+msgstr "+{n} tâches · {h} h"
+
+msgid "Folded branch"
+msgstr "Branche repliée"
+
+msgid "ES"
+msgstr "DT"
+
+msgid "EF"
+msgstr "FT"
+
+msgid "LS"
+msgstr "DTA"
+
+msgid "LF"
+msgstr "FTA"
+
+msgid "Slack: {n} d"
+msgstr "Marge : {n} j"
+
+msgid "No estimate"
+msgstr "Aucune estimation"
+
+msgid "Critical path"
+msgstr "Chemin critique"
+
+msgid "Closed"
+msgstr "Clôturée"
+
+msgid "{n} hidden links"
+msgstr "{n} liens masqués"
+
+msgid "Dependency cycle: critical path not computed"
+msgstr "Cycle de dépendances : chemin critique non calculé"

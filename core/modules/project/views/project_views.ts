@@ -155,6 +155,11 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   ganttDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
   // The task form's color_groups: colors the Gantt bars and the cards' ribbon.
   colorTagsField: 'color_groups',
+  // WBS/PERT diagram modes (ADR-039); PERT dates reuse the Gantt start/end fields.
+  wbsParentField: 'parent_id',
+  wbsGroupField: 'project_id',
+  pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+  pertHoursField: 'planned_hours',
 }
 
 const taskFormFields: Fields = [

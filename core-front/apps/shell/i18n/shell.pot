@@ -2564,3 +2564,72 @@ msgstr ""
 
 msgid "Drag an unscheduled record onto the timeline to plan it."
 msgstr ""
+
+msgid "WBS"
+msgstr ""
+
+msgid "PERT"
+msgstr ""
+
+msgid "Re-arrange"
+msgstr ""
+
+msgid "Export PNG"
+msgstr ""
+
+msgid "Export PDF"
+msgstr ""
+
+msgid "Fit view"
+msgstr ""
+
+msgid "More than"
+msgstr ""
+
+msgid "records match — narrow the filters to draw the diagram"
+msgstr ""
+
+msgid "Expand"
+msgstr ""
+
+msgid "Collapse"
+msgstr ""
+
+msgid "+1 task · {h} h"
+msgstr ""
+
+msgid "+{n} tasks · {h} h"
+msgstr ""
+
+msgid "Folded branch"
+msgstr ""
+
+msgid "ES"
+msgstr ""
+
+msgid "EF"
+msgstr ""
+
+msgid "LS"
+msgstr ""
+
+msgid "LF"
+msgstr ""
+
+msgid "Slack: {n} d"
+msgstr ""
+
+msgid "No estimate"
+msgstr ""
+
+msgid "Critical path"
+msgstr ""
+
+msgid "Closed"
+msgstr ""
+
+msgid "{n} hidden links"
+msgstr ""
+
+msgid "Dependency cycle: critical path not computed"
+msgstr ""

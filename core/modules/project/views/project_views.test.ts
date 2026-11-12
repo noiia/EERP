@@ -44,6 +44,10 @@ describe('project views', () => {
       ganttEndField: 'deadline',
       ganttDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
       colorTagsField: 'color_groups',
+      wbsParentField: 'parent_id',
+      wbsGroupField: 'project_id',
+      pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+      pertHoursField: 'planned_hours',
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)
