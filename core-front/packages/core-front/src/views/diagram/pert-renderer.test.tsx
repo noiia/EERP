@@ -43,6 +43,7 @@ import { ApiError } from '../../api/errors'
 import type { ViewDescriptor } from '../descriptor'
 import type { EntityActions } from '../stores'
 import { useSessionStore } from '../session-store'
+import { moduleRegistry } from '../../registry'
 
 type Task = { id: string; name: string; planned_hours: number | null; date_start: string | null; deadline: string | null; closed?: boolean }
 type Link = { id: string; depends_on_id: string; task_id: string }
@@ -70,18 +71,23 @@ const diamondLinks = (): Link[] => [
   { id: 'l4', depends_on_id: 'C', task_id: 'D' },
 ]
 
-function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; create?: RelationOps['create']; update?: EntityActions<Task>['update'] } = {}) {
-  const { tasks = diamond(), links = diamondLinks(), write = true } = opts
+function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrite?: boolean; create?: RelationOps['create']; update?: EntityActions<Task>['update']; listPage?: RelationOps['listPage']; serverOptions?: object } = {}) {
+  const { tasks = diamond(), links = diamondLinks(), write = true, linkWrite = write } = opts
   useSessionStore.setState({
-    identity: { userId: 'u1', tenantId: 't1', roles: [], permissions: write ? ['project_task:project_task:read', 'project_task:project_task:write'] : ['project_task:project_task:read'] },
+    identity: {
+      userId: 'u1',
+      tenantId: 't1',
+      roles: [],
+      permissions: ['project_task:project_task:read', ...(write ? ['project_task:project_task:write'] : []), ...(linkWrite ? ['project_task_dependency:project_task_dependency:write'] : [])],
+    },
   } as never)
   const ops: RelationOps = {
     list: vi.fn(async () => []),
     get: vi.fn(),
     create: opts.create ?? vi.fn(async (_e: string, body: Record<string, unknown>) => ({ id: 'new', ...body })),
     remove: vi.fn(async () => {}),
-    listPage: vi.fn(async (_e: string, o?: { in?: Record<string, string[]> }) => {
-      const records = links.filter((l) => o?.in?.task_id?.includes(l.task_id))
+    listPage: opts.listPage ?? vi.fn(async (_e: string, o?: { in?: Record<string, string[]> }) => {
+      const records = links.filter((l) => o?.in?.task_id?.includes(l.task_id) || o?.in?.depends_on_id?.includes(l.depends_on_id))
       return { records, total: records.length }
     }),
     getViewLayout: async () => ({ positions: {}, folded: [] }),
@@ -104,6 +110,7 @@ function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; create?:
         hoursField="planned_hours"
         boxFields={['name', 'planned_hours', 'name', 'nope']}
         onRecordsChange={onRecordsChange}
+        serverOptions={opts.serverOptions}
       />
     </RelationOpsProvider>,
   )
@@ -138,9 +145,40 @@ describe('PertRenderer', () => {
   })
 
   it('shows hidden links count', async () => {
-    setup({ links: [...diamondLinks(), { id: 'l9', depends_on_id: 'X', task_id: 'B' }] })
-    expect(await screen.findByText('1 hidden links')).toBeInTheDocument()
+    setup({ links: [...diamondLinks(), { id: 'l9', depends_on_id: 'X', task_id: 'B' }, { id: 'l8', depends_on_id: 'D', task_id: 'Y' }] })
+    expect(await screen.findByText('2 hidden links')).toBeInTheDocument()
     expect(rf.props.edges).toHaveLength(4)
+  })
+
+  it('counts a link from a shown task to a hidden one', async () => {
+    setup({ links: [...diamondLinks(), { id: 'l9', depends_on_id: 'D', task_id: 'X' }] })
+    expect(await screen.findByText('1 hidden link')).toBeInTheDocument()
+    expect(rf.props.edges).toHaveLength(4)
+  })
+
+  it('shows a spinner while the records load', async () => {
+    setup({ serverOptions: {}, listPage: vi.fn(() => new Promise<never>(() => {})) })
+    expect(await screen.findByRole('progressbar')).toBeInTheDocument()
+    expect(screen.queryByTestId('react-flow')).toBeNull()
+  })
+
+  it('gates arrows on the dependency entity, not the task one', async () => {
+    setup({ write: false, linkWrite: true })
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    expect(rf.props.onConnect).toBeDefined()
+    expect(rf.props.edges.every((e) => e.deletable === true)).toBe(true)
+    cleanup()
+    setup({ write: true, linkWrite: false })
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    expect(rf.props.onConnect).toBeUndefined()
+    expect(rf.props.onEdgesDelete).toBeUndefined()
+  })
+
+  it('edits a box field through the form descriptor', async () => {
+    const spy = vi.spyOn(moduleRegistry, 'formDescriptorFor').mockReturnValue({ ...descriptor, viewType: 'form', fields: [{ name: 'name', label: 'Title', type: 'text' }] })
+    setup()
+    expect((await screen.findAllByLabelText('Title')).length).toBe(4)
+    spy.mockRestore()
   })
 
   it('creates a dependency on connect', async () => {

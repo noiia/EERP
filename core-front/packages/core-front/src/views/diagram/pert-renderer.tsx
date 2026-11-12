@@ -12,7 +12,6 @@ import type { GanttDependenciesConfig } from '../../api/view-fields'
 import { usePermission } from '../../auth/Can'
 import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
-import { moduleRegistry } from '../../registry'
 import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
 import { ViewBanner } from '../banner'
 import { ErrorAlert } from '../error-alert'
@@ -20,9 +19,9 @@ import { formatDatePattern, useFormatStore, useNumberFormat } from '../format-st
 import { useRelationOps } from '../relation-ops'
 import type { EntityActions, HasId } from '../stores'
 import { layoutPert } from './auto-layout'
-import { DiagramCanvas, DiagramCapNotice, useDiagramRecords } from './diagram-canvas'
+import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { computePert, offsetToDate } from './pert'
-import { TASK_BOX_SIZE, type TaskBoxData } from './task-box'
+import { boxFieldOf, TASK_BOX_SIZE, type TaskBoxData } from './task-box'
 
 // PERT display mode: one box per record, an arrow per dependency row (blocker →
 // dependent), each box showing its ES/EF/LS/LF dates and slack, the critical path in
@@ -69,6 +68,8 @@ export function PertRenderer<T extends HasId>({
   const ops = useRelationOps()
   const { entity, formPath } = descriptor
   const canWrite = usePermission(`${entity}:${entity}:write`)
+  // Arrows are rows of the dependency entity: its own write right gates them.
+  const canLink = usePermission(`${dep.entity}:${dep.entity}:write`)
   const loaded = useDiagramRecords(entity, serverOptions, initialData)
   const [rows, setRows] = useState(loaded.records)
   const [seen, setSeen] = useState(loaded.records)
@@ -81,8 +82,10 @@ export function PertRenderer<T extends HasId>({
   }, [rows, onRecordsChange])
   const [error, setError] = useState<SerializedError | null>(null)
 
-  // Dependency rows pointing at the shown records, read like gantt-renderer's: in[toField]
-  // by id chunks, each paged until a short page; read again only when the id set changes.
+  // Dependency rows touching the shown records, read like gantt-renderer's but from
+  // both ends (in[toField] and in[fromField], so a link to a hidden record is counted
+  // too) by id chunks, each paged until a short page, deduplicated by id; read again
+  // only when the id set changes.
   const [links, setLinks] = useState<LinkRow[]>([])
   const listPage = ops?.listPage
   const depKey = JSON.stringify(dep)
@@ -96,15 +99,17 @@ export function PertRenderer<T extends HasId>({
     const ids = idsKey.split(',')
     let cancelled = false
     const load = async () => {
-      const out: LinkRow[] = []
-      for (let i = 0; i < ids.length; i += LINK_CHUNK) {
-        for (let page = 1; ; page++) {
-          const res = await listPage(d.entity, { in: { [d.toField]: ids.slice(i, i + LINK_CHUNK) }, order: d.toField, page, pageSize: LINK_PAGE_SIZE })
-          for (const r of res.records as Record<string, unknown>[]) out.push({ id: String(r.id), from: String(r[d.fromField]), to: String(r[d.toField]) })
-          if (res.records.length < LINK_PAGE_SIZE) break
+      const out = new Map<string, LinkRow>()
+      for (const end of [d.toField, d.fromField]) {
+        for (let i = 0; i < ids.length; i += LINK_CHUNK) {
+          for (let page = 1; ; page++) {
+            const res = await listPage(d.entity, { in: { [end]: ids.slice(i, i + LINK_CHUNK) }, order: end, page, pageSize: LINK_PAGE_SIZE })
+            for (const r of res.records as Record<string, unknown>[]) out.set(String(r.id), { id: String(r.id), from: String(r[d.fromField]), to: String(r[d.toField]) })
+            if (res.records.length < LINK_PAGE_SIZE) break
+          }
         }
       }
-      return out
+      return [...out.values()]
     }
     load().then(
       (ls) => !cancelled && setLinks(ls),
@@ -115,9 +120,7 @@ export function PertRenderer<T extends HasId>({
     }
   }, [listPage, depKey, idsKey])
 
-  const formFields = moduleRegistry.formDescriptorFor(entity)?.fields ?? []
-  const fieldOf = (name: string): FieldDescriptor | undefined =>
-    descriptor.fields.find((f) => f.name === name) ?? formFields.find((f) => f.name === name)
+  const fieldOf = boxFieldOf(descriptor)
   const fields = [...new Set(boxFields.filter((n): n is string => !!n))]
     .map(fieldOf)
     .filter((f): f is FieldDescriptor => !!f)
@@ -180,7 +183,7 @@ export function PertRenderer<T extends HasId>({
         id: l.id,
         source: l.from,
         target: l.to,
-        deletable: canWrite,
+        deletable: canLink,
         className: critical ? 'critical' : undefined,
         markerEnd: { type: 'arrowclosed' as MarkerType, ...(critical ? { color: red } : {}) },
         ...(critical ? { style: { stroke: red, strokeWidth: 2 } } : {}),
@@ -207,6 +210,7 @@ export function PertRenderer<T extends HasId>({
   }
 
   if (loaded.capped) return <DiagramCapNotice />
+  if (loaded.loading) return <DiagramLoading />
   return (
     <>
       <ErrorAlert error={error ?? (loaded.error ? { code: 'INTERNAL_ERROR', message: loaded.error } : null)} />
@@ -218,14 +222,14 @@ export function PertRenderer<T extends HasId>({
         nodes={rfNodes}
         edges={edges}
         autoLayout={() => layoutPert(rows.map((r) => r.id), links, TASK_BOX_SIZE)}
-        onConnect={canWrite ? onConnect : undefined}
-        onEdgesDelete={canWrite ? onEdgesDelete : undefined}
+        onConnect={canLink ? onConnect : undefined}
+        onEdgesDelete={canLink ? onEdgesDelete : undefined}
         legend={[
           { color: red, label: t('Critical path') },
           { color: theme.palette.warning.main, label: t('No estimate') },
           { color: theme.palette.action.disabled, label: t('Closed') },
         ]}
-        toolbarExtra={pert.hiddenLinks > 0 ? <Chip size="small" label={t('{n} hidden links').replace('{n}', String(pert.hiddenLinks))} /> : undefined}
+        toolbarExtra={pert.hiddenLinks > 0 ? <Chip size="small" label={pert.hiddenLinks === 1 ? t('1 hidden link') : t('{n} hidden links').replace('{n}', String(pert.hiddenLinks))} /> : undefined}
       />
     </>
   )
