@@ -41,11 +41,13 @@ flowchart LR
 Box positions and folded branches are stored per user in `user_view_layout`, through
 `GET|PUT /api/v1/me/view_layout/:entity/:mode` (`mode` is `wbs` or `pert`). A second user sees their own
 layout, never the first one's. Edits to the records themselves (hours, parent, dependency arrows) are not
-layout: they go through the normal save path and follow the caller's write permission.
+layout: they go through the normal save path and follow the caller's write permission (an arrow, the
+dependency entity's). A saved layout keeps the positions of boxes not drawn right now (a folded branch, a
+narrower filter), so they come back where they were.
 
 ### Client-side export
 
-PNG and PDF are produced in the browser (`html-to-image` + `jspdf`, both lazy-loaded), not through
+PNG and PDF are produced in the browser (`html-to-image` + `jspdf`, loaded on the first export), not through
 `internal/reports`. That pipeline renders a server-known print route; the server cannot see the
 user's arrangement, which lives in their layout and the current viewport.
 
@@ -55,7 +57,8 @@ user's arrangement, which lives in their layout and the current viewport.
 - A task with no estimate counts as 1 day and carries a "No estimate" badge.
 - Time zero is the earliest start among the drawn tasks.
 - Critical = slack < 1e-6 days.
-- A dependency with an end that is hidden (filtered out, or over the cap) is not drawn and is counted as a hidden link.
+- Dependency rows are read from both ends (`in[toField]` and `in[fromField]`), so a link whose other end is filtered out is counted as a hidden link and not drawn (over the cap, nothing is drawn at all).
+- A record whose `closed` field is `true` is drawn faded — the one column name the engine assumes; it still counts in the critical path.
 - A dependency cycle disables the critical path, with a warning.
 
 ### Cap
