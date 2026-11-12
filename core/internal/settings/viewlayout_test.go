@@ -2,6 +2,7 @@ package settings_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -99,11 +100,12 @@ func TestViewLayout_OwnRowOnly(t *testing.T) {
 }
 
 func TestViewLayout_Limits(t *testing.T) {
-	h := settings.NewViewLayoutHandler(layoutApp(t).DB)
+	app := layoutApp(t)
+	h := settings.NewViewLayoutHandler(app.DB)
 	ids := make([]string, 2001)
 	pos := make([]string, 2001)
 	for i := range ids {
-		ids[i] = `"i` + strings.Repeat("0", i%7) + string(rune('a'+i%26)) + strings.Repeat("z", i/26) + `"`
+		ids[i] = fmt.Sprintf(`"id%d"`, i)
 		pos[i] = ids[i] + `:{"x":0,"y":0}`
 	}
 	tests := []struct{ name, entity, mode, body string }{
@@ -117,8 +119,17 @@ func TestViewLayout_Limits(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if rec := layoutCall(t, h.Put, "PUT", tc.entity, tc.mode, tc.body, newID()); rec.Code != http.StatusBadRequest {
+			id := newID()
+			rec := layoutCall(t, h.Put, "PUT", tc.entity, tc.mode, tc.body, id)
+			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status %d, want 400", rec.Code)
+			}
+			if strings.Count(rec.Body.String(), `"error"`) != 1 {
+				t.Fatalf("expected one error response, got %s", rec.Body)
+			}
+			var n int
+			if err := app.DB.QueryRow(t.Context(), `SELECT count(*) FROM user_view_layout WHERE tenant_id=$1 AND user_id=$2`, id.TenantID, id.UserID).Scan(&n); err != nil || n != 0 {
+				t.Fatalf("persisted rows = %d, err %v", n, err)
 			}
 		})
 	}

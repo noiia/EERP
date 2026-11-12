@@ -80,25 +80,28 @@ func (l *viewLayout) validate() error {
 
 // ViewLayoutHandler serves GET|PUT /api/v1/me/view_layout/:entity/:mode, the
 // caller's own layout only (tenant and user come from the JWT).
-type ViewLayoutHandler struct{ rows *orm.Repository[UserViewLayout] }
+type ViewLayoutHandler struct {
+	rows *orm.Repository[UserViewLayout]
+}
 
 func NewViewLayoutHandler(db *orm.DB) *ViewLayoutHandler {
 	return &ViewLayoutHandler{rows: orm.MustRepo[UserViewLayout](db)}
 }
 
-func layoutParams(c *echo.Context) (entity, mode string, err error) {
+func layoutParams(c *echo.Context) (entity, mode string, ok bool) {
 	entity, mode = c.Param("entity"), c.Param("mode")
-	if !layoutEntityPattern.MatchString(entity) || !layoutModes[mode] {
-		return "", "", errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Unknown entity or mode.")
-	}
-	return entity, mode, nil
+	return entity, mode, layoutEntityPattern.MatchString(entity) && layoutModes[mode]
+}
+
+func badLayoutParams(c *echo.Context) error {
+	return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Unknown entity or mode.")
 }
 
 // Get: nothing saved (or an unreadable value) reads as an empty layout.
 func (h *ViewLayoutHandler) Get(c *echo.Context) error {
-	entity, mode, err := layoutParams(c)
-	if err != nil {
-		return err
+	entity, mode, ok := layoutParams(c)
+	if !ok {
+		return badLayoutParams(c)
 	}
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
@@ -123,9 +126,9 @@ func (h *ViewLayoutHandler) Get(c *echo.Context) error {
 
 // Put replaces the whole layout.
 func (h *ViewLayoutHandler) Put(c *echo.Context) error {
-	entity, mode, err := layoutParams(c)
-	if err != nil {
-		return err
+	entity, mode, ok := layoutParams(c)
+	if !ok {
+		return badLayoutParams(c)
 	}
 	var l viewLayout
 	if err := c.Bind(&l); err != nil {
