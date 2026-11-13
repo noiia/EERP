@@ -308,6 +308,8 @@ describe('WbsRenderer', () => {
     for (const n of tasks) expect(far(n.id)).toBe(!inZone(n))
     // The camera pans over the far boxes: they load.
     const out = tasks.find((n) => !inZone(n))!
+    // The boxes subscribe in a passive effect, which can still be pending after findBy resolves.
+    await waitFor(() => expect(rf.listeners.size).toBeGreaterThan(0))
     act(() => rf.move([-out.position.x, -out.position.y]))
     expect(far(out.id)).toBe(false)
   })
