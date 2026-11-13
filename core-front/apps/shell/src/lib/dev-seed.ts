@@ -814,7 +814,7 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
           .map(([ti, ci]) => ({ task_id: tasks.records[ti].id, color_id: colors.records[ci].id })),
       ),
     )
-    if (pi === 0 && company) await seedObs(project.id, people, me, track)
+    if (pi === 0 && company) await seedObs(project.id, company, people, me, track)
   }
   results.push(...Object.values(outcomes))
   return results
@@ -823,10 +823,14 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
 /** A 5-box OBS: sponsor (contact) over the manager (user), who has two team members; a text note under the sponsor. */
 async function seedObs(
   projectId: string,
+  company: { id: string },
   people: { id: string }[],
   me: string | undefined,
   track: (o: { result: SeedEntityResult }) => void,
 ) {
+  if (people.length < 3) return
+  // The Add contact picker lists a project company's linked people only.
+  track(await createMany('contact_company', people.slice(0, 3).map((p) => ({ contact_id: p.id, company_id: company.id }))))
   const box = (b: Record<string, unknown>) => createMany<{ id: string }>('project_obs_box', [{ project_id: projectId, ...b }])
   const sponsor = await box({ kind: 'contact', contact_id: people[0]?.id, title: 'Sponsor', color: '#1e88e5', x: 300, y: 0 })
   track(sponsor)

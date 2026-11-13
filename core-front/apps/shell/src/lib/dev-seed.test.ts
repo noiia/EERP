@@ -210,6 +210,7 @@ describe('seedDemoData', () => {
       'project_task_user',
       'project_timesheet',
       'project_task_color',
+      'contact_company',
       'project_obs_box',
       'report_page_format',
       'event',
@@ -521,6 +522,10 @@ describe('seedDemoData — Project app', () => {
     expect(boxes.map((b) => b.kind).sort()).toEqual(['contact', 'contact', 'contact', 'text', 'user'])
     expect(boxes.some((b) => typeof b.color === 'string' && /^#[0-9a-f]{6}$/.test(b.color))).toBe(true)
     expect(boxes.filter((b) => b.parent_id).length).toBe(4)
+    // The picker offers the company's linked people: every contact box's person is linked.
+    const links = bodies('contact_company')
+    expect(links.every((l) => l.company_id === company?.id)).toBe(true)
+    for (const b of boxes.filter((x) => x.kind === 'contact')) expect(links.map((l) => l.contact_id)).toContain(b.contact_id)
   })
 
   it('assigns nothing without a signed-in identity', async () => {
