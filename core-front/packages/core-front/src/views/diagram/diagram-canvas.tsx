@@ -4,6 +4,8 @@ import { flushSync } from 'react-dom'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
+import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { ThemeProvider, useTheme } from '@mui/material/styles'
@@ -25,6 +27,7 @@ import { serializeError, toApiError, type SerializedError } from '../../api/erro
 import type { EntityListOptions } from '../../api/list-options'
 import { useT } from '../../i18n/translate'
 import { ErrorAlert } from '../error-alert'
+import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
 import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
@@ -139,6 +142,39 @@ function toggled(prev: Set<string>, picks: { id: string; selected: boolean }[]):
     else next.delete(c.id)
   }
   return next
+}
+
+/** How to use the canvas: the tips that apply to what this canvas allows. */
+function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert'; links: boolean; drop: boolean; notes: boolean }) {
+  const t = useT()
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const tips = [
+    t('Scroll to zoom, drag the background to move around.'),
+    t('Drag a box to move it: your arrangement is saved for you only.'),
+    t('Shift+click or Shift+drag on the background selects several boxes; drag one to move them all.'),
+    t('Double-click a box to open its record. Zoomed out, boxes show only their title.'),
+    links && (mode === 'pert'
+      ? t('Drag from the dot on the right of a box to another box to add a dependency.')
+      : t('Drag from the dot under a box to another box to make it its parent.')),
+    links && t('Click a link to select it, then press Delete to remove it.'),
+    drop && t('Drop a box onto another to move it under that one.'),
+    notes && t('Add note adds a text box only you see; drag from its dot to a box to link them.'),
+    t('Re-arrange places every box again; Fit view shows the whole diagram.'),
+  ].filter((x): x is string => !!x)
+  return (
+    <>
+      <IconButton size="small" aria-label={t('How to use this diagram')} onClick={(e) => setAnchor(e.currentTarget)}>
+        <FontAwesomeIcon icon={byPrefixAndName.fas['circle-info']} />
+      </IconButton>
+      <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
+        <Box component="ul" sx={{ m: 0, p: 2, pl: 4, maxWidth: 420 }}>
+          {tips.map((tip) => (
+            <Typography key={tip} component="li" variant="body2" sx={{ mb: 0.5 }}>{tip}</Typography>
+          ))}
+        </Box>
+      </Popover>
+    </>
+  )
 }
 
 function BoxOps({ ops, children }: { ops: RelationOps | null; children: ReactNode }) {
@@ -504,6 +540,7 @@ function Canvas(props: DiagramCanvasProps) {
     <Box>
       <ErrorAlert error={saveError ?? exportError} />
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
+        <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} notes={!!props.notes} />
         <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>
         <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>
         <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>

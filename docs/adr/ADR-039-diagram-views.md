@@ -83,6 +83,12 @@ layout: they go through the normal save path and follow the caller's write permi
 dependency entity's). A saved layout keeps the positions of boxes not drawn right now (a folded branch, a
 narrower filter), so they come back where they were.
 
+### Help
+
+An info button at the start of the canvas toolbar opens a short list of how to use the diagram. It
+lists only what this canvas allows (no linking tip without the right to link, the drop-to-re-parent tip
+on WBS only, the notes tip where notes are on), so it never describes a gesture that does nothing.
+
 ### Notes (PERT)
 
 PERT's **Add note** button drops a free-text box in the middle of the view. A note explains a part of

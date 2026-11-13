@@ -271,6 +271,15 @@ describe('DiagramCanvas', () => {
     expect(data.onDelete).toHaveBeenCalled()
   })
 
+  it('explains how to use the canvas, with the tips that apply to it', async () => {
+    setup({ mode: 'pert', notes: true, onConnect: vi.fn() })
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'How to use this diagram' }))
+    expect(screen.getByText(/add a dependency/)).toBeTruthy()
+    expect(screen.getByText(/Add note adds a text box/)).toBeTruthy()
+    expect(screen.queryByText(/move it under that one/)).toBeNull()
+  })
+
   it('deletes the selected edge', async () => {
     const onEdgesDelete = vi.fn()
     const edges = [{ id: 'e1', source: 'a', target: 'b' }, { id: 'e2', source: 'b', target: 'a' }]

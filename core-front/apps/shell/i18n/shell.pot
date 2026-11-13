@@ -2580,6 +2580,39 @@ msgstr ""
 msgid "Note"
 msgstr ""
 
+msgid "How to use this diagram"
+msgstr ""
+
+msgid "Scroll to zoom, drag the background to move around."
+msgstr ""
+
+msgid "Drag a box to move it: your arrangement is saved for you only."
+msgstr ""
+
+msgid "Shift+click or Shift+drag on the background selects several boxes; drag one to move them all."
+msgstr ""
+
+msgid "Double-click a box to open its record. Zoomed out, boxes show only their title."
+msgstr ""
+
+msgid "Drag from the dot on the right of a box to another box to add a dependency."
+msgstr ""
+
+msgid "Drag from the dot under a box to another box to make it its parent."
+msgstr ""
+
+msgid "Click a link to select it, then press Delete to remove it."
+msgstr ""
+
+msgid "Drop a box onto another to move it under that one."
+msgstr ""
+
+msgid "Add note adds a text box only you see; drag from its dot to a box to link them."
+msgstr ""
+
+msgid "Re-arrange places every box again; Fit view shows the whole diagram."
+msgstr ""
+
 msgid "Re-arrange"
 msgstr ""
 

@@ -2712,6 +2712,39 @@ msgstr "Supprimer la note"
 msgid "Note"
 msgstr "Note"
 
+msgid "How to use this diagram"
+msgstr "Comment utiliser ce diagramme"
+
+msgid "Scroll to zoom, drag the background to move around."
+msgstr "Faites défiler pour zoomer, faites glisser le fond pour vous déplacer."
+
+msgid "Drag a box to move it: your arrangement is saved for you only."
+msgstr "Faites glisser une boîte pour la déplacer : votre disposition est enregistrée pour vous seul."
+
+msgid "Shift+click or Shift+drag on the background selects several boxes; drag one to move them all."
+msgstr "Maj+clic ou Maj+glisser sur le fond sélectionne plusieurs boîtes ; faites-en glisser une pour toutes les déplacer."
+
+msgid "Double-click a box to open its record. Zoomed out, boxes show only their title."
+msgstr "Double-cliquez sur une boîte pour ouvrir son enregistrement. En vue éloignée, les boîtes n’affichent que leur titre."
+
+msgid "Drag from the dot on the right of a box to another box to add a dependency."
+msgstr "Faites glisser depuis le point à droite d’une boîte vers une autre boîte pour ajouter une dépendance."
+
+msgid "Drag from the dot under a box to another box to make it its parent."
+msgstr "Faites glisser depuis le point sous une boîte vers une autre boîte pour en faire son parent."
+
+msgid "Click a link to select it, then press Delete to remove it."
+msgstr "Cliquez sur un lien pour le sélectionner, puis appuyez sur Suppr pour le retirer."
+
+msgid "Drop a box onto another to move it under that one."
+msgstr "Déposez une boîte sur une autre pour la placer sous celle-ci."
+
+msgid "Add note adds a text box only you see; drag from its dot to a box to link them."
+msgstr "Ajouter une note crée une zone de texte visible par vous seul ; faites glisser depuis son point vers une boîte pour les relier."
+
+msgid "Re-arrange places every box again; Fit view shows the whole diagram."
+msgstr "Réorganiser replace toutes les boîtes ; Ajuster la vue affiche tout le diagramme."
+
 msgid "Re-arrange"
 msgstr "Réorganiser"
 
