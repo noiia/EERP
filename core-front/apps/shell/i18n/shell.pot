@@ -2675,3 +2675,36 @@ msgstr ""
 
 msgid "Dependency cycle: critical path not computed"
 msgstr ""
+
+msgid "Add contact"
+msgstr ""
+
+msgid "Add user"
+msgstr ""
+
+msgid "Add text"
+msgstr ""
+
+msgid "Contact"
+msgstr ""
+
+msgid "User"
+msgstr ""
+
+msgid "Pick a color"
+msgstr ""
+
+msgid "Clear color"
+msgstr ""
+
+msgid "Deleted contact"
+msgstr ""
+
+msgid "Unknown user"
+msgstr ""
+
+msgid "OBS"
+msgstr ""
+
+msgid "Edit box"
+msgstr ""

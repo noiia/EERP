@@ -1,4 +1,5 @@
 import {
+  faAddressBook,
   faAlignLeft,
   faAnglesRight,
   faArrowLeft,
@@ -45,6 +46,7 @@ import {
   faMagnifyingGlass,
   faMobileScreen,
   faMoon,
+  faFont,
   faPalette,
   faPanorama,
   faPen,
@@ -75,6 +77,7 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 // arbitrary names, so they are resolved on the server instead (`solidIcon`, server
 // barrel) and only their definitions reach the browser.
 const BUILT_IN: IconDefinition[] = [
+  faAddressBook,
   faAlignLeft,
   faAnglesRight,
   faArrowLeft,
@@ -121,6 +124,7 @@ const BUILT_IN: IconDefinition[] = [
   faMagnifyingGlass,
   faMobileScreen,
   faMoon,
+  faFont,
   faPalette,
   faPanorama,
   faPen,

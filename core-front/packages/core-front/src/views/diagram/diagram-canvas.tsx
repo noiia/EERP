@@ -31,6 +31,7 @@ import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
 import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
+import { ObsBox } from './obs-box'
 import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
@@ -221,7 +222,9 @@ export interface DiagramCanvasProps {
    * was before the drag. */
   onNodeDrop?: (id: string, overId: string | null, at: Record<string, Point>) => boolean | void | Promise<boolean | void>
   legend: { color: string; label: string }[]
-  toolbarExtra?: ReactNode
+  /** Toolbar content; as a function it gets `centerSpot`: the free top-left nearest the
+   * middle of the view for a box of that size. */
+  toolbarExtra?: ReactNode | ((centerSpot: (size: { w: number; h: number }) => Point) => ReactNode)
   /** Offer "Add note": the user's own text boxes, linkable to any box. */
   notes?: boolean
   /** Controlled: these are the fixed positions (no layout read or save); the caller stores
@@ -230,9 +233,11 @@ export interface DiagramCanvasProps {
   /** Boxes dropped (one or a selection) with their free spots. `false` (now or once resolved)
    * refuses: they go back where they were. */
   onMove?: (moved: Record<string, Point>) => boolean | void | Promise<boolean | void>
+  /** Boxes don't drag. */
+  readOnly?: boolean
 }
 
-const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox }
+const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox }
 const NOTE_EDGE = 'note-link:'
 // No notes is no key: a layout without notes saves as it always did.
 const savedNotes = (notes: DiagramNote[]) => (notes.length ? notes : undefined)
@@ -377,15 +382,17 @@ function Canvas(props: DiagramCanvasProps) {
     setPositions((p) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== id)))
     scheduleSave()
   }
-  const addNote = () => {
-    const id = `note-${crypto.randomUUID()}`
-    // The middle of what the user is looking at, on the nearest free spot.
+  // The middle of what the user is looking at, on the nearest free spot.
+  const centerSpot = ({ w, h }: { w: number; h: number }) => {
     const box = container.current?.getBoundingClientRect()
     const mid = box && instance.current
       ? instance.current.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
       : { x: 0, y: 0 }
-    const { w, h } = NOTE_BOX_SIZE
-    const spot = freeSpot({ x: mid.x - w / 2, y: mid.y - h / 2, w, h }, ids.map((i) => ({ ...placed[i], ...sized(i) })))
+    return freeSpot({ x: mid.x - w / 2, y: mid.y - h / 2, w, h }, ids.map((i) => ({ ...placed[i], ...sized(i) })))
+  }
+  const addNote = () => {
+    const id = `note-${crypto.randomUUID()}`
+    const spot = centerSpot(NOTE_BOX_SIZE)
     setNotes((ns) => [...ns, { id, text: '', links: [] }])
     setPositions((p) => ({ ...p, ...placed, [id]: spot }))
     scheduleSave()
@@ -575,7 +582,7 @@ function Canvas(props: DiagramCanvasProps) {
             <Typography variant="caption" color="text.secondary">{l.label}</Typography>
           </Stack>
         ))}
-        {props.toolbarExtra}
+        {typeof props.toolbarExtra === 'function' ? props.toolbarExtra(centerSpot) : props.toolbarExtra}
       </Stack>
       <Box ref={container} sx={{ height: '70vh', border: 1, borderColor: 'divider', borderRadius: 1 }}>
         {loaded ? (
@@ -591,7 +598,8 @@ function Canvas(props: DiagramCanvasProps) {
             onNodeDragStop={onNodeDragStop}
             onConnect={props.onConnect || props.notes ? onConnect : undefined}
             onEdgesDelete={props.onEdgesDelete || props.notes ? onEdgesDelete : undefined}
-            nodesConnectable={!!props.onConnect || !!props.notes}
+            nodesConnectable={!props.readOnly && (!!props.onConnect || !!props.notes)}
+            nodesDraggable={!props.readOnly}
             selectionKeyCode="Shift"
             multiSelectionKeyCode="Shift"
             onReconnect={props.onReconnect}

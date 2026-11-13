@@ -2807,3 +2807,36 @@ msgstr "{n} liens masqués"
 
 msgid "Dependency cycle: critical path not computed"
 msgstr "Cycle de dépendances : chemin critique non calculé"
+
+msgid "Add contact"
+msgstr "Ajouter un contact"
+
+msgid "Add user"
+msgstr "Ajouter un utilisateur"
+
+msgid "Add text"
+msgstr "Ajouter un texte"
+
+msgid "Contact"
+msgstr "Contact"
+
+msgid "User"
+msgstr "Utilisateur"
+
+msgid "Pick a color"
+msgstr "Choisir une couleur"
+
+msgid "Clear color"
+msgstr "Effacer la couleur"
+
+msgid "Deleted contact"
+msgstr "Contact supprimé"
+
+msgid "Unknown user"
+msgstr "Utilisateur inconnu"
+
+msgid "OBS"
+msgstr "OBS"
+
+msgid "Edit box"
+msgstr "Modifier l’encadré"
