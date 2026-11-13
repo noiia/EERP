@@ -26,6 +26,9 @@ vi.mock('./diagram/pert-renderer', () => ({
     <div data-testid="pert-renderer">{JSON.stringify([p.dependencies, p.startField, p.endField, p.hoursField, p.boxFields])}</div>
   ),
 }))
+vi.mock('./diagram/obs-renderer', () => ({
+  ObsRenderer: (p: { projectId: string }) => <div data-testid="obs-renderer">{p.projectId}</div>,
+}))
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
 import { useBreadcrumbStore } from './breadcrumb-store'
 import type { ViewDescriptor } from './descriptor'
@@ -1467,6 +1470,25 @@ describe('EntityView', () => {
       expect(await screen.findByTestId('pert-renderer')).toHaveTextContent(
         JSON.stringify([dep, 'date_start', 'deadline', 'planned_hours', [null, 'name', null, 'date_start', 'deadline', 'planned_hours']]),
       )
+    })
+
+    it('OBS shows only when the list is pinned to one project, and renders for that id', async () => {
+      const obs = { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id' }
+      const { unmount } = render(
+        <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { obs } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.queryByRole('button', { name: 'OBS' })).not.toBeInTheDocument()
+      unmount()
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, listFilter: { filter: { project_id: 'p1' } }, viewModeDefaults: { obs } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'OBS' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('obs-renderer')).toHaveTextContent('p1')
     })
 
     it('switching to Graph with a GraphOpsProvider renders the real canvas, not the placeholder', async () => {

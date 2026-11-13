@@ -18,11 +18,12 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid'
-import { DataGrid, GraphRenderer, PertRenderer, RichTreeView, WbsRenderer } from './lazy-widgets'
+import { DataGrid, GraphRenderer, ObsRenderer, PertRenderer, RichTreeView, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
 import {
   availableDisplayModes,
+  pinnedId,
   DISPLAY_MODES,
   effectiveViewFields,
   EMPTY_VIEW_FIELDS,
@@ -904,6 +905,7 @@ const MODE_LABELS: Record<DisplayMode, string> = {
   gantt: 'Gantt',
   wbs: 'WBS',
   pert: 'PERT',
+  obs: 'OBS',
 }
 
 /**
@@ -971,7 +973,6 @@ function TreeRenderer<T extends HasId>({
   // whatever Settings -> Views has saved — the switcher and both modes below
   // act on this merged EFFECTIVE config, never the raw pieces separately.
   const effective = effectiveViewFields(descriptor.viewModeDefaults, viewFields)
-  const availability = availableDisplayModes(effective)
 
   // A single shared record set every mode reads from, instead of each mode
   // rendering its own frozen copy of `initialData`. Kanban/Calendar's drags
@@ -1013,6 +1014,7 @@ function TreeRenderer<T extends HasId>({
     () => mergeListOptions(descriptor.listFilter, activeFilters),
     [descriptor.listFilter, activeFilters],
   )
+  const availability = availableDisplayModes(effective, baseOptions)
   const onFiltersChange = (options: EntityListOptions | undefined) => {
     setActiveFilters(options)
     setLiveResults(null)
@@ -1237,6 +1239,9 @@ function TreeRenderer<T extends HasId>({
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
     )
+  } else if (mode === 'obs' && effective.obs && availability.obs) {
+    const projectId = pinnedId(baseOptions, effective.obs.projectField)!
+    content = <ObsRenderer key={projectId} config={effective.obs} projectId={projectId} />
   } else if (mode === 'graph' && effective.enableGraphs) {
     content = (
       <GraphRenderer

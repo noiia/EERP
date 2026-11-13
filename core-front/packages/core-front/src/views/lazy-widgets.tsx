@@ -7,6 +7,7 @@ import type { GraphRendererProps } from './graph-renderer'
 import type { HtmlEditorProps } from './html-editor'
 import type { WbsRendererProps } from './diagram/wbs-renderer'
 import type { PertRendererProps } from './diagram/pert-renderer'
+import type { ObsRendererProps } from './diagram/obs-renderer'
 import { lazyComponent } from './lazy-component'
 
 // The engine's heavy widgets, each in its own chunk (see lazy-component.tsx).
@@ -47,4 +48,8 @@ export const PertRenderer = lazyComponent<PertRendererProps<HasId>>(() =>
   import('./diagram/pert-renderer').then(
     (m) => m.PertRenderer as React.ComponentType<PertRendererProps<HasId>>,
   ),
+)
+
+export const ObsRenderer = lazyComponent<ObsRendererProps>(() =>
+  import('./diagram/obs-renderer').then((m) => m.ObsRenderer),
 )

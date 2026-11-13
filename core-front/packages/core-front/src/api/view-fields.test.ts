@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { availableDisplayModes, effectiveViewFields, EMPTY_VIEW_FIELDS } from './view-fields'
+import { availableDisplayModes, effectiveViewFields, EMPTY_VIEW_FIELDS, pinnedId } from './view-fields'
 
 describe('effectiveViewFields', () => {
   it('falls back to the module default when nothing is overridden', () => {
@@ -24,6 +24,7 @@ describe('effectiveViewFields', () => {
       pertDependencies: null,
       pertHoursField: null,
       colorTagsField: null,
+        obs: null,
     })
   })
 
@@ -44,6 +45,7 @@ describe('effectiveViewFields', () => {
       pertDependencies: null,
       pertHoursField: null,
       colorTagsField: null,
+        obs: null,
     })
   })
 
@@ -69,6 +71,7 @@ describe('effectiveViewFields', () => {
       pertDependencies: null,
       pertHoursField: null,
       colorTagsField: null,
+        obs: null,
     })
   })
 
@@ -91,6 +94,7 @@ describe('effectiveViewFields', () => {
       pertDependencies: null,
       pertHoursField: null,
       colorTagsField: null,
+        obs: null,
     })
   })
 
@@ -136,8 +140,9 @@ describe('availableDisplayModes', () => {
       pertDependencies: null,
       pertHoursField: null,
       colorTagsField: null,
+        obs: null,
       }),
-    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false })
+    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false })
     expect(
       availableDisplayModes({
         kanbanStatusField: 'status',
@@ -155,8 +160,9 @@ describe('availableDisplayModes', () => {
       pertDependencies: null,
       pertHoursField: null,
       colorTagsField: null,
+        obs: null,
       }),
-    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false })
+    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false })
   })
 
   it('gantt needs BOTH a start and an end field', () => {
@@ -198,5 +204,24 @@ describe('wbs / pert modes', () => {
         EMPTY_VIEW_FIELDS,
       ),
     ).toMatchObject({ wbsParentField: 'parent_id', wbsGroupField: 'stage_id', pertDependencies: dep, pertHoursField: 'planned_hours' })
+  })
+})
+
+describe('pinnedId / obs availability', () => {
+  it('pinnedId reads one filter or one in id, else null', () => {
+    expect(pinnedId({ filter: { project_id: 'p1' } }, 'project_id')).toBe('p1')
+    expect(pinnedId({ in: { project_id: ['p1'] } }, 'project_id')).toBe('p1')
+    expect(pinnedId(undefined, 'project_id')).toBeNull()
+    expect(pinnedId({ in: { project_id: ['p1', 'p2'] } }, 'project_id')).toBeNull()
+    expect(pinnedId({ filter: { project_id: '' } }, 'project_id')).toBeNull()
+  })
+
+  it('obs needs a module config and a pinned project', () => {
+    const obs = { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id' }
+    const eff = effectiveViewFields({ obs }, EMPTY_VIEW_FIELDS)
+    expect(eff.obs).toEqual(obs)
+    expect(availableDisplayModes(eff).obs).toBe(false)
+    expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).obs).toBe(true)
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).obs).toBe(false)
   })
 })

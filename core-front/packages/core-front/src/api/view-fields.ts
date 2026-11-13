@@ -10,6 +10,8 @@
 // two competing sources of truth. Client-safe (no 'server-only' import) so
 // both the engine's renderers and the shell's Settings -> Views page can
 // import it.
+import type { EntityListOptions } from './list-options'
+
 
 /** Server state: app_settings key `views.<entity>.fields`, mirrored camelCase
  * client-side. A null field means "no workspace override" — NOT "disabled";
@@ -83,6 +85,8 @@ export interface ViewModeDefaults {
   /** PERT mode: the planned-hours number field read as a task's duration; dates reuse
    * ganttStartField/ganttEndField. Module-declared only. */
   pertHoursField?: string
+  /** OBS mode: the entity's own org-chart boxes, available while the list is pinned to one project. Module-declared only. */
+  obs?: ObsConfig
   /** Names a many2many field (widget `colortags`) of the descriptor — else of
    * the entity's form descriptor: its related records' colors paint the Gantt
    * bars and a ribbon on Kanban/Calendar cards. Module-declared only. */
@@ -129,6 +133,7 @@ export interface EffectiveViewFields {
   wbsOrderField: string | null
   pertDependencies: GanttDependenciesConfig | null
   pertHoursField: string | null
+  obs: ObsConfig | null
   colorTagsField: string | null
 }
 
@@ -156,14 +161,32 @@ export function effectiveViewFields(
     wbsOrderField: defaults?.wbsOrderField ?? null,
     pertDependencies: defaults?.pertDependencies ?? null,
     pertHoursField: defaults?.pertHoursField ?? null,
+    obs: defaults?.obs ?? null,
     colorTagsField: defaults?.colorTagsField ?? null,
   }
 }
 
-/** The list view's display-mode switcher (top-right of the list). */
-export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert'
+/** Module-declared only. */
+export interface ObsConfig {
+  entity: string
+  projectField: string
+  projectEntity: string
+  companyField: string
+  canEdit?: string
+}
 
-export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert']
+/** The one id `options` pins `field` to (filter[field]=id, or in[field] with one id), else null. */
+export function pinnedId(options: EntityListOptions | undefined, field: string): string | null {
+  const f = options?.filter?.[field]
+  if (f) return f
+  const ids = options?.in?.[field]
+  return ids?.length === 1 && ids[0] ? ids[0] : null
+}
+
+/** The list view's display-mode switcher (top-right of the list). */
+export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs'
+
+export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs']
 
 /**
  * Which modes are usable right now for a given entity's EFFECTIVE (module
@@ -172,7 +195,7 @@ export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calenda
  * entirely, not just disables them — until a field/flag resolves truthy,
  * whether that came from the module's own default or Settings -> Views.
  */
-export function availableDisplayModes(effective: EffectiveViewFields): Record<DisplayMode, boolean> {
+export function availableDisplayModes(effective: EffectiveViewFields, options?: EntityListOptions): Record<DisplayMode, boolean> {
   return {
     list: true,
     kanban: effective.kanbanStatusField != null,
@@ -181,5 +204,6 @@ export function availableDisplayModes(effective: EffectiveViewFields): Record<Di
     gantt: effective.ganttStartField != null && effective.ganttEndField != null,
     wbs: effective.wbsParentField != null,
     pert: effective.pertDependencies != null,
+    obs: effective.obs != null && pinnedId(options, effective.obs.projectField) != null,
   }
 }
