@@ -160,10 +160,14 @@ function fakeEmail(first: string, last: string, company: string): string {
 }
 
 function buildContacts(): Record<string, unknown>[] {
-  return Array.from({ length: CONTACT_COUNT }, () => {
+  return Array.from({ length: CONTACT_COUNT }, (_, i) => {
     const first = pick(FIRST_NAMES)
     const last = pick(LAST_NAMES)
     const company = pick(COMPANIES)
+    // The last one is a company: the demo project's client (its OBS picks people from the rest).
+    if (i === CONTACT_COUNT - 1) {
+      return { name: company, email: fakeEmail(first, last, company), company, status: 'customer', kind: 'company' }
+    }
     return {
       name: `${first} ${last}`,
       email: fakeEmail(first, last, company),
@@ -707,13 +711,20 @@ async function seedProjectPlan(
   )
 }
 
-async function seedProjects(): Promise<SeedEntityResult[]> {
+async function seedProjects(contacts: { records: { id: string }[]; bodies: Record<string, unknown>[] }): Promise<SeedEntityResult[]> {
   const results: SeedEntityResult[] = []
   const add = (r: SeedEntityResult) => results.push(r)
   const day = 86_400_000
+  const companyAt = contacts.bodies.findIndex((b) => b.kind === 'company')
+  const company = companyAt >= 0 ? contacts.records[companyAt] : undefined
+  const people = contacts.records.filter((_, i) => i !== companyAt)
   const projects = await createMany<{ id: string }>(
     'project',
-    [...PROJECT_DEMOS, ...PROJECT_PLAN_DEMOS.map((name) => ({ name, visibility: 'everyone' as const }))].map((p) => ({ name: p.name, visibility: p.visibility })),
+    [...PROJECT_DEMOS, ...PROJECT_PLAN_DEMOS.map((name) => ({ name, visibility: 'everyone' as const }))].map((p, i) => ({
+      name: p.name,
+      visibility: p.visibility,
+      ...(i === 0 && company ? { company_id: company.id } : {}),
+    })),
   )
   add(projects.result)
   const isPlan = (i: number) => PROJECT_PLAN_DEMOS.includes(String(projects.bodies[i].name))
@@ -803,9 +814,32 @@ async function seedProjects(): Promise<SeedEntityResult[]> {
           .map(([ti, ci]) => ({ task_id: tasks.records[ti].id, color_id: colors.records[ci].id })),
       ),
     )
+    if (pi === 0 && company) await seedObs(project.id, people, me, track)
   }
   results.push(...Object.values(outcomes))
   return results
+}
+
+/** A 5-box OBS: sponsor (contact) over the manager (user), who has two team members; a text note under the sponsor. */
+async function seedObs(
+  projectId: string,
+  people: { id: string }[],
+  me: string | undefined,
+  track: (o: { result: SeedEntityResult }) => void,
+) {
+  const box = (b: Record<string, unknown>) => createMany<{ id: string }>('project_obs_box', [{ project_id: projectId, ...b }])
+  const sponsor = await box({ kind: 'contact', contact_id: people[0]?.id, title: 'Sponsor', color: '#1e88e5', x: 300, y: 0 })
+  track(sponsor)
+  const root = sponsor.records[0]?.id
+  const manager = me ? await box({ kind: 'user', user_id: me, title: 'Project manager', parent_id: root, color: '#43a047', x: 300, y: 160 }) : null
+  if (manager) track(manager)
+  const lead = manager?.records[0]?.id ?? root
+  const rest = [
+    { kind: 'contact', contact_id: people[1]?.id, title: 'Developer', parent_id: lead, x: 120, y: 320 },
+    { kind: 'contact', contact_id: people[2]?.id, title: 'Designer', parent_id: lead, x: 360, y: 320 },
+    { kind: 'text', text: 'Weekly steering committee on Mondays.', parent_id: root, x: 560, y: 160 },
+  ]
+  track(await createMany('project_obs_box', rest.map((b) => ({ project_id: projectId, ...b }))))
 }
 
 /**
@@ -889,7 +923,7 @@ export async function seedDemoData(volume: SeedVolume = 'light', groups: string[
   results.push(quoteLinesOutcome.result)
   results.push(await applyStatuses('quote', quotesOutcome))
 
-  results.push(...(await seedProjects()))
+  results.push(...(await seedProjects(contactsOutcome)))
 
   const preferences = await getMyLocalePreferences()
   const pageFormatsOutcome = await createMany(

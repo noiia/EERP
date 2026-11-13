@@ -210,6 +210,7 @@ describe('seedDemoData', () => {
       'project_task_user',
       'project_timesheet',
       'project_task_color',
+      'project_obs_box',
       'report_page_format',
       'event',
       'event_session',
@@ -506,6 +507,20 @@ describe('seedDemoData — Project app', () => {
     const perTask = new Map<string, number>()
     for (const l of links) perTask.set(String(l.task_id), (perTask.get(String(l.task_id)) ?? 0) + 1)
     expect([...perTask.values()].filter((n) => n === 2)).toHaveLength(3)
+  })
+
+  it('seeds a 5-box OBS for the project that has a company', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const company = (await createdFor('contact')).find((c) => c.kind === 'company')
+    const withCompany = (await createdFor('project')).filter((p) => p.company_id === company?.id)
+    expect(withCompany).toHaveLength(1)
+    const boxes = bodies('project_obs_box')
+    expect(boxes).toHaveLength(5)
+    expect(boxes.every((b) => b.project_id === withCompany[0].id)).toBe(true)
+    expect(boxes.map((b) => b.kind).sort()).toEqual(['contact', 'contact', 'contact', 'text', 'user'])
+    expect(boxes.some((b) => typeof b.color === 'string' && /^#[0-9a-f]{6}$/.test(b.color))).toBe(true)
+    expect(boxes.filter((b) => b.parent_id).length).toBe(4)
   })
 
   it('assigns nothing without a signed-in identity', async () => {

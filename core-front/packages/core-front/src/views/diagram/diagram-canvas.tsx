@@ -151,10 +151,13 @@ function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert' | 'obs
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const tips = [
     t('Scroll to zoom, drag the background to move around.'),
-    t('Drag a box to move it: your arrangement is saved for you only.'),
+    mode === 'obs'
+      ? t('Drag a box to move it: the chart is shared, and only the project manager can change it.')
+      : t('Drag a box to move it: your arrangement is saved for you only.'),
     t('Shift+click or Shift+drag on the background selects several boxes; drag one to move them all.'),
     t('Double-click a box to open its record. Zoomed out, boxes show only their title.'),
-    links && (mode === 'pert'
+    mode === 'obs' && t("Add boxes from the toolbar; drag from a box's dot to another to put it under that one."),
+    links && mode !== 'obs' && (mode === 'pert'
       ? t('Drag from the dot on the right of a box to another box to add a dependency.')
       : t('Drag from the dot under a box to another box to make it its parent.')),
     links && t('Click a link to select it, then press Delete to remove it.'),

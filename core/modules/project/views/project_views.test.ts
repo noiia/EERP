@@ -53,6 +53,7 @@ describe('project views', () => {
       wbsOrderField: 'wbs_number',
       pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
       pertHoursField: 'planned_hours',
+      obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)

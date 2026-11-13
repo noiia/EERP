@@ -2840,3 +2840,9 @@ msgstr "OBS"
 
 msgid "Edit box"
 msgstr "Modifier l’encadré"
+
+msgid "Drag a box to move it: the chart is shared, and only the project manager can change it."
+msgstr "Faites glisser un encadré pour le déplacer : le diagramme est partagé et seul le chef de projet peut le modifier."
+
+msgid "Add boxes from the toolbar; drag from a box's dot to another to put it under that one."
+msgstr "Ajoutez des encadrés depuis la barre d’outils ; faites glisser le point d’un encadré vers un autre pour le placer sous celui-ci."

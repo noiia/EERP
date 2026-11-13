@@ -167,6 +167,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   wbsOrderField: 'wbs_number',
   pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
   pertHoursField: 'planned_hours',
+  // OBS chart of the pinned project (ADR-039).
+  obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
 }
 
 // The task's many2many fields: on the form, and filters of the task lists

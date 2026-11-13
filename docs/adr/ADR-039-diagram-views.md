@@ -149,6 +149,27 @@ user's arrangement, which lives in their layout and the current viewport.
 
 A diagram draws at most 2000 records; beyond that it shows a notice asking to narrow the filters.
 
+### OBS (organizational breakdown structure)
+
+A third mode, `obs`, draws who is on a project: boxes for contacts, staff users and free text, joined
+by parent lines (`obsConfig`: the box entity, the project field, the project entity, the optional
+company field, a `canEdit` guard).
+
+- *Shared, not per user.* WBS/PERT boxes are views of records that exist anyway, so each user may
+  arrange them privately. An OBS box *is* the data (a `project_obs_box` row with its `x`/`y`), so
+  the chart is one shared document: moves, colors and parents are record writes, allowed to the
+  project manager and admins only (Go answers 403 to anyone else; the UI hides the editing controls).
+- *One pinned project.* The mode is offered only while the list's filters pin the project field to a
+  single id; a chart mixing projects has no meaning. A persisted `obs` mode falls back to List when
+  the pin is lost.
+- *Controlled canvas.* `DiagramCanvas` takes `positions` + `onMove` (a rejected write snaps the box
+  back) and never reads or saves a per-user layout in this mode; boxes never placed are laid out like WBS.
+- *Colors.* A box has a free `#rrggbb` color; the text color is derived for contrast.
+- *Deleting.* Deleting a box clears its children's `parent_id` in the same transaction, so the
+  children become roots instead of disappearing.
+- *Contacts.* The contact picker offers the project company's people (`contact_company`) when the
+  project has a company, else every person.
+
 ## Consequences
 
 - Any entity gets the modes by adding descriptor keys, no new code.
