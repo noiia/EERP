@@ -210,6 +210,37 @@ describe('DiagramCanvas', () => {
     expect(saveViewLayout).toHaveBeenCalledWith('project_task', 'wbs', { positions: { a: at(40, 40), b: at(800, 800) }, folded: [] })
   })
 
+  it('controlled positions: no layout read or save, drops reported to onMove', async () => {
+    const onMove = vi.fn(() => true)
+    const { getViewLayout, saveViewLayout } = setup({ positions: { a: at(10, 10), b: at(500, 500) }, onMove })
+    await flush()
+    expect(pos('a')).toEqual(at(10, 10))
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(40, 40) }))
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    expect(onMove).toHaveBeenCalledWith({ a: at(40, 40) })
+    expect(getViewLayout).not.toHaveBeenCalled()
+    expect(saveViewLayout).not.toHaveBeenCalled()
+  })
+
+  it('controlled positions: a refused move snaps back', async () => {
+    const onMove = vi.fn(async () => false)
+    setup({ positions: { a: at(10, 10), b: at(500, 500) }, onMove })
+    await flush()
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(40, 40) }))
+    await flush()
+    expect(pos('a')).toEqual(at(10, 10))
+  })
+
+  it('controlled positions: a selection drop and Re-arrange report to onMove', async () => {
+    const onMove = vi.fn()
+    setup({ positions: { a: at(10, 10), b: at(500, 500) }, onMove })
+    await flush()
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(100, 100) }, [{ id: 'a', position: at(100, 100) }, { id: 'b', position: at(700, 700) }]))
+    expect(onMove).toHaveBeenLastCalledWith({ a: at(100, 100), b: at(700, 700) })
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Re-arrange' })))
+    expect(onMove).toHaveBeenLastCalledWith({ a: at(0, 0), b: at(500, 500) })
+  })
+
   it('reports the box a dragged one was dropped on', async () => {
     const onNodeDrop = vi.fn()
     setup({ onNodeDrop })

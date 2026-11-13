@@ -145,7 +145,7 @@ function toggled(prev: Set<string>, picks: { id: string; selected: boolean }[]):
 }
 
 /** How to use the canvas: the tips that apply to what this canvas allows. */
-function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert'; links: boolean; drop: boolean; notes: boolean }) {
+function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert' | 'obs'; links: boolean; drop: boolean; notes: boolean }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const tips = [
@@ -201,9 +201,12 @@ function useCachedGet(ops: RelationOps | null): RelationOps | null {
   }, [ops])
 }
 
+// Per-user layouts exist for WBS and PERT only; OBS is always controlled.
+type LayoutMode = 'wbs' | 'pert'
+
 export interface DiagramCanvasProps {
   entity: string
-  mode: 'wbs' | 'pert'
+  mode: 'wbs' | 'pert' | 'obs'
   title: string
   /** Positions are ignored: the canvas places them. */
   nodes: Node[]
@@ -224,6 +227,12 @@ export interface DiagramCanvasProps {
   toolbarExtra?: ReactNode
   /** Offer "Add note": the user's own text boxes, linkable to any box. */
   notes?: boolean
+  /** Controlled: these are the fixed positions (no layout read or save); the caller stores
+   * drops reported to `onMove`. */
+  positions?: Record<string, Point>
+  /** Boxes dropped (one or a selection) with their free spots. `false` (now or once resolved)
+   * refuses: they go back where they were. */
+  onMove?: (moved: Record<string, Point>) => boolean | void | Promise<boolean | void>
 }
 
 const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox }
@@ -248,12 +257,14 @@ function Canvas(props: DiagramCanvasProps) {
   const ops = useRelationOps()
   const boxOps = useCachedGet(ops)
   const compact = useMemo(() => compactTheme(outer), [outer])
-  const getViewLayout = ops?.getViewLayout
-  const saveViewLayout = ops?.saveViewLayout
+  // Controlled positions never touch the per-user layout.
+  const getViewLayout = props.positions ? undefined : ops?.getViewLayout
+  const saveViewLayout = props.positions ? undefined : ops?.saveViewLayout
   const [loaded, setLoaded] = useState(!getViewLayout)
   // Fixed positions: loaded, dropped or re-arranged. Ids not drawn now (folded, filtered
   // out) keep theirs and are saved with the rest.
-  const [positions, setPositions] = useState<Record<string, Point>>({})
+  const [ownPositions, setPositions] = useState<Record<string, Point>>({})
+  const positions = props.positions ?? ownPositions
   // Kept (and saved back) even where they aren't drawn: they belong to the saved layout.
   const [notes, setNotes] = useState<DiagramNote[]>([])
   const [live, setLive] = useState<Record<string, Point>>({})
@@ -285,7 +296,7 @@ function Canvas(props: DiagramCanvasProps) {
   useEffect(() => {
     if (!getViewLayout) return
     let cancelled = false
-    getViewLayout(entity, mode)
+    getViewLayout(entity, mode as LayoutMode)
       .then((layout) => {
         if (cancelled) return
         setPositions(layout.positions)
@@ -343,7 +354,7 @@ function Canvas(props: DiagramCanvasProps) {
 
   const save = (layout: ViewLayout) => {
     if (!saveViewLayout) return
-    saveViewLayout(entity, mode, layout).then(
+    saveViewLayout(entity, mode as LayoutMode, layout).then(
       () => setSaveError(null),
       (e: unknown) => setSaveError(serializeError(toApiError(e))),
     )
@@ -437,6 +448,13 @@ function Canvas(props: DiagramCanvasProps) {
     if (picks.length) setSelectedNodes((prev) => toggled(prev, picks))
   }
 
+  // Controlled positions come back from the caller, so a refused move needs no undo here.
+  const reportMove = (moved: Record<string, Point>, undo: (ok: boolean | void) => void) => {
+    const res = props.onMove!(moved)
+    if (res instanceof Promise) void res.then(undo, () => undo(false))
+    else undo(res)
+  }
+
   const onNodeDragStop = (_: unknown, node: Node, dragged: Node[] = [node]) => {
     // A selection moved together: only the layout changes (no re-parent), each box on the
     // free spot nearest where it was let go, clear of the others and of the boxes placed before it.
@@ -452,6 +470,7 @@ function Canvas(props: DiagramCanvasProps) {
       setPositions(next)
       setLive({})
       scheduleSave()
+      if (props.onMove) reportMove(Object.fromEntries(dragged.map((n) => [n.id, next[n.id]])), () => {})
       return
     }
     const rect: Rect = { ...node.position, ...sized(node.id) }
@@ -462,7 +481,9 @@ function Canvas(props: DiagramCanvasProps) {
       setPositions((p) => ({ ...p, [node.id]: before }))
       scheduleSave()
     }
-    setPositions({ ...positions, ...placed, [node.id]: freeSpot(rect, others) })
+    const spot = freeSpot(rect, others)
+    setPositions({ ...positions, ...placed, [node.id]: spot })
+    if (props.onMove) reportMove({ [node.id]: spot }, putBack)
     if (onNodeDrop && !noteIds.has(node.id)) {
       const cx = rect.x + rect.w / 2
       const cy = rect.y + rect.h / 2
@@ -481,6 +502,10 @@ function Canvas(props: DiagramCanvasProps) {
     const next = { ...positions, ...placed, ...Object.fromEntries(nodes.map((n) => [n.id, auto[n.id] ?? { x: 0, y: 0 }])) }
     setPositions(next)
     setLive({})
+    if (props.onMove) {
+      props.onMove(Object.fromEntries(nodes.map((n) => [n.id, next[n.id]])))
+      return
+    }
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
     save({ positions: toSave(next), folded: savedFolded, notes: savedNotes(notes) })
