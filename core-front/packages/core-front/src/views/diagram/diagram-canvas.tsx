@@ -571,7 +571,7 @@ function Canvas(props: DiagramCanvasProps) {
       <ErrorAlert error={saveError ?? exportError} />
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
         <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} notes={!!props.notes} />
-        <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>
+        {props.readOnly ? null : <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>}
         <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>
         <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>
         <Button size="small" onClick={() => instance.current?.fitView()}>{t('Fit view')}</Button>

@@ -226,6 +226,38 @@ describe('ObsRenderer', () => {
     expect(rf.props.edges).toEqual([])
   })
 
+  it('sends one color write per pick, showing the picked color meanwhile', async () => {
+    const { ops } = setup()
+    await editable()
+    fireEvent.click(within(screen.getByTestId('node-b3')).getByRole('button', { name: 'Color' }))
+    const input = screen.getByLabelText('Pick a color') as HTMLInputElement
+    for (const c of ['#111111', '#222222', '#333333']) fireEvent.input(input, { target: { value: c } })
+    expect(ops.update).not.toHaveBeenCalled()
+    const shown = () => screen.getByTestId('node-b3').querySelector('[data-testid="obs-box"]')
+    expect(shown()).toHaveStyle({ backgroundColor: '#333333' })
+    fireEvent.change(input, { target: { value: '#333333' } })
+    expect(ops.update).toHaveBeenCalledTimes(1)
+    expect(ops.update).toHaveBeenCalledWith('project_obs_box', 'b3', { color: '#333333' })
+    // A refused pick goes back to the stored color.
+    ops.update.mockRejectedValueOnce(err(403, 'no color'))
+    fireEvent.change(input, { target: { value: '#444444' } })
+    expect(await screen.findByText('no color')).toBeInTheDocument()
+    await waitFor(() => expect(shown()).toHaveStyle({ backgroundColor: '#333333' }))
+  })
+
+  it('keeps a later drop when an earlier one of the same box is refused', async () => {
+    const { ops } = setup()
+    await editable()
+    let refuse!: (e: unknown) => void
+    ops.update.mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject }))
+    await act(async () => { rf.props.onNodeDragStop!(null, { ...node('b1'), position: { x: 100, y: 2000 } }) })
+    await act(async () => rf.props.onNodeDragStop!(null, { ...node('b1'), position: { x: 100, y: 4000 } }))
+    expect(node('b1').position).toEqual({ x: 100, y: 4000 })
+    await act(async () => refuse(err(403, 'late refusal')))
+    expect(await screen.findByText('late refusal')).toBeInTheDocument()
+    expect(node('b1').position).toEqual({ x: 100, y: 4000 })
+  })
+
   it('saves moves and snaps back on a refusal', async () => {
     const { ops } = setup()
     await editable()
@@ -245,6 +277,7 @@ describe('ObsRenderer', () => {
     expect(screen.queryByRole('button', { name: 'Add contact' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Color' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Re-arrange' })).toBeNull()
     expect(rf.props.onConnect).toBeUndefined()
     expect(rf.props.nodesDraggable).toBe(false)
     expect(rf.props.edges.every((e) => e.deletable === false)).toBe(true)

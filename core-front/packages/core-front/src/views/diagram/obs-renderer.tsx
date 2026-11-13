@@ -121,7 +121,7 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     data: {
       row,
       editable,
-      onColor: (color) => void patch(row.id, { color }).catch(fail),
+      onColor: (color) => patch(row.id, { color }).catch(fail),
       onDelete: () => {
         setError(null)
         ops!.remove(entity, row.id).then(() => setReloads((n) => n + 1), fail)
@@ -155,6 +155,8 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     setPositions((p) => {
       const next = { ...p }
       for (const id of failed) {
+        // A later drop of the same box has moved it since: that one wins.
+        if (next[id]?.x !== moved[id].x || next[id]?.y !== moved[id].y) continue
         if (before[id]) next[id] = before[id]
         else delete next[id]
       }

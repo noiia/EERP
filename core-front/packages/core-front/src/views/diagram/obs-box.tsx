@@ -1,5 +1,5 @@
 'use client'
-import { memo, useEffect, useState, type MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -34,7 +34,8 @@ export interface ObsRow {
 export interface ObsBoxData extends Record<string, unknown> {
   row: ObsRow
   editable: boolean
-  onColor: (color: string | null) => void
+  /** Settles once the write is done (refused or not). */
+  onColor: (color: string | null) => Promise<void>
   onDelete: () => void
   onEdit: () => void
 }
@@ -72,9 +73,25 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...OBS_BOX_SIZE })
   const lines = useLines(data.row)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
+  // The color being picked shows at once; one write goes out when the pick is committed.
+  const [draft, setDraft] = useState<string | null>(null)
   const { row, editable } = data
-  const bg = row.color ?? theme.palette.background.paper
-  const fg = row.color ? theme.palette.getContrastText(row.color) : theme.palette.text.primary
+  const commit = (color: string | null) => {
+    setDraft(color)
+    void data.onColor(color).finally(() => setDraft(null))
+  }
+  const commitRef = useRef(commit)
+  useEffect(() => {
+    commitRef.current = commit
+  })
+  // React's onChange fires on every `input` while dragging in the picker; the native
+  // `change` event fires once, when the pick is done.
+  const colorInput = useCallback((el: HTMLInputElement | null) => {
+    el?.addEventListener('change', () => commitRef.current(el.value))
+  }, [])
+  const color = draft ?? row.color
+  const bg = color ?? theme.palette.background.paper
+  const fg = color ? theme.palette.getContrastText(color) : theme.palette.text.primary
   const stop = (e: MouseEvent) => e.stopPropagation()
   return (
     <Paper
@@ -101,9 +118,9 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
               </IconButton>
               <Menu open={!!menu} anchorEl={menu} onClose={() => setMenu(null)}>
                 <Box sx={{ px: 2, py: 1 }}>
-                  <input type="color" aria-label={t('Pick a color')} value={row.color ?? '#ffffff'} onChange={(e) => data.onColor(e.target.value)} />
+                  <input ref={colorInput} type="color" aria-label={t('Pick a color')} defaultValue={row.color ?? '#ffffff'} onInput={(e) => setDraft(e.currentTarget.value)} />
                 </Box>
-                <MenuItem onClick={() => { setMenu(null); data.onColor(null) }}>{t('Clear color')}</MenuItem>
+                <MenuItem onClick={() => { setMenu(null); commit(null) }}>{t('Clear color')}</MenuItem>
               </Menu>
             </Box>
           ) : null}
