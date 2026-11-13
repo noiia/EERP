@@ -31,10 +31,30 @@ export const DETAIL_ZOOM = 0.6
 /** True while the canvas exports, so the image always gets the full boxes. */
 export const ForceDetail = createContext(false)
 
-/** Whether boxes draw in full. Selects only "near or far" from React Flow's store, so a
- * box re-renders when the zoom crosses DETAIL_ZOOM, not on every zoom step. */
-export function useDetailed(): boolean {
-  const near = useStore((s) => s.transform[2] >= DETAIL_ZOOM)
+/** The zone around the camera where boxes draw in full, as a share of the visible width and
+ * height added on each side: boxes just off screen are ready before a pan reaches them. */
+export const DETAIL_MARGIN = 0.5
+
+/** A box's top-left (flow coordinates) and size. */
+export interface BoxArea { x?: number; y?: number; w: number; h: number }
+
+/** Whether a box draws in full: zoomed in to DETAIL_ZOOM or more and inside the camera's
+ * zone (`box` unknown, or the pane not measured yet: inside). Selects only that boolean from
+ * React Flow's store, so a box re-renders when it crosses the threshold or the zone's edge,
+ * not on every pan or zoom step. */
+export function useDetailed(box?: BoxArea): boolean {
+  const near = useStore((s) => {
+    const [tx, ty, zoom] = s.transform
+    if (zoom < DETAIL_ZOOM) return false
+    if (box?.x === undefined || box.y === undefined || !s.width || !s.height) return true
+    const vw = s.width / zoom
+    const vh = s.height / zoom
+    const left = -tx / zoom - vw * DETAIL_MARGIN
+    const top = -ty / zoom - vh * DETAIL_MARGIN
+    const right = left + vw * (1 + 2 * DETAIL_MARGIN)
+    const bottom = top + vh * (1 + 2 * DETAIL_MARGIN)
+    return box.x + box.w >= left && box.x <= right && box.y + box.h >= top && box.y <= bottom
+  })
   return useContext(ForceDetail) || near
 }
 
@@ -73,9 +93,9 @@ export function boxFieldOf(descriptor: ViewDescriptor) {
     formFields.find((f) => f.name === name) ?? descriptor.fields.find((f) => f.name === name)
 }
 
-export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node<TaskBoxData>>) {
+export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosition, positionAbsoluteX, positionAbsoluteY }: NodeProps<Node<TaskBoxData>>) {
   const t = useT()
-  const detailed = useDetailed()
+  const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...TASK_BOX_SIZE })
   const [error, setError] = useState<SerializedError | null>(null)
   const { record, chevron } = data
   const onDoubleClick = (e: MouseEvent) => {
@@ -123,9 +143,9 @@ export interface LabelBoxData extends Record<string, unknown> {
 }
 
 /** A read-only box with just a title (a WBS group root), as wide as a TaskBox. */
-export const LabelBox = memo(function LabelBox({ data, sourcePosition, targetPosition }: NodeProps<Node<LabelBoxData>>) {
+export const LabelBox = memo(function LabelBox({ data, sourcePosition, targetPosition, positionAbsoluteX, positionAbsoluteY }: NodeProps<Node<LabelBoxData>>) {
   const t = useT()
-  const detailed = useDetailed()
+  const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...LABEL_BOX_SIZE })
   const { chevron } = data
   if (!detailed) {
     return (

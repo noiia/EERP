@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentType, ReactNode } from 'react'
 
 // React Flow stubbed as in diagram-canvas.test.tsx, but drawing each node through
@@ -9,34 +9,55 @@ type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown;
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
-  nodeTypes: Record<string, ComponentType<{ id: string; data: unknown }>>
+  nodeTypes: Record<string, ComponentType<{ id: string; data: unknown; positionAbsoluteX?: number; positionAbsoluteY?: number }>>
   onNodeDragStop?: (e: unknown, n: RfNode) => void
   onConnect?: (c: { source: string; target: string }) => void
   onEdgesDelete?: (e: RfEdge[]) => void
   onReconnect?: (old: RfEdge, c: { source: string; target: string }) => void
   children?: ReactNode
 }
-const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
-vi.mock('@xyflow/react', () => ({
-  ReactFlow: (props: RfProps) => {
-    rf.props = props
-    return (
-      <div data-testid="react-flow">
-        <div className="react-flow__viewport" />
-        {props.nodes.map((n) => {
-          const C = props.nodeTypes[n.type]
-          return <div key={n.id} data-testid={`node-${n.id}`}><C id={n.id} data={n.data} /></div>
-        })}
-      </div>
-    )
+// The camera (zoom, pan, pane size) is a small subscribable store, like React Flow's own.
+const rf = vi.hoisted(() => ({
+  props: null as unknown as RfProps,
+  zoom: 1,
+  pan: [0, 0],
+  pane: { width: 0, height: 0 },
+  listeners: new Set<() => void>(),
+  move(pan: number[]) {
+    this.pan = pan
+    this.listeners.forEach((l) => l())
   },
-  Background: () => null,
-  Controls: () => null,
-  Handle: () => null,
-  useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
-  Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
-  getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
 }))
+vi.mock('@xyflow/react', async () => {
+  const { useSyncExternalStore } = await import('react')
+  return {
+    ReactFlow: (props: RfProps) => {
+      rf.props = props
+      return (
+        <div data-testid="react-flow">
+          <div className="react-flow__viewport" />
+          {props.nodes.map((n) => {
+            const C = props.nodeTypes[n.type]
+            return <div key={n.id} data-testid={`node-${n.id}`}><C id={n.id} data={n.data} positionAbsoluteX={n.position.x} positionAbsoluteY={n.position.y} /></div>
+          })}
+        </div>
+      )
+    },
+    Background: () => null,
+    Controls: () => null,
+    Handle: () => null,
+    useStore: (select: (s: { transform: [number, number, number]; width: number; height: number }) => unknown) =>
+      useSyncExternalStore(
+        (l: () => void) => {
+          rf.listeners.add(l)
+          return () => rf.listeners.delete(l)
+        },
+        () => select({ transform: [rf.pan[0], rf.pan[1], rf.zoom], ...rf.pane }),
+      ),
+    Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
+    getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
+  }
+})
 const exportPng = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('./export', () => ({ exportPng, exportPdf: vi.fn() }))
 const push = vi.hoisted(() => vi.fn())
@@ -108,6 +129,8 @@ const drop = (id: string, on: string) => {
 
 afterEach(() => {
   rf.zoom = 1
+  rf.pan = [0, 0]
+  rf.pane = { width: 0, height: 0 }
   cleanup()
   vi.clearAllMocks()
 })
@@ -271,6 +294,22 @@ describe('WbsRenderer', () => {
     await waitFor(() => expect(screen.queryAllByLabelText('Name')).toHaveLength(0))
     fireEvent.doubleClick(screen.getByText('2 - Review'))
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/D'))
+  })
+
+  it('draws in full only the boxes in the zone around the camera, the others once it comes near', async () => {
+    // A 200×200 pane at zoom 1: the zone is x and y in [-100, 300].
+    rf.pane = { width: 200, height: 200 }
+    setup()
+    await screen.findByTestId('node-A')
+    const inZone = (n: RfNode) => n.position.x + TASK_BOX_SIZE.w >= -100 && n.position.x <= 300 && n.position.y + TASK_BOX_SIZE.h >= -100 && n.position.y <= 300
+    const tasks = rf.props.nodes.filter((n) => !n.id.startsWith('group:'))
+    const far = (id: string) => !!within(screen.getByTestId(`node-${id}`)).queryByTestId('task-box-far')
+    expect(tasks.some(inZone) && tasks.some((n) => !inZone(n))).toBe(true)
+    for (const n of tasks) expect(far(n.id)).toBe(!inZone(n))
+    // The camera pans over the far boxes: they load.
+    const out = tasks.find((n) => !inZone(n))!
+    act(() => rf.move([-out.position.x, -out.position.y]))
+    expect(far(out.id)).toBe(false)
   })
 
   it('is read-only without the write permission', async () => {

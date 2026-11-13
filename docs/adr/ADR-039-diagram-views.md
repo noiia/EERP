@@ -90,7 +90,10 @@ its usual size, and a WBS project root only its name: the form widgets are unrea
 what makes a zoomed-out diagram of hundreds of boxes slow. The box size and handles don't change, so
 the layout and the arrows don't move; double-click still opens the record. Each box selects only
 "near or far" from React Flow's store, so it re-renders when the zoom crosses the threshold, not on
-every zoom step. An export always draws the full boxes. The website workflow map drops its arrow
+every zoom step. Zoomed in, only the boxes in a zone around the camera draw in full: the visible area
+plus half its width and height on each side (`DETAIL_MARGIN`), so the boxes just off screen are ready
+before a pan reaches them; boxes further away stay light until the camera's zone reaches them. An
+export always draws the full boxes. The website workflow map drops its arrow
 labels below the same zoom.
 
 ### Client-side export
