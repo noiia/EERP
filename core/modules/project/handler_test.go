@@ -184,10 +184,14 @@ func TestRestoreProject(t *testing.T) {
 	old := f.milestone(p) // deleted before the project: stays deleted
 	f.exec(`UPDATE project_milestone SET deleted_at = now() - interval '1 day' WHERE id = $1`, old)
 	f.milestone(p)
+	box := f.obsBox(p, nil)
 	member := f.caller(uuid.New())
 	f.member(p, member.UserID)
 	if code, body := f.do(m, http.MethodDelete, "project/"+p.String(), nil); code != http.StatusNoContent {
 		t.Fatalf("delete: %d %v", code, body)
+	}
+	if n := f.float(`SELECT count(*) FROM project_obs_box WHERE id = $1 AND deleted_at IS NULL`, box); n != 0 {
+		t.Errorf("the OBS box outlived its project")
 	}
 
 	f.run(t, []writeCase{
@@ -197,6 +201,9 @@ func TestRestoreProject(t *testing.T) {
 	code, body := f.do(m, http.MethodPost, "project/"+p.String()+"/restore", nil)
 	if code != http.StatusOK || body["id"] != p.String() {
 		t.Fatalf("restore: %d %v, want 200 with the project", code, body)
+	}
+	if n := f.float(`SELECT count(*) FROM project_obs_box WHERE id = $1 AND deleted_at IS NULL`, box); n != 1 {
+		t.Errorf("the OBS box did not come back with its project")
 	}
 	for table, want := range map[string]float64{"project_stage": 3, "project_milestone": 1, "project_member": 1} {
 		if n := f.float(`SELECT count(*) FROM `+table+` WHERE project_id = $1 AND deleted_at IS NULL`, p); n != want {
@@ -268,5 +275,27 @@ func TestDeleteRestoreColor_TakesItsLinks(t *testing.T) {
 	}
 	if code, _ := f.do(someone, http.MethodPost, "project_color/"+color.String()+"/restore", nil); code != http.StatusNotFound {
 		t.Errorf("restore a live color: %d, want 404", code)
+	}
+}
+
+func TestRestore_KeepsDeadReferences(t *testing.T) {
+	f := newFixture(t)
+	m := f.caller(uuid.New())
+	company, person := f.contactOf("company"), f.contactOf("contact")
+	p := f.project(m.UserID, "everyone")
+	f.exec(`UPDATE project SET company_id = $1 WHERE id = $2`, company, p)
+	box := f.id(`INSERT INTO project_obs_box (tenant_id, project_id, kind, contact_id, x, y) VALUES ($1, $2, 'contact', $3, 0, 0) RETURNING id`, f.tenant, p, person)
+	if code, body := f.do(m, http.MethodDelete, "project_obs_box/"+box.String(), nil); code != http.StatusNoContent {
+		t.Fatalf("delete box: %d %v", code, body)
+	}
+	if code, body := f.do(m, http.MethodDelete, "project/"+p.String(), nil); code != http.StatusNoContent {
+		t.Fatalf("delete project: %d %v", code, body)
+	}
+	f.exec(`UPDATE contact SET deleted_at = now() WHERE id = ANY($1)`, []uuid.UUID{company, person})
+	if code, body := f.do(m, http.MethodPost, "project/"+p.String()+"/restore", nil); code != http.StatusOK {
+		t.Errorf("restore project with a deleted company: %d %v, want 200", code, body)
+	}
+	if code, body := f.do(m, http.MethodPost, "project_obs_box/"+box.String()+"/restore", nil); code/100 != 2 {
+		t.Errorf("restore box with a deleted contact: %d %v, want 2xx", code, body)
 	}
 }

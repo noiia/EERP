@@ -108,6 +108,7 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   rf.props = null as unknown as RfProps
+  rf.zoom = 1
 })
 
 describe('ObsRenderer', () => {
@@ -136,6 +137,13 @@ describe('ObsRenderer', () => {
     expect(await within(screen.getByTestId('node-b6')).findByText('Alice')).toBeInTheDocument()
     // b1 and b6 share contact c1: one read.
     expect(ops.get.mock.calls.filter(([e, id]) => e === 'contact' && id === 'c1')).toHaveLength(1)
+  })
+
+  it('zoomed out, an untitled box shows its first content line', async () => {
+    rf.zoom = 0.1
+    setup({ rows: [box('b1', { kind: 'contact', contact_id: 'c1', title: '' }), box('b2', { title: '', text: 'Free text' })] })
+    expect(await within(await screen.findByTestId('node-b1')).findByText('Alice')).toBeInTheDocument()
+    expect(within(screen.getByTestId('node-b2')).getByText('Free text')).toBeInTheDocument()
   })
 
   it('draws parent lines and edits them with the edit right', async () => {

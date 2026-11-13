@@ -126,7 +126,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
           ) : null}
         </>
       ) : (
-        <Typography noWrap sx={{ fontSize: 28, lineHeight: 1.4, fontWeight: 600 }}>{row.title}</Typography>
+        <Typography noWrap sx={{ fontSize: 28, lineHeight: 1.4, fontWeight: 600 }}>{row.title || lines[0]}</Typography>
       )}
       <Handle type="source" position={Position.Bottom} />
     </Paper>

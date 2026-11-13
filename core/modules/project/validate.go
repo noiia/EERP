@@ -312,7 +312,8 @@ func (h *Handler) row(ctx context.Context, table string, id, tenant uuid.UUID, l
 // ── Rules per table ──────────────────────────────────────────────────────────
 
 func projectRules(r *request) error {
-	if r.changed("company_id") {
+	// a restore keeps its stored company, even one deleted since: the user couldn't clear it
+	if r.changed("company_id") && (r.op != opCreate || r.id == uuid.Nil) {
 		id, err := r.ref("company_id")
 		if err != nil {
 			return err
@@ -616,7 +617,7 @@ var obsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
 			return invalid(k, k+" must be null for a "+kind+" box")
 		case k == need && id == uuid.Nil:
 			return invalid(k, k+" is required for a "+kind+" box")
-		case id == uuid.Nil || !r.changed(k):
+		case id == uuid.Nil || !r.changed(k) || (r.op == opCreate && r.id != uuid.Nil): // a restore keeps a dead reference
 			continue
 		}
 		q := `SELECT EXISTS (SELECT 1 FROM contact WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`

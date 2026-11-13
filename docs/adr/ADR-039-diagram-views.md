@@ -152,7 +152,7 @@ A diagram draws at most 2000 records; beyond that it shows a notice asking to na
 ### OBS (organizational breakdown structure)
 
 A third mode, `obs`, draws who is on a project: boxes for contacts, staff users and free text, joined
-by parent lines (`obsConfig`: the box entity, the project field, the project entity, the optional
+by parent lines (descriptor key `obs`, type `ObsConfig`: the box entity, the project field, the project entity, the optional
 company field, a `canEdit` guard).
 
 - *Shared, not per user.* WBS/PERT boxes are views of records that exist anyway, so each user may
@@ -177,6 +177,7 @@ company field, a `canEdit` guard).
 
 ## Pitfalls
 
+- A role without `contact:contact:read` / `users:users:read` sees every contact/user box labelled "Deleted contact" / "Unknown user".
 - A box drag only changes the user's layout; a re-parent or arrow change is a real record write and fails for a user without write permission.
 - The layout row is replaced whole on each PUT (≤ 5000 ids, finite coordinates within ±10⁶, else 400).
 - Hidden-end links silently shrink the critical path; the hidden count is the only hint.

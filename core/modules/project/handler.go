@@ -150,7 +150,7 @@ func (h *Handler) DeleteProject(c *echo.Context) error {
 		if tag.RowsAffected() == 0 {
 			return conflict("the project still has tasks: delete them first, or archive the project")
 		}
-		for _, table := range []string{"project_stage", "project_milestone", "project_member"} {
+		for _, table := range []string{"project_stage", "project_milestone", "project_member", "project_obs_box"} {
 			if _, err := tx.Exec(ctx, `UPDATE `+table+` SET deleted_at = now(), updated_at = now()
 				WHERE project_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant); err != nil {
 				return err
@@ -187,7 +187,7 @@ func (h *Handler) RestoreProject(get echo.HandlerFunc) echo.HandlerFunc {
 				}
 				return err
 			}
-			for _, table := range []string{"project_stage", "project_milestone", "project_member"} {
+			for _, table := range []string{"project_stage", "project_milestone", "project_member", "project_obs_box"} {
 				if _, err := tx.Exec(ctx, `UPDATE `+table+` SET deleted_at = NULL, updated_at = now()
 					WHERE project_id = $1 AND tenant_id = $2 AND deleted_at = $3`, id, tenant, at); err != nil {
 					return err
