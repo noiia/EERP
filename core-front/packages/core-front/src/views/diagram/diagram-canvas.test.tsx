@@ -222,13 +222,50 @@ describe('DiagramCanvas', () => {
     expect(saveViewLayout).not.toHaveBeenCalled()
   })
 
-  it('controlled positions: a refused move snaps back', async () => {
-    const onMove = vi.fn(async () => false)
-    setup({ positions: { a: at(10, 10), b: at(500, 500) }, onMove })
+  it('controlled positions: an accepted move lands, a refused one stays put', async () => {
+    let verdict = true
+    const onMove = vi.fn(async (m: Record<string, { x: number; y: number }>) => (m ? verdict : false))
+    function Parent() {
+      const [positions, setPositions] = useState({ a: at(10, 10), b: at(500, 500) })
+      return (
+        <DiagramCanvas
+          entity="obs" mode="obs" title="Plan" nodes={[node('a'), node('b')]} edges={[]} legend={[]}
+          autoLayout={() => positions} positions={positions}
+          onMove={async (m) => {
+            const ok = await onMove(m)
+            if (ok !== false) setPositions((p) => ({ ...p, ...m }))
+            return ok
+          }}
+        />
+      )
+    }
+    render(<Parent />)
     await flush()
+    verdict = false
     act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(40, 40) }))
     await flush()
+    expect(onMove).toHaveBeenCalledWith({ a: at(40, 40) })
     expect(pos('a')).toEqual(at(10, 10))
+    verdict = true
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(40, 40) }))
+    await flush()
+    expect(pos('a')).toEqual(at(40, 40))
+  })
+
+  it('an obs canvas without positions never reads or saves a layout', async () => {
+    const { getViewLayout, saveViewLayout } = setup({ mode: 'obs' })
+    await flush()
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(40, 40) }))
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    expect(getViewLayout).not.toHaveBeenCalled()
+    expect(saveViewLayout).not.toHaveBeenCalled()
+  })
+
+  it('controlled positions: a rejected Re-arrange move is swallowed', async () => {
+    setup({ positions: { a: at(10, 10), b: at(500, 500) }, onMove: () => Promise.reject(new Error('no')) })
+    await flush()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Re-arrange' })))
+    await flush()
   })
 
   it('controlled positions: a selection drop and Re-arrange report to onMove', async () => {

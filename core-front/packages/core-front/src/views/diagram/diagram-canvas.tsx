@@ -201,9 +201,6 @@ function useCachedGet(ops: RelationOps | null): RelationOps | null {
   }, [ops])
 }
 
-// Per-user layouts exist for WBS and PERT only; OBS is always controlled.
-type LayoutMode = 'wbs' | 'pert'
-
 export interface DiagramCanvasProps {
   entity: string
   mode: 'wbs' | 'pert' | 'obs'
@@ -258,8 +255,9 @@ function Canvas(props: DiagramCanvasProps) {
   const boxOps = useCachedGet(ops)
   const compact = useMemo(() => compactTheme(outer), [outer])
   // Controlled positions never touch the per-user layout.
-  const getViewLayout = props.positions ? undefined : ops?.getViewLayout
-  const saveViewLayout = props.positions ? undefined : ops?.saveViewLayout
+  const layoutMode = mode === 'obs' ? undefined : mode
+  const getViewLayout = props.positions || !layoutMode ? undefined : ops?.getViewLayout
+  const saveViewLayout = props.positions || !layoutMode ? undefined : ops?.saveViewLayout
   const [loaded, setLoaded] = useState(!getViewLayout)
   // Fixed positions: loaded, dropped or re-arranged. Ids not drawn now (folded, filtered
   // out) keep theirs and are saved with the rest.
@@ -294,9 +292,9 @@ function Canvas(props: DiagramCanvasProps) {
   })
 
   useEffect(() => {
-    if (!getViewLayout) return
+    if (!getViewLayout || !layoutMode) return
     let cancelled = false
-    getViewLayout(entity, mode as LayoutMode)
+    getViewLayout(entity, layoutMode)
       .then((layout) => {
         if (cancelled) return
         setPositions(layout.positions)
@@ -353,8 +351,8 @@ function Canvas(props: DiagramCanvasProps) {
   })
 
   const save = (layout: ViewLayout) => {
-    if (!saveViewLayout) return
-    saveViewLayout(entity, mode as LayoutMode, layout).then(
+    if (!saveViewLayout || !layoutMode) return
+    saveViewLayout(entity, layoutMode, layout).then(
       () => setSaveError(null),
       (e: unknown) => setSaveError(serializeError(toApiError(e))),
     )
@@ -449,8 +447,8 @@ function Canvas(props: DiagramCanvasProps) {
   }
 
   // Controlled positions come back from the caller, so a refused move needs no undo here.
-  const reportMove = (moved: Record<string, Point>, undo: (ok: boolean | void) => void) => {
-    const res = props.onMove!(moved)
+  const reportMove = (onMove: NonNullable<DiagramCanvasProps['onMove']>, moved: Record<string, Point>, undo: (ok: boolean | void) => void) => {
+    const res = onMove(moved)
     if (res instanceof Promise) void res.then(undo, () => undo(false))
     else undo(res)
   }
@@ -470,7 +468,7 @@ function Canvas(props: DiagramCanvasProps) {
       setPositions(next)
       setLive({})
       scheduleSave()
-      if (props.onMove) reportMove(Object.fromEntries(dragged.map((n) => [n.id, next[n.id]])), () => {})
+      if (props.onMove) reportMove(props.onMove, Object.fromEntries(dragged.map((n) => [n.id, next[n.id]])), () => {})
       return
     }
     const rect: Rect = { ...node.position, ...sized(node.id) }
@@ -483,7 +481,7 @@ function Canvas(props: DiagramCanvasProps) {
     }
     const spot = freeSpot(rect, others)
     setPositions({ ...positions, ...placed, [node.id]: spot })
-    if (props.onMove) reportMove({ [node.id]: spot }, putBack)
+    if (props.onMove) reportMove(props.onMove, { [node.id]: spot }, putBack)
     if (onNodeDrop && !noteIds.has(node.id)) {
       const cx = rect.x + rect.w / 2
       const cy = rect.y + rect.h / 2
@@ -503,7 +501,7 @@ function Canvas(props: DiagramCanvasProps) {
     setPositions(next)
     setLive({})
     if (props.onMove) {
-      props.onMove(Object.fromEntries(nodes.map((n) => [n.id, next[n.id]])))
+      reportMove(props.onMove, Object.fromEntries(nodes.map((n) => [n.id, next[n.id]])), () => {})
       return
     }
     if (timer.current) clearTimeout(timer.current)
