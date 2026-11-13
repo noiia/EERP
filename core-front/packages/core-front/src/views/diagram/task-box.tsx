@@ -2,6 +2,7 @@
 import { createContext, memo, useContext, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
+import InputBase from '@mui/material/InputBase'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -168,6 +169,50 @@ export const LabelBox = memo(function LabelBox({ data, sourcePosition, targetPos
         <Typography variant="subtitle2" noWrap>{data.label}</Typography>
       </Stack>
       {data.footer}
+      <Handle type="source" position={sourcePosition ?? Position.Bottom} />
+    </Paper>
+  )
+})
+
+/** A note box's size: a few lines of text, scrolling past that. */
+export const NOTE_BOX_SIZE = { w: 200, h: 120 }
+/** The server's limits on one note. */
+export const NOTE_TEXT_LIMIT = 2000
+export const NOTE_LINK_LIMIT = 50
+export const NOTE_LIMIT = 200
+
+export interface NoteBoxData extends Record<string, unknown> {
+  text: string
+  onText: (text: string) => void
+  onDelete: () => void
+}
+
+/** A user's free-text note on the diagram: typed in place (saved on blur), linked to
+ * boxes by dragging from or to its handles, deleted with its button. */
+export const NoteBox = memo(function NoteBox({ data, sourcePosition, targetPosition }: NodeProps<Node<NoteBoxData>>) {
+  const t = useT()
+  const [draft, setDraft] = useState<string | null>(null)
+  const commit = () => {
+    if (draft !== null && draft !== data.text) data.onText(draft)
+    setDraft(null)
+  }
+  return (
+    <Paper variant="outlined" sx={{ width: NOTE_BOX_SIZE.w, height: NOTE_BOX_SIZE.h, boxSizing: 'border-box', borderStyle: 'dashed', bgcolor: 'action.hover', position: 'relative', p: 1, pr: 3.5 }}>
+      <Handle type="target" position={targetPosition ?? Position.Top} />
+      <IconButton className="nodrag" size="small" aria-label={t('Delete note')} onClick={data.onDelete} sx={{ position: 'absolute', top: 2, right: 2 }}>
+        <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} />
+      </IconButton>
+      <InputBase
+        className="nodrag nowheel"
+        multiline
+        fullWidth
+        value={draft ?? data.text}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        placeholder={t('Note')}
+        inputProps={{ maxLength: NOTE_TEXT_LIMIT, 'aria-label': t('Note') }}
+        sx={{ height: '100%', overflow: 'auto', alignItems: 'flex-start', fontSize: '0.8rem' }}
+      />
       <Handle type="source" position={sourcePosition ?? Position.Bottom} />
     </Paper>
   )

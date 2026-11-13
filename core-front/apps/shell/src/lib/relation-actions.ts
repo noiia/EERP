@@ -67,7 +67,7 @@ export async function getViewLayout(entity: string, mode: 'wbs' | 'pert'): Promi
   if (!isLayoutMode(mode)) return { positions: {}, folded: [] }
   try {
     const l = await apiRequest<Partial<ViewLayout>>('GET', `/me/view_layout/${encodeURIComponent(entity)}/${mode}`)
-    return { positions: l.positions ?? {}, folded: l.folded ?? [] }
+    return { positions: l.positions ?? {}, folded: l.folded ?? [], notes: l.notes ?? [] }
   } catch {
     return { positions: {}, folded: [] }
   }

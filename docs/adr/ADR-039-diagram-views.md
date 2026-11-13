@@ -83,6 +83,18 @@ layout: they go through the normal save path and follow the caller's write permi
 dependency entity's). A saved layout keeps the positions of boxes not drawn right now (a folded branch, a
 narrower filter), so they come back where they were.
 
+### Notes (PERT)
+
+PERT's **Add note** button drops a free-text box in the middle of the view. A note explains a part of
+the plan ("waiting on the supplier's quote") without becoming a record: it is part of the user's own
+layout (`notes: [{id, text, links}]` beside `positions`, its position under its own id), so it is
+private to that user, needs no write right on the tasks, and never shows in lists or exports of the data.
+Dragging between a note's handle and a task box links them (a dashed line, any number per note); a
+selected line is removed with Delete, the note with its trash button. The text is saved on blur. A link
+to a task not drawn right now stays saved and comes back with the task. Re-arrange leaves notes where
+they are. Limits (Go, 400 beyond): 200 notes, 2000 characters and 50 links each. The canvas opts in with
+`DiagramCanvas`'s `notes` prop, so WBS could take notes the same way.
+
 ### Zoomed-out boxes
 
 Below zoom 0.6 (`DETAIL_ZOOM`) a task box draws only its title (`<order> - <name>`, large type) at

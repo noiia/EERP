@@ -231,6 +231,7 @@ export function PertRenderer<T extends HasId>({
         autoLayout={() => layoutPert(rows.map((r) => r.id), links, TASK_BOX_SIZE, orderOf)}
         onConnect={canLink ? onConnect : undefined}
         onEdgesDelete={canLink ? onEdgesDelete : undefined}
+        notes
         legend={[
           { color: red, label: t('Critical path') },
           { color: theme.palette.warning.main, label: t('No estimate') },

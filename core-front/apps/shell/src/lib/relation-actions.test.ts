@@ -50,7 +50,10 @@ describe('relation actions', () => {
 describe('view layout actions', () => {
   it('GET returns the saved layout, the empty one when the request throws', async () => {
     apiRequestMock.mockResolvedValueOnce({ positions: { a: { x: 1, y: 2 } }, folded: ['b'] })
-    await expect(getViewLayout('project_task', 'wbs')).resolves.toEqual({ positions: { a: { x: 1, y: 2 } }, folded: ['b'] })
+    await expect(getViewLayout('project_task', 'wbs')).resolves.toEqual({ positions: { a: { x: 1, y: 2 } }, folded: ['b'], notes: [] })
+    const notes = [{ id: 'n', text: 'hi', links: ['a'] }]
+    apiRequestMock.mockResolvedValueOnce({ positions: {}, folded: [], notes })
+    await expect(getViewLayout('project_task', 'pert')).resolves.toEqual({ positions: {}, folded: [], notes })
     expect(apiRequestMock).toHaveBeenCalledWith('GET', '/me/view_layout/project_task/wbs')
     apiRequestMock.mockRejectedValueOnce(new Error('boom'))
     await expect(getViewLayout('project_task', 'pert')).resolves.toEqual({ positions: {}, folded: [] })

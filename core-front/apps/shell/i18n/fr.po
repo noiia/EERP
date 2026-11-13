@@ -2703,6 +2703,15 @@ msgstr "WBS"
 msgid "PERT"
 msgstr "PERT"
 
+msgid "Add note"
+msgstr "Ajouter une note"
+
+msgid "Delete note"
+msgstr "Supprimer la note"
+
+msgid "Note"
+msgstr "Note"
+
 msgid "Re-arrange"
 msgstr "Réorganiser"
 

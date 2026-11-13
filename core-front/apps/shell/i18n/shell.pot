@@ -2571,6 +2571,15 @@ msgstr ""
 msgid "PERT"
 msgstr ""
 
+msgid "Add note"
+msgstr ""
+
+msgid "Delete note"
+msgstr ""
+
+msgid "Note"
+msgstr ""
+
 msgid "Re-arrange"
 msgstr ""
 

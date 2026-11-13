@@ -6,13 +6,15 @@ import type { Node, NodeProps } from '@xyflow/react'
 // React Flow needs real layout (ResizeObserver, sizes) jsdom lacks: like the shell's
 // WorkflowMap tests, the stub keeps its props so the tests call the canvas's handlers
 // the way React Flow would.
-type RfNode = { id: string; position: { x: number; y: number }; measured?: { width: number; height: number }; selected?: boolean }
-type RfEdge = { id: string; source: string; target: string; selected?: boolean }
+type RfNode = { id: string; type?: string; data?: Record<string, unknown>; position: { x: number; y: number }; measured?: { width: number; height: number }; selected?: boolean }
+type RfEdge = { id: string; source: string; target: string; selected?: boolean; data?: unknown }
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
   onEdgesChange?: (c: unknown[]) => void
   onEdgesDelete?: (e: RfEdge[]) => void
+  onConnect?: (c: { source: string; target: string }) => void
+  nodesConnectable?: boolean
   onNodesChange?: (c: unknown[]) => void
   onNodeDragStop?: (e: unknown, n: RfNode, nodes?: RfNode[]) => void
   selectionKeyCode?: string
@@ -51,7 +53,7 @@ vi.mock('./export', () => {
 })
 
 import { DIAGRAM_RECORD_CAP, DiagramCanvas, DiagramCapNotice, trimPositions, useDiagramRecords, type DiagramCanvasProps } from './diagram-canvas'
-import { LabelBox, TaskBox, type TaskBoxData } from './task-box'
+import { LabelBox, NoteBox, TaskBox, type NoteBoxData, type TaskBoxData } from './task-box'
 import { RelationOpsProvider, type RelationOps, type ViewLayout } from '../relation-ops'
 import type { EntityListOptions } from '../../api/list-options'
 import { translationRegistry } from '../../i18n/registry'
@@ -216,6 +218,57 @@ describe('DiagramCanvas', () => {
     expect(onNodeDrop).toHaveBeenCalledWith('a', 'b', expect.objectContaining({ a: expect.anything(), b: expect.anything() }))
     act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(2000, 2000) }))
     expect(onNodeDrop).toHaveBeenLastCalledWith('a', null, expect.anything())
+  })
+
+  it('adds, links, edits and deletes notes, saved with the layout', async () => {
+    const onConnect = vi.fn()
+    const onEdgesDelete = vi.fn()
+    const layout: ViewLayout = { positions: { n1: at(900, 0) }, folded: [], notes: [{ id: 'n1', text: 'why', links: ['a', 'gone'] }] }
+    const { saveViewLayout } = setup({ mode: 'pert', notes: true, onConnect, onEdgesDelete }, layout)
+    await flush()
+    expect(rf.props.nodesConnectable).toBe(true)
+    expect(pos('n1')).toEqual(at(900, 0))
+    // A link to a box not drawn stays saved but isn't drawn.
+    expect(rf.props.edges.map((e) => [e.source, e.target])).toEqual([['n1', 'a']])
+
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Add note' })))
+    const added = rf.props.nodes.find((n) => n.type === 'note' && n.id !== 'n1')!
+    act(() => rf.props.onConnect!({ source: 'b', target: added.id }))
+    act(() => rf.props.onConnect!({ source: 'n1', target: added.id })) // note to note: ignored
+    act(() => rf.props.onConnect!({ source: 'a', target: 'b' }))
+    expect(onConnect).toHaveBeenCalledTimes(1)
+    act(() => (added.data as NoteBoxData).onText('hello'))
+    act(() => rf.props.onEdgesDelete!(rf.props.edges.filter((e) => e.source === 'n1')))
+    expect(onEdgesDelete).not.toHaveBeenCalled()
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    const saved = (saveViewLayout.mock.lastCall as unknown as [string, string, ViewLayout])[2]
+    expect(saved.notes).toEqual([{ id: 'n1', text: 'why', links: ['gone'] }, { id: added.id, text: 'hello', links: ['b'] }])
+    expect(saved.positions[added.id]).toBeDefined()
+
+    act(() => (rf.props.nodes.find((n) => n.id === 'n1')!.data as NoteBoxData).onDelete())
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    const after = (saveViewLayout.mock.lastCall as unknown as [string, string, ViewLayout])[2]
+    expect(after.notes!.map((n) => n.id)).toEqual([added.id])
+    expect(after.positions.n1).toBeUndefined()
+  })
+
+  it('keeps notes where they are on re-arrange', async () => {
+    const { saveViewLayout } = setup({ mode: 'pert', notes: true }, { positions: { n1: at(900, 900) }, folded: [], notes: [{ id: 'n1', text: '', links: [] }] })
+    await flush()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Re-arrange' })))
+    expect(pos('n1')).toEqual(at(900, 900))
+    expect(saveViewLayout).toHaveBeenLastCalledWith('project_task', 'pert', expect.objectContaining({ notes: [{ id: 'n1', text: '', links: [] }] }))
+  })
+
+  it('note box commits its text on blur and deletes from its button', () => {
+    const data: NoteBoxData = { text: 'old', onText: vi.fn(), onDelete: vi.fn() }
+    render(<NoteBox {...({ data } as unknown as NodeProps<Node<NoteBoxData>>)} />)
+    const input = screen.getByRole('textbox', { name: 'Note' })
+    fireEvent.change(input, { target: { value: 'new' } })
+    fireEvent.blur(input)
+    expect(data.onText).toHaveBeenCalledWith('new')
+    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }))
+    expect(data.onDelete).toHaveBeenCalled()
   })
 
   it('deletes the selected edge', async () => {

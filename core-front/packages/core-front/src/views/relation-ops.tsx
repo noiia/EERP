@@ -14,10 +14,19 @@ export interface RelationRecord {
   [key: string]: unknown
 }
 
-/** A user's own saved WBS/PERT arrangement: box positions and folded node ids. */
+/** A free-text box the user drew on their diagram (its position is in `positions`
+ * under its id), linked to the boxes whose ids are in `links`. */
+export interface DiagramNote {
+  id: string
+  text: string
+  links: string[]
+}
+
+/** A user's own saved WBS/PERT arrangement: box positions, folded node ids and notes. */
 export interface ViewLayout {
   positions: Record<string, Point>
   folded: string[]
+  notes?: DiagramNote[]
 }
 
 export interface RelationOps {

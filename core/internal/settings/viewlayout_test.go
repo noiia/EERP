@@ -57,6 +57,7 @@ func TestViewLayout_RoundTripAndReplace(t *testing.T) {
 	for _, body := range []string{
 		`{"positions":{"a":{"x":1,"y":2}},"folded":["a"]}`,
 		`{"positions":{"b":{"x":-3.5,"y":4}},"folded":[]}`,
+		`{"positions":{"n1":{"x":0,"y":0}},"folded":[],"notes":[{"id":"n1","text":"why","links":["b"]}]}`,
 	} {
 		if rec := layoutCall(t, h.Put, "PUT", "project_task", "pert", body, id); rec.Code != 204 {
 			t.Fatalf("put %d %s", rec.Code, rec.Body)
@@ -116,6 +117,10 @@ func TestViewLayout_Limits(t *testing.T) {
 		{"x out of range", "project_task", "wbs", `{"positions":{"a":{"x":1e7,"y":0}}}`},
 		{"overflow number", "project_task", "wbs", `{"positions":{"a":{"x":1e309,"y":0}}}`},
 		{"too many folded", "project_task", "wbs", `{"folded":[` + strings.Join(ids, ",") + `]}`},
+		{"note without id", "project_task", "pert", `{"notes":[{"id":"","text":"x","links":[]}]}`},
+		{"long note", "project_task", "pert", `{"notes":[{"id":"n","text":"` + strings.Repeat("a", 2001) + `","links":[]}]}`},
+		{"bad note link", "project_task", "pert", `{"notes":[{"id":"n","text":"x","links":[""]}]}`},
+		{"too many notes", "project_task", "pert", `{"notes":[` + strings.Repeat(`{"id":"n","text":"","links":[]},`, 200) + `{"id":"n","text":"","links":[]}]}`},
 	}
 	// A WBS saves its group roots too: 2000 tasks plus their groups must fit.
 	t.Run("at the limit", func(t *testing.T) {

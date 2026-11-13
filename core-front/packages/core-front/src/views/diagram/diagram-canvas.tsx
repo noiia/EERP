@@ -25,10 +25,10 @@ import { serializeError, toApiError, type SerializedError } from '../../api/erro
 import type { EntityListOptions } from '../../api/list-options'
 import { useT } from '../../i18n/translate'
 import { ErrorAlert } from '../error-alert'
-import { RelationOpsProvider, useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
+import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
 import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
-import { compactTheme, ForceDetail, LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
+import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
 // (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
@@ -36,7 +36,8 @@ import { compactTheme, ForceDetail, LabelBox, TASK_BOX_SIZE, TaskBox } from './t
 // box lands on the nearest free spot and the whole arrangement is saved 500 ms after
 // the last drop. Nodes default to the `task` type (TaskBox). Shift+click adds a box to the
 // selection, Shift+drag on the pane draws a selection rectangle (React Flow's own keys), and
-// dragging a selected box moves the whole selection.
+// dragging a selected box moves the whole selection. With `notes`, the user also adds
+// free-text note boxes, saved in the same layout and linked to boxes by dashed lines.
 
 export const DIAGRAM_RECORD_CAP = 2000
 /** The server's limit on saved positions (and folded ids) per layout. */
@@ -185,9 +186,14 @@ export interface DiagramCanvasProps {
   onNodeDrop?: (id: string, overId: string | null, at: Record<string, Point>) => boolean | void | Promise<boolean | void>
   legend: { color: string; label: string }[]
   toolbarExtra?: ReactNode
+  /** Offer "Add note": the user's own text boxes, linkable to any box. */
+  notes?: boolean
 }
 
-const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox }
+const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox }
+const NOTE_EDGE = 'note-link:'
+// No notes is no key: a layout without notes saves as it always did.
+const savedNotes = (notes: DiagramNote[]) => (notes.length ? notes : undefined)
 // Measured size, else the node's declared one (a WBS group root is shorter), else a task box.
 const size = (n?: Node) => ({
   w: n?.measured?.width ?? n?.width ?? TASK_BOX_SIZE.w,
@@ -212,6 +218,8 @@ function Canvas(props: DiagramCanvasProps) {
   // Fixed positions: loaded, dropped or re-arranged. Ids not drawn now (folded, filtered
   // out) keep theirs and are saved with the rest.
   const [positions, setPositions] = useState<Record<string, Point>>({})
+  // Kept (and saved back) even where they aren't drawn: they belong to the saved layout.
+  const [notes, setNotes] = useState<DiagramNote[]>([])
   const [live, setLive] = useState<Record<string, Point>>({})
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
   // Edges are controlled: React Flow's Delete key only targets edges passed in as selected.
@@ -245,6 +253,7 @@ function Canvas(props: DiagramCanvasProps) {
       .then((layout) => {
         if (cancelled) return
         setPositions(layout.positions)
+        setNotes(layout.notes ?? [])
         loadedFolded.current = layout.folded
         echo.current = JSON.stringify(layout.folded)
         foldedChangeRef.current?.(layout.folded)
@@ -258,12 +267,29 @@ function Canvas(props: DiagramCanvasProps) {
     }
   }, [entity, mode, getViewLayout])
 
-  const ids = nodes.map((n) => n.id)
+  // Note callbacks run on user events, after the helpers below are defined.
+  const noteNodes: Node[] = props.notes
+    ? notes.map((n) => ({
+        id: n.id,
+        type: 'note',
+        position: { x: 0, y: 0 },
+        width: NOTE_BOX_SIZE.w,
+        height: NOTE_BOX_SIZE.h,
+        data: {
+          text: n.text,
+          onText: (text: string) => changeNote(n.id, (x) => ({ ...x, text })),
+          onDelete: () => deleteNote(n.id),
+        } satisfies NoteBoxData,
+      }))
+    : []
+  const noteIds = new Set(noteNodes.map((n) => n.id))
+  const all = [...nodes, ...noteNodes]
+  const ids = all.map((n) => n.id)
   const idsKey = ids.join('\n')
   const placed = useMemo(() => {
     const auto = autoRef.current()
     return separateBoxes(
-      nodes.map((n) => {
+      all.map((n) => {
         const p = positions[n.id] ?? auto[n.id] ?? { x: 0, y: 0 }
         const { w, h } = size({ ...n, measured: undefined })
         return { id: n.id, ...p, w, h, fixed: n.id in positions }
@@ -274,12 +300,12 @@ function Canvas(props: DiagramCanvasProps) {
   const savedFolded = onFoldedChange ? folded : loadedFolded.current
   const drawn = useMemo(() => new Set(ids), [idsKey])
   const toSave = (all: Record<string, Point>) => trimPositions(all, drawn)
-  const latest = useRef({ positions, placed, drawn, folded: savedFolded })
+  const latest = useRef({ positions, placed, drawn, folded: savedFolded, notes })
   useEffect(() => {
-    latest.current = { positions, placed, drawn, folded: savedFolded }
+    latest.current = { positions, placed, drawn, folded: savedFolded, notes }
   })
 
-  const save = (layout: { positions: Record<string, Point>; folded: string[] }) => {
+  const save = (layout: ViewLayout) => {
     if (!saveViewLayout) return
     saveViewLayout(entity, mode, layout).then(
       () => setSaveError(null),
@@ -289,13 +315,37 @@ function Canvas(props: DiagramCanvasProps) {
   const flush = () => {
     timer.current = null
     const l = latest.current
-    save({ positions: trimPositions({ ...l.positions, ...l.placed }, l.drawn), folded: l.folded })
+    save({ positions: trimPositions({ ...l.positions, ...l.placed }, l.drawn), folded: l.folded, notes: savedNotes(l.notes) })
   }
   const scheduleSave = () => {
     if (!saveViewLayout) return
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(flush, SAVE_DELAY_MS)
   }
+
+  const changeNote = (id: string, f: (n: DiagramNote) => DiagramNote) => {
+    setNotes((ns) => ns.map((n) => (n.id === id ? f(n) : n)))
+    scheduleSave()
+  }
+  const deleteNote = (id: string) => {
+    setNotes((ns) => ns.filter((n) => n.id !== id))
+    setPositions((p) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== id)))
+    scheduleSave()
+  }
+  const addNote = () => {
+    const id = `note-${crypto.randomUUID()}`
+    // The middle of what the user is looking at, on the nearest free spot.
+    const box = container.current?.getBoundingClientRect()
+    const mid = box && instance.current
+      ? instance.current.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
+      : { x: 0, y: 0 }
+    const { w, h } = NOTE_BOX_SIZE
+    const spot = freeSpot({ x: mid.x - w / 2, y: mid.y - h / 2, w, h }, ids.map((i) => ({ ...placed[i], ...sized(i) })))
+    setNotes((ns) => [...ns, { id, text: '', links: [] }])
+    setPositions((p) => ({ ...p, ...placed, [id]: spot }))
+    scheduleSave()
+  }
+
   const flushRef = useRef(flush)
   useEffect(() => {
     flushRef.current = flush
@@ -317,13 +367,13 @@ function Canvas(props: DiagramCanvasProps) {
     if (loaded && !isEcho) scheduleSave()
   }, [foldedNow, loaded])
 
-  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const byId = new Map(all.map((n) => [n.id, n]))
   const sized = (id: string) => (sizes[id] ? { w: sizes[id].width, h: sizes[id].height } : size(byId.get(id)))
   const vertical = mode === 'wbs'
   // A drag frame re-renders only the canvas: every other box keeps its node object, so
   // React Flow skips it (2000 boxes would otherwise all re-render per frame).
   const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; selected: boolean; node: Node }>())
-  const rfNodes: Node[] = nodes.map((n) => {
+  const rfNodes: Node[] = all.map((n) => {
     const position = live[n.id] ?? placed[n.id]
     const selected = selectedNodes.has(n.id)
     const prev = built.current.get(n.id)
@@ -377,7 +427,7 @@ function Canvas(props: DiagramCanvasProps) {
       scheduleSave()
     }
     setPositions({ ...positions, ...placed, [node.id]: freeSpot(rect, others) })
-    if (onNodeDrop) {
+    if (onNodeDrop && !noteIds.has(node.id)) {
       const cx = rect.x + rect.w / 2
       const cy = rect.y + rect.h / 2
       const over = others.find((o) => cx >= o.x && cx <= o.x + o.w && cy >= o.y && cy <= o.y + o.h)
@@ -391,20 +441,43 @@ function Canvas(props: DiagramCanvasProps) {
 
   const rearrange = () => {
     const auto = autoRef.current()
-    // Only the drawn boxes are re-arranged; hidden ones keep their saved spot.
-    const next = { ...positions, ...Object.fromEntries(ids.map((id) => [id, auto[id] ?? { x: 0, y: 0 }])) }
+    // Only the drawn boxes are re-arranged; hidden ones and notes keep their spot.
+    const next = { ...positions, ...placed, ...Object.fromEntries(nodes.map((n) => [n.id, auto[n.id] ?? { x: 0, y: 0 }])) }
     setPositions(next)
     setLive({})
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
-    save({ positions: toSave(next), folded: savedFolded })
+    save({ positions: toSave(next), folded: savedFolded, notes: savedNotes(notes) })
   }
 
   const onEdgesChange = (changes: EdgeChange[]) => {
     const picks = changes.filter((c) => c.type === 'select')
     if (picks.length) setSelectedEdges((prev) => toggled(prev, picks))
   }
-  const rfEdges = edges.map((e) => (selectedEdges.has(e.id) ? { ...e, selected: true } : e))
+  const noteEdges: Edge[] = noteNodes.flatMap((n) =>
+    notes.find((x) => x.id === n.id)!.links
+      .filter((id) => drawn.has(id) && !noteIds.has(id))
+      .map((id) => ({ id: `${NOTE_EDGE}${n.id}>${id}`, source: n.id, target: id, data: { note: n.id, box: id }, style: { strokeDasharray: '4 4' } })),
+  )
+  const rfEdges = [...edges, ...noteEdges].map((e) => (selectedEdges.has(e.id) ? { ...e, selected: true } : e))
+
+  // A link with a note on one end belongs to the note; box-to-box ones go to the renderer.
+  const onConnect = (c: Connection) => {
+    const fromNote = noteIds.has(c.source)
+    if (!fromNote && !noteIds.has(c.target)) return props.onConnect?.(c)
+    if (fromNote === noteIds.has(c.target)) return
+    const [note, box] = fromNote ? [c.source, c.target] : [c.target, c.source]
+    changeNote(note, (n) => (n.links.includes(box) || n.links.length >= NOTE_LINK_LIMIT ? n : { ...n, links: [...n.links, box] }))
+  }
+  const onEdgesDelete = (deleted: Edge[]) => {
+    const isNote = (e: Edge) => e.id.startsWith(NOTE_EDGE)
+    for (const e of deleted.filter(isNote)) {
+      const { note, box } = e.data as { note: string; box: string }
+      changeNote(note, (n) => ({ ...n, links: n.links.filter((id) => id !== box) }))
+    }
+    const rest = deleted.filter((e) => !isNote(e))
+    if (rest.length) props.onEdgesDelete?.(rest)
+  }
 
   const exportAs = async (kind: 'png' | 'pdf') => {
     const viewport = container.current?.querySelector<HTMLElement>('.react-flow__viewport')
@@ -435,6 +508,7 @@ function Canvas(props: DiagramCanvasProps) {
         <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>
         <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>
         <Button size="small" onClick={() => instance.current?.fitView()}>{t('Fit view')}</Button>
+        {props.notes ? <Button size="small" onClick={addNote} disabled={notes.length >= NOTE_LIMIT}>{t('Add note')}</Button> : null}
         {legend.map((l) => (
           <Stack key={l.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
             <Box aria-hidden sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: l.color }} />
@@ -455,9 +529,9 @@ function Canvas(props: DiagramCanvasProps) {
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onNodeDragStop={onNodeDragStop}
-            onConnect={props.onConnect}
-            onEdgesDelete={props.onEdgesDelete}
-            nodesConnectable={!!props.onConnect}
+            onConnect={props.onConnect || props.notes ? onConnect : undefined}
+            onEdgesDelete={props.onEdgesDelete || props.notes ? onEdgesDelete : undefined}
+            nodesConnectable={!!props.onConnect || !!props.notes}
             selectionKeyCode="Shift"
             multiSelectionKeyCode="Shift"
             onReconnect={props.onReconnect}

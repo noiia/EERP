@@ -32,6 +32,9 @@ const (
 	maxLayoutPositions = 5000
 	maxLayoutIDLen     = 300
 	maxLayoutCoord     = 1e6
+	maxLayoutNotes     = 200
+	maxNoteText        = 2000
+	maxNoteLinks       = 50
 )
 
 var (
@@ -45,9 +48,18 @@ type layoutPoint struct {
 	Y float64 `json:"y"`
 }
 
+// layoutNote is a free-text box the user drew on their diagram, linked to
+// boxes by id; its position is in Positions under its own id.
+type layoutNote struct {
+	ID    string   `json:"id"`
+	Text  string   `json:"text"`
+	Links []string `json:"links"`
+}
+
 type viewLayout struct {
 	Positions map[string]layoutPoint `json:"positions"`
 	Folded    []string               `json:"folded"`
+	Notes     []layoutNote           `json:"notes,omitempty"`
 }
 
 func (l *viewLayout) validate() error {
@@ -73,6 +85,22 @@ func (l *viewLayout) validate() error {
 	for _, id := range l.Folded {
 		if err := check(id); err != nil {
 			return err
+		}
+	}
+	if len(l.Notes) > maxLayoutNotes {
+		return fmt.Errorf("at most %d notes", maxLayoutNotes)
+	}
+	for _, n := range l.Notes {
+		if err := check(n.ID); err != nil {
+			return err
+		}
+		if len([]rune(n.Text)) > maxNoteText || len(n.Links) > maxNoteLinks {
+			return fmt.Errorf("a note holds at most %d characters and %d links", maxNoteText, maxNoteLinks)
+		}
+		for _, id := range n.Links {
+			if err := check(id); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

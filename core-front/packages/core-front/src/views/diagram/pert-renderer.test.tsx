@@ -181,10 +181,11 @@ describe('PertRenderer', () => {
     expect(rf.props.onConnect).toBeDefined()
     expect(rf.props.edges.every((e) => e.deletable === true)).toBe(true)
     cleanup()
-    setup({ write: true, linkWrite: false })
+    const { ops } = setup({ write: true, linkWrite: false })
     await waitFor(() => expect(rf.props.edges).toHaveLength(4))
-    expect(rf.props.onConnect).toBeUndefined()
-    expect(rf.props.onEdgesDelete).toBeUndefined()
+    // Still connectable for notes, but a box-to-box arrow creates nothing.
+    act(() => rf.props.onConnect!({ source: 'D', target: 'A' }))
+    expect(ops.create).not.toHaveBeenCalled()
   })
 
   it('edits a box field through the form descriptor', async () => {
@@ -251,10 +252,12 @@ describe('PertRenderer', () => {
   })
 
   it('is read-only without the write permission', async () => {
-    setup({ write: false })
+    const { ops } = setup({ write: false })
     await waitFor(() => expect(rf.props.edges).toHaveLength(4))
-    expect(rf.props.onConnect).toBeUndefined()
-    expect(rf.props.onEdgesDelete).toBeUndefined()
+    act(() => rf.props.onConnect!({ source: 'D', target: 'A' }))
+    act(() => rf.props.onEdgesDelete!([rf.props.edges[0]]))
+    expect(ops.create).not.toHaveBeenCalled()
+    expect(ops.remove).not.toHaveBeenCalled()
     expect(rf.props.edges.every((e) => e.deletable === false)).toBe(true)
     expect(screen.getAllByLabelText('Name').every((i) => (i as HTMLInputElement).disabled)).toBe(true)
   })
