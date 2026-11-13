@@ -124,8 +124,11 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   (`seedUUID(DevTenantID, "permission:*:*:*")`) for both seed paths instead of two rows sharing a
   code.
 - **S3 extraction is manifest-driven, not a bucket dump.** `BuildManifest` queries the database
-  being extracted (not necessarily the active one) for every `picture`/`attachment` row's
-  `object_key` — this is what scopes an extraction to exactly that database's own objects out of
+  being extracted (not necessarily the active one) for the `object_key` of every row in
+  `manifestSources`: `picture`, `attachment`, and the Teams app's `chat_attachment` and live
+  `team_file` rows (deleting a Teams file removes its object, so deleted rows are left out; a
+  table the database doesn't have is skipped). A module that stores objects under a table of its
+  own must be added to that list, or its files silently miss from extractions — this is what scopes an extraction to exactly that database's own objects out of
   a bucket potentially shared by several EERP databases on the same instance. Generated report
   PDFs (`internal/reports`) are deliberately never included: that package persists no DB row for
   its own S3 key at all, and a report is always regeneratable on demand from the underlying

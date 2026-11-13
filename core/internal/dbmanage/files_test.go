@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
@@ -14,7 +15,9 @@ import (
 
 	"core/internal/testdb"
 	_ "core/modules/attachments"
+	_ "core/modules/auth"
 	_ "core/modules/pictures"
+	_ "core/modules/teams"
 
 	"github.com/google/uuid"
 )
@@ -59,18 +62,30 @@ func TestPersistDBName(t *testing.T) {
 	}
 }
 
-// BuildManifest lists every picture and attachment object of one database,
-// and is never nil — an empty database encodes as [].
+// BuildManifest lists every picture, attachment and live Teams file object of
+// one database, and is never nil — an empty database encodes as [].
 func TestBuildManifest(t *testing.T) {
 	ctx := context.Background()
 	cfg := testdb.Config(t)
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "pictures", "attachments")
+	testdb.MigrateModules(t, app, "pictures", "attachments", "auth", "teams")
 	tenant := uuid.New()
 	t.Cleanup(func() {
 		_, _ = app.DB.Exec(ctx, `DELETE FROM picture WHERE tenant_id = $1`, tenant)
 		_, _ = app.DB.Exec(ctx, `DELETE FROM attachment WHERE tenant_id = $1`, tenant)
+		_, _ = app.DB.Exec(ctx, `DELETE FROM chat_attachment WHERE tenant_id = $1`, tenant)
+		_, _ = app.DB.Exec(ctx, `DELETE FROM team_file WHERE tenant_id = $1`, tenant)
 	})
+	for _, q := range []string{
+		`INSERT INTO chat_attachment (tenant_id, message_id, filename, mime, size, object_key) VALUES ($1, $2, 'a.png', 'image/png', 3, 'k/chat')`,
+		`INSERT INTO team_file (tenant_id, team_id, name, mime, size, object_key, uploaded_by) VALUES ($1, $2, 'b.png', 'image/png', 3, 'k/file', $2)`,
+		// A deleted Teams file's object is gone: never listed.
+		`INSERT INTO team_file (tenant_id, team_id, name, mime, size, object_key, uploaded_by, deleted_at) VALUES ($1, $2, 'c.png', 'image/png', 3, 'k/gone', $2, now())`,
+	} {
+		if _, err := app.DB.Exec(ctx, q, tenant, uuid.New()); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := app.DB.Exec(ctx, `INSERT INTO picture (tenant_id, table_name, record_id, field, object_key, mime, size)
 		VALUES ($1, 'product', $2, 'picture', 'k/pic', 'image/png', 3)`, tenant, uuid.New()); err != nil {
 		t.Fatal(err)
@@ -88,11 +103,15 @@ func TestBuildManifest(t *testing.T) {
 	found := map[string]string{}
 	for _, e := range entries {
 		if e.TenantID == tenant.String() {
+			if found[e.Table] != "" {
+				t.Errorf("%s listed twice", e.Table)
+			}
 			found[e.Table] = e.ObjectKey
 		}
 	}
-	if found["picture"] != "k/pic" || found["attachment"] != "k/doc" {
-		t.Errorf("manifest entries for the tenant = %v", found)
+	want := map[string]string{"picture": "k/pic", "attachment": "k/doc", "chat_attachment": "k/chat", "team_file": "k/file"}
+	if fmt.Sprint(found) != fmt.Sprint(want) {
+		t.Errorf("manifest entries for the tenant = %v, want %v", found, want)
 	}
 	if _, err := BuildManifest(ctx, conn, "no_such_database_"+strings.ReplaceAll(uuid.NewString()[:8], "-", "")); err == nil {
 		t.Error("an unknown database: want an error")
