@@ -136,7 +136,11 @@ deployment, a locked-out admin), so it cannot ride the normal JWT session model.
   (no temp file, no full in-memory buffering); `restore.go` writes the upload to a temp dir,
   `pg_restore`s the dump, then re-uploads each manifest object to the *current* instance's bucket
   at the *same* key — no key rewriting, since keys are tenant/table/record/field-scoped, never
-  environment-scoped.
+  environment-scoped. The restore reads the dump's table of contents first and leaves out any
+  extension the target server doesn't ship, with the schemas it owns: a database first created by
+  an older PostGIS image carries `postgis_tiger_geocoder`, which PostGIS 3.7 images dropped and
+  EERP never used, and a strict restore would fail on it. A failed restore drops the database it
+  created, so the next attempt can reuse the name.
 - **Frontend:** `core-front/apps/shell/app/database/management/page.tsx` is a plain client
   component, deliberately outside `requireAuth()` and the descriptor-driven view engine — this
   route must render for a fully anonymous visitor. No BFF/Server Actions: the browser calls

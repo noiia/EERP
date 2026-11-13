@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 
 	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
+
+	"core/internal/common"
 )
 
 // Restore rebuilds a database from a zip produced by Extract: creates a new
@@ -62,6 +65,10 @@ func (m *Manager) Restore(c *echo.Context) error {
 		return err
 	}
 	if err := pgRestore(ctx, m.conn, name, dumpPath); err != nil {
+		// Drop the half-restored database, so a retry can reuse the name.
+		if dropErr := DropDatabase(ctx, m.conn, name, m.ActiveName()); dropErr != nil && common.Logger != nil {
+			common.Logger.Warn("dbmanage: drop failed restore", zap.String("database", name), zap.Error(dropErr))
+		}
 		return err
 	}
 
