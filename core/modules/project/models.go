@@ -151,3 +151,21 @@ type ProjectTimesheet struct {
 	Hours       float64   `db:"hours" json:"hours"`
 	Description string    `db:"description" json:"description"`
 }
+
+// ProjectObsBox is one box of a project's OBS (organizational breakdown
+// structure) chart: a contact, a staff user or free text, under an optional
+// parent box of the same project. Written by the project's manager only.
+type ProjectObsBox struct {
+	model.BaseModel
+	TenantID  uuid.UUID  `db:"tenant_id"`
+	ProjectID uuid.UUID  `db:"project_id,index" json:"project_id"`
+	ParentID  *uuid.UUID `db:"parent_id,index" json:"parent_id"`
+	Kind      string     `db:"kind" json:"kind"`             // "contact" | "user" | "text"
+	ContactID *uuid.UUID `db:"contact_id" json:"contact_id"` // kind contact only
+	UserID    *uuid.UUID `db:"user_id" json:"user_id"`       // kind user only
+	Title     *string    `db:"title" json:"title"`           // the role, ≤ 200 chars
+	Text      *string    `db:"text" json:"text"`             // ≤ 2000 chars
+	Color     *string    `db:"color" json:"color"`           // "#rrggbb" lowercase or null
+	X         float64    `db:"x" json:"x"`
+	Y         float64    `db:"y" json:"y"`
+}

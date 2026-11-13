@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"core/internal/auth"
 	"core/orm"
@@ -576,6 +577,11 @@ func colorRules(r *request) error {
 	if _, set := r.body["color"]; !set && r.op == opUpdate {
 		return nil
 	}
+	return lowerColor(r)
+}
+
+// lowerColor checks the color after the write is "#rrggbb" and stores it lowercase.
+func lowerColor(r *request) error {
 	color, _ := r.get("color").(string)
 	color = strings.ToLower(strings.TrimSpace(color))
 	if !hexColor.MatchString(color) {
@@ -584,6 +590,74 @@ func colorRules(r *request) error {
 	r.body["color"] = color
 	return nil
 }
+
+// obsRefs: the reference column each OBS box kind requires (the others must be null).
+var obsRefs = map[string]string{"contact": "contact_id", "user": "user_id", "text": ""}
+
+// obsRules: an OBS box is the manager's; its reference matches its kind, its
+// parent is a box of the same project, never itself or a descendant.
+var obsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
+	if r.op == opDelete {
+		return nil
+	}
+	r.defaults(map[string]any{"x": 0, "y": 0})
+	kind, _ := r.get("kind").(string)
+	need, ok := obsRefs[kind]
+	if !ok {
+		return invalid("kind", "kind must be contact, user or text")
+	}
+	for _, k := range []string{"contact_id", "user_id"} {
+		id, err := r.ref(k)
+		if err != nil {
+			return err
+		}
+		switch {
+		case k != need && id != uuid.Nil:
+			return invalid(k, k+" must be null for a "+kind+" box")
+		case k == need && id == uuid.Nil:
+			return invalid(k, k+" is required for a "+kind+" box")
+		case id == uuid.Nil || !r.changed(k):
+			continue
+		}
+		q := `SELECT EXISTS (SELECT 1 FROM contact WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`
+		if k == "user_id" {
+			q = `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND kind <> 'website')`
+		}
+		var found bool
+		if err := r.h.db.QueryRow(r.ctx, q, id, r.tenant).Scan(&found); err != nil {
+			return err
+		}
+		if !found {
+			return invalid(k, k+" not found")
+		}
+	}
+	for k, max := range map[string]int{"title": 200, "text": 2000} {
+		if s, _ := r.get(k).(string); utf8.RuneCountInString(s) > max {
+			return invalid(k, k+" is longer than "+strconv.Itoa(max)+" characters")
+		}
+	}
+	if r.get("color") != nil {
+		if err := lowerColor(r); err != nil {
+			return err
+		}
+	}
+	parent, err := r.inProject("project_obs_box", "parent_id", pid)
+	if err != nil || parent == uuid.Nil || !r.changed("parent_id") || r.id == uuid.Nil {
+		return err
+	}
+	var cycle bool // walk up from the new parent: reaching the box is a cycle
+	if err := r.h.db.QueryRow(r.ctx, `WITH RECURSIVE up AS (
+			SELECT $1::uuid AS id
+			UNION SELECT b.parent_id FROM project_obs_box b JOIN up ON b.id = up.id
+			WHERE b.parent_id IS NOT NULL AND b.deleted_at IS NULL)
+		SELECT EXISTS (SELECT 1 FROM up WHERE id = $2)`, parent, r.id).Scan(&cycle); err != nil {
+		return err
+	}
+	if cycle {
+		return invalid("parent_id", "a box can't be its own parent or ancestor")
+	}
+	return nil
+})
 
 var dependencyRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
 	on, err := r.visibleRef("project_task", "depends_on_id", true)
@@ -726,4 +800,9 @@ func (h *Handler) ValidateColorBody(next echo.HandlerFunc) echo.HandlerFunc {
 // they manage the project.
 func (h *Handler) ValidateTimesheetBody(next echo.HandlerFunc) echo.HandlerFunc {
 	return h.guard("project_timesheet", timesheetRules)(next)
+}
+
+// ValidateObsBody: OBS boxes are written by the project's manager or an admin.
+func (h *Handler) ValidateObsBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_obs_box", obsRules)(next)
 }

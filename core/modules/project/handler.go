@@ -54,6 +54,7 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		"project_color":           h.ValidateColorBody,
 		"project_task_color":      h.ValidateTaskLinkBody("project_task_color"),
 		"project_timesheet":       h.ValidateTimesheetBody,
+		"project_obs_box":         h.ValidateObsBody,
 	}
 	for table, guard := range guards {
 		g := generic(table)
@@ -64,6 +65,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 			del, restore = h.DeleteProject, h.RestoreProject(g.GetByID)
 		case "project_stage":
 			del = h.DeleteStage
+		case "project_obs_box":
+			del = h.DeleteObsBox
 		case "project_color":
 			del, restore = h.DeleteColor, h.RestoreColor(g.GetByID)
 		case "project_task":
@@ -280,6 +283,34 @@ func (h *Handler) DeleteStage(c *echo.Context) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return respond(c, conflict("the stage still has tasks: move them to another stage first"))
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// DeleteObsBox handles DELETE /api/v1/project_obs_box/:id behind
+// ValidateObsBody (visible, manager or admin): its live children lose their
+// parent and the box is soft-deleted, in one transaction.
+func (h *Handler) DeleteObsBox(c *echo.Context) error {
+	ctx := c.Request().Context()
+	tenant, _ := access.TenantFromContext(ctx)
+	id, err := echo.PathParam[uuid.UUID](c, "id")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
+	}
+	err = orm.Transact(ctx, h.db, func(tx *orm.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE project_obs_box SET parent_id = NULL, updated_at = now()
+			WHERE parent_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE project_obs_box SET deleted_at = now(), updated_at = now()
+			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
+		if err == nil && tag.RowsAffected() == 0 {
+			return errNotFound
+		}
+		return err
+	})
+	if err != nil {
+		return respond(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

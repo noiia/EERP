@@ -35,6 +35,7 @@ func (m *projectModule) Register() error {
 		orm.Register[ProjectMilestone](orm.WithTableName("project_milestone"), orm.WithRowScope(ChildScope(p)),
 			orm.WithReadOnlyFields("task_count", "task_done_count")),
 		orm.Register[ProjectTimesheet](orm.WithTableName("project_timesheet"), orm.WithRowScope(TaskChildScope(p))),
+		orm.Register[ProjectObsBox](orm.WithTableName("project_obs_box"), orm.WithRowScope(ChildScope(p))),
 	} {
 		if err != nil {
 			return err
