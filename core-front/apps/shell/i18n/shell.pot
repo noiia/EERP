@@ -2679,6 +2679,9 @@ msgstr ""
 msgid "Add contact"
 msgstr ""
 
+msgid "Create a new contact"
+msgstr ""
+
 msgid "Add user"
 msgstr ""
 

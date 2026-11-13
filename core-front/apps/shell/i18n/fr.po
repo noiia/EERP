@@ -2811,6 +2811,9 @@ msgstr "Cycle de dépendances : chemin critique non calculé"
 msgid "Add contact"
 msgstr "Ajouter un contact"
 
+msgid "Create a new contact"
+msgstr "Créer un nouveau contact"
+
 msgid "Add user"
 msgstr "Ajouter un utilisateur"
 

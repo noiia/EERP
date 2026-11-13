@@ -294,6 +294,21 @@ describe('ObsRenderer', () => {
     expect(ops.update).not.toHaveBeenCalled()
   })
 
+  it('creates a new contact from the picker as a person of the project company', async () => {
+    const { ops } = setup()
+    fireEvent.click(await editable())
+    fireEvent.change(screen.getByRole('combobox', { name: 'Contact' }), { target: { value: 'Carol' } })
+    fireEvent.click(await screen.findByRole('option', { name: 'Create a new contact' }))
+    const wizard = (await screen.findAllByRole('dialog')).at(-1)!
+    expect(within(wizard).getByDisplayValue('Carol')).toBeInTheDocument()
+    fireEvent.click(within(wizard).getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(ops.create).toHaveBeenCalledWith('contact', expect.objectContaining({ kind: 'contact', name: 'Carol' })))
+    await waitFor(() => expect(ops.create).toHaveBeenCalledWith('contact_company', { contact_id: 'new1', company_id: 'co1' }))
+    expect(screen.getByRole('combobox', { name: 'Contact' })).toHaveValue('Carol')
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(ops.create).toHaveBeenLastCalledWith('project_obs_box', expect.objectContaining({ kind: 'contact', contact_id: 'new1' })))
+  })
+
   it('places unsaved boxes with the tree layout and re-arranges all', async () => {
     const rows = [box('r1'), box('k1', { parent_id: 'r1' }), box('k2', { parent_id: 'r1' }), box('r2')]
     const { ops } = setup({ rows })

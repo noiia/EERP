@@ -168,7 +168,9 @@ company field, a `canEdit` guard).
 - *Deleting.* Deleting a box clears its children's `parent_id` in the same transaction, so the
   children become roots instead of disappearing.
 - *Contacts.* The contact picker offers the project company's people (`contact_company`) when the
-  project has a company, else every person.
+  project has a company, else every person. Its last line, *Create a new contact*, opens the
+  contact form as a dialog (the relation create wizard, kind preset to person) and links the new
+  person to the project's company (`contact_company`), so it is offered next time too.
 
 ## Consequences
 

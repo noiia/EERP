@@ -9,6 +9,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import type { Connection, Edge, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
@@ -19,6 +20,7 @@ import { ErrorAlert } from '../error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { kanbanColumnsGuard } from '../kanban-columns'
 import { useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
+import { RelationCreateWizard } from '../relation-widgets'
 import { layoutWbs } from './auto-layout'
 import type { Point } from './collide'
 import { DiagramCanvas, DiagramLoading } from './diagram-canvas'
@@ -45,6 +47,10 @@ export interface ObsRendererProps {
 }
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
+// The picker's last line: create a new person (child of the project's company) from a wizard.
+const CREATE: Option = { id: '__create__', label: '' }
+const contactLabel = (r: Record<string, unknown>) =>
+  [str(r.name), str(r.email) && `(${str(r.email)})`].filter(Boolean).join(' ') || String(r.id)
 const savedPositions = (rows: ObsRow[]) =>
   Object.fromEntries(rows.filter((r) => r.x || r.y).map((r) => [r.id, { x: r.x, y: r.y }]))
 
@@ -222,7 +228,11 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
 /** People to pick: a contact of the project's company (any person when it has none), or a user. */
 function usePicker(kind: Kind, ops: RelationOps, config: ObsConfig, projectId: string) {
   const project = useRef<Promise<RelationRecord> | null>(null)
-  return async (q: string): Promise<Option[]> => {
+  const companyOf = async () => {
+    project.current ??= ops.get(config.projectEntity, projectId)
+    return str((await project.current)[config.companyField])
+  }
+  const find = async (q: string): Promise<Option[]> => {
     const listPage = ops.listPage
     if (!listPage) return []
     const rows = (res: { records: RelationRecord[] }) => res.records as Record<string, unknown>[]
@@ -230,8 +240,7 @@ function usePicker(kind: Kind, ops: RelationOps, config: ObsConfig, projectId: s
       const res = await listPage('users', { ...(q ? { search: { email: q } } : {}), pageSize: PICK_SIZE })
       return rows(res).map((r) => ({ id: String(r.id), label: str(r.display_name) ? `${str(r.display_name)} (${String(r.email ?? '')})` : String(r.email ?? r.id) }))
     }
-    project.current ??= ops.get(config.projectEntity, projectId)
-    const company = str((await project.current)[config.companyField])
+    const company = await companyOf()
     const search = q ? { search: { name: q } } : {}
     let res
     if (company) {
@@ -243,8 +252,9 @@ function usePicker(kind: Kind, ops: RelationOps, config: ObsConfig, projectId: s
     } else {
       res = await listPage('contact', { filter: { kind: 'contact' }, ...search, pageSize: PICK_SIZE })
     }
-    return rows(res).map((r) => ({ id: String(r.id), label: [str(r.name), str(r.email) && `(${str(r.email)})`].filter(Boolean).join(' ') || String(r.id) }))
+    return rows(res).map((r) => ({ id: String(r.id), label: contactLabel(r) }))
   }
+  return { find, companyOf }
 }
 
 function ObsBoxDialog({ draft, ops, config, projectId, onSubmit, onClose }: {
@@ -264,8 +274,21 @@ function ObsBoxDialog({ draft, ops, config, projectId, onSubmit, onClose }: {
   const [options, setOptions] = useState<Option[]>([])
   const [error, setError] = useState<SerializedError | null>(null)
   const [busy, setBusy] = useState(false)
-  const pick = usePicker(kind, ops, config, projectId)
-  const find = (q: string) => pick(q).then(setOptions, (e: unknown) => setError(serializeError(toApiError(e))))
+  const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
+  const picker = usePicker(kind, ops, config, projectId)
+  const fail = (e: unknown) => setError(serializeError(toApiError(e)))
+  const find = (q: string) => picker.find(q).then((o) => setOptions(kind === 'contact' ? [...o, CREATE] : o), fail)
+  // A new person joins the project's company, so the picker offers it next time too.
+  const created = async (r: RelationRecord) => {
+    setPicked({ id: String(r.id), label: contactLabel(r as Record<string, unknown>) })
+    try {
+      const company = await picker.companyOf()
+      if (company) await ops.create('contact_company', { contact_id: r.id, company_id: company })
+    } catch (e: unknown) {
+      fail(e)
+    }
+  }
   const needsRef = !row && kind !== 'text'
   const heading = row ? t('Edit box') : kind === 'contact' ? t('Add contact') : kind === 'user' ? t('Add user') : t('Add text')
 
@@ -295,13 +318,20 @@ function ObsBoxDialog({ draft, ops, config, projectId, onSubmit, onClose }: {
                 <Autocomplete
                   options={options}
                   value={picked}
-                  onChange={(_, v) => setPicked(v)}
+                  onChange={(_, v) => (v === CREATE ? setCreating(true) : setPicked(v))}
                   onOpen={() => void find('')}
                   onInputChange={(_, q, reason) => {
-                    if (reason === 'input') void find(q)
+                    if (reason !== 'input') return
+                    setQuery(q)
+                    void find(q)
                   }}
                   filterOptions={(o) => o} // the server already searched
-                  getOptionLabel={(o) => o.label}
+                  getOptionLabel={(o) => (o === CREATE ? t('Create a new contact') : o.label)}
+                  renderOption={({ key, ...props }, o) => (
+                    <li key={key} {...props}>
+                      {o === CREATE ? <Typography component="span" color="primary">{t('Create a new contact')}</Typography> : o.label}
+                    </li>
+                  )}
                   isOptionEqualToValue={(a, b) => a.id === b.id}
                   noOptionsText={t('No results')}
                   renderInput={(params) => <TextField {...params} label={kind === 'contact' ? t('Contact') : t('User')} />}
@@ -321,6 +351,16 @@ function ObsBoxDialog({ draft, ops, config, projectId, onSubmit, onClose }: {
           </DialogActions>
         </Box>
       </BannerScope>
+      {creating ? (
+        <RelationCreateWizard
+          rel={{ entity: 'contact', kind: 'many2one' }}
+          ops={ops}
+          preset={{ kind: 'contact', ...(query ? { name: query } : {}) }}
+          hidden={['kind', 'companies']}
+          onClose={() => setCreating(false)}
+          onCreated={(r) => void created(r)}
+        />
+      ) : null}
     </Dialog>
   )
 }
