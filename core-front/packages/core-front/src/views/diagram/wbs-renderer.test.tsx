@@ -5,14 +5,15 @@ import type { ComponentType, ReactNode } from 'react'
 // React Flow stubbed as in diagram-canvas.test.tsx, but drawing each node through
 // its nodeTypes component so the boxes (chevrons, footers, labels) are on screen.
 type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; height?: number }
-type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown }
+type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown; deletable?: boolean; reconnectable?: boolean }
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
   nodeTypes: Record<string, ComponentType<{ id: string; data: unknown }>>
   onNodeDragStop?: (e: unknown, n: RfNode) => void
-  onConnect?: unknown
-  onEdgesDelete?: unknown
+  onConnect?: (c: { source: string; target: string }) => void
+  onEdgesDelete?: (e: RfEdge[]) => void
+  onReconnect?: (old: RfEdge, c: { source: string; target: string }) => void
   children?: ReactNode
 }
 const rf = vi.hoisted(() => ({ props: null as unknown as RfProps }))
@@ -124,8 +125,7 @@ describe('WbsRenderer', () => {
     expect(rf.props.nodes.map((n) => n.id)).toEqual(['group:p1', 'A', 'B', 'D', 'group:p2', 'C'])
     expect(rf.props.edges.map((e) => [e.source, e.target])).toEqual([['group:p1', 'A'], ['A', 'B'], ['group:p1', 'D'], ['group:p2', 'C']])
     expect(rf.props.edges.every((e) => e.markerEnd === undefined)).toBe(true)
-    expect(rf.props.onConnect).toBeUndefined()
-    expect(rf.props.onEdgesDelete).toBeUndefined()
+    expect(rf.props.edges.map((e) => e.deletable && e.reconnectable)).toEqual([false, true, false, false])
     expect(screen.getAllByLabelText('Name').map((i) => (i as HTMLInputElement).value)).toEqual(['Design', 'Mockups', 'Review', 'Ops'])
     fireEvent.doubleClick(screen.getByTestId('node-A').firstElementChild!)
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/A'))
@@ -258,5 +258,56 @@ describe('WbsRenderer', () => {
     drop('D', 'B')
     expect(actions.update).not.toHaveBeenCalled()
     expect(node('D').position).toEqual(before)
+    expect(rf.props.onConnect).toBeUndefined()
+    expect(rf.props.onEdgesDelete).toBeUndefined()
+    expect(rf.props.onReconnect).toBeUndefined()
+    expect(rf.props.edges.some((e) => e.deletable || e.reconnectable)).toBe(false)
+  })
+
+  it('a drawn link makes the source the parent, and refuses cycles, other groups and group targets', async () => {
+    const { actions, onRecordsChange } = setup()
+    await screen.findByTestId('node-D')
+    act(() => rf.props.onConnect!({ source: 'B', target: 'A' })) // B is A's child
+    act(() => rf.props.onConnect!({ source: 'C', target: 'D' })) // another project
+    act(() => rf.props.onConnect!({ source: 'A', target: 'group:p1' }))
+    act(() => rf.props.onConnect!({ source: 'A', target: 'B' })) // already its parent
+    expect(actions.update).not.toHaveBeenCalled()
+    act(() => rf.props.onConnect!({ source: 'B', target: 'D' }))
+    expect(actions.update).toHaveBeenCalledWith('D', { parent_id: 'B' })
+    await waitFor(() => expect(rf.props.edges.map((e) => [e.source, e.target])).toContainEqual(['B', 'D']))
+    expect(onRecordsChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'D', parent_id: 'B' })]))
+  })
+
+  it('deleting a link clears the parent, and re-reads the renumbered records', async () => {
+    const listPage = vi.fn(async () => ({ records: rows(), total: 4 }))
+    const { actions } = setup(undefined, true, { serverOptions: {}, orderField: 'wbs_number' }, { listPage })
+    await screen.findByTestId('node-B')
+    expect(listPage).toHaveBeenCalledTimes(1)
+    act(() => rf.props.onEdgesDelete!([rf.props.edges.find((e) => e.target === 'B')!]))
+    expect(actions.update).toHaveBeenCalledWith('B', { parent_id: null })
+    await waitFor(() => expect(listPage).toHaveBeenCalledTimes(2))
+  })
+
+  it('moving a link end re-parents: the new child takes it, the old child loses it', async () => {
+    const { actions } = setup()
+    await screen.findByTestId('node-B')
+    const ab = rf.props.edges.find((e) => e.target === 'B')!
+    act(() => rf.props.onReconnect!(ab, { source: 'A', target: 'D' }))
+    await waitFor(() => expect(actions.update).toHaveBeenCalledWith('B', { parent_id: null }))
+    expect(vi.mocked(actions.update).mock.calls).toEqual([['D', { parent_id: 'A' }], ['B', { parent_id: null }]])
+    vi.mocked(actions.update).mockClear()
+    // The parent end moved: same child, new parent.
+    act(() => rf.props.onReconnect!(rf.props.edges.find((e) => e.target === 'D')!, { source: 'B', target: 'D' }))
+    expect(vi.mocked(actions.update).mock.calls).toEqual([['D', { parent_id: 'B' }]])
+  })
+
+  it('shows a refused link', async () => {
+    const update = vi.fn(async () => {
+      throw new ApiError({ code: 'VALIDATION_ERROR', message: 'nope', status: 422 })
+    })
+    setup(update)
+    await screen.findByTestId('node-D')
+    act(() => rf.props.onConnect!({ source: 'A', target: 'D' }))
+    expect(await screen.findByText('nope')).toBeInTheDocument()
   })
 })

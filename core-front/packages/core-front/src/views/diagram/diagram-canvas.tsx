@@ -164,6 +164,8 @@ export interface DiagramCanvasProps {
   onFoldedChange?: (folded: string[]) => void
   onConnect?: (c: Connection) => void
   onEdgesDelete?: (e: Edge[]) => void
+  /** An edge end dragged onto another box (only `reconnectable` edges). */
+  onReconnect?: (old: Edge, c: Connection) => void
   /** WBS re-parent: the box under the dropped one, and every box's top-left (the dropped
    * one where it was let go). `false` (now or once resolved) puts the box back where it
    * was before the drag. */
@@ -423,6 +425,8 @@ function Canvas(props: DiagramCanvasProps) {
             onConnect={props.onConnect}
             onEdgesDelete={props.onEdgesDelete}
             nodesConnectable={!!props.onConnect}
+            onReconnect={props.onReconnect}
+            edgesReconnectable={false}
             onInit={(i) => {
               instance.current = i
             }}

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Typography from '@mui/material/Typography'
-import type { Edge, Node } from '@xyflow/react'
+import type { Connection, Edge, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { EntityListOptions } from '../../api/list-options'
@@ -22,7 +22,10 @@ import { buildWbs, canReparent } from './wbs'
 // WBS display mode: the records as a top-down tree over `parentField`, under one
 // read-only root per `groupField` value. Boxes edit their fields in place, parents
 // fold (the folds ride the canvas's saved layout), and a box dropped on another one
-// is re-parented there (on a group root: parent cleared).
+// is re-parented there (on a group root: parent cleared). The lines are the parent
+// links: drawing one from a box's bottom to another's top makes the first the parent,
+// deleting one clears the child's parent, dragging an end moves the link. The server
+// renumbers the order after each, so the records are read again.
 
 const FOLDED_COLOR = '#ed6c02'
 const GROUP = 'group:'
@@ -137,8 +140,42 @@ export function WbsRenderer<T extends HasId>({
   const shown = new Set(visible)
   const edges: Edge[] = visible.flatMap((id) => {
     const p = nodes[id].parentId
-    return p && shown.has(p) ? [{ id: `${p}->${id}`, source: p, target: id, deletable: false }] : []
+    // A group root's line isn't a parent link: it can't be deleted or moved.
+    const link = canWrite && !p?.startsWith(GROUP)
+    return p && shown.has(p) ? [{ id: `${p}->${id}`, source: p, target: id, deletable: link, reconnectable: link }] : []
   })
+
+  const groupOf = (target: string) =>
+    target.startsWith(GROUP) ? target.slice(GROUP.length) : str(values(byId.get(target)!)[groupField!])
+  // Makes `parent` (a task, a group root or null = none) the parent of `child`; false when refused or unchanged.
+  const setParent = (child: string, parent: string | null): Promise<boolean> | false => {
+    if (!canWrite || nodes[child]?.kind !== 'task' || !canReparent(nodes, child, parent)) return false
+    if (groupField && parent && groupOf(parent) !== groupOf(child)) return false
+    const value = parent && !parent.startsWith(GROUP) ? parent : null
+    if (value === str(values(byId.get(child)!)[parentField])) return false
+    setError(null)
+    return actions.update(child, { [parentField]: value } as Partial<T>).then(
+      (updated) => {
+        replace(updated)
+        // Siblings and descendants were renumbered too.
+        if (orderField) loaded.reload()
+        return true
+      },
+      (e: unknown) => {
+        setError(serializeError(toApiError(e)))
+        return false
+      },
+    )
+  }
+  const onConnect = ({ source, target }: Connection) => void setParent(target, source)
+  const onEdgesDelete = (deleted: Edge[]) => {
+    for (const e of deleted) void setParent(e.target, null)
+  }
+  // The child end moved: the new box takes the parent and the old one loses it.
+  const onReconnect = (old: Edge, { source, target }: Connection) => {
+    const done = setParent(target, source)
+    if (target !== old.target && done) void done.then((ok) => ok && setParent(old.target, null))
+  }
 
   // The order number a box dropped under `parent` takes: one past the siblings left of it.
   const orderAt = (id: string, parent: string | null, at: Record<string, { x: number }>): string | null => {
@@ -158,8 +195,6 @@ export function WbsRenderer<T extends HasId>({
     // Read-only, or another group (moving between groups isn't a WBS drag).
     if (!canWrite || (overId !== null && !canReparent(nodes, id, overId))) return false
     if (!ordered && overId === nodes[id]?.parentId) return false
-    const groupOf = (target: string) =>
-      target.startsWith(GROUP) ? target.slice(GROUP.length) : str(values(byId.get(target)!)[groupField!])
     if (groupField && parent && groupOf(parent) !== groupOf(id)) return false
     const code = ordered ? orderAt(id, parent, at) : null
     if (ordered && code !== null && code === str(values(byId.get(id)!)[orderField])) return true
@@ -196,6 +231,9 @@ export function WbsRenderer<T extends HasId>({
         folded={folded}
         onFoldedChange={setFolded}
         onNodeDrop={onNodeDrop}
+        onConnect={canWrite ? onConnect : undefined}
+        onEdgesDelete={canWrite ? onEdgesDelete : undefined}
+        onReconnect={canWrite ? onReconnect : undefined}
         legend={[{ color: FOLDED_COLOR, label: t('Folded branch') }]}
       />
     </>

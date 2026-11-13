@@ -44,6 +44,13 @@ order, and so people can name tasks by number.
 - **WBS**: siblings are drawn in number order; a box dropped on a parent, or on empty space among its
   siblings, writes the number for where it landed (one past the siblings left of it) and the diagram
   re-reads every record, since siblings renumber too.
+- **WBS lines are the parent links**, edited like PERT arrows (write permission only): drawing a
+  line from a box's bottom to another box's top makes the first the parent of the second (a task is
+  parent, child or both); deleting a line clears the child's parent (it hangs under its project
+  root); dragging a line's end moves the link — the parent end changes the parent, the child end
+  gives the parent to the new box and clears the old child's. Each is a plain parent write, so the
+  task goes last under its new parent and the diagram re-reads the renumbered records. A project
+  root's lines can't be edited; cycles and links across projects are refused before any write.
 - **PERT** only reads it: the auto-layout puts each task at least in the column of its top-level
   number (the `1.x` tasks start the chart, the highest number ends it), dependencies still placing a
   blocker left of what it blocks. Moving a PERT box never changes a number.
