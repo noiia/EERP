@@ -3,6 +3,7 @@ import { deflateSync, crc32 } from 'node:zlib'
 import { ApiError, apiRequest, createServerApiClient, uploadPicture } from '@eerp/core-front/server'
 import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
+import { buildProjectPlan, PLAN_DONE_PHASES, PROJECT_PLAN_DEMOS } from './dev-seed-plan'
 import { DEMO_SITE_PAGES, DEMO_SITE_PUBLISHED } from './dev-seed-website'
 import { getMyLocalePreferences } from './preferences'
 import { getIdentity } from './session'
@@ -667,18 +668,55 @@ const PROJECT_COLOR_DEMOS = [
  * The Project app's demo: 3 projects (the manager, the signed-in admin, is
  * filled by Go; stages come from its insert trigger, so they are read back),
  * each with 2 milestones, 8 tasks of 2 subtasks, a dependency and timesheets,
- * plus 4 color groups some tasks are put in.
+ * plus 4 color groups some tasks are put in; then 2 large projects (buildProjectPlan, 220
+ * tasks and 175 dependencies each) for the WBS and PERT views.
  * Aggregates (hours, counts, blocked) belong to Go's triggers: never sent.
  */
+// Creates buildProjectPlan's tasks level by level (in order, so Go numbers siblings as listed),
+// then its dependencies between the tasks that were created.
+async function seedProjectPlan(
+  projectId: string,
+  stages: { id: string }[],
+  track: (o: { result: SeedEntityResult }) => void,
+) {
+  const plan = buildProjectPlan()
+  // Done phases in the closed (last) stage, the next two in progress, the rest new.
+  const stageOf = (p: number) => {
+    const i = p < PLAN_DONE_PHASES ? stages.length - 1 : p < PLAN_DONE_PHASES + 2 ? Math.min(1, stages.length - 1) : 0
+    return stages[i] ? { stage_id: stages[i].id } : {}
+  }
+  const ids = new Map<string, string>()
+  for (const level of [plan.phases, plan.packages, plan.leaves]) {
+    const keyOf = new Map<Record<string, unknown>, string>()
+    const bodies = level.flatMap(({ key, p, parent: parentKey, ...fields }) => {
+      const parent = parentKey ? ids.get(parentKey) : undefined
+      if (parentKey && !parent) return [] // its parent failed: skipped
+      const body = { ...fields, project_id: projectId, ...(parent ? { parent_id: parent } : {}), ...stageOf(p) }
+      keyOf.set(body, key)
+      return [body]
+    })
+    const created = await createMany<{ id: string }>('project_task', bodies)
+    created.bodies.forEach((b, i) => ids.set(keyOf.get(b)!, created.records[i].id))
+    track(created)
+  }
+  track(
+    await createMany(
+      'project_task_dependency',
+      plan.links.filter(([a, b]) => ids.has(a) && ids.has(b)).map(([a, b]) => ({ depends_on_id: ids.get(a), task_id: ids.get(b) })),
+    ),
+  )
+}
+
 async function seedProjects(): Promise<SeedEntityResult[]> {
   const results: SeedEntityResult[] = []
   const add = (r: SeedEntityResult) => results.push(r)
   const day = 86_400_000
   const projects = await createMany<{ id: string }>(
     'project',
-    PROJECT_DEMOS.map((p) => ({ name: p.name, visibility: p.visibility })),
+    [...PROJECT_DEMOS, ...PROJECT_PLAN_DEMOS.map((name) => ({ name, visibility: 'everyone' as const }))].map((p) => ({ name: p.name, visibility: p.visibility })),
   )
   add(projects.result)
+  const isPlan = (i: number) => PROJECT_PLAN_DEMOS.includes(String(projects.bodies[i].name))
   const colors = await createMany<{ id: string }>('project_color', PROJECT_COLOR_DEMOS)
   add(colors.result)
   const outcomes: Record<string, SeedEntityResult> = {}
@@ -691,14 +729,20 @@ async function seedProjects(): Promise<SeedEntityResult[]> {
   }
   const client = createServerApiClient()
   const me = (await getIdentity())?.userId
-  for (const [pi, project] of projects.records.entries()) {
-    let stages: { id: string; sequence: number }[] = []
+  const stagesOf = async (projectId: string) => {
     try {
-      stages = (await client.list<{ id: string; sequence: number }>('project_stage', { filter: { project_id: project.id } }))
+      return (await client.list<{ id: string; sequence: number }>('project_stage', { filter: { project_id: projectId } }))
         .slice()
         .sort((a, b) => a.sequence - b.sequence)
     } catch {
-      // unreadable stages: tasks fall back to the server's first-stage default
+      return [] // unreadable stages: tasks fall back to the server's first-stage default
+    }
+  }
+  for (const [pi, project] of projects.records.entries()) {
+    const stages = await stagesOf(project.id)
+    if (isPlan(pi)) {
+      await seedProjectPlan(project.id, stages, track)
+      continue
     }
     const milestones = await createMany<{ id: string }>(
       'project_milestone',

@@ -18,6 +18,12 @@ vi.mock('@eerp/core-front/server', async (importOriginal) => {
   }
 })
 
+/** The records the create mock returned for `entity`, in call order. */
+async function createdFor(entity: string): Promise<Record<string, unknown>[]> {
+  return Promise.all(createMock.mock.results.filter((_, i) => createMock.mock.calls[i][0] === entity).map((r) => r.value as Promise<Record<string, unknown>>))
+}
+const PLAN_NAMES = ['Platform migration', 'Factory expansion']
+
 const revalidateTagMock = vi.fn()
 vi.mock('next/cache', () => ({ revalidateTag: (...args: unknown[]) => revalidateTagMock(...args) }))
 
@@ -34,6 +40,7 @@ const getIdentityMock = vi.fn()
 vi.mock('./session', () => ({ getIdentity: () => getIdentityMock() }))
 
 import { getSeedGroups, seedDemoData } from './dev-seed'
+import { buildProjectPlan } from './dev-seed-plan'
 import { seedingAllowed } from './dev-seed-allowed'
 
 function callsFor(entity: string): unknown[][] {
@@ -422,10 +429,11 @@ describe('seedDemoData — Project app', () => {
     const result = await seedDemoData()
     expect(result.ok).toBe(true)
     const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
-    expect(callsFor('project')).toHaveLength(3)
+    expect(callsFor('project')).toHaveLength(5) // + the 2 plan projects (next test)
     expect(bodies('project').filter((p) => p.visibility === 'members')).toHaveLength(1)
     expect(callsFor('project_milestone')).toHaveLength(6)
-    const tasks = bodies('project_task')
+    const small = new Set((await createdFor('project')).filter((p) => !PLAN_NAMES.includes(String(p.name))).map((p) => p.id))
+    const tasks = bodies('project_task').filter((t) => small.has(t.project_id))
     expect(tasks.filter((t) => !t.parent_id)).toHaveLength(24)
     expect(tasks.filter((t) => t.parent_id)).toHaveLength(48)
     expect(tasks.find((t) => !t.parent_id)?.stage_id).toMatch(/^stage-project-\d+-10$/)
@@ -435,11 +443,55 @@ describe('seedDemoData — Project app', () => {
       expect(lead).toBeGreaterThan(0)
       expect(lead).toBeLessThanOrEqual(7 * 86_400_000)
     }
-    expect(callsFor('project_task_dependency')).toHaveLength(3)
+    expect(callsFor('project_task_dependency')).toHaveLength(3 + 2 * 175)
     expect(bodies('project_task_user')).toHaveLength(6)
     expect(bodies('project_task_user').every((a) => a.user_id === 'admin-1')).toBe(true)
     expect(callsFor('project_timesheet')).toHaveLength(19)
     expect(bodies('project_timesheet').every((t) => Number(t.hours) > 0 && typeof t.date === 'string')).toBe(true)
+  })
+
+  it('seeds 2 plan projects of 220 tasks in three levels, wired for PERT', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const plans = (await createdFor('project')).filter((p) => PLAN_NAMES.includes(String(p.name)))
+    expect(plans).toHaveLength(2)
+    const allTasks = await createdFor('project_task')
+    for (const projectId of plans.map((p) => String(p.id))) {
+      const tasks = allTasks.filter((t) => t.project_id === projectId)
+      expect(tasks).toHaveLength(220)
+      const byId = new Map(tasks.map((t) => [t.id, t]))
+      const depth = (t: Record<string, unknown>): number => (t.parent_id ? 1 + depth(byId.get(t.parent_id)!) : 0)
+      expect(tasks.filter((t) => depth(t) === 0)).toHaveLength(10)
+      expect(tasks.filter((t) => depth(t) === 1)).toHaveLength(60)
+      expect(tasks.filter((t) => depth(t) === 2)).toHaveLength(150)
+      // A parent is always created before its children (Go numbers siblings in creation order).
+      const order = new Map(tasks.map((t, i) => [t.id, i]))
+      expect(tasks.every((t) => !t.parent_id || order.get(t.parent_id)! < order.get(t.id)!)).toBe(true)
+      // Done phases sit in the closed (last) stage, the last phases in the first.
+      expect(tasks[0].stage_id).toBe(`stage-${projectId}-30`)
+      expect(tasks[9].stage_id).toBe(`stage-${projectId}-10`)
+      const deps = bodies('project_task_dependency').filter((d) => byId.has(d.task_id))
+      expect(deps).toHaveLength(175)
+      expect(deps.every((d) => byId.has(d.depends_on_id))).toBe(true)
+    }
+  })
+
+  it('builds a plan whose dependencies form no cycle and leave the work packages unlinked', () => {
+    const plan = buildProjectPlan(Date.UTC(2026, 0, 1))
+    const keys = new Set([...plan.phases, ...plan.packages, ...plan.leaves].map((t) => t.key))
+    expect(plan.links.every(([a, b]) => keys.has(a) && keys.has(b) && a !== b)).toBe(true)
+    // Topological sort consumes every task: no cycle.
+    const indeg = new Map([...keys].map((k) => [k, 0]))
+    for (const [, b] of plan.links) indeg.set(b, indeg.get(b)! + 1)
+    const queue = [...keys].filter((k) => indeg.get(k) === 0)
+    for (let i = 0; i < queue.length; i++)
+      for (const [a, b] of plan.links) if (a === queue[i]) { indeg.set(b, indeg.get(b)! - 1); if (indeg.get(b) === 0) queue.push(b) }
+    expect(queue).toHaveLength(keys.size)
+    const linked = new Set(plan.links.flat())
+    expect(plan.packages.some((p) => linked.has(p.key))).toBe(false)
+    // Leaves have hours, and every task ends after it starts.
+    expect(plan.leaves.every((l) => (l.planned_hours ?? 0) > 0)).toBe(true)
+    expect([...plan.phases, ...plan.packages, ...plan.leaves].every((t) => Date.parse(t.deadline) > Date.parse(t.date_start))).toBe(true)
   })
 
   it('seeds 4 color groups and puts some tasks in them, one task per project in two', async () => {
