@@ -6,7 +6,7 @@ import type { Node, NodeProps } from '@xyflow/react'
 // React Flow needs real layout (ResizeObserver, sizes) jsdom lacks: like the shell's
 // WorkflowMap tests, the stub keeps its props so the tests call the canvas's handlers
 // the way React Flow would.
-type RfNode = { id: string; position: { x: number; y: number }; measured?: { width: number; height: number } }
+type RfNode = { id: string; position: { x: number; y: number }; measured?: { width: number; height: number }; selected?: boolean }
 type RfEdge = { id: string; source: string; target: string; selected?: boolean }
 type RfProps = {
   nodes: RfNode[]
@@ -14,7 +14,9 @@ type RfProps = {
   onEdgesChange?: (c: unknown[]) => void
   onEdgesDelete?: (e: RfEdge[]) => void
   onNodesChange?: (c: unknown[]) => void
-  onNodeDragStop?: (e: unknown, n: RfNode) => void
+  onNodeDragStop?: (e: unknown, n: RfNode, nodes?: RfNode[]) => void
+  selectionKeyCode?: string
+  multiSelectionKeyCode?: string
   onInit?: (i: { fitView: () => void }) => void
   children?: ReactNode
 }
@@ -106,6 +108,34 @@ describe('DiagramCanvas', () => {
     await flush()
     // Taken as a 300px box, g would overlap t and push it down.
     expect(pos('t')).toEqual(at(0, 120))
+  })
+
+  it('selects boxes with Shift (click and rectangle) and moves a selection together', async () => {
+    const onNodeDrop = vi.fn(() => true)
+    const { saveViewLayout } = setup({ onNodeDrop })
+    await flush()
+    expect(rf.props.selectionKeyCode).toBe('Shift')
+    expect(rf.props.multiSelectionKeyCode).toBe('Shift')
+    act(() => rf.props.onNodesChange!([{ type: 'select', id: 'a', selected: true }, { type: 'select', id: 'b', selected: true }]))
+    expect(rf.props.nodes.map((n) => n.selected)).toEqual([true, true])
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(100, 100) }, [{ id: 'a', position: at(100, 100) }, { id: 'b', position: at(600, 600) }]))
+    expect(pos('a')).toEqual(at(100, 100))
+    expect(pos('b')).toEqual(at(600, 600))
+    expect(onNodeDrop).not.toHaveBeenCalled() // a group move is layout only
+    await act(() => vi.advanceTimersByTimeAsync(500))
+    expect(saveViewLayout).toHaveBeenCalledWith('project_task', 'wbs', expect.objectContaining({ positions: { a: at(100, 100), b: at(600, 600) } }))
+    act(() => rf.props.onNodesChange!([{ type: 'select', id: 'a', selected: false }]))
+    expect(rf.props.nodes.map((n) => n.selected)).toEqual([false, true])
+  })
+
+  it('keeps a moved selection off each other and the other boxes', async () => {
+    setup({ nodes: [node('a'), node('b'), node('c')], autoLayout: () => ({ a: at(0, 0), b: at(500, 0), c: at(1000, 0) }) })
+    await flush()
+    // a and b dropped onto c's spot, on top of each other.
+    act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(1000, 0) }, [{ id: 'a', position: at(1000, 0) }, { id: 'b', position: at(1000, 0) }]))
+    expect(pos('c')).toEqual(at(1000, 0))
+    expect(pos('a')).not.toEqual(at(1000, 0))
+    expect(pos('b')).not.toEqual(pos('a'))
   })
 
   it('merges saved positions with auto layout', async () => {

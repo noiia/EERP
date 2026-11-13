@@ -33,7 +33,9 @@ import { compactTheme, LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
 // (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
 // their spot, the others take autoLayout()'s, moved clear of the saved ones; a dropped
 // box lands on the nearest free spot and the whole arrangement is saved 500 ms after
-// the last drop. Nodes default to the `task` type (TaskBox).
+// the last drop. Nodes default to the `task` type (TaskBox). Shift+click adds a box to the
+// selection, Shift+drag on the pane draws a selection rectangle (React Flow's own keys), and
+// dragging a selected box moves the whole selection.
 
 export const DIAGRAM_RECORD_CAP = 2000
 /** The server's limit on saved positions (and folded ids) per layout. */
@@ -127,6 +129,16 @@ export function trimPositions(positions: Record<string, Point>, drawn: Set<strin
   return Object.fromEntries(kept.map((id) => [id, positions[id]]))
 }
 
+// The selection after React Flow's select changes.
+function toggled(prev: Set<string>, picks: { id: string; selected: boolean }[]): Set<string> {
+  const next = new Set(prev)
+  for (const c of picks) {
+    if (c.selected) next.add(c.id)
+    else next.delete(c.id)
+  }
+  return next
+}
+
 function BoxOps({ ops, children }: { ops: RelationOps | null; children: ReactNode }) {
   return ops ? <RelationOpsProvider ops={ops}>{children}</RelationOpsProvider> : <>{children}</>
 }
@@ -203,6 +215,8 @@ function Canvas(props: DiagramCanvasProps) {
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
   // Edges are controlled: React Flow's Delete key only targets edges passed in as selected.
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set())
+  // Nodes are controlled too: a selection only shows (and drags together) once passed back.
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set())
   const [saveError, setSaveError] = useState<SerializedError | null>(null)
   const [exportError, setExportError] = useState<SerializedError | null>(null)
   const container = useRef<HTMLDivElement>(null)
@@ -306,21 +320,23 @@ function Canvas(props: DiagramCanvasProps) {
   const vertical = mode === 'wbs'
   // A drag frame re-renders only the canvas: every other box keeps its node object, so
   // React Flow skips it (2000 boxes would otherwise all re-render per frame).
-  const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; node: Node }>())
+  const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; selected: boolean; node: Node }>())
   const rfNodes: Node[] = nodes.map((n) => {
     const position = live[n.id] ?? placed[n.id]
+    const selected = selectedNodes.has(n.id)
     const prev = built.current.get(n.id)
-    if (prev && prev.src === n && prev.position === position && prev.size === sizes[n.id]) return prev.node
+    if (prev && prev.src === n && prev.position === position && prev.size === sizes[n.id] && prev.selected === selected) return prev.node
     const node: Node = {
       ...n,
       type: n.type ?? 'task',
       position,
       deletable: false,
+      selected,
       sourcePosition: vertical ? Position.Bottom : Position.Right,
       targetPosition: vertical ? Position.Top : Position.Left,
       ...(sizes[n.id] ? { measured: sizes[n.id] } : {}),
     }
-    built.current.set(n.id, { src: n, position, size: sizes[n.id], node })
+    built.current.set(n.id, { src: n, position, size: sizes[n.id], selected, node })
     return node
   })
 
@@ -329,9 +345,27 @@ function Canvas(props: DiagramCanvasProps) {
     if (moves.length) setLive((l) => ({ ...l, ...Object.fromEntries(moves) }))
     const measured = changes.flatMap((c) => (c.type === 'dimensions' && c.dimensions ? [[c.id, c.dimensions] as const] : []))
     if (measured.length) setSizes((m) => ({ ...m, ...Object.fromEntries(measured) }))
+    const picks = changes.filter((c) => c.type === 'select')
+    if (picks.length) setSelectedNodes((prev) => toggled(prev, picks))
   }
 
-  const onNodeDragStop = (_: unknown, node: Node) => {
+  const onNodeDragStop = (_: unknown, node: Node, dragged: Node[] = [node]) => {
+    // A selection moved together: only the layout changes (no re-parent), each box on the
+    // free spot nearest where it was let go, clear of the others and of the boxes placed before it.
+    if (dragged.length > 1) {
+      const moved = new Set(dragged.map((n) => n.id))
+      const taken: Rect[] = ids.filter((id) => !moved.has(id)).map((id) => ({ ...placed[id], ...sized(id) }))
+      const next = { ...positions, ...placed }
+      for (const n of dragged) {
+        const spot = freeSpot({ ...n.position, ...sized(n.id) }, taken)
+        next[n.id] = spot
+        taken.push({ ...spot, ...sized(n.id) })
+      }
+      setPositions(next)
+      setLive({})
+      scheduleSave()
+      return
+    }
     const rect: Rect = { ...node.position, ...sized(node.id) }
     const others = ids.filter((id) => id !== node.id).map((id) => ({ id, ...placed[id], ...sized(id) }))
     const before = placed[node.id]
@@ -366,15 +400,7 @@ function Canvas(props: DiagramCanvasProps) {
 
   const onEdgesChange = (changes: EdgeChange[]) => {
     const picks = changes.filter((c) => c.type === 'select')
-    if (!picks.length) return
-    setSelectedEdges((prev) => {
-      const next = new Set(prev)
-      for (const c of picks) {
-        if (c.selected) next.add(c.id)
-        else next.delete(c.id)
-      }
-      return next
-    })
+    if (picks.length) setSelectedEdges((prev) => toggled(prev, picks))
   }
   const rfEdges = edges.map((e) => (selectedEdges.has(e.id) ? { ...e, selected: true } : e))
 
@@ -425,6 +451,8 @@ function Canvas(props: DiagramCanvasProps) {
             onConnect={props.onConnect}
             onEdgesDelete={props.onEdgesDelete}
             nodesConnectable={!!props.onConnect}
+            selectionKeyCode="Shift"
+            multiSelectionKeyCode="Shift"
             onReconnect={props.onReconnect}
             edgesReconnectable={false}
             onInit={(i) => {

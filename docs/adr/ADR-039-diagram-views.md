@@ -51,9 +51,12 @@ order, and so people can name tasks by number.
   gives the parent to the new box and clears the old child's. Each is a plain parent write, so the
   task goes last under its new parent and the diagram re-reads the renumbered records. A project
   root's lines can't be edited; cycles and links across projects are refused before any write.
-- **PERT** only reads it: the auto-layout puts each task at least in the column of its top-level
-  number (the `1.x` tasks start the chart, the highest number ends it), dependencies still placing a
-  blocker left of what it blocks. Moving a PERT box never changes a number.
+- **List, Kanban, Calendar, Gantt** show it with the task's name, `1.2 - Design`: a number alone names
+  nothing. Display only; the stored value and its sort stay the bare number.
+- **PERT** only reads it: within a linked group the auto-layout puts each task at least in the
+  column of its top-level number (lowest numbers first, highest last), dependencies still placing a
+  blocker left of what it blocks; unlinked tasks get one column per top-level number (see *PERT
+  conventions*). Moving a PERT box never changes a number.
 
 Pitfalls: the number is text, so the list's sort on it is lexical (`10` before `2`); the update's
 answer can carry the pre-renumber number when the move also renumbered the new parent — re-read.
@@ -68,6 +71,10 @@ flowchart LR
 ```
 
 ### Per-user layouts
+
+On both canvases, Shift+click adds a box to the selection and Shift+drag on empty space draws a
+selection rectangle (React Flow's own keys); dragging a selected box moves the whole selection, each
+box landing on the nearest free spot. A group move changes only the layout, never a WBS parent.
 
 Box positions and folded branches are stored per user in `user_view_layout`, through
 `GET|PUT /api/v1/me/view_layout/:entity/:mode` (`mode` is `wbs` or `pert`). A second user sees their own
@@ -91,6 +98,21 @@ user's arrangement, which lives in their layout and the current viewport.
 - Dependency rows are read from both ends (`in[toField]` and `in[fromField]`), so a link whose other end is filtered out is counted as a hidden link and not drawn (over the cap, nothing is drawn at all).
 - A record whose `closed` field is `true` is drawn faded — the one column name the engine assumes; it still counts in the critical path.
 - A dependency cycle disables the critical path, with a warning.
+- **Auto-layout** (new boxes and *Re-arrange*, `layoutPert`): linked tasks on the left, each
+  connected group of dependencies laid out on its own and the groups stacked top to bottom so
+  independent chains never interleave.
+  - *Columns*: a blocker sits left of what it blocks; a task with more dependents than blockers
+    moves right, next to its nearest dependent, so arrows stay one column long where possible;
+    empty columns are dropped. Columns are 100px apart (5 dots of the canvas grid).
+  - *Rows*: each task is placed inline with its blockers' mean height (a task nothing blocks, with
+    its dependents'), so chains draw as straight lines; a column whose tasks want the same height
+    is packed around it with the least total move (a fork centers on its blocker).
+  - *Hidden lines*: an arrow spanning several columns is traced as React Flow draws it, and a box
+    it would pass behind moves up or down its column to the nearest clear height (a few passes,
+    best effort).
+  - Unlinked tasks go to their right, after one empty column, one column per top-level order
+    number, wrapped into the next column every 10 tasks, centered on the linked part's middle line.
+  - Boxes are then separated so none overlap.
 
 ### Cap
 
