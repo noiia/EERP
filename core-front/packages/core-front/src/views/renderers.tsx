@@ -967,7 +967,7 @@ function TreeRenderer<T extends HasId>({
   const unitSystem = useUnitStore((s) => s.system)
   const i18nLocale = useI18nStore((s) => s.locale)
   const router = useRouter()
-  const mode = useUiStore((s) => s.viewMode[descriptor.entity] ?? 'list')
+  const storedMode = useUiStore((s) => s.viewMode[descriptor.entity] ?? 'list')
   const setViewMode = useUiStore((s) => s.setViewMode)
   // The module's own hardcoded baseline (if any), overridden field-by-field by
   // whatever Settings -> Views has saved — the switcher and both modes below
@@ -1015,6 +1015,8 @@ function TreeRenderer<T extends HasId>({
     [descriptor.listFilter, activeFilters],
   )
   const availability = availableDisplayModes(effective, baseOptions)
+  // OBS depends on the live filters: once the pin is lost the persisted 'obs' reads as List everywhere.
+  const mode = storedMode === 'obs' && !availability.obs ? 'list' : storedMode
   const onFiltersChange = (options: EntityListOptions | undefined) => {
     setActiveFilters(options)
     setLiveResults(null)

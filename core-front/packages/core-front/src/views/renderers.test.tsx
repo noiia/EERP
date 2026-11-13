@@ -1491,6 +1491,35 @@ describe('EntityView', () => {
       expect(await screen.findByTestId('obs-renderer')).toHaveTextContent('p1')
     })
 
+    it('OBS follows the URL-seeded project filter: remounts on another project, falls back to a refiltered List when cleared', async () => {
+      const obs = { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id' }
+      const listPage = vi.fn(async () => ({ records: [{ id: 'x', name: 'Fresh row' }], total: 1 }))
+      const ops: RelationOps = { list: vi.fn(async () => []), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+      const descriptor = {
+        ...treeDescriptor,
+        fields: [...treeDescriptor.fields, { name: 'project_id', label: 'Project id', type: 'text' as const }],
+        viewModeDefaults: { obs },
+      }
+      const ui = () => (
+        <RelationOpsProvider ops={ops}>
+          <EntityView descriptor={descriptor} initialData={[{ id: '1', name: 'Old row' }]} actions={noopActions} />
+        </RelationOpsProvider>
+      )
+      mockSearchParams = new URLSearchParams('filter[project_id]=p1')
+      const { rerender } = render(ui())
+      fireEvent.click(await screen.findByRole('button', { name: 'OBS' }))
+      expect(await screen.findByTestId('obs-renderer')).toHaveTextContent('p1')
+      mockSearchParams = new URLSearchParams('filter[project_id]=p2')
+      rerender(ui())
+      await waitFor(() => expect(screen.getByTestId('obs-renderer')).toHaveTextContent('p2'))
+      fireEvent.click(screen.getAllByTestId('CancelIcon')[0])
+      await waitFor(() => expect(screen.queryByTestId('obs-renderer')).not.toBeInTheDocument())
+      expect(screen.queryByRole('button', { name: 'OBS' })).not.toBeInTheDocument()
+      // Unfiltered first page is the seeded one; the grid is back and was not left blank/stale.
+      expect(await screen.findByText('Old row')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
     it('switching to Graph with a GraphOpsProvider renders the real canvas, not the placeholder', async () => {
       const get = vi.fn(async () => ({ tiles: [] }))
       render(
