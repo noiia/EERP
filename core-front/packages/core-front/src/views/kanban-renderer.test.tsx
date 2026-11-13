@@ -97,6 +97,16 @@ describe('KanbanRenderer', () => {
     expect(groups).toEqual(['open', 'won', 'lost', 'No status'])
   })
 
+  it('heads a card with "<order> - <name>" and no second name line', () => {
+    const ordered = {
+      ...descriptor,
+      fields: [{ name: 'wbs_number', label: 'Order', type: 'text' as const }, ...descriptor.fields],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    } as ViewDescriptor<Deal>
+    render(<KanbanRenderer descriptor={ordered} initialData={[{ ...records[0], wbs_number: '1.2' } as Deal]} actions={actions} statusField="status" />)
+    expect(screen.getByTestId('kanban-card-1')).toHaveTextContent(/^1\.2 - Acme$/)
+  })
+
   it('never prints a geo or distance field on a card', () => {
     const geoDescriptor: ViewDescriptor<Deal> = {
       ...descriptor,

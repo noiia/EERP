@@ -25,7 +25,7 @@ import {
   type KanbanColumn,
 } from './kanban-columns'
 import { ErrorAlert } from './error-alert'
-import { orderedFields } from './layout-fields'
+import { orderedFields, orderLabel } from './layout-fields'
 import { useRelationLabels } from './use-relation-labels'
 import { formatTotal } from './total-format'
 import { useRelationOps, type RelationRecord } from './relation-ops'
@@ -115,10 +115,12 @@ export function KanbanRenderer<T extends HasId>({
   const badgeDescriptor = badgeField ? descriptor.fields.find((f) => f.name === badgeField) : undefined
   // Label field + up to 3 more, skipping the status field itself (redundant
   // with the column a card is already sorted into) and the badge field (a chip).
-  const cardFields = orderedFields(descriptor, {
+  const orderField = descriptor.viewModeDefaults?.wbsOrderField
+  const shown = orderedFields(descriptor, {
     exclude: [statusField, ...(badgeField ? [badgeField] : []), ...(colorTagsField ? [colorTagsField] : [])],
-    limit: 4,
   })
+  // The order field already shows the name ("1.2 - Design"): no second name line.
+  const cardFields = (shown.some((f) => f.name === orderField) ? shown.filter((f) => f.name !== 'name' && f.name !== 'title') : shown).slice(0, 4)
 
   // many2one columns: the related records, scoped when the list pins scopeField to one id.
   const scopeId = config?.scopeField ? (serverOptions ?? descriptor.listFilter)?.filter?.[config.scopeField] : undefined
@@ -481,7 +483,7 @@ export function KanbanRenderer<T extends HasId>({
                               variant={i === 0 ? 'body2' : 'caption'}
                               sx={{ display: 'block', fontWeight: i === 0 ? 600 : 400 }}
                             >
-                              {labelOf(f.name, (record as Record<string, unknown>)[f.name])}
+                              {orderLabel(descriptor, f.name, record as Record<string, unknown>) ?? labelOf(f.name, (record as Record<string, unknown>)[f.name])}
                             </Typography>
                           ))}
                           {badgeDescriptor && (record as Record<string, unknown>)[badgeDescriptor.name] === true ? (

@@ -437,6 +437,21 @@ describe('EntityView', () => {
     expect(screen.getByText('Ada')).toBeInTheDocument()
   })
 
+  it('the order column shows "<order> - <name>"', () => {
+    type Row = { id: string; name: string; wbs_number: string }
+    const tasks: ViewDescriptor<Row> = {
+      entity: 'project_task',
+      viewType: 'tree',
+      fields: [
+        { name: 'wbs_number', label: 'Order', type: 'text' },
+        { name: 'name', label: 'Name', type: 'text' },
+      ],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    }
+    render(<EntityView descriptor={tasks} initialData={[{ id: '1', name: 'Design', wbs_number: '1.2' }]} actions={noopActions as unknown as EntityActions<Row>} />)
+    expect(screen.getByText('1.2 - Design')).toBeInTheDocument()
+  })
+
   it('a text/color column shows a swatch beside the hex, and leaves a non-color value as plain text', () => {
     type Group = { id: string; name: string; color: string }
     const groups: ViewDescriptor<Group> = {
@@ -1643,6 +1658,31 @@ describe('EntityView', () => {
     )
     expect(screen.getByRole('tree')).toBeInTheDocument()
     expect(screen.getByText('Root')).toBeInTheDocument()
+  })
+
+  it('labels hierarchical tree items "<order> - <name>" by the order field', () => {
+    type Row = { id: string; name: string; wbs_number: string; parent_id: string | null }
+    const tasks: ViewDescriptor<Row> = {
+      entity: 'project_task',
+      viewType: 'tree',
+      fields: [
+        { name: 'wbs_number', label: 'Order', type: 'text' },
+        { name: 'name', label: 'Name', type: 'text' },
+      ],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    }
+    render(
+      <EntityView
+        descriptor={tasks}
+        initialData={[
+          { id: 'a', name: 'Design', wbs_number: '1', parent_id: null },
+          { id: 'b', name: 'Mockups', wbs_number: '1.1', parent_id: 'a' },
+        ]}
+        actions={noopActions as unknown as EntityActions<Row>}
+      />,
+    )
+    expect(screen.getByRole('tree')).toBeInTheDocument()
+    expect(screen.getByText('1 - Design')).toBeInTheDocument()
   })
 
   it('renders a dashboard block per list view with its name and entry count', () => {

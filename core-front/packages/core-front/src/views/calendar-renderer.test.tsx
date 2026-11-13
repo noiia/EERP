@@ -70,6 +70,16 @@ describe('CalendarRenderer', () => {
     expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Beta')
   })
 
+  it('labels a record "<order> - <name>" when its first field is the order number', () => {
+    const ordered = {
+      ...descriptor,
+      fields: [{ name: 'wbs_number', label: 'Order', type: 'text' as const }, ...descriptor.fields],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    } as ViewDescriptor<Task>
+    render(<CalendarRenderer descriptor={ordered} initialData={records.map((r) => ({ ...r, wbs_number: '2' }))} actions={actions} dateField="due_date" />)
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('2 - Alpha')
+  })
+
   it('labels a record with its first text field, never a geo field', () => {
     const geoDescriptor: ViewDescriptor<Task> = {
       ...descriptor,

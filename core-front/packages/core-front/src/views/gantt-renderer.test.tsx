@@ -120,6 +120,33 @@ describe('GanttRenderer', () => {
     expect(range()).toBe(`${new Date(2026, 3, 1).toLocaleDateString()} – ${new Date(2026, 8, 30).toLocaleDateString()}`)
   })
 
+  it('draws a grey line per day, or 8 per month in Month zoom', () => {
+    renderGantt()
+    const lines = () => screen.getByTestId('gantt-grid-lines').children
+    expect(lines()).toHaveLength(83) // 12 weeks = 84 days, 83 inner boundaries
+    fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+    expect(lines()).toHaveLength(13)
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }))
+    expect(lines()).toHaveLength(6 * 8 - 1) // the range's left edge draws none
+  })
+
+  it('labels rows with the title field, not the layout\'s first field', () => {
+    renderGantt([{ ...alpha, wbs_number: '1.2' } as Task], {
+      ...descriptor,
+      fields: [{ name: 'wbs_number', label: 'Order', type: 'text' }, ...descriptor.fields],
+    })
+    expect(within(screen.getByTestId('gantt-row-1')).getByRole('button', { name: 'Alpha' })).toBeInTheDocument()
+  })
+
+  it('labels rows "<order> - <name>" when the list has an order field', () => {
+    renderGantt([{ ...alpha, wbs_number: '1.2' } as Task], {
+      ...descriptor,
+      fields: [{ name: 'wbs_number', label: 'Order', type: 'text' }, ...descriptor.fields],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    })
+    expect(within(screen.getByTestId('gantt-row-1')).getByRole('button', { name: '1.2 - Alpha' })).toBeInTheDocument()
+  })
+
   it('marks today on the timeline only while today is in the visible range', () => {
     renderGantt()
     expect(screen.getByRole('img', { name: 'Today' })).toBeInTheDocument()

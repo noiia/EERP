@@ -58,6 +58,7 @@ import { HeaderButtonContainer } from './header-button-container'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
 import { LayoutForm } from './layout-renderer'
+import { orderLabel } from './layout-fields'
 import { useListNavStore, type ListNav } from './list-nav-store'
 import { SelectionBar } from './list-selection'
 import { PictureSizeProvider } from './picture-widgets'
@@ -1268,6 +1269,9 @@ function TreeRenderer<T extends HasId>({
           // own id is the user id), so this renders that row's avatar + live
           // presence bubble beside the field's own value instead of the bare
           // text DataGrid renders by default (Settings -> Users' first user).
+          if (f.name === descriptor.viewModeDefaults?.wbsOrderField) {
+            col.valueFormatter = (_v: unknown, row: Record<string, unknown>) => orderLabel(descriptor, f.name, row)
+          }
           if (f.widget === 'datetime') {
             col.valueFormatter = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString() : '')
           }
@@ -1446,7 +1450,9 @@ function HierarchyTree<T extends HasId & TreeNode>({
   const toItem = (node: T): TreeViewDefaultItemModelProperties => ({
     id: node.id,
     label: String(
-      labelField ? ((node as Record<string, unknown>)[labelField] ?? node.id) : node.id,
+      labelField
+        ? (orderLabel(descriptor, labelField, node as Record<string, unknown>) ?? (node as Record<string, unknown>)[labelField] ?? node.id)
+        : node.id,
     ),
     children: store.getState().children(node.id).map(toItem),
   })

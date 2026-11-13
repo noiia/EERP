@@ -14,7 +14,7 @@ import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import { useT } from '../i18n/translate'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
-import { orderedFields } from './layout-fields'
+import { orderedFields, orderLabel } from './layout-fields'
 import { formatTotal } from './total-format'
 import { useRelationOps } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
@@ -228,7 +228,8 @@ export function CalendarRenderer<T extends HasId>({
 
   function label(record: T): string {
     if (!labelField) return record.id
-    return String((record as Record<string, unknown>)[labelField.name] ?? record.id)
+    const r = record as Record<string, unknown>
+    return orderLabel(descriptor, labelField.name, r) ?? String(r[labelField.name] ?? record.id)
   }
 
   function isFlagged(record: T): boolean {

@@ -24,7 +24,7 @@ import { BannerScope, BannerSlot } from './banner'
 import { colorStripes } from './color-tags'
 import { ErrorAlert } from './error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
-import { orderedFields } from './layout-fields'
+import { orderedFields, orderLabel } from './layout-fields'
 import { useRelationOps } from './relation-ops'
 import { RelationColorTagsWidget } from './relation-widgets'
 import type { EntityActions, HasId } from './stores'
@@ -115,6 +115,16 @@ function viewRange(zoom: Zoom, anchor: Date) {
 function shiftAnchor(zoom: Zoom, anchor: Date, dir: number): Date {
   if (zoom === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + 6 * dir, 1)
   return addDays(anchor, (zoom === 'day' ? 14 : 84) * dir)
+}
+
+/** Grey grid line offsets (days from the range start): every day, or 8 per month in Month zoom. */
+function gridLines(zoom: Zoom, start: Date, columns: Date[], totalDays: number): number[] {
+  if (zoom !== 'month') return Array.from({ length: totalDays - 1 }, (_, i) => i + 1)
+  return columns.flatMap((c) => {
+    const first = dayDiff(c, start)
+    const len = dayDiff(new Date(c.getFullYear(), c.getMonth() + 1, 1), c)
+    return Array.from({ length: 8 }, (_, k) => first + (k * len) / 8).filter((d) => d > 0)
+  })
 }
 
 /** Shift + wheel: `steps` of the smallest move the Monday-aligned range shows (a month, else a week). */
@@ -309,9 +319,15 @@ export function GanttRenderer<T extends HasId>({
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
 
-  const [labelField] = orderedFields(descriptor, { exclude: [startField, endField], limit: 1 })
+  // A title field ('name'/'title') beats the layout's first field, which may be an order number.
+  const labelField =
+    descriptor.fields.find((f) => f.name === 'name' || f.name === 'title') ??
+    orderedFields(descriptor, { exclude: [startField, endField], limit: 1 })[0]
+  const orderField = descriptor.viewModeDefaults?.wbsOrderField
+  // With an order number: "1.2 - Design", as List, Kanban and Calendar show it.
   const label = (record: T) =>
-    labelField ? String((record as Record<string, unknown>)[labelField.name] ?? record.id) : record.id
+    (orderField && orderLabel(descriptor, orderField, record as Record<string, unknown>)) ||
+    (labelField ? String((record as Record<string, unknown>)[labelField.name] ?? record.id) : record.id)
   const openForm = (record: T) => {
     if (formPath) router.push(erpPath(formPath.replace(':id', record.id)))
   }
@@ -693,6 +709,17 @@ export function GanttRenderer<T extends HasId>({
                 </Typography>
               ))}
             </Box>
+            {rows.length > 0 ? (
+              <Box
+                data-testid="gantt-grid-lines"
+                aria-hidden
+                sx={{ gridColumn: 2, gridRow: `2 / span ${rows.length}`, position: 'relative', pointerEvents: 'none' }}
+              >
+                {gridLines(zoom, range.start, range.columns, totalDays).map((d) => (
+                  <Box key={d} sx={{ position: 'absolute', top: 0, bottom: 0, width: '1px', bgcolor: 'divider' }} style={{ left: pct(d) }} />
+                ))}
+              </Box>
+            ) : null}
             {rows.map((row, i) => (
               <Box key={row.record.id} data-testid={`gantt-row-${row.record.id}`} sx={{ display: 'contents' }}>
                 <Box sx={{ gridColumn: 1, gridRow: i + 2, display: 'flex', alignItems: 'center', minWidth: 0 }}>
