@@ -75,7 +75,7 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		e.DELETE(base+"/:id", del, with...)
 		e.POST(base+"/:id/restore", restore, with...)
 	}
-	e.GET("/api/v1/project_task", AssignedToMe(generic("project_task").List), mw...)
+	e.GET("/api/v1/project_task", AssignedToMe(TaskFilters(generic("project_task").List)), mw...)
 	e.GET("/api/v1/project/:id/can_manage", h.CanManage, mw...)
 }
 
@@ -89,6 +89,33 @@ func AssignedToMe(next echo.HandlerFunc) echo.HandlerFunc {
 			q.Del(assigneeParam) // QueryParams is the context's cached map
 			r := c.Request()
 			c.SetRequest(r.WithContext(context.WithValue(r.Context(), assignedOnlyKey{}, true)))
+		}
+		return next(c)
+	}
+}
+
+// TaskFilters serves the task list's many2many filters (taskLinkFilters):
+// the generic list knows only columns, so each is taken off the query and
+// TaskScope applies it. A value that isn't an id is a 400.
+func TaskFilters(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		q := c.QueryParams() // the context's cached map
+		var links []linkFilter
+		for _, f := range taskLinkFilters {
+			v := q.Get(f.param)
+			if v == "" {
+				continue
+			}
+			id, err := uuid.Parse(v)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, f.param+" must be an id")
+			}
+			q.Del(f.param)
+			links = append(links, linkFilter{f.table, f.column, id})
+		}
+		if len(links) > 0 {
+			r := c.Request()
+			c.SetRequest(r.WithContext(context.WithValue(r.Context(), linkFiltersKey{}, links)))
 		}
 		return next(c)
 	}

@@ -164,9 +164,10 @@ export interface DiagramCanvasProps {
   onFoldedChange?: (folded: string[]) => void
   onConnect?: (c: Connection) => void
   onEdgesDelete?: (e: Edge[]) => void
-  /** WBS re-parent: the box under the dropped one. `false` (now or once resolved)
-   * puts the box back where it was before the drag. */
-  onNodeDrop?: (id: string, overId: string | null) => boolean | void | Promise<boolean | void>
+  /** WBS re-parent: the box under the dropped one, and every box's top-left (the dropped
+   * one where it was let go). `false` (now or once resolved) puts the box back where it
+   * was before the drag. */
+  onNodeDrop?: (id: string, overId: string | null, at: Record<string, Point>) => boolean | void | Promise<boolean | void>
   legend: { color: string; label: string }[]
   toolbarExtra?: ReactNode
 }
@@ -342,7 +343,7 @@ function Canvas(props: DiagramCanvasProps) {
       const cx = rect.x + rect.w / 2
       const cy = rect.y + rect.h / 2
       const over = others.find((o) => cx >= o.x && cx <= o.x + o.w && cy >= o.y && cy <= o.y + o.h)
-      const res = onNodeDrop(node.id, over?.id ?? null)
+      const res = onNodeDrop(node.id, over?.id ?? null, { ...placed, [node.id]: rect })
       if (res instanceof Promise) void res.then(putBack, () => putBack(false))
       else putBack(res)
     }

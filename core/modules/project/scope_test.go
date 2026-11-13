@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"slices"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -370,4 +371,77 @@ func TestRowScope_DependencyNeedsBothTasks(t *testing.T) {
 	if n := f.total(f.caller(uuid.New(), AdminGroup), "project_task_dependency?filter[task_id]="+a.String()); n != 1 {
 		t.Errorf("admin: total %d, want 1", n)
 	}
+}
+
+// The task list filters on its many2many fields: filter[assignees]=<user> and
+// filter[color_groups]=<color> keep the linked tasks, combined with each other,
+// with My tasks and with the row scope; a non-id is a 400.
+func TestTaskFilters_LinkedRecords(t *testing.T) {
+	f := newFixture(t)
+	manager, alice, bob, admin := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	p := f.project(manager, "everyone")
+	hidden := f.project(manager, "members")
+	a, b, both := f.task(p, nil, nil), f.task(p, nil, nil), f.task(p, nil, nil)
+	secret := f.task(hidden, nil, nil)
+	f.assign(p, a, alice)
+	f.assign(p, b, bob)
+	f.assign(p, both, alice)
+	f.assign(hidden, secret, alice)
+	red := f.id(`INSERT INTO project_color (tenant_id, name, color) VALUES ($1, 'Red', '#ff0000') RETURNING id`, f.tenant)
+	for _, task := range []uuid.UUID{b, both} {
+		f.exec(`INSERT INTO project_task_color (tenant_id, project_id, task_id, color_id) VALUES ($1, $2, $3, $4)`, f.tenant, p, task, red)
+	}
+	// A deleted link no longer matches.
+	f.exec(`INSERT INTO project_task_color (tenant_id, project_id, task_id, color_id, deleted_at) VALUES ($1, $2, $3, $4, now())`, f.tenant, p, a, red)
+
+	ids := func(who auth.Identity, path string) []string {
+		t.Helper()
+		code, body := f.get(who, path)
+		if code != http.StatusOK {
+			t.Fatalf("GET %s: %d %v", path, code, body)
+		}
+		var out []string
+		for _, r := range body["data"].([]any) {
+			out = append(out, r.(map[string]any)["id"].(string))
+		}
+		slices.Sort(out)
+		return out
+	}
+	sorted := func(v ...uuid.UUID) []string {
+		out := make([]string, len(v))
+		for i, id := range v {
+			out[i] = id.String()
+		}
+		slices.Sort(out)
+		return out
+	}
+	for name, tc := range map[string]struct {
+		who  auth.Identity
+		path string
+		want []string
+	}{
+		"assignee, scoped":     {f.caller(bob), "project_task?filter[assignees]=" + alice.String(), sorted(a, both)},
+		"assignee, admin":      {f.caller(admin, AdminGroup), "project_task?filter[assignees]=" + alice.String(), sorted(a, both, secret)},
+		"color":                {f.caller(bob), "project_task?filter[color_groups]=" + red.String(), sorted(b, both)},
+		"color, admin":         {f.caller(admin, AdminGroup), "project_task?filter[color_groups]=" + red.String(), sorted(b, both)},
+		"both":                 {f.caller(bob), "project_task?filter[assignees]=" + alice.String() + "&filter[color_groups]=" + red.String(), sorted(both)},
+		"with My tasks":        {f.caller(bob), "project_task?filter[assignee]=me&filter[color_groups]=" + red.String(), sorted(b)},
+		"with a column filter": {f.caller(bob), "project_task?filter[assignees]=" + alice.String() + "&filter[id]=" + a.String(), sorted(a)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := ids(tc.who, tc.path); !slices.Equal(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+	t.Run("counts through distinct", func(t *testing.T) {
+		if n := f.total(f.caller(bob), "project_task?filter[color_groups]="+red.String()+"&distinct=stage_id"); n < 0 {
+			t.Fatal("distinct failed")
+		}
+	})
+	t.Run("not an id", func(t *testing.T) {
+		if code, _ := f.get(f.caller(bob), "project_task?filter[assignees]=alice"); code != http.StatusBadRequest {
+			t.Fatalf("got %d, want 400", code)
+		}
+	})
 }

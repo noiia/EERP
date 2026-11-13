@@ -279,3 +279,51 @@ msgstr ""
 
 msgid "Conversations that only this group could see will be visible to owners only."
 msgstr ""
+
+msgid "Format text"
+msgstr ""
+
+msgid "Formatting"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Bold"
+msgstr ""
+
+msgid "Italic"
+msgstr ""
+
+msgid "Strikethrough"
+msgstr ""
+
+msgid "Code"
+msgstr ""
+
+msgid "Code block"
+msgstr ""
+
+msgid "Quote"
+msgstr ""
+
+msgid "Bulleted list"
+msgstr ""
+
+msgid "Numbered list"
+msgstr ""
+
+msgid "Link"
+msgstr ""
+
+msgid "Write a message (Ctrl+Enter to send)"
+msgstr ""
+
+msgid "Message options"
+msgstr ""
+
+msgid "Delete message"
+msgstr ""
+
+msgid "The message could not be deleted."
+msgstr ""

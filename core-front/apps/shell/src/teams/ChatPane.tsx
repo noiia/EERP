@@ -4,34 +4,47 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Drawer from '@mui/material/Drawer'
+import IconButton from '@mui/material/IconButton'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
-import { AvatarWithPresence, avatarUrl, T, useT } from '@eerp/core-front'
-import { postMessage, toggleReaction, type Message, type Role } from './client'
+import { AvatarWithPresence, avatarUrl, T, useSessionStore, useT } from '@eerp/core-front'
+import { deleteMessage, postMessage, toggleReaction, type Message, type Role } from './client'
 import { useChatStore } from './chat-store'
 import { Composer, type MentionCandidate } from './Composer'
 import { FolderPanel } from './FolderPanel'
 import { ImageAttachments } from './ImageAttachments'
+import { Markdown } from './Markdown'
 
 const PANEL_WIDTH = 360
 
 export const REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 const NO_MESSAGES: Message[] = []
 
-function MessageItem({ m, onReact }: { m: Message; onReact: (emoji: string) => void }) {
+function MessageItem({ m, onReact, onDelete }: { m: Message; onReact: (emoji: string) => void; onDelete?: () => void }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [menu, setMenu] = useState<HTMLElement | null>(null)
   return (
     <Box component="article" sx={{ py: 0.75 }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         <AvatarWithPresence userId={m.author_id} label={m.author_name} size={24} src={avatarUrl(m.author_id, m.author_has_avatar)} />
         <Typography variant="subtitle2" component="span">{m.author_name}</Typography>
         <Typography variant="caption" color="text.secondary">{new Date(m.created_at).toLocaleString()}</Typography>
+        {onDelete && (
+          <>
+            <IconButton size="small" aria-label={t('Message options')} aria-haspopup="menu" onClick={(e) => setMenu(e.currentTarget)}>⋮</IconButton>
+            <Menu anchorEl={menu} open={menu !== null} onClose={() => setMenu(null)}>
+              <MenuItem onClick={() => { setMenu(null); onDelete() }} sx={{ color: 'error.main' }}><T text="Delete message" /></MenuItem>
+            </Menu>
+          </>
+        )}
       </Stack>
-      {m.body && <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.body}</Typography>}
+      {m.body && <Markdown text={m.body} />}
       <ImageAttachments attachments={m.attachments} />
       <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
         {m.reactions.map((r) => (
@@ -91,7 +104,10 @@ export function ChatPane({
   const narrow = useMediaQuery(useTheme().breakpoints.down('md'))
   const [panel, setPanel] = useState(false)
   const [dragging, setDragging] = useState(false)
-  const [dropError, setDropError] = useState('')
+  const [actionError, setActionError] = useState('')
+  // Files dropped on the pane wait in the composer; a new array per drop.
+  const [dropped, setDropped] = useState<File[]>([])
+  const me = useSessionStore((s) => s.identity?.userId)
   const messages = useChatStore((s) => s.messages[channelId] ?? NO_MESSAGES)
   const hasMore = useChatStore((s) => s.hasMore[channelId] ?? false)
   const scroller = useRef<HTMLDivElement>(null)
@@ -137,6 +153,13 @@ export function ChatPane({
       .catch(() => {})
   }
 
+  const remove = (messageId: string) => {
+    setActionError('')
+    deleteMessage(messageId)
+      .then(() => useChatStore.getState().remove({ type: 'chat_message_deleted', channel_id: channelId, message_id: messageId }))
+      .catch((err: unknown) => setActionError(err instanceof Error && err.message ? err.message : t('The message could not be deleted.')))
+  }
+
   const send = async (body: string, mentions: string[], files: File[]) => {
     const m = await postMessage(channelId, body, mentions, files)
     atBottom.current = true
@@ -159,8 +182,7 @@ export function ChatPane({
       const files = Array.from(e.dataTransfer.files ?? [])
       if (!droppable || files.length === 0) return
       e.preventDefault()
-      setDropError('')
-      send('', [], files).catch((err: unknown) => setDropError(err instanceof Error && err.message ? err.message : t('The message could not be sent.')))
+      setDropped(files)
     },
   }
 
@@ -184,10 +206,18 @@ export function ChatPane({
           {messages.length === 0 && (
             <Typography color="text.secondary" sx={{ py: 2 }}><T text="No messages yet." /></Typography>
           )}
-          {messages.map((m) => <MessageItem key={m.id} m={m} onReact={(e) => react(m.id, e)} />)}
+          {messages.map((m) => (
+            <MessageItem
+              key={m.id}
+              m={m}
+              onReact={(e) => react(m.id, e)}
+              // Go's rule: the author (not a guest) or a team owner.
+              onDelete={!readOnly && (m.author_id === me || role === 'owner') ? () => remove(m.id) : undefined}
+            />
+          ))}
         </Box>
-        {dropError && <Typography color="error" variant="body2" sx={{ px: 2 }}>{dropError}</Typography>}
-        <Composer members={members} canAttach={canAttach} readOnly={readOnly} onSend={send} />
+        {actionError && <Typography color="error" variant="body2" sx={{ px: 2 }}>{actionError}</Typography>}
+        <Composer members={members} canAttach={canAttach} readOnly={readOnly} onSend={send} dropped={dropped} />
       </Box>
       {folderPanel && (narrow
         ? <Drawer anchor="right" open onClose={() => setPanel(false)} slotProps={{ paper: { sx: { width: `min(${PANEL_WIDTH}px, 100vw)` } } }}>{folderPanel}</Drawer>

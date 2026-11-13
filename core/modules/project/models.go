@@ -62,7 +62,8 @@ type ProjectTask struct {
 	DateStart        *time.Time `db:"date_start" json:"date_start"`
 	Deadline         *time.Time `db:"deadline" json:"deadline"`
 	PlannedHours     float64    `db:"planned_hours" json:"planned_hours"`
-	Sequence         int        `db:"sequence" json:"sequence"`
+	Sequence         int        `db:"sequence" json:"sequence"`     // position among its siblings, kept 1..n by trigger
+	WbsNumber        *string    `db:"wbs_number" json:"wbs_number"` // order number, "3.1.2"; trigger-maintained
 	SpentHours       float64    `db:"spent_hours" json:"spent_hours"`
 	SubtaskHours     float64    `db:"subtask_hours" json:"subtask_hours"`
 	SubtaskCount     int        `db:"subtask_count" json:"subtask_count"`

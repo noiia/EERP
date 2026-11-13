@@ -182,9 +182,9 @@ describe('DiagramCanvas', () => {
     setup({ onNodeDrop })
     await flush()
     act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(510, 510) }))
-    expect(onNodeDrop).toHaveBeenCalledWith('a', 'b')
+    expect(onNodeDrop).toHaveBeenCalledWith('a', 'b', expect.objectContaining({ a: expect.anything(), b: expect.anything() }))
     act(() => rf.props.onNodeDragStop!(null, { id: 'a', position: at(2000, 2000) }))
-    expect(onNodeDrop).toHaveBeenLastCalledWith('a', null)
+    expect(onNodeDrop).toHaveBeenLastCalledWith('a', null, expect.anything())
   })
 
   it('deletes the selected edge', async () => {

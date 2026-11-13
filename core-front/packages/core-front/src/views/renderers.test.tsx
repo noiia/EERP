@@ -1426,7 +1426,7 @@ describe('EntityView', () => {
     it('switching to WBS hands the lazy WbsRenderer the module defaults', async () => {
       render(
         <EntityView
-          descriptor={{ ...treeDescriptor, viewModeDefaults: { wbsParentField: 'parent_id', wbsGroupField: 'project_id', pertHoursField: 'planned_hours', kanbanStatusField: 'status' } }}
+          descriptor={{ ...treeDescriptor, viewModeDefaults: { wbsParentField: 'parent_id', wbsGroupField: 'project_id', wbsOrderField: 'wbs_number', pertHoursField: 'planned_hours', kanbanStatusField: 'status' } }}
           initialData={[{ id: '1', name: 'Ada' }]}
           actions={noopActions}
         />,
@@ -1434,7 +1434,7 @@ describe('EntityView', () => {
       fireEvent.click(screen.getByRole('button', { name: 'WBS' }))
       expect(screen.queryByRole('grid')).not.toBeInTheDocument()
       expect(await screen.findByTestId('wbs-renderer')).toHaveTextContent(
-        JSON.stringify(['parent_id', 'project_id', ['name', 'status', null, null, 'planned_hours'], 'planned_hours']),
+        JSON.stringify(['parent_id', 'project_id', ['wbs_number', 'name', 'status', null, null, 'planned_hours'], 'planned_hours']),
       )
     })
 
@@ -1450,7 +1450,7 @@ describe('EntityView', () => {
       fireEvent.click(screen.getByRole('button', { name: 'PERT' }))
       expect(screen.queryByRole('grid')).not.toBeInTheDocument()
       expect(await screen.findByTestId('pert-renderer')).toHaveTextContent(
-        JSON.stringify([dep, 'date_start', 'deadline', 'planned_hours', ['name', null, 'date_start', 'deadline', 'planned_hours']]),
+        JSON.stringify([dep, 'date_start', 'deadline', 'planned_hours', [null, 'name', null, 'date_start', 'deadline', 'planned_hours']]),
       )
     })
 

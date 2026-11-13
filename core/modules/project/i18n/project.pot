@@ -141,3 +141,6 @@ msgstr ""
 
 msgid "Color groups"
 msgstr ""
+
+msgid "Order"
+msgstr ""

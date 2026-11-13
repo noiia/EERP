@@ -492,15 +492,22 @@ export function validateCatalogDescriptor<T>(descriptor: ViewDescriptor<T>): voi
  */
 export function validateSearchDescriptor<T>(descriptor: ViewDescriptor<T>): void {
   if (descriptor.viewType !== 'tree' || !descriptor.search) return
-  const { liveFields, filterableFields, groupableFields } = descriptor.search
+  const { liveFields, filterableFields, groupableFields, filterOnlyFields } = descriptor.search
   const fieldNames = new Set(descriptor.fields.map((f) => f.name))
+  for (const f of filterOnlyFields ?? []) {
+    if (fieldNames.has(f.name)) throw new Error(`search.filterOnlyFields "${f.name}" repeats a field of this view`)
+    if (f.type === 'relation' && !f.relation) throw new Error(`search.filterOnlyFields "${f.name}" needs a relation block`)
+  }
+  const filterNames = new Set([...fieldNames, ...(filterOnlyFields ?? []).map((f) => f.name)])
   const checkNamed = (key: string, name: string): void => {
     if (!fieldNames.has(name)) {
       throw new Error(`search.${key} "${name}" is not declared in this view's fields`)
     }
   }
   for (const entry of liveFields ?? []) checkNamed('liveFields', entry.field)
-  for (const name of filterableFields ?? []) checkNamed('filterableFields', name)
+  for (const name of filterableFields ?? []) {
+    if (!filterNames.has(name)) throw new Error(`search.filterableFields "${name}" is not declared in this view's fields`)
+  }
   for (const name of groupableFields ?? []) checkNamed('groupableFields', name)
 }
 
@@ -1115,6 +1122,13 @@ export interface SearchDescriptor {
   filterableFields?: string[]
   /** Omitted ⇒ every selection/relation/boolean field is groupable. */
   groupableFields?: string[]
+  /**
+   * Fields offered as filters only, never as list columns — e.g. a many2many
+   * the list can't show (a task's assignees). Its filter is sent as
+   * `filter[<name>]=<id>`, which the entity's own list handler must resolve
+   * (the generic list knows only columns). Names must not repeat `fields`.
+   */
+  filterOnlyFields?: FieldDescriptor[]
 }
 
 /**

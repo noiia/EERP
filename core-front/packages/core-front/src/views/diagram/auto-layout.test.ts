@@ -68,3 +68,14 @@ describe('layoutPert', () => {
     noOverlap(pos)
   })
 })
+
+describe('layoutPert with order numbers', () => {
+  it('starts with the 1.x records and ends with the highest, dependencies still first', () => {
+    const size = { w: 100, h: 50 }
+    const order: Record<string, string> = { a: '2', b: '1.1', c: '1', d: '3', e: '2.1' }
+    const pos = layoutPert(['a', 'b', 'c', 'd', 'e'], [{ from: 'd', to: 'a' }], size, (id) => order[id])
+    expect(pos.b.x).toBe(pos.c.x)
+    expect(pos.c.x).toBeLessThan(pos.e.x)
+    expect(pos.d.x).toBeLessThan(pos.a.x) // d blocks a, whatever their numbers
+  })
+})

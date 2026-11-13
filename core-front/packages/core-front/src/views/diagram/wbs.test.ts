@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWbs, canReparent } from './wbs'
+import { buildWbs, canReparent, compareOrder } from './wbs'
 
 const chain = [
   { id: 'a', parentId: null, plannedHours: 1 },
@@ -56,5 +56,19 @@ describe('canReparent', () => {
     expect(canReparent(nodes, 'zz', 'a')).toBe(false)
     expect(canReparent(nodes, 'b', 'zz')).toBe(false)
     expect(canReparent(nodes, 'group:p', 'a')).toBe(false)
+  })
+})
+
+describe('order numbers', () => {
+  it('compares segment by segment, unnumbered last', () => {
+    expect(['2.10', '10', '2.9', '', '2', '1.1'].sort((a, b) => compareOrder(a || null, b || null))).toEqual(['1.1', '2', '2.9', '2.10', '10', ''])
+  })
+  it('orders siblings by number', () => {
+    const { nodes, roots } = buildWbs(
+      [{ id: 'b', parentId: null, order: '2' }, { id: 'a', parentId: null, order: '1' }, { id: 'a2', parentId: 'a', order: '1.2' }, { id: 'a1', parentId: 'a', order: '1.1' }],
+      new Set(),
+    )
+    expect(roots).toEqual(['a', 'b'])
+    expect(nodes.a.children).toEqual(['a1', 'a2'])
   })
 })

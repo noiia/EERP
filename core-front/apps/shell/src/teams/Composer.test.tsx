@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Composer } from './Composer'
+import { Composer, PATTERNS, applyPattern } from './Composer'
 
 const members = [
   { user_id: 'a', display_name: 'Alice' },
   { user_id: 'b', display_name: 'Bob' },
 ]
-const box = () => screen.getByRole('textbox', { name: /message/i })
+const box = () => screen.getByRole<HTMLTextAreaElement>('textbox', { name: /message/i })
 const type = (value: string) => fireEvent.change(box(), { target: { value } })
 
 describe('Composer', () => {
@@ -71,5 +71,39 @@ describe('Composer', () => {
     fireEvent.keyDown(box(), { key: 'Enter' })
     expect(await screen.findByText('Too long')).toBeInTheDocument()
     expect(box()).toHaveValue('hello')
+  })
+
+  it('opens the formatting panel, grows the box and wraps the selection with a pattern', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined)
+    render(<Composer members={members} canAttach onSend={onSend} />)
+    expect(screen.queryByRole('toolbar', { name: /formatting/i })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /format text/i }))
+    expect(screen.getByRole('button', { name: /format text/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(box()).toHaveAttribute('placeholder', 'Write a message (Ctrl+Enter to send)')
+    type('say hi now')
+    box().setSelectionRange(4, 6)
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    expect(box()).toHaveValue('say **hi** now')
+    expect([box().selectionStart, box().selectionEnd]).toEqual([6, 8])
+    // Enter is a new line while formatting; Ctrl+Enter sends.
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+    fireEvent.keyDown(box(), { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('say **hi** now', [], []))
+  })
+})
+
+describe('applyPattern', () => {
+  const p = (title: string) => PATTERNS.find((x) => x.title === title)!
+  it.each([
+    ['Italic', 'ab', 1, 1, 'a**b', [2, 2]],
+    ['Title', 'one\ntwo', 5, 5, 'one\n## two', [8, 8]],
+    ['Numbered list', 'a\nb', 0, 3, '1. a\n2. b', [3, 9]],
+    ['Code block', 'x', 0, 1, '```\nx\n```', [4, 5]],
+    ['Link', 'site', 0, 4, '[site](https://)', [1, 5]],
+  ] as const)('%s', (title, text, start, end, want, sel) => {
+    const r = applyPattern(text, start, end, p(title))
+    expect(r.text).toBe(want)
+    expect([r.start, r.end]).toEqual(sel)
   })
 })

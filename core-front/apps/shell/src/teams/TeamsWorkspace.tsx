@@ -7,7 +7,7 @@ import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { layout, onChatFrame, onLiveReconnect, T, useRecordLabelStore, useSessionStore, useT } from '@eerp/core-front'
 import { getTeam, listChannels, listDirect, listMembers, listShared, type Channel, type DirectChat, type Member, type Team } from './client'
-import { useChatStore, type ChatMessageFrame, type ChatReactionFrame } from './chat-store'
+import { useChatStore, type ChatMessageFrame, type ChatDeletedFrame, type ChatReactionFrame } from './chat-store'
 import { ChatPane } from './ChatPane'
 import { FilesPane } from './FilesPane'
 import { SharedPane } from './SharedPane'
@@ -68,6 +68,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   useEffect(() => onChatFrame((f) => {
     const store = useChatStore.getState()
     if (f.type === 'chat_reaction') return store.applyReactions(f as unknown as ChatReactionFrame)
+    if (f.type === 'chat_message_deleted') return store.remove(f as unknown as ChatDeletedFrame)
     const frame = f as unknown as ChatMessageFrame
     store.receive(frame)
     // A first message in a conversation this sidebar doesn't list yet.

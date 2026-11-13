@@ -352,6 +352,49 @@ func TestReaction_Toggle(t *testing.T) {
 	}
 }
 
+func TestDeleteMessage(t *testing.T) {
+	f := newChatFixture(t, false)
+	m := f.post(t, f.member, f.general, `{"body":"oops"}`)
+	p := map[string]string{"message": m["id"].(string)}
+	other := f.post(t, f.owner, f.general, `{"body":"owner's"}`)
+	op := map[string]string{"message": other["id"].(string)}
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.outside), p); rec.Code != 404 {
+		t.Fatalf("outsider: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.guest), p); rec.Code != 403 {
+		t.Fatalf("guest: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.member), op); rec.Code != 403 {
+		t.Fatalf("member deleting another's: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.member), p); rec.Code != 204 {
+		t.Fatalf("author: %d %s", rec.Code, rec.Body)
+	}
+	fr := f.hub.frames[len(f.hub.frames)-1]
+	if fr.payload["type"] != "chat_message_deleted" || fr.payload["message_id"] != m["id"] {
+		t.Fatalf("frame: %v", fr.payload)
+	}
+	// Gone: a second delete, a reaction and the list no longer find it.
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.member), p); rec.Code != 404 {
+		t.Fatalf("again: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.ToggleReaction, "POST", `{"emoji":"👍"}`, f.as(f.owner), p); rec.Code != 404 {
+		t.Fatalf("react on deleted: %d", rec.Code)
+	}
+	rec := serve(t, f.h.ListMessages, "GET", "", f.as(f.owner), map[string]string{"channel": f.general.String()})
+	if strings.Contains(rec.Body.String(), "oops") {
+		t.Fatalf("still listed: %s", rec.Body)
+	}
+	// An owner deletes anyone's message.
+	byMember := f.post(t, f.member, f.general, `{"body":"by member"}`)
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.owner), map[string]string{"message": byMember["id"].(string)}); rec.Code != 204 {
+		t.Fatalf("owner: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.member), map[string]string{"message": "x"}); rec.Code != 404 {
+		t.Fatalf("bad id: %d", rec.Code)
+	}
+}
+
 func multipartReq(t *testing.T, body string, files map[string]string) (*bytes.Buffer, string) {
 	t.Helper()
 	var buf bytes.Buffer

@@ -361,6 +361,72 @@ describe('SearchBar', () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith('sf1'))
   })
 
+  it('offers filter-only fields and proposes related records as the value of a relation filter', async () => {
+    const list = vi.fn(async (entity: string, opts?: { search?: Record<string, string> }) =>
+      entity === 'users'
+        ? [{ id: 'u-1', email: 'ada@x.io' }, { id: 'u-2', email: 'bob@x.io' }].filter((u) => !opts?.search || u.email.includes(opts.search.email))
+        : [],
+    )
+    const onFiltersChange = vi.fn()
+    const withAssignees: ViewDescriptor<Contact> = {
+      ...descriptor,
+      search: {
+        filterOnlyFields: [
+          { name: 'assignees', label: 'Assignees', type: 'relation', relation: { entity: 'users', kind: 'many2many', via: 'task_user', labelField: 'email' } },
+        ],
+      },
+    }
+    render(
+      <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as RelationOps}>
+        <SearchBar descriptor={withAssignees} onResults={vi.fn()} fallback={fallback} onFiltersChange={onFiltersChange} pagedByParent />
+      </RelationOpsProvider>,
+    )
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    const [fieldSelect, opSelect] = screen.getAllByRole('combobox')
+    fireEvent.mouseDown(fieldSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'Assignees' }))
+    fireEvent.mouseDown(opSelect)
+    // A many2many filter takes one id: "=" only.
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Op', '='])
+    fireEvent.click(screen.getByRole('option', { name: '=' }))
+    const value = screen.getByPlaceholderText('Value')
+    fireEvent.mouseDown(value)
+    expect(await screen.findByRole('option', { name: 'ada@x.io' })).toBeInTheDocument()
+    fireEvent.change(value, { target: { value: 'bob' } })
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith('users', { search: { email: 'bob' }, pageSize: 20 }))
+    fireEvent.click(await screen.findByRole('option', { name: 'bob@x.io' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { assignees: 'u-2' } }))
+    expect(await screen.findByText(/Assignees = bob@x.io/)).toBeInTheDocument()
+  })
+
+  it('picks several related records for an "in" filter on a many2one', async () => {
+    const list = vi.fn(async (entity: string) => (entity === 'project' ? [{ id: 'p-1', name: 'Apollo' }, { id: 'p-2', name: 'Gemini' }] : []))
+    const onFiltersChange = vi.fn()
+    const withProject: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [...descriptor.fields, { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one', labelField: 'name' } }],
+    }
+    render(
+      <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as RelationOps}>
+        <SearchBar descriptor={withProject} onResults={vi.fn()} fallback={fallback} onFiltersChange={onFiltersChange} pagedByParent />
+      </RelationOpsProvider>,
+    )
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    const [fieldSelect, opSelect] = screen.getAllByRole('combobox')
+    fireEvent.mouseDown(fieldSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'Project' }))
+    fireEvent.mouseDown(opSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'in' }))
+    const value = screen.getByPlaceholderText('Value')
+    fireEvent.mouseDown(value)
+    fireEvent.click(await screen.findByRole('option', { name: 'Apollo' }))
+    fireEvent.mouseDown(value)
+    fireEvent.click(await screen.findByRole('option', { name: 'Gemini' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ in: { project_id: ['p-1', 'p-2'] } }))
+  })
+
   it('typing into the Add-filter value field never lets the Menu steal focus (the MUI Menu typeahead bug)', async () => {
     // The "Status" field option starts with 's' — exactly the letter MUI's
     // MenuList typeahead would jump focus to if the keydown ever reached it.

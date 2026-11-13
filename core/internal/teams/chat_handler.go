@@ -547,6 +547,42 @@ func (h *Handler) ToggleReaction(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"reactions": out})
 }
 
+// DeleteMessage serves DELETE /messages/:message: its author (member or owner), or a team
+// owner, removes it; the channel's audience gets a chat_message_deleted frame.
+func (h *Handler) DeleteMessage(c *echo.Context) error {
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	msgID, err := echo.PathParam[uuid.UUID](c, "message")
+	if err != nil {
+		return notFound(c, "message")
+	}
+	m, err := h.repo.FindMessage(ctx, id.TenantID, msgID)
+	if errors.Is(err, orm.ErrNotFound) {
+		return notFound(c, "message")
+	}
+	if err != nil {
+		return err
+	}
+	_, role, audience, err := h.channelAccess(c, m.ChannelID)
+	if role == "" {
+		return err
+	}
+	if !CanEditItem(role, m.AuthorID, id.UserID) {
+		return forbidden(c)
+	}
+	if err := h.repo.DeleteMessage(ctx, id.TenantID, m.ID); err != nil {
+		return err
+	}
+	h.push(id.TenantID, audience, deletedFrame{Type: "chat_message_deleted", ChannelID: m.ChannelID, MessageID: m.ID})
+	return c.NoContent(http.StatusNoContent)
+}
+
+type deletedFrame struct {
+	Type      string    `json:"type"`
+	ChannelID uuid.UUID `json:"channel_id"`
+	MessageID uuid.UUID `json:"message_id"`
+}
+
 // GetAttachment serves GET /attachments/:id as a download, to the channel's readers only.
 func (h *Handler) GetAttachment(c *echo.Context) error {
 	ctx := c.Request().Context()

@@ -1213,8 +1213,9 @@ function TreeRenderer<T extends HasId>({
         actions={actions as unknown as EntityActions<HasId>}
         parentField={effective.wbsParentField}
         groupField={effective.wbsGroupField ?? undefined}
-        boxFields={['name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
+        boxFields={[effective.wbsOrderField, 'name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
         hoursField={effective.pertHoursField ?? undefined}
+        orderField={effective.wbsOrderField ?? undefined}
         onRecordsChange={setLiveRecords as (r: HasId[]) => void}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
@@ -1229,7 +1230,8 @@ function TreeRenderer<T extends HasId>({
         startField={effective.ganttStartField ?? undefined}
         endField={effective.ganttEndField ?? undefined}
         hoursField={effective.pertHoursField ?? undefined}
-        boxFields={['name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
+        orderField={effective.wbsOrderField ?? undefined}
+        boxFields={[effective.wbsOrderField, 'name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
         onRecordsChange={setLiveRecords as (r: HasId[]) => void}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

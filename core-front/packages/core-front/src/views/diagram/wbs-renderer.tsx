@@ -37,6 +37,9 @@ export interface WbsRendererProps<T extends HasId> {
   boxFields?: (string | null | undefined)[]
   /** A number field summed into a folded box's footer. */
   hoursField?: string
+  /** The dotted order number field (`wbsOrderField`): siblings drawn in its order, and a
+   * dropped box writes its new number from where it lands among its (new) siblings. */
+  orderField?: string
   onRecordsChange?: (records: T[]) => void
   serverOptions?: EntityListOptions
 }
@@ -49,6 +52,7 @@ export function WbsRenderer<T extends HasId>({
   groupField,
   boxFields = ['name'],
   hoursField,
+  orderField,
   onRecordsChange,
   serverOptions,
 }: WbsRendererProps<T>) {
@@ -84,6 +88,7 @@ export function WbsRenderer<T extends HasId>({
       id: r.id,
       parentId: str(values(r)[parentField]),
       groupId: groupField ? str(values(r)[groupField]) : null,
+      order: orderField ? str(values(r)[orderField]) : null,
       plannedHours: hoursField ? Number(values(r)[hoursField]) || 0 : 0,
     })),
     foldedSet,
@@ -135,18 +140,38 @@ export function WbsRenderer<T extends HasId>({
     return p && shown.has(p) ? [{ id: `${p}->${id}`, source: p, target: id, deletable: false }] : []
   })
 
+  // The order number a box dropped under `parent` takes: one past the siblings left of it.
+  const orderAt = (id: string, parent: string | null, at: Record<string, { x: number }>): string | null => {
+    const parentCode = parent && !parent.startsWith(GROUP) ? str(values(byId.get(parent)!)[orderField!]) : ''
+    if (parentCode === null) return null
+    const siblings = parent ? nodes[parent].children : roots
+    const pos = 1 + siblings.filter((s) => s !== id && at[s] && at[s].x < at[id].x).length
+    return parentCode ? `${parentCode}.${pos}` : String(pos)
+  }
+
   // false puts the box back where it was (DiagramCanvas.onNodeDrop).
-  const onNodeDrop = (id: string, overId: string | null): boolean | Promise<boolean> => {
-    if (overId === null) return true
-    // Already there, read-only, or another group (moving between groups isn't a WBS drag).
-    if (!canWrite || overId === nodes[id]?.parentId || !canReparent(nodes, id, overId)) return false
+  const onNodeDrop = (id: string, overId: string | null, at: Record<string, { x: number }>): boolean | Promise<boolean> => {
+    const ordered = orderField && canWrite && nodes[id]?.kind === 'task'
+    // Dropped on empty space: with order numbers, a move among its own siblings.
+    if (overId === null && !ordered) return true
+    const parent = overId ?? nodes[id].parentId
+    // Read-only, or another group (moving between groups isn't a WBS drag).
+    if (!canWrite || (overId !== null && !canReparent(nodes, id, overId))) return false
+    if (!ordered && overId === nodes[id]?.parentId) return false
     const groupOf = (target: string) =>
       target.startsWith(GROUP) ? target.slice(GROUP.length) : str(values(byId.get(target)!)[groupField!])
-    if (groupField && groupOf(overId) !== groupOf(id)) return false
+    if (groupField && parent && groupOf(parent) !== groupOf(id)) return false
+    const code = ordered ? orderAt(id, parent, at) : null
+    if (ordered && code !== null && code === str(values(byId.get(id)!)[orderField])) return true
+    if (overId === null && code === null) return true
     setError(null)
-    return actions.update(id, { [parentField]: overId.startsWith(GROUP) ? null : overId } as Partial<T>).then(
+    // A number names the parent too (the server resolves it); without one, the parent alone.
+    const patch = code !== null ? { [orderField!]: code } : { [parentField]: parent && !parent.startsWith(GROUP) ? parent : null }
+    return actions.update(id, patch as Partial<T>).then(
       (updated) => {
         replace(updated)
+        // Siblings and descendants were renumbered too.
+        if (ordered) loaded.reload()
         return true
       },
       (e: unknown) => {

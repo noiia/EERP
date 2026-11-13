@@ -132,7 +132,11 @@ registerFieldFunction({
 
 const stage = { entity: 'project_stage', kind: 'many2one', labelField: 'name' } as const
 
+// The task's order number ("3.1.2"): Go keeps it and moves the task when one is typed.
+const orderField: Fields[number] = { name: 'wbs_number', label: 'Order', type: 'text' }
+
 const taskListFields: Fields = [
+  orderField,
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'project_id', label: 'Project', type: 'relation', required: true, relation: project },
   { name: 'stage_id', label: 'Stage', type: 'relation', relation: stage },
@@ -158,13 +162,31 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   // WBS/PERT diagram modes (ADR-039); PERT dates reuse the Gantt start/end fields.
   wbsParentField: 'parent_id',
   wbsGroupField: 'project_id',
+  wbsOrderField: 'wbs_number',
   pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
   pertHoursField: 'planned_hours',
+}
+
+// The task's many2many fields: on the form, and filters of the task lists
+// (Go's TaskFilters resolves filter[assignees]/filter[color_groups]).
+const assigneesField: Fields[number] = {
+  name: 'assignees',
+  label: 'Assignees',
+  type: 'relation',
+  relation: { entity: 'users', kind: 'many2many', via: 'project_task_user', viaFields: { own: 'task_id', related: 'user_id' }, labelField: 'email' },
+}
+const colorGroupsField: Fields[number] = {
+  name: 'color_groups',
+  label: 'Color groups',
+  type: 'relation',
+  widget: 'colortags',
+  relation: { entity: 'project_color', kind: 'many2many', via: 'project_task_color', viaFields: { own: 'task_id', related: 'color_id' }, labelField: 'name' },
 }
 
 const taskFormFields: Fields = [
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'project_id', label: 'Project', type: 'relation', required: true, relation: project },
+  orderField,
   { name: 'stage_id', label: 'Stage', type: 'relation', relation: { ...stage, filterFields: sameProject } },
   { name: 'parent_id', label: 'Parent task', type: 'relation', relation: { ...task, filterFields: sameProject } },
   {
@@ -173,25 +195,14 @@ const taskFormFields: Fields = [
     type: 'relation',
     relation: { entity: 'project_milestone', kind: 'many2one', labelField: 'name', filterFields: sameProject },
   },
-  {
-    name: 'assignees',
-    label: 'Assignees',
-    type: 'relation',
-    relation: { entity: 'users', kind: 'many2many', via: 'project_task_user', viaFields: { own: 'task_id', related: 'user_id' }, labelField: 'email' },
-  },
+  assigneesField,
   {
     name: 'tags',
     label: 'Tags',
     type: 'relation',
     relation: { entity: 'project_tag', kind: 'many2many', via: 'project_task_tag', viaFields: { own: 'task_id', related: 'tag_id' }, labelField: 'name' },
   },
-  {
-    name: 'color_groups',
-    label: 'Color groups',
-    type: 'relation',
-    widget: 'colortags',
-    relation: { entity: 'project_color', kind: 'many2many', via: 'project_task_color', viaFields: { own: 'task_id', related: 'color_id' }, labelField: 'name' },
-  },
+  colorGroupsField,
   { name: 'date_start', label: 'Start date', type: 'date' },
   { name: 'deadline', label: 'Deadline', type: 'date' },
   { name: 'priority', label: 'Priority', type: 'boolean', widget: 'stars' },
@@ -329,6 +340,7 @@ const tasksList = (navLabel: string, listFilter?: ViewDescriptor['listFilter']):
   createPermission: write('project_task'),
   permissions: perm('project_task'),
   viewModeDefaults: taskViewModeDefaults,
+  search: { filterOnlyFields: [assigneesField, colorGroupsField] },
   ...(listFilter ? { listFilter } : {}),
 })
 

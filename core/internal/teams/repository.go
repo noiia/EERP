@@ -593,6 +593,17 @@ func (r *Repository) CreateMessage(ctx context.Context, m Message, atts []Attach
 	return m, atts, nil
 }
 
+// DeleteMessage soft-deletes a message: it leaves lists, unread counts, reactions and
+// attachment downloads. Files it stored in a team folder stay there.
+func (r *Repository) DeleteMessage(ctx context.Context, tenant, id uuid.UUID) error {
+	if _, err := r.messages.UpdateQuery().Set("deleted_at", time.Now()).
+		Where(orm.Cond("tenant_id = $1", tenant)).Where(orm.Cond("id = $1", id)).Where(orm.Cond("deleted_at IS NULL")).
+		Exec(ctx, r.db); err != nil {
+		return fmt.Errorf("teams: delete message: %w", err)
+	}
+	return nil
+}
+
 // ListMessages returns up to limit messages of the channel older than before (when set), newest first.
 func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID, before *time.Time, limit int) ([]Message, error) {
 	q := orm.Select[Message](r.messages.Meta()).Where(orm.Cond("tenant_id = $1", tenant)).
@@ -608,7 +619,7 @@ func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID
 }
 
 func (r *Repository) FindMessage(ctx context.Context, tenant, id uuid.UUID) (Message, error) {
-	rows, err := r.messages.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id))
+	rows, err := r.messages.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id), orm.Cond("deleted_at IS NULL"))
 	if err != nil {
 		return Message{}, fmt.Errorf("teams: find message: %w", err)
 	}

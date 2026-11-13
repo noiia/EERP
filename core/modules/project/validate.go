@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -385,11 +386,17 @@ func taskRules(r *request) error {
 	if r.op == opDelete {
 		return nil
 	}
+	code, _ := r.body["wbs_number"].(string)
+	delete(r.body, "wbs_number") // trigger-maintained: a typed one becomes parent_id + sequence
+	if code = strings.TrimSpace(code); code != "" {
+		r.body["wbs_number"] = code
+	}
 	pid, err := r.visibleRef("project", "project_id", true)
 	if err != nil {
 		return err
 	}
 	if r.stored != nil && r.changed("project_id") { // a move: UpdateTask does the rest
+		delete(r.body, "wbs_number")
 		// An assignee-only caller can't see the source project: moving would
 		// expose its hidden subtasks and rows in the target.
 		ok, err := orm.CanSeeRecord(r.ctx, r.h.db, "project", r.storedRef("project_id"))
@@ -403,6 +410,9 @@ func taskRules(r *request) error {
 		if err == nil && parent != uuid.Nil {
 			err = invalid("project_id", "a subtask can't change project: move its parent task, or clear parent_id first")
 		}
+		return err
+	}
+	if err := taskOrder(r, pid); err != nil {
 		return err
 	}
 	r.defaults(map[string]any{"description": "", "priority": false, "planned_hours": 0, "sequence": 0})
@@ -437,6 +447,47 @@ func taskRules(r *request) error {
 	if cycle {
 		return invalid("parent_id", "a task can't be its own parent or ancestor")
 	}
+	return nil
+}
+
+var orderNumber = regexp.MustCompile(`^[1-9][0-9]{0,5}(\.[1-9][0-9]{0,5})*$`)
+
+// taskOrder turns a typed order number ("2.4": 4th child of task 2 of the
+// same project, "3": 3rd top-level task) into parent_id + sequence; the
+// triggers shift the siblings and renumber. A re-parent without one goes
+// last among its new siblings (sequence 0).
+func taskOrder(r *request, pid uuid.UUID) error {
+	code, ok := r.body["wbs_number"].(string)
+	delete(r.body, "wbs_number")
+	if !ok || (r.stored != nil && code == r.stored["wbs_number"]) {
+		if r.stored != nil && r.changed("parent_id") && !r.changed("sequence") {
+			r.body["sequence"] = 0
+		}
+		return nil
+	}
+	if !orderNumber.MatchString(code) {
+		return invalid("wbs_number", "an order number is positions separated by dots, e.g. 2.4")
+	}
+	parentCode, last := "", code
+	if i := strings.LastIndexByte(code, '.'); i >= 0 {
+		parentCode, last = code[:i], code[i+1:]
+	}
+	pos, _ := strconv.Atoi(last) // the regexp bounds it
+	var parent any
+	if parentCode != "" {
+		var id uuid.UUID
+		err := r.h.db.QueryRow(r.ctx, `SELECT id FROM project_task
+			WHERE tenant_id = $1 AND project_id = $2 AND wbs_number = $3 AND deleted_at IS NULL`, r.tenant, pid, parentCode).Scan(&id)
+		if errors.Is(err, orm.ErrNotFound) {
+			return invalid("wbs_number", "no task numbered "+parentCode+" in this project")
+		}
+		if err != nil {
+			return err
+		}
+		parent = id.String()
+	}
+	r.body["parent_id"] = parent
+	r.body["sequence"] = pos
 	return nil
 }
 

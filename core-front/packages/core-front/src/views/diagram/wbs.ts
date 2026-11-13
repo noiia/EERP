@@ -1,9 +1,19 @@
-export interface WbsInput { id: string; parentId: string | null; groupId?: string | null; groupLabel?: string; plannedHours?: number | null; closed?: boolean }
+export interface WbsInput { id: string; parentId: string | null; order?: string | null; groupId?: string | null; groupLabel?: string; plannedHours?: number | null; closed?: boolean }
 export interface WbsNode { id: string; kind: 'group' | 'task'; parentId: string | null; children: string[]; depth: number; hiddenCount: number; hiddenHours: number }
 
 const GROUP = 'group:'
 
-export function buildWbs(rows: WbsInput[], folded: ReadonlySet<string>): { nodes: Record<string, WbsNode>; roots: string[]; visible: string[] } {
+/** Dotted order numbers compared segment by segment ("2.10" after "2.9"); none sorts last. */
+export function compareOrder(a: string | null | undefined, b: string | null | undefined): number {
+  if (!a || !b) return a ? -1 : b ? 1 : 0
+  const x = a.split('.').map(Number)
+  const y = b.split('.').map(Number)
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] - y[i]
+  return x.length - y.length
+}
+
+export function buildWbs(input: WbsInput[], folded: ReadonlySet<string>): { nodes: Record<string, WbsNode>; roots: string[]; visible: string[] } {
+  const rows = [...input].sort((a, b) => compareOrder(a.order, b.order)) // stable: unnumbered keep input order
   const nodes: Record<string, WbsNode> = {}
   const roots: string[] = []
   const byId = new Map(rows.map((r) => [r.id, r]))

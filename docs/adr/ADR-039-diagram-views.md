@@ -24,8 +24,32 @@ its `viewModeDefaults`:
 | `wbsGroupField` | WBS | one tree per value (e.g. `project_id`) |
 | `pertDependencies` | PERT | `{entity, fromField, toField}` dependency table, same shape as `ganttDependencies` |
 | `pertHoursField` | PERT | estimate in hours (duration) |
+| `wbsOrderField` | WBS, PERT | dotted order number (`3.1.2`), optional — see below |
 
-PERT start and end dates reuse `ganttStartField`/`ganttEndField`. The Project task lists set all four keys.
+PERT start and end dates reuse `ganttStartField`/`ganttEndField`. The Project task lists set all five keys.
+
+### Order numbers (2026-11-13)
+
+A task's order number says where it sits in the tree: top-level tasks are `1`, `2`, `3`…, the
+children of `3` are `3.1`, `3.2`… It exists so the PERT chart can be laid out from the plan's own
+order, and so people can name tasks by number.
+
+- **Stored and maintained by Postgres**, not the client: `project_task.sequence` is the position
+  among live siblings (kept `1..n`), `wbs_number` the dotted path. Triggers append a new task last,
+  shift siblings when a task is placed at a position, close the gap on delete, and renumber the
+  descendants. A moved top-level task goes last in its new project.
+- **Writing a number moves the task**: a PUT with `wbs_number: "2.4"` makes it the 4th child of the
+  task numbered `2` in the same project (`"3"` = 3rd top-level task); an unknown parent number or a
+  malformed one is a 422. A re-parent without a number goes last.
+- **WBS**: siblings are drawn in number order; a box dropped on a parent, or on empty space among its
+  siblings, writes the number for where it landed (one past the siblings left of it) and the diagram
+  re-reads every record, since siblings renumber too.
+- **PERT** only reads it: the auto-layout puts each task at least in the column of its top-level
+  number (the `1.x` tasks start the chart, the highest number ends it), dependencies still placing a
+  blocker left of what it blocks. Moving a PERT box never changes a number.
+
+Pitfalls: the number is text, so the list's sort on it is lexical (`10` before `2`); the update's
+answer can carry the pre-renumber number when the move also renumbered the new parent — re-read.
 
 ```mermaid
 flowchart LR

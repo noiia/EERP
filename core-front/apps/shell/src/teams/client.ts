@@ -181,6 +181,7 @@ export function postMessage(channel: string, body: string, mentions: string[] = 
   for (const f of files) form.append('files', f)
   return call<Message>('POST', `/channels/${channel}/messages`, form)
 }
+export const deleteMessage = (message: string) => call<void>('DELETE', `/messages/${message}`)
 export const markRead = (channel: string) => call<void>('POST', `/channels/${channel}/read`)
 export const toggleReaction = (message: string, emoji: string) =>
   call<{ reactions: Reaction[] }>('POST', `/messages/${message}/reactions`, { emoji })

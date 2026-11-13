@@ -124,6 +124,7 @@ func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 	g.POST("/channels/:channel/messages", h.PostMessage, upload)
 	g.POST("/channels/:channel/read", h.MarkRead, upload)
 	g.POST("/messages/:message/reactions", h.ToggleReaction)
+	g.DELETE("/messages/:message", h.DeleteMessage)
 	g.GET("/attachments/:id", h.GetAttachment)
 	if h.objects == nil {
 		return

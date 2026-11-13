@@ -74,6 +74,10 @@ export interface ViewModeDefaults {
   wbsParentField?: string
   /** WBS mode: a many2one whose value groups/colors the boxes. Module-declared only. */
   wbsGroupField?: string
+  /** WBS/PERT: a text field holding the record's dotted order number ("3.1.2"). WBS draws
+   * siblings in that order and a box dropped among siblings writes its new number; PERT's
+   * auto-layout runs from the 1.x records to the highest. Module-declared only. */
+  wbsOrderField?: string
   /** PERT mode: the dependency rows (same shape as ganttDependencies). Module-declared only. */
   pertDependencies?: GanttDependenciesConfig
   /** PERT mode: the planned-hours number field read as a task's duration; dates reuse
@@ -122,6 +126,7 @@ export interface EffectiveViewFields {
   ganttDependencies: GanttDependenciesConfig | null
   wbsParentField: string | null
   wbsGroupField: string | null
+  wbsOrderField: string | null
   pertDependencies: GanttDependenciesConfig | null
   pertHoursField: string | null
   colorTagsField: string | null
@@ -148,6 +153,7 @@ export function effectiveViewFields(
     ganttDependencies: defaults?.ganttDependencies ?? null,
     wbsParentField: defaults?.wbsParentField ?? null,
     wbsGroupField: defaults?.wbsGroupField ?? null,
+    wbsOrderField: defaults?.wbsOrderField ?? null,
     pertDependencies: defaults?.pertDependencies ?? null,
     pertHoursField: defaults?.pertHoursField ?? null,
     colorTagsField: defaults?.colorTagsField ?? null,

@@ -3,8 +3,12 @@ package project
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"sync/atomic"
+
+	"github.com/google/uuid"
 
 	"core/internal/auth"
 	"core/orm"
@@ -67,9 +71,9 @@ const (
 	projectSQL = `(project.tenant_id = $2 AND (visibility = 'everyone' OR manager_id = $1 OR EXISTS (
 		SELECT 1 FROM project_member pm
 		WHERE pm.project_id = project.id AND pm.user_id = $1 AND pm.deleted_at IS NULL)))`
-	childSQL      = `(project_id IN (` + visibleProjects + `))`
-	taskSQL       = `(project_id IN (` + visibleProjects + `) OR project_task.id IN (` + assignedTasks + `))`
-	taskChildSQL  = `((project_id IN (` + visibleProjects + `) OR task_id IN (` + assignedTasks + `))
+	childSQL     = `(project_id IN (` + visibleProjects + `))`
+	taskSQL      = `(project_id IN (` + visibleProjects + `) OR project_task.id IN (` + assignedTasks + `))`
+	taskChildSQL = `((project_id IN (` + visibleProjects + `) OR task_id IN (` + assignedTasks + `))
 		AND task_id IN (SELECT t.id FROM project_task t WHERE t.deleted_at IS NULL AND t.tenant_id = $2))`
 	dependencySQL = `(task_id IN (` + visibleTasks + `) AND depends_on_id IN (` + visibleTasks + `))`
 	stageSQL      = `(project_id IN (` + visibleProjects + `) OR project_id IN (
@@ -111,19 +115,57 @@ func ChildScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 // assigned to (not their subtasks).
 // With the My tasks flag (AssignedToMe) it is only the caller's assigned
 // tasks, admins included: an assigned task is always visible to its assignee.
+// Link filters (TaskFilters) further keep the tasks linked to the given record.
 func TaskScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
-	visible := scope(perms, taskSQL)
 	return func(ctx context.Context) (orm.Condition, bool, error) {
-		if ctx.Value(assignedOnlyKey{}) == nil {
-			return visible(ctx)
-		}
 		id, ok := auth.IdentityFromContext(ctx)
 		if !ok {
 			return orm.Condition{}, false, errNoCaller
 		}
-		return orm.Cond(`(project_task.id IN (`+assignedTasks+`))`, id.UserID, id.TenantID), true, nil
+		var parts []string
+		var args []any
+		tenant := "$1"
+		switch {
+		case ctx.Value(assignedOnlyKey{}) != nil:
+			parts, args, tenant = []string{`(project_task.id IN (` + assignedTasks + `))`}, []any{id.UserID, id.TenantID}, "$2"
+		default:
+			p := perms()
+			if p == nil {
+				return orm.Condition{}, false, errNoPermissions
+			}
+			if !IsAdmin(ctx, p) {
+				parts, args, tenant = []string{taskSQL}, []any{id.UserID, id.TenantID}, "$2"
+			}
+		}
+		links, _ := ctx.Value(linkFiltersKey{}).([]linkFilter)
+		if len(links) > 0 && len(args) == 0 {
+			args = []any{id.TenantID} // an admin: no visibility part, the links still need the tenant
+		}
+		for _, l := range links {
+			args = append(args, l.id)
+			parts = append(parts, fmt.Sprintf(`project_task.id IN (SELECT task_id FROM %s WHERE tenant_id = %s AND %s = $%d AND deleted_at IS NULL)`,
+				l.table, tenant, l.column, len(args)))
+		}
+		if len(parts) == 0 {
+			return orm.Condition{}, false, nil
+		}
+		return orm.Cond(strings.Join(parts, " AND "), args...), true, nil
 	}
 }
+
+// taskLinkFilters are the task list's filters on the task form's many2many
+// fields: filter[<field>]=<id> keeps the tasks with a live junction row to it.
+var taskLinkFilters = []struct{ param, table, column string }{
+	{"filter[assignees]", "project_task_user", "user_id"},
+	{"filter[color_groups]", "project_task_color", "color_id"},
+}
+
+type linkFilter struct {
+	table, column string
+	id            uuid.UUID
+}
+
+type linkFiltersKey struct{}
 
 // assigneeParam is the task list's My tasks filter; assignedOnlyKey marks
 // the request context that asked for it.

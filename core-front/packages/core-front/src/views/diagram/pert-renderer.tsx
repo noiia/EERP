@@ -41,6 +41,8 @@ export interface PertRendererProps<T extends HasId> {
   startField?: string
   endField?: string
   hoursField?: string
+  /** Dotted order number field: the auto-layout runs from the 1.x records to the highest. */
+  orderField?: string
   /** Fields edited in each box, in order (unknown names and duplicates dropped). Default: name. */
   boxFields?: (string | null | undefined)[]
   onRecordsChange?: (records: T[]) => void
@@ -55,6 +57,7 @@ export function PertRenderer<T extends HasId>({
   startField,
   endField,
   hoursField,
+  orderField,
   boxFields = ['name'],
   onRecordsChange,
   serverOptions,
@@ -136,6 +139,8 @@ export function PertRenderer<T extends HasId>({
     })),
     links,
   )
+  const orderById = new Map(rows.map((r) => [r.id, orderField ? str(values(r)[orderField]) : null]))
+  const orderOf = orderField ? (id: string) => orderById.get(id) ?? null : undefined
   const date = (days: number) => formatDatePattern(offsetToDate(pert.origin, days), dateFormat)
 
   const replace = (updated: T) => setRows((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
@@ -221,7 +226,7 @@ export function PertRenderer<T extends HasId>({
         title={t('PERT')}
         nodes={rfNodes}
         edges={edges}
-        autoLayout={() => layoutPert(rows.map((r) => r.id), links, TASK_BOX_SIZE)}
+        autoLayout={() => layoutPert(rows.map((r) => r.id), links, TASK_BOX_SIZE, orderOf)}
         onConnect={canLink ? onConnect : undefined}
         onEdgesDelete={canLink ? onEdgesDelete : undefined}
         legend={[

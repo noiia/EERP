@@ -46,6 +46,7 @@ describe('project views', () => {
       colorTagsField: 'color_groups',
       wbsParentField: 'parent_id',
       wbsGroupField: 'project_id',
+      wbsOrderField: 'wbs_number',
       pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
       pertHoursField: 'planned_hours',
     }
@@ -124,5 +125,16 @@ describe('project views', () => {
     expect(config.entries).toContainEqual(
       expect.objectContaining({ kind: 'line', label: 'Color groups', path: '/project/colors', permission: 'project_color:project_color:read' }),
     )
+  })
+
+  it('filters the task lists by assignee and color group, without list columns for them', () => {
+    for (const path of ['/project/tasks', '/project/my-tasks']) {
+      const d = route(path).descriptor
+      const only = d.search?.filterOnlyFields ?? []
+      expect(only.map((f) => f.name), path).toEqual(['assignees', 'color_groups'])
+      // The same fields as the form's, so labels and pickers match.
+      for (const f of only) expect(f, path).toEqual(field('/project/tasks/:id', f.name))
+      expect(d.fields.map((f) => f.name)).not.toContain('assignees')
+    }
   })
 })

@@ -21,21 +21,22 @@ export function useRelationLabels(
   const cache = useRef(new Map<string, string | null>())
   const [, setVersion] = useState(0)
 
-  const many2one = new Map(
+  const related = new Map(
     fields
-      .filter((f) => f.type === 'relation' && f.relation?.kind === 'many2one')
+      // A many2many filter value is one related id too (search.filterOnlyFields).
+      .filter((f) => f.type === 'relation' && (f.relation?.kind === 'many2one' || f.relation?.kind === 'many2many'))
       .map((f) => [f.name, f]),
   )
   const wanted = [
     ...new Set(
       refs
-        .filter(([f, v]) => many2one.has(f) && typeof v === 'string' && v !== '')
+        .filter(([f, v]) => related.has(f) && typeof v === 'string' && v !== '')
         .map(([f, v]) => keyOf(f, v as string)),
     ),
   ].sort()
   const wantedKey = wanted.join('\n')
-  const fieldsRef = useRef(many2one)
-  fieldsRef.current = many2one
+  const fieldsRef = useRef(related)
+  fieldsRef.current = related
 
   useEffect(() => {
     if (!ops || wantedKey === '') return
@@ -67,7 +68,7 @@ export function useRelationLabels(
 
   return (field: string, value: unknown) => {
     if (value == null) return ''
-    if (!many2one.has(field) || typeof value !== 'string' || !ops) return String(value)
+    if (!related.has(field) || typeof value !== 'string' || !ops) return String(value)
     const label = cache.current.get(keyOf(field, value))
     if (label === undefined) return ''
     return label ?? value

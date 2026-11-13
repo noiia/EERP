@@ -327,6 +327,19 @@ describe('validateSearchDescriptor', () => {
     ).toThrowError(/search.groupableFields "nope" is not declared/)
   })
 
+  it('accepts filterOnlyFields, also in filterableFields, and refuses a repeated or relation-less one', () => {
+    const assignees: FieldDescriptor = { name: 'assignees', label: 'Assignees', type: 'relation', relation: { entity: 'users', kind: 'many2many' } }
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { filterOnlyFields: [assignees], filterableFields: ['name', 'assignees'] })),
+    ).not.toThrow()
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { filterOnlyFields: [{ name: 'name', label: 'Name', type: 'text' }] })),
+    ).toThrowError(/filterOnlyFields "name" repeats/)
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { filterOnlyFields: [{ name: 'x', label: 'X', type: 'relation' }] })),
+    ).toThrowError(/filterOnlyFields "x" needs a relation block/)
+  })
+
   it('is a no-op for every other viewType, even with a search block set', () => {
     const nonTree: ViewDescriptor = {
       entity: 'crm',

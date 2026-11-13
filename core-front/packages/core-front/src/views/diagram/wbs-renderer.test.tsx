@@ -163,6 +163,26 @@ describe('WbsRenderer', () => {
     expect(rf.props.edges.map((e) => [e.source, e.target])).toContainEqual(['B', 'D'])
   })
 
+  it('with order numbers, a drop writes the number it lands at', async () => {
+    const numbered = { A: '1', B: '1.1', D: '2', C: '1' } as Record<string, string>
+    const { actions } = setup(undefined, true, {
+      orderField: 'wbs_number',
+      initialData: rows().map((r) => ({ ...r, wbs_number: numbered[r.id] })) as Task[],
+    })
+    await screen.findByTestId('node-D')
+    // D before A in the drawn order: D numbered 2 stays after A numbered 1.
+    expect(rf.props.nodes.map((n) => n.id)).toEqual(['group:p1', 'A', 'B', 'D', 'group:p2', 'C'])
+    drop('D', 'A') // on A, level with its only child B: first under A
+    expect(actions.update).toHaveBeenLastCalledWith('D', { wbs_number: '1.1' })
+    // Empty space left of A: first among the top-level tasks.
+    act(() => rf.props.onNodeDragStop!(null, { ...node('D'), position: { x: -5000, y: -5000 } }))
+    expect(actions.update).toHaveBeenLastCalledWith('D', { wbs_number: '1' })
+    vi.mocked(actions.update).mockClear()
+    // Empty space right of A: still second, nothing written.
+    act(() => rf.props.onNodeDragStop!(null, { ...node('D'), position: { x: 5000, y: -5000 } }))
+    expect(actions.update).not.toHaveBeenCalled()
+  })
+
   it('drop on a group root clears the parent', async () => {
     const { actions } = setup()
     await screen.findByTestId('node-B')

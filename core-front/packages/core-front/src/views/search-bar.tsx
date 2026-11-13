@@ -27,6 +27,7 @@ import {
   type ViewDescriptor,
 } from './descriptor'
 import { GeoCenterInput, ZoneRecordInput } from './geo-filter-inputs'
+import { RelationFilterInput } from './relation-filter-input'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { useRelationLabels } from './use-relation-labels'
 import { useRelationOps } from './relation-ops'
@@ -109,10 +110,15 @@ function defaultLiveFields<T>(descriptor: ViewDescriptor<T>): string[] {
  * server-side (core/orm/internal/crud.checkColumn). */
 function filterableFields<T>(descriptor: ViewDescriptor<T>, callerGroups: string[]): FieldDescriptor[] {
   const names = descriptor.search?.filterableFields
-  const candidates = names
-    ? descriptor.fields.filter((f) => names.includes(f.name))
-    : descriptor.fields
+  const all = allFields(descriptor)
+  const candidates = names ? all.filter((f) => names.includes(f.name)) : all
   return candidates.filter((f) => isFieldVisible(f, {}, callerGroups))
+}
+
+/** The view's fields plus its filter-only ones (search.filterOnlyFields). */
+function allFields<T>(descriptor: ViewDescriptor<T>): FieldDescriptor[] {
+  const extra = descriptor.search?.filterOnlyFields
+  return extra?.length ? [...descriptor.fields, ...extra] : descriptor.fields
 }
 
 /** Fields offered in the Group-by section: declared `search.groupableFields`
@@ -156,8 +162,10 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
     case 'number':
     case 'date':
       return ['eq', 'gt', 'gte', 'lt', 'lte']
-    case 'selection':
     case 'relation':
+      // A many2many filter is resolved by the entity's handler, one id at a time.
+      return field.relation?.kind === 'many2many' ? ['eq'] : ['eq', 'in']
+    case 'selection':
     case 'boolean':
       return ['eq', 'in']
     case 'geo':
@@ -342,7 +350,7 @@ export function SearchBar<T extends HasId>({
   )
 
   // Relation filters and group-by values carry ids: show their records' labels.
-  const labelOf = useRelationLabels(descriptor.fields, [
+  const labelOf = useRelationLabels(allFields(descriptor), [
     ...filters.flatMap((f): [string, unknown][] =>
       (f.op === 'in' ? (f.values ?? []) : [f.value]).map((v) => [f.field, v]),
     ),
@@ -534,6 +542,7 @@ export function SearchBar<T extends HasId>({
 
   const menuOpen = Boolean(anchorEl)
   const stopKeyPropagation = (e: React.KeyboardEvent) => e.stopPropagation()
+  const draftRelation = filterFields.find((f) => f.name === draftField && f.type === 'relation' && f.relation)
 
   return (
     <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
@@ -617,6 +626,7 @@ export function SearchBar<T extends HasId>({
               onChange={(e) => {
                 setDraftField(e.target.value)
                 setDraftOp('')
+                setDraftValue('')
               }}
               sx={{ minWidth: 90 }}
             >
@@ -635,7 +645,10 @@ export function SearchBar<T extends HasId>({
               value={draftOp}
               disabled={!draftField}
               onKeyDown={stopKeyPropagation}
-              onChange={(e) => setDraftOp(e.target.value as FilterOperator)}
+              onChange={(e) => {
+                setDraftOp(e.target.value as FilterOperator)
+                setDraftValue('')
+              }}
               sx={{ minWidth: 80 }}
             >
               <MenuItem value="">
@@ -653,6 +666,13 @@ export function SearchBar<T extends HasId>({
               <ZoneRecordInput
                 zones={zonesOf(filterFields.find((f) => f.name === draftField)!)}
                 value={draftValue}
+                onChange={setDraftValue}
+              />
+            ) : draftRelation && (draftOp === 'eq' || draftOp === 'in') ? (
+              <RelationFilterInput
+                key={`${draftField}:${draftOp}`}
+                field={draftRelation}
+                multiple={draftOp === 'in'}
                 onChange={setDraftValue}
               />
             ) : (
@@ -758,6 +778,6 @@ export function SearchBar<T extends HasId>({
 }
 
 function fieldLabelOf<T>(descriptor: ViewDescriptor<T>, name: string): string {
-  const field = descriptor.fields.find((f) => f.name === name)
+  const field = allFields(descriptor).find((f) => f.name === name)
   return field ? fieldLabel(field) : name
 }

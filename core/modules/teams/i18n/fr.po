@@ -280,3 +280,51 @@ msgstr "Enregistrer une liste vide ouvre cette conversation à toute l'équipe."
 
 msgid "Conversations that only this group could see will be visible to owners only."
 msgstr "Les conversations que seul ce groupe pouvait voir ne seront visibles que par les propriétaires."
+
+msgid "Format text"
+msgstr "Mettre en forme"
+
+msgid "Formatting"
+msgstr "Mise en forme"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "Bold"
+msgstr "Gras"
+
+msgid "Italic"
+msgstr "Italique"
+
+msgid "Strikethrough"
+msgstr "Barré"
+
+msgid "Code"
+msgstr "Code"
+
+msgid "Code block"
+msgstr "Bloc de code"
+
+msgid "Quote"
+msgstr "Citation"
+
+msgid "Bulleted list"
+msgstr "Liste à puces"
+
+msgid "Numbered list"
+msgstr "Liste numérotée"
+
+msgid "Link"
+msgstr "Lien"
+
+msgid "Write a message (Ctrl+Enter to send)"
+msgstr "Écrire un message (Ctrl+Entrée pour envoyer)"
+
+msgid "Message options"
+msgstr "Options du message"
+
+msgid "Delete message"
+msgstr "Supprimer le message"
+
+msgid "The message could not be deleted."
+msgstr "Le message n'a pas pu être supprimé."

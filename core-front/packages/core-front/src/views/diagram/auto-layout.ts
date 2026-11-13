@@ -1,6 +1,6 @@
 import { separateBoxes, type Point } from './collide'
 import type { PertLink } from './pert'
-import type { WbsNode } from './wbs'
+import { compareOrder, type WbsNode } from './wbs'
 
 export interface BoxSize { w: number; h: number }
 
@@ -36,8 +36,12 @@ export function layoutWbs(
   return finish(pos, size, heightOf)
 }
 
-/** Longest-path columns (blocker left of dependent), one barycenter sweep for rows. */
-export function layoutPert(ids: string[], links: PertLink[], size: BoxSize): Record<string, Point> {
+/** Longest-path columns (blocker left of dependent), one barycenter sweep for rows. With
+ * `orderOf` (dotted order numbers), a record is also never left of its top-level number's
+ * column: the 1.x records start the chart, the highest number ends it. */
+export function layoutPert(ids: string[], links: PertLink[], size: BoxSize, orderOf?: (id: string) => string | null): Record<string, Point> {
+  if (orderOf) ids = [...ids].sort((a, b) => compareOrder(orderOf(a), orderOf(b)))
+  const tops = orderOf ? [...new Set(ids.map((i) => orderOf(i)?.split('.')[0]).filter((t): t is string => !!t))] : []
   const known = new Set(ids)
   const blockers = new Map<string, string[]>(ids.map((i) => [i, []]))
   const dependents = new Map<string, string[]>(ids.map((i) => [i, []]))
@@ -48,7 +52,7 @@ export function layoutPert(ids: string[], links: PertLink[], size: BoxSize): Rec
     dependents.get(l.from)!.push(l.to)
     indeg.set(l.to, indeg.get(l.to)! + 1)
   }
-  const rank = new Map<string, number>(ids.map((i) => [i, 0]))
+  const rank = new Map<string, number>(ids.map((i) => [i, Math.max(0, tops.indexOf(orderOf?.(i)?.split('.')[0] ?? ''))]))
   const queue = ids.filter((i) => indeg.get(i) === 0)
   for (let q = 0; q < queue.length; q++) {
     for (const d of dependents.get(queue[q])!) {

@@ -142,3 +142,6 @@ msgstr "membres uniquement"
 
 msgid "Color groups"
 msgstr "Groupes de couleurs"
+
+msgid "Order"
+msgstr "Ordre"

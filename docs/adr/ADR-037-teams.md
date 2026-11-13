@@ -121,7 +121,7 @@ flowchart TD
 
 - Teams has no admin override: an administrator who isn't a member can't read a team. Recovering a
   team that lost all its owners is impossible through the API (the last-owner rule prevents it).
-- Messages are append-only: no edit, delete, threads or search in v1.
+- Messages can't be edited; no threads or search in v1. Deleting a message (added later, `DELETE /messages/:message`) follows the item rule above: its author, or a team owner. It's a soft delete that hides the message everywhere, while files it put in a team folder stay there, since they belong to the folder.
 - **Single instance.** Live delivery inherits the presence hub's limit (ADR-019): with several
   `core-back` replicas, a frame only reaches users connected to the replica that handled the
   write. The others see the message on their next read.

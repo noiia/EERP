@@ -21,6 +21,12 @@ export interface ChatReactionFrame {
   reactions: { emoji: string; count: number; mine?: boolean }[]
 }
 
+export interface ChatDeletedFrame {
+  type: 'chat_message_deleted'
+  channel_id: string
+  message_id: string
+}
+
 interface ChatState {
   /** The channel on screen: its incoming messages don't count as unread. */
   open: string | null
@@ -33,6 +39,7 @@ interface ChatState {
   close: (channel: string) => void
   receive: (frame: ChatMessageFrame) => void
   applyReactions: (frame: ChatReactionFrame) => void
+  remove: (frame: ChatDeletedFrame) => void
 }
 
 const merge = (a: Message[], b: Message[]) => {
@@ -88,6 +95,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: list || isOpen ? { ...s.messages, [channel]: [...(list ?? []), message] } : s.messages,
       unread: isOpen || mine ? s.unread : { ...s.unread, [channel]: (s.unread[channel] ?? 0) + 1 },
     })
+  },
+  remove: ({ channel_id: channel, message_id }) => {
+    const list = get().messages[channel]
+    if (list) set({ messages: { ...get().messages, [channel]: list.filter((m) => m.id !== message_id) } })
   },
   applyReactions: ({ channel_id: channel, message_id, reactions }) => {
     const list = get().messages[channel]

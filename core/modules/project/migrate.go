@@ -163,7 +163,83 @@ var migrations = slices.Concat(
 			UPDATE project_task SET closed = NEW.closed WHERE stage_id = NEW.id AND closed IS DISTINCT FROM NEW.closed;
 			RETURN NULL;
 		END $$`,
+
+		// ── Order numbers (wbs_number "3.1.2"): sequence is a task's 1-based
+		// position among its live siblings, wbs_number the dotted path of them.
+		// project.ordering marks the order functions' own writes, which must not
+		// re-enter them. One advisory lock per project serializes renumbering.
+		`CREATE OR REPLACE FUNCTION project_task_order_lock(pid uuid) RETURNS void LANGUAGE sql AS $$
+			SELECT pg_advisory_xact_lock(hashtext('project_task_order'), hashtext(pid::text)) $$`,
+		// shortcut: rewrites the whole project's numbers per changed row, O(tasks)
+		// each; move to a statement-level trigger if bulk task inserts get slow.
+		`CREATE OR REPLACE FUNCTION project_task_renumber(pid uuid) RETURNS void LANGUAGE plpgsql AS $$
+		BEGIN
+			IF pid IS NULL THEN RETURN; END IF;
+			PERFORM project_task_order_lock(pid);
+			PERFORM set_config('project.ordering', 'on', true);
+			WITH RECURSIVE ranked AS (
+				SELECT id, parent_id, row_number() OVER (PARTITION BY parent_id ORDER BY sequence, created_at, id)::int AS rn
+				FROM project_task WHERE project_id = pid AND deleted_at IS NULL),
+			tree AS (
+				SELECT id, rn::text AS code FROM ranked WHERE parent_id IS NULL
+				UNION ALL SELECT r.id, tree.code || '.' || r.rn FROM ranked r JOIN tree ON r.parent_id = tree.id)
+			UPDATE project_task t SET sequence = r.rn, wbs_number = tree.code
+			FROM ranked r LEFT JOIN tree ON tree.id = r.id
+			WHERE t.id = r.id AND (t.sequence, t.wbs_number) IS DISTINCT FROM (r.rn, tree.code);
+			PERFORM set_config('project.ordering', 'off', true);
+		END $$`,
+		// BEFORE: puts the row at position sequence among its siblings (0 = last),
+		// shifting the others; a re-parent sends 0 (validate.go), a moved
+		// top-level task goes last in its new project, a moved subtask keeps its place.
+		`CREATE OR REPLACE FUNCTION project_task_place() RETURNS trigger LANGUAGE plpgsql AS $$
+		DECLARE
+			k int;
+			n int;
+		BEGIN
+			IF current_setting('project.ordering', true) = 'on' OR NEW.deleted_at IS NOT NULL THEN RETURN NEW; END IF;
+			IF TG_OP = 'UPDATE' THEN
+				IF (OLD.parent_id, OLD.sequence, OLD.deleted_at) IS NOT DISTINCT FROM (NEW.parent_id, NEW.sequence, NEW.deleted_at) THEN
+					IF OLD.project_id = NEW.project_id OR NEW.parent_id IS NOT NULL THEN RETURN NEW; END IF;
+					NEW.sequence := 0;
+				END IF;
+			END IF;
+			PERFORM project_task_order_lock(NEW.project_id);
+			k := CASE WHEN NEW.sequence > 0 THEN NEW.sequence ELSE 2147483647 END;
+			PERFORM set_config('project.ordering', 'on', true);
+			WITH s AS (
+				SELECT id, row_number() OVER (ORDER BY sequence, created_at, id)::int AS rn FROM project_task
+				WHERE project_id = NEW.project_id AND parent_id IS NOT DISTINCT FROM NEW.parent_id AND deleted_at IS NULL AND id <> NEW.id)
+			UPDATE project_task t SET sequence = s.rn + (s.rn >= k)::int FROM s
+			WHERE t.id = s.id AND t.sequence <> s.rn + (s.rn >= k)::int;
+			PERFORM set_config('project.ordering', 'off', true);
+			SELECT count(*) INTO n FROM project_task
+			WHERE project_id = NEW.project_id AND parent_id IS NOT DISTINCT FROM NEW.parent_id AND deleted_at IS NULL AND id <> NEW.id;
+			NEW.sequence := LEAST(k, n + 1);
+			NEW.wbs_number := COALESCE((SELECT p.wbs_number || '.' FROM project_task p WHERE p.id = NEW.parent_id), '') || NEW.sequence;
+			RETURN NEW;
+		END $$`,
+		// AFTER: siblings and descendants renumbered (also closes a deleted task's gap).
+		`CREATE OR REPLACE FUNCTION project_task_order_changed() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF current_setting('project.ordering', true) = 'on' THEN RETURN NULL; END IF;
+			IF TG_OP = 'INSERT' THEN
+				PERFORM project_task_renumber(NEW.project_id);
+				RETURN NULL;
+			END IF;
+			PERFORM project_task_renumber(OLD.project_id);
+			IF TG_OP = 'UPDATE' THEN
+				IF NEW.project_id <> OLD.project_id THEN PERFORM project_task_renumber(NEW.project_id); END IF;
+			END IF;
+			RETURN NULL;
+		END $$`,
 	},
+	trigger("project_task_place", "project_task", "BEFORE INSERT OR UPDATE", "", "project_task_place"),
+	trigger("project_task_order_ins_del", "project_task", "AFTER INSERT OR DELETE", "", "project_task_order_changed"),
+	trigger("project_task_order_upd", "project_task", "AFTER UPDATE",
+		`(OLD.parent_id, OLD.project_id, OLD.sequence, OLD.deleted_at) IS DISTINCT FROM (NEW.parent_id, NEW.project_id, NEW.sequence, NEW.deleted_at)`,
+		"project_task_order_changed"),
+	// Numbers existing tasks once (a no-op when they are already right).
+	[]string{`SELECT project_task_renumber(id) FROM project`},
 	trigger("project_default_stages", "project", "AFTER INSERT", "", "project_default_stages"),
 	trigger("project_task_mirror_closed", "project_task", "BEFORE INSERT OR UPDATE OF stage_id", "", "project_task_mirror_closed"),
 	trigger("project_task_ins_del", "project_task", "AFTER INSERT OR DELETE", "", "project_task_changed"),
