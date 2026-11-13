@@ -116,6 +116,8 @@ export function WbsRenderer<T extends HasId>({
     nodes[id].children.length ? { folded: foldedSet.has(id), onToggle: () => toggle(id) } : undefined
 
   const byId = new Map(rows.map((r) => [r.id, r]))
+  // The zoomed-out box title: "<order> - <name>" like the lists.
+  const titleOf = (r: T) => [orderField ? str(values(r)[orderField]) : null, str(values(r).name) ?? str(values(r).title)].filter(Boolean).join(' - ')
   const rfNodes: Node[] = visible.map((id) => {
     if (nodes[id].kind === 'group') {
       const data: LabelBoxData = { label: labelOf(groupField!, id.slice(GROUP.length)), chevron: chevron(id), footer: footer(id) }
@@ -124,6 +126,7 @@ export function WbsRenderer<T extends HasId>({
     const record = byId.get(id)!
     const data: TaskBoxData = {
       record: values(record),
+      title: titleOf(record),
       editable: canWrite,
       fields,
       onCommit: async (field, value) => {

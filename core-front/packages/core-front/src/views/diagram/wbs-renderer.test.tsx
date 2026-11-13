@@ -16,12 +16,13 @@ type RfProps = {
   onReconnect?: (old: RfEdge, c: { source: string; target: string }) => void
   children?: ReactNode
 }
-const rf = vi.hoisted(() => ({ props: null as unknown as RfProps }))
+const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: RfProps) => {
     rf.props = props
     return (
       <div data-testid="react-flow">
+        <div className="react-flow__viewport" />
         {props.nodes.map((n) => {
           const C = props.nodeTypes[n.type]
           return <div key={n.id} data-testid={`node-${n.id}`}><C id={n.id} data={n.data} /></div>
@@ -32,10 +33,12 @@ vi.mock('@xyflow/react', () => ({
   Background: () => null,
   Controls: () => null,
   Handle: () => null,
+  useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
 }))
-vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn() }))
+const exportPng = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('./export', () => ({ exportPng, exportPdf: vi.fn() }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
@@ -104,6 +107,7 @@ const drop = (id: string, on: string) => {
 }
 
 afterEach(() => {
+  rf.zoom = 1
   cleanup()
   vi.clearAllMocks()
 })
@@ -248,6 +252,25 @@ describe('WbsRenderer', () => {
     setup(undefined, true, { serverOptions: {} }, { listPage: vi.fn(() => new Promise<never>(() => {})) })
     expect(await screen.findByRole('progressbar')).toBeInTheDocument()
     expect(screen.queryByTestId('react-flow')).toBeNull()
+  })
+
+  it('zoomed out, boxes show only "<order> - <name>"; an export still gets the full boxes', async () => {
+    const numbered = { A: '1', B: '1.1', D: '2', C: '1' } as Record<string, string>
+    rf.zoom = 0.3
+    setup(undefined, true, { orderField: 'wbs_number', initialData: rows().map((r) => ({ ...r, wbs_number: numbered[r.id] })) as Task[] })
+    await screen.findByText('1.1 - Mockups')
+    expect(screen.getAllByTestId('task-box-far')).toHaveLength(4)
+    expect(screen.queryAllByLabelText('Name')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Collapse' })).toBeNull()
+    let inputsDuringExport = -1
+    exportPng.mockImplementationOnce(async () => {
+      inputsDuringExport = screen.queryAllByLabelText('Name').length
+    })
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    expect(inputsDuringExport).toBe(4)
+    await waitFor(() => expect(screen.queryAllByLabelText('Name')).toHaveLength(0))
+    fireEvent.doubleClick(screen.getByText('2 - Review'))
+    expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/D'))
   })
 
   it('is read-only without the write permission', async () => {

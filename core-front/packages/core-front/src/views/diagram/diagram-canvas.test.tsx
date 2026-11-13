@@ -20,7 +20,7 @@ type RfProps = {
   onInit?: (i: { fitView: () => void }) => void
   children?: ReactNode
 }
-const rf = vi.hoisted(() => ({ props: null as unknown as RfProps }))
+const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: RfProps) => {
     rf.props = props
@@ -37,6 +37,7 @@ vi.mock('@xyflow/react', () => ({
   Background: () => null,
   Controls: () => null,
   Handle: () => null,
+  useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
 }))

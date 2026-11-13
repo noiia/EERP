@@ -12,7 +12,7 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useTheme, type Theme } from '@mui/material/styles'
-import { Background, BaseEdge, Controls, getBezierPath, MarkerType, Position, ReactFlow, type Connection, type Edge, type EdgeProps, type EdgeTypes, type IsValidConnection, type Node, type NodeChange, type XYPosition } from '@xyflow/react'
+import { Background, BaseEdge, Controls, getBezierPath, MarkerType, Position, ReactFlow, type Connection, type Edge, type EdgeProps, type EdgeTypes, type IsValidConnection, type Node, type NodeChange, type XYPosition, useStore } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { BannerScope, BannerSlot, byPrefixAndName, erpPath, FontAwesomeIcon, useT, ViewBanner } from '@eerp/core-front'
 import { getPageLayout, saveLayout, saveWorkflowPositions, type WorkflowPositions } from '@/website/editor-actions'
@@ -416,7 +416,12 @@ function MapLegend({ canEdit, canArrange }: { canEdit: boolean; canArrange: bool
 
 /** The map's arrow: React Flow's bezier, its label drawn at the spot the map chose for it
  * (`data.spot`, see placeLabels) instead of always the middle. */
+/** Below this zoom an arrow's label is dropped: unreadable there, and costly over many arrows. */
+const LABEL_ZOOM = 0.6
+
 function LabeledEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, ...rest }: EdgeProps<MapEdge>) {
+  // Only "near or far" is selected, so an edge re-renders when the zoom crosses LABEL_ZOOM, not on every step.
+  const near = useStore((s) => s.transform[2] >= LABEL_ZOOM)
   const [path, midX, midY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
   const spot = data?.spot
   const at = spot ? bezierPoint({ x: sourceX, y: sourceY }, { x: targetX, y: targetY }, spot.t) : { x: midX, y: midY }
@@ -427,7 +432,7 @@ function LabeledEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targe
       markerEnd={rest.markerEnd}
       style={rest.style}
       interactionWidth={rest.interactionWidth}
-      label={rest.label}
+      label={near ? rest.label : undefined}
       labelX={at.x}
       labelY={at.y + (spot?.dy ?? 0)}
       labelStyle={rest.labelStyle}

@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -27,7 +28,7 @@ import { ErrorAlert } from '../error-alert'
 import { RelationOpsProvider, useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
 import type { HasId } from '../stores'
 import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
-import { compactTheme, LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
+import { compactTheme, ForceDetail, LabelBox, TASK_BOX_SIZE, TaskBox } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
 // (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
@@ -219,6 +220,7 @@ function Canvas(props: DiagramCanvasProps) {
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set())
   const [saveError, setSaveError] = useState<SerializedError | null>(null)
   const [exportError, setExportError] = useState<SerializedError | null>(null)
+  const [exporting, setExporting] = useState(false)
   const container = useRef<HTMLDivElement>(null)
   const instance = useRef<ReactFlowInstance | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -409,6 +411,8 @@ function Canvas(props: DiagramCanvasProps) {
     if (!viewport) return
     const bounds = getNodesBounds(rfNodes)
     setExportError(null)
+    // Full boxes in the image even when zoomed out: drawn before the capture starts.
+    flushSync(() => setExporting(true))
     try {
       // html-to-image and jspdf load on the first export, not with the diagram.
       const { exportPdf, exportPng } = await import('./export')
@@ -418,6 +422,8 @@ function Canvas(props: DiagramCanvasProps) {
       else await exportPdf(viewport, bounds, { title, date: new Date(), legend, background }, title)
     } catch (e: unknown) {
       setExportError(serializeError(toApiError(e)))
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -441,6 +447,7 @@ function Canvas(props: DiagramCanvasProps) {
         {loaded ? (
           <BoxOps ops={boxOps}>
           <ThemeProvider theme={compact}>
+          <ForceDetail.Provider value={exporting}>
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
@@ -464,6 +471,7 @@ function Canvas(props: DiagramCanvasProps) {
             <Background />
             <Controls showInteractive={false} />
           </ReactFlow>
+          </ForceDetail.Provider>
           </ThemeProvider>
           </BoxOps>
         ) : null}

@@ -1,12 +1,12 @@
 'use client'
-import { memo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { createContext, memo, useContext, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { createTheme, type Theme } from '@mui/material/styles'
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import { Handle, Position, useStore, type Node, type NodeProps } from '@xyflow/react'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import { useT } from '../../i18n/translate'
 import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
@@ -25,8 +25,26 @@ export const TASK_BOX_SIZE = { w: 240, h: 300 }
 /** A WBS group root: a title and an optional fold summary, as wide as a task box. */
 export const LABEL_BOX_SIZE = { w: 240, h: 64 }
 
+/** Below this zoom a box draws only its title: its widgets are too small to read there,
+ * and hundreds of them are what makes a zoomed-out diagram slow. */
+export const DETAIL_ZOOM = 0.6
+/** True while the canvas exports, so the image always gets the full boxes. */
+export const ForceDetail = createContext(false)
+
+/** Whether boxes draw in full. Selects only "near or far" from React Flow's store, so a
+ * box re-renders when the zoom crosses DETAIL_ZOOM, not on every zoom step. */
+export function useDetailed(): boolean {
+  const near = useStore((s) => s.transform[2] >= DETAIL_ZOOM)
+  return useContext(ForceDetail) || near
+}
+
+// The far-zoom title: large enough to read at DETAIL_ZOOM and below, at most 4 lines.
+const FAR_TITLE_SX = { fontSize: 28, lineHeight: 1.2, fontWeight: 600, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' } as const
+
 export interface TaskBoxData extends Record<string, unknown> {
   record: Record<string, unknown>
+  /** What the box shows when zoomed out (default: the record's name or title). */
+  title?: string
   editable: boolean
   /** Fields edited in the box (descriptor definitions); those missing on the record are skipped. */
   fields: FieldDescriptor[]
@@ -57,10 +75,21 @@ export function boxFieldOf(descriptor: ViewDescriptor) {
 
 export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosition }: NodeProps<Node<TaskBoxData>>) {
   const t = useT()
+  const detailed = useDetailed()
   const [error, setError] = useState<SerializedError | null>(null)
   const { record, chevron } = data
   const onDoubleClick = (e: MouseEvent) => {
     if (!(e.target as HTMLElement).closest('input, textarea, [role="combobox"]')) data.onOpen()
+  }
+  if (!detailed) {
+    // Same size and handles as the full box: the layout and the arrows don't move.
+    return (
+      <Paper variant="outlined" data-testid="task-box-far" onDoubleClick={data.onOpen} sx={{ width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1.5 }}>
+        <Handle type="target" position={targetPosition ?? Position.Top} />
+        <Typography sx={FAR_TITLE_SX}>{data.title ?? String(record.name ?? record.title ?? '')}</Typography>
+        <Handle type="source" position={sourcePosition ?? Position.Bottom} />
+      </Paper>
+    )
   }
   return (
     <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'auto', p: 1 }}>
@@ -96,7 +125,17 @@ export interface LabelBoxData extends Record<string, unknown> {
 /** A read-only box with just a title (a WBS group root), as wide as a TaskBox. */
 export const LabelBox = memo(function LabelBox({ data, sourcePosition, targetPosition }: NodeProps<Node<LabelBoxData>>) {
   const t = useT()
+  const detailed = useDetailed()
   const { chevron } = data
+  if (!detailed) {
+    return (
+      <Paper variant="outlined" sx={{ width: LABEL_BOX_SIZE.w, height: LABEL_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1, bgcolor: 'action.hover' }}>
+        <Handle type="target" position={targetPosition ?? Position.Top} />
+        <Typography noWrap sx={{ fontSize: 28, lineHeight: 1.6, fontWeight: 600 }}>{data.label}</Typography>
+        <Handle type="source" position={sourcePosition ?? Position.Bottom} />
+      </Paper>
+    )
+  }
   return (
     <Paper variant="outlined" sx={{ width: LABEL_BOX_SIZE.w, height: LABEL_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1, bgcolor: 'action.hover' }}>
       <Handle type="target" position={targetPosition ?? Position.Top} />

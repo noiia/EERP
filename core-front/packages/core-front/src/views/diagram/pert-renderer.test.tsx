@@ -13,7 +13,7 @@ type RfProps = {
   onEdgesDelete?: (e: RfEdge[]) => void
   children?: ReactNode
 }
-const rf = vi.hoisted(() => ({ props: null as unknown as RfProps }))
+const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: RfProps) => {
     rf.props = props
@@ -29,6 +29,7 @@ vi.mock('@xyflow/react', () => ({
   Background: () => null,
   Controls: () => null,
   Handle: () => null,
+  useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
 }))
@@ -125,6 +126,18 @@ afterEach(() => {
 })
 
 describe('PertRenderer', () => {
+  it('zoomed out, boxes show only their title', async () => {
+    rf.zoom = 0.3
+    try {
+      setup()
+      expect(await screen.findByText('Spec')).toBeInTheDocument()
+      expect(screen.getAllByTestId('task-box-far')).toHaveLength(4)
+      expect(screen.queryByText(/^ES /)).toBeNull()
+    } finally {
+      rf.zoom = 1
+    }
+  })
+
   it('highlights the critical chain', async () => {
     setup()
     await waitFor(() => expect(rf.props.edges).toHaveLength(4))

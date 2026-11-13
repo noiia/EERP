@@ -21,9 +21,10 @@ type RfProps = {
   onNodeDragStop?: (e: unknown, n: RfNode) => void
   onBeforeDelete?: (els: { nodes: RfNode[]; edges: RfEdge[] }) => Promise<boolean>
   nodesDraggable?: boolean
+  edgeTypes?: Record<string, (p: Record<string, unknown>) => ReactNode>
   nodesConnectable?: boolean
 }
-const rf = vi.hoisted(() => ({ props: null as unknown as RfProps }))
+const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: RfProps & { children?: ReactNode }) => {
     rf.props = props
@@ -40,7 +41,8 @@ vi.mock('@xyflow/react', () => ({
     )
   },
   Background: () => null,
-  BaseEdge: () => null,
+  BaseEdge: ({ label }: { label?: ReactNode }) => <span data-testid="edge-label">{label}</span>,
+  useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
   getBezierPath: () => ['', 0, 0, 0, 0],
   Controls: () => null,
   MarkerType: { ArrowClosed: 'arrowclosed' },
@@ -76,6 +78,18 @@ beforeEach(() => {
 })
 
 describe('WorkflowMap', () => {
+  it('drops arrow labels when zoomed out', () => {
+    render(<WorkflowMap pages={pages} />)
+    const Edge = rf.props.edgeTypes!.labeled
+    const props = { id: 'e', sourceX: 0, sourceY: 0, targetX: 100, targetY: 0, sourcePosition: 'right', targetPosition: 'left', label: 'Go' }
+    const { rerender } = render(<>{Edge(props)}</>)
+    expect(screen.getAllByTestId('edge-label').at(-1)).toHaveTextContent('Go')
+    rf.zoom = 0.3
+    rerender(<>{Edge(props)}</>)
+    expect(screen.getAllByTestId('edge-label').at(-1)).toHaveTextContent('')
+    rf.zoom = 1
+  })
+
   it('renders a node per page plus the system and missing nodes', () => {
     render(<WorkflowMap pages={pages} />)
     for (const id of ['page:', 'page:about', 'page:contact', 'sys:login', 'page:gone']) {

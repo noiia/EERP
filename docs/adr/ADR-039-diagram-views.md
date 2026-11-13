@@ -83,6 +83,16 @@ layout: they go through the normal save path and follow the caller's write permi
 dependency entity's). A saved layout keeps the positions of boxes not drawn right now (a folded branch, a
 narrower filter), so they come back where they were.
 
+### Zoomed-out boxes
+
+Below zoom 0.6 (`DETAIL_ZOOM`) a task box draws only its title (`<order> - <name>`, large type) at
+its usual size, and a WBS project root only its name: the form widgets are unreadable there and are
+what makes a zoomed-out diagram of hundreds of boxes slow. The box size and handles don't change, so
+the layout and the arrows don't move; double-click still opens the record. Each box selects only
+"near or far" from React Flow's store, so it re-renders when the zoom crosses the threshold, not on
+every zoom step. An export always draws the full boxes. The website workflow map drops its arrow
+labels below the same zoom.
+
 ### Client-side export
 
 PNG and PDF are produced in the browser (`html-to-image` + `jspdf`, loaded on the first export), not through

@@ -150,6 +150,8 @@ export function PertRenderer<T extends HasId>({
     const closed = values(record).closed === true
     const data: TaskBoxData = {
       record: values(record),
+      // Zoomed out: "<order> - <name>" like the lists.
+      title: [orderById.get(id), str(values(record).name) ?? str(values(record).title)].filter(Boolean).join(' - '),
       editable: canWrite,
       fields,
       onCommit: async (field, value) => {
