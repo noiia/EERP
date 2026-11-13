@@ -304,3 +304,25 @@ func TestValidate_Colors(t *testing.T) {
 		}
 	})
 }
+
+func (f *fixture) contactOf(kind string) uuid.UUID {
+	return f.id(`INSERT INTO contact (tenant_id, name, email, company, status, kind) VALUES ($1, 'C', '', '', 'lead', $2) RETURNING id`, f.tenant, kind)
+}
+
+func TestProjectRules_Company(t *testing.T) {
+	f := newFixture(t)
+	other := f.sibling()
+	me := f.caller(uuid.New())
+	company, person, foreign := f.contactOf("company"), f.contactOf("contact"), other.contactOf("company")
+	create := func(c any) map[string]any { return map[string]any{"name": "P", "company_id": c} }
+	f.run(t, []writeCase{
+		{"company contact", me, http.MethodPost, "project", create(company), 201},
+		{"person contact", me, http.MethodPost, "project", create(person), 422},
+		{"another tenant's company", me, http.MethodPost, "project", create(foreign), 422},
+		{"null", me, http.MethodPost, "project", create(nil), 201},
+	})
+	_, body := f.do(me, http.MethodPost, "project", create(company))
+	if got := body["company_id"]; got != company.String() {
+		t.Errorf("company_id = %v, want %v (%v)", got, company, body)
+	}
+}

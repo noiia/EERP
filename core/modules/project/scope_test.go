@@ -2,15 +2,16 @@ package project
 
 import (
 	"context"
-	"slices"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"core/internal/auth"
 	"core/internal/testdb"
 	_ "core/modules/auth"
+	_ "core/modules/contact"
 	"core/orm"
 	"core/orm/access"
 	ormserver "core/orm/server"
@@ -36,7 +37,7 @@ var projectTables = []string{
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	app := testdb.Open(t)
-	testdb.MigrateModules(t, app, "auth", "project")
+	testdb.MigrateModules(t, app, "auth", "contact", "project")
 	SetPermissions(auth.NewPermissionRepository(app.DB))
 	s := ormserver.New(app, ormserver.Config{})
 	handlers := ormserver.BuildHandlers(app)
@@ -44,7 +45,7 @@ func newFixture(t *testing.T) *fixture {
 	NewHandler(app.DB, auth.NewPermissionRepository(app.DB)).Mount(s.Echo(), func(t string) Generic { return handlers[t] })
 	f := &fixture{t: t, app: app, e: s.Echo(), tenant: uuid.New()}
 	t.Cleanup(func() {
-		for _, table := range projectTables {
+		for _, table := range append(projectTables, "contact") {
 			_, _ = app.DB.Exec(context.Background(), `DELETE FROM `+table+` WHERE tenant_id = $1`, f.tenant)
 		}
 	})

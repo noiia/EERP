@@ -311,6 +311,22 @@ func (h *Handler) row(ctx context.Context, table string, id, tenant uuid.UUID, l
 // ── Rules per table ──────────────────────────────────────────────────────────
 
 func projectRules(r *request) error {
+	if r.changed("company_id") {
+		id, err := r.ref("company_id")
+		if err != nil {
+			return err
+		}
+		if id != uuid.Nil {
+			var kind *string
+			err := r.h.db.QueryRow(r.ctx, `SELECT kind FROM contact WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, r.tenant).Scan(&kind)
+			if err != nil && !errors.Is(err, orm.ErrNotFound) {
+				return err
+			}
+			if kind == nil || *kind != "company" {
+				return invalid("company_id", "company_id must be a company contact")
+			}
+		}
+	}
 	if r.op == opCreate && r.id == uuid.Nil { // a POST: anyone with write
 		if r.body["manager_id"] == nil {
 			r.body["manager_id"] = r.user.String()

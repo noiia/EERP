@@ -20,7 +20,8 @@ type Project struct {
 	Name         string     `db:"name" json:"name"`
 	Description  string     `db:"description" json:"description"`
 	ManagerID    uuid.UUID  `db:"manager_id,index" json:"manager_id"`
-	Visibility   string     `db:"visibility" json:"visibility"` // "everyone" | "members"
+	CompanyID    *uuid.UUID `db:"company_id,index" json:"company_id"` // a contact of kind "company"
+	Visibility   string     `db:"visibility" json:"visibility"`       // "everyone" | "members"
 	DateStart    *time.Time `db:"date_start" json:"date_start"`
 	DateEnd      *time.Time `db:"date_end" json:"date_end"`
 	Active       bool       `db:"active" json:"active"`

@@ -19,6 +19,7 @@ import {
 type Fields = ViewDescriptor['fields']
 
 const users = { entity: 'users', kind: 'many2one', labelField: 'email' } as const
+const company = { entity: 'contact', kind: 'many2one', labelField: 'name', filter: { kind: 'company' } } as const
 const project = { entity: 'project', kind: 'many2one', labelField: 'name' } as const
 const task = { entity: 'project_task', kind: 'many2one', labelField: 'name' } as const
 // A task's stage/milestone/parent: only its own project's rows are offered.
@@ -46,6 +47,7 @@ const projectListFields: Fields = [
 
 const projectFormFields: Fields = [
   ...projectListFields,
+  { name: 'company_id', label: 'Company', type: 'relation', relation: company },
   { name: 'date_start', label: 'Start date', type: 'date' },
   { name: 'date_end', label: 'End date', type: 'date' },
   { name: 'description', label: 'Description', type: 'text', widget: 'long' },

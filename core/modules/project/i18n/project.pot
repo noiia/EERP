@@ -55,6 +55,9 @@ msgstr ""
 msgid "Hours"
 msgstr ""
 
+msgid "Company"
+msgstr ""
+
 msgid "Manager"
 msgstr ""
 

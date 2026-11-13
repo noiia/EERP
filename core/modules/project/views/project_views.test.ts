@@ -6,6 +6,10 @@ const route = (path: string) => mod.routes.find((r) => r.path === path)!
 const field = (path: string, name: string) => route(path).descriptor.fields.find((f) => f.name === name)!
 
 describe('project views', () => {
+  it('offers only company contacts as the project company', () => {
+    expect(field('/project/:id', 'company_id').relation).toMatchObject({ entity: 'contact', kind: 'many2one', filter: { kind: 'company' } })
+  })
+
   it('registers a Project app with every route and its permission', () => {
     const registry = new ModuleRegistry()
     registry.register(mod, { appMode: true }) // throws on an invalid descriptor or extension
