@@ -149,6 +149,51 @@ describe('ObsRenderer', () => {
     await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'b1', { color: '#ff0000' }))
   })
 
+  it('undoes a delete by re-creating the box under its old id', async () => {
+    const { ops } = setup()
+    await editable()
+    // A color change before the delete: undone later, it must reach the re-created box.
+    await act(async () => (node('b1').data as { onColor: (c: string) => void }).onColor('#00ff00'))
+    await act(async () => (node('b1').data as { onDelete: () => void }).onDelete())
+    await waitFor(() => expect(ops.remove).toHaveBeenLastCalledWith('project_obs_box', 'b1'))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ops.update).toHaveBeenCalledWith('project_obs_box', 'b3', { parent_id: 'new1' }))
+    expect(ops.create).toHaveBeenLastCalledWith('project_obs_box', expect.objectContaining({ kind: 'contact', contact_id: 'c1', title: 'CEO', color: '#00ff00', x: 100, y: 50, parent_id: null }))
+    expect(ops.update).toHaveBeenCalledWith('project_obs_box', 'b2', { parent_id: 'new1' })
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'new1', { color: '#ff0000' }))
+    // Redo twice: the color again, then the delete — of the new id.
+    await act(async () => fireEvent.keyDown(window, { key: 'y', ctrlKey: true }))
+    await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'new1', { color: '#00ff00' }))
+    await act(async () => fireEvent.keyDown(window, { key: 'y', ctrlKey: true }))
+    await waitFor(() => expect(ops.remove).toHaveBeenLastCalledWith('project_obs_box', 'new1'))
+  })
+
+  it('undoes and redoes a create', async () => {
+    const { ops } = setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Add text' }))
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'Committee' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(ops.create).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ops.remove).toHaveBeenLastCalledWith('project_obs_box', 'new1'))
+    await act(async () => fireEvent.keyDown(window, { key: 'y', ctrlKey: true }))
+    await waitFor(() => expect(ops.create).toHaveBeenLastCalledWith('project_obs_box', expect.objectContaining({ kind: 'text', title: 'Committee' })))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ops.remove).toHaveBeenLastCalledWith('project_obs_box', 'new2'))
+  })
+
+  it('shows a refused undo of a delete', async () => {
+    const { ops } = setup()
+    await editable()
+    await act(async () => (node('b4').data as { onDelete: () => void }).onDelete())
+    await waitFor(() => expect(ops.remove).toHaveBeenCalled())
+    ops.create.mockRejectedValueOnce(err(422, 'contact gone'))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    expect(await screen.findByText('contact gone')).toBeInTheDocument()
+  })
+
   it('shows each box with its color, title and kind label', async () => {
     const { ops } = setup()
     expect(await within(await screen.findByTestId('node-b1')).findByText('Alice')).toBeInTheDocument()

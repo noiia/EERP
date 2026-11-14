@@ -66,8 +66,16 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   const [canEdit, setCanEdit] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const update = ops?.update
-  // Undo/redo of moves, parent links, insertions, colors and text edits (not box create/delete).
+  // Undo/redo of moves, parent links, insertions, colors, text edits and box create/delete.
   const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
+  // A box re-created by an undo gets a new id: history steps name the id they knew, and
+  // every write resolves it here (old id → the id that replaced it, chained).
+  const alias = useRef(new Map<string, string>())
+  const cur = (id: string) => {
+    let x = id
+    while (alias.current.has(x)) x = alias.current.get(x)!
+    return x
+  }
 
   const listPage = ops?.listPage
   useEffect(() => {
@@ -118,7 +126,32 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   const replace = (r: RelationRecord) => setRows((rs) => rs!.map((x) => (x.id === r.id ? { ...x, ...(r as unknown as ObsRow) } : x)))
   const patch = (id: string, body: Record<string, unknown>) => {
     setError(null)
-    return update!(entity, id, body).then(replace)
+    const b = typeof body.parent_id === 'string' ? { ...body, parent_id: cur(body.parent_id) } : body
+    return update!(entity, cur(id), b).then(replace)
+  }
+  const removeBox = async (id: string) => {
+    await ops!.remove(entity, cur(id))
+    // The server cleared its children's parent: read the chart again.
+    setReloads((n) => n + 1)
+  }
+  // Puts back a removed box (as `row` was) under the id `oldId` steps know it by, its former
+  // children under it again.
+  const recreate = async (row: ObsRow, oldId: string, children: string[]) => {
+    const created = await ops!.create(entity, {
+      [projectField]: projectId,
+      kind: row.kind,
+      contact_id: row.contact_id ?? null,
+      user_id: row.user_id ?? null,
+      title: row.title,
+      text: row.text ?? '',
+      color: row.color ?? null,
+      parent_id: row.parent_id ? cur(row.parent_id) : null,
+      x: row.x,
+      y: row.y,
+    })
+    alias.current.set(cur(oldId), String(created.id))
+    for (const c of children) await update!(entity, cur(c), { parent_id: String(created.id) })
+    setReloads((n) => n + 1)
   }
   // A patch recorded for undo: `old` holds the same keys' current values.
   const change = (id: string, body: Record<string, unknown>) => {
@@ -140,7 +173,9 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
       onColor: (color) => change(row.id, { color }),
       onDelete: () => {
         setError(null)
-        ops!.remove(entity, row.id).then(() => setReloads((n) => n + 1), fail)
+        const kept = { ...row, ...positions[row.id] }
+        const children = rows.filter((r) => r.parent_id === row.id).map((r) => r.id)
+        void history.perform(() => removeBox(row.id), () => recreate(kept, row.id, children))
       },
       onEdit: () => setDraft({ kind: row.kind, row }),
     } satisfies ObsBoxData,
@@ -179,7 +214,9 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     )
   }
   // Positions move first (the controlled canvas draws only these); refused ones go back.
-  const onMove = async (moved: Record<string, Point>) => {
+  const onMove = async (asked: Record<string, Point>) => {
+    // Undo/redo replays a move by the ids it knew.
+    const moved = Object.fromEntries(Object.entries(asked).map(([id, p]) => [cur(id), p]))
     const before = positions
     setError(null)
     setPositions((p) => ({ ...p, ...moved }))
@@ -218,8 +255,10 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
       text: d.kind === 'text' ? text : '',
       ...spot,
     })
-    setRows((rs) => [...rs!, created as unknown as ObsRow])
-    setPositions((p) => ({ ...p, [String(created.id)]: spot }))
+    const row = created as unknown as ObsRow
+    setRows((rs) => [...rs!, row])
+    setPositions((p) => ({ ...p, [row.id]: spot }))
+    history.push({ undo: () => removeBox(row.id), redo: () => recreate({ ...row, ...spot }, row.id, []) })
   }
 
   const addButtons = (centerSpot: (size: { w: number; h: number }) => Point) => (
