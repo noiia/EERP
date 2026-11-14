@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from 'react'
 
 // React Flow stubbed as in wbs-renderer.test.tsx: each node drawn through its nodeTypes component.
 type RfNode = { id: string; type: string; data: unknown; className?: string; position: { x: number; y: number } }
-type RfEdge = { id: string; source: string; target: string; className?: string; markerEnd?: unknown; deletable?: boolean }
+type RfEdge = { id: string; source: string; target: string; className?: string; markerEnd?: unknown; deletable?: boolean; label?: unknown }
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
@@ -249,6 +249,32 @@ describe('PertRenderer', () => {
     setup({ links: [...diamondLinks(), { id: 'l5', depends_on_id: 'D', task_id: 'A' }] })
     expect(await screen.findByText('Dependency cycle: critical path not computed')).toBeInTheDocument()
     expect(critical()).toEqual([])
+  })
+
+  it('inserts an unlinked box dropped on an arrow', async () => {
+    let n = 0
+    const create = vi.fn(async (_e: string, body: Record<string, unknown>) => ({ id: `n${++n}`, ...body }))
+    const { ops } = setup({ tasks: [...diamond(), { id: 'E', name: 'Test', planned_hours: 8, date_start: null, deadline: null }], create })
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    // Centered on the A → B arrow (right-middle of A to left-middle of B).
+    const dropAt = () => {
+      const a = node('A').position
+      const b = node('B').position
+      return { x: (a.x + 240 + b.x) / 2 - 120, y: (a.y + b.y) / 2 }
+    }
+    const drop = (id: string) =>
+      act(() => (rf.props as unknown as { onNodeDragStop: (e: unknown, n: unknown) => void }).onNodeDragStop(null, { ...node(id), position: dropAt() }))
+    drop('D') // linked: never inserted
+    expect(create).not.toHaveBeenCalled()
+    // Dragged over the arrow: it's highlighted with a "+".
+    act(() => (rf.props as unknown as { onNodesChange: (c: unknown[]) => void }).onNodesChange([{ type: 'position', id: 'E', dragging: true, position: dropAt() }]))
+    expect(rf.props.edges.find((e) => e.id === 'l1')).toMatchObject({ className: 'insert-target', label: '+' })
+    drop('E')
+    expect(rf.props.edges.find((e) => e.className === 'insert-target')).toBeUndefined()
+    await waitFor(() => expect(ops.remove).toHaveBeenCalledWith('project_task_dependency', 'l1'))
+    expect(create).toHaveBeenCalledWith('project_task_dependency', { depends_on_id: 'A', task_id: 'E' })
+    expect(create).toHaveBeenCalledWith('project_task_dependency', { depends_on_id: 'E', task_id: 'B' })
+    await waitFor(() => expect(rf.props.edges.map((e) => e.id).sort()).toEqual(['l2', 'l3', 'l4', 'n1', 'n2']))
   })
 
   it('is read-only without the write permission', async () => {

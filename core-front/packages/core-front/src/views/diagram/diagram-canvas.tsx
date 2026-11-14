@@ -161,7 +161,9 @@ function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert' | 'obs
       ? t('Drag from the dot on the right of a box to another box to add a dependency.')
       : t('Drag from the dot under a box to another box to make it its parent.')),
     links && t('Click a link to select it, then press Delete to remove it.'),
-    drop && t('Drop a box onto another to move it under that one.'),
+    drop && (mode === 'pert'
+      ? t('Drop a box with no links onto an arrow to insert it there.')
+      : t('Drop a box onto another to move it under that one.')),
     notes && t('Add note adds a text box only you see; drag from its dot to a box to link them.'),
     t('Re-arrange places every box again; Fit view shows the whole diagram.'),
   ].filter((x): x is string => !!x)
@@ -224,6 +226,8 @@ export interface DiagramCanvasProps {
    * one where it was let go). `false` (now or once resolved) puts the box back where it
    * was before the drag. */
   onNodeDrop?: (id: string, overId: string | null, at: Record<string, Point>) => boolean | void | Promise<boolean | void>
+  /** A single box being dragged (`at` as for onNodeDrop), then `null` when it's let go. */
+  onNodeDragOver?: (id: string | null, at: Record<string, Point>) => void
   legend: { color: string; label: string }[]
   /** Toolbar content; as a function it gets `centerSpot`: the free top-left nearest the
    * middle of the view for a box of that size. */
@@ -450,6 +454,11 @@ function Canvas(props: DiagramCanvasProps) {
   const onNodesChange = (changes: NodeChange[]) => {
     const moves = changes.flatMap((c) => (c.type === 'position' && c.position ? [[c.id, c.position] as const] : []))
     if (moves.length) setLive((l) => ({ ...l, ...Object.fromEntries(moves) }))
+    const dragging = changes.some((c) => c.type === 'position' && c.dragging)
+    if (moves.length === 1 && dragging && props.onNodeDragOver && !noteIds.has(moves[0][0])) {
+      const [id, p] = moves[0]
+      props.onNodeDragOver(id, { ...placed, [id]: { ...p, ...sized(id) } })
+    }
     const measured = changes.flatMap((c) => (c.type === 'dimensions' && c.dimensions ? [[c.id, c.dimensions] as const] : []))
     if (measured.length) setSizes((m) => ({ ...m, ...Object.fromEntries(measured) }))
     const picks = changes.filter((c) => c.type === 'select')
@@ -464,6 +473,7 @@ function Canvas(props: DiagramCanvasProps) {
   }
 
   const onNodeDragStop = (_: unknown, node: Node, dragged: Node[] = [node]) => {
+    props.onNodeDragOver?.(null, {})
     // A selection moved together: only the layout changes (no re-parent), each box on the
     // free spot nearest where it was let go, clear of the others and of the boxes placed before it.
     if (dragged.length > 1) {
