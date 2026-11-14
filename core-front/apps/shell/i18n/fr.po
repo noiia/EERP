@@ -2745,8 +2745,11 @@ msgstr "Annuler"
 msgid "Redo"
 msgstr "Rétablir"
 
-msgid "Drop a box with no links onto an arrow to insert it there."
-msgstr "Déposez une boîte sans lien sur une flèche pour l’insérer à cet endroit."
+msgid "Drop a box with no links onto a line to insert it there."
+msgstr "Déposez une boîte sans lien sur un trait pour l’insérer à cet endroit."
+
+msgid "Ctrl+Z undoes your last change, Ctrl+Y redoes it."
+msgstr "Ctrl+Z annule votre dernière modification, Ctrl+Y la rétablit."
 
 msgid "Add note adds a text box only you see; drag from its dot to a box to link them."
 msgstr "Ajouter une note crée une zone de texte visible par vous seul ; faites glisser depuis son point vers une boîte pour les relier."

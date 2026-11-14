@@ -181,6 +181,37 @@ describe('WbsRenderer', () => {
     await waitFor(() => expect(onRecordsChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'A', name: 'Plan' })])))
   })
 
+  it('inserts a lone task dropped on a parent line, and undoes it', async () => {
+    const { actions } = setup()
+    await screen.findByTestId('node-D')
+    // Centered between A's bottom and B's top: on the A → B line, over no box.
+    const onLine = () => {
+      const a = node('A').position
+      const b = node('B').position
+      return { x: (a.x + b.x) / 2, y: (a.y + TASK_BOX_SIZE.h + b.y) / 2 - TASK_BOX_SIZE.h / 2 }
+    }
+    // Another group's task never goes in.
+    act(() => rf.props.onNodeDragStop!(null, { ...node('C'), position: onLine() }))
+    expect(actions.update).not.toHaveBeenCalled()
+    act(() => rf.props.onNodeDragStop!(null, { ...node('D'), position: onLine() }))
+    await waitFor(() => expect(actions.update).toHaveBeenLastCalledWith('B', { parent_id: 'D' }))
+    expect(actions.update).toHaveBeenCalledWith('D', { parent_id: 'A' })
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(actions.update).toHaveBeenLastCalledWith('D', { parent_id: null }))
+    expect(actions.update).toHaveBeenCalledWith('B', { parent_id: 'A' })
+  })
+
+  it('undoes and redoes a reparent', async () => {
+    const { actions } = setup()
+    await screen.findByTestId('node-D')
+    drop('D', 'B')
+    await waitFor(() => expect(rf.props.edges.map((e) => [e.source, e.target])).toContainEqual(['B', 'D']))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(actions.update).toHaveBeenLastCalledWith('D', { parent_id: null }))
+    await act(async () => fireEvent.keyDown(window, { key: 'y', ctrlKey: true }))
+    await waitFor(() => expect(actions.update).toHaveBeenLastCalledWith('D', { parent_id: 'B' }))
+  })
+
   it('reparents on drop', async () => {
     const { actions, onRecordsChange } = setup()
     await screen.findByTestId('node-D')

@@ -123,6 +123,32 @@ describe('ObsRenderer', () => {
     expect(await screen.findByText('no read')).toBeInTheDocument()
   })
 
+  it('inserts a lone box dropped on a line, and undoes it', async () => {
+    const { ops } = setup()
+    await editable()
+    // b1 (100, 50) → b2 (400, 300): b6 centered on the line between them.
+    const mid = { x: (100 + 400 + OBS_BOX_SIZE.w) / 2, y: (50 + OBS_BOX_SIZE.h + 300) / 2 }
+    act(() => rf.props.onNodeDragStop!(null, { ...node('b6'), position: { x: mid.x - OBS_BOX_SIZE.w / 2, y: mid.y - OBS_BOX_SIZE.h / 2 } }))
+    await waitFor(() => expect(ops.update).toHaveBeenCalledWith('project_obs_box', 'b2', { parent_id: 'b6' }))
+    expect(ops.update).toHaveBeenCalledWith('project_obs_box', 'b6', { parent_id: 'b1' })
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'b6', { parent_id: null }))
+    expect(ops.update).toHaveBeenCalledWith('project_obs_box', 'b2', { parent_id: 'b1' })
+  })
+
+  it('undoes a color change and a parent link', async () => {
+    const { ops } = setup()
+    await editable()
+    await act(async () => (node('b1').data as { onColor: (c: string) => void }).onColor('#00ff00'))
+    await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'b1', { color: '#00ff00' }))
+    act(() => rf.props.onConnect!({ source: 'b4', target: 'b5' }))
+    await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'b5', { parent_id: 'b4' }))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'b5', { parent_id: null }))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ops.update).toHaveBeenLastCalledWith('project_obs_box', 'b1', { color: '#ff0000' }))
+  })
+
   it('shows each box with its color, title and kind label', async () => {
     const { ops } = setup()
     expect(await within(await screen.findByTestId('node-b1')).findByText('Alice')).toBeInTheDocument()

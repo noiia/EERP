@@ -13,6 +13,8 @@ export interface HistoryEntry {
 
 export interface UndoHistory {
   push: (entry: HistoryEntry) => void
+  /** Runs `redo` now and records it once it succeeded; a failure goes to `onError`. */
+  perform: (redo: () => unknown, undo: () => unknown) => Promise<void>
   undo: () => Promise<void>
   redo: () => Promise<void>
   canUndo: boolean
@@ -49,13 +51,23 @@ export function useUndoHistory(onError?: (e: unknown) => void): UndoHistory {
     }
   }
 
+  const push = (entry: HistoryEntry) => {
+    done.current.push(entry)
+    if (done.current.length > HISTORY_LIMIT) done.current.shift()
+    undone.current.length = 0
+    bump()
+  }
+
   return useMemo(
     () => ({
-      push: (entry: HistoryEntry) => {
-        done.current.push(entry)
-        if (done.current.length > HISTORY_LIMIT) done.current.shift()
-        undone.current.length = 0
-        bump()
+      push,
+      perform: async (redo: () => unknown, undo: () => unknown) => {
+        try {
+          await redo()
+          push({ undo, redo })
+        } catch (e: unknown) {
+          errorRef.current?.(e)
+        }
       },
       undo: () => step(done.current, undone.current, (e) => e.undo()),
       redo: () => step(undone.current, done.current, (e) => e.redo()),

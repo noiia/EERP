@@ -2613,7 +2613,10 @@ msgstr ""
 msgid "Redo"
 msgstr ""
 
-msgid "Drop a box with no links onto an arrow to insert it there."
+msgid "Drop a box with no links onto a line to insert it there."
+msgstr ""
+
+msgid "Ctrl+Z undoes your last change, Ctrl+Y redoes it."
 msgstr ""
 
 msgid "Add note adds a text box only you see; drag from its dot to a box to link them."

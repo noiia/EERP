@@ -103,3 +103,22 @@ export function placeLabels(labels: LabelInput[], boxes: Rect[], gap = LABEL_GAP
 export function labelSize(text: string): { w: number; h: number } {
   return { w: text.length * 6 + 8, h: 16 }
 }
+
+/** Whether the segment a→b crosses (or lies in) the rectangle — Liang–Barsky clipping. */
+export function segmentHitsRect(a: { x: number; y: number }, b: { x: number; y: number }, r: { x: number; y: number; w: number; h: number }): boolean {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  let t0 = 0
+  let t1 = 1
+  for (const [p, q] of [[-dx, a.x - r.x], [dx, r.x + r.w - a.x], [-dy, a.y - r.y], [dy, r.y + r.h - a.y]]) {
+    if (p === 0) {
+      if (q < 0) return false
+      continue
+    }
+    const t = q / p
+    if (p < 0) t0 = Math.max(t0, t)
+    else t1 = Math.min(t1, t)
+    if (t0 > t1) return false
+  }
+  return true
+}

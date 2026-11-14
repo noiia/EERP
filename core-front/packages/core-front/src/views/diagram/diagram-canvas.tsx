@@ -31,7 +31,7 @@ import { ErrorAlert } from '../error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
-import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
+import { freeSpot, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
 import { historyKey, type UndoHistory } from './history'
 import { ObsBox } from './obs-box'
 import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
@@ -148,7 +148,7 @@ function toggled(prev: Set<string>, picks: { id: string; selected: boolean }[]):
 }
 
 /** How to use the canvas: the tips that apply to what this canvas allows. */
-function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert' | 'obs'; links: boolean; drop: boolean; notes: boolean }) {
+function DiagramHelp({ mode, links, drop, insert, history, notes }: { mode: 'wbs' | 'pert' | 'obs'; links: boolean; drop: boolean; insert: boolean; history: boolean; notes: boolean }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const tips = [
@@ -163,9 +163,9 @@ function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert' | 'obs
       ? t('Drag from the dot on the right of a box to another box to add a dependency.')
       : t('Drag from the dot under a box to another box to make it its parent.')),
     links && t('Click a link to select it, then press Delete to remove it.'),
-    drop && (mode === 'pert'
-      ? t('Drop a box with no links onto an arrow to insert it there.')
-      : t('Drop a box onto another to move it under that one.')),
+    drop && t('Drop a box onto another to move it under that one.'),
+    insert && t('Drop a box with no links onto a line to insert it there.'),
+    history && t('Ctrl+Z undoes your last change, Ctrl+Y redoes it.'),
     notes && t('Add note adds a text box only you see; drag from its dot to a box to link them.'),
     t('Re-arrange places every box again; Fit view shows the whole diagram.'),
   ].filter((x): x is string => !!x)
@@ -243,8 +243,11 @@ export interface DiagramCanvasProps {
    * one where it was let go). `false` (now or once resolved) puts the box back where it
    * was before the drag. */
   onNodeDrop?: (id: string, overId: string | null, at: Record<string, Point>) => boolean | void | Promise<boolean | void>
-  /** A single box being dragged (`at` as for onNodeDrop), then `null` when it's let go. */
-  onNodeDragOver?: (id: string | null, at: Record<string, Point>) => void
+  /** A single box let go across a line (`edges` only, never its own): insert it there.
+   * While dragged over one, that line is highlighted with a "+". Takes precedence over
+   * onNodeDrop. `canInsert` (default: any) picks the boxes and lines it applies to. */
+  onInsert?: (id: string, edge: Edge) => void
+  canInsert?: (id: string, edge: Edge) => boolean
   legend: { color: string; label: string }[]
   /** Toolbar content; as a function it gets `centerSpot`: the free top-left nearest the
    * middle of the view for a box of that size. */
@@ -470,13 +473,41 @@ function Canvas(props: DiagramCanvasProps) {
     return node
   })
 
+  // The line a box at `rect` would be inserted into: the first it crosses, each line taken
+  // straight from the source's out side to the target's in side (right → left in PERT,
+  // bottom → top otherwise).
+  const [insertEdge, setInsertEdge] = useState<string | null>(null)
+  // The box under the center of `rect` (one being dropped onto another).
+  const boxUnder = (id: string, rect: Rect) => {
+    const cx = rect.x + rect.w / 2
+    const cy = rect.y + rect.h / 2
+    return ids.find((o) => {
+      if (o === id) return false
+      const r = { ...placed[o], ...sized(o) }
+      return cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h
+    })
+  }
+  // Never while over a box: that's a drop onto it (onNodeDrop).
+  const insertTarget = (id: string, rect: Rect): Edge | undefined => {
+    if (!props.onInsert || noteIds.has(id) || boxUnder(id, rect)) return undefined
+    const box = (n: string) => ({ ...placed[n], ...sized(n) })
+    const out = (r: Rect) => (mode !== 'pert' ? { x: r.x + r.w / 2, y: r.y + r.h } : { x: r.x + r.w, y: r.y + r.h / 2 })
+    const into = (r: Rect) => (mode !== 'pert' ? { x: r.x + r.w / 2, y: r.y } : { x: r.x, y: r.y + r.h / 2 })
+    return edges.find(
+      (e) =>
+        e.source !== id && e.target !== id && placed[e.source] && placed[e.target] &&
+        (props.canInsert?.(id, e) ?? true) &&
+        segmentHitsRect(out(box(e.source)), into(box(e.target)), rect),
+    )
+  }
+
   const onNodesChange = (changes: NodeChange[]) => {
     const moves = changes.flatMap((c) => (c.type === 'position' && c.position ? [[c.id, c.position] as const] : []))
     if (moves.length) setLive((l) => ({ ...l, ...Object.fromEntries(moves) }))
     const dragging = changes.some((c) => c.type === 'position' && c.dragging)
-    if (moves.length === 1 && dragging && props.onNodeDragOver && !noteIds.has(moves[0][0])) {
+    if (moves.length === 1 && dragging && props.onInsert) {
       const [id, p] = moves[0]
-      props.onNodeDragOver(id, { ...placed, [id]: { ...p, ...sized(id) } })
+      setInsertEdge(insertTarget(id, { ...p, ...sized(id) })?.id ?? null)
     }
     const measured = changes.flatMap((c) => (c.type === 'dimensions' && c.dimensions ? [[c.id, c.dimensions] as const] : []))
     if (measured.length) setSizes((m) => ({ ...m, ...Object.fromEntries(measured) }))
@@ -520,7 +551,7 @@ function Canvas(props: DiagramCanvasProps) {
   }, [history])
 
   const onNodeDragStop = (_: unknown, node: Node, dragged: Node[] = [node]) => {
-    props.onNodeDragOver?.(null, {})
+    setInsertEdge(null)
     // A selection moved together: only the layout changes (no re-parent), each box on the
     // free spot nearest where it was let go, clear of the others and of the boxes placed before it.
     if (dragged.length > 1) {
@@ -551,11 +582,10 @@ function Canvas(props: DiagramCanvasProps) {
     setPositions({ ...positions, ...placed, [node.id]: spot })
     if (before) recordMove({ [node.id]: before }, { [node.id]: spot })
     if (props.onMove) reportMove(props.onMove, { [node.id]: spot }, putBack)
-    if (onNodeDrop && !noteIds.has(node.id)) {
-      const cx = rect.x + rect.w / 2
-      const cy = rect.y + rect.h / 2
-      const over = others.find((o) => cx >= o.x && cx <= o.x + o.w && cy >= o.y && cy <= o.y + o.h)
-      const res = onNodeDrop(node.id, over?.id ?? null, { ...placed, [node.id]: rect })
+    const hit = insertTarget(node.id, rect)
+    if (hit) props.onInsert!(node.id, hit)
+    else if (onNodeDrop && !noteIds.has(node.id)) {
+      const res = onNodeDrop(node.id, boxUnder(node.id, rect) ?? null, { ...placed, [node.id]: rect })
       if (res instanceof Promise) void res.then(putBack, () => putBack(false))
       else putBack(res)
     }
@@ -587,7 +617,22 @@ function Canvas(props: DiagramCanvasProps) {
       .filter((id) => drawn.has(id) && !noteIds.has(id))
       .map((id) => ({ id: `${NOTE_EDGE}${n.id}>${id}`, source: n.id, target: id, data: { note: n.id, box: id }, style: { strokeDasharray: '4 4' } })),
   )
-  const rfEdges = [...edges, ...noteEdges].map((e) => (selectedEdges.has(e.id) ? { ...e, selected: true } : e))
+  const accent = outer.palette.primary.main
+  const rfEdges = [...edges, ...noteEdges].map((e) => {
+    const sel = selectedEdges.has(e.id) ? { ...e, selected: true } : e
+    if (e.id !== insertEdge) return sel
+    return {
+      ...sel,
+      className: 'insert-target',
+      label: '+',
+      labelStyle: { fill: outer.palette.primary.contrastText, fontSize: 28, fontWeight: 700 },
+      labelBgStyle: { fill: accent },
+      labelBgPadding: [10, 2] as [number, number],
+      labelBgBorderRadius: 20,
+      markerEnd: e.markerEnd ? { ...(e.markerEnd as object), color: accent } : undefined,
+      style: { ...e.style, stroke: accent, strokeWidth: 3 },
+    } as Edge
+  })
 
   // A link with a note on one end belongs to the note; box-to-box ones go to the renderer.
   const onConnect = (c: Connection) => {
@@ -632,7 +677,7 @@ function Canvas(props: DiagramCanvasProps) {
     <Box>
       <ErrorAlert error={saveError ?? exportError} />
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
-        <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} notes={!!props.notes} />
+        <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} insert={!!props.onInsert} history={!!props.history} notes={!!props.notes} />
         {props.readOnly ? null : <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>}
         <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>
         <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>

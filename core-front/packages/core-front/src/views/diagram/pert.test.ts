@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computePert, offsetToDate, segmentHitsRect, taskDuration } from './pert'
+import { computePert, offsetToDate, taskDuration } from './pert'
 
 const t = (id: string, days: number) => ({ id, plannedHours: days * 8 })
 
@@ -57,16 +57,4 @@ describe('computePert', () => {
     expect(computePert([t('A', 1)], [], today).origin).toEqual(new Date(2026, 5, 7))
     expect(offsetToDate(new Date(Date.UTC(2026, 0, 1)), 2).toISOString()).toBe('2026-01-03T00:00:00.000Z')
   })
-})
-
-describe('segmentHitsRect', () => {
-  const r = { x: 10, y: 10, w: 10, h: 10 }
-  it.each([
-    ['crosses it', { x: 0, y: 15 }, { x: 30, y: 15 }, true],
-    ['starts inside', { x: 15, y: 15 }, { x: 50, y: 50 }, true],
-    ['passes above', { x: 0, y: 5 }, { x: 30, y: 5 }, false],
-    ['stops short', { x: 0, y: 15 }, { x: 5, y: 15 }, false],
-    ['diagonal miss', { x: 0, y: 30 }, { x: 30, y: 25 }, false],
-    ['vertical through', { x: 15, y: 0 }, { x: 15, y: 30 }, true],
-  ])('%s', (_name, a, b, hit) => expect(segmentHitsRect(a, b, r)).toBe(hit))
 })

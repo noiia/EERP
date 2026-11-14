@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bezierPoint, freeSpot, labelSize, overlaps, placeLabels, separateBoxes, type Rect } from './collide'
+import { bezierPoint, freeSpot, labelSize, overlaps, placeLabels, segmentHitsRect, separateBoxes, type Rect } from './collide'
 
 const r = (x: number, y: number, w = 100, h = 40): Rect => ({ x, y, w, h })
 
@@ -62,4 +62,16 @@ describe('placeLabels', () => {
     const out = placeLabels([{ id: 'a', source: { x: 0, y: 0 }, target: { x: 300, y: 0 }, ...size }], [r(130, -20, 40, 40)])
     expect(out.a).not.toEqual({ t: 0.5, dy: 0 })
   })
+})
+
+describe('segmentHitsRect', () => {
+  const r = { x: 10, y: 10, w: 10, h: 10 }
+  it.each([
+    ['crosses it', { x: 0, y: 15 }, { x: 30, y: 15 }, true],
+    ['starts inside', { x: 15, y: 15 }, { x: 50, y: 50 }, true],
+    ['passes above', { x: 0, y: 5 }, { x: 30, y: 5 }, false],
+    ['stops short', { x: 0, y: 15 }, { x: 5, y: 15 }, false],
+    ['diagonal miss', { x: 0, y: 30 }, { x: 30, y: 25 }, false],
+    ['vertical through', { x: 15, y: 0 }, { x: 15, y: 30 }, true],
+  ])('%s', (_name, a, b, hit) => expect(segmentHitsRect(a, b, r)).toBe(hit))
 })

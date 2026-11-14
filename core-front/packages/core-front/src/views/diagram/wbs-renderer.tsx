@@ -16,6 +16,7 @@ import type { EntityActions, HasId } from '../stores'
 import { useRelationLabels } from '../use-relation-labels'
 import { layoutWbs } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
+import { useUndoHistory } from './history'
 import { boxFieldOf, LABEL_BOX_SIZE, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
 import { buildWbs, canReparent } from './wbs'
 
@@ -76,6 +77,8 @@ export function WbsRenderer<T extends HasId>({
   }, [rows, onRecordsChange])
   const [folded, setFolded] = useState<string[]>([])
   const [error, setError] = useState<SerializedError | null>(null)
+  // Undo/redo of moves, parent and order changes, insertions and box edits.
+  const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
 
   const fieldOf = boxFieldOf(descriptor)
   const fields = [...new Set(boxFields.filter((n): n is string => !!n))]
@@ -130,7 +133,10 @@ export function WbsRenderer<T extends HasId>({
       editable: canWrite,
       fields,
       onCommit: async (field, value) => {
-        replace(await actions.update(id, { [field]: value } as Partial<T>))
+        const old = values(record)[field]
+        const set = async (v: unknown) => replace(await actions.update(id, { [field]: v } as Partial<T>))
+        await set(value)
+        history.push({ undo: () => set(old), redo: () => set(value) })
       },
       onOpen: () => {
         if (formPath) router.push(erpPath(formPath.replace(':id', id)))
@@ -157,11 +163,13 @@ export function WbsRenderer<T extends HasId>({
     const value = parent && !parent.startsWith(GROUP) ? parent : null
     if (value === str(values(byId.get(child)!)[parentField])) return false
     setError(null)
+    const back = restore(child)
     return actions.update(child, { [parentField]: value } as Partial<T>).then(
       (updated) => {
         replace(updated)
         // Siblings and descendants were renumbered too.
         if (orderField) loaded.reload()
+        history.push({ undo: () => write(child, back), redo: () => write(child, { [parentField]: value }) })
         return true
       },
       (e: unknown) => {
@@ -170,6 +178,42 @@ export function WbsRenderer<T extends HasId>({
       },
     )
   }
+  // Writes a record as an undo/redo step does: no checks (they ran when the step was first
+  // taken), the tree read again when order numbers may have moved.
+  const write = async (id: string, patch: Record<string, unknown>) => {
+    replace(await actions.update(id, patch as Partial<T>))
+    if (orderField) loaded.reload()
+  }
+  // What puts a record back where it is now: its order number (it names the parent and the
+  // position), else its parent.
+  const restore = (id: string): Record<string, unknown> => {
+    const r = values(byId.get(id)!)
+    const code = orderField ? str(r[orderField]) : null
+    return code !== null ? { [orderField!]: code } : { [parentField]: str(r[parentField]) }
+  }
+
+  // A task with no parent and no child dropped across a parent line P → C goes in between:
+  // it takes C's place under P (its number, with order numbers) and C goes under it.
+  const canInsert = (id: string, e: Edge) =>
+    canWrite && nodes[id]?.kind === 'task' && !e.source.startsWith(GROUP) &&
+    str(values(byId.get(id)!)[parentField]) === null && nodes[id].children.length === 0 &&
+    (!groupField || groupOf(e.source) === groupOf(id))
+  const onInsert = (id: string, { source: p, target: c }: Edge) => {
+    const backC = restore(c)
+    const place = orderField && str(values(byId.get(c)!)[orderField]) !== null ? backC : { [parentField]: p }
+    setError(null)
+    void history.perform(
+      async () => {
+        await write(id, place)
+        await write(c, { [parentField]: id })
+      },
+      async () => {
+        await write(c, backC)
+        await write(id, { [parentField]: null })
+      },
+    )
+  }
+
   const onConnect = ({ source, target }: Connection) => void setParent(target, source)
   const onEdgesDelete = (deleted: Edge[]) => {
     for (const e of deleted) void setParent(e.target, null)
@@ -205,11 +249,13 @@ export function WbsRenderer<T extends HasId>({
     setError(null)
     // A number names the parent too (the server resolves it); without one, the parent alone.
     const patch = code !== null ? { [orderField!]: code } : { [parentField]: parent && !parent.startsWith(GROUP) ? parent : null }
+    const back = restore(id)
     return actions.update(id, patch as Partial<T>).then(
       (updated) => {
         replace(updated)
         // Siblings and descendants were renumbered too.
         if (ordered) loaded.reload()
+        history.push({ undo: () => write(id, back), redo: () => write(id, patch) })
         return true
       },
       (e: unknown) => {
@@ -237,6 +283,9 @@ export function WbsRenderer<T extends HasId>({
         onConnect={canWrite ? onConnect : undefined}
         onEdgesDelete={canWrite ? onEdgesDelete : undefined}
         onReconnect={canWrite ? onReconnect : undefined}
+        onInsert={canWrite ? onInsert : undefined}
+        canInsert={canInsert}
+        history={history}
         legend={[{ color: FOLDED_COLOR, label: t('Folded branch') }]}
       />
     </>

@@ -24,6 +24,7 @@ import { RelationCreateWizard } from '../relation-widgets'
 import { layoutWbs } from './auto-layout'
 import type { Point } from './collide'
 import { DiagramCanvas, DiagramLoading } from './diagram-canvas'
+import { useUndoHistory } from './history'
 import { OBS_BOX_SIZE, type ObsBoxData, type ObsRow } from './obs-box'
 import { buildWbs } from './wbs'
 
@@ -65,6 +66,8 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   const [canEdit, setCanEdit] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const update = ops?.update
+  // Undo/redo of moves, parent links, insertions, colors and text edits (not box create/delete).
+  const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
 
   const listPage = ops?.listPage
   useEffect(() => {
@@ -117,6 +120,13 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     setError(null)
     return update!(entity, id, body).then(replace)
   }
+  // A patch recorded for undo: `old` holds the same keys' current values.
+  const change = (id: string, body: Record<string, unknown>) => {
+    const row = rows.find((r) => r.id === id) as unknown as Record<string, unknown> | undefined
+    const old = Object.fromEntries(Object.keys(body).map((k) => [k, row?.[k] ?? null]))
+    setError(null)
+    return history.perform(() => patch(id, body), () => patch(id, old))
+  }
 
   const nodes: Node[] = rows.map((row) => ({
     id: row.id,
@@ -127,7 +137,7 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     data: {
       row,
       editable,
-      onColor: (color) => patch(row.id, { color }).catch(fail),
+      onColor: (color) => change(row.id, { color }),
       onDelete: () => {
         setError(null)
         ops!.remove(entity, row.id).then(() => setReloads((n) => n + 1), fail)
@@ -145,10 +155,28 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   }
 
   const onConnect = ({ source, target }: Connection) => {
-    if (source !== target) patch(target, { parent_id: source }).catch(fail)
+    if (source !== target) void change(target, { parent_id: source })
   }
   const onEdgesDelete = (deleted: Edge[]) => {
-    for (const e of deleted) patch(e.target, { parent_id: null }).catch(fail)
+    for (const e of deleted) void change(e.target, { parent_id: null })
+  }
+  // A box with no parent and no child dropped across a line P → C goes in between.
+  const canInsert = (id: string) => {
+    const row = rows.find((r) => r.id === id)
+    return !!row && !(row.parent_id && ids.has(row.parent_id)) && !rows.some((r) => r.parent_id === id)
+  }
+  const onInsert = (id: string, { source: p, target: c }: Edge) => {
+    setError(null)
+    void history.perform(
+      async () => {
+        await patch(id, { parent_id: p })
+        await patch(c, { parent_id: id })
+      },
+      async () => {
+        await patch(c, { parent_id: p })
+        await patch(id, { parent_id: null })
+      },
+    )
   }
   // Positions move first (the controlled canvas draws only these); refused ones go back.
   const onMove = async (moved: Record<string, Point>) => {
@@ -176,7 +204,9 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     const d = draft!
     const body: Record<string, unknown> = d.kind === 'text' ? { title, text } : { title }
     if (d.row) {
-      await update!(entity, d.row.id, body).then(replace)
+      const old = { title: d.row.title, ...(d.kind === 'text' ? { text: d.row.text } : {}) }
+      await patch(d.row.id, body)
+      history.push({ undo: () => patch(d.row!.id, old), redo: () => patch(d.row!.id, body) })
       return
     }
     const spot = d.spot ?? { x: 0, y: 0 }
@@ -216,6 +246,9 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
         onMove={editable ? onMove : undefined}
         onConnect={editable ? onConnect : undefined}
         onEdgesDelete={editable ? onEdgesDelete : undefined}
+        onInsert={editable ? onInsert : undefined}
+        canInsert={canInsert}
+        history={editable ? history : undefined}
         readOnly={!editable}
         legend={[]}
         toolbarExtra={editable ? addButtons : undefined}

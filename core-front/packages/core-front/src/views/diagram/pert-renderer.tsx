@@ -21,7 +21,7 @@ import type { EntityActions, HasId } from '../stores'
 import { layoutPert } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { useUndoHistory } from './history'
-import { computePert, offsetToDate, segmentHitsRect } from './pert'
+import { computePert, offsetToDate } from './pert'
 import { boxFieldOf, TASK_BOX_SIZE, type TaskBoxData } from './task-box'
 
 // PERT display mode: one box per record, an arrow per dependency row (blocker →
@@ -91,8 +91,6 @@ export function PertRenderer<T extends HasId>({
   // too) by id chunks, each paged until a short page, deduplicated by id; read again
   // only when the id set changes.
   const [links, setLinks] = useState<LinkRow[]>([])
-  // The arrow a dragged box would be inserted into: drawn highlighted with a "+".
-  const [insertEdge, setInsertEdge] = useState<string | null>(null)
   // Undo/redo of moves, links and box edits. Links are replayed by their two ends, since a
   // re-created link gets a new id; the ref holds the links as they are now.
   const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
@@ -199,23 +197,6 @@ export function PertRenderer<T extends HasId>({
     .filter((l) => shown.has(l.from) && shown.has(l.to))
     .map((l) => {
       const critical = pert.criticalLinks.has(`${l.from}->${l.to}`)
-      if (l.id === insertEdge) {
-        const accent = theme.palette.primary.main
-        return {
-          id: l.id,
-          source: l.from,
-          target: l.to,
-          deletable: canLink,
-          className: 'insert-target',
-          label: '+',
-          labelStyle: { fill: theme.palette.primary.contrastText, fontSize: 28, fontWeight: 700 },
-          labelBgStyle: { fill: accent },
-          labelBgPadding: [10, 2] as [number, number],
-          labelBgBorderRadius: 20,
-          markerEnd: { type: 'arrowclosed' as MarkerType, color: accent },
-          style: { stroke: accent, strokeWidth: 3 },
-        }
-      }
       return {
         id: l.id,
         source: l.from,
@@ -227,20 +208,6 @@ export function PertRenderer<T extends HasId>({
       }
     })
 
-  // The arrow a box with no link would go into if let go at `at[id]`: the first it crosses.
-  type At = Record<string, { x: number; y: number; w?: number; h?: number }>
-  const insertTarget = (id: string, at: At): Edge | undefined => {
-    if (!ops || !canLink || links.some((l) => l.from === id || l.to === id)) return undefined
-    const box = (n: string) => ({ ...TASK_BOX_SIZE, ...at[n] })
-    const dropped = box(id)
-    return edges.find((e) => {
-      const a = box(e.source)
-      const b = box(e.target)
-      return at[e.source] && at[e.target] && segmentHitsRect({ x: a.x + a.w, y: a.y + a.h / 2 }, { x: b.x, y: b.y + b.h / 2 }, dropped)
-    })
-  }
-
-  const fail = (e: unknown) => setError(serializeError(toApiError(e)))
   const addLink = async (from: string, to: string) => {
     if (!ops) return
     const created = await ops.create(dep.entity, { [dep.fromField]: from, [dep.toField]: to })
@@ -252,10 +219,9 @@ export function PertRenderer<T extends HasId>({
     await ops.remove(dep.entity, l.id)
     setLinks((ls) => ls.filter((x) => x.id !== l.id))
   }
-  // Recorded only once it succeeded.
   const record = (run: () => Promise<unknown>, undo: () => Promise<unknown>) => {
     setError(null)
-    run().then(() => history.push({ undo, redo: run }), fail)
+    void history.perform(run, undo)
   }
 
   const onConnect = ({ source, target }: Connection) => {
@@ -272,10 +238,8 @@ export function PertRenderer<T extends HasId>({
   }
 
   // A box with no link dropped across an arrow A → B goes in between: A → box → B.
-  const onNodeDrop = (id: string, _over: string | null, at: At) => {
-    const hit = insertTarget(id, at)
-    if (!ops || !hit) return
-    const { source: a, target: b } = hit
+  const canInsert = (id: string) => !links.some((l) => l.from === id || l.to === id)
+  const onInsert = (id: string, { source: a, target: b }: Edge) => {
     // The new links first: a refused one leaves the old arrow in place.
     record(
       async () => {
@@ -304,9 +268,9 @@ export function PertRenderer<T extends HasId>({
         autoLayout={() => layoutPert(rows.map((r) => r.id), links, TASK_BOX_SIZE, orderOf)}
         onConnect={canLink ? onConnect : undefined}
         onEdgesDelete={canLink ? onEdgesDelete : undefined}
-        onNodeDrop={canLink ? onNodeDrop : undefined}
+        onInsert={canLink ? onInsert : undefined}
+        canInsert={canInsert}
         history={history}
-        onNodeDragOver={canLink ? (id, at) => setInsertEdge(id ? (insertTarget(id, at)?.id ?? null) : null) : undefined}
         notes
         legend={[
           { color: red, label: t('Critical path') },
