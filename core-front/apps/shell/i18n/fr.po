@@ -2739,6 +2739,12 @@ msgstr "Cliquez sur un lien pour le sélectionner, puis appuyez sur Suppr pour l
 msgid "Drop a box onto another to move it under that one."
 msgstr "Déposez une boîte sur une autre pour la placer sous celle-ci."
 
+msgid "Undo"
+msgstr "Annuler"
+
+msgid "Redo"
+msgstr "Rétablir"
+
 msgid "Drop a box with no links onto an arrow to insert it there."
 msgstr "Déposez une boîte sans lien sur une flèche pour l’insérer à cet endroit."
 

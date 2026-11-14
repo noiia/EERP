@@ -275,6 +275,48 @@ describe('PertRenderer', () => {
     expect(create).toHaveBeenCalledWith('project_task_dependency', { depends_on_id: 'A', task_id: 'E' })
     expect(create).toHaveBeenCalledWith('project_task_dependency', { depends_on_id: 'E', task_id: 'B' })
     await waitFor(() => expect(rf.props.edges.map((e) => e.id).sort()).toEqual(['l2', 'l3', 'l4', 'n1', 'n2']))
+    // One undo puts the arrow back as it was.
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(rf.props.edges.map((e) => `${e.source}>${e.target}`).sort()).toEqual(['A>B', 'A>C', 'B>D', 'C>D']))
+  })
+
+  it('undoes and redoes link changes by their two ends', async () => {
+    let n = 0
+    const create = vi.fn(async (_e: string, body: Record<string, unknown>) => ({ id: `n${++n}`, ...body }))
+    const { ops } = setup({ create })
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    const ends = () => rf.props.edges.map((e) => `${e.source}>${e.target}`).sort()
+    act(() => rf.props.onConnect!({ source: 'B', target: 'C' }))
+    await waitFor(() => expect(ends()).toContain('B>C'))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ends()).not.toContain('B>C'))
+    expect(ops.remove).toHaveBeenLastCalledWith('project_task_dependency', 'n1')
+    await act(async () => fireEvent.keyDown(window, { key: 'y', ctrlKey: true }))
+    await waitFor(() => expect(ends()).toContain('B>C'))
+    // A deleted arrow comes back as a new row.
+    act(() => rf.props.onEdgesDelete!([rf.props.edges.find((e) => e.id === 'l3')!]))
+    await waitFor(() => expect(ends()).not.toContain('B>D'))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(ends()).toContain('B>D'))
+    expect(create).toHaveBeenLastCalledWith('project_task_dependency', { depends_on_id: 'B', task_id: 'D' })
+  })
+
+  it('undoes a box edit', async () => {
+    const { actions } = setup()
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    await act(() => (node('C').data as TaskBoxData).onCommit('planned_hours', 80))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(actions.update).toHaveBeenLastCalledWith('C', { planned_hours: 8 }))
+  })
+
+  it('shows an undo failure', async () => {
+    const { ops } = setup()
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    act(() => rf.props.onConnect!({ source: 'B', target: 'C' }))
+    await waitFor(() => expect(rf.props.edges).toHaveLength(5))
+    vi.mocked(ops.remove).mockRejectedValueOnce(new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    expect(await screen.findByText('nope')).toBeInTheDocument()
   })
 
   it('is read-only without the write permission', async () => {

@@ -52,7 +52,8 @@ vi.mock('./export', () => {
   return { exportPng, exportPdf }
 })
 
-import { DIAGRAM_RECORD_CAP, DiagramCanvas, DiagramCapNotice, trimPositions, useDiagramRecords, type DiagramCanvasProps } from './diagram-canvas'
+import { DIAGRAM_RECORD_CAP, DiagramCanvas, DiagramCapNotice, handleSize, trimPositions, useDiagramRecords, type DiagramCanvasProps } from './diagram-canvas'
+import { useUndoHistory } from './history'
 import { LabelBox, NoteBox, TaskBox, type NoteBoxData, type TaskBoxData } from './task-box'
 import { RelationOpsProvider, type RelationOps, type ViewLayout } from '../relation-ops'
 import type { EntityListOptions } from '../../api/list-options'
@@ -95,6 +96,44 @@ afterEach(() => {
 })
 
 describe('DiagramCanvas', () => {
+  it('grows connector dots as the view zooms out', async () => {
+    expect(handleSize(1)).toBe(12)
+    expect(handleSize(4)).toBe(8)
+    expect(handleSize(0.1)).toBeCloseTo(120)
+    rf.zoom = 0.5
+    setup()
+    await flush()
+    expect(screen.getByTestId('react-flow').parentElement!.style.getPropertyValue('--handle-size')).toBe('24px')
+    rf.zoom = 1
+  })
+
+  it('undoes and redoes box moves (Ctrl+Z, Ctrl+Y, toolbar)', async () => {
+    const saveViewLayout = vi.fn(async () => {})
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), getViewLayout: async () => ({ positions: {}, folded: [] }), saveViewLayout }
+    function WithHistory() {
+      const history = useUndoHistory()
+      return (
+        <DiagramCanvas entity="project_task" mode="pert" title="Plan" nodes={[node('a'), node('b')]} edges={[]}
+          autoLayout={() => ({ a: at(0, 0), b: at(500, 500) })} legend={[]} history={history} />
+      )
+    }
+    render(<RelationOpsProvider ops={ops}><WithHistory /></RelationOpsProvider>)
+    await flush()
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
+    act(() => rf.props.onNodeDragStop!(null, { ...rf.props.nodes[0], position: at(40, 40) }))
+    expect(pos('a')).toEqual(at(40, 40))
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    expect(pos('a')).toEqual(at(0, 0))
+    await act(async () => fireEvent.keyDown(window, { key: 'y', ctrlKey: true }))
+    expect(pos('a')).toEqual(at(40, 40))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Undo' })))
+    expect(pos('a')).toEqual(at(0, 0))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Redo' })))
+    expect(pos('a')).toEqual(at(40, 40))
+    await act(() => vi.advanceTimersByTimeAsync(600))
+    expect(saveViewLayout).toHaveBeenLastCalledWith('project_task', 'pert', expect.objectContaining({ positions: expect.objectContaining({ a: at(40, 40) }) }))
+  })
+
   it('loads the export code only on the first export', async () => {
     setup()
     await flush()

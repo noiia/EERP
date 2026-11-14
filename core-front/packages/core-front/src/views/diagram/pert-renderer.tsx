@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
@@ -20,6 +20,7 @@ import { useRelationOps } from '../relation-ops'
 import type { EntityActions, HasId } from '../stores'
 import { layoutPert } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
+import { useUndoHistory } from './history'
 import { computePert, offsetToDate, segmentHitsRect } from './pert'
 import { boxFieldOf, TASK_BOX_SIZE, type TaskBoxData } from './task-box'
 
@@ -92,6 +93,13 @@ export function PertRenderer<T extends HasId>({
   const [links, setLinks] = useState<LinkRow[]>([])
   // The arrow a dragged box would be inserted into: drawn highlighted with a "+".
   const [insertEdge, setInsertEdge] = useState<string | null>(null)
+  // Undo/redo of moves, links and box edits. Links are replayed by their two ends, since a
+  // re-created link gets a new id; the ref holds the links as they are now.
+  const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
+  const linksRef = useRef(links)
+  useEffect(() => {
+    linksRef.current = links
+  })
   const listPage = ops?.listPage
   const depKey = JSON.stringify(dep)
   const idsKey = rows.map((r) => r.id).sort().join(',')
@@ -157,7 +165,10 @@ export function PertRenderer<T extends HasId>({
       editable: canWrite,
       fields,
       onCommit: async (field, value) => {
-        replace(await actions.update(id, { [field]: value } as Partial<T>))
+        const old = values(record)[field]
+        const set = async (v: unknown) => replace(await actions.update(id, { [field]: v } as Partial<T>))
+        await set(value)
+        history.push({ undo: () => set(old), redo: () => set(value) })
       },
       onOpen: () => {
         if (formPath) router.push(erpPath(formPath.replace(':id', id)))
@@ -229,40 +240,53 @@ export function PertRenderer<T extends HasId>({
     })
   }
 
+  const fail = (e: unknown) => setError(serializeError(toApiError(e)))
+  const addLink = async (from: string, to: string) => {
+    if (!ops) return
+    const created = await ops.create(dep.entity, { [dep.fromField]: from, [dep.toField]: to })
+    setLinks((ls) => [...ls, { id: String(created.id), from, to }])
+  }
+  const dropLink = async (from: string, to: string) => {
+    const l = linksRef.current.find((x) => x.from === from && x.to === to)
+    if (!ops || !l) return
+    await ops.remove(dep.entity, l.id)
+    setLinks((ls) => ls.filter((x) => x.id !== l.id))
+  }
+  // Recorded only once it succeeded.
+  const record = (run: () => Promise<unknown>, undo: () => Promise<unknown>) => {
+    setError(null)
+    run().then(() => history.push({ undo, redo: run }), fail)
+  }
+
   const onConnect = ({ source, target }: Connection) => {
     if (!ops || source === target || links.some((l) => l.from === source && l.to === target)) return
-    setError(null)
-    ops.create(dep.entity, { [dep.fromField]: source, [dep.toField]: target }).then(
-      (created) => setLinks((ls) => [...ls, { id: String(created.id), from: source, to: target }]),
-      (e: unknown) => setError(serializeError(toApiError(e))),
-    )
+    record(() => addLink(source, target), () => dropLink(source, target))
   }
   const onEdgesDelete = (deleted: Edge[]) => {
     if (!ops) return
-    setError(null)
-    for (const e of deleted) {
-      ops.remove(dep.entity, e.id).then(
-        () => setLinks((ls) => ls.filter((l) => l.id !== e.id)),
-        (err: unknown) => setError(serializeError(toApiError(err))),
-      )
-    }
+    const pairs = deleted.map((e) => [e.source, e.target] as const)
+    record(
+      () => Promise.all(pairs.map(([a, b]) => dropLink(a, b))),
+      () => Promise.all(pairs.map(([a, b]) => addLink(a, b))),
+    )
   }
 
   // A box with no link dropped across an arrow A → B goes in between: A → box → B.
   const onNodeDrop = (id: string, _over: string | null, at: At) => {
     const hit = insertTarget(id, at)
     if (!ops || !hit) return
-    setError(null)
-    const link = (from: string, to: string) =>
-      ops.create(dep.entity, { [dep.fromField]: from, [dep.toField]: to }).then((c) => ({ id: String(c.id), from, to }))
-    // Both new links first: a refused one leaves the old arrow in place.
-    Promise.all([link(hit.source, id), link(id, hit.target)])
-      .then(async (added) => {
-        setLinks((ls) => [...ls, ...added])
-        await ops.remove(dep.entity, hit.id)
-        setLinks((ls) => ls.filter((l) => l.id !== hit.id))
-      })
-      .catch((e: unknown) => setError(serializeError(toApiError(e))))
+    const { source: a, target: b } = hit
+    // The new links first: a refused one leaves the old arrow in place.
+    record(
+      async () => {
+        await Promise.all([addLink(a, id), addLink(id, b)])
+        await dropLink(a, b)
+      },
+      async () => {
+        await addLink(a, b)
+        await Promise.all([dropLink(a, id), dropLink(id, b)])
+      },
+    )
   }
 
   if (loaded.capped) return <DiagramCapNotice />
@@ -281,6 +305,7 @@ export function PertRenderer<T extends HasId>({
         onConnect={canLink ? onConnect : undefined}
         onEdgesDelete={canLink ? onEdgesDelete : undefined}
         onNodeDrop={canLink ? onNodeDrop : undefined}
+        history={history}
         onNodeDragOver={canLink ? (id, at) => setInsertEdge(id ? (insertTarget(id, at)?.id ?? null) : null) : undefined}
         notes
         legend={[

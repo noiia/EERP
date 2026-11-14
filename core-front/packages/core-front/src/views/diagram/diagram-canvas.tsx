@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -22,6 +22,7 @@ import {
   type NodeChange,
   type NodeTypes,
   type ReactFlowInstance,
+  useStore,
 } from '@xyflow/react'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { EntityListOptions } from '../../api/list-options'
@@ -31,6 +32,7 @@ import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
 import { freeSpot, separateBoxes, type Point, type Rect } from './collide'
+import { historyKey, type UndoHistory } from './history'
 import { ObsBox } from './obs-box'
 import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
 
@@ -183,6 +185,21 @@ function DiagramHelp({ mode, links, drop, notes }: { mode: 'wbs' | 'pert' | 'obs
   )
 }
 
+// Connector dots keep at least HANDLE_SCREEN_PX on screen however far the view is zoomed
+// out, so links can still be drawn from a zoomed-out overview (never under HANDLE_MIN_PX).
+export const HANDLE_SCREEN_PX = 12
+const HANDLE_MIN_PX = 8
+export const handleSize = (zoom: number) => Math.max(HANDLE_MIN_PX, HANDLE_SCREEN_PX / zoom)
+
+/** Sets `--handle-size` on the canvas box from the zoom; re-renders only itself. */
+function HandleScale({ target }: { target: RefObject<HTMLDivElement | null> }) {
+  const zoom = useStore((s) => s.transform[2])
+  useEffect(() => {
+    target.current?.style.setProperty('--handle-size', `${handleSize(zoom)}px`)
+  }, [zoom, target])
+  return null
+}
+
 function BoxOps({ ops, children }: { ops: RelationOps | null; children: ReactNode }) {
   return ops ? <RelationOpsProvider ops={ops}>{children}</RelationOpsProvider> : <>{children}</>
 }
@@ -242,6 +259,8 @@ export interface DiagramCanvasProps {
   onMove?: (moved: Record<string, Point>) => boolean | void | Promise<boolean | void>
   /** Boxes don't drag. */
   readOnly?: boolean
+  /** Undo/redo: box moves are recorded in it, Ctrl+Z / Ctrl+Y and toolbar buttons drive it. */
+  history?: UndoHistory
 }
 
 const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox }
@@ -472,6 +491,34 @@ function Canvas(props: DiagramCanvasProps) {
     else undo(res)
   }
 
+  // Moves replay through the latest onMove (controlled positions) and the layout save.
+  const onMoveRef = useRef(props.onMove)
+  useEffect(() => {
+    onMoveRef.current = props.onMove
+  })
+  const applyMove = (to: Record<string, Point>) => {
+    setPositions((p) => ({ ...p, ...to }))
+    setLive({})
+    scheduleSave()
+    const res = onMoveRef.current?.(to)
+    if (res instanceof Promise) void res.catch(() => {})
+  }
+  const recordMove = (from: Record<string, Point>, to: Record<string, Point>) =>
+    props.history?.push({ undo: () => applyMove(from), redo: () => applyMove(to) })
+
+  const history = props.history
+  useEffect(() => {
+    if (!history) return
+    const onKey = (e: KeyboardEvent) => {
+      const k = historyKey(e)
+      if (!k) return
+      e.preventDefault()
+      void (k === 'undo' ? history.undo() : history.redo())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [history])
+
   const onNodeDragStop = (_: unknown, node: Node, dragged: Node[] = [node]) => {
     props.onNodeDragOver?.(null, {})
     // A selection moved together: only the layout changes (no re-parent), each box on the
@@ -489,6 +536,7 @@ function Canvas(props: DiagramCanvasProps) {
       setLive({})
       scheduleSave()
       if (props.onMove) reportMove(props.onMove, Object.fromEntries(dragged.map((n) => [n.id, next[n.id]])), () => {})
+      recordMove(Object.fromEntries(dragged.map((n) => [n.id, placed[n.id]])), Object.fromEntries(dragged.map((n) => [n.id, next[n.id]])))
       return
     }
     const rect: Rect = { ...node.position, ...sized(node.id) }
@@ -501,6 +549,7 @@ function Canvas(props: DiagramCanvasProps) {
     }
     const spot = freeSpot(rect, others)
     setPositions({ ...positions, ...placed, [node.id]: spot })
+    if (before) recordMove({ [node.id]: before }, { [node.id]: spot })
     if (props.onMove) reportMove(props.onMove, { [node.id]: spot }, putBack)
     if (onNodeDrop && !noteIds.has(node.id)) {
       const cx = rect.x + rect.w / 2
@@ -588,6 +637,16 @@ function Canvas(props: DiagramCanvasProps) {
         <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>
         <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>
         <Button size="small" onClick={() => instance.current?.fitView()}>{t('Fit view')}</Button>
+        {props.history ? (
+          <>
+            <IconButton size="small" aria-label={t('Undo')} title={t('Undo') + ' (Ctrl+Z)'} disabled={!props.history.canUndo} onClick={() => void props.history?.undo()}>
+              <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
+            </IconButton>
+            <IconButton size="small" aria-label={t('Redo')} title={t('Redo') + ' (Ctrl+Y)'} disabled={!props.history.canRedo} onClick={() => void props.history?.redo()}>
+              <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-right']} />
+            </IconButton>
+          </>
+        ) : null}
         {props.notes ? <Button size="small" onClick={addNote} disabled={notes.length >= NOTE_LIMIT}>{t('Add note')}</Button> : null}
         {legend.map((l) => (
           <Stack key={l.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
@@ -597,7 +656,16 @@ function Canvas(props: DiagramCanvasProps) {
         ))}
         {typeof props.toolbarExtra === 'function' ? props.toolbarExtra(centerSpot) : props.toolbarExtra}
       </Stack>
-      <Box ref={container} sx={{ height: '70vh', border: 1, borderColor: 'divider', borderRadius: 1 }}>
+      <Box
+        ref={container}
+        sx={{
+          height: '70vh',
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1,
+          '& .react-flow__handle': { width: 'var(--handle-size, 8px)', height: 'var(--handle-size, 8px)', minWidth: 0, minHeight: 0 },
+        }}
+      >
         {loaded ? (
           <BoxOps ops={boxOps}>
           <ThemeProvider theme={compact}>
@@ -625,6 +693,7 @@ function Canvas(props: DiagramCanvasProps) {
           >
             <Background />
             <Controls showInteractive={false} />
+            <HandleScale target={container} />
           </ReactFlow>
           </ForceDetail.Provider>
           </ThemeProvider>
