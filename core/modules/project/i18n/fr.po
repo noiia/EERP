@@ -232,3 +232,6 @@ msgstr "Évaluation"
 
 msgid "Color"
 msgstr "Couleur"
+
+msgid "Risk map"
+msgstr "Carte du risque"

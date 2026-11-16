@@ -353,10 +353,18 @@ const riskListFields: Fields = [
 ]
 
 const riskFormFields: Fields = [
+  riskListFields[0],
+  // The read-only mind map: a virtual anchor centred on the (editable) name, so every input stays in the layout once.
   {
-    ...riskListFields[0],
+    name: 'risk_map',
+    label: 'Risk map',
+    type: 'text',
     widget: 'mindmap',
+    store: false,
+    readOnly: true,
+    hideLabel: true,
     widgetOptions: {
+      center: 'name',
       satellites: [
         { field: 'category_id', label: 'Risk category', entity: 'project_risk_category' },
         { field: 'description', label: 'Risk type' },
@@ -364,7 +372,9 @@ const riskFormFields: Fields = [
       ],
     },
   },
-  ...riskListFields.slice(1, 3),
+  // The project is chosen at creation only: Go refuses to move a risk.
+  { ...riskListFields[1], states: { readOnly: { field: 'id', op: 'set' } } },
+  riskListFields[2],
   { name: 'description', label: 'Risk type', type: 'text' },
   // Top-level tasks of the same project; Go's 422 guards the top-level part (a relation filter can't express "no parent").
   { name: 'phase_task_id', label: 'Project phase', type: 'relation', relation: { ...task, filterFields: sameProject } },
@@ -386,6 +396,7 @@ const riskFormFields: Fields = [
     name: 'linked_tasks',
     label: 'Linked tasks',
     type: 'relation',
+    // Rows show the task id (grids don't resolve many2one labels); the add/edit dialog is riskTaskFields' picker.
     relation: { entity: 'project_risk_task', kind: 'one2many', inverseField: 'risk_id', labelField: 'task_id' },
     widgetOptions: {
       deletable: true,
@@ -399,7 +410,9 @@ const riskFormFields: Fields = [
 
 const f = (name: string) => ({ kind: 'field' as const, name })
 const riskFormLayout: ViewDescriptor['layout'] = [
-  { kind: 'row', id: FORM_HEADER_ID, children: [f('name')] },
+  { kind: 'row', id: FORM_HEADER_ID, children: [{ kind: 'field', name: 'name', variant: 'title' }] },
+  { kind: 'group', children: [f('risk_map')] },
+  { kind: 'group', columns: 2, children: ['project_id', 'category_id', 'description', 'phase_task_id'].map(f) },
   {
     kind: 'group',
     id: FORM_COLUMNS_ID,
@@ -418,6 +431,13 @@ const riskFormLayout: ViewDescriptor['layout'] = [
     id: FORM_NOTEBOOK_ID,
     children: [{ kind: 'page', title: 'Linked tasks', children: [f('linked_tasks')] }],
   },
+]
+
+// The linked-task dialog: pick the task, then the estimate that matches the risk's impact.
+const riskTaskFields: Fields = [
+  { name: 'task_id', label: 'Task', type: 'relation', required: true, relation: task },
+  { name: 'delay_days', label: 'Delay (days)', type: 'number' },
+  { name: 'extra_hours', label: 'Extra hours', type: 'number' },
 ]
 
 const riskCategoryFields: Fields = [
@@ -551,6 +571,10 @@ const routes: FrontModule['routes'] = [
   {
     path: '/project/risks/:id',
     descriptor: { entity: 'project_risk', viewType: 'form', fields: riskFormFields, layout: riskFormLayout, permissions: perm('project_risk') },
+  },
+  {
+    path: '/project/risk_tasks/:id',
+    descriptor: { entity: 'project_risk_task', viewType: 'form', fields: riskTaskFields, permissions: perm('project_risk_task') },
   },
   {
     path: '/project/risk_categories',

@@ -231,3 +231,6 @@ msgstr ""
 
 msgid "Color"
 msgstr ""
+
+msgid "Risk map"
+msgstr ""

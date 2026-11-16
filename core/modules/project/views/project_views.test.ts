@@ -150,8 +150,10 @@ describe('project views', () => {
     expect(route('/project/risk_categories/:id').descriptor).toMatchObject({ entity: 'project_risk_category', viewType: 'form' })
     const form = route('/project/risks/:id').descriptor
     expect(form).toMatchObject({ entity: 'project_risk', viewType: 'form' })
-    expect(field('/project/risks/:id', 'name')).toMatchObject({ widget: 'mindmap' })
-    expect(field('/project/risks/:id', 'name').widgetOptions).toEqual({
+    expect(field('/project/risks/:id', 'name').widget).toBeUndefined()
+    expect(field('/project/risks/:id', 'risk_map')).toMatchObject({ widget: 'mindmap', store: false, readOnly: true })
+    expect(field('/project/risks/:id', 'risk_map').widgetOptions).toEqual({
+      center: 'name',
       satellites: [
         { field: 'category_id', label: 'Risk category', entity: 'project_risk_category' },
         { field: 'description', label: 'Risk type' },
@@ -161,6 +163,14 @@ describe('project views', () => {
     expect(field('/project/risks/:id', 'phase_task_id')).toMatchObject({ relation: { entity: 'project_task', filterFields: { project_id: 'project_id' } } })
     expect(field('/project/risks/:id', 'criticity').readOnly).toBe(true)
     expect(field('/project/risks/:id', 'linked_tasks')).toMatchObject({ relation: { entity: 'project_risk_task', kind: 'one2many', inverseField: 'risk_id' } })
+    // Every field of the form is in its layout (an explicit layout renders only the fields it names), once.
+    const named: string[] = []
+    const walk = (nodes: unknown[]) => nodes.forEach((n) => { const x = n as { kind: string; name?: string; children?: unknown[] }; if (x.kind === 'field') named.push(x.name!); else walk(x.children ?? []) })
+    walk(form.layout!)
+    expect(named.sort()).toEqual(form.fields.map((f) => f.name).sort())
+    expect(field('/project/risks/:id', 'project_id').states).toEqual({ readOnly: { field: 'id', op: 'set' } })
+    expect(route('/project/risk_tasks/:id').descriptor).toMatchObject({ entity: 'project_risk_task', viewType: 'form' })
+    expect(field('/project/risk_tasks/:id', 'task_id')).toMatchObject({ required: true, relation: { entity: 'project_task', kind: 'many2one' } })
     expect(JSON.stringify(form.layout)).toContain('Linked tasks')
     const registry = new ModuleRegistry()
     registry.register(mod, { appMode: true })
