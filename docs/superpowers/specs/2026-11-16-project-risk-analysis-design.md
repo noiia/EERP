@@ -45,7 +45,7 @@ per-risk "mind-map" (category / type and description / project phase around the 
    search, filters, sort and export, all free from the engine) and the standard form.
 6. The **risk form** is the per-risk sheet. Its header is a read-only mind-map of the
    risk: the risk in the centre, linked to its category, its type and short description,
-   and its project phase. The mind-map can be exported to PNG/PDF.
+   and its project phase. The mind-map can be exported to PNG.
 
 ## Non-goals
 

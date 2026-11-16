@@ -67,7 +67,7 @@ The delay severity is computed in Go (`risk_calc.go`) while the PERT view comput
 
 A **Risk** display mode on the task lists (`viewModeDefaults.risk`, pinned to one project like OBS)
 holds a criticity matrix (before and residual), an Ishikawa and a register. The risk form's header is a
-read-only mind-map (`text/mindmap` widget, exportable to PNG/PDF through the plain-element export in
+read-only mind-map (`text/mindmap` widget, exportable to PNG through the plain-element export in
 `views/diagram/export.ts`).
 
 ## Pitfalls
@@ -76,4 +76,7 @@ read-only mind-map (`text/mindmap` widget, exportable to PNG/PDF through the pla
   on large tenants. Pin `filter[project_id]`.
 - Anything reading `project_risk` outside that GET (raw SQL, exports) may see severities as old as the
   last read or write.
+- The risk form's linked-task grid shows raw task ids and its task picker is not limited to the risk's
+  project (the one2many grid has no child descriptor to resolve many2one labels); Go still refuses a
+  task of another project. Known v1 limit.
 - Never write `severity_computed`, `severity_note` or the generated columns by hand.
