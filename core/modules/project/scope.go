@@ -191,3 +191,9 @@ func StageScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 func DependencyScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
 	return scope(perms, dependencySQL)
 }
+
+// RiskLinkScope: a risk's task links, visible with the project and only
+// while the linked task is live (as TaskChildScope hides a deleted task's rows).
+func RiskLinkScope(perms func() *auth.PermissionRepository) orm.RowScopeFunc {
+	return scope(perms, childSQL+` AND task_id IN (SELECT t.id FROM project_task t WHERE t.deleted_at IS NULL AND t.tenant_id = $2)`)
+}

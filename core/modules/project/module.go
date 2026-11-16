@@ -36,6 +36,10 @@ func (m *projectModule) Register() error {
 			orm.WithReadOnlyFields("task_count", "task_done_count")),
 		orm.Register[ProjectTimesheet](orm.WithTableName("project_timesheet"), orm.WithRowScope(TaskChildScope(p))),
 		orm.Register[ProjectObsBox](orm.WithTableName("project_obs_box"), orm.WithRowScope(ChildScope(p))),
+		orm.Register[ProjectRisk](orm.WithTableName("project_risk"), orm.WithRowScope(ChildScope(p)),
+			orm.WithReadOnlyFields("severity_computed", "severity_note")),
+		orm.Register[ProjectRiskTask](orm.WithTableName("project_risk_task"), orm.WithRowScope(RiskLinkScope(p))),
+		orm.Register[ProjectRiskCategory](orm.WithTableName("project_risk_category")),
 	} {
 		if err != nil {
 			return err

@@ -54,6 +54,24 @@ var migrations = slices.Concat(
 		check("project", "project_visibility", "visibility IN ('everyone', 'members')"),
 		check("project_timesheet", "project_timesheet_hours", "hours > 0"),
 
+		// ── Risk register: generated figures (a generated column can't read
+		// another, so criticity inlines the effective severity).
+		`ALTER TABLE project_risk ADD COLUMN IF NOT EXISTS severity_effective integer GENERATED ALWAYS AS (COALESCE(severity, severity_computed)) STORED`,
+		`ALTER TABLE project_risk ADD COLUMN IF NOT EXISTS criticity integer GENERATED ALWAYS AS (likelihood * detectability * COALESCE(severity, severity_computed)) STORED`,
+		`ALTER TABLE project_risk ADD COLUMN IF NOT EXISTS residual_criticity integer GENERATED ALWAYS AS (residual_likelihood * residual_detectability * residual_severity) STORED`,
+		check("project_risk", "project_risk_likelihood", "likelihood BETWEEN 1 AND 3"),
+		check("project_risk", "project_risk_detectability", "detectability BETWEEN 1 AND 3"),
+		check("project_risk", "project_risk_severity", "severity BETWEEN 1 AND 3"),
+		check("project_risk", "project_risk_severity_computed", "severity_computed BETWEEN 1 AND 3"),
+		check("project_risk", "project_risk_residual_likelihood", "residual_likelihood BETWEEN 1 AND 3"),
+		check("project_risk", "project_risk_residual_detectability", "residual_detectability BETWEEN 1 AND 3"),
+		check("project_risk", "project_risk_residual_severity", "residual_severity BETWEEN 1 AND 3"),
+		check("project_risk", "project_risk_impact_on", "impact_on IN ('delay', 'cost', 'quality')"),
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_risk_task_live ON project_risk_task (risk_id, task_id) WHERE deleted_at IS NULL`,
+		`INSERT INTO project_risk_category (tenant_id, name)
+		 SELECT DISTINCT c.tenant_id, v.name FROM company c CROSS JOIN (VALUES ('Technical'), ('Organizational'), ('External'), ('Financial')) AS v(name)
+		 WHERE NOT EXISTS (SELECT 1 FROM project_risk_category x WHERE x.tenant_id = c.tenant_id AND x.name = v.name)`,
+
 		// ── Recompute functions: each rewrites its row only when a figure changed.
 		`CREATE OR REPLACE FUNCTION project_task_refresh(tid uuid) RETURNS void LANGUAGE plpgsql AS $$
 		BEGIN
