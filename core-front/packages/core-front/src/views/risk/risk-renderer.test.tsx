@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
-vi.mock('../diagram/export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn() }))
+vi.mock('../diagram/export', () => ({ exportElementPng: vi.fn(), exportElementPdf: vi.fn() }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 import { RiskRenderer } from './risk-renderer'
-import { exportPng } from '../diagram/export'
+import { exportElementPng as exportPng } from '../diagram/export'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
 

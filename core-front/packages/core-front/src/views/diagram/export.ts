@@ -52,7 +52,16 @@ export async function exportPdf(
   filename: string,
 ): Promise<void> {
   const { w, h } = size(bounds)
-  const image = await diagramToPng(viewport, bounds, meta.background)
+  await writePdf(await diagramToPng(viewport, bounds, meta.background), w, h, meta, filename)
+}
+
+async function writePdf(
+  image: string,
+  w: number,
+  h: number,
+  meta: { title: string; date: Date; legend: LegendEntry[] },
+  filename: string,
+): Promise<void> {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: pdfFormat(w, h) })
   const pageW = doc.internal.pageSize.getWidth()
   const pageH = doc.internal.pageSize.getHeight()
@@ -74,4 +83,27 @@ export async function exportPdf(
     x += 10 + doc.getTextWidth(label)
   }
   doc.save(`${filename}.pdf`)
+}
+
+/** PNG data URL of a plain element at its natural size (no viewport transform: for HTML/SVG content that is
+ * not an xyflow canvas); same pixel-ratio rule as diagramToPng. */
+export async function elementToPng(el: HTMLElement, background = WHITE): Promise<string> {
+  const width = Math.ceil(el.scrollWidth)
+  const height = Math.ceil(el.scrollHeight)
+  return toPng(el, { backgroundColor: background, width, height, pixelRatio: Math.max(width, height) * 2 > MAX_CANVAS_SIDE ? 1 : 2 })
+}
+
+export async function exportElementPng(el: HTMLElement, filename: string, background?: string): Promise<void> {
+  const a = document.createElement('a')
+  a.download = `${filename}.png`
+  a.href = await elementToPng(el, background)
+  a.click()
+}
+
+export async function exportElementPdf(
+  el: HTMLElement,
+  meta: { title: string; date: Date; legend: LegendEntry[]; background?: string },
+  filename: string,
+): Promise<void> {
+  await writePdf(await elementToPng(el, meta.background), Math.ceil(el.scrollWidth), Math.ceil(el.scrollHeight), meta, filename)
 }

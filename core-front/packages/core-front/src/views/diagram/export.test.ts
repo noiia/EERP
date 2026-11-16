@@ -9,7 +9,7 @@ vi.mock('jspdf', () => ({
 }))
 
 import { toPng } from 'html-to-image'
-import { diagramToPng, exportPdf, exportPng, pdfColor, pdfFormat } from './export'
+import { diagramToPng, elementToPng, exportPdf, exportPng, pdfColor, pdfFormat } from './export'
 
 const bounds = { x: 10, y: 20, width: 800, height: 400 }
 
@@ -35,6 +35,18 @@ describe('diagramToPng', () => {
     await diagramToPng(el, { x: 0, y: 0, width: 9000, height: 400 })
     await diagramToPng(el, { x: 0, y: 0, width: 400, height: 9000 })
     expect(vi.mocked(toPng).mock.calls.map((c) => c[1]?.pixelRatio)).toEqual([1, 1])
+  })
+})
+
+describe('elementToPng', () => {
+  it('renders the element at its own size with no transform', async () => {
+    const el = document.createElement('div')
+    Object.defineProperty(el, 'scrollWidth', { value: 300 })
+    Object.defineProperty(el, 'scrollHeight', { value: 120 })
+    await elementToPng(el, '#000')
+    const o = vi.mocked(toPng).mock.calls[0][1]!
+    expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 2, backgroundColor: '#000' })
+    expect(o.style).toBeUndefined()
   })
 })
 

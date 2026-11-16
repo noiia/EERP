@@ -89,13 +89,12 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
     setMenu(null)
     const el = area.current
     if (!el) return
-    const bounds = { x: 0, y: 0, width: el.scrollWidth, height: el.scrollHeight }
     const name = `${tab}-${projectId}`
     const bg = th.palette.background.paper
     const meta = { title: `${project} — ${tab === 'matrix' ? t('Matrix') : t('Ishikawa')}`, date: new Date(), legend: [], background: bg }
     const run = async () => {
-      const { exportPdf, exportPng } = await import('../diagram/export')
-      return kind === 'png' ? exportPng(el, bounds, name, bg) : exportPdf(el, bounds, meta, name)
+      const { exportElementPdf, exportElementPng } = await import('../diagram/export')
+      return kind === 'png' ? exportElementPng(el, name, bg) : exportElementPdf(el, meta, name)
     }
     run().catch((e: unknown) => setError(serializeError(toApiError(e))))
   }
@@ -124,8 +123,8 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
         </Menu>
       </Stack>
       <Box sx={{ pt: 2, overflow: 'auto' }}>
-        {tab === 'matrix' && <Box ref={area} sx={{ display: 'inline-block', minWidth: '100%' }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
-        {tab === 'ishikawa' && <Box ref={area} sx={{ display: 'inline-block' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
+        {tab === 'matrix' && <Box ref={area} sx={{ display: 'block', width: 'max-content' }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
+        {tab === 'ishikawa' && <Box ref={area} sx={{ display: 'block', width: 'max-content' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
         {tab === 'register' && <RiskRegister rows={rows} categories={categories} onOpen={open} />}
       </Box>
     </Box>
