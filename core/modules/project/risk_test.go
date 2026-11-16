@@ -113,6 +113,19 @@ func TestRiskRules(t *testing.T) {
 		{"viewer deletes", viewer, http.MethodDelete, path, nil, 403},
 		{"manager deletes", me, http.MethodDelete, path, nil, 204},
 	})
+	t.Run("restore", func(t *testing.T) {
+		cat := f.id(`INSERT INTO project_risk_category (tenant_id, name) VALUES ($1, 'Gone') RETURNING id`, f.tenant)
+		r := f.id(`INSERT INTO project_risk (tenant_id, project_id, name, impact_on, category_id) VALUES ($1, $2, 'D', 'quality', $3) RETURNING id`, f.tenant, p, cat)
+		f.exec(`UPDATE project_risk SET deleted_at = now() WHERE id = $1`, r)
+		f.exec(`UPDATE project_risk_category SET deleted_at = now() WHERE id = $1`, cat)
+		url := "project_risk/" + r.String() + "/restore"
+		if code, body := f.do(viewer, http.MethodPost, url, nil); code != http.StatusForbidden {
+			t.Errorf("viewer restores: %d %v, want 403", code, body)
+		}
+		if code, body := f.do(me, http.MethodPost, url, nil); code != http.StatusOK {
+			t.Errorf("manager restores: %d %v, want 200", code, body)
+		}
+	})
 	t.Run("impact defaults to delay", func(t *testing.T) {
 		code, body := f.do(me, http.MethodPost, "project_risk", risk(nil))
 		if code != http.StatusCreated || body["impact_on"] != "delay" {

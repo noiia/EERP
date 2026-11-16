@@ -711,6 +711,13 @@ func riskRules(r *request) error {
 	if r.op == opDelete {
 		return r.requireManage(r.storedRef("project_id"))
 	}
+	if r.op == opCreate && r.id != uuid.Nil { // a restore undoes the manager's delete and keeps dead references
+		pid, err := r.ref("project_id")
+		if err != nil {
+			return err
+		}
+		return r.requireManage(pid)
+	}
 	if err := fixedProject(r); err != nil {
 		return err
 	}
