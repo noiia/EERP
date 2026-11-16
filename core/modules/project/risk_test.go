@@ -35,6 +35,13 @@ func TestRisk_Schema(t *testing.T) {
 		t.Error("likelihood 4 accepted")
 	}
 
+	for sev, ok := range map[int]bool{4: true, 5: false} {
+		_, err := f.app.DB.Exec(ctx, `INSERT INTO project_risk (tenant_id, project_id, name, impact_on, severity) VALUES ($1, $2, 'S', 'cost', $3)`, f.tenant, p, sev)
+		if (err == nil) != ok {
+			t.Errorf("severity %d: accepted = %v, want %v", sev, err == nil, ok)
+		}
+	}
+
 	task := f.task(p, nil, nil)
 	link := `INSERT INTO project_risk_task (tenant_id, project_id, risk_id, task_id) VALUES ($1, $2, $3, $4)`
 	f.exec(link, f.tenant, p, risk, task)

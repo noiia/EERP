@@ -61,11 +61,14 @@ var migrations = slices.Concat(
 		`ALTER TABLE project_risk ADD COLUMN IF NOT EXISTS residual_criticity integer GENERATED ALWAYS AS (residual_likelihood * residual_detectability * residual_severity) STORED`,
 		check("project_risk", "project_risk_likelihood", "likelihood BETWEEN 1 AND 3"),
 		check("project_risk", "project_risk_detectability", "detectability BETWEEN 1 AND 3"),
-		check("project_risk", "project_risk_severity", "severity BETWEEN 1 AND 3"),
-		check("project_risk", "project_risk_severity_computed", "severity_computed BETWEEN 1 AND 3"),
+		`ALTER TABLE project_risk DROP CONSTRAINT IF EXISTS project_risk_severity`, // replaces the former 1-3 range
+		check("project_risk", "project_risk_severity", "severity BETWEEN 1 AND 4"),
+		`ALTER TABLE project_risk DROP CONSTRAINT IF EXISTS project_risk_severity_computed`, // replaces the former 1-3 range
+		check("project_risk", "project_risk_severity_computed", "severity_computed BETWEEN 1 AND 4"),
 		check("project_risk", "project_risk_residual_likelihood", "residual_likelihood BETWEEN 1 AND 3"),
 		check("project_risk", "project_risk_residual_detectability", "residual_detectability BETWEEN 1 AND 3"),
-		check("project_risk", "project_risk_residual_severity", "residual_severity BETWEEN 1 AND 3"),
+		`ALTER TABLE project_risk DROP CONSTRAINT IF EXISTS project_risk_residual_severity`, // replaces the former 1-3 range
+		check("project_risk", "project_risk_residual_severity", "residual_severity BETWEEN 1 AND 4"),
 		check("project_risk", "project_risk_impact_on", "impact_on IN ('delay', 'cost', 'quality')"),
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_risk_task_live ON project_risk_task (risk_id, task_id) WHERE deleted_at IS NULL`,
 		`INSERT INTO project_risk_category (tenant_id, name)
