@@ -22,6 +22,7 @@ import { HtmlEditor } from './lazy-widgets'
 import { useT } from '../i18n/translate'
 import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
 import { AddressWidget } from './address-widget'
+import { MindmapWidget } from './mindmap-widget'
 import { DistanceWidget } from './distance-widget'
 import { GeoPointWidget, GeoShapeWidget } from './geo-widgets'
 import { RelationCarouselWidget } from './carousel-widget'
@@ -953,6 +954,7 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'relation/colortags': RelationColorTagsWidget,
   'relation/summary': RelationSummaryWidget,
   'totals/recap': TaxTotalsWidget,
+  'text/mindmap': MindmapWidget,
   'address/form': AddressWidget,
   'distance/meters': DistanceWidget,
   'geo/point': GeoPointWidget,

@@ -104,7 +104,7 @@ export type JsonValue =
  * the draft field holding the record id (omitted = this record).
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
-  text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username', 'user-presence', 'html'],
+  text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username', 'user-presence', 'html', 'mindmap'],
   number: ['float', 'int', 'percent', 'stars', 'duration', 'phone', 'monetary'],
   boolean: ['switch', 'picture', 'signature', 'file', 'stars'],
   date: ['simple', 'datetime'],
