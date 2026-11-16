@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import fixture from '../../../../../../core/modules/project/testdata/risk_pert_fixture.json'
 import { computePert, offsetToDate, taskDuration } from './pert'
 
 const t = (id: string, days: number) => ({ id, plannedHours: days * 8 })
@@ -56,5 +57,8 @@ describe('computePert', () => {
     const today = new Date(2026, 5, 7, 15, 30)
     expect(computePert([t('A', 1)], [], today).origin).toEqual(new Date(2026, 5, 7))
     expect(offsetToDate(new Date(Date.UTC(2026, 0, 1)), 2).toISOString()).toBe('2026-01-03T00:00:00.000Z')
+  })
+  it('matches the shared Go fixture', () => {
+    expect(computePert(fixture.tasks, fixture.links).finish).toBeCloseTo(fixture.finish, 6)
   })
 })
