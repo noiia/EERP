@@ -52,7 +52,8 @@ func TestRisk_CategorySeed(t *testing.T) {
 		_, _ = f.app.DB.Exec(ctx, `DELETE FROM company WHERE tenant_id = $1`, f.tenant)
 	})
 	count := func() (n int) {
-		if err := f.app.DB.QueryRow(ctx, `SELECT count(*) FROM project_risk_category WHERE tenant_id = $1`, f.tenant).Scan(&n); err != nil {
+		if err := f.app.DB.QueryRow(ctx, `SELECT count(*) FROM project_risk_category WHERE tenant_id = $1
+			AND name IN ('Internal', 'Environment', 'Financial', 'Project management')`, f.tenant).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n

@@ -69,7 +69,7 @@ var migrations = slices.Concat(
 		check("project_risk", "project_risk_impact_on", "impact_on IN ('delay', 'cost', 'quality')"),
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_risk_task_live ON project_risk_task (risk_id, task_id) WHERE deleted_at IS NULL`,
 		`INSERT INTO project_risk_category (tenant_id, name)
-		 SELECT DISTINCT c.tenant_id, v.name FROM company c CROSS JOIN (VALUES ('Technical'), ('Organizational'), ('External'), ('Financial')) AS v(name)
+		 SELECT DISTINCT c.tenant_id, v.name FROM company c CROSS JOIN (VALUES ('Internal'), ('Environment'), ('Financial'), ('Project management')) AS v(name)
 		 WHERE NOT EXISTS (SELECT 1 FROM project_risk_category x WHERE x.tenant_id = c.tenant_id AND x.name = v.name)`,
 
 		// ── Recompute functions: each rewrites its row only when a figure changed.
