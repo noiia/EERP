@@ -159,6 +159,9 @@ func recomputeProject(ctx context.Context, ex orm.Executor, tenant, project uuid
 // stays the generic handler's, row scope included.
 func (h *Handler) RecomputeOnRead(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
+		if q := c.QueryParams(); q.Has("aggregate") || q.Has("distinct") {
+			return next(c) // Graph tiles and group-by would each trigger a full recompute
+		}
 		ctx := c.Request().Context()
 		tenant, _ := access.TenantFromContext(ctx)
 		var projects []uuid.UUID
@@ -223,7 +226,8 @@ func (b *bufferedResponse) Write(p []byte) (int, error) {
 // (it must sit AFTER the guard, which rewrites the body): once the write
 // succeeded, the project's risks are recomputed, and a risk's own POST/PUT
 // answer carries the fresh derived columns. The write's response is held in a
-// buffer meanwhile; any other answer is flushed unchanged.
+// buffer meanwhile; any other answer is flushed unchanged. The body is
+// rewritten, so this relies on the generic handler not setting Content-Length.
 func (h *Handler) RecomputeAfterWrite(table string, next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		ctx := c.Request().Context()

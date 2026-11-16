@@ -14,7 +14,7 @@ func TestDelaySeverity(t *testing.T) {
 	for _, c := range []struct {
 		in   float64
 		want int
-	}{{0, 1}, {6.9, 2}, {7, 3}, {14, 3}, {14.1, 4}} {
+	}{{0, 1}, {6.9, 2}, {7, 3}, {14, 3}, {14.1, 4}, {6.999999999999999, 3}} {
 		if got := delaySeverity(c.in); got != c.want {
 			t.Errorf("delaySeverity(%v) = %d, want %d", c.in, got, c.want)
 		}

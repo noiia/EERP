@@ -235,3 +235,12 @@ msgstr "Couleur"
 
 msgid "Risk map"
 msgstr "Carte du risque"
+
+msgid "No estimate on linked tasks"
+msgstr "Aucune estimation sur les tâches liées"
+
+msgid "Dependency cycle"
+msgstr "Cycle de dépendances"
+
+msgid "Project has no planned hours"
+msgstr "Le projet n'a pas d'heures prévues"

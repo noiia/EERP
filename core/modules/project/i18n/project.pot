@@ -234,3 +234,12 @@ msgstr ""
 
 msgid "Risk map"
 msgstr ""
+
+msgid "No estimate on linked tasks"
+msgstr ""
+
+msgid "Dependency cycle"
+msgstr ""
+
+msgid "Project has no planned hours"
+msgstr ""

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -78,6 +79,7 @@ func projectFinish(tasks []calcTask, links []calcLink, extra map[uuid.UUID]float
 }
 
 func delaySeverity(days float64) int {
+	days = math.Round(days*1e6) / 1e6 // float noise: 0.1-day sums must not land a hair under a threshold
 	switch {
 	case days < 1e-6:
 		return 1

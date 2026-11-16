@@ -77,6 +77,48 @@ func TestRisk_CategorySeed(t *testing.T) {
 	}
 }
 
+func TestRisk_CategorySeedKeepsRename(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.exec(`INSERT INTO company (tenant_id, name) VALUES ($1, 'C')`, f.tenant)
+	t.Cleanup(func() {
+		_, _ = f.app.DB.Exec(ctx, `DELETE FROM project_risk_category WHERE tenant_id = $1`, f.tenant)
+		_, _ = f.app.DB.Exec(ctx, `DELETE FROM company WHERE tenant_id = $1`, f.tenant)
+	})
+	if err := (&projectModule{}).Migrate(ctx, f.app.DB); err != nil {
+		t.Fatal(err)
+	}
+	f.exec(`UPDATE project_risk_category SET name = 'Renamed' WHERE tenant_id = $1 AND name = 'Internal'`, f.tenant)
+	if err := (&projectModule{}).Migrate(ctx, f.app.DB); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := f.app.DB.QueryRow(ctx, `SELECT count(*) FROM project_risk_category WHERE tenant_id = $1`, f.tenant).Scan(&n); err != nil || n != 4 {
+		t.Errorf("categories = %d (%v), want 4: a renamed default must not be re-seeded", n, err)
+	}
+}
+
+func TestRiskRecompute_SkippedForAggregates(t *testing.T) {
+	r := newRiskFx(t)
+	risk := r.risk("delay", 1, 1)
+	r.link(risk, r.a, 2, nil)
+	stored := func() (n int) {
+		if err := r.app.DB.QueryRow(context.Background(), `SELECT severity_computed FROM project_risk WHERE id = $1`, risk).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	r.exec(`UPDATE project_risk SET severity_computed = 4 WHERE id = $1`, risk)
+	for _, q := range []string{"?aggregate=count&value=likelihood", "?distinct=name"} {
+		if code, _ := r.get(r.me, "project_risk"+q); code != http.StatusOK || stored() != 4 {
+			t.Fatalf("%s: code %d, stored %d, want 200 and untouched 4", q, code, stored())
+		}
+	}
+	if code, _ := r.get(r.me, "project_risk"); code != http.StatusOK || stored() != 2 {
+		t.Fatalf("plain list: stored %d, want recomputed 2", stored())
+	}
+}
+
 func TestRiskRules(t *testing.T) {
 	f := newFixture(t)
 	other := f.sibling()
