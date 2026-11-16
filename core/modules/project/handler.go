@@ -55,6 +55,9 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		"project_task_color":      h.ValidateTaskLinkBody("project_task_color"),
 		"project_timesheet":       h.ValidateTimesheetBody,
 		"project_obs_box":         h.ValidateObsBody,
+		"project_risk":            h.ValidateRiskBody,
+		"project_risk_task":       h.ValidateRiskLinkBody,
+		"project_risk_category":   h.ValidateRiskCategoryBody,
 	}
 	for table, guard := range guards {
 		g := generic(table)

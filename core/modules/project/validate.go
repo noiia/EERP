@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -687,6 +688,135 @@ var dependencyRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
 	return nil
 })
 
+// riskStaff checks a staff user (not a website visitor) of the tenant.
+func riskStaff(r *request, k string) error {
+	id, err := r.ref(k)
+	if err != nil || id == uuid.Nil || !r.changed(k) {
+		return err
+	}
+	var ok bool
+	if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2
+		AND deleted_at IS NULL AND kind <> 'website')`, id, r.tenant).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return invalid(k, k+" not found")
+	}
+	return nil
+}
+
+// riskRules: any viewer of the project writes its risks, only the manager
+// or an admin deletes one. Scores stay in their ranges (the CHECKs backstop).
+func riskRules(r *request) error {
+	if r.op == opDelete {
+		return r.requireManage(r.storedRef("project_id"))
+	}
+	if err := fixedProject(r); err != nil {
+		return err
+	}
+	pid, err := r.visibleRef("project", "project_id", true)
+	if err != nil {
+		return err
+	}
+	if name, _ := r.get("name").(string); strings.TrimSpace(name) == "" {
+		return invalid("name", "name is required")
+	}
+	r.defaults(map[string]any{"impact_on": "delay"})
+	switch r.get("impact_on") {
+	case "delay", "cost", "quality":
+	default:
+		return invalid("impact_on", "impact_on must be delay, cost or quality")
+	}
+	for k, max := range map[string]float64{"likelihood": 3, "detectability": 3, "severity": 4,
+		"residual_likelihood": 3, "residual_detectability": 3, "residual_severity": 4} {
+		switch v := r.get(k).(type) {
+		case nil:
+		case float64:
+			if v < 1 || v > max || v != math.Trunc(v) {
+				return invalid(k, k+" must be a whole number from 1 to "+strconv.Itoa(int(max)))
+			}
+		default:
+			return invalid(k, k+" must be a number")
+		}
+	}
+	// A phase is a top-level task of the project.
+	phase, err := r.inProject("project_task", "phase_task_id", pid)
+	if err != nil {
+		return err
+	}
+	if phase != uuid.Nil && (r.changed("phase_task_id") || r.changed("project_id")) {
+		var top bool
+		if err := r.h.db.QueryRow(r.ctx, `SELECT parent_id IS NULL FROM project_task WHERE id = $1 AND tenant_id = $2`,
+			phase, r.tenant).Scan(&top); err != nil {
+			return err
+		}
+		if !top {
+			return invalid("phase_task_id", "a phase is a top-level task")
+		}
+	}
+	if cat, err := r.ref("category_id"); err != nil {
+		return err
+	} else if cat != uuid.Nil && r.changed("category_id") {
+		var ok bool
+		if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM project_risk_category
+			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`, cat, r.tenant).Scan(&ok); err != nil {
+			return err
+		}
+		if !ok {
+			return invalid("category_id", "category_id not found")
+		}
+	}
+	return riskStaff(r, "responsible_id")
+}
+
+// riskLinkRules: a risk-task link lives in the risk's project and carries the
+// estimate its risk's impact asks for (delay days, extra hours; none for quality).
+var riskLinkRules = taskLinkRules(func(r *request, pid uuid.UUID) error {
+	if r.op == opDelete {
+		return nil
+	}
+	risk, err := r.visibleRef("project_risk", "risk_id", true)
+	if err != nil {
+		return err
+	}
+	var owner uuid.UUID
+	var impact string
+	if err := r.h.db.QueryRow(r.ctx, `SELECT project_id, impact_on FROM project_risk WHERE id = $1 AND tenant_id = $2`,
+		risk, r.tenant).Scan(&owner, &impact); err != nil {
+		return err
+	}
+	if owner != pid {
+		return invalid("task_id", "task_id belongs to another project")
+	}
+	for k, on := range map[string]string{"delay_days": "delay", "extra_hours": "cost"} {
+		v, set := r.get(k).(float64)
+		if r.get(k) != nil && !set {
+			return invalid(k, k+" must be a number")
+		}
+		if set && v < 0 {
+			return invalid(k, k+" can't be negative")
+		}
+		if impact == on && !set {
+			return invalid(k, k+" is required on a "+impact+" risk")
+		}
+	}
+	return nil
+})
+
+// riskCategoryRules: a name, and a "#rrggbb" color when one is given.
+func riskCategoryRules(r *request) error {
+	if r.op == opDelete {
+		return nil
+	}
+	if name, _ := r.get("name").(string); strings.TrimSpace(name) == "" {
+		return invalid("name", "name is required")
+	}
+	if r.get("color") == nil {
+		return nil
+	}
+	return lowerColor(r)
+}
+
 // timesheetRules: a user logs hours as themselves; another user's line is
 // written by the project's manager or an admin.
 var timesheetRules = taskLinkRules(func(r *request, pid uuid.UUID) error {
@@ -806,4 +936,19 @@ func (h *Handler) ValidateTimesheetBody(next echo.HandlerFunc) echo.HandlerFunc 
 // ValidateObsBody: OBS boxes are written by the project's manager or an admin.
 func (h *Handler) ValidateObsBody(next echo.HandlerFunc) echo.HandlerFunc {
 	return h.guard("project_obs_box", obsRules)(next)
+}
+
+// ValidateRiskBody: see riskRules.
+func (h *Handler) ValidateRiskBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_risk", riskRules)(next)
+}
+
+// ValidateRiskLinkBody: see riskLinkRules.
+func (h *Handler) ValidateRiskLinkBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_risk_task", riskLinkRules)(next)
+}
+
+// ValidateRiskCategoryBody: see riskCategoryRules.
+func (h *Handler) ValidateRiskCategoryBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_risk_category", riskCategoryRules)(next)
 }
