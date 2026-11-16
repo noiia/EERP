@@ -357,6 +357,12 @@ describe('selection', () => {
     }
   })
 
+  it('shows an option\'s declared label while keeping its raw value', () => {
+    const labelled = { ...statusField, selection: { options: ['no_estimate'], labels: { no_estimate: 'No estimate on linked tasks' } } }
+    renderWidget(labelled, 'no_estimate')
+    expect(screen.getByLabelText('Status')).toHaveTextContent('No estimate on linked tasks')
+  })
+
   it('picking an option emits its raw (untranslated) value', () => {
     const { onChange } = renderWidget(statusField, 'incoming')
     fireEvent.mouseDown(screen.getByLabelText('Status'))

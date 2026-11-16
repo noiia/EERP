@@ -382,7 +382,13 @@ const riskFormFields: Fields = [
   { name: 'likelihood', label: likelihood, type: 'number', widget: 'int' },
   { name: 'detectability', label: detectability, type: 'number', widget: 'int' },
   { name: 'severity_computed', label: 'Computed severity', type: 'number', widget: 'int', readOnly: true },
-  { name: 'severity_note', label: 'Computation note', type: 'text', readOnly: true },
+  {
+    name: 'severity_note',
+    label: 'Computation note',
+    type: 'selection',
+    readOnly: true,
+    selection: { options: ['no_estimate', 'cycle', 'no_planned_hours'], labels: { no_estimate: 'No estimate on linked tasks', cycle: 'Dependency cycle', no_planned_hours: 'Project has no planned hours' } },
+  },
   { name: 'severity', label: 'Severity (1 to 4, overrides the computed one)', type: 'number', widget: 'int' },
   { name: 'criticity', label: 'Criticity', type: 'number', widget: 'int', readOnly: true },
   { name: 'remediation', label: 'Remediation', type: 'text', widget: 'long' },
@@ -396,7 +402,7 @@ const riskFormFields: Fields = [
     name: 'linked_tasks',
     label: 'Linked tasks',
     type: 'relation',
-    // Rows show the task id (grids don't resolve many2one labels); the add/edit dialog is riskTaskFields' picker.
+    // Known v1 limit: the grid shows the raw task id (it has no child descriptor to resolve many2one labels with) and the dialog's task picker isn't scoped to the risk's project (Go's 422 guards that); see ADR-040 Pitfalls.
     relation: { entity: 'project_risk_task', kind: 'one2many', inverseField: 'risk_id', labelField: 'task_id' },
     widgetOptions: {
       deletable: true,

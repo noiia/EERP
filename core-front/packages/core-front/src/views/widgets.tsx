@@ -394,7 +394,7 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
     >
       {options.map((option) => (
         <MenuItem key={option} value={option}>
-          {t(option)}
+          {t(field.selection?.labels?.[option] ?? option)}
         </MenuItem>
       ))}
     </TextField>

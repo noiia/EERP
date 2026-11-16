@@ -211,6 +211,8 @@ export interface RelationDescriptor {
  */
 export interface SelectionDescriptor {
   options: string[]
+  /** Display msgid per option (the plain select only); an option without one is translated as itself. */
+  labels?: Record<string, string>
 }
 
 // ── declarative field states (docs/roadmaps/view-customization.md, Phase 2) ───

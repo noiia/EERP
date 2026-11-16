@@ -163,6 +163,7 @@ describe('project views', () => {
     expect(field('/project/risks/:id', 'phase_task_id')).toMatchObject({ relation: { entity: 'project_task', filterFields: { project_id: 'project_id' } } })
     expect(field('/project/risks/:id', 'criticity').readOnly).toBe(true)
     expect(field('/project/risks/:id', 'linked_tasks')).toMatchObject({ relation: { entity: 'project_risk_task', kind: 'one2many', inverseField: 'risk_id' } })
+    expect(field('/project/risks/:id', 'severity_note')).toMatchObject({ type: 'selection', readOnly: true, selection: { labels: { cycle: 'Dependency cycle' } } })
     // Every field of the form is in its layout (an explicit layout renders only the fields it names), once.
     const named: string[] = []
     const walk = (nodes: unknown[]) => nodes.forEach((n) => { const x = n as { kind: string; name?: string; children?: unknown[] }; if (x.kind === 'field') named.push(x.name!); else walk(x.children ?? []) })

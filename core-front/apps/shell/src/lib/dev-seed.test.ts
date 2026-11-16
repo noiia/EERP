@@ -3,7 +3,11 @@ import { ApiError } from '@eerp/core-front/server'
 
 const createMock = vi.fn()
 const listMock = vi.fn(async (entity: string, o?: { filter?: Record<string, string> }) =>
-  entity === 'project_stage' ? [30, 10, 20].map((sequence) => ({ id: `stage-${o?.filter?.project_id}-${sequence}`, sequence })) : [],
+  entity === 'project_stage'
+    ? [30, 10, 20].map((sequence) => ({ id: `stage-${o?.filter?.project_id}-${sequence}`, sequence }))
+    : entity === 'project_risk_category'
+      ? ['Internal', 'Financial', 'Project management'].map((name) => ({ id: `cat-${name}`, name }))
+      : [],
 )
 const updateMock = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ id, ...body }))
 const apiRequestMock = vi.fn()
@@ -535,6 +539,8 @@ describe('seedDemoData — Project app', () => {
     const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
     const risks = bodies('project_risk')
     expect(risks).toHaveLength(6)
+    expect(risks.every((r) => typeof r.category_id === 'string')).toBe(true)
+    expect(new Set(risks.map((r) => r.category_id)).size).toBe(3)
     expect(risks.map((r) => r.impact_on).sort()).toEqual(['cost', 'cost', 'delay', 'delay', 'quality', 'quality'])
     const created = await createdFor('project_risk')
     const impact = new Map(created.map((r) => [r.id, r.impact_on]))
