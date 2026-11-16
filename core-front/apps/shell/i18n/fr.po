@@ -2853,6 +2853,9 @@ msgstr "Utilisateur inconnu"
 msgid "OBS"
 msgstr "OBS"
 
+msgid "Risk"
+msgstr "Risque"
+
 msgid "Edit box"
 msgstr "Modifier l’encadré"
 

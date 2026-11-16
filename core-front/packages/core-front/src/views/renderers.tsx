@@ -18,7 +18,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid'
-import { DataGrid, GraphRenderer, ObsRenderer, PertRenderer, RichTreeView, WbsRenderer } from './lazy-widgets'
+import { DataGrid, GraphRenderer, ObsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
 import {
@@ -906,6 +906,7 @@ const MODE_LABELS: Record<DisplayMode, string> = {
   wbs: 'WBS',
   pert: 'PERT',
   obs: 'OBS',
+  risk: 'Risk',
 }
 
 /**
@@ -1016,7 +1017,8 @@ function TreeRenderer<T extends HasId>({
   )
   const availability = availableDisplayModes(effective, baseOptions)
   // OBS depends on the live filters: once the pin is lost the persisted 'obs' reads as List everywhere.
-  const mode = storedMode === 'obs' && !availability.obs ? 'list' : storedMode
+  const mode =
+    (storedMode === 'obs' && !availability.obs) || (storedMode === 'risk' && !availability.risk) ? 'list' : storedMode
   const onFiltersChange = (options: EntityListOptions | undefined) => {
     setActiveFilters(options)
     setLiveResults(null)
@@ -1244,6 +1246,9 @@ function TreeRenderer<T extends HasId>({
   } else if (mode === 'obs' && effective.obs && availability.obs) {
     const projectId = pinnedId(baseOptions, effective.obs.projectField)!
     content = <ObsRenderer key={projectId} config={effective.obs} projectId={projectId} />
+  } else if (mode === 'risk' && effective.risk && availability.risk) {
+    const projectId = pinnedId(baseOptions, effective.risk.projectField)!
+    content = <RiskRenderer key={projectId} config={effective.risk} projectId={projectId} />
   } else if (mode === 'graph' && effective.enableGraphs) {
     content = (
       <GraphRenderer

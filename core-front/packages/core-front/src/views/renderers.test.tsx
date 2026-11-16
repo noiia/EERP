@@ -29,6 +29,9 @@ vi.mock('./diagram/pert-renderer', () => ({
 vi.mock('./diagram/obs-renderer', () => ({
   ObsRenderer: (p: { projectId: string }) => <div data-testid="obs-renderer">{p.projectId}</div>,
 }))
+vi.mock('./risk/risk-renderer', () => ({
+  RiskRenderer: (p: { projectId: string }) => <div data-testid="risk-renderer">{p.projectId}</div>,
+}))
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
 import { useBreadcrumbStore } from './breadcrumb-store'
 import type { ViewDescriptor } from './descriptor'
@@ -1518,6 +1521,28 @@ describe('EntityView', () => {
       // Unfiltered first page is the seeded one; the grid is back and was not left blank/stale.
       expect(await screen.findByText('Old row')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('Risk shows only when pinned to one project; a persisted risk mode with no pin renders List', async () => {
+      const risk = { entity: 'project_risk', linkEntity: 'project_risk_link', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' }
+      useUiStore.setState({ viewMode: { [treeDescriptor.entity]: 'risk' } })
+      const { unmount } = render(
+        <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { risk } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.queryByRole('button', { name: 'Risk' })).not.toBeInTheDocument()
+      expect(screen.queryByTestId('risk-renderer')).not.toBeInTheDocument()
+      expect(await screen.findByRole('grid')).toBeInTheDocument()
+      unmount()
+      useUiStore.setState({ viewMode: {} })
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, listFilter: { filter: { project_id: 'p1' } }, viewModeDefaults: { risk } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Risk' }))
+      expect(await screen.findByTestId('risk-renderer')).toHaveTextContent('p1')
     })
 
     it('switching to Graph with a GraphOpsProvider renders the real canvas, not the placeholder', async () => {

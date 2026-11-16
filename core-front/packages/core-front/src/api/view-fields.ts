@@ -87,6 +87,8 @@ export interface ViewModeDefaults {
   pertHoursField?: string
   /** OBS mode: the entity's own org-chart boxes, available while the list is pinned to one project. Module-declared only. */
   obs?: ObsConfig
+  /** Risk mode: the entity's risk analysis, available while the list is pinned to one project. Module-declared only. */
+  risk?: RiskConfig
   /** Names a many2many field (widget `colortags`) of the descriptor — else of
    * the entity's form descriptor: its related records' colors paint the Gantt
    * bars and a ribbon on Kanban/Calendar cards. Module-declared only. */
@@ -134,6 +136,7 @@ export interface EffectiveViewFields {
   pertDependencies: GanttDependenciesConfig | null
   pertHoursField: string | null
   obs: ObsConfig | null
+  risk: RiskConfig | null
   colorTagsField: string | null
 }
 
@@ -162,8 +165,18 @@ export function effectiveViewFields(
     pertDependencies: defaults?.pertDependencies ?? null,
     pertHoursField: defaults?.pertHoursField ?? null,
     obs: defaults?.obs ?? null,
+    risk: defaults?.risk ?? null,
     colorTagsField: defaults?.colorTagsField ?? null,
   }
+}
+
+/** Module-declared only. */
+export interface RiskConfig {
+  entity: string
+  linkEntity: string
+  categoryEntity: string
+  projectField: string
+  formPath: string
 }
 
 /** Module-declared only. */
@@ -184,9 +197,9 @@ export function pinnedId(options: EntityListOptions | undefined, field: string):
 }
 
 /** The list view's display-mode switcher (top-right of the list). */
-export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs'
+export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs' | 'risk'
 
-export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs']
+export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs', 'risk']
 
 /**
  * Which modes are usable right now for a given entity's EFFECTIVE (module
@@ -205,5 +218,6 @@ export function availableDisplayModes(effective: EffectiveViewFields, options?: 
     wbs: effective.wbsParentField != null,
     pert: effective.pertDependencies != null,
     obs: effective.obs != null && pinnedId(options, effective.obs.projectField) != null,
+    risk: effective.risk != null && pinnedId(options, effective.risk.projectField) != null,
   }
 }

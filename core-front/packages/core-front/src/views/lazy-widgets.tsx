@@ -8,6 +8,7 @@ import type { HtmlEditorProps } from './html-editor'
 import type { WbsRendererProps } from './diagram/wbs-renderer'
 import type { PertRendererProps } from './diagram/pert-renderer'
 import type { ObsRendererProps } from './diagram/obs-renderer'
+import type { RiskRendererProps } from './risk/risk-renderer'
 import { lazyComponent } from './lazy-component'
 
 // The engine's heavy widgets, each in its own chunk (see lazy-component.tsx).
@@ -52,4 +53,8 @@ export const PertRenderer = lazyComponent<PertRendererProps<HasId>>(() =>
 
 export const ObsRenderer = lazyComponent<ObsRendererProps>(() =>
   import('./diagram/obs-renderer').then((m) => m.ObsRenderer),
+)
+
+export const RiskRenderer = lazyComponent<RiskRendererProps>(() =>
+  import('./risk/risk-renderer').then((m) => m.RiskRenderer),
 )

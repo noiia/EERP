@@ -25,6 +25,7 @@ describe('effectiveViewFields', () => {
       pertHoursField: null,
       colorTagsField: null,
         obs: null,
+        risk: null,
     })
   })
 
@@ -46,6 +47,7 @@ describe('effectiveViewFields', () => {
       pertHoursField: null,
       colorTagsField: null,
         obs: null,
+        risk: null,
     })
   })
 
@@ -72,6 +74,7 @@ describe('effectiveViewFields', () => {
       pertHoursField: null,
       colorTagsField: null,
         obs: null,
+        risk: null,
     })
   })
 
@@ -95,6 +98,7 @@ describe('effectiveViewFields', () => {
       pertHoursField: null,
       colorTagsField: null,
         obs: null,
+        risk: null,
     })
   })
 
@@ -141,8 +145,9 @@ describe('availableDisplayModes', () => {
       pertHoursField: null,
       colorTagsField: null,
         obs: null,
+        risk: null,
       }),
-    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false })
+    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false, risk: false })
     expect(
       availableDisplayModes({
         kanbanStatusField: 'status',
@@ -161,8 +166,9 @@ describe('availableDisplayModes', () => {
       pertHoursField: null,
       colorTagsField: null,
         obs: null,
+        risk: null,
       }),
-    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false })
+    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false, risk: false })
   })
 
   it('gantt needs BOTH a start and an end field', () => {
@@ -223,5 +229,16 @@ describe('pinnedId / obs availability', () => {
     expect(availableDisplayModes(eff).obs).toBe(false)
     expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).obs).toBe(true)
     expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).obs).toBe(false)
+  })
+})
+
+describe('risk availability', () => {
+  const risk = { entity: 'project_risk', linkEntity: 'project_risk_link', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' }
+  it('needs a module config and a pinned project', () => {
+    const eff = effectiveViewFields({ risk }, EMPTY_VIEW_FIELDS)
+    expect(eff.risk).toEqual(risk)
+    expect(availableDisplayModes(eff).risk).toBe(false)
+    expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).risk).toBe(true)
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).risk).toBe(false)
   })
 })
