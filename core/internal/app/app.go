@@ -909,10 +909,23 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		if publicPictures != nil {
 			// The workspace favicon (Settings → Global settings): a picture on the
 			// (workspace, <tenant id>, favicon) anchor, served to anyone — browsers
-			// fetch it before any login. 404 until one is uploaded.
+			// fetch it before any login. Without one, the default company's logo
+			// (the ERP top bar's picture) stands in; 404 when neither exists.
+			// Also the PWA manifest's icon (core-front app/manifest.ts).
 			publicGroup.GET("/favicon", func(c *echo.Context) error {
-				tenant, _ := access.TenantFromContext(c.Request().Context())
-				return publicPictures(c, pictures.WorkspaceTable, tenant, pictures.FaviconField)
+				ctx := c.Request().Context()
+				tenant, _ := access.TenantFromContext(ctx)
+				err := publicPictures(c, pictures.WorkspaceTable, tenant, pictures.FaviconField)
+				var he *echo.HTTPError
+				if !errors.As(err, &he) || he.Code != http.StatusNotFound {
+					return err
+				}
+				var company uuid.UUID
+				if app.DB.QueryRow(ctx, `SELECT id FROM company WHERE tenant_id = $1 AND deleted_at IS NULL
+					ORDER BY is_default DESC, created_at LIMIT 1`, tenant).Scan(&company) != nil {
+					return err
+				}
+				return publicPictures(c, "company", company, "logo")
 			})
 		}
 		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)

@@ -49,7 +49,7 @@ export function FaviconSettings() {
   return (
     <Stack spacing={2}>
       <Typography variant="body2" color="text.secondary">
-        {t('The small icon shown in browser tabs, for the ERP and the public website. A square PNG (e.g. 64×64) works best; browsers may keep the old one for a few minutes.')}
+        {t('The small icon shown in browser tabs, for the ERP and the public website, and the icon of the installed app. Without one, the company logo is used. A square PNG (e.g. 64×64) works best; browsers may keep the old one for a few minutes.')}
       </Typography>
       {error && <ViewBanner status="error">{error}</ViewBanner>}
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>

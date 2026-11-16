@@ -20,6 +20,7 @@ const ROOT_PASSTHROUGH = new Set([
   'database',
   '_next',
   'favicon.ico',
+  'manifest.webmanifest',
   'robots.txt',
   'security.txt',
   '.well-known',

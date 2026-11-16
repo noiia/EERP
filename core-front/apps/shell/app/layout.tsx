@@ -22,9 +22,10 @@ import { parseThemeCookie, THEME_COOKIE } from '../src/lib/theme-cookie'
 export const metadata = {
   title: 'EERP',
   description: 'EERP frontend service',
-  // The workspace favicon (Settings → Global settings), served anonymously by Go
-  // through the gateway; a 404 (none uploaded) just leaves the browser's default.
-  icons: { icon: '/api/v1/public/favicon' },
+  // The workspace favicon (Settings → Global settings), else the default company's
+  // logo, served anonymously by Go through the gateway; a 404 (neither uploaded)
+  // just leaves the browser's default.
+  icons: { icon: '/api/v1/public/favicon', apple: '/api/v1/public/favicon' },
 }
 
 // The root layout is shared by the public website (/), the ERP (/app — its chrome
