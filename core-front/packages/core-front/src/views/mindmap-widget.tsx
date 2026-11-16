@@ -12,7 +12,8 @@ import type { WidgetProps } from './widgets'
 // text/mindmap — read-only: this field's value in a centre box, one box per
 // widgetOptions.satellites entry (label + sibling value, + `under`'s value as a
 // second line) joined to it. A many2one satellite names its `entity` (and
-// optional `labelField`) so its id resolves to a record label.
+// optional `labelField`) so its id resolves to a record label. widgetOptions.center names a
+// sibling whose value is the centre box's (default: this field's own).
 interface Satellite { field: string; label: string; under?: string; entity?: string; labelField?: string }
 
 const dash = (v: string) => (v === '' ? '—' : v)
@@ -30,6 +31,9 @@ export function MindmapWidget({ field, value, draft }: WidgetProps) {
     name: s.field, type: 'relation', relation: { entity: s.entity, kind: 'many2one', labelField: s.labelField ?? 'name' },
   }) as unknown as FieldDescriptor)
   const labelOf = useRelationLabels(rel, sats.map((s) => [s.field, values[s.field]]))
+  // widgetOptions.center: a sibling field whose value fills the centre box (so the widget can
+  // anchor on a virtual field while the real, editable field is shown elsewhere in the form).
+  const centre = typeof field.widgetOptions?.center === 'string' ? values[field.widgetOptions.center] : value
   const show = (name: string) => (values[name] == null ? '' : labelOf(name, values[name]))
 
   const W = 180, H = 56, G = 24
@@ -55,7 +59,7 @@ export function MindmapWidget({ field, value, draft }: WidgetProps) {
           ))}
           <foreignObject x={width / 2 - W / 2} y={mid - H / 2} width={W} height={H}>
             <Box sx={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 2, borderColor: 'primary.main', borderRadius: 1, bgcolor: 'background.paper', p: 0.5 }}>
-              <Typography variant="subtitle2" align="center">{dash(value == null ? '' : String(value))}</Typography>
+              <Typography variant="subtitle2" align="center">{dash(centre == null ? '' : String(centre))}</Typography>
             </Box>
           </foreignObject>
           {sats.map((s, i) => (

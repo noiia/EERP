@@ -71,4 +71,12 @@ describe('text/mindmap', () => {
     render(<Widget field={f} value="Centre" onChange={vi.fn()} draft={{}} />)
     expect(screen.getByText('Centre')).toBeTruthy()
   })
+
+  it('shows the sibling named by the centre option instead of its own', () => {
+    const f = { ...field, widgetOptions: { center: 'name' } } as FieldDescriptor
+    const Widget = fieldWidget(f)
+    render(<Widget field={f} value="own" onChange={vi.fn()} draft={{ name: 'Sibling' }} />)
+    expect(screen.getByText('Sibling')).toBeTruthy()
+    expect(screen.queryByText('own')).toBeNull()
+  })
 })
