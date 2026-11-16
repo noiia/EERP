@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
@@ -135,13 +135,17 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
   // — otherwise it would fall back to the raw titleized id the moment the
   // user navigates one step further.
   const recordLabel = useRecordLabelStore((s) => (s.id === lastSegment ? s.label : null))
+  // The crumb keeps the page's query (a list's filter[...] seeds), so coming back from a
+  // record through the breadcrumb restores the same filtered list.
+  const search = useSearchParams()?.toString() ?? ''
 
   // This page's own crumb (never an ancestor chain — see crumbForPath), with
   // its label swapped for the resolved record name once known.
   const currentCrumb = useMemo(() => {
-    const base = crumbForPath(pathname, t)
+    const found = crumbForPath(pathname, t)
+    const base = found && search ? { ...found, href: `${found.href}?${search}` } : found
     return base && recordLabel ? { ...base, label: recordLabel } : base
-  }, [pathname, recordLabel])
+  }, [pathname, search, recordLabel])
   // Merged with whatever was already in the cross-navigation trail (see
   // breadcrumb-store.ts): a genuinely new page appends after it, and
   // returning to an already-visited page truncates the forward history —
@@ -162,7 +166,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
     const rooted = withTeamsRoot(stored, pathname)
     if (rooted !== stored) useBreadcrumbStore.getState().visit(rooted[0])
     useBreadcrumbStore.getState().visit(currentCrumb)
-  }, [pathname, recordLabel])
+  }, [pathname, search, recordLabel])
   const narrow = useMediaQuery(`(max-width:${layout.topBarCompactWidth}px)`)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 

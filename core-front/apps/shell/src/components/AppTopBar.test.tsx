@@ -16,11 +16,13 @@ import {
 moduleRegistry.register({ name: 'crm', routes: [] }, { displayName: 'CRM' })
 
 const pathnameMock = vi.fn<() => string>()
+const searchMock = vi.fn(() => new URLSearchParams())
 const pushMock = vi.fn()
 const refreshMock = vi.fn()
 vi.mock('next/navigation', () => ({
   usePathname: () => pathnameMock(),
   useRouter: () => ({ push: pushMock, refresh: refreshMock, prefetch: () => {} }),
+  useSearchParams: () => searchMock(),
 }))
 
 const setActiveCompanyMock = vi.fn()
@@ -56,6 +58,7 @@ const crmHeaderMenus: ModuleHeaderMenus[] = [
 ]
 
 beforeEach(() => {
+  searchMock.mockReturnValue(new URLSearchParams())
   pushMock.mockReset()
   refreshMock.mockReset()
   setActiveCompanyMock.mockReset()
@@ -132,6 +135,17 @@ describe('AppTopBar', () => {
     const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
     expect(breadcrumb.getByRole('link', { name: 'Crm - List' })).toHaveAttribute('href', '/app/crm/list')
     expect(breadcrumb.getByText('42')).toBeInTheDocument()
+  })
+
+  it('a filtered list keeps its query in its crumb, so coming back from a record restores the filters', () => {
+    pathnameMock.mockReturnValue('/app/crm/list')
+    searchMock.mockReturnValue(new URLSearchParams('filter[project_id]=p1'))
+    const { rerender } = render(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
+    pathnameMock.mockReturnValue('/app/crm/42')
+    searchMock.mockReturnValue(new URLSearchParams())
+    rerender(<AppTopBar identity={identity} headerMenus={crmHeaderMenus} />)
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'breadcrumb' }))
+    expect(breadcrumb.getByRole('link', { name: 'Crm - List' })).toHaveAttribute('href', '/app/crm/list?filter%5Bproject_id%5D=p1')
   })
 
   it('being on a list page itself shows its own merged "<Entity> - List" crumb, not two separate crumbs', () => {

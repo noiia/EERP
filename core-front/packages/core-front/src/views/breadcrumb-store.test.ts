@@ -40,6 +40,14 @@ describe('nextBreadcrumbTrail', () => {
     const trail = nextBreadcrumbTrail([sale, products, stale], productA)
     expect(trail).toEqual([sale, products, productA])
   })
+
+  it('a filtered list keeps its query, and is the same page whatever its filters', () => {
+    const tasks: Crumb = { label: 'Tasks', href: '/project/tasks?filter%5Bproject_id%5D=p1' }
+    const task: Crumb = { label: 'Task', href: '/project/tasks/t1' }
+    expect(nextBreadcrumbTrail([sale, tasks], task)).toEqual([sale, tasks, task])
+    const other: Crumb = { label: 'Tasks', href: '/project/tasks?filter%5Bproject_id%5D=p2' }
+    expect(nextBreadcrumbTrail([sale, tasks, task], other)).toEqual([sale, other])
+  })
 })
 
 describe('useBreadcrumbStore', () => {

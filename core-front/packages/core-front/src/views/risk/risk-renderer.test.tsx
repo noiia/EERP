@@ -4,6 +4,16 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 vi.mock('../diagram/export', () => ({ exportElementPng: vi.fn(), exportElementPdf: vi.fn() }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
+const canWrite = vi.hoisted(() => ({ value: true }))
+vi.mock('../../auth/Can', () => ({ usePermission: () => canWrite.value }))
+const wizard = vi.hoisted(() => vi.fn())
+vi.mock('../relation-widgets', async (orig) => ({
+  ...(await orig<object>()),
+  RelationCreateWizard: (p: { preset: unknown; onCreated: (r: unknown) => void }) => {
+    wizard(p.preset)
+    return <button onClick={() => p.onCreated({ id: 'new' })}>wizard-create</button>
+  },
+}))
 
 import { RiskRenderer } from './risk-renderer'
 import { exportElementPng as exportPng } from '../diagram/export'
@@ -42,24 +52,24 @@ describe('RiskRenderer', () => {
   it('places the chip in its cell and moves it with the residual toggle', async () => {
     setup(rows())
     const cell = await screen.findByTestId('cell-2:3')
-    expect(within(cell).getByText('6')).toBeTruthy()
+    expect(within(cell).getByText('6 - Late vendor')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'After remediation' }))
-    expect(within(screen.getByTestId('cell-1:1')).getAllByText('1').length).toBeGreaterThan(0)
+    expect(within(screen.getByTestId('cell-1:1')).getAllByText(/^1 - /).length).toBeGreaterThan(0)
   })
 
   it('draws one bone per category', async () => {
     setup(rows())
     fireEvent.click(await screen.findByRole('tab', { name: 'Ishikawa' }))
     const bone = await screen.findByTestId('bone-c1')
-    expect(within(bone).getByText('Late vendor')).toBeTruthy()
-    expect(within(screen.getByTestId('bone-c2')).getByText('Budget cut')).toBeTruthy()
-    expect(screen.getByText('Apollo')).toBeTruthy()
+    expect(within(bone).getByText('Late vendor', { ignore: 'title' })).toBeTruthy()
+    expect(within(screen.getByTestId('bone-c2')).getByText('Budget cut', { ignore: 'title' })).toBeTruthy()
+    expect(screen.getByText('Apollo', { ignore: 'title' })).toBeTruthy()
   })
 
   it('opens a risk form on click', async () => {
     setup(rows())
     fireEvent.click(await screen.findByRole('tab', { name: 'Ishikawa' }))
-    fireEvent.click(await screen.findByText('Late vendor'))
+    fireEvent.click(await screen.findByText('Late vendor', { ignore: 'title' }))
     expect(push).toHaveBeenCalledWith('/app/project/risks/Late vendor')
   })
 
@@ -73,6 +83,36 @@ describe('RiskRenderer', () => {
   it('shows the error alert when the read fails', async () => {
     setup([], true)
     expect(await screen.findByText(/nope/)).toBeTruthy()
+  })
+
+  it('names chips while a cell is not crowded, else shows only the value', async () => {
+    setup(['a', 'b', 'c', 'd'].map((id) => risk(id)))
+    const cell = await screen.findByTestId('cell-2:3')
+    expect(within(cell).getAllByText('6')).toHaveLength(4)
+  })
+
+  it('clips long Ishikawa labels and keeps the full name as tooltip', async () => {
+    const long = 'A very long risk name that would overflow its bone box'
+    setup([risk(long)])
+    fireEvent.click(await screen.findByRole('tab', { name: 'Ishikawa' }))
+    expect(await screen.findByText(/^A very long risk name.*…$/)).toBeTruthy()
+    expect(screen.getByText(long).tagName.toLowerCase()).toBe('title')
+  })
+
+  it('creates a risk in the project and reloads', async () => {
+    setup(rows())
+    fireEvent.click(await screen.findByRole('button', { name: 'New risk' }))
+    expect(wizard).toHaveBeenCalledWith({ project_id: 'p1' })
+    fireEvent.click(screen.getByRole('button', { name: 'wizard-create' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'wizard-create' })).toBeNull())
+  })
+
+  it('hides New risk without write permission', async () => {
+    canWrite.value = false
+    setup(rows())
+    expect(await screen.findByRole('tab', { name: 'Matrix' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'New risk' })).toBeNull()
+    canWrite.value = true
   })
 
   it('exports PNG from Matrix and Ishikawa', async () => {

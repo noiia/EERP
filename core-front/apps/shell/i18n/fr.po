@@ -2865,6 +2865,9 @@ msgstr "Faites glisser un encadré pour le déplacer : le diagramme est partagé
 msgid "Add boxes from the toolbar; drag from a box's dot to another to put it under that one."
 msgstr "Ajoutez des encadrés depuis la barre d’outils ; faites glisser le point d’un encadré vers un autre pour le placer sous celui-ci."
 
+msgid "New risk"
+msgstr "Nouveau risque"
+
 msgid "Matrix"
 msgstr "Matrice"
 

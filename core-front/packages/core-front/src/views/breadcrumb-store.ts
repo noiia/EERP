@@ -36,7 +36,10 @@ export function nextBreadcrumbTrail(trail: Crumb[], current: Crumb | null): Crum
   // its real name resolves (record-label-store reports it asynchronously,
   // shortly after the form mounts), so the label can legitimately improve
   // on a later visit to the SAME href.
-  const idx = trail.findIndex((c) => c.href === current.href)
+  // Matched on the path alone: the same list reached with other filters is the same page, its
+  // crumb taking the latest query.
+  const path = (href: string) => href.split('?')[0]
+  const idx = trail.findIndex((c) => path(c.href) === path(current.href))
   if (idx !== -1) return [...trail.slice(0, idx), current]
 
   // A genuinely new page: append it as the newest visited view.

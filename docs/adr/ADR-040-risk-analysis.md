@@ -66,7 +66,7 @@ The delay severity is computed in Go (`risk_calc.go`) while the PERT view comput
 ### Frontend
 
 A **Risk** display mode on the task lists (`viewModeDefaults.risk`, pinned to one project like OBS)
-holds a criticity matrix (before and residual), an Ishikawa and a register. The risk form's header is a
+holds a criticity matrix (before and residual), an Ishikawa and a register, plus a *New risk* button (the risk form as a dialog, its project preset). Both diagrams fill the view: the matrix stretches, the Ishikawa scales to fit and cuts long labels (full text as tooltip). A matrix cell holding at most three risks names them (`6 - Budget cut`); a busier one shows only the criticity. The risk form's header is a
 read-only mind-map (`text/mindmap` widget, exportable to PNG through the plain-element export in
 `views/diagram/export.ts`).
 

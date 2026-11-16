@@ -2733,6 +2733,9 @@ msgstr ""
 msgid "Add boxes from the toolbar; drag from a box's dot to another to put it under that one."
 msgstr ""
 
+msgid "New risk"
+msgstr ""
+
 msgid "Matrix"
 msgstr ""
 

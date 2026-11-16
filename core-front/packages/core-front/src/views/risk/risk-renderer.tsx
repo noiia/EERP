@@ -11,6 +11,7 @@ import Tabs from '@mui/material/Tabs'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import { useTheme } from '@mui/material/styles'
+import { usePermission } from '../../auth/Can'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { RiskConfig } from '../../api/view-fields'
 import { useT } from '../../i18n/translate'
@@ -18,6 +19,7 @@ import { erpPath } from '../../navigation'
 import { ErrorAlert } from '../error-alert'
 import { DiagramLoading } from '../diagram/diagram-canvas'
 import { useRelationOps } from '../relation-ops'
+import { RelationCreateWizard } from '../relation-widgets'
 import { Ishikawa } from './ishikawa'
 import { RiskMatrix } from './risk-matrix'
 import { RiskRegister } from './risk-register'
@@ -45,8 +47,11 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const [project, setProject] = useState('')
   const [error, setError] = useState<SerializedError | null>(null)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [reload, setReload] = useState(0)
   const area = useRef<HTMLDivElement>(null)
   const { entity, projectField, categoryEntity } = config
+  const canCreate = usePermission(`${entity}:${entity}:write`)
 
   const listPage = ops?.listPage
   const get = ops?.get
@@ -80,7 +85,7 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
     return () => {
       cancelled = true
     }
-  }, [listPage, get, entity, projectField, categoryEntity, projectId])
+  }, [listPage, get, entity, projectField, categoryEntity, projectId, reload])
 
   if (!rows) return <DiagramLoading />
   const open = (id: string) => router.push(erpPath(config.formPath.replace(':id', id)))
@@ -109,6 +114,7 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
           <Tab value="register" label={t('Register')} />
         </Tabs>
         <Stack direction="row" spacing={1}>
+          {canCreate && ops && <Button size="small" variant="contained" onClick={() => setCreating(true)}>{t('New risk')}</Button>}
           {tab === 'matrix' && (
             <ToggleButtonGroup size="small" exclusive value={residual ? 'after' : 'now'} onChange={(_, v: string | null) => v && setResidual(v === 'after')}>
               <ToggleButton value="now">{t('Current')}</ToggleButton>
@@ -123,10 +129,24 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
         </Menu>
       </Stack>
       <Box sx={{ pt: 2, overflow: 'auto' }}>
-        {tab === 'matrix' && <Box ref={area} sx={{ display: 'block', width: 'max-content' }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
-        {tab === 'ishikawa' && <Box ref={area} sx={{ display: 'block', width: 'max-content' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
+        {/* The diagrams fill the view (centred, scaled to fit) instead of floating small in an empty zone. */}
+        {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: '70vh' }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
+        {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: '70vh', bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
         {tab === 'register' && <RiskRegister rows={rows} categories={categories} onOpen={open} />}
       </Box>
+      {creating && ops ? (
+        <RelationCreateWizard
+          rel={{ entity, kind: 'many2one' }}
+          ops={ops}
+          preset={{ [projectField]: projectId }}
+          hidden={[projectField]}
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false)
+            setReload((n) => n + 1)
+          }}
+        />
+      ) : null}
     </Box>
   )
 }
