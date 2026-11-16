@@ -709,6 +709,23 @@ async function seedProjectPlan(
       plan.links.filter(([a, b]) => ids.has(a) && ids.has(b)).map(([a, b]) => ({ depends_on_id: ids.get(a), task_id: ids.get(b) })),
     ),
   )
+  // Risks on the open (not done) leaves: a delay with 2 links, a cost with 1, a quality without.
+  const open = plan.leaves.filter((l) => l.p >= PLAN_DONE_PHASES && ids.has(l.key))
+  const phase = ids.get(`${PLAN_DONE_PHASES}`)
+  const risks = await createMany<{ id: string }>('project_risk', [
+    { name: 'Supplier delivery slips', impact_on: 'delay', likelihood: 2, detectability: 2 },
+    { name: 'Unplanned rework', impact_on: 'cost', likelihood: 2, detectability: 1 },
+    { name: 'Deliverable misses acceptance criteria', impact_on: 'quality', likelihood: 1, detectability: 3, severity: 2 },
+  ].map((r) => ({ ...r, project_id: projectId, ...(phase ? { phase_task_id: phase } : {}) })))
+  track(risks)
+  const [delay, cost] = risks.records
+  const at = (i: number) => (open[i] ? ids.get(open[i].key) : undefined)
+  const links = [
+    { risk_id: delay?.id, task_id: at(0), delay_days: 5 },
+    { risk_id: delay?.id, task_id: at(1), delay_days: 10 },
+    { risk_id: cost?.id, task_id: at(2), extra_hours: 8 },
+  ]
+  track(await createMany('project_risk_task', links.filter((l) => l.risk_id && l.task_id)))
 }
 
 async function seedProjects(contacts: { records: { id: string }[]; bodies: Record<string, unknown>[] }): Promise<SeedEntityResult[]> {

@@ -148,3 +148,87 @@ msgstr "Groupes de couleurs"
 
 msgid "Order"
 msgstr "Ordre"
+
+msgid "Risk"
+msgstr "Risque"
+
+msgid "Risks"
+msgstr "Risques"
+
+msgid "Risk category"
+msgstr "Catégorie de risque"
+
+msgid "Risk categories"
+msgstr "Catégories de risque"
+
+msgid "Risk type"
+msgstr "Type de risque"
+
+msgid "Project phase"
+msgstr "Phase du projet"
+
+msgid "Impact on"
+msgstr "Impact sur"
+
+msgid "delay"
+msgstr "délai"
+
+msgid "cost"
+msgstr "coût"
+
+msgid "quality"
+msgstr "qualité"
+
+msgid "Likelihood (1 unlikely, 2 likely, 3 very likely)"
+msgstr "Probabilité (1 improbable, 2 probable, 3 très probable)"
+
+msgid "Detectability (1 easy, 2 difficult, 3 impossible)"
+msgstr "Détectabilité (1 facile, 2 difficile, 3 impossible)"
+
+msgid "Severity"
+msgstr "Gravité"
+
+msgid "Computed severity"
+msgstr "Gravité calculée"
+
+msgid "Computation note"
+msgstr "Note de calcul"
+
+msgid "Severity (1 to 4, overrides the computed one)"
+msgstr "Gravité (1 à 4, remplace la gravité calculée)"
+
+msgid "Criticity"
+msgstr "Criticité"
+
+msgid "Remediation"
+msgstr "Remédiation"
+
+msgid "Residual likelihood (1 to 3)"
+msgstr "Probabilité résiduelle (1 à 3)"
+
+msgid "Residual detectability (1 to 3)"
+msgstr "Détectabilité résiduelle (1 à 3)"
+
+msgid "Residual severity (1 to 4)"
+msgstr "Gravité résiduelle (1 à 4)"
+
+msgid "Residual criticity"
+msgstr "Criticité résiduelle"
+
+msgid "Responsible"
+msgstr "Responsable"
+
+msgid "Linked tasks"
+msgstr "Tâches liées"
+
+msgid "Delay (days)"
+msgstr "Retard (jours)"
+
+msgid "Extra hours"
+msgstr "Heures supplémentaires"
+
+msgid "Assessment"
+msgstr "Évaluation"
+
+msgid "Color"
+msgstr "Couleur"

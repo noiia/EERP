@@ -212,6 +212,8 @@ describe('seedDemoData', () => {
       'project_task_color',
       'contact_company',
       'project_obs_box',
+      'project_risk',
+      'project_risk_task',
       'report_page_format',
       'event',
       'event_session',
@@ -526,6 +528,23 @@ describe('seedDemoData — Project app', () => {
     const links = bodies('contact_company')
     expect(links.every((l) => l.company_id === company?.id)).toBe(true)
     for (const b of boxes.filter((x) => x.kind === 'contact')) expect(links.map((l) => l.contact_id)).toContain(b.contact_id)
+  })
+
+  it('seeds 3 risks per large project, with the matching estimate on each link', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const risks = bodies('project_risk')
+    expect(risks).toHaveLength(6)
+    expect(risks.map((r) => r.impact_on).sort()).toEqual(['cost', 'cost', 'delay', 'delay', 'quality', 'quality'])
+    const created = await createdFor('project_risk')
+    const impact = new Map(created.map((r) => [r.id, r.impact_on]))
+    const links = bodies('project_risk_task')
+    expect(links).toHaveLength(6)
+    for (const l of links) {
+      expect(typeof l.task_id).toBe('string')
+      expect(l[impact.get(l.risk_id) === 'delay' ? 'delay_days' : 'extra_hours']).toBeGreaterThan(0)
+    }
+    expect(links.filter((l) => impact.get(l.risk_id) === 'delay')).toHaveLength(4)
   })
 
   it('assigns nothing without a signed-in identity', async () => {

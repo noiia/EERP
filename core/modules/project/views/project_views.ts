@@ -1,4 +1,6 @@
 import {
+  FORM_COLUMNS_ID,
+  FORM_HEADER_ID,
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
   registerHeaderButtonAction,
@@ -169,6 +171,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   pertHoursField: 'planned_hours',
   // OBS chart of the pinned project (ADR-039).
   obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
+  // Risk analysis: matrix, Ishikawa and register tabs over these tables.
+  risk: { entity: 'project_risk', linkEntity: 'project_risk_task', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' },
 }
 
 // The task's many2many fields: on the form, and filters of the task lists
@@ -325,9 +329,108 @@ const colorFields: Fields = [
   { name: 'color', label: 'Color', type: 'text', widget: 'color', required: true },
 ]
 
+// ── risks ─────────────────────────────────────────────────────────────────────
+// The scores are integer columns while `selection` options are strings, so they are
+// number fields whose labels carry the legend words (spreadsheet legend).
+
+const riskCategory = { entity: 'project_risk_category', kind: 'many2one', labelField: 'name' } as const
+const riskImpact: Fields[number] = { name: 'impact_on', label: 'Impact on', type: 'selection', widget: 'radio', selection: { options: ['delay', 'cost', 'quality'] } }
+const likelihood = 'Likelihood (1 unlikely, 2 likely, 3 very likely)'
+const detectability = 'Detectability (1 easy, 2 difficult, 3 impossible)'
+
+const riskListFields: Fields = [
+  { name: 'name', label: 'Risk', type: 'text', required: true },
+  { name: 'project_id', label: 'Project', type: 'relation', required: true, relation: project },
+  { name: 'category_id', label: 'Risk category', type: 'relation', relation: riskCategory },
+  riskImpact,
+  { name: 'likelihood', label: likelihood, type: 'number', widget: 'int' },
+  { name: 'detectability', label: detectability, type: 'number', widget: 'int' },
+  { name: 'severity_effective', label: 'Severity', type: 'number', widget: 'int', readOnly: true },
+  { name: 'criticity', label: 'Criticity', type: 'number', widget: 'int', readOnly: true },
+  { name: 'residual_criticity', label: 'Residual criticity', type: 'number', widget: 'int', readOnly: true },
+  { name: 'responsible_id', label: 'Responsible', type: 'relation', relation: users },
+  { name: 'deadline', label: 'Deadline', type: 'date' },
+]
+
+const riskFormFields: Fields = [
+  {
+    ...riskListFields[0],
+    widget: 'mindmap',
+    widgetOptions: {
+      satellites: [
+        { field: 'category_id', label: 'Risk category', entity: 'project_risk_category' },
+        { field: 'description', label: 'Risk type' },
+        { field: 'phase_task_id', label: 'Project phase', entity: 'project_task' },
+      ],
+    },
+  },
+  ...riskListFields.slice(1, 3),
+  { name: 'description', label: 'Risk type', type: 'text' },
+  // Top-level tasks of the same project; Go's 422 guards the top-level part (a relation filter can't express "no parent").
+  { name: 'phase_task_id', label: 'Project phase', type: 'relation', relation: { ...task, filterFields: sameProject } },
+  riskImpact,
+  { name: 'likelihood', label: likelihood, type: 'number', widget: 'int' },
+  { name: 'detectability', label: detectability, type: 'number', widget: 'int' },
+  { name: 'severity_computed', label: 'Computed severity', type: 'number', widget: 'int', readOnly: true },
+  { name: 'severity_note', label: 'Computation note', type: 'text', readOnly: true },
+  { name: 'severity', label: 'Severity (1 to 4, overrides the computed one)', type: 'number', widget: 'int' },
+  { name: 'criticity', label: 'Criticity', type: 'number', widget: 'int', readOnly: true },
+  { name: 'remediation', label: 'Remediation', type: 'text', widget: 'long' },
+  { name: 'residual_likelihood', label: 'Residual likelihood (1 to 3)', type: 'number', widget: 'int' },
+  { name: 'residual_detectability', label: 'Residual detectability (1 to 3)', type: 'number', widget: 'int' },
+  { name: 'residual_severity', label: 'Residual severity (1 to 4)', type: 'number', widget: 'int' },
+  { name: 'residual_criticity', label: 'Residual criticity', type: 'number', widget: 'int', readOnly: true },
+  { name: 'responsible_id', label: 'Responsible', type: 'relation', relation: users },
+  { name: 'deadline', label: 'Deadline', type: 'date' },
+  {
+    name: 'linked_tasks',
+    label: 'Linked tasks',
+    type: 'relation',
+    relation: { entity: 'project_risk_task', kind: 'one2many', inverseField: 'risk_id', labelField: 'task_id' },
+    widgetOptions: {
+      deletable: true,
+      columns: [
+        { key: 'delay_days', label: 'Delay (days)' },
+        { key: 'extra_hours', label: 'Extra hours' },
+      ],
+    },
+  },
+]
+
+const f = (name: string) => ({ kind: 'field' as const, name })
+const riskFormLayout: ViewDescriptor['layout'] = [
+  { kind: 'row', id: FORM_HEADER_ID, children: [f('name')] },
+  {
+    kind: 'group',
+    id: FORM_COLUMNS_ID,
+    columns: 2,
+    children: [
+      { kind: 'group', title: 'Assessment', children: ['impact_on', 'likelihood', 'detectability', 'severity_computed', 'severity_note', 'severity', 'criticity'].map(f) },
+      {
+        kind: 'group',
+        title: 'Remediation',
+        children: ['remediation', 'residual_likelihood', 'residual_detectability', 'residual_severity', 'residual_criticity', 'responsible_id', 'deadline'].map(f),
+      },
+    ],
+  },
+  {
+    kind: 'notebook',
+    id: FORM_NOTEBOOK_ID,
+    children: [{ kind: 'page', title: 'Linked tasks', children: [f('linked_tasks')] }],
+  },
+]
+
+const riskCategoryFields: Fields = [
+  { name: 'name', label: 'Name', type: 'text', required: true },
+  { name: 'color', label: 'Color', type: 'text', widget: 'color' },
+]
+
 // Color groups are renamed, recolored and deleted from the Configuration menu.
 registerHeaderMenu('project', 'configuration', {
-  entries: [{ kind: 'line', label: 'Color groups', path: '/project/colors', permission: 'project_color:project_color:read' }],
+  entries: [
+    { kind: 'line', label: 'Color groups', path: '/project/colors', permission: 'project_color:project_color:read' },
+    { kind: 'line', label: 'Risk categories', path: '/project/risk_categories', permission: 'project_risk_category:project_risk_category:read' },
+  ],
 })
 
 // ── routes ────────────────────────────────────────────────────────────────────
@@ -431,6 +534,40 @@ const routes: FrontModule['routes'] = [
   {
     path: '/project/colors/:id',
     descriptor: { entity: 'project_color', viewType: 'form', fields: colorFields, permissions: perm('project_color') },
+  },
+  {
+    path: '/project/risks',
+    descriptor: {
+      entity: 'project_risk',
+      viewType: 'tree',
+      navLabel: 'Risks',
+      fields: riskListFields,
+      formPath: '/project/risks/:id',
+      createPermission: write('project_risk'),
+      permissions: perm('project_risk'),
+      viewModeDefaults: { enableGraphs: true },
+    },
+  },
+  {
+    path: '/project/risks/:id',
+    descriptor: { entity: 'project_risk', viewType: 'form', fields: riskFormFields, layout: riskFormLayout, permissions: perm('project_risk') },
+  },
+  {
+    path: '/project/risk_categories',
+    descriptor: {
+      entity: 'project_risk_category',
+      viewType: 'tree',
+      navLabel: 'Risk categories',
+      hideFromTopBar: true,
+      fields: riskCategoryFields,
+      formPath: '/project/risk_categories/:id',
+      createPermission: write('project_risk_category'),
+      permissions: perm('project_risk_category'),
+    },
+  },
+  {
+    path: '/project/risk_categories/:id',
+    descriptor: { entity: 'project_risk_category', viewType: 'form', fields: riskCategoryFields, permissions: perm('project_risk_category') },
   },
   {
     path: '/project/tags/:id',

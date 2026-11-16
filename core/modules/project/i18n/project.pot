@@ -147,3 +147,87 @@ msgstr ""
 
 msgid "Order"
 msgstr ""
+
+msgid "Risk"
+msgstr ""
+
+msgid "Risks"
+msgstr ""
+
+msgid "Risk category"
+msgstr ""
+
+msgid "Risk categories"
+msgstr ""
+
+msgid "Risk type"
+msgstr ""
+
+msgid "Project phase"
+msgstr ""
+
+msgid "Impact on"
+msgstr ""
+
+msgid "delay"
+msgstr ""
+
+msgid "cost"
+msgstr ""
+
+msgid "quality"
+msgstr ""
+
+msgid "Likelihood (1 unlikely, 2 likely, 3 very likely)"
+msgstr ""
+
+msgid "Detectability (1 easy, 2 difficult, 3 impossible)"
+msgstr ""
+
+msgid "Severity"
+msgstr ""
+
+msgid "Computed severity"
+msgstr ""
+
+msgid "Computation note"
+msgstr ""
+
+msgid "Severity (1 to 4, overrides the computed one)"
+msgstr ""
+
+msgid "Criticity"
+msgstr ""
+
+msgid "Remediation"
+msgstr ""
+
+msgid "Residual likelihood (1 to 3)"
+msgstr ""
+
+msgid "Residual detectability (1 to 3)"
+msgstr ""
+
+msgid "Residual severity (1 to 4)"
+msgstr ""
+
+msgid "Residual criticity"
+msgstr ""
+
+msgid "Responsible"
+msgstr ""
+
+msgid "Linked tasks"
+msgstr ""
+
+msgid "Delay (days)"
+msgstr ""
+
+msgid "Extra hours"
+msgstr ""
+
+msgid "Assessment"
+msgstr ""
+
+msgid "Color"
+msgstr ""

@@ -30,7 +30,7 @@ describe('project views', () => {
       expect(r.permission, path).toBe(`${table}:${table}:read`)
     }
     const menus = registry.headerMenus().find((m) => m.module === 'project')!.menus
-    expect(menus.map((m) => m.label)).toEqual(['Projects', 'Tasks', 'My tasks', 'Milestones', 'Timesheets', 'Configuration'])
+    expect(menus.map((m) => m.label)).toEqual(['Projects', 'Tasks', 'My tasks', 'Milestones', 'Timesheets', 'Risks', 'Configuration'])
     // Archived projects are hidden by a removable default filter, not a fixed listFilter.
     expect(menus[0].entries[0]).toMatchObject({ path: '/project?filter[active]=true' })
     expect(route('/project').descriptor.listFilter).toBeUndefined()
@@ -54,6 +54,7 @@ describe('project views', () => {
       pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
       pertHoursField: 'planned_hours',
       obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
+      risk: { entity: 'project_risk', linkEntity: 'project_risk_task', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' },
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)
@@ -141,5 +142,29 @@ describe('project views', () => {
       for (const f of only) expect(f, path).toEqual(field('/project/tasks/:id', f.name))
       expect(d.fields.map((f) => f.name)).not.toContain('assignees')
     }
+  })
+
+  it('declares the risk list, its mind-map form with linked tasks, categories and menu', () => {
+    expect(route('/project/risks').descriptor).toMatchObject({ entity: 'project_risk', viewType: 'tree', navLabel: 'Risks', formPath: '/project/risks/:id' })
+    expect(route('/project/risk_categories').descriptor).toMatchObject({ entity: 'project_risk_category', viewType: 'tree', hideFromTopBar: true, formPath: '/project/risk_categories/:id' })
+    expect(route('/project/risk_categories/:id').descriptor).toMatchObject({ entity: 'project_risk_category', viewType: 'form' })
+    const form = route('/project/risks/:id').descriptor
+    expect(form).toMatchObject({ entity: 'project_risk', viewType: 'form' })
+    expect(field('/project/risks/:id', 'name')).toMatchObject({ widget: 'mindmap' })
+    expect(field('/project/risks/:id', 'name').widgetOptions).toEqual({
+      satellites: [
+        { field: 'category_id', label: 'Risk category', entity: 'project_risk_category' },
+        { field: 'description', label: 'Risk type' },
+        { field: 'phase_task_id', label: 'Project phase', entity: 'project_task' },
+      ],
+    })
+    expect(field('/project/risks/:id', 'phase_task_id')).toMatchObject({ relation: { entity: 'project_task', filterFields: { project_id: 'project_id' } } })
+    expect(field('/project/risks/:id', 'criticity').readOnly).toBe(true)
+    expect(field('/project/risks/:id', 'linked_tasks')).toMatchObject({ relation: { entity: 'project_risk_task', kind: 'one2many', inverseField: 'risk_id' } })
+    expect(JSON.stringify(form.layout)).toContain('Linked tasks')
+    const registry = new ModuleRegistry()
+    registry.register(mod, { appMode: true })
+    const config = registry.headerMenus().find((m) => m.module === 'project')!.menus.find((m) => m.label === 'Configuration')!
+    expect(config.entries).toContainEqual(expect.objectContaining({ label: 'Risk categories', path: '/project/risk_categories', permission: 'project_risk_category:project_risk_category:read' }))
   })
 })
