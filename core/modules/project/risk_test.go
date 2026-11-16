@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"core/internal/auth"
 	"net/http"
 	"testing"
 
@@ -220,5 +221,196 @@ func TestRiskScope_MembersOnly(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// riskFx seeds a project of three chained 16 h tasks (a→b→c) and a standalone 8 h one.
+type riskFx struct {
+	*fixture
+	m          uuid.UUID
+	me         auth.Identity
+	p          uuid.UUID
+	a, b, c, d uuid.UUID
+}
+
+func newRiskFx(t *testing.T) riskFx {
+	f := newFixture(t)
+	m := uuid.New()
+	r := riskFx{fixture: f, m: m, me: f.caller(m), p: f.project(m, "everyone")}
+	r.a, r.b, r.c, r.d = f.task(r.p, nil, nil), f.task(r.p, nil, nil), f.task(r.p, nil, nil), f.task(r.p, nil, nil)
+	for _, t := range []uuid.UUID{r.a, r.b, r.c} {
+		f.exec(`UPDATE project_task SET planned_hours = 16 WHERE id = $1`, t)
+	}
+	f.exec(`UPDATE project_task SET planned_hours = 8 WHERE id = $1`, r.d)
+	f.dependency(r.p, r.b, r.a)
+	f.dependency(r.p, r.c, r.b)
+	return r
+}
+
+func (r riskFx) risk(impact string, likelihood, detect int) uuid.UUID {
+	return r.id(`INSERT INTO project_risk (tenant_id, project_id, name, impact_on, likelihood, detectability)
+		VALUES ($1, $2, 'R', $3, $4, $5) RETURNING id`, r.tenant, r.p, impact, likelihood, detect)
+}
+
+func (r riskFx) link(risk, task uuid.UUID, days, hours any) uuid.UUID {
+	return r.id(`INSERT INTO project_risk_task (tenant_id, project_id, risk_id, task_id, delay_days, extra_hours)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, r.tenant, r.p, risk, task, days, hours)
+}
+
+func (r riskFx) read(risk uuid.UUID) map[string]any {
+	r.t.Helper()
+	code, body := r.get(r.me, "project_risk/"+risk.String())
+	if code != http.StatusOK {
+		r.t.Fatalf("get risk: %d %v", code, body)
+	}
+	return body
+}
+
+func TestRiskRecompute_DelayChain(t *testing.T) {
+	r := newRiskFx(t)
+	risk := r.risk("delay", 2, 3)
+	r.link(risk, r.b, 8, nil)
+	for _, step := range []func(){
+		func() {},
+		func() { r.dependency(r.p, r.a, r.d) },
+		func() { r.exec(`UPDATE project_task SET planned_hours = 200 WHERE id = $1`, r.b) },
+	} {
+		step()
+		if b := r.read(risk); b["severity_computed"] != float64(3) || b["criticity"] != float64(18) {
+			t.Fatalf("severity/criticity = %v/%v, want 3/18", b["severity_computed"], b["criticity"])
+		}
+	}
+}
+
+func TestRiskRecompute_Cost(t *testing.T) {
+	r := newRiskFx(t)
+	r.exec(`UPDATE project SET planned_hours = 100 WHERE id = $1`, r.p)
+	risk := r.risk("cost", 1, 1)
+	r.link(risk, r.a, nil, 7)
+	if b := r.read(risk); b["severity_computed"] != float64(3) {
+		t.Fatalf("severity = %v, want 3", b["severity_computed"])
+	}
+	r.exec(`UPDATE project SET planned_hours = 0 WHERE id = $1`, r.p)
+	if b := r.read(risk); b["severity_computed"] != nil || b["severity_note"] != "no_planned_hours" {
+		t.Fatalf("%v/%v, want nil/no_planned_hours", b["severity_computed"], b["severity_note"])
+	}
+}
+
+func TestRiskRecompute_ImpactChange(t *testing.T) {
+	r := newRiskFx(t)
+	risk := r.risk("delay", 2, 2)
+	r.link(risk, r.a, 2, nil)
+	if b := r.read(risk); b["severity_computed"] != float64(2) {
+		t.Fatalf("severity = %v, want 2", b["severity_computed"])
+	}
+	code, body := r.do(r.me, http.MethodPut, "project_risk/"+risk.String(), map[string]any{"impact_on": "cost"})
+	if code != http.StatusOK || body["severity_note"] != "no_estimate" || body["criticity"] != nil || body["severity_computed"] != nil {
+		t.Fatalf("%d %v, want 200 with note no_estimate and null criticity", code, body)
+	}
+}
+
+func TestRiskRecompute_CreateAnswerIsFresh(t *testing.T) {
+	r := newRiskFx(t)
+	code, body := r.do(r.me, http.MethodPost, "project_risk", map[string]any{"project_id": r.p, "name": "N", "impact_on": "delay"})
+	if code != http.StatusCreated || body["severity_note"] != "no_estimate" {
+		t.Fatalf("%d %v, want 201 with no_estimate", code, body)
+	}
+}
+
+func TestRiskRecompute_Cycle(t *testing.T) {
+	r := newRiskFx(t)
+	r.dependency(r.p, r.a, r.b) // a→b→a
+	risk := r.risk("delay", 1, 1)
+	r.link(risk, r.a, 1, nil)
+	if b := r.read(risk); b["severity_note"] != "cycle" || b["severity_computed"] != nil {
+		t.Fatalf("%v, want cycle", b)
+	}
+}
+
+func TestRiskRecompute_ManualOverride(t *testing.T) {
+	r := newRiskFx(t)
+	risk := r.risk("delay", 2, 2)
+	r.link(risk, r.b, 8, nil)
+	r.exec(`UPDATE project_risk SET severity = 1 WHERE id = $1`, risk)
+	if b := r.read(risk); b["severity_computed"] != float64(3) || b["criticity"] != float64(4) {
+		t.Fatalf("%v/%v, want computed 3 and criticity 2*1*2", b["severity_computed"], b["criticity"])
+	}
+}
+
+func TestRiskRecompute_UnpinnedList(t *testing.T) {
+	r := newRiskFx(t)
+	q := r.project(r.m, "everyone")
+	qt := r.task(q, nil, nil)
+	r1, r2 := r.risk("delay", 1, 1), r.id(`INSERT INTO project_risk (tenant_id, project_id, name, impact_on) VALUES ($1, $2, 'Q', 'delay') RETURNING id`, r.tenant, q)
+	r.link(r1, r.a, 8, nil)
+	r.exec(`INSERT INTO project_risk_task (tenant_id, project_id, risk_id, task_id, delay_days) VALUES ($1, $2, $3, $4, 1)`, r.tenant, q, r2, qt)
+	admin := r.caller(uuid.New(), "project_admin")
+	if n := r.total(admin, "project_risk?page_size=1"); n != 2 {
+		t.Fatalf("total = %d, want 2 (pagination and scope stay generic)", n)
+	}
+	for _, id := range []uuid.UUID{r1, r2} {
+		var note *string
+		var sev *int
+		if err := r.app.DB.QueryRow(context.Background(), `SELECT severity_computed, severity_note FROM project_risk WHERE id = $1`, id).Scan(&sev, &note); err != nil || sev == nil {
+			t.Fatalf("risk %s not recomputed: %v %v", id, sev, err)
+		}
+	}
+}
+
+func TestRiskRecompute_ListKeepsRowScope(t *testing.T) {
+	r := newRiskFx(t)
+	p := r.project(r.m, "members")
+	r.id(`INSERT INTO project_risk (tenant_id, project_id, name, impact_on) VALUES ($1, $2, 'S', 'quality') RETURNING id`, r.tenant, p)
+	if n := r.total(r.caller(uuid.New()), "project_risk"); n != 0 {
+		t.Fatalf("stranger lists %d risks", n)
+	}
+}
+
+func TestUpdateTask_MoveDropsRiskLinks(t *testing.T) {
+	r := newRiskFx(t)
+	q := r.project(r.m, "everyone")
+	r.stage(q, "New")
+	sub := r.task(r.p, &r.d, nil)
+	risk := r.risk("delay", 1, 1)
+	r.exec(`UPDATE project_risk SET phase_task_id = $1 WHERE id = $2`, r.d, risk)
+	r.link(risk, sub, 3, nil)
+	if code, body := r.do(r.me, http.MethodPut, "project_task/"+r.d.String(), map[string]any{"project_id": q}); code != http.StatusOK {
+		t.Fatalf("move: %d %v", code, body)
+	}
+	var live int
+	var phase *uuid.UUID
+	if err := r.app.DB.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM project_risk_task WHERE risk_id = $1 AND deleted_at IS NULL),
+		(SELECT phase_task_id FROM project_risk WHERE id = $1)`, risk).Scan(&live, &phase); err != nil {
+		t.Fatal(err)
+	}
+	if live != 0 || phase != nil {
+		t.Fatalf("live links %d, phase %v, want 0 and NULL", live, phase)
+	}
+	if b := r.read(risk); b["severity_note"] != "no_estimate" {
+		t.Fatalf("note = %v, want no_estimate", b["severity_note"])
+	}
+}
+
+func TestRiskLinks_DeletedTaskHidden(t *testing.T) {
+	r := newRiskFx(t)
+	risk := r.risk("delay", 1, 1)
+	r.link(risk, r.a, 8, nil)
+	url := "project_risk_task?filter[project_id]=" + r.p.String()
+	if b := r.read(risk); b["severity_computed"] != float64(3) {
+		t.Fatalf("severity = %v, want 3", b["severity_computed"])
+	}
+	r.exec(`UPDATE project_task SET deleted_at = now() WHERE id = $1`, r.a)
+	if n := r.total(r.me, url); n != 0 {
+		t.Fatalf("links = %d, want 0", n)
+	}
+	if b := r.read(risk); b["severity_note"] != "no_estimate" {
+		t.Fatalf("note = %v, want no_estimate", b["severity_note"])
+	}
+	r.exec(`UPDATE project_task SET deleted_at = NULL WHERE id = $1`, r.a)
+	if n := r.total(r.me, url); n != 1 {
+		t.Fatalf("links = %d, want 1 after restore", n)
+	}
+	if b := r.read(risk); b["severity_computed"] != float64(3) {
+		t.Fatalf("severity = %v, want 3 again", b["severity_computed"])
 	}
 }

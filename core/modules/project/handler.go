@@ -75,13 +75,21 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		case "project_task":
 			update = h.UpdateTask(g.Update, g.GetByID)
 		}
+		create := g.Create
+		if table == "project_risk" || table == "project_risk_task" {
+			create, update = h.RecomputeAfterWrite(table, create), h.RecomputeAfterWrite(table, update)
+			del, restore = h.RecomputeAfterWrite(table, del), h.RecomputeAfterWrite(table, restore)
+		}
 		base := "/api/v1/" + table
-		e.POST(base, g.Create, with...)
+		e.POST(base, create, with...)
 		e.PUT(base+"/:id", update, with...)
 		e.DELETE(base+"/:id", del, with...)
 		e.POST(base+"/:id/restore", restore, with...)
 	}
 	e.GET("/api/v1/project_task", AssignedToMe(TaskFilters(generic("project_task").List)), mw...)
+	risks := generic("project_risk")
+	e.GET("/api/v1/project_risk", h.RecomputeOnRead(risks.List), mw...)
+	e.GET("/api/v1/project_risk/:id", h.RecomputeOnRead(risks.GetByID), mw...)
 	e.GET("/api/v1/project/:id/can_manage", h.CanManage, mw...)
 }
 
@@ -401,7 +409,16 @@ func moveTask(c *echo.Context, tx *orm.Tx, tenant, task, target uuid.UUID) error
 			return err
 		}
 	}
-	return nil
+	// A moved task's risk links and phases do not follow it: the risk stays in its project.
+	if _, err := tx.Exec(ctx, tree+`
+		UPDATE project_risk_task SET deleted_at = now(), updated_at = now()
+		WHERE tenant_id = $2 AND deleted_at IS NULL AND task_id IN (SELECT id FROM tree)`, task, tenant); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, tree+`
+		UPDATE project_risk SET phase_task_id = NULL, updated_at = now()
+		WHERE tenant_id = $2 AND phase_task_id IN (SELECT id FROM tree)`, task, tenant)
+	return err
 }
 
 // CanManage handles GET /api/v1/project/:id/can_manage → {"can_manage":
