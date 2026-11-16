@@ -2864,3 +2864,63 @@ msgstr "Faites glisser un encadré pour le déplacer : le diagramme est partagé
 
 msgid "Add boxes from the toolbar; drag from a box's dot to another to put it under that one."
 msgstr "Ajoutez des encadrés depuis la barre d’outils ; faites glisser le point d’un encadré vers un autre pour le placer sous celui-ci."
+
+msgid "Matrix"
+msgstr "Matrice"
+
+msgid "Ishikawa"
+msgstr "Ishikawa"
+
+msgid "Register"
+msgstr "Registre"
+
+msgid "Likelihood"
+msgstr "Probabilité"
+
+msgid "Severity"
+msgstr "Gravité"
+
+msgid "Current"
+msgstr "Actuel"
+
+msgid "After remediation"
+msgstr "Après remédiation"
+
+msgid "Uncategorized"
+msgstr "Sans catégorie"
+
+msgid "Delay"
+msgstr "Délai"
+
+msgid "Cost"
+msgstr "Coût"
+
+msgid "Quality"
+msgstr "Qualité"
+
+msgid "Not computable"
+msgstr "Non calculable"
+
+msgid "Category"
+msgstr "Catégorie"
+
+msgid "Impact on"
+msgstr "Impact sur"
+
+msgid "Detectability"
+msgstr "Détectabilité"
+
+msgid "Criticity"
+msgstr "Criticité"
+
+msgid "Remediation"
+msgstr "Remédiation"
+
+msgid "Responsible"
+msgstr "Responsable"
+
+msgid "Deadline"
+msgstr "Échéance"
+
+msgid "Residual criticity"
+msgstr "Criticité résiduelle"

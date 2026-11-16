@@ -2732,3 +2732,63 @@ msgstr ""
 
 msgid "Add boxes from the toolbar; drag from a box's dot to another to put it under that one."
 msgstr ""
+
+msgid "Matrix"
+msgstr ""
+
+msgid "Ishikawa"
+msgstr ""
+
+msgid "Register"
+msgstr ""
+
+msgid "Likelihood"
+msgstr ""
+
+msgid "Severity"
+msgstr ""
+
+msgid "Current"
+msgstr ""
+
+msgid "After remediation"
+msgstr ""
+
+msgid "Uncategorized"
+msgstr ""
+
+msgid "Delay"
+msgstr ""
+
+msgid "Cost"
+msgstr ""
+
+msgid "Quality"
+msgstr ""
+
+msgid "Not computable"
+msgstr ""
+
+msgid "Category"
+msgstr ""
+
+msgid "Impact on"
+msgstr ""
+
+msgid "Detectability"
+msgstr ""
+
+msgid "Criticity"
+msgstr ""
+
+msgid "Remediation"
+msgstr ""
+
+msgid "Responsible"
+msgstr ""
+
+msgid "Deadline"
+msgstr ""
+
+msgid "Residual criticity"
+msgstr ""
