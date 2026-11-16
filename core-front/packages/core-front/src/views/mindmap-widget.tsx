@@ -21,7 +21,10 @@ export function MindmapWidget({ field, value, draft }: WidgetProps) {
   const t = useT()
   const th = useTheme()
   const box = useRef<HTMLDivElement>(null)
-  const sats = (field.widgetOptions?.satellites ?? []) as unknown as Satellite[]
+  const raw = field.widgetOptions?.satellites
+  const sats = (Array.isArray(raw) ? raw : []).filter(
+    (s): s is Satellite => typeof s === 'object' && s !== null && typeof (s as Satellite).field === 'string',
+  )
   const values = draft ?? {}
   const rel = sats.filter((s) => s.entity).map((s) => ({
     name: s.field, type: 'relation', relation: { entity: s.entity, kind: 'many2one', labelField: s.labelField ?? 'name' },

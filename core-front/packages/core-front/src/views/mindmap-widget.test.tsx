@@ -59,4 +59,16 @@ describe('text/mindmap', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Export PNG' }))
     await waitFor(() => expect(exportElementPng).toHaveBeenCalled())
   })
+
+  it.each([
+    ['absent', undefined],
+    ['empty', []],
+    ['non-array', 'oops'],
+    ['null entry', [null, 3, { label: 'no field' }]],
+  ])('ignores malformed satellites (%s)', (_n, satellites) => {
+    const f = { ...field, widgetOptions: satellites === undefined ? {} : { satellites } } as FieldDescriptor
+    const Widget = fieldWidget(f)
+    render(<Widget field={f} value="Centre" onChange={vi.fn()} draft={{}} />)
+    expect(screen.getByText('Centre')).toBeTruthy()
+  })
 })
