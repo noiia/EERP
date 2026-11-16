@@ -172,6 +172,8 @@ company field, a `canEdit` guard).
   contact form as a dialog (the relation create wizard, kind preset to person) and links the new
   person to the project's company (`contact_company`), so it is offered next time too.
 
+See also [ADR-040](ADR-040-risk-analysis.md): the risk severity reuses these conventions for its critical path.
+
 ## Consequences
 
 - Any entity gets the modes by adding descriptor keys, no new code.

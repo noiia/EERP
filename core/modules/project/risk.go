@@ -182,6 +182,7 @@ func (h *Handler) RecomputeOnRead(next echo.HandlerFunc) echo.HandlerFunc {
 			}
 			projects = []uuid.UUID{p}
 		}
+		// shortcut: an unpinned list recomputes every project with live risks in the tenant, upgrade to a dirty flag or background job when tenants hold thousands of risky projects.
 		if err := recomputeRisks(ctx, h.db, tenant, projects...); err != nil {
 			return err
 		}
