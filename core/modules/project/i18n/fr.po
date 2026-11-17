@@ -247,3 +247,27 @@ msgstr "Le projet n'a pas d'heures prévues"
 
 msgid "Closed at"
 msgstr "Fermée le"
+
+msgid "Burndown"
+msgstr "Consommation"
+
+msgid "Planned value"
+msgstr "Valeur planifiée"
+
+msgid "Earned value"
+msgstr "Valeur acquise"
+
+msgid "Actual cost"
+msgstr "Coût réel"
+
+msgid "Schedule performance index"
+msgstr "Indice de performance des délais"
+
+msgid "Cost performance index"
+msgstr "Indice de performance des coûts"
+
+msgid "Ideal"
+msgstr "Idéal"
+
+msgid "Risk trend"
+msgstr "Tendance des risques"

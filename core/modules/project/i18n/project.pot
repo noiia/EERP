@@ -246,3 +246,27 @@ msgstr ""
 
 msgid "Closed at"
 msgstr ""
+
+msgid "Burndown"
+msgstr ""
+
+msgid "Planned value"
+msgstr ""
+
+msgid "Earned value"
+msgstr ""
+
+msgid "Actual cost"
+msgstr ""
+
+msgid "Schedule performance index"
+msgstr ""
+
+msgid "Cost performance index"
+msgstr ""
+
+msgid "Ideal"
+msgstr ""
+
+msgid "Risk trend"
+msgstr ""

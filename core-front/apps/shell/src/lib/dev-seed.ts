@@ -845,6 +845,23 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
     )
     if (pi === 0 && company) await seedObs(project.id, company, people, me, track)
   }
+  // Metrics window (WP2): the small demos get a 30-day past start and a 60-day
+  // future end; the plan projects span their plan (first phase to last).
+  const span: SeedEntityResult = { entity: 'project metrics span', created: 0, failed: 0, errors: [] }
+  const planPhases = buildProjectPlan().phases
+  for (const [pi, project] of projects.records.entries()) {
+    const body = isPlan(pi)
+      ? { date_start: planPhases[0]?.date_start, date_end: planPhases[planPhases.length - 1]?.deadline }
+      : { date_start: new Date(Date.now() - 30 * day).toISOString(), date_end: new Date(Date.now() + 60 * day).toISOString() }
+    try {
+      await client.update('project', project.id, body)
+      span.created += 1
+    } catch (e) {
+      span.failed += 1
+      if (span.errors.length < 5) span.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  track({ result: span })
   results.push(...Object.values(outcomes))
   return results
 }

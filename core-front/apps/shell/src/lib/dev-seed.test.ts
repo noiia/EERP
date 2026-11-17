@@ -218,6 +218,7 @@ describe('seedDemoData', () => {
       'project_obs_box',
       'project_risk',
       'project_risk_task',
+      'project metrics span',
       'report_page_format',
       'event',
       'event_session',
@@ -563,6 +564,32 @@ describe('seedDemoData — Project app', () => {
     listMock.mockRejectedValueOnce(new Error('boom'))
     await seedDemoData()
     expect(callsFor('project_task').length).toBeGreaterThan(0)
+  })
+
+  it('gives every project a metrics window (date_start / date_end)', async () => {
+    await seedDemoData()
+    const day = 86_400_000
+    const created = await createdFor('project')
+    const plans = new Set(created.filter((p) => PLAN_NAMES.includes(String(p.name))).map((p) => String(p.id)))
+    const updates = updateMock.mock.calls
+      .filter(([e]) => e === 'project')
+      .map(([, id, body]) => [String(id), body as Record<string, unknown>] as const)
+    expect(updates).toHaveLength(5) // 3 small + 2 plan
+    const plan = buildProjectPlan()
+    const planStart = Date.parse(plan.phases[0].date_start)
+    const planEnd = Date.parse(plan.phases[plan.phases.length - 1].deadline)
+    for (const [id, body] of updates) {
+      const start = Date.parse(String(body.date_start))
+      const end = Date.parse(String(body.date_end))
+      if (plans.has(id)) {
+        expect(Math.abs(start - planStart)).toBeLessThan(10 * 60 * 1000)
+        expect(Math.abs(end - planEnd)).toBeLessThan(10 * 60 * 1000)
+      } else {
+        expect(Math.abs(start - (Date.now() - 30 * day))).toBeLessThan(10 * 60 * 1000)
+        expect(Math.abs(end - (Date.now() + 60 * day))).toBeLessThan(10 * 60 * 1000)
+        expect(end > start).toBe(true)
+      }
+    }
   })
 })
 

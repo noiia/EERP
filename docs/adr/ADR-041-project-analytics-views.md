@@ -73,3 +73,66 @@ the hour totals (a read-only `datetime` column on the task list and form).
   inside the module's `Migrate`, after `ensureSchema` created the tables: they
   are idempotent, but the module must register the two tables for their DDL to
   exist in the first place.
+
+### Project metrics endpoint (WP2)
+
+`GET /api/v1/project/:id/metrics` answers one question per point in time:
+what was the project's scope and done work, its earned value and actual cost,
+where the tasks were (per stage), and how the risks looked — all as exact
+time series. That is why it is a server-side endpoint and not a client
+aggregation over the generic API: the window is a `generate_series` walked in
+SQL (one query per series, tenant-pinned), so the figures are exact for any
+date, and the row-scope gate (`orm.CanSeeRecord`) happens at a single point —
+a non-member or a mere task assignee gets a 404, never a series or task ids.
+The cross-project pages (portfolio, workload) keep using the generic API: no
+new permissions, row scope for free.
+
+The window runs from the project's `date_start` (else the earliest live
+task's `created_at`, else today) to `max(today, date_end)`, capped at
+`from + 3 years`. The bucket is `day` when the span is ≤ 120 days, else
+`week` with points on Mondays; the last point is always today when today is
+in the window (the daily grid walks the full window, which may end in the
+future; the weekly grid trims at today). The series are:
+
+- **Burndown:** scope(t) = Σ planned_hours (and the count) of the tasks
+  created by t and not yet deleted, with time-varying project membership from
+  the `project_task_stage` intervals (they carry `project_id`, so a moved
+  task counts in the old project only up to the move date). done(t) is the
+  same restricted to `closed_at <= t`; remaining = scope − done.
+- **Earned value:** PV(t) = Σ planned_hours × clamp((t − date_start) /
+  (deadline − date_start), 0, 1) over the live tasks with both dates (a task
+  where `deadline <= date_start` counts fully from its deadline); EV(t) = Σ
+  planned_hours of the tasks with `closed_at <= t`; AC(t) = Σ live timesheet
+  hours with `date <= t`. SPI = EV/PV and CPI = EV/AC at today, `null` when
+  the denominator is 0.
+- **Ideal line:** from scope(from) at `from` down to 0 at `date_end`
+  (none when `date_end` is NULL or before `from`), on the bucket's grid
+  clipped at the window's `to`.
+- **Flow:** the live tasks' stage per date, from the same intervals.
+- **Risk trend:** each risk's LAST `project_risk_history` snapshot at or
+  before the date (a deleted snapshot drops the risk out), banded per
+  ADR-040 (criticity ≤ 4 green, ≤ 12 amber, > 12 red).
+
+`pv_excluded` counts the live tasks without both dates: PV skips them,
+nothing else does.
+
+Pitfalls:
+
+- The history starts at the migration time: spans backfilled for
+  pre-existing tasks have `entered_at = created_at` (an estimate), and
+  `project_risk_history` has no rows before it — the charts are exact from
+  the migration on, approximate before.
+- The endpoint reads the excluded history tables straight from the database:
+  those typed reads bypass the generic row scope, which is why the visibility
+  gate runs first and every query is tenant-pinned (the tables are
+  `orm.WithExcluded()`, so no route of the generic CRUD can serve them).
+- EV equals done_hours by construction (both are the closed tasks' planned
+  hours); the duplicate field exists so the burndown and the EVM views read
+  their own names.
+- AC uses the timesheets' current `project_id`: hours follow the task to its
+  new project when it moves.
+- A project with no dates, no hours and no timesheets answers one point of
+  zeros with SPI/CPI `null` and `pv_excluded` set — never a division by zero.
+- The client-side reads of the Insights mode page until a short page and stop
+  at 1000 records with a "first 1000 shown" caption (ADR-032); the endpoint
+  itself is bounded by the 3-year window and the bucket.
