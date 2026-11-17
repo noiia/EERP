@@ -1,3 +1,4 @@
+'use client'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { layout } from './tokens'
 

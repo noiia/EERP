@@ -13,6 +13,7 @@ import type { MenuNode } from './descriptor'
 import { MenuNodeItem } from './form-actions-menu'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { menuActionRegistry } from './menu-actions'
+import { usePhone } from './use-phone'
 
 // The list view's row-selection toolbar — right of the search bar (only for
 // the flat DataGrid branch, which is also where TreeRenderer turns on
@@ -58,6 +59,7 @@ export function SelectionBar({
   onDelete,
 }: SelectionBarProps) {
   const t = useT()
+  const phone = usePhone()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -88,7 +90,12 @@ export function SelectionBar({
         {error}
       </ViewBanner>
       <Badge badgeContent={selectedIds.length} color="primary" max={999}>
-        <Button size="small" variant={allSelected ? 'contained' : 'outlined'} onClick={onSelectAll}>
+        <Button
+          size="small"
+          variant={allSelected ? 'contained' : 'outlined'}
+          sx={phone ? { minHeight: 40 } : undefined}
+          onClick={onSelectAll}
+        >
           {t('Select all')}
         </Button>
       </Badge>

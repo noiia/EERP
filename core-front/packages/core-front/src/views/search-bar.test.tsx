@@ -6,6 +6,7 @@ import { SavedFilterOpsProvider, type SavedFilterOps, type SavedFilterRecord } f
 import { SearchBar, toListOptions } from './search-bar'
 import { useSessionStore, type Identity } from './session-store'
 import { useUndoToastStore } from './undo-toast'
+import { setViewportWidth } from '../test/viewport'
 
 // The page URL's query, as Next's useSearchParams serves it (null outside a router).
 const urlParams = vi.hoisted(() => ({ current: null as URLSearchParams | null }))
@@ -503,5 +504,32 @@ describe('geo filter value validation', () => {
   })
   it('covers drops a radius', () => {
     expect(run('covers', '2.35,48.85,1000')).toEqual({ pageSize: 1, covers: { g: '2.35,48.85' } })
+  })
+})
+
+describe('SearchBar on phone (390px)', () => {
+  // Defect: the dropdown took the search field's width minus 20px (~170px),
+  // cutting off the Filters row's Field/Op/Value/Add controls.
+  it('opens the filter menu at full screen width', () => {
+    setViewportWidth(390)
+    renderBar()
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    // calc(100vw - 32px): jsdom resolves 100vw against its fixed 1024px layout width.
+    expect(getComputedStyle(document.querySelector('.MuiMenu-paper')!).width).toBe(`${1024 - 32}px`)
+  })
+
+  // Defect: the field kept its 450px desktop width, capped by an auto-width parent.
+  it('lets the search field fill its line', () => {
+    setViewportWidth(390)
+    renderBar()
+    expect(screen.getByPlaceholderText('Search…').closest('.MuiTextField-root')).toHaveStyle({ width: '100%' })
+  })
+
+  // Defect: the filter row's Add button was a 30×37px target.
+  it('gives the Add filter button a 40px touch target', () => {
+    setViewportWidth(390)
+    renderBar()
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    expect(screen.getByRole('button', { name: 'Add filter' })).toHaveStyle({ minWidth: '40px', minHeight: '40px' })
   })
 })

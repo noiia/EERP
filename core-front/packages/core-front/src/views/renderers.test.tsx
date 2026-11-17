@@ -1911,3 +1911,60 @@ describe('DisplayModeSwitcher on phone', () => {
     expect(screen.getByRole('group', { name: 'Display mode' })).toBeInTheDocument()
   })
 })
+
+describe('List on phone (390px)', () => {
+  const list: ViewDescriptor<Contact> = {
+    entity: 'crm',
+    viewType: 'tree',
+    formPath: '/crm/:id',
+    createPermission: 'crm:crm:write',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'email', label: 'Email', type: 'text' },
+    ],
+  }
+  const renderList = () => {
+    useSessionStore.setState({ identity: identityWith(['*:*:*']) })
+    return render(<EntityView descriptor={list} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} title="Contacts" />)
+  }
+
+  // Defect: title, search bar and Create shared one row, squeezing the search
+  // field to ~85px and pushing Create past the page inset.
+  it('wraps the title row so the search bar takes its own full-width line', () => {
+    setViewportWidth(390)
+    renderList()
+    expect(screen.getByTestId('list-title-row')).toHaveStyle({ flexWrap: 'wrap' })
+    expect(screen.getByTestId('list-search-slot')).toHaveStyle({ flexBasis: '100%', order: '1' })
+  })
+
+  // Defect: the grid squeezed every column into the screen width ("N", "We…").
+  it('scrolls grid columns sideways inside the grid wrapper only', () => {
+    setViewportWidth(390)
+    renderList()
+    expect(screen.getByTestId('list-grid')).toHaveStyle({ overflowX: 'auto' })
+    // The 140px column minWidth itself is checked in a real browser (jsdom gives the grid 0px).
+  })
+
+  // Defect: the full-width search field pushed Select all past the page inset.
+  it('lets the search bar share its line with Select all', () => {
+    setViewportWidth(390)
+    renderList()
+    const bar = screen.getByPlaceholderText('Search…').closest('.MuiTextField-root')!.parentElement!.parentElement!
+    expect(bar).toHaveStyle({ flex: '1', minWidth: '0' })
+    // Defect: Select all was a 26px-high target.
+    expect(screen.getByRole('button', { name: /Select all/ })).toHaveStyle({ minHeight: '40px' })
+  })
+
+  // Defect: Create was a 33px-high target.
+  it('gives Create a 40px touch target', () => {
+    setViewportWidth(390)
+    renderList()
+    expect(screen.getByRole('button', { name: 'Create' })).toHaveStyle({ minHeight: '40px' })
+  })
+
+  it('keeps the one-row header at desktop width', () => {
+    renderList()
+    expect(screen.getByTestId('list-title-row')).not.toHaveStyle({ flexWrap: 'wrap' })
+    expect(screen.getByTestId('list-grid')).not.toHaveStyle({ overflowX: 'auto' })
+  })
+})

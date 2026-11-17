@@ -31,6 +31,7 @@ import { RelationFilterInput } from './relation-filter-input'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { useRelationLabels } from './use-relation-labels'
 import { useRelationOps } from './relation-ops'
+import { usePhone } from './use-phone'
 import { useSavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
 import { useSessionStore } from './session-store'
 import type { HasId } from './stores'
@@ -540,26 +541,31 @@ export function SearchBar<T extends HasId>({
     })
   }
 
+  const phone = usePhone()
   const menuOpen = Boolean(anchorEl)
   const stopKeyPropagation = (e: React.KeyboardEvent) => e.stopPropagation()
   const draftRelation = filterFields.find((f) => f.name === draftField && f.type === 'relation' && f.relation)
 
   return (
-    <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+    <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, ...(phone && { flex: 1, minWidth: 0 }) }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...(phone && { width: '100%' }) }}>
         <TextField
           size="small"
           placeholder={t('Search…')}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onClick={(e) => void openMenu(e.currentTarget)}
-          sx={{
-            width: `${layout.searchBarMaxWidth}px`,
-            maxWidth: '100%',
-            [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
-              width: layout.searchBarNarrowWidth,
-            },
-          }}
+          sx={
+            phone
+              ? { width: '100%' }
+              : {
+                  width: `${layout.searchBarMaxWidth}px`,
+                  maxWidth: '100%',
+                  [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
+                    width: layout.searchBarNarrowWidth,
+                  },
+                }
+          }
           slotProps={{
             input: {
               startAdornment: (
@@ -611,7 +617,10 @@ export function SearchBar<T extends HasId>({
             // (anchorOrigin/transformOrigin above) — the bar's own live
             // width, not a fixed guess, so it tracks the narrow-viewport
             // breakpoint automatically.
-            sx: { width: anchorEl ? anchorEl.offsetWidth - 20 : 360, maxWidth: '90vw' },
+            // On phone the bar is too narrow for the Filters row: full screen width, inside the Popover's 16px edge margin.
+            sx: phone
+              ? { width: 'calc(100vw - 32px)', maxWidth: 'none' }
+              : { width: anchorEl ? anchorEl.offsetWidth - 20 : 360, maxWidth: '90vw' },
           },
         }}
       >
@@ -687,6 +696,7 @@ export function SearchBar<T extends HasId>({
             <IconButton
               size="small"
               aria-label={t('Add filter')}
+              sx={phone ? { minWidth: 40, minHeight: 40 } : undefined}
               disabled={!draftField || !draftOp}
               onClick={addFilter}
             >
