@@ -121,6 +121,26 @@ describe('GanttRenderer', () => {
     expect(range()).toBe(`${new Date(2026, 3, 1).toLocaleDateString()} – ${new Date(2026, 8, 30).toLocaleDateString()}`)
   })
 
+  it('the slider and a drag on the empty timeline move it by single days', () => {
+    sizeTrack()
+    renderGantt()
+    fireEvent.click(screen.getByRole('button', { name: 'Day' })) // 100px per day
+    const range = () => screen.getByText(/–/).textContent
+    const slider = screen.getByRole('slider', { name: 'Timeline position' })
+    fireEvent.change(slider, { target: { value: 3 } })
+    expect(range()).toBe(`${new Date(2026, 2, 5).toLocaleDateString()} – ${new Date(2026, 2, 18).toLocaleDateString()}`)
+    // Dragging the track 200px right shows two days earlier; no quick create on release.
+    drag(screen.getByTestId('gantt-row-track-1'), 200)
+    expect(range()).toBe(`${new Date(2026, 2, 3).toLocaleDateString()} – ${new Date(2026, 2, 16).toLocaleDateString()}`)
+    // A drag on a bar moves the bar, not the timeline.
+    drag(screen.getByTestId('gantt-bar-1'), 100)
+    expect(range()).toBe(`${new Date(2026, 2, 3).toLocaleDateString()} – ${new Date(2026, 2, 16).toLocaleDateString()}`)
+    expect(update).toHaveBeenCalledWith('1', { date_start: '2026-03-03', deadline: '2026-03-09' })
+    // Month zoom over a mid-month start still draws its 8 lines per month inside the range.
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }))
+    expect(range()).toBe(`${new Date(2026, 2, 1).toLocaleDateString()} – ${new Date(2026, 7, 31).toLocaleDateString()}`)
+  })
+
   it('draws a grey line per day, or 8 per month in Month zoom', () => {
     renderGantt()
     const lines = () => screen.getByTestId('gantt-grid-lines').children

@@ -2547,6 +2547,9 @@ msgstr ""
 msgid "Today"
 msgstr ""
 
+msgid "Timeline position"
+msgstr ""
+
 msgid "Previous period"
 msgstr ""
 

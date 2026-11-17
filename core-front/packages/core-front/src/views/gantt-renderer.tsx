@@ -8,6 +8,7 @@ import CardContent from '@mui/material/CardContent'
 import Collapse from '@mui/material/Collapse'
 import IconButton from '@mui/material/IconButton'
 import Popover from '@mui/material/Popover'
+import Slider from '@mui/material/Slider'
 import Stack from '@mui/material/Stack'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
@@ -100,18 +101,29 @@ function dayDiff(a: Date, b: Date): number {
   return Math.round((a.getTime() - b.getTime()) / DAY_MS)
 }
 
-/** Visible range [start, end) and its header columns for a zoom level. */
+/** The aligned start a zoom shows by default: the 1st of the month, else Monday. */
+function alignAnchor(zoom: Zoom, d: Date): Date {
+  return zoom === 'month' ? new Date(d.getFullYear(), d.getMonth(), 1) : monday(d)
+}
+
+/** Visible range [start, end) from `anchor` (its first day — any day, the slider
+ * and drag-to-pan move it by single days) and its header columns: every day,
+ * every Monday, or every 1st of the month inside the range. */
 function viewRange(zoom: Zoom, anchor: Date, phone = false) {
-  if (zoom === 'month') {
-    const n = phone ? 3 : 6
-    const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
-    const columns = Array.from({ length: n }, (_, i) => new Date(start.getFullYear(), start.getMonth() + i, 1))
-    return { start, end: new Date(start.getFullYear(), start.getMonth() + n, 1), columns }
+  const start = addDays(anchor, 0)
+  const end =
+    zoom === 'month'
+      ? new Date(start.getFullYear(), start.getMonth() + (phone ? 3 : 6), start.getDate())
+      : addDays(start, zoom === 'day' ? (phone ? 7 : 14) : phone ? 42 : 84)
+  let c =
+    zoom === 'day' ? start
+    : zoom === 'week' ? monday(addDays(start, 6))
+    : start.getDate() === 1 ? start : new Date(start.getFullYear(), start.getMonth() + 1, 1)
+  const columns: Date[] = []
+  for (; c < end; c = zoom === 'month' ? new Date(c.getFullYear(), c.getMonth() + 1, 1) : addDays(c, zoom === 'day' ? 1 : 7)) {
+    columns.push(c)
   }
-  const start = monday(anchor)
-  const [count, step] = zoom === 'day' ? [phone ? 7 : 14, 1] : [phone ? 6 : 12, 7]
-  const columns = Array.from({ length: count }, (_, i) => addDays(start, i * step))
-  return { start, end: addDays(start, count * step), columns }
+  return { start, end, columns }
 }
 
 function shiftAnchor(zoom: Zoom, anchor: Date, dir: number, phone = false): Date {
@@ -120,13 +132,19 @@ function shiftAnchor(zoom: Zoom, anchor: Date, dir: number, phone = false): Date
 }
 
 /** Grey grid line offsets (days from the range start): every day, or 8 per month in Month zoom. */
-function gridLines(zoom: Zoom, start: Date, columns: Date[], totalDays: number): number[] {
+function gridLines(zoom: Zoom, start: Date, totalDays: number): number[] {
   if (zoom !== 'month') return Array.from({ length: totalDays - 1 }, (_, i) => i + 1)
-  return columns.flatMap((c) => {
+  const out: number[] = []
+  // From the month holding the range start: a panned range starts mid-month.
+  for (let c = new Date(start.getFullYear(), start.getMonth(), 1); dayDiff(c, start) < totalDays; c = new Date(c.getFullYear(), c.getMonth() + 1, 1)) {
     const first = dayDiff(c, start)
     const len = dayDiff(new Date(c.getFullYear(), c.getMonth() + 1, 1), c)
-    return Array.from({ length: 8 }, (_, k) => first + (k * len) / 8).filter((d) => d > 0)
-  })
+    for (let k = 0; k < 8; k++) {
+      const d = first + (k * len) / 8
+      if (d > 0 && d < totalDays) out.push(d)
+    }
+  }
+  return out
 }
 
 /** Shift + wheel: `steps` of the smallest move the Monday-aligned range shows (a month, else a week). */
@@ -231,10 +249,17 @@ export function GanttRenderer<T extends HasId>({
   const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
   const { formPath } = descriptor
   const [zoom, setZoom] = useState<Zoom>(() => readZoom(descriptor.entity))
-  const [anchor, setAnchor] = useState(() => new Date())
+  const [anchor, setAnchor] = useState(() => alignAnchor(readZoom(descriptor.entity), new Date()))
   const phone = usePhone()
   const range = viewRange(zoom, anchor, phone)
   const totalDays = dayDiff(range.end, range.start)
+  // The slider spans one view either side of its base; moving out of that (Today, Previous…) recenters it.
+  const [sliderBase, setSliderBase] = useState(range.start)
+  let sliderValue = dayDiff(range.start, sliderBase)
+  if (Math.abs(sliderValue) > totalDays) {
+    setSliderBase(range.start)
+    sliderValue = 0
+  }
   const fromIso = isoDate(range.start)
   const untilIso = isoDate(range.end)
 
@@ -381,6 +406,30 @@ export function GanttRenderer<T extends HasId>({
   }, [zoom])
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
+
+  /** Dragging the timeline's empty area (a finger swipe on phone) pans it by whole days. */
+  function startPan(event: React.PointerEvent) {
+    if (event.button !== 0 || dragRef.current || (event.target as Element).closest('button, a, input, [role="button"]')) return
+    const width = trackRef.current?.getBoundingClientRect().width ?? 0
+    if (width <= 0) return
+    const pan = { x: event.clientX, anchor: range.start, pxPerDay: width / totalDays, moved: false }
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - pan.x
+      if (!pan.moved && Math.abs(dx) < 6) return
+      pan.moved = true
+      setAnchor(addDays(pan.anchor, -Math.round(dx / pan.pxPerDay)))
+    }
+    const stop = () => {
+      // A pan ending over a row fires a click there: not a quick create.
+      if (pan.moved) dragEndedAt.current = Date.now()
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+  }
   // Records with a write in flight: no new move until it settles, so a late
   // failure can't revert over a newer move.
   const pendingRef = useRef(new Set<string>())
@@ -659,6 +708,7 @@ export function GanttRenderer<T extends HasId>({
               onChange={(_e, next: Zoom | null) => {
                 if (!next) return
                 setZoom(next)
+                setAnchor((a) => alignAnchor(next, a))
                 writeZoom(descriptor.entity, next)
               }}
               aria-label={t('Zoom')}
@@ -676,7 +726,7 @@ export function GanttRenderer<T extends HasId>({
                 {t('Previous')}
               </Button>
             )}
-            <Button size="small" sx={{ minHeight: phone ? 40 : undefined }} onClick={() => setAnchor(new Date())}>
+            <Button size="small" sx={{ minHeight: phone ? 40 : undefined }} onClick={() => setAnchor(alignAnchor(zoom, new Date()))}>
               {t('Today')}
             </Button>
             {phone ? (
@@ -699,8 +749,12 @@ export function GanttRenderer<T extends HasId>({
           </Box>
           <Box
             ref={gridRef}
+            onPointerDown={startPan}
             // minHeight: the whole timeline stays a drop target for Unscheduled cards, even with few rows.
+            // pan-y: a horizontal swipe reaches startPan, a vertical one still scrolls the page.
             sx={{
+              touchAction: 'pan-y',
+              userSelect: 'none',
               display: 'grid',
               gridTemplateColumns: phone ? '88px minmax(0, 1fr)' : 'minmax(96px, 200px) minmax(0, 1fr)',
               gridAutoRows: 'min-content',
@@ -730,7 +784,7 @@ export function GanttRenderer<T extends HasId>({
                 aria-hidden
                 sx={{ gridColumn: 2, gridRow: `2 / span ${rows.length}`, position: 'relative', pointerEvents: 'none' }}
               >
-                {gridLines(zoom, range.start, range.columns, totalDays).map((d) => (
+                {gridLines(zoom, range.start, totalDays).map((d) => (
                   <Box key={d} sx={{ position: 'absolute', top: 0, bottom: 0, width: '1px', bgcolor: 'divider' }} style={{ left: pct(d) }} />
                 ))}
               </Box>
@@ -829,6 +883,20 @@ export function GanttRenderer<T extends HasId>({
                 </Box>
               ) : null}
             </Box>
+          </Box>
+          <Box sx={{ display: 'grid', gridTemplateColumns: phone ? '88px minmax(0, 1fr)' : 'minmax(96px, 200px) minmax(0, 1fr)', px: 1 }}>
+            <Slider
+              size="small"
+              aria-label={t('Timeline position')}
+              min={-totalDays}
+              max={totalDays}
+              value={sliderValue}
+              track={false}
+              valueLabelDisplay="auto"
+              valueLabelFormat={(v) => addDays(sliderBase, v).toLocaleDateString()}
+              onChange={(_e, v) => setAnchor(addDays(sliderBase, v as number))}
+              sx={{ gridColumn: 2 }}
+            />
           </Box>
         </Box>
 

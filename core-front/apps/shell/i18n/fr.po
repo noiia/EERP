@@ -2679,6 +2679,9 @@ msgstr "Mois"
 msgid "Today"
 msgstr "Aujourd'hui"
 
+msgid "Timeline position"
+msgstr "Position de la frise"
+
 msgid "Previous period"
 msgstr "Période précédente"
 
