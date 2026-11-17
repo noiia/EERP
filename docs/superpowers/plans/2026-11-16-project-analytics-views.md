@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the 15 validated Project views: critical path and baseline on Gantt, Kanban swimlanes, an **Insights** mode (burndown/burnup, cumulative flow, earned value, milestone roadmap, risk trend), a **Matrix** mode (Eisenhower, RACI, dependency matrix), and four pages (My day, Timesheet week, Workload, Portfolio).
+**Goal:** Add the 16 validated Project views: critical path and baseline on Gantt, Kanban swimlanes, an **Insights** mode (burndown/burnup, cumulative flow, earned value, milestone roadmap, risk trend), a **Matrix** mode (Eisenhower, RACI, dependency matrix), a **PBS** diagram mode (product breakdown structure), and four pages (My day, Timesheet week, Workload, Portfolio).
 
 **Architecture:**
 - **Backend** (`core/modules/project`):
   - New data, all maintained by triggers: a task's `closed_at`, a stage-history table, a risk-history table.
-  - New tables: baselines, RACI, capacities.
+  - New tables: baselines, RACI, capacities, PBS items (plus a task's `pbs_item_id`).
   - Two read endpoints on one project: `GET /api/v1/project/:id/metrics` and `GET /api/v1/project/:id/schedule`. Their permission derives as `project:project:read`, like `can_manage`, and each checks `orm.CanSeeRecord` (404 otherwise).
-- **Frontend, single-project views:** inside the task lists, following the Risk mode's pattern. They are engine display modes configured by `viewModeDefaults` and offered while the list is pinned to one project (`views/insights/`, `views/matrix/`), plus opt-in Gantt and Kanban options.
+- **Frontend, single-project views:** inside the task lists, following the Risk mode's pattern. They are engine display modes configured by `viewModeDefaults` and offered while the list is pinned to one project (`views/insights/`, `views/matrix/`, `views/diagram/pbs-renderer.tsx`), plus opt-in Gantt and Kanban options.
 - **Frontend, cross-project views:** hand-built shell pages (Teams' pattern, `apps/shell/app/app/project/*`). They read only through the generic list API, so row scope and field gating apply with no new endpoint or permission.
 
 **Tech Stack:** Go (Echo, core/orm, pgx, Postgres 18), Next.js App Router + React 19 + MUI 7, Vitest, Go `testing` with `newFixture`.
@@ -38,6 +38,12 @@
   - Quadrants: Do (important+urgent), Schedule (important), Delegate (urgent), Eliminate (neither).
   - Closed tasks are excluded.
 - **RACI:** roles `R`, `A`, `C`, `I`. At most one `A` per task (422 `ONE_ACCOUNTABLE`). A user holds one role per task (unique live `(task_id, user_id)` → 409). Staff users only (422).
+- **PBS:**
+  - A PBS item is a deliverable of one project: `name` (required, ≤ 200), `description` (≤ 2000), a lowercase `#rrggbb` `color` (else 422), an optional `parent_id` in the same project and acyclic (422), and `x`/`y`.
+  - A task produces at most one item (`project_task.pbs_item_id`, same project, else 422). A task move clears it, like its milestone.
+  - The chart is shared data, like OBS: item writes (create, update, move, delete) are manager/admin only (403). Linking a task to an item is a task write, open to anyone who may edit the task.
+  - Deleting an item clears its children's `parent_id` and its tasks' `pbs_item_id` in one transaction. Its children become roots and nothing disappears.
+  - An item's progress = done / total over the live tasks linked to it **and to its descendants**. A leaf with no task is flagged `No task produces this`.
 - **Capacity:** `hours_per_week` in (0, 168]. A user with no row has 40.
 - **Workload:**
   - A task's planned_hours are spread evenly over the Mon–Fri days of [date_start, deadline] (both dates required, open tasks only), then split equally among its assignees. No assignee → the "Unassigned" row.
@@ -56,13 +62,14 @@
 2. **A project with no dates, no planned hours and no timesheets** → metrics answers zeros with `pv_excluded` set and SPI/CPI `null`. The Insights charts show "Not enough data yet", with no NaN, no division by zero and no empty SVG path. *(Task 2, Task 9.)*
 3. **A task moved to another project, then deleted** → its stage history, RACI rows and baseline rows follow or hide, and the old project's metrics stop counting it from the move date. *(Task 1, Task 5.)*
 4. **Timesheet week grid: a cell holding several entries** stays read-only (no silent merge). Typing `0` deletes the single entry, and a refused write (403 for someone else's entry) restores the cell. *(Task 14.)*
-5. **Workload over a holiday-only or weekend-only task** (date_start and deadline on Sat/Sun) → its hours land on the nearest following Monday, never dropped and never divided by zero. *(Task 15.)*
+5. **PBS: deleting an item that has children and linked tasks** → children become roots, tasks keep existing with `pbs_item_id` NULL, all in one transaction; a non-manager gets 403 and nothing changes. A task moved to another project loses its item. *(Task 18.)*
+6. **Workload over a holiday-only or weekend-only task** (date_start and deadline on Sat/Sun) → its hours land on the nearest following Monday, never dropped and never divided by zero. *(Task 15.)*
 
 ---
 
 ## Work Packages (one per person)
 
-The 17 tasks below are grouped into 10 work packages (WPs), each one branch and one pull request into `dev`. A WP starts once every WP in its **Blocked by** column is merged. The frontend WPs (5–10) also need `2026-11-16-project-phone-mode.md` merged first.
+The 19 tasks below are grouped into 11 work packages (WPs), each one branch and one pull request into `dev`. A WP starts once every WP in its **Blocked by** column is merged. The frontend WPs (5–10) also need `2026-11-16-project-phone-mode.md` merged first.
 
 | WP | Title | Tasks | Blocked by | Wave |
 |---|---|---|---|---|
@@ -76,8 +83,9 @@ The 17 tasks below are grouped into 10 work packages (WPs), each one branch and 
 | WP8 | Frontend: Matrices mode (Eisenhower, RACI, DSM) | 11, 12 | WP4, WP5 | 2 |
 | WP9 | Pages: plumbing, My day, Timesheet week | 13, 14 | — | 1 |
 | WP10 | Pages: Workload & Portfolio | 15, 16 | WP4, WP9 | 2 |
+| WP11 | PBS: deliverables backend & diagram mode | 18, 19 | WP5 | 2 |
 
-**Wave 1 (parallel from day one):** WP1, WP3, WP4, WP5, WP9. **Wave 2:** WP2, WP6, WP8, WP10. **Wave 3:** WP7.
+**Wave 1 (parallel from day one):** WP1, WP3, WP4, WP5, WP9. **Wave 2:** WP2, WP6, WP8, WP10, WP11. **Wave 3:** WP7.
 
 **Task 17 is shared:**
 - WP1 writes the ADR-041 skeleton (context, decision headings).
@@ -85,8 +93,8 @@ The 17 tasks below are grouped into 10 work packages (WPs), each one branch and 
 - Whoever merges the last WP runs the Task 17 Step 3 walk-through and `make test`.
 
 **Shared files to merge with care:**
-- `core/modules/project/{models,module,migrate,scope,validate}.go` and `scope_test.go`'s table list (WP1, WP3, WP4): append your block at the end of each list or function, never reorder existing lines.
-- `core/modules/project/views/project_views.ts` (WP5, WP6, WP8, WP9, WP10): add new constants and routes at the end of their sections.
+- `core/modules/project/{models,module,migrate,scope,validate}.go` and `scope_test.go`'s table list (WP1, WP3, WP4, WP11): append your block at the end of each list or function, never reorder existing lines.
+- `core/modules/project/views/project_views.ts` (WP5, WP6, WP8, WP9, WP10, WP11): add new constants and routes at the end of their sections.
 - Rebase on `dev` before opening the PR.
 
 ---
@@ -96,13 +104,13 @@ The 17 tasks below are grouped into 10 work packages (WPs), each one branch and 
 | Area | Files |
 |---|---|
 | Go data | `core/modules/project/models.go`, `module.go`, `migrate.go` (DDL, triggers, backfills), `scope.go`, `validate.go` (guards) |
-| Go endpoints | `core/modules/project/metrics.go` (new), `schedule.go` (new), `baseline.go` (new), `handler.go` (`Mount`) |
-| Go tests | `metrics_test.go`, `schedule_test.go`, `baseline_test.go`, `raci_test.go`, `history_test.go` (new), `scope_test.go` (table list) |
+| Go endpoints | `core/modules/project/metrics.go` (new), `schedule.go` (new), `baseline.go` (new), `handler.go` (`Mount`, `DeletePbsItem`) |
+| Go tests | `metrics_test.go`, `schedule_test.go`, `baseline_test.go`, `raci_test.go`, `history_test.go`, `pbs_test.go` (new), `scope_test.go` (table list) |
 | Descriptors | `core/modules/project/views/project_views.ts` (+ test) |
 | Engine config | `core-front/packages/core-front/src/views/descriptor.ts` (`ViewModeDefaults`), `src/api/view-fields.ts` (`DisplayMode`, availability), `views/renderers.tsx` (`MODE_LABELS`, dispatch), `views/lazy-widgets.tsx` |
-| Engine views | `views/gantt-renderer.tsx`, `views/kanban-renderer.tsx`, `views/insights/*` (new), `views/matrix/*` (new), `views/charts/line-chart.tsx` (new, shared by Insights) |
+| Engine views | `views/gantt-renderer.tsx`, `views/kanban-renderer.tsx`, `views/insights/*` (new), `views/matrix/*` (new), `views/diagram/pbs-renderer.tsx` + `pbs-box.tsx` (new), `views/charts/line-chart.tsx` (new, shared by Insights) |
 | Shell pages | `apps/shell/app/app/project/{my-day,timesheet-week,workload,portfolio}/page.tsx` (new), `apps/shell/src/project/*` (new client components) |
-| Seed & docs | `apps/shell/src/lib/dev-seed.ts` (`seedProjects`), `docs/adr/ADR-041-project-analytics-views.md` (new), root `CLAUDE.md` project bullet, `core-front/CLAUDE.md` rows |
+| Seed & docs | `apps/shell/src/lib/dev-seed.ts` (`seedProjects`), `docs/adr/ADR-041-project-analytics-views.md` (new), `docs/adr/ADR-039-diagram-views.md` (§ PBS), root `CLAUDE.md` project bullet, `core-front/CLAUDE.md` rows |
 
 ---
 
@@ -415,10 +423,85 @@ The 17 tasks below are grouped into 10 work packages (WPs), each one branch and 
 
 ### Task 17: Demo seed, docs, final check
 
-**Files:** modify `apps/shell/src/lib/dev-seed.ts` (`seedProjects`) + its test, `docs/adr/ADR-041-project-analytics-views.md` (new), root `CLAUDE.md` (project bullet), `core-front/CLAUDE.md` (*List display modes* row: Gantt critical path/baseline, swimlanes, Insights and Matrix modes; a new *Project pages* row), `core/modules/project/i18n/*`, `apps/shell/i18n/*`.
+**Files:** modify `apps/shell/src/lib/dev-seed.ts` (`seedProjects`) + its test, `docs/adr/ADR-041-project-analytics-views.md` (new), `docs/adr/ADR-039-diagram-views.md` (§ PBS), root `CLAUDE.md` (project bullet), `core-front/CLAUDE.md` (*List display modes* row: Gantt critical path/baseline, swimlanes, Insights and Matrix modes; a new *Project pages* row), `core/modules/project/i18n/*`, `apps/shell/i18n/*`.
 
 - [ ] **Step 1:** Seed, per large demo project: one baseline (through the POST), RACI rows (an `A` and an `R` on most tasks), timesheets over the past weeks, capacities for the demo users, and a few stage moves and risk edits spread over time. Seeding today can't backdate triggers, so document that the history charts fill in over time, or backdate the seeded history rows through a dev-only SQL path only if one already exists. Update the seed test's request counts.
 - [ ] **Step 2:** Write ADR-041. It covers why per-project metrics are server-side (exact time series, row scope at one point) while cross-project pages use the generic API (no new permissions, row scope for free), the history tables and their triggers, the EVM/burndown definitions (copied from Global Constraints), and the pitfalls (history starts at migration time; typed reads bypass row scope; the 1000 caps).
 - [ ] **Step 3:** Run the app (`run` skill), seed, and check each new view at 1280px and 390px. Screenshot to the scratchpad and fix defects with a test each.
 - [ ] **Step 4:** `graphify update .`, then `make test`. Expected: green, coverage at or above the floors.
 - [ ] **Step 5: Commit** `docs(project): ADR-041 analytics views, seed and docs`.
+
+## Phase D — Product breakdown structure (PBS)
+
+The PBS answers *what* the project delivers, where the WBS answers *how* the work is split and the OBS *who* does it. Each box is a deliverable (a `project_pbs_item`); the tasks that produce it link to it, so the chart shows how far each deliverable has got. For example, for a website project:
+
+```mermaid
+flowchart TD
+    P["Website v2<br/>(project)"] --> A["Public site<br/>3/5 tasks done"]
+    P --> B["Back office<br/>1/4 tasks done"]
+    P --> C["Documentation<br/>No task produces this"]
+    A --> A1["Home page<br/>2/2"]
+    A --> A2["Booking flow<br/>1/3"]
+    B --> B1["Admin screens<br/>1/4"]
+    A1 -.->|"produced by"| T1["1.2 - Build home page"]
+    A2 -.->|"produced by"| T2["2.1 - Booking API"]
+```
+
+How the three diagrams relate:
+
+```mermaid
+flowchart LR
+    PBS["PBS: deliverables<br/>project_pbs_item"] -->|"pbs_item_id"| Task["project_task"]
+    WBS["WBS: work<br/>parent_id, wbs_number"] --- Task
+    OBS["OBS: people<br/>project_obs_box"] -.->|"same shared-chart rules"| PBS
+```
+
+### Task 18: PBS items (backend)
+
+**Files:** modify `models.go`, `module.go`, `scope.go`, `migrate.go`, `validate.go`, `handler.go` (`DeletePbsItem`, the `UpdateTask` move list, the restore-with-project table lists), `scope_test.go` (table list), `core/internal/app/app_test.go` (route table). Test: `pbs_test.go` (new).
+
+**Interfaces:**
+- Produces:
+  - Table `project_pbs_item` (`project_id`, `parent_id` NULL, `name`, `description` NULL, `color` NULL, `x`, `y`; read-only `task_count`, `done_count` — trigger-maintained over the item's own live tasks). Generic CRUD, `orm.WithRowScope(ChildScope(p))` like `project_obs_box`.
+  - Column `project_task.pbs_item_id UUID NULL` (json `pbs_item_id`, indexed).
+  - `DELETE /api/v1/project_pbs_item/:id` overridden by `DeletePbsItem` (the `DeleteObsBox` shape).
+  - Restoring a project brings back the PBS items deleted with it (same `deleted_at`), like stages and OBS boxes.
+
+- [ ] **Step 1: Write the failing tests** (`newFixture`):
+  - `TestPbs_ManagerOnly`: a member's POST/PUT/DELETE → 403; the manager's and an admin's → 2xx.
+  - `TestPbs_Validation`: missing name, name > 200, description > 2000, `#ABCDEF` stored lowercase, `red` → 422; a parent from another project and a parent cycle → 422.
+  - `TestPbs_TaskLink`: a task linked to an item of another project → 422; any task editor (not only the manager) may set or clear `pbs_item_id`.
+  - `TestPbs_Counts`: linking, closing, unlinking and deleting tasks keep `task_count`/`done_count` exact.
+  - `TestPbs_DeleteDetaches`: deleting an item with 2 children and 3 tasks → children are roots, tasks have `pbs_item_id` NULL, one transaction (a forced failure leaves everything as it was).
+  - `TestPbs_TaskMoveClearsItem`: a task moved to another project loses its `pbs_item_id`.
+  - `TestPbs_RestoreWithProject`: deleting then restoring the project brings its items back.
+  - `TestPbs_Visibility`: a members-only project's items → 404 for a non-member, also through `in[id]=`.
+- [ ] **Step 2: Run** `rtk go test ./modules/project/ -run Pbs`. Expected: FAIL.
+- [ ] **Step 3: Implement.** Copy the `project_obs_box` guard (`obsRules`) for the item rules; the count trigger runs `AFTER INSERT OR UPDATE OF pbs_item_id, closed, deleted_at ON project_task` and recounts the old and new item. Clear `pbs_item_id` where `UpdateTask` clears the milestone. Add `pbs_item_id` to the task form descriptor as a many2one filtered on the task's project (`relation.filterFields: { project_id: 'project_id' }`).
+- [ ] **Step 4: Run** `rtk go test ./modules/project/ ./internal/app/`. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(project): PBS deliverables`.
+
+### Task 19: PBS display mode (engine)
+
+**Files:** create `views/diagram/pbs-renderer.tsx`, `views/diagram/pbs-box.tsx` (+ `pbs-renderer.test.tsx`). Modify `descriptor.ts` (`ViewModeDefaults.pbs`), `api/view-fields.ts` (`DisplayMode` gains `'pbs'`, appended after WP5's `'matrix'`), `views/renderers.tsx` (`MODE_LABELS`: `PBS`, dispatch), `views/lazy-widgets.tsx`, `core/modules/project/views/project_views.ts` (+ test).
+
+**Interfaces:**
+- Produces: `pbs?: { entity: string; projectField: string; projectEntity: string; taskField: string; canEdit?: string }`. Project value: `pbs: { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id', canEdit: 'project.canEditStages' }`.
+- Available only while `projectField` is pinned (`pinnedId`, the OBS rule); a persisted `pbs` mode falls back to List when the pin is lost.
+
+- [ ] **Step 1: Write the failing tests:**
+  - The mode is offered only when pinned; `project_views.test.ts` asserts the config above.
+  - Boxes draw each item's name, color and a progress bar `done / total` rolled up over its descendants (Global Constraints); a leaf with no task shows `No task produces this` in the warning color.
+  - With the `canEdit` guard true: *Add item*, edit (name, description, color), re-parent by drawing or re-ending a line, drop-on-line insert (`onInsert`, like OBS) and delete — each a record write through `RelationOps`, recorded in the undo history; a refused write (403) snaps back and shows the error banner.
+  - Without it the canvas is read-only (no handles, no toolbar buttons).
+  - Clicking a box's task count opens `/project/tasks?filter[project_id]=<id>&filter[pbs_item_id]=<item>` (add `pbs_item_id` to the task list's filterable fields).
+  - Positions are the items' `x`/`y` (controlled canvas, no per-user layout); never-placed items are laid out like WBS.
+  - Over 2000 items the diagram notice shows (ADR-039 cap).
+  - At 390px: no action is drag-only — an item's edit dialog has a *Parent* select, and *Add item* asks for the parent.
+  - Export (PNG/PDF) works like OBS.
+- [ ] **Step 2: Run.** Expected: FAIL.
+- [ ] **Step 3: Implement** by following `obs-renderer.tsx` (controlled `DiagramCanvas`, `history.ts`, `DiagramHelp`). Counts come from one `project_task?filter[project_id]=<id>&order=wbs_number` read (paged, 1000 cap with caption) grouped by `pbs_item_id` client-side; the stored `task_count`/`done_count` serve when that read is capped.
+- [ ] **Step 4: Run** the engine and project-module vitest suites. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(core-front): PBS diagram mode`.
+
+WP11 also adds a § PBS to [ADR-039](../../adr/ADR-039-diagram-views.md) (why the chart is shared like OBS, why progress rolls up, delete detaches), the PBS lines in root `CLAUDE.md` and `core-front/CLAUDE.md`, its i18n strings, and seeds one PBS per large demo project (`seedProjects`, items linked to about half the tasks).
