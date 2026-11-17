@@ -2933,3 +2933,12 @@ msgstr "Échéance"
 
 msgid "Residual criticity"
 msgstr "Criticité résiduelle"
+
+msgid "Full screen"
+msgstr "Plein écran"
+
+msgid "Exit full screen"
+msgstr "Quitter le plein écran"
+
+msgid "More"
+msgstr "Plus"

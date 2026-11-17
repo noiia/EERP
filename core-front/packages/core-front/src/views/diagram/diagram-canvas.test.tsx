@@ -59,6 +59,7 @@ import { RelationOpsProvider, type RelationOps, type ViewLayout } from '../relat
 import type { EntityListOptions } from '../../api/list-options'
 import { translationRegistry } from '../../i18n/registry'
 import { useI18nStore } from '../../i18n/i18n-store'
+import { setViewportWidth } from '../../test/viewport'
 
 type ListPage = NonNullable<RelationOps['listPage']>
 const at = (x: number, y: number) => ({ x, y })
@@ -653,5 +654,120 @@ describe('TaskBox', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     expect(onToggle).toHaveBeenCalled()
     expect(screen.getByText('foot')).toBeInTheDocument()
+  })
+})
+
+describe('DiagramCanvas full screen and phone toolbar', () => {
+  const shell = () => screen.getByTestId('diagram-canvas')
+  const enter = () => act(() => fireEvent.click(screen.getByRole('button', { name: 'Full screen' })))
+
+  it('enters and leaves full screen', async () => {
+    setup()
+    await flush()
+    expect(shell()).not.toHaveStyle({ position: 'fixed' })
+    enter()
+    expect(shell()).toHaveStyle({ position: 'fixed', top: '0px', right: '0px', bottom: '0px', left: '0px' })
+    expect(screen.getByRole('button', { name: 'Exit full screen' })).toBeInTheDocument()
+    // Escape while typing in a field stays in full screen.
+    const input = document.createElement('input')
+    shell().appendChild(input)
+    act(() => fireEvent.keyDown(input, { key: 'Escape' }))
+    expect(shell()).toHaveStyle({ position: 'fixed' })
+    input.remove()
+    act(() => fireEvent.keyDown(window, { key: 'Escape' }))
+    expect(shell()).not.toHaveStyle({ position: 'fixed' })
+    enter()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' })))
+    expect(screen.getByRole('button', { name: 'Full screen' })).toBeInTheDocument()
+  })
+
+  it('exits full screen on browser Back without leaving the page', async () => {
+    const push = vi.spyOn(window.history, 'pushState')
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    const url = window.location.href
+    setup()
+    await flush()
+    enter()
+    expect(push).toHaveBeenCalledTimes(1)
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')))
+    expect(shell()).not.toHaveStyle({ position: 'fixed' })
+    expect(back).not.toHaveBeenCalled() // Back already consumed the entry
+    expect(window.location.href).toBe(url)
+    // Leaving by the button consumes the pushed entry once.
+    enter()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' })))
+    expect(back).toHaveBeenCalledTimes(1)
+    push.mockRestore()
+    back.mockRestore()
+  })
+
+  it('does not go back on unmount once the page has moved on', async () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    setup()
+    await flush()
+    enter()
+    window.history.pushState({ other: true }, '') // a navigation away
+    cleanup()
+    expect(back).not.toHaveBeenCalled()
+    back.mockRestore()
+  })
+
+  it('fits the view after toggling full screen', async () => {
+    setup()
+    await flush()
+    const fitView = vi.fn()
+    act(() => rf.props.onInit!({ fitView }))
+    enter()
+    await act(() => vi.advanceTimersByTimeAsync(200))
+    expect(fitView).toHaveBeenCalledTimes(1)
+    act(() => fireEvent.keyDown(window, { key: 'Escape' }))
+    await act(() => vi.advanceTimersByTimeAsync(200))
+    expect(fitView).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts full screen-capable canvas at the remaining viewport height on phone', async () => {
+    setViewportWidth(390)
+    setup()
+    await flush()
+    // jsdom resolves calc(100dvh - 160px) against its window height.
+    expect(screen.getByTestId('react-flow').parentElement!).toHaveStyle({ height: `${window.innerHeight - 160}px` })
+  })
+
+  it('shows Fit, Undo, Redo, Full screen and a More menu on phone', async () => {
+    setViewportWidth(390)
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), getViewLayout: async () => ({ positions: {}, folded: [] }), saveViewLayout: vi.fn(async () => {}) }
+    function WithHistory() {
+      const history = useUndoHistory()
+      return (
+        <DiagramCanvas entity="project_task" mode="pert" title="Plan" nodes={[node('a')]} edges={[]} notes
+          autoLayout={() => ({ a: at(0, 0) })} legend={[{ color: '#ff0000', label: 'Critical' }]} history={history} />
+      )
+    }
+    render(<RelationOpsProvider ops={ops}><WithHistory /></RelationOpsProvider>)
+    await flush()
+    for (const name of ['Fit view', 'Undo', 'Redo', 'Full screen', 'More']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    for (const name of ['Re-arrange', 'Export PNG', 'Export PDF', 'Add note', 'How to use this diagram']) expect(screen.queryByRole('button', { name })).toBeNull()
+    expect(screen.queryByText('Critical')).toBeNull()
+    expect(screen.getByRole('button', { name: 'More' })).toHaveStyle({ minWidth: '40px', minHeight: '40px' })
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'More' })))
+    for (const name of ['Re-arrange', 'Export PNG', 'Export PDF', 'Add note']) expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'How to use this diagram' })).toBeInTheDocument()
+    expect(screen.getByText('Critical')).toBeInTheDocument()
+    act(() => fireEvent.click(screen.getByRole('menuitem', { name: 'Add note' })))
+    expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('keeps notes and positions when toggling full screen', async () => {
+    setup({ mode: 'pert', notes: true })
+    await flush()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Add note' })))
+    act(() => rf.props.onNodeDragStop!(null, { ...rf.props.nodes[0], position: at(40, 40) }))
+    const flow = screen.getByTestId('react-flow')
+    enter()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' })))
+    expect(screen.getByTestId('react-flow')).toBe(flow)
+    expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)
+    expect(pos('a')).toEqual(at(40, 40))
   })
 })

@@ -5,6 +5,8 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -28,6 +30,7 @@ import { serializeError, toApiError, type SerializedError } from '../../api/erro
 import type { EntityListOptions } from '../../api/list-options'
 import { useT } from '../../i18n/translate'
 import { ErrorAlert } from '../error-alert'
+import { usePhone } from '../use-phone'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
@@ -50,6 +53,14 @@ export const DIAGRAM_RECORD_CAP = 2000
 export const LAYOUT_POSITION_LIMIT = 5000
 const PAGE_SIZE = 200
 const SAVE_DELAY_MS = 500
+// Full screen: the history entry's marker, and the wait for React Flow to see its new size.
+const FULLSCREEN_KEY = 'eerpDiagramFullscreen'
+const FIT_DELAY_MS = 100
+// Phone: the canvas takes what the top bar, mode picker and toolbar leave.
+const PHONE_CANVAS_HEIGHT = 'calc(100dvh - 160px)'
+const TOUCH = { minWidth: 40, minHeight: 40 }
+const isTyping = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
 
 /** Every record matching `serverOptions` (paged until a short page, never trusting
  * `total`), up to DIAGRAM_RECORD_CAP; `capped` when a probe finds more. Without
@@ -308,6 +319,11 @@ function Canvas(props: DiagramCanvasProps) {
   const [saveError, setSaveError] = useState<SerializedError | null>(null)
   const [exportError, setExportError] = useState<SerializedError | null>(null)
   const [exporting, setExporting] = useState(false)
+  const phone = usePhone()
+  // CSS only on the same element: no remount, so unsaved notes and positions stay.
+  const [fullscreen, setFullscreen] = useState(false)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
+  const fitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const container = useRef<HTMLDivElement>(null)
   const instance = useRef<ReactFlowInstance | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -437,6 +453,39 @@ function Canvas(props: DiagramCanvasProps) {
     clearTimeout(timer.current)
     flushRef.current()
   }, [])
+
+  const showFullscreen = (on: boolean) => {
+    setFullscreen(on)
+    if (fitTimer.current) clearTimeout(fitTimer.current)
+    fitTimer.current = setTimeout(() => instance.current?.fitView(), FIT_DELAY_MS)
+  }
+  useEffect(() => () => {
+    if (fitTimer.current) clearTimeout(fitTimer.current)
+  }, [])
+  // Full screen owns one history entry: Back leaves full screen, not the page. Escape too,
+  // unless typing or something else (a menu, an editor) took it.
+  useEffect(() => {
+    if (!fullscreen) return
+    const token = crypto.randomUUID()
+    window.history.pushState({ ...window.history.state, [FULLSCREEN_KEY]: token }, '')
+    let popped = false
+    const onPop = () => {
+      popped = true
+      showFullscreen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !isTyping(e.target)) showFullscreen(false)
+    }
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('keydown', onKey)
+      // Left by the button, Escape or unmount: consume our entry, unless Back already did
+      // or the page has moved on since (going back then would undo that navigation).
+      if (!popped && (window.history.state as Record<string, unknown> | null)?.[FULLSCREEN_KEY] === token) window.history.back()
+    }
+  }, [fullscreen])
 
   // A fold change by the user is part of the layout; the parent echoing the loaded folds isn't.
   const foldedNow = JSON.stringify(folded)
@@ -673,38 +722,69 @@ function Canvas(props: DiagramCanvasProps) {
     }
   }
 
+  const fullscreenLabel = fullscreen ? t('Exit full screen') : t('Full screen')
+  const closeMore = () => setMoreAnchor(null)
+  const help = <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} insert={!!props.onInsert} history={!!props.history} notes={!!props.notes} />
+  const addNoteButton = props.notes ? <Button size="small" onClick={addNote} disabled={notes.length >= NOTE_LIMIT}>{t('Add note')}</Button> : null
+  const legendItems = legend.map((l) => (
+    <Stack key={l.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+      <Box aria-hidden sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: l.color }} />
+      <Typography variant="caption" color="text.secondary">{l.label}</Typography>
+    </Stack>
+  ))
+  const extra = typeof props.toolbarExtra === 'function' ? props.toolbarExtra(centerSpot) : props.toolbarExtra
+
   return (
-    <Box>
+    <Box
+      data-testid="diagram-canvas"
+      sx={fullscreen ? { position: 'fixed', inset: 0, zIndex: (th) => th.zIndex.drawer + 2, bgcolor: 'background.default', height: '100dvh', display: 'flex', flexDirection: 'column', p: 1 } : undefined}
+    >
       <ErrorAlert error={saveError ?? exportError} />
-      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
-        <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} insert={!!props.onInsert} history={!!props.history} notes={!!props.notes} />
-        {props.readOnly ? null : <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>}
-        <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>
-        <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>
-        <Button size="small" onClick={() => instance.current?.fitView()}>{t('Fit view')}</Button>
+      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: phone ? 'nowrap' : 'wrap', alignItems: 'center', mb: 1 }}>
+        {phone ? null : help}
+        {phone || props.readOnly ? null : <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>}
+        {phone ? null : <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>}
+        {phone ? null : <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>}
+        <Button size="small" onClick={() => instance.current?.fitView()} sx={phone ? TOUCH : undefined}>{t('Fit view')}</Button>
         {props.history ? (
           <>
-            <IconButton size="small" aria-label={t('Undo')} title={t('Undo') + ' (Ctrl+Z)'} disabled={!props.history.canUndo} onClick={() => void props.history?.undo()}>
+            <IconButton size="small" aria-label={t('Undo')} title={t('Undo') + ' (Ctrl+Z)'} disabled={!props.history.canUndo} onClick={() => void props.history?.undo()} sx={phone ? TOUCH : undefined}>
               <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
             </IconButton>
-            <IconButton size="small" aria-label={t('Redo')} title={t('Redo') + ' (Ctrl+Y)'} disabled={!props.history.canRedo} onClick={() => void props.history?.redo()}>
+            <IconButton size="small" aria-label={t('Redo')} title={t('Redo') + ' (Ctrl+Y)'} disabled={!props.history.canRedo} onClick={() => void props.history?.redo()} sx={phone ? TOUCH : undefined}>
               <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-right']} />
             </IconButton>
           </>
         ) : null}
-        {props.notes ? <Button size="small" onClick={addNote} disabled={notes.length >= NOTE_LIMIT}>{t('Add note')}</Button> : null}
-        {legend.map((l) => (
-          <Stack key={l.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <Box aria-hidden sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: l.color }} />
-            <Typography variant="caption" color="text.secondary">{l.label}</Typography>
-          </Stack>
-        ))}
-        {typeof props.toolbarExtra === 'function' ? props.toolbarExtra(centerSpot) : props.toolbarExtra}
+        <IconButton size="small" aria-label={fullscreenLabel} title={fullscreenLabel} onClick={() => showFullscreen(!fullscreen)} sx={phone ? TOUCH : undefined}>
+          <FontAwesomeIcon icon={byPrefixAndName.fas[fullscreen ? 'compress' : 'expand']} />
+        </IconButton>
+        {phone ? null : addNoteButton}
+        {phone ? null : legendItems}
+        {phone ? null : extra}
+        {phone ? (
+          <>
+            <IconButton size="small" aria-label={t('More')} onClick={(e) => setMoreAnchor(e.currentTarget)} sx={TOUCH}>
+              <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
+            </IconButton>
+            <Menu open={!!moreAnchor} anchorEl={moreAnchor} onClose={closeMore}>
+              {props.readOnly ? null : <MenuItem onClick={() => { closeMore(); rearrange() }}>{t('Re-arrange')}</MenuItem>}
+              <MenuItem onClick={() => { closeMore(); void exportAs('png') }}>{t('Export PNG')}</MenuItem>
+              <MenuItem onClick={() => { closeMore(); void exportAs('pdf') }}>{t('Export PDF')}</MenuItem>
+              {props.notes ? <MenuItem disabled={notes.length >= NOTE_LIMIT} onClick={() => { closeMore(); addNote() }}>{t('Add note')}</MenuItem> : null}
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', px: 2, py: 1, maxWidth: 320 }}>
+                {help}
+                {legendItems}
+                {extra ? <Box onClick={closeMore}>{extra}</Box> : null}
+              </Stack>
+            </Menu>
+          </>
+        ) : null}
       </Stack>
       <Box
         ref={container}
         sx={{
-          height: '70vh',
+          ...(fullscreen ? { flex: 1, minHeight: 0 } : { height: phone ? PHONE_CANVAS_HEIGHT : '70vh' }),
           border: 1,
           borderColor: 'divider',
           borderRadius: 1,

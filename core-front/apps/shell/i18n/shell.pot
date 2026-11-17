@@ -2801,3 +2801,12 @@ msgstr ""
 
 msgid "Residual criticity"
 msgstr ""
+
+msgid "Full screen"
+msgstr ""
+
+msgid "Exit full screen"
+msgstr ""
+
+msgid "More"
+msgstr ""
