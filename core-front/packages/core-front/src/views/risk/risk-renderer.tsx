@@ -18,6 +18,7 @@ import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
 import { ErrorAlert } from '../error-alert'
 import { DiagramLoading } from '../diagram/diagram-canvas'
+import { usePhone } from '../use-phone'
 import { useRelationOps } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
 import { Ishikawa } from './ishikawa'
@@ -40,6 +41,7 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const ops = useRelationOps()
   const router = useRouter()
   const th = useTheme()
+  const phone = usePhone()
   const [tab, setTab] = useState<Tab>('matrix')
   const [residual, setResidual] = useState(false)
   const [rows, setRows] = useState<RiskRow[] | null>(null)
@@ -107,18 +109,18 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   return (
     <Box sx={{ p: 1 }}>
       <ErrorAlert error={error} />
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={tab} onChange={(_, v: Tab) => setTab(v)}>
+      <Stack direction={phone ? 'column' : 'row'} sx={{ alignItems: phone ? 'stretch' : 'center', justifyContent: 'space-between', borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs value={tab} onChange={(_, v: Tab) => setTab(v)} variant={phone ? 'fullWidth' : 'standard'}>
           <Tab value="matrix" label={t('Matrix')} />
           <Tab value="ishikawa" label={t('Ishikawa')} />
           <Tab value="register" label={t('Register')} />
         </Tabs>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} sx={phone ? { py: 1, flexWrap: 'wrap', '& .MuiButton-root, & .MuiToggleButton-root': { minHeight: 40, minWidth: 40 } } : undefined}>
           {canCreate && ops && <Button size="small" variant="contained" onClick={() => setCreating(true)}>{t('New risk')}</Button>}
           {tab === 'matrix' && (
             <ToggleButtonGroup size="small" exclusive value={residual ? 'after' : 'now'} onChange={(_, v: string | null) => v && setResidual(v === 'after')}>
-              <ToggleButton value="now">{t('Current')}</ToggleButton>
-              <ToggleButton value="after">{t('After remediation')}</ToggleButton>
+              <ToggleButton value="now">{phone ? t('Now') : t('Current')}</ToggleButton>
+              <ToggleButton value="after">{phone ? t('After') : t('After remediation')}</ToggleButton>
             </ToggleButtonGroup>
           )}
           {exportable && <Button size="small" onClick={(e) => setMenu(e.currentTarget)}>{t('Export')}</Button>}
@@ -130,8 +132,8 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
       </Stack>
       <Box sx={{ pt: 2, overflow: 'auto' }}>
         {/* The diagrams fill the view (centred, scaled to fit) instead of floating small in an empty zone. */}
-        {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: '70vh' }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
-        {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: '70vh', bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
+        {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: { xs: 'calc(100dvh - 220px)', sm: '70vh' } }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
+        {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: { xs: 'calc(100dvh - 220px)', sm: '70vh' }, bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
         {tab === 'register' && <RiskRegister rows={rows} categories={categories} onOpen={open} />}
       </Box>
       {creating && ops ? (

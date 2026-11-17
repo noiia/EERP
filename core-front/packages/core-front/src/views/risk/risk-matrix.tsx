@@ -3,6 +3,7 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import { alpha, type Theme } from '@mui/material/styles'
 import { useT } from '../../i18n/translate'
+import { usePhone } from '../use-phone'
 import { band, matrixCells, type Band, type RiskRow } from './scoring'
 
 const BAND_COLOR: Record<Band, 'success' | 'warning' | 'error'> = { low: 'success', medium: 'warning', high: 'error' }
@@ -15,10 +16,11 @@ export const bandMain = (th: Theme, b: Band | null) => (b ? th.palette[BAND_COLO
 // each chip by the risk's own criticity. `residual` plots the scores after remediation.
 export function RiskMatrix({ rows, residual, onOpen }: { rows: RiskRow[]; residual: boolean; onOpen: (id: string) => void }) {
   const t = useT()
+  const phone = usePhone()
   const cells = matrixCells(rows, residual)
   const severities = [1, 2, 3, 4]
   return (
-    <Box sx={{ display: 'grid', gridTemplateColumns: `auto repeat(${severities.length}, minmax(120px, 1fr))`, gridTemplateRows: 'repeat(3, minmax(84px, 1fr)) auto', gap: 0.5, p: 2, width: '100%', height: '100%', boxSizing: 'border-box', bgcolor: 'background.paper' }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: `auto repeat(${severities.length}, ${phone ? 'minmax(0, 1fr)' : 'minmax(120px, 1fr)'})`, gridTemplateRows: 'repeat(3, minmax(84px, 1fr)) auto', gap: 0.5, p: 2, width: '100%', height: '100%', boxSizing: 'border-box', bgcolor: 'background.paper' }}>
       {[3, 2, 1].map((l) => [
         <Box key={`l${l}`} sx={{ alignSelf: 'center', pr: 1, fontWeight: 600 }}>{`${t('Likelihood')} ${l}`}</Box>,
         ...severities.map((s) => {
@@ -37,7 +39,8 @@ export function RiskMatrix({ rows, residual, onOpen }: { rows: RiskRow[]; residu
                     key={r.id}
                     size="small"
                     color={band(c) ? BAND_COLOR[band(c)!] : 'default'}
-                    label={items.length <= FULL_LABEL_MAX ? `${value} - ${r.name}` : value}
+                    label={items.length <= FULL_LABEL_MAX ? `${value} - ${phone && r.name.length > 12 ? `${r.name.slice(0, 12)}…` : r.name}` : value}
+                    aria-label={phone ? r.name : undefined}
                     sx={{ maxWidth: '100%' }}
                     title={r.name}
                     onClick={() => onOpen(r.id)}

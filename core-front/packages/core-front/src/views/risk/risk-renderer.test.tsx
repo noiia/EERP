@@ -19,6 +19,7 @@ import { RiskRenderer } from './risk-renderer'
 import { exportElementPng as exportPng } from '../diagram/export'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
+import { setViewportWidth } from '../../test/viewport'
 
 const config = { entity: 'project_risk', linkEntity: 'project_risk_task', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' }
 const risk = (id: string, o: Record<string, unknown> = {}) => ({
@@ -123,5 +124,50 @@ describe('RiskRenderer', () => {
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Export PNG' }))
     }
     await waitFor(() => expect(exportPng).toHaveBeenCalledTimes(2))
+  })
+
+  describe('phone', () => {
+    it('puts full-width tabs on their own row and actions below', async () => {
+      setViewportWidth(390)
+      setup(rows())
+      const tabs = (await screen.findByRole('tablist')).closest('.MuiTabs-root') as HTMLElement
+      expect(tabs.querySelector('.MuiTabs-fixed')).toBeTruthy()
+      expect(screen.getByRole('tab', { name: 'Matrix' }).className).toContain('MuiTab-fullWidth')
+      const row = screen.getByRole('button', { name: 'New risk' }).parentElement as HTMLElement
+      expect(row.contains(tabs)).toBe(false)
+      expect(screen.getByRole('button', { name: 'Now' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'After' })).toBeTruthy()
+    })
+
+    it('fits the matrix in the screen with short chip labels', async () => {
+      setViewportWidth(390)
+      setup([risk('A very long risk name')])
+      const cell = await screen.findByTestId('cell-2:3')
+      expect((cell.parentElement as HTMLElement).style.gridTemplateColumns || getComputedStyle(cell.parentElement as HTMLElement).gridTemplateColumns).toContain('minmax(0px, 1fr)')
+      const chip = within(cell).getByRole('button')
+      expect(chip.textContent).toBe('6 - A very long …')
+      expect(chip.getAttribute('aria-label')).toBe('A very long risk name')
+    })
+
+    it('shows the register as cards that open the form', async () => {
+      setViewportWidth(390)
+      setup(rows())
+      fireEvent.click(await screen.findByRole('tab', { name: 'Register' }))
+      const items = await screen.findAllByRole('listitem')
+      expect(items).toHaveLength(2)
+      expect(screen.queryByRole('table')).toBeNull()
+      expect(within(items[0]).getByText('Late vendor')).toBeTruthy()
+      expect(within(items[0]).getByText('Internal')).toBeTruthy()
+      fireEvent.click(items[0])
+      expect(push).toHaveBeenCalledWith('/app/project/risks/Late vendor')
+    })
+  })
+
+  it('keeps the desktop table and 120px matrix columns', async () => {
+    setup(rows())
+    const cell = await screen.findByTestId('cell-2:3')
+    expect((cell.parentElement as HTMLElement).style.gridTemplateColumns || getComputedStyle(cell.parentElement as HTMLElement).gridTemplateColumns).toContain('120px')
+    fireEvent.click(screen.getByRole('tab', { name: 'Register' }))
+    expect(await screen.findByRole('table')).toBeTruthy()
   })
 })

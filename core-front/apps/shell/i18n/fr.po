@@ -2895,6 +2895,12 @@ msgstr "Actuel"
 msgid "After remediation"
 msgstr "Après remédiation"
 
+msgid "Now"
+msgstr "Maintenant"
+
+msgid "After"
+msgstr "Après"
+
 msgid "Uncategorized"
 msgstr "Sans catégorie"
 
