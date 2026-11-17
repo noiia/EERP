@@ -392,6 +392,7 @@ const riskFormFields: Fields = [
   { name: 'severity', label: 'Severity (1 to 4, overrides the computed one)', type: 'number', widget: 'int' },
   { name: 'criticity', label: 'Criticity', type: 'number', widget: 'int', readOnly: true },
   { name: 'remediation', label: 'Remediation', type: 'text', widget: 'long' },
+  { name: 'if_it_happens', label: 'If it happens', type: 'text', widget: 'long' },
   { name: 'residual_likelihood', label: 'Residual likelihood (1 to 3)', type: 'number', widget: 'int' },
   { name: 'residual_detectability', label: 'Residual detectability (1 to 3)', type: 'number', widget: 'int' },
   { name: 'residual_severity', label: 'Residual severity (1 to 4)', type: 'number', widget: 'int' },
@@ -428,7 +429,7 @@ const riskFormLayout: ViewDescriptor['layout'] = [
       {
         kind: 'group',
         title: 'Remediation',
-        children: ['remediation', 'residual_likelihood', 'residual_detectability', 'residual_severity', 'residual_criticity', 'responsible_id', 'deadline'].map(f),
+        children: ['remediation', 'if_it_happens', 'residual_likelihood', 'residual_detectability', 'residual_severity', 'residual_criticity', 'responsible_id', 'deadline'].map(f),
       },
     ],
   },

@@ -202,6 +202,9 @@ msgstr ""
 msgid "Remediation"
 msgstr ""
 
+msgid "If it happens"
+msgstr ""
+
 msgid "Residual likelihood (1 to 3)"
 msgstr ""
 

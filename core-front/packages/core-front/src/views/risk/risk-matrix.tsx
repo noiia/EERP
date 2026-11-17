@@ -1,6 +1,8 @@
 'use client'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
+import Tooltip from '@mui/material/Tooltip'
+import Typography from '@mui/material/Typography'
 import { alpha, type Theme } from '@mui/material/styles'
 import { useT } from '../../i18n/translate'
 import { usePhone } from '../use-phone'
@@ -13,10 +15,11 @@ export const FULL_LABEL_MAX = 3
 export const bandMain = (th: Theme, b: Band | null) => (b ? th.palette[BAND_COLOR[b]].main : th.palette.text.disabled)
 
 // Likelihood (rows, 3 -> 1) against severity (columns, 1 -> 4); a cell is tinted by likelihood x severity,
-// each chip by the risk's own criticity. `residual` plots the scores after remediation.
-export function RiskMatrix({ rows, residual, onOpen }: { rows: RiskRow[]; residual: boolean; onOpen: (id: string) => void }) {
+// each chip by the risk's own criticity. `residual` plots the scores after remediation; `wide`
+// keeps the desktop layout whatever the screen (the export draws it off screen).
+export function RiskMatrix({ rows, residual, onOpen, wide = false }: { rows: RiskRow[]; residual: boolean; onOpen: (id: string) => void; wide?: boolean }) {
   const t = useT()
-  const phone = usePhone()
+  const phone = usePhone() && !wide
   const cells = matrixCells(rows, residual)
   const severities = [1, 2, 3, 4]
   return (
@@ -35,16 +38,16 @@ export function RiskMatrix({ rows, residual, onOpen }: { rows: RiskRow[]; residu
                 const c = residual ? r.residual_criticity : r.criticity
                 const value = c ?? '—'
                 return (
+                  <Tooltip key={r.id} placement="top" title={<RiskTip risk={r} residual={residual} />}>
                   <Chip
-                    key={r.id}
                     size="small"
                     color={band(c) ? BAND_COLOR[band(c)!] : 'default'}
                     label={items.length <= FULL_LABEL_MAX ? `${value} - ${phone && r.name.length > 12 ? `${r.name.slice(0, 12)}…` : r.name}` : value}
                     aria-label={phone ? `${value} - ${r.name}` : undefined}
                     sx={{ maxWidth: '100%', ...(phone && { minHeight: 40 }) }}
-                    title={r.name}
                     onClick={() => onOpen(r.id)}
                   />
+                  </Tooltip>
                 )
               })}
             </Box>
@@ -53,6 +56,37 @@ export function RiskMatrix({ rows, residual, onOpen }: { rows: RiskRow[]; residu
       ])}
       <Box />
       {severities.map((s) => <Box key={s} sx={{ textAlign: 'center', fontWeight: 600 }}>{`${t('Severity')} ${s}`}</Box>)}
+    </Box>
+  )
+}
+
+const show = (v: number | string | null | undefined) => (v == null || v === '' ? '—' : String(v))
+
+/** The hover tile over a matrix chip: the risk's title, its scores (current or after
+ * remediation, as the matrix shows), its remediation and its "if it happens" plan. */
+export function RiskTip({ risk: r, residual }: { risk: RiskRow; residual: boolean }) {
+  const t = useT()
+  const scores: [string, number | null | undefined][] = residual
+    ? [['Likelihood', r.residual_likelihood], ['Severity', r.residual_severity], ['Detectability', r.residual_detectability], ['Criticity', r.residual_criticity]]
+    : [['Likelihood', r.likelihood], ['Severity', r.severity_effective], ['Detectability', r.detectability], ['Criticity', r.criticity]]
+  const text = (label: string, v: string | null | undefined) => (
+    <Box sx={{ mt: 0.75 }}>
+      <Typography variant="body2" sx={{ fontWeight: 600, display: 'block' }}>{t(label)}</Typography>
+      <Typography variant="body2" sx={{ display: 'block', whiteSpace: 'pre-line' }}>{show(v)}</Typography>
+    </Box>
+  )
+  return (
+    <Box data-testid="risk-tip" sx={{ maxWidth: 320 }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{r.name}</Typography>
+      {/* Each value right next to its label (max-content columns), not pushed to the far edge. */}
+      <Box component="dl" sx={{ m: 0, mt: 0.5, display: 'grid', gridTemplateColumns: 'max-content max-content', columnGap: 1, '& dd': { m: 0 } }}>
+        {scores.map(([label, v]) => [
+          <Typography key={`${label}-k`} component="dt" variant="body2">{`${t(label)} :`}</Typography>,
+          <Typography key={`${label}-v`} component="dd" variant="body2" sx={{ fontWeight: 600 }}>{show(v)}</Typography>,
+        ])}
+      </Box>
+      {text('Remediation', r.remediation)}
+      {text('If it happens', r.if_it_happens)}
     </Box>
   )
 }

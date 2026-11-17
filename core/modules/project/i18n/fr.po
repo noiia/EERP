@@ -203,6 +203,9 @@ msgstr "Criticité"
 msgid "Remediation"
 msgstr "Remédiation"
 
+msgid "If it happens"
+msgstr "Si le risque survient"
+
 msgid "Residual likelihood (1 to 3)"
 msgstr "Probabilité résiduelle (1 à 3)"
 

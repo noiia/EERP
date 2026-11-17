@@ -190,6 +190,7 @@ type ProjectRisk struct {
 	SeverityEffective     *int       `db:"severity_effective,generated" json:"severity_effective"`
 	Criticity             *int       `db:"criticity,generated" json:"criticity"`
 	Remediation           *string    `db:"remediation" json:"remediation"`
+	IfItHappens           *string    `db:"if_it_happens" json:"if_it_happens"` // the response plan once the risk occurs
 	ResidualLikelihood    *int       `db:"residual_likelihood" json:"residual_likelihood"`
 	ResidualDetectability *int       `db:"residual_detectability" json:"residual_detectability"`
 	ResidualSeverity      *int       `db:"residual_severity" json:"residual_severity"`

@@ -126,6 +126,35 @@ describe('RiskRenderer', () => {
     await waitFor(() => expect(exportPng).toHaveBeenCalledTimes(2))
   })
 
+  it('exports the matrix with the current and after-remediation versions in one image', async () => {
+    let captured = ''
+    vi.mocked(exportPng).mockImplementationOnce(async (el: HTMLElement) => {
+      captured = el.textContent ?? ''
+      expect(el.dataset.testid).toBe('matrix-export')
+    })
+    setup(rows())
+    await screen.findByTestId('cell-2:3')
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export PNG' }))
+    await waitFor(() => expect(exportPng).toHaveBeenCalledTimes(1))
+    // Both titles, and Late vendor plotted at 6 (current) and at 1 (after remediation).
+    expect(captured).toContain('Current')
+    expect(captured).toContain('After remediation')
+    expect(captured).toContain('6 - Late vendor')
+    expect(captured).toContain('1 - Late vendor')
+    await waitFor(() => expect(screen.queryByTestId('matrix-export')).toBeNull())
+  })
+
+  it('shows the risk on hover: scores, remediation and if it happens', async () => {
+    setup([risk('Late vendor', { detectability: 1, remediation: 'Second supplier', if_it_happens: 'Switch supplier' })])
+    fireEvent.mouseOver(within(await screen.findByTestId('cell-2:3')).getByText('6 - Late vendor'))
+    const tip = await screen.findByTestId('risk-tip')
+    for (const text of ['Late vendor', 'Likelihood :', 'Severity :', 'Detectability :', 'Criticity :', 'Second supplier', 'If it happens', 'Switch supplier']) {
+      expect(within(tip).getByText(text)).toBeTruthy()
+    }
+    expect(within(tip).getByText('6')).toBeTruthy()
+  })
+
   describe('phone', () => {
     it('puts full-width tabs on their own row and actions below', async () => {
       setViewportWidth(390)

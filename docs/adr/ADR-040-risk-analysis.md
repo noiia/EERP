@@ -26,6 +26,9 @@ keeps dead references).
 | Severity, quality | typed only: 1 to 4 |
 
 Scores are int number fields (selection options are string-only); the legend words live in labels.
+Besides the scores, a risk carries two free texts: `remediation` (what lowers the risk beforehand,
+scored by the residual fields) and `if_it_happens` (the response plan once the risk occurs, which no
+score depends on).
 `criticity` = likelihood x severity x detectability (1 to 36), a stored generated column, like the
 residual criticity. Bands: up to 4 green, up to 12 amber, above 12 red.
 
@@ -66,9 +69,9 @@ The delay severity is computed in Go (`risk_calc.go`) while the PERT view comput
 ### Frontend
 
 A **Risk** display mode on the task lists (`viewModeDefaults.risk`, pinned to one project like OBS)
-holds a criticity matrix (before and residual), an Ishikawa and a register, plus a *New risk* button (the risk form as a dialog, its project preset). Both diagrams fill the view: the matrix stretches, the Ishikawa scales to fit and cuts long labels (full text as tooltip). A matrix cell holding at most three risks names them (`6 - Budget cut`); a busier one shows only the criticity. The risk form's header is a
+holds a criticity matrix (before and residual), an Ishikawa and a register, plus a *New risk* button (the risk form as a dialog, its project preset). Both diagrams fill the view: the matrix stretches, the Ishikawa scales to fit and cuts long labels (full text as tooltip). A matrix cell holding at most three risks names them (`6 - Budget cut`); a busier one shows only the criticity. Hovering a matrix chip shows a tile above it with the risk's title, its scores for the side shown (likelihood, severity, detectability, criticity — current or after remediation), its remediation and its *If it happens* plan. The matrix export (PNG/PDF) holds both versions side by side, *Current* and *After remediation*, whichever one is on screen (`risk-renderer.tsx` draws them off screen, at desktop layout, only while exporting). The risk form's header is a
 read-only mind-map (`text/mindmap` widget, exportable to PNG through the plain-element export in
-`views/diagram/export.ts`).
+`views/diagram/export.ts`); its centre box fits the risk name (`centreBox`: 14px in 180×56 up to 40 characters, then a smaller font and a wider, then taller box, capped at 320×220), so a long name neither overflows nor dwarfs the satellites.
 
 ## Pitfalls
 

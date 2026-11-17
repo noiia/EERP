@@ -2928,6 +2928,9 @@ msgstr "Impact sur"
 msgid "Detectability"
 msgstr "Détectabilité"
 
+msgid "If it happens"
+msgstr "Si le risque survient"
+
 msgid "Criticity"
 msgstr "Criticité"
 
