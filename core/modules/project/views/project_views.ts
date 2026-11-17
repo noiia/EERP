@@ -190,6 +190,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
     deadlineField: 'deadline',
     closedField: 'closed',
     urgentDays: 7,
+    taskEntity: 'project_task',
+    taskFormPath: '/project/tasks/:id',
   },
 }
 

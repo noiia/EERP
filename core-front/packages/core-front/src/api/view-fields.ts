@@ -179,6 +179,10 @@ export interface MatrixConfig {
   closedField: string
   /** The Eisenhower urgency horizon in days. */
   urgentDays: number
+  /** The task entity the matrices read. */
+  taskEntity: string
+  /** The task form route the matrices open (e.g. '/project/tasks/:id'). */
+  taskFormPath: string
 }
 
 /** Rows of `entity` link record `fromField` (the blocker: the arrow leaves

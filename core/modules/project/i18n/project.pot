@@ -246,3 +246,33 @@ msgstr ""
 
 msgid "Assignee"
 msgstr ""
+
+msgid "Eisenhower"
+msgstr ""
+
+msgid "RACI"
+msgstr ""
+
+msgid "Dependencies"
+msgstr ""
+
+msgid "Do"
+msgstr ""
+
+msgid "Schedule"
+msgstr ""
+
+msgid "Delegate"
+msgstr ""
+
+msgid "Eliminate"
+msgstr ""
+
+msgid "Toggle priority"
+msgstr ""
+
+msgid "First 150 tasks shown"
+msgstr ""
+
+msgid "First 1000 shown"
+msgstr ""

@@ -294,6 +294,8 @@ describe('matrix availability', () => {
     deadlineField: 'deadline',
     closedField: 'closed',
     urgentDays: 7,
+    taskEntity: 'project_task',
+    taskFormPath: '/project/tasks/:id',
   }
   it('needs a module config and a pinned project', () => {
     const eff = effectiveViewFields({ matrix }, EMPTY_VIEW_FIELDS)

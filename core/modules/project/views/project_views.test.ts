@@ -68,6 +68,8 @@ describe('project views', () => {
         deadlineField: 'deadline',
         closedField: 'closed',
         urgentDays: 7,
+        taskEntity: 'project_task',
+        taskFormPath: '/project/tasks/:id',
       },
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)

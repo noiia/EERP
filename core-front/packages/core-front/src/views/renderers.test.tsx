@@ -1567,6 +1567,8 @@ describe('EntityView', () => {
         deadlineField: 'deadline',
         closedField: 'closed',
         urgentDays: 7,
+        taskEntity: 'project_task',
+        taskFormPath: '/project/tasks/:id',
       }
       const { unmount } = render(
         <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { insights, matrix } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
