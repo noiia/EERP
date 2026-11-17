@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listFiles, TeamsApiError, listMessages, postMessage, setShares } from './client'
+import { listFiles, TeamsApiError, listMessages, postMessage, saveNote, setShares } from './client'
 
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
@@ -8,6 +8,14 @@ afterEach(() => fetchMock.mockReset())
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
 
 describe('teams client', () => {
+  it('saves note JSON with the version returned by the download', async () => {
+    fetchMock.mockResolvedValue(ok({ version: '"v2"' }))
+    const content = { type: 'doc', content: [{ type: 'paragraph' }] }
+    await saveNote('t1', 'f1', JSON.stringify(content), '"v1"')
+    expect(fetchMock).toHaveBeenCalledWith('/api/teams/t1/files/f1/note', expect.objectContaining({
+      method: 'PUT', body: JSON.stringify({ content, version: '"v1"' }),
+    }))
+  })
   it('posts files as multipart with repeated mentions/files', async () => {
     fetchMock.mockImplementation(async () => ok({ id: 'm' }))
     const f1 = new File(['a'], 'a.txt')

@@ -2816,3 +2816,249 @@ msgstr ""
 
 msgid "More"
 msgstr ""
+
+msgid "New note"
+msgstr ""
+
+msgid "Invalid note file."
+msgstr ""
+
+msgid "This note contains formatting that this editor does not support."
+msgstr ""
+
+msgid "Discard unsaved changes?"
+msgstr ""
+
+msgid "Strikethrough"
+msgstr ""
+
+msgid "Task list"
+msgstr ""
+
+msgid "Blockquote"
+msgstr ""
+
+msgid "Code block"
+msgstr ""
+
+msgid "Subscript"
+msgstr ""
+
+msgid "Superscript"
+msgstr ""
+
+msgid "This note has changed. Reopen it before saving again."
+msgstr ""
+
+msgid "Only .ocnote files can be edited as notes."
+msgstr ""
+
+msgid "The note is too large."
+msgstr ""
+
+msgid "The note must contain a Tiptap JSON document."
+msgstr ""
+
+msgid "The note version is required."
+msgstr ""
+
+msgid "Align left"
+msgstr ""
+
+msgid "Align center"
+msgstr ""
+
+msgid "Align right"
+msgstr ""
+
+msgid "Insert table"
+msgstr ""
+
+msgid "Insert image"
+msgstr ""
+
+msgid "Image address"
+msgstr ""
+
+msgid "Text color"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Loading…"
+msgstr ""
+
+msgid "Document tools"
+msgstr ""
+
+msgid "Text style"
+msgstr ""
+
+msgid "Normal text"
+msgstr ""
+
+msgid "Font family"
+msgstr ""
+
+msgid "Font size"
+msgstr ""
+
+msgid "Default"
+msgstr ""
+
+msgid "Line spacing"
+msgstr ""
+
+msgid "Justify"
+msgstr ""
+
+msgid "Custom color"
+msgstr ""
+
+msgid "Reset color"
+msgstr ""
+
+msgid "Table size"
+msgstr ""
+
+msgid "Add row above"
+msgstr ""
+
+msgid "Add row below"
+msgstr ""
+
+msgid "Add column before"
+msgstr ""
+
+msgid "Add column after"
+msgstr ""
+
+msgid "Toggle header row"
+msgstr ""
+
+msgid "Merge cells"
+msgstr ""
+
+msgid "Split cell"
+msgstr ""
+
+msgid "Delete row"
+msgstr ""
+
+msgid "Delete column"
+msgstr ""
+
+msgid "Delete table"
+msgstr ""
+
+msgid "Upload image"
+msgstr ""
+
+msgid "Image from URL"
+msgstr ""
+
+msgid "Remove image"
+msgstr ""
+
+msgid "Horizontal line"
+msgstr ""
+
+msgid "Clear formatting"
+msgstr ""
+
+msgid "Link address"
+msgstr ""
+
+msgid "Link text"
+msgstr ""
+
+msgid "Enter a valid address."
+msgstr ""
+
+msgid "Insert"
+msgstr ""
+
+msgid "Choose an image smaller than 5 MB."
+msgstr ""
+
+msgid "The image could not be loaded."
+msgstr ""
+
+msgid "Find and replace"
+msgstr ""
+
+msgid "Find in document"
+msgstr ""
+
+msgid "Replace with"
+msgstr ""
+
+msgid "Replace all"
+msgstr ""
+
+msgid "Previous result"
+msgstr ""
+
+msgid "Next result"
+msgstr ""
+
+msgid "Match case"
+msgstr ""
+
+msgid "Whole words"
+msgstr ""
+
+msgid "Close search"
+msgstr ""
+
+msgid "Document outline"
+msgstr ""
+
+msgid "Outline"
+msgstr ""
+
+msgid "Close outline"
+msgstr ""
+
+msgid "Headings"
+msgstr ""
+
+msgid "Untitled heading"
+msgstr ""
+
+msgid "Add headings to navigate your document."
+msgstr ""
+
+msgid "Note content"
+msgstr ""
+
+msgid "Code language"
+msgstr ""
+
+msgid "Print"
+msgstr ""
+
+msgid "Allow pop-ups to print this document."
+msgstr ""
+
+msgid "words"
+msgstr ""
+
+msgid "characters"
+msgstr ""
+
+msgid "Editing"
+msgstr ""
+
+msgid "Read only"
+msgstr ""
+
+msgid "Your changes have not been saved yet."
+msgstr ""
+
+msgid "Keep editing"
+msgstr ""
+
+msgid "Discard changes"
+msgstr ""

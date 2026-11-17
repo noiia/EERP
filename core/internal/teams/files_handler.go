@@ -481,6 +481,7 @@ func (h *Handler) DownloadFile(c *echo.Context) error {
 		contentType = f.Mime
 	}
 	c.Response().Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": f.Name}))
+	c.Response().Header().Set("ETag", fileVersion(f.ObjectKey))
 	return c.Stream(http.StatusOK, contentType, body)
 }
 

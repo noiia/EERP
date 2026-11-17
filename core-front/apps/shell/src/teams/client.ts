@@ -203,6 +203,8 @@ export function uploadFile(team: string, file: File, folderId?: string): Promise
 /** folder_id: undefined = unchanged, '' = move to the root. */
 export const updateFile = (team: string, file: string, patch: { name?: string; folder_id?: string }) =>
   call<TeamFile>('PUT', `/${team}/files/${file}`, patch)
+export const saveNote = (team: string, file: string, content: string, version: string) =>
+  call<{ version: string }>('PUT', `/${team}/files/${file}/note`, { content: JSON.parse(content), version })
 export const deleteFile = (team: string, file: string) => call<void>('DELETE', `/${team}/files/${file}`)
 export const getShares = (file: string) => list<Share>(`/files/${file}/shares`)
 export const setShares = async (file: string, userIds: string[]) =>

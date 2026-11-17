@@ -29,6 +29,7 @@ async function forward(request: Request, context: RouteContext): Promise<Respons
       headers: {
         ...(upstream.headers.get('content-type') ? { 'Content-Type': upstream.headers.get('content-type')! } : {}),
         ...(disposition ? { 'Content-Disposition': disposition } : {}),
+        ...(upstream.headers.get('etag') ? { ETag: upstream.headers.get('etag')! } : {}),
         'Cache-Control': 'private, no-store',
       },
     })

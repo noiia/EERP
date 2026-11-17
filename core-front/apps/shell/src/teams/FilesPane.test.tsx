@@ -1,12 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }) }))
-const c = { listFiles: vi.fn(), deleteFile: vi.fn(), updateFile: vi.fn(), uploadFile: vi.fn(), createFolder: vi.fn(), updateFolder: vi.fn(), deleteFolder: vi.fn() }
+const c = { listFiles: vi.fn(), deleteFile: vi.fn(), updateFile: vi.fn(), saveNote: vi.fn(), uploadFile: vi.fn(), createFolder: vi.fn(), updateFolder: vi.fn(), deleteFolder: vi.fn() }
 vi.mock('./client', () => ({
   listFiles: (...a: unknown[]) => c.listFiles(...a),
   deleteFile: (...a: unknown[]) => c.deleteFile(...a),
   updateFile: (...a: unknown[]) => c.updateFile(...a),
+  saveNote: (...a: unknown[]) => c.saveNote(...a),
   uploadFile: (...a: unknown[]) => c.uploadFile(...a),
   createFolder: (...a: unknown[]) => c.createFolder(...a),
   updateFolder: (...a: unknown[]) => c.updateFolder(...a),
@@ -16,8 +17,14 @@ vi.mock('./client', () => ({
   directory: () => Promise.resolve([]),
 }))
 
-import { useSessionStore } from '@eerp/core-front'
+import { preloadLazyComponents, useSessionStore } from '@eerp/core-front'
 import { FilesPane } from './FilesPane'
+
+beforeAll(() => preloadLazyComponents())
+afterEach(() => vi.unstubAllGlobals())
+
+Range.prototype.getClientRects ??= () => document.body.getClientRects()
+Range.prototype.getBoundingClientRect ??= () => document.body.getBoundingClientRect()
 
 const listing = {
   folder: { id: 'f1', name: 'Docs', parent_id: null },
@@ -124,6 +131,40 @@ describe('FilesPane', () => {
     fireEvent.change(screen.getByTestId('teams-upload-input'), { target: { files } })
     await waitFor(() => expect(c.uploadFile).toHaveBeenCalledTimes(2))
     expect(c.uploadFile).toHaveBeenCalledWith('t1', files[0], 'f1')
+  })
+
+  it('creates a note in the currently browsed folder', async () => {
+    render(<FilesPane teamId="t1" folderId="f1" role="member" />)
+    await screen.findByText('mine.pdf')
+    fireEvent.click(screen.getByRole('button', { name: 'New note' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Meeting' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Meeting.ocnote' })
+    const save = within(dialog).getByRole('button', { name: 'Save' })
+    await waitFor(() => expect(save).toBeEnabled())
+    fireEvent.click(save)
+    await waitFor(() => expect(c.uploadFile).toHaveBeenCalledWith('t1', expect.any(File), 'f1'))
+    const file = c.uploadFile.mock.calls[0]![1] as File
+    expect(file.name).toBe('Meeting.ocnote')
+    expect(file.type).toBe('application/json')
+  })
+
+  it.each(['owner', 'member', 'guest'] as const)('opens notes with the rights of a %s', async (role) => {
+    c.listFiles.mockResolvedValue({ ...listing, files: [{ ...listing.files[0], name: 'Notes.OCNOTE', mime: 'application/json' }] })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Note body"}]}]}', { headers: { etag: '"v1"' } })))
+    render(<FilesPane teamId="t1" role={role} />)
+    fireEvent.click(await screen.findByRole('link', { name: 'Notes.OCNOTE' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Notes.OCNOTE' })
+    await within(dialog).findByText('Note body')
+    if (role === 'guest') {
+      expect(within(dialog).queryByRole('button', { name: 'Save' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'New note' })).toBeNull()
+    } else {
+      fireEvent.click(await within(dialog).findByRole('button', { name: 'Text style' }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Heading 2' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(c.saveNote).toHaveBeenCalledWith('t1', 'a', expect.stringContaining('heading'), '"v1"'))
+    }
   })
 
   it('says so when file storage is not configured', async () => {

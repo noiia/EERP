@@ -17,9 +17,9 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { erpPath, IntentLink, T, useSessionStore, useT } from '@eerp/core-front'
+import { erpPath, IntentLink, isOcNote, NoteFileLink, OcNoteDialog, T, useSessionStore, useT } from '@eerp/core-front'
 import {
-  createFolder, deleteFile, deleteFolder, listFiles, updateFile, updateFolder, uploadFile,
+  createFolder, deleteFile, deleteFolder, listFiles, saveNote, updateFile, updateFolder, uploadFile,
   type FolderListing, type Role,
 } from './client'
 import { FolderPicker } from './FolderPicker'
@@ -29,6 +29,7 @@ export const formatSize = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `$
 
 type Dlg =
   | { kind: 'newFolder' }
+  | { kind: 'newNote' }
   | { kind: 'rename'; target: 'file' | 'folder'; id: string; name: string }
   | { kind: 'delete'; target: 'file' | 'folder'; id: string; name: string }
   | { kind: 'move'; target: 'file' | 'folder'; id: string }
@@ -50,6 +51,7 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
   const [error, setError] = useState('')
   const [dlg, setDlg] = useState<Dlg | null>(null)
   const [name, setName] = useState('')
+  const [newNote, setNewNote] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
 
   const reload = useCallback(() => {
@@ -87,6 +89,10 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
   const submitName = () => {
     if (!dlg || !name.trim()) return
     if (dlg.kind === 'newFolder') run(createFolder(teamId, name.trim(), folderId), true)
+    else if (dlg.kind === 'newNote') {
+      setNewNote(isOcNote(name.trim()) ? name.trim() : `${name.trim()}.ocnote`)
+      setDlg(null)
+    }
     else if (dlg.kind === 'rename') run(dlg.target === 'file' ? updateFile(teamId, dlg.id, { name: name.trim() }) : updateFolder(teamId, dlg.id, { name: name.trim() }), dlg.target === 'folder')
   }
   const openName = (d: Dlg, initial = '') => { setName(initial); setDlg(d) }
@@ -115,6 +121,7 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
         </Breadcrumbs>
         {canWrite && (
           <Stack direction="row" spacing={1}>
+            <Button onClick={() => openName({ kind: 'newNote' })}><T text="New note" /></Button>
             <Button onClick={() => openName({ kind: 'newFolder' })}><T text="New folder" /></Button>
             <Button variant="contained" onClick={() => input.current?.click()}><T text="Upload" /></Button>
             <input ref={input} type="file" multiple hidden data-testid="teams-upload-input" onChange={(e) => {
@@ -144,7 +151,8 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
           ))}
           {listing?.files.map((f) => (
             <TableRow key={f.id}>
-              <TableCell><Link href={`/api/teams/files/${f.id}/download`}>{f.name}</Link></TableCell>
+              <TableCell><NoteFileLink name={f.name} url={`/api/teams/files/${f.id}/download`}
+                onSave={canEdit(f.uploaded_by) ? async (content, version) => { const saved = await saveNote(teamId, f.id, content, version); reload(); return saved } : undefined} /></TableCell>
               {!compact && <TableCell>{formatSize(f.size)}</TableCell>}
               {!compact && <TableCell>{f.uploaded_by_name}</TableCell>}
               <TableCell>{actions('file', f.id, f.name, f.uploaded_by)}</TableCell>
@@ -153,8 +161,12 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
         </TableBody>
       </Table>
 
-      <Dialog open={dlg?.kind === 'newFolder' || dlg?.kind === 'rename'} onClose={() => setDlg(null)} fullWidth maxWidth="xs">
-        <DialogTitle>{dlg?.kind === 'rename' ? <T text="Rename" /> : <T text="New folder" />}</DialogTitle>
+      {newNote !== null && <OcNoteDialog name={newNote} onClose={() => setNewNote(null)} onSave={async (content) => {
+        await uploadFile(teamId, new File([content], newNote, { type: 'application/json' }), folderId)
+        reload()
+      }} />}
+      <Dialog open={dlg?.kind === 'newFolder' || dlg?.kind === 'newNote' || dlg?.kind === 'rename'} onClose={() => setDlg(null)} fullWidth maxWidth="xs">
+        <DialogTitle>{dlg?.kind === 'rename' ? <T text="Rename" /> : dlg?.kind === 'newNote' ? <T text="New note" /> : <T text="New folder" />}</DialogTitle>
         <DialogContent>
           <TextField autoFocus fullWidth size="small" sx={{ mt: 1 }} label={t('Name')} value={name} onChange={(e) => setName(e.target.value)} />
         </DialogContent>
