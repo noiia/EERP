@@ -10,7 +10,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { T } from '@eerp/core-front'
+import { isOcNote, NoteFileLink, T } from '@eerp/core-front'
 import type { Attachment } from './client'
 import { formatSize } from './FilesPane'
 
@@ -40,7 +40,9 @@ export function ImageAttachments({ attachments }: { attachments: Attachment[] })
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 0.5 }}>
           {others.map((a) => a.deleted
             ? <Typography key={a.id} variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}><T text="File deleted" /></Typography>
-            : <Chip key={a.id} component="a" href={attachmentUrl(a)} clickable size="small" label={`${a.filename} (${formatSize(a.size)})`} />)}
+            : isOcNote(a.filename)
+              ? <NoteFileLink key={a.id} name={a.filename} url={attachmentUrl(a)}>{`${a.filename} (${formatSize(a.size)})`}</NoteFileLink>
+              : <Chip key={a.id} component="a" href={attachmentUrl(a)} clickable size="small" label={`${a.filename} (${formatSize(a.size)})`} />)}
         </Stack>
       )}
       <Dialog open={viewing !== null} onClose={() => setViewing(null)} maxWidth="lg">

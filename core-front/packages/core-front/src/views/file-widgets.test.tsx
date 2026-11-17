@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { AttachmentClient, AttachmentMeta } from '../api/attachments-client'
@@ -90,7 +90,16 @@ const billingField: FieldDescriptor = {
   widget: 'file',
 }
 
+afterEach(() => vi.unstubAllGlobals())
+
 describe('boolean/file', () => {
+  it('opens an attached OpenCloud note in the reader', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Attached note"}]}]}')))
+    renderWidget(billingField, stubClient({ find: vi.fn(async () => ({ ...meta, filename: 'invoice.ocnote' })) }), { value: true })
+    fireEvent.click(await screen.findByRole('link', { name: 'invoice.ocnote' }))
+    expect(await screen.findByText('Attached note')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+  })
   it('shows the unsaved-record hint instead of an upload surface with no id yet', () => {
     renderWidget(billingField, stubClient(), { recordId: null })
     expect(screen.getByText('Available once the record has been saved.')).toBeInTheDocument()

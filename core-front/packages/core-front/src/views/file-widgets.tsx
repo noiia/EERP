@@ -3,7 +3,6 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
 import {
   createAttachmentClient,
@@ -16,14 +15,14 @@ import { fieldLabel } from './descriptor'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { UnsavedRecordHint, WidgetFrame } from './picture-widgets'
+import { NoteFileLink } from './ocnote-file'
 import type { WidgetProps } from './widgets'
 
 // boolean/file — the non-image sibling of picture-widgets.tsx's
 // BooleanPictureWidget: same "DB column stores only the flag, the service is
 // authoritative, upload happens before the record PUT commits the flag"
 // contract, over internal/attachments instead of internal/pictures. Renders
-// as a filename + download link instead of an <img> thumbnail — a PDF has no
-// inline preview worth building here.
+// as a filename + download link, with a reader for OpenCloud notes.
 
 const AttachmentClientContext = createContext<AttachmentClient | null>(null)
 
@@ -130,18 +129,10 @@ export function BooleanFileWidget(props: WidgetProps) {
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           {meta ? (
             <>
-              <Link
-                href={client.url(meta.id)}
-                // download hints the filename to browsers that honor it; the
-                // real guarantee is Go's own Content-Disposition header on
-                // the streamed response (a same-origin BFF route, so this
-                // isn't a cross-origin download the attribute can't reach).
-                download={meta.filename}
-                sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
-              >
+              <NoteFileLink name={meta.filename} url={client.url(meta.id)}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['file']} size="sm" />
                 {meta.filename}
-              </Link>
+              </NoteFileLink>
               <Button component="label" size="small" disabled={!interactive}>
                 {t('Replace')}
                 <Box
