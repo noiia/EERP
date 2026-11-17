@@ -22,10 +22,15 @@ export function RiskMatrix({ rows, residual, onOpen, wide = false }: { rows: Ris
   const phone = usePhone() && !wide
   const cells = matrixCells(rows, residual)
   const severities = [1, 2, 3, 4]
+  // Phone: "P3" (the translated label's first letter) instead of "Probabilité 3"; the full name stays as the title.
+  const axis = (label: string, n: number) => {
+    const full = `${t(label)} ${n}`
+    return phone ? <span title={full} aria-label={full}>{`${t(label).charAt(0).toUpperCase()}${n}`}</span> : full
+  }
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: `auto repeat(${severities.length}, ${phone ? 'minmax(0, 1fr)' : 'minmax(120px, 1fr)'})`, gridTemplateRows: 'repeat(3, minmax(84px, 1fr)) auto', gap: 0.5, p: 2, width: '100%', height: '100%', boxSizing: 'border-box', bgcolor: 'background.paper' }}>
       {[3, 2, 1].map((l) => [
-        <Box key={`l${l}`} sx={{ alignSelf: 'center', pr: 1, fontWeight: 600 }}>{`${t('Likelihood')} ${l}`}</Box>,
+        <Box key={`l${l}`} sx={{ alignSelf: 'center', pr: 1, fontWeight: 600 }}>{axis('Likelihood', l)}</Box>,
         ...severities.map((s) => {
           const items = cells.get(`${l}:${s}`) ?? []
           return (
@@ -55,7 +60,7 @@ export function RiskMatrix({ rows, residual, onOpen, wide = false }: { rows: Ris
         }),
       ])}
       <Box />
-      {severities.map((s) => <Box key={s} sx={{ textAlign: 'center', fontWeight: 600 }}>{`${t('Severity')} ${s}`}</Box>)}
+      {severities.map((s) => <Box key={s} sx={{ textAlign: 'center', fontWeight: 600 }}>{axis('Severity', s)}</Box>)}
     </Box>
   )
 }

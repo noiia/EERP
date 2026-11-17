@@ -184,6 +184,9 @@ describe('RiskRenderer', () => {
       expect(chip.textContent).toBe('6 - A very long …')
       expect(chip.getAttribute('aria-label')).toBe('6 - A very long risk name')
       expect(getComputedStyle(chip).minHeight).toBe('40px')
+      expect(screen.getByText('L3').getAttribute('title')).toBe('Likelihood 3')
+      expect(screen.getByText('S4').getAttribute('title')).toBe('Severity 4')
+      expect(screen.queryByText('Likelihood 3')).toBeNull()
     })
 
     it('shows the register as cards that open the form', async () => {
