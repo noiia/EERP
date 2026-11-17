@@ -853,8 +853,12 @@ func baselineRules(r *request) error {
 		return err
 	}
 	if _, set := r.body["name"]; set {
-		if name, _ := r.get("name").(string); strings.TrimSpace(name) == "" {
+		name, _ := r.get("name").(string)
+		if strings.TrimSpace(name) == "" {
 			return invalid("name", "name is required")
+		}
+		if utf8.RuneCountInString(name) > 200 {
+			return invalid("name", "name is longer than 200 characters")
 		}
 	}
 	return nil

@@ -121,6 +121,9 @@ func TestBaseline_ManagerOnly(t *testing.T) {
 	if code, body := f.do(stranger, http.MethodPut, "project_baseline/"+renameID.String(), map[string]any{"name": "B3 renamed"}); code != http.StatusOK || body["name"] != "B3 renamed" {
 		t.Fatalf("rename: %d %v, want 200", code, body)
 	}
+	if code, _ := f.do(stranger, http.MethodPut, "project_baseline/"+renameID.String(), map[string]any{"name": long}); code != http.StatusUnprocessableEntity {
+		t.Fatalf("rename over 200: %d, want 422", code)
+	}
 }
 
 func TestBaseline_Limit20(t *testing.T) {
