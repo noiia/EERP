@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the 16 validated Project views: critical path and baseline on Gantt, Kanban swimlanes, an **Insights** mode (burndown/burnup, cumulative flow, earned value, milestone roadmap, risk trend), a **Matrix** mode (Eisenhower, RACI, dependency matrix), a **PBS** diagram mode (product breakdown structure) with a deliverables footer on the WBS, and four pages (My day, Timesheet week, Workload, Portfolio).
+**Goal:** Add the 16 validated Project views: critical path and baseline on Gantt, Kanban swimlanes, an **Insights** mode (burndown/burnup, cumulative flow, earned value, milestone roadmap, risk trend), a **Matrix** mode (Eisenhower, RACI, dependency matrix), a **PBS** diagram mode (product breakdown structure) with a deliverables footer on the WBS, four pages, and diagram PNG/PDF exports that keep their lines and arrows (My day, Timesheet week, Workload, Portfolio).
 
 **Architecture:**
 - **Backend** (`core/modules/project`):
@@ -45,6 +45,7 @@
   - Deleting an item clears its children's `parent_id` and its tasks' `pbs_item_id` in one transaction. Its children become roots and nothing disappears.
   - An item's progress = done / total over the live tasks linked to it **and to its descendants**. A leaf with no task is flagged `No task produces this`.
   - **WBS footer:** each level-2 column of the WBS (a top-level task and its subtree) gets one detached deliverable box at the bottom of the diagram, listing the items its tasks produce (`No deliverable` when none). It is drawn, never stored, and takes no part in editing.
+- **Diagram exports:** a PNG or PDF export of any diagram (PERT, WBS, OBS, PBS, mind-map, Ishikawa) draws every line, dash and arrowhead the canvas shows between elements, in light and dark themes.
 - **Capacity:** `hours_per_week` in (0, 168]. A user with no row has 40.
 - **Workload:**
   - A task's planned_hours are spread evenly over the Mon–Fri days of [date_start, deadline] (both dates required, open tasks only), then split equally among its assignees. No assignee → the "Unassigned" row.
@@ -70,7 +71,7 @@
 
 ## Work Packages (one per person)
 
-The 20 tasks below are grouped into 11 work packages (WPs), each one branch and one pull request into `dev`. A WP starts once every WP in its **Blocked by** column is merged. The frontend WPs (5–10) also need `2026-11-16-project-phone-mode.md` merged first.
+The 21 tasks below are grouped into 12 work packages (WPs), each one branch and one pull request into `dev`. A WP starts once every WP in its **Blocked by** column is merged. The frontend WPs (5–11) also need `2026-11-16-project-phone-mode.md` merged first.
 
 | WP | Title | Tasks | Blocked by | Wave |
 |---|---|---|---|---|
@@ -85,8 +86,9 @@ The 20 tasks below are grouped into 11 work packages (WPs), each one branch and 
 | WP9 | Pages: plumbing, My day, Timesheet week | 13, 14 | — | 1 |
 | WP10 | Pages: Workload & Portfolio | 15, 16 | WP4, WP9 | 2 |
 | WP11 | PBS: deliverables backend, diagram mode & WBS footer | 18, 19, 20 | WP5 | 2 |
+| WP12 | Diagram exports keep lines and arrows | 21 | — | 1 |
 
-**Wave 1 (parallel from day one):** WP1, WP3, WP4, WP5, WP9. **Wave 2:** WP2, WP6, WP8, WP10, WP11. **Wave 3:** WP7.
+**Wave 1 (parallel from day one):** WP1, WP3, WP4, WP5, WP9, WP12. **Wave 2:** WP2, WP6, WP8, WP10, WP11. **Wave 3:** WP7.
 
 **Task 17 is shared:**
 - WP1 writes the ADR-041 skeleton (context, decision headings).
@@ -109,7 +111,7 @@ The 20 tasks below are grouped into 11 work packages (WPs), each one branch and 
 | Go tests | `metrics_test.go`, `schedule_test.go`, `baseline_test.go`, `raci_test.go`, `history_test.go`, `pbs_test.go` (new), `scope_test.go` (table list) |
 | Descriptors | `core/modules/project/views/project_views.ts` (+ test) |
 | Engine config | `core-front/packages/core-front/src/views/descriptor.ts` (`ViewModeDefaults`), `src/api/view-fields.ts` (`DisplayMode`, availability), `views/renderers.tsx` (`MODE_LABELS`, dispatch), `views/lazy-widgets.tsx` |
-| Engine views | `views/gantt-renderer.tsx`, `views/kanban-renderer.tsx`, `views/insights/*` (new), `views/matrix/*` (new), `views/diagram/pbs-renderer.tsx` + `pbs-box.tsx` + `deliverable-box.tsx` (new), `views/diagram/wbs.ts` + `wbs-renderer.tsx` (WBS footer), `views/charts/line-chart.tsx` (new, shared by Insights) |
+| Engine views | `views/gantt-renderer.tsx`, `views/kanban-renderer.tsx`, `views/insights/*` (new), `views/matrix/*` (new), `views/diagram/pbs-renderer.tsx` + `pbs-box.tsx` + `deliverable-box.tsx` (new), `views/diagram/wbs.ts` + `wbs-renderer.tsx` (WBS footer), `views/diagram/export.ts` (exports keep links), `views/charts/line-chart.tsx` (new, shared by Insights) |
 | Shell pages | `apps/shell/app/app/project/{my-day,timesheet-week,workload,portfolio}/page.tsx` (new), `apps/shell/src/project/*` (new client components) |
 | Seed & docs | `apps/shell/src/lib/dev-seed.ts` (`seedProjects`), `docs/adr/ADR-041-project-analytics-views.md` (new), `docs/adr/ADR-039-diagram-views.md` (§ PBS), root `CLAUDE.md` project bullet, `core-front/CLAUDE.md` rows |
 
@@ -545,3 +547,24 @@ flowchart TD
 - [ ] **Step 5: Commit** `feat(core-front): WBS deliverables footer`.
 
 WP11 also adds a § PBS to [ADR-039](../../adr/ADR-039-diagram-views.md) (why the chart is shared like OBS, why progress rolls up, delete detaches, the WBS footer), the PBS lines in root `CLAUDE.md` and `core-front/CLAUDE.md`, its i18n strings, and seeds one PBS per large demo project (`seedProjects`, items linked to about half the tasks).
+
+## Phase E — Diagram exports keep their links
+
+### Task 21: Lines and arrows in PNG/PDF exports
+
+Today a diagram exported to PNG or PDF shows its boxes but none of the lines between them: no PERT dependency arrows, WBS/OBS/PBS parent lines, or dashed note links. An export must show everything the canvas draws between elements.
+
+**Likely cause (confirm in Step 1):** `export.ts` `diagramToPng` clones only `.react-flow__viewport` with `html-to-image`. The edge `<svg>`'s stroke comes from React Flow CSS variables set on the `.react-flow` ancestor (`--xy-edge-stroke…`), and its arrowheads point to `<marker>` defs through `url(#…)`. Neither survives a clone of the viewport alone, and the edges SVG may also clone with a zero size.
+
+**Files:** modify `views/diagram/export.ts` (+ `export.test.ts`), `views/diagram/diagram-canvas.tsx` (`exportAs`) (+ `diagram-canvas.test.tsx`). Check `elementToPng`'s users too (mind-map, Ishikawa).
+
+- [ ] **Step 1: Reproduce and pin the cause.** Run the app (`run` skill) and export a seeded large project's PERT, WBS (with folded and unfolded nodes), OBS and a PERT with notes, as PNG and PDF. Save the images to the scratchpad and inspect which are missing: the line paths, their stroke, the arrowheads, or the whole edges layer. Write the confirmed cause into this task before fixing.
+- [ ] **Step 2: Write the failing tests:**
+  - `export.test.ts` (html-to-image mocked): the node handed to `toPng` contains every `.react-flow__edge` path with an explicit, resolved `stroke` (no `var(…)`), `stroke-width` and `fill: none`, every `marker-end` it uses resolves to a `<marker>` inside the captured node, and the edges SVG has a non-zero width and height.
+  - `diagram-canvas.test.tsx`: exporting a diagram with 3 edges (one marker arrow, one dashed note link, one highlighted edge) hands the exporter 3 edge paths keeping their dash and colors, and edges hidden by a fold stay hidden.
+  - The canvas is left exactly as before the export (no leftover inline styles or cloned defs on screen).
+- [ ] **Step 3: Implement** the smallest fix for the confirmed cause, for example capturing `.react-flow__renderer` with the edges layer included, or setting the computed stroke, marker and size on the edge elements only for the capture and restoring them in a `finally`. Keep the 2×/1× pixel-ratio rule and the dark-theme background.
+- [ ] **Step 4: Verify** by repeating Step 1's exports: every line, dash and arrowhead on screen is in each PNG and PDF, in light and dark themes. Check the mind-map and Ishikawa exports, and fix them the same way if their lines are missing. Then run the engine vitest suite. Expected: PASS.
+- [ ] **Step 5: Commit** `fix(core-front): diagram exports keep lines and arrows`.
+
+This task also covers the PBS diagram and the WBS deliverables footer (Tasks 19–20): their exports use the same path.
