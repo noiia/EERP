@@ -403,3 +403,6 @@ msgstr "150 premières tâches affichées"
 
 msgid "No one accountable"
 msgstr "Personne n'est responsable"
+
+msgid "Deliverable"
+msgstr "Livrable"

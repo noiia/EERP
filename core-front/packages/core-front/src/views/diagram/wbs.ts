@@ -66,6 +66,31 @@ export function buildWbs(input: WbsInput[], folded: ReadonlySet<string>): { node
   return { nodes, roots, visible }
 }
 
+/** The WBS columns a deliverable footer sits under: one per level-2 task (a task with no
+ * parent and no group is its own column). `rows` are the task rows the footer draws for,
+ * in WBS order: a column's list is the item ids its tasks carry, first-seen, unique.
+ * Folded subtrees count too (the walk is over the tree, not the visible set). */
+export function wbsColumnDeliverables(
+  nodes: Record<string, WbsNode>,
+  rows: WbsInput[],
+  itemOf: (id: string) => string | null,
+): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  const inOrder = [...rows].sort((a, b) => compareOrder(a.order, b.order)) // stable: unnumbered keep input order
+  for (const r of inOrder) {
+    const item = itemOf(r.id)
+    if (!item) continue
+    // The column head: the task itself while it is level 1 or 2, else the nearest
+    // level-2 ancestor (groups are structural, tasks carry the depth).
+    let head: WbsNode | undefined = nodes[r.id]
+    while (head && head.kind === 'task' && head.depth > 1) head = head.parentId ? nodes[head.parentId] : undefined
+    if (!head || head.kind !== 'task') continue
+    const list = out.get(head.id) ?? (out.set(head.id, []), out.get(head.id)!)
+    if (!list.includes(item)) list.push(item)
+  }
+  return out
+}
+
 // A `group:` id (or null) means "clear the parent". Self, descendants and unknown ids are refused.
 export function canReparent(nodes: Record<string, WbsNode>, taskId: string, newParentId: string | null): boolean {
   const t = nodes[taskId]

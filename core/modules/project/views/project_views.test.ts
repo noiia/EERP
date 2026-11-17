@@ -51,6 +51,7 @@ describe('project views', () => {
       wbsParentField: 'parent_id',
       wbsGroupField: 'project_id',
       wbsOrderField: 'wbs_number',
+      wbsDeliverables: { field: 'pbs_item_id', entity: 'project_pbs_item', labelField: 'name', doneField: 'done_count', totalField: 'task_count' },
       pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
       pertHoursField: 'planned_hours',
       obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
@@ -71,6 +72,7 @@ describe('project views', () => {
         taskEntity: 'project_task',
         taskFormPath: '/project/tasks/:id',
       },
+      pbs: { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id', canEdit: 'project.canEditStages' },
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)
@@ -102,7 +104,7 @@ describe('project views', () => {
   })
 
   it('scopes stage, milestone and parent to the task\'s project', () => {
-    for (const name of ['stage_id', 'milestone_id', 'parent_id']) {
+    for (const name of ['stage_id', 'milestone_id', 'parent_id', 'pbs_item_id']) {
       expect(field('/project/tasks/:id', name).relation?.filterFields, name).toEqual({ project_id: 'project_id' })
     }
   })
@@ -192,7 +194,7 @@ describe('project views', () => {
     for (const path of ['/project/tasks', '/project/my-tasks']) {
       const d = route(path).descriptor
       const only = d.search?.filterOnlyFields ?? []
-      expect(only.map((f) => f.name), path).toEqual(['assignees', 'color_groups'])
+      expect(only.map((f) => f.name), path).toEqual(['assignees', 'color_groups', 'pbs_item_id'])
       // The same fields as the form's, so labels and pickers match.
       for (const f of only) expect(f, path).toEqual(field('/project/tasks/:id', f.name))
       expect(d.fields.map((f) => f.name)).not.toContain('assignees')

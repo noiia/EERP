@@ -48,6 +48,8 @@ func (m *projectModule) Register() error {
 		orm.Register[ProjectBaselineTask](orm.WithTableName("project_baseline_task"), orm.WithRowScope(ChildScope(p))),
 		orm.Register[ProjectTaskRaci](orm.WithTableName("project_task_raci"), orm.WithRowScope(TaskChildScope(p))),
 		orm.Register[ProjectCapacity](orm.WithTableName("project_capacity")),
+		orm.Register[ProjectPbsItem](orm.WithTableName("project_pbs_item"), orm.WithRowScope(ChildScope(p)),
+			orm.WithReadOnlyFields("task_count", "done_count")),
 	} {
 		if err != nil {
 			return err

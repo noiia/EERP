@@ -37,6 +37,7 @@ var projectTables = []string{
 	"project_task_stage", "project_risk_history",
 	"project_baseline", "project_baseline_task",
 	"project_task_raci", "project_capacity",
+	"project_pbs_item",
 }
 
 func newFixture(t *testing.T) *fixture {

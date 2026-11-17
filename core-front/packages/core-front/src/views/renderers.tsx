@@ -20,7 +20,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid'
-import { DataGrid, GraphRenderer, InsightsRenderer, MatrixRenderer, ObsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
+import { DataGrid, GraphRenderer, InsightsRenderer, MatrixRenderer, ObsRenderer, PbsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
 import {
@@ -912,6 +912,7 @@ const MODE_LABELS: Record<DisplayMode, string> = {
   risk: 'Risk',
   insights: 'Insights',
   matrix: 'Matrices',
+  pbs: 'PBS',
 }
 
 /**
@@ -1064,7 +1065,8 @@ function TreeRenderer<T extends HasId>({
     (storedMode === 'obs' && !availability.obs) ||
     (storedMode === 'risk' && !availability.risk) ||
     (storedMode === 'insights' && !availability.insights) ||
-    (storedMode === 'matrix' && !availability.matrix)
+    (storedMode === 'matrix' && !availability.matrix) ||
+    (storedMode === 'pbs' && !availability.pbs)
       ? 'list'
       : storedMode
   const onFiltersChange = (options: EntityListOptions | undefined) => {
@@ -1275,6 +1277,7 @@ function TreeRenderer<T extends HasId>({
         boxFields={[effective.wbsOrderField, 'name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
         hoursField={effective.pertHoursField ?? undefined}
         orderField={effective.wbsOrderField ?? undefined}
+        deliverables={effective.wbsDeliverables ?? undefined}
         onRecordsChange={setLiveRecords as (r: HasId[]) => void}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
@@ -1307,6 +1310,9 @@ function TreeRenderer<T extends HasId>({
   } else if (mode === 'matrix' && effective.matrix && availability.matrix) {
     const projectId = pinnedId(baseOptions, effective.matrix.projectField)!
     content = <MatrixRenderer key={projectId} config={effective.matrix} projectId={projectId} />
+  } else if (mode === 'pbs' && effective.pbs && availability.pbs) {
+    const projectId = pinnedId(baseOptions, effective.pbs.projectField)!
+    content = <PbsRenderer key={projectId} config={effective.pbs} projectId={projectId} />
   } else if (mode === 'graph' && effective.enableGraphs) {
     content = (
       <GraphRenderer

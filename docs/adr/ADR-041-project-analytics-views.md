@@ -213,3 +213,35 @@ its own extras on top of the shared task set:
   highlights its row and column, and tapping a mark opens the dependent
   task's form. Over 150 tasks the grid caps at 150 and says so; on phone it
   scrolls inside its own box with sticky row and column headers.
+
+## PBS deliverables (WP11)
+
+A project's **PBS** (project breakdown structure) is a free tree of
+deliverables its tasks produce. It is stored like the OBS boxes, with two
+differences that shape the rest of this section:
+
+- **`project_pbs_item`** (`project_id`, `parent_id`, `name` ≤ 200 chars,
+  `description` ≤ 2000 chars, `color` `#rrggbb` lowercase or NULL, `x`, `y`)
+  is manager-writable (same rules as the OBS boxes) and tenant- and
+  project-scoped like its siblings.
+- A task links to the deliverable it produces through
+  **`project_task.pbs_item_id`** (NULL by default, indexed): any task editor
+  may set or clear it, not only the manager. The link is a task field, not a
+  join table, so it moves with the task and dies with it.
+
+The item carries **`task_count`** and **`done_count`**, both read-only and
+trigger-maintained, like `milestone.task_count`: an AFTER trigger on
+`project_task` recounts the old and the new item whenever a link, a close or a
+soft delete/restore changes. The trigger fires on every row change, not on
+`UPDATE OF pbs_item_id, closed, deleted_at`: the `closed` mirror flips on a
+stage move the statement never lists, and Postgres counts only the statement's
+own SET columns for `UPDATE OF`, so such a trigger definition would keep
+`done_count` stale. The function bails out when none of the three columns
+changed, so an unrelated edit costs two counted no-ops.
+
+Deleting an item (manager only) detaches in one transaction: its live children
+lose their parent, its live tasks lose the link, then the item is soft-deleted
+(the counts fall back to zero on the way). Moving a task to another project
+clears the link, like the milestone. Deleting and restoring a project carries
+the items with it: they are in the project's delete/restore table lists, under
+the same `deleted_at`.

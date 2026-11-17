@@ -31,6 +31,8 @@ describe('effectiveViewFields', () => {
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -58,6 +60,8 @@ describe('effectiveViewFields', () => {
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -90,6 +94,8 @@ describe('effectiveViewFields', () => {
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -119,6 +125,8 @@ describe('effectiveViewFields', () => {
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -171,8 +179,10 @@ describe('availableDisplayModes', () => {
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
       }),
-    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false })
+    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false, pbs: false })
     expect(
       availableDisplayModes({
         kanbanStatusField: 'status',
@@ -197,8 +207,10 @@ describe('availableDisplayModes', () => {
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
       }),
-    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false })
+    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false, pbs: false })
   })
 
   it('gantt needs BOTH a start and an end field', () => {
@@ -303,6 +315,17 @@ describe('matrix availability', () => {
     expect(availableDisplayModes(eff).matrix).toBe(false)
     expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).matrix).toBe(true)
     expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).matrix).toBe(false)
+  })
+})
+
+describe('pbs availability', () => {
+  const pbs = { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id' }
+  it('needs a module config and a pinned project', () => {
+    const eff = effectiveViewFields({ pbs }, EMPTY_VIEW_FIELDS)
+    expect(eff.pbs).toEqual(pbs)
+    expect(availableDisplayModes(eff).pbs).toBe(false)
+    expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).pbs).toBe(true)
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).pbs).toBe(false)
   })
 })
 

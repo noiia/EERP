@@ -2975,3 +2975,24 @@ msgstr "Aucune ligne de base"
 
 msgid "Dependency cycle: no critical path"
 msgstr "Cycle de dépendances : aucun chemin critique"
+
+msgid "PBS"
+msgstr "PBS"
+
+msgid "Add item"
+msgstr "Ajouter un élément"
+
+msgid "Edit item"
+msgstr "Modifier l'élément"
+
+msgid "Parent"
+msgstr "Parent"
+
+msgid "No parent"
+msgstr "Sans parent"
+
+msgid "No task produces this"
+msgstr "Aucune tâche ne produit ce livrable"
+
+msgid "No deliverable"
+msgstr "Aucun livrable"
