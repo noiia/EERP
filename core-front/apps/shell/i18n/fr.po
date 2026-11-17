@@ -2948,3 +2948,6 @@ msgstr "Quitter le plein écran"
 
 msgid "More"
 msgstr "Plus"
+
+msgid "Records: {n}"
+msgstr "Enregistrements : {n}"

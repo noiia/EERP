@@ -30,7 +30,7 @@ import { serializeError, toApiError, type SerializedError } from '../../api/erro
 import type { EntityListOptions } from '../../api/list-options'
 import { useT } from '../../i18n/translate'
 import { ErrorAlert } from '../error-alert'
-import { usePhone } from '../use-phone'
+import { useFillHeight, usePhone } from '../use-phone'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
@@ -56,8 +56,6 @@ const SAVE_DELAY_MS = 500
 // Full screen: the history entry's marker, and the wait for React Flow to see its new size.
 const FULLSCREEN_KEY = 'eerpDiagramFullscreen'
 const FIT_DELAY_MS = 100
-// Phone: the canvas takes what the top bar, mode picker and toolbar leave.
-const PHONE_CANVAS_HEIGHT = 'calc(100dvh - 160px)'
 const TOUCH = { minWidth: 40, minHeight: 40 }
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
@@ -325,6 +323,7 @@ function Canvas(props: DiagramCanvasProps) {
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const fitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const container = useRef<HTMLDivElement>(null)
+  const phoneHeight = useFillHeight(container, phone && !fullscreen)
   const instance = useRef<ReactFlowInstance | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Folds: the saved ones (kept as-is when the parent doesn't manage folds), the prop's
@@ -466,7 +465,7 @@ function Canvas(props: DiagramCanvasProps) {
   // unless typing or something else (a menu, an editor) took it.
   useEffect(() => {
     if (!fullscreen) return
-    const token = crypto.randomUUID()
+    const token = `${Date.now()}-${Math.random()}` // randomUUID throws outside a secure context (http://LAN-IP)
     window.history.pushState({ ...window.history.state, [FULLSCREEN_KEY]: token }, '')
     let popped = false
     const onPop = () => {
@@ -784,7 +783,7 @@ function Canvas(props: DiagramCanvasProps) {
       <Box
         ref={container}
         sx={{
-          ...(fullscreen ? { flex: 1, minHeight: 0 } : { height: phone ? PHONE_CANVAS_HEIGHT : '70vh' }),
+          ...(fullscreen ? { flex: 1, minHeight: 0 } : { height: phoneHeight ?? '70vh' }),
           border: 1,
           borderColor: 'divider',
           borderRadius: 1,

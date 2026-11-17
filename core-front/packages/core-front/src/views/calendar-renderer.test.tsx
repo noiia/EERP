@@ -426,7 +426,7 @@ describe('CalendarRenderer phone', () => {
     it('shows a count badge per day instead of cards', () => {
       setViewportWidth(390)
       mount()
-      const cell = screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) })
+      const cell = screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) })
       expect(cell).toHaveTextContent('3')
       expect(screen.queryByTestId('calendar-card-1')).toBeNull()
     })
@@ -435,7 +435,7 @@ describe('CalendarRenderer phone', () => {
       setViewportWidth(390)
       const withForm = { ...descriptor, formPath: '/tasks/:id' }
       render(<CalendarRenderer descriptor={withForm} initialData={three} actions={actions} dateField="due_date" />)
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
       const list = screen.getByRole('list', { name: dayLabel })
       expect(within(list).getAllByRole('listitem')).toHaveLength(3)
       fireEvent.click(within(list).getByText('Beta'))
@@ -445,7 +445,7 @@ describe('CalendarRenderer phone', () => {
     it('stacks Unscheduled below the agenda, full width', () => {
       setViewportWidth(390)
       mount()
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
       const list = screen.getByRole('list', { name: dayLabel })
       const group = screen.getByRole('group', { name: 'Unscheduled' })
       expect(list.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -457,7 +457,7 @@ describe('CalendarRenderer phone', () => {
       grant('tasks:tasks:write')
       mount()
       // No day picked yet beyond the default (today may be another day): pick one.
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
       fireEvent.click(screen.getByRole('button', { name: `Schedule on ${dayLabel}` }))
       await waitFor(() => expect(update).toHaveBeenCalledWith('4', { due_date: day10 }))
     })
@@ -465,19 +465,19 @@ describe('CalendarRenderer phone', () => {
     it('hides Schedule without write permission or without a selected day', () => {
       setViewportWidth(390)
       mount()
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
       expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
     })
 
     it('offers Add on the selected day only when quick create is available, opening it with that date', () => {
       setViewportWidth(390)
       mount()
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
       expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
       cleanup()
       quickMock.canCreate = true
       mount()
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
       fireEvent.click(screen.getByRole('button', { name: 'Add' }))
       expect(quickMock.open).toHaveBeenCalledWith({ due_date: day10 })
     })
@@ -501,7 +501,7 @@ describe('CalendarRenderer phone', () => {
     it('keeps the picked day when the viewport crosses 600px', () => {
       setViewportWidth(390)
       mount()
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
       act(() => setViewportWidth(1280))
       expect(screen.getByRole('group', { name: day10 })).toHaveTextContent('Alpha')
       act(() => setViewportWidth(390))

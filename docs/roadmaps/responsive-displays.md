@@ -622,10 +622,13 @@ gives every list display mode a phone layout.
   breakpoint object `{ xs: <phone>, sm: <desktop> }`, never JavaScript.
 - Crossing 600px (rotating a phone, resizing a window) **re-renders, never remounts**:
   Kanban scroll, the Gantt anchor and zoom, an unsaved diagram note and the open mode all
-  survive. Each renderer pins this with a "toggles phone without losing X" test.
-- At ≥ 600px the DOM is unchanged, apart from added `data-testid`s.
+  survive. Calendar, Gantt and the diagram canvas pin this with a crossing test; the other
+  renderers keep their state in plain component state that a re-render cannot reset.
+- At ≥ 600px the DOM is unchanged, apart from added `data-testid`s and the diagram
+  canvas's Full screen button (also offered on desktop).
 - On phone the page inset is `layout.pageInsetPhone` (8px) instead of `5vw`/`5vh`
-  (`app/app/layout.tsx`). Anything that cancels the inset (a form's top margin, Teams'
+  (`app/app/layout.tsx`); the module page's `Container` drops its own 16px gutter on phone
+  (`px: { xs: 0, sm: 3 }`) so the total is 8px. Anything that cancels the inset (a form's top margin, Teams'
   full-bleed workspace) cancels the phone value on phone.
 - Tests: `setViewportWidth(390)` (engine `src/test/viewport.ts`) makes `matchMedia`
   answer for that width; every test starts at 1280px.
@@ -639,7 +642,7 @@ gives every list display mode a phone layout.
 | Kanban | One snapping column per screen (85% wide). With write permission, each card has a 40px **Move** button opening a menu of the other columns; it goes through the drop path, so a merged many2one column still answers with `resolveDropTarget`'s refusal. |
 | Calendar | A month of square day buttons with counts; the selected day's records listed below (default today) with **Add** (quick create on that day); Unscheduled stacked below, each card with a 40px **Schedule on \<date\>** button (write permission only). |
 | Gantt | Spans of 7 days / 6 weeks / 3 months, an 88px two-line name column, icon toolbar, 16px bar handles, Unscheduled stacked below. Bars keep `touch-action: none` (pointer drags work on touch), so a vertical scroll must start outside a bar. |
-| WBS / PERT / OBS | A **Full screen** toggle (CSS only, same element, so nothing is lost) that pushes one history entry: browser Back or Escape leaves full screen, never the page. One-row toolbar (Fit view, Undo, Redo, Full screen, **More** menu with the rest) over a `calc(100dvh - 160px)` canvas. |
+| WBS / PERT / OBS | A **Full screen** toggle (CSS only, same element, so nothing is lost) that pushes one history entry: browser Back or Escape leaves full screen, never the page. One-row toolbar (Fit view, Undo, Redo, Full screen, **More** menu with the rest) over a canvas that fills the screen from its measured top (`useFillHeight`, `use-phone.ts`; Risk's matrix and Ishikawa use it too). |
 | Risk | Full-width tabs, a Now / After toggle, compact matrix chips (12 characters + …, 40px tall), the register as keyboard-accessible tap-to-open cards. |
 | Graph | The read-only one-column projection (Phase 2). |
 
@@ -650,8 +653,8 @@ gives every list display mode a phone layout.
   calls the same code path as the drop. Pointer-event drags (Gantt bars, React Flow) work
   on touch and may stay.
 - Controls a phone layout adds are at least 40×40px.
-- A phone-only write control is shown only with `<entity>:<entity>:write`, like its
-  desktop drag.
+- A phone-only write control is shown only with `<entity>:<entity>:write` (the Kanban
+  desktop drag is not write-gated; its drop is refused by the API instead).
 - Check a new view at 390×844 and 360×740: `document.documentElement.scrollWidth` must not
   exceed `innerWidth`; wide content scrolls inside its own container.
 

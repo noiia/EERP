@@ -18,7 +18,7 @@ import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
 import { ErrorAlert } from '../error-alert'
 import { DiagramLoading } from '../diagram/diagram-canvas'
-import { usePhone } from '../use-phone'
+import { useFillHeight, usePhone } from '../use-phone'
 import { useRelationOps } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
 import { Ishikawa } from './ishikawa'
@@ -52,6 +52,7 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const [creating, setCreating] = useState(false)
   const [reload, setReload] = useState(0)
   const area = useRef<HTMLDivElement>(null)
+  const fill = useFillHeight(area, phone)
   const { entity, projectField, categoryEntity } = config
   const canCreate = usePermission(`${entity}:${entity}:write`)
 
@@ -132,8 +133,8 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
       </Stack>
       <Box sx={{ pt: 2, overflow: 'auto' }}>
         {/* The diagrams fill the view (centred, scaled to fit) instead of floating small in an empty zone. */}
-        {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: { xs: 'calc(100dvh - 220px)', sm: '70vh' } }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
-        {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: { xs: 'calc(100dvh - 220px)', sm: '70vh' }, bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
+        {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' } }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
+        {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' }, bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
         {tab === 'register' && <RiskRegister rows={rows} categories={categories} onOpen={open} />}
       </Box>
       {creating && ops ? (

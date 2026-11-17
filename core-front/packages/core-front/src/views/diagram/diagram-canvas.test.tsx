@@ -729,8 +729,8 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     setViewportWidth(390)
     setup()
     await flush()
-    // jsdom resolves calc(100dvh - 160px) against its window height.
-    expect(screen.getByTestId('react-flow').parentElement!).toHaveStyle({ height: `${window.innerHeight - 160}px` })
+    // The canvas top is measured (0 in jsdom): the height is what remains below it.
+    expect(screen.getByTestId('react-flow').parentElement!).toHaveStyle({ height: `${window.innerHeight - 8}px` })
   })
 
   it('shows Fit, Undo, Redo, Full screen and a More menu on phone', async () => {
@@ -769,5 +769,17 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     expect(screen.getByTestId('react-flow')).toBe(flow)
     expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)
     expect(pos('a')).toEqual(at(40, 40))
+  })
+
+  it('keeps an added note when the viewport crosses from phone to desktop', async () => {
+    setViewportWidth(390)
+    setup({ mode: 'pert', notes: true })
+    await flush()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'More' })))
+    act(() => fireEvent.click(screen.getByRole('menuitem', { name: 'Add note' })))
+    const flow = screen.getByTestId('react-flow')
+    act(() => setViewportWidth(1280))
+    expect(screen.getByTestId('react-flow')).toBe(flow)
+    expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)
   })
 })

@@ -1890,7 +1890,7 @@ describe('DisplayModeSwitcher on phone', () => {
       />,
     )
 
-  it('shows one "View: <mode>" button instead of the toggle group on phone', () => {
+  it('shows one "Display mode: <mode>" button instead of the toggle group on phone', () => {
     setViewportWidth(390)
     renderTasks()
     expect(screen.queryByRole('group', { name: 'Display mode' })).toBeNull()
