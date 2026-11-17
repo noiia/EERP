@@ -271,3 +271,6 @@ msgstr "Idéal"
 
 msgid "Risk trend"
 msgstr "Tendance des risques"
+
+msgid "Assignee"
+msgstr "Assigné"
