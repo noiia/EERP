@@ -274,3 +274,30 @@ msgstr "Tendance des risques"
 
 msgid "Assignee"
 msgstr "Assigné"
+
+msgid "Burnup"
+msgstr "Progression"
+
+msgid "Flow"
+msgstr "Flux"
+
+msgid "Remaining hours"
+msgstr "Heures restantes"
+
+msgid "Remaining tasks"
+msgstr "Tâches restantes"
+
+msgid "Scope hours"
+msgstr "Heures du périmètre"
+
+msgid "Done hours"
+msgstr "Heures réalisées"
+
+msgid "Not enough data yet"
+msgstr "Pas encore assez de données"
+
+msgid "tasks without dates are left out of PV"
+msgstr "tâches sans dates sont exclues de la valeur planifiée"
+
+msgid "Line chart"
+msgstr "Graphique linéaire"

@@ -68,14 +68,16 @@ const CATEGORICAL_DARK = [
 const CHROME_LIGHT = { primaryInk: '#0b0b0b', mutedInk: '#898781', baseline: '#c3c2b7' }
 const CHROME_DARK = { primaryInk: '#ffffff', mutedInk: '#898781', baseline: '#383835' }
 
-function useGraphPalette() {
+// Exported so the Insights mode's charts (views/insights/*, views/charts/*)
+// reuse the SAME light/dark categorical palette as the graph widgets.
+export function useGraphPalette() {
   const theme = useUiStore((s) => s.theme)
   return theme === 'dark'
     ? { categorical: CATEGORICAL_DARK, chrome: CHROME_DARK }
     : { categorical: CATEGORICAL_LIGHT, chrome: CHROME_LIGHT }
 }
 
-function colorFor(index: number, palette: readonly string[]): string {
+export function colorFor(index: number, palette: readonly string[]): string {
   return palette[index % palette.length]!
 }
 

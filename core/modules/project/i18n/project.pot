@@ -273,3 +273,30 @@ msgstr ""
 
 msgid "Assignee"
 msgstr ""
+
+msgid "Burnup"
+msgstr ""
+
+msgid "Flow"
+msgstr ""
+
+msgid "Remaining hours"
+msgstr ""
+
+msgid "Remaining tasks"
+msgstr ""
+
+msgid "Scope hours"
+msgstr ""
+
+msgid "Done hours"
+msgstr ""
+
+msgid "Not enough data yet"
+msgstr ""
+
+msgid "tasks without dates are left out of PV"
+msgstr ""
+
+msgid "Line chart"
+msgstr ""
