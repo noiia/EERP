@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { createTheme, ThemeProvider } from '@mui/material/styles'
 
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
@@ -213,6 +214,134 @@ describe('InsightsRenderer — burndown, burnup, earned value', () => {
       const legend = screen.getByTestId('line-legend')
       expect(svg.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(getComputedStyle(legend).flexWrap || legend.style.flexWrap).toBe('wrap')
+    })
+  })
+})
+
+describe('InsightsRenderer — flow, milestones, risk trend', () => {
+  it('draws the flow as stacked areas with the closed stages at the bottom and a counts tooltip', async () => {
+    const { container } = setup(metrics())
+    fireEvent.click(await screen.findByRole('tab', { name: 'Flow' }))
+    expect(await screen.findByTestId('flow-area-s1')).toBeTruthy()
+    expect(screen.getByTestId('flow-area-s2')).toBeTruthy()
+    expect(screen.getByTestId('flow-area-s3')).toBeTruthy()
+    // Stack order bottom→top: the closed Done stage first, then New and In
+    // progress by sequence. The bottom band lies on the plot baseline
+    // (height 280 − bottom padding 26 = 254).
+    expect(screen.getByTestId('flow-area-s3').getAttribute('d')!).toContain('254')
+    // The stage colors come from the categorical palette (light by default).
+    expect(screen.getByTestId('flow-area-s3').getAttribute('fill')).toBe('#2a78d6')
+    expect(screen.getByTestId('flow-area-s1').getAttribute('fill')).toBe('#1baf7a')
+    expect(screen.getByTestId('flow-area-s2').getAttribute('fill')).toBe('#eda100')
+    // The tooltip lists the counts at a date.
+    fireEvent.mouseEnter(container.querySelector('[data-fc-hit="2026-11-16"]')!)
+    expect(await screen.findByText(/New: 2/)).toBeTruthy()
+    expect(screen.getByText(/In progress: 1/)).toBeTruthy()
+    expect(screen.getByText(/Done: 1/)).toBeTruthy()
+  })
+
+  it('reads the milestones through ops.listPage ordered by deadline, one row per milestone', async () => {
+    const { ops } = setup(metrics())
+    fireEvent.click(await screen.findByRole('tab', { name: 'Milestones' }))
+    expect(ops.listPage).toHaveBeenCalledWith(
+      'project_milestone',
+      expect.objectContaining({ filter: { project_id: 'p1' }, order: 'deadline' }),
+    )
+    const m1 = await screen.findByTestId('milestone-row-m1')
+    expect(m1).toBeTruthy()
+    expect(screen.getByTestId('milestone-row-m2')).toBeTruthy()
+    // The progress task_done_count / task_count, the deadline diamond on the
+    // shared axis, and the reached_at check (m1 only: m2 is unreached).
+    expect(screen.getByText('1/2')).toBeTruthy()
+    expect(screen.getByText('1/4')).toBeTruthy()
+    expect(screen.getByTestId('milestone-deadline-m1')).toBeTruthy()
+    expect(screen.getByTestId('milestone-deadline-m2')).toBeTruthy()
+    expect(screen.getByTestId('milestone-reached-m1')).toBeTruthy()
+    expect(screen.queryByTestId('milestone-reached-m2')).toBeNull()
+  })
+
+  it('marks an unreached milestone past its deadline Late and opens its form on tap', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-17T12:00:00Z'))
+    try {
+      setup(metrics())
+      fireEvent.click(await screen.findByRole('tab', { name: 'Milestones' }))
+      await screen.findByTestId('milestone-row-m2')
+      // m2 is unreached and its deadline (2026-11-01) is past: the Late chip
+      // in the error color; m1 (reached) carries none.
+      expect(screen.getAllByText('Late')).toHaveLength(1)
+      const late = screen.getByText('Late')
+      expect(late.closest('.MuiChip-root')!.className).toContain('MuiChip-colorError')
+      // Tapping a row opens the milestone's form.
+      fireEvent.click(screen.getByTestId('milestone-row-m2'))
+      expect(push).toHaveBeenCalledWith('/app/project/milestones/m2')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('caps the milestones at 1000 and says the first 1000 are shown', async () => {
+    const big = Array.from({ length: 1001 }, (_, i) => ({
+      id: `b${i}`,
+      name: `Milestone ${i}`,
+      deadline: '2026-11-01T00:00:00Z',
+      reached: false,
+      reached_at: null,
+      task_count: 1,
+      task_done_count: 0,
+    }))
+    const get = vi.fn(async () => metrics())
+    const listPage = vi.fn(async (_entity: string, opts: { page?: number; pageSize?: number } = {}) => {
+      const pageSize = opts.pageSize ?? 200
+      const start = ((opts.page ?? 1) - 1) * pageSize
+      return { records: big.slice(start, start + pageSize), total: big.length }
+    })
+    render(
+      <RelationOpsProvider ops={{ get, listPage } as unknown as RelationOps}>
+        <InsightsRenderer config={config} projectId="p1" />
+      </RelationOpsProvider>,
+    )
+    fireEvent.click(await screen.findByRole('tab', { name: 'Milestones' }))
+    expect(await screen.findByText('First 1000 shown')).toBeTruthy()
+    expect(screen.getAllByTestId(/^milestone-row-/)).toHaveLength(1000)
+  })
+
+  it('draws the risk trend with the banded counts and the max criticity line', async () => {
+    const get = vi.fn(async () => metrics())
+    const ops = { get, listPage: vi.fn() } as unknown as RelationOps
+    const { container } = render(
+      <ThemeProvider
+        theme={createTheme({
+          palette: { success: { main: '#11aa11' }, warning: { main: '#cc8800' }, error: { main: '#dd0000' } },
+        })}
+      >
+        <RelationOpsProvider ops={ops}>
+          <InsightsRenderer config={config} projectId="p1" />
+        </RelationOpsProvider>
+      </ThemeProvider>,
+    )
+    fireEvent.click(await screen.findByRole('tab', { name: 'Risk trend' }))
+    // The max-criticity line (6 → 18 over the two points).
+    const line = await screen.findByTestId('risk-trend-max')
+    expect(line.getAttribute('d')!).toContain('M')
+    // The stacked counts, banded with the ADR-040 colors from the theme
+    // (≤ 4 green, ≤ 12 amber, > 12 red).
+    expect(container.querySelector('[data-testid="risk-band-green"]')!.getAttribute('fill')).toBe('#11aa11')
+    expect(container.querySelector('[data-testid="risk-band-amber"]')!.getAttribute('fill')).toBe('#cc8800')
+    expect(container.querySelector('[data-testid="risk-band-red"]')!.getAttribute('fill')).toBe('#dd0000')
+    // The tooltip lists the counts (and the day's max criticity).
+    fireEvent.mouseEnter(container.querySelector('[data-rt-hit="2026-11-17"]')!)
+    expect(await screen.findByText(/Red: 1/)).toBeTruthy()
+    expect(screen.getByText(/Max criticity: 18/)).toBeTruthy()
+  })
+
+  describe('phone', () => {
+    it('stacks the milestone label over the bar at 390px', async () => {
+      setViewportWidth(390)
+      setup(metrics())
+      fireEvent.click(await screen.findByRole('tab', { name: 'Milestones' }))
+      const row = await screen.findByTestId('milestone-row-m1')
+      expect(row.closest('.MuiStack-root')).toHaveStyle({ flexDirection: 'column' })
     })
   })
 })

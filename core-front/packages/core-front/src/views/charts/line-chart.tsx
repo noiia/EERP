@@ -38,13 +38,15 @@ export interface LineChartProps {
 // fixed pixel width (the graph widgets measure their tile instead — here the
 // container is the whole view, and the jsdom test viewport never fires a
 // ResizeObserver, so a fixed viewBox is what a 390px test can assert).
-const VIEW_W = 640
-const PAD = { top: 12, right: 14, bottom: 26, left: 40 }
+// Exported so the Insights' sibling charts (views/insights/*) share the same
+// geometry and date labels.
+export const VIEW_W = 640
+export const PAD = { top: 12, right: 14, bottom: 26, left: 40 }
 
 /** `YYYY-MM-DD` → a short localized label ("11 Nov"), built from the numeric
  * Date constructor — never `new Date('YYYY-MM-DD')` (UTC-midnight parsing,
  * the classic wrong-local-day bug this codebase avoids throughout). */
-function dayLabel(x: string, locale: string | undefined): string {
+export function dayLabel(x: string, locale: string | undefined): string {
   const [y, m, d] = x.split('-').map(Number)
   return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(y, m - 1, d))
 }

@@ -301,3 +301,18 @@ msgstr "tâches sans dates sont exclues de la valeur planifiée"
 
 msgid "Line chart"
 msgstr "Graphique linéaire"
+
+msgid "Late"
+msgstr "En retard"
+
+msgid "Max criticity"
+msgstr "Criticité maximale"
+
+msgid "Green"
+msgstr "Vert"
+
+msgid "Amber"
+msgstr "Ambre"
+
+msgid "Red"
+msgstr "Rouge"

@@ -862,6 +862,33 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
     }
   }
   track({ result: span })
+  // Insights milestones (WP7): the small demos' two milestones become a
+  // reached one (deadline 30 days ago, reached stamped by the server) and a
+  // late unreached one (deadline 3 days ago) so the roadmap tab is alive.
+  const insightMilestones: SeedEntityResult = { entity: 'project insights milestones', created: 0, failed: 0, errors: [] }
+  for (const [pi, project] of projects.records.entries()) {
+    if (isPlan(pi)) continue
+    let existing: { id: string }[]
+    try {
+      existing = await client.list<{ id: string }>('project_milestone', { filter: { project_id: project.id }, order: 'created_at' })
+    } catch {
+      existing = [] // unreadable milestones: leave the defaults
+    }
+    const bodies = [
+      { deadline: new Date(Date.now() - 30 * day).toISOString(), reached: true },
+      { deadline: new Date(Date.now() - 3 * day).toISOString() },
+    ].slice(0, existing.length)
+    for (let i = 0; i < bodies.length; i++) {
+      try {
+        await client.update('project_milestone', existing[i].id, bodies[i])
+        insightMilestones.created += 1
+      } catch (e) {
+        insightMilestones.failed += 1
+        if (insightMilestones.errors.length < 5) insightMilestones.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+      }
+    }
+  }
+  track({ result: insightMilestones })
   results.push(...Object.values(outcomes))
   return results
 }

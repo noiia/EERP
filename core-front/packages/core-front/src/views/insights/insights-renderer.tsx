@@ -15,6 +15,9 @@ import { usePhone } from '../use-phone'
 import { useRelationOps } from '../relation-ops'
 import { BurnChart } from './burn-chart'
 import { EvmChart } from './evm-chart'
+import { FlowChart } from './flow-chart'
+import { MilestoneRoadmap, type Milestone } from './milestone-roadmap'
+import { RiskTrend } from './risk-trend'
 
 export interface InsightsRendererProps {
   config: InsightsConfig
@@ -154,8 +157,14 @@ export function InsightsRenderer({ config, projectId }: InsightsRendererProps) {
   })
   const [metrics, setMetrics] = useState<ProjectMetrics | null>(null)
   const [error, setError] = useState<SerializedError | null>(null)
+  // The milestones tab is the one tab that reads beyond the shared metrics
+  // read: it pages the project's milestones until a short page (ADR-032).
+  const [milestones, setMilestones] = useState<Milestone[] | null>(null)
+  const [msCapped, setMsCapped] = useState(false)
+  const [msError, setMsError] = useState<SerializedError | null>(null)
 
   const get = ops?.get
+  const listPage = ops?.listPage
   // The ONE metrics read per pinned id: every tab draws from this single read.
   useEffect(() => {
     if (!get) return
@@ -177,6 +186,56 @@ export function InsightsRenderer({ config, projectId }: InsightsRendererProps) {
       cancelled = true
     }
   }, [get, config.projectEntity, projectId, config.metricsPath])
+
+  // Read the milestones only when the tab is shown: page until a short page,
+  // stop at 1000 with a "first 1000 shown" caption (the Gantt/kanban pattern).
+  useEffect(() => {
+    if (tab !== 'milestones') {
+      setMilestones(null)
+      setMsCapped(false)
+      setMsError(null)
+      return
+    }
+    if (!listPage) {
+      setMilestones([])
+      setMsCapped(false)
+      setMsError(null)
+      return
+    }
+    let cancelled = false
+    const PAGE_SIZE = 200
+    const CAP = 1000
+    const opts = { filter: { project_id: projectId }, order: 'deadline' }
+    ;(async () => {
+      const rows: Milestone[] = []
+      let capped = false
+      for (let page = 1; ; page++) {
+        const res = await listPage(config.milestoneEntity, { ...opts, page, pageSize: PAGE_SIZE })
+        rows.push(...(res.records as unknown as Milestone[]))
+        if (res.records.length < PAGE_SIZE) break
+        if (rows.length >= CAP) {
+          // One probe row past the cap: exactly CAP matches isn't "more".
+          const probe = await listPage(config.milestoneEntity, { ...opts, page: CAP + 1, pageSize: 1 })
+          capped = probe.records.length > 0
+          break
+        }
+      }
+      if (!cancelled) {
+        setMilestones(rows)
+        setMsCapped(capped)
+        setMsError(null)
+      }
+    })().catch((e: unknown) => {
+      if (!cancelled) {
+        setMilestones(null)
+        setMsCapped(false)
+        setMsError(serializeError(toApiError(e)))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, listPage, config.milestoneEntity, projectId])
 
   const changeTab = (next: TabKey) => {
     setTab(next)
@@ -234,10 +293,24 @@ export function InsightsRenderer({ config, projectId }: InsightsRendererProps) {
               : (
                   <EvmChart points={metrics.points} spi={metrics.spi} cpi={metrics.cpi} pvExcluded={metrics.pv_excluded} />
                 ))}
-        {/* Flow / Milestones / Risk trend: filled in by their own task. */}
-        {tab === 'flow' && metrics != null && <Box sx={{ py: 2 }} />}
-        {tab === 'milestones' && <Box sx={{ py: 2 }} />}
-        {tab === 'risk' && metrics != null && <Box sx={{ py: 2 }} />}
+        {tab === 'flow' &&
+          (metrics == null
+            ? error
+              ? null
+              : <Loading />
+            : zero
+              ? <Empty />
+              : <FlowChart stages={metrics.stages} flow={metrics.flow} />)}
+        {tab === 'milestones' &&
+          (msError ? <ErrorAlert error={msError} /> : milestones == null ? <Loading /> : <MilestoneRoadmap milestones={milestones} capped={msCapped} />)}
+        {tab === 'risk' &&
+          (metrics == null
+            ? error
+              ? null
+              : <Loading />
+            : zero
+              ? <Empty />
+              : <RiskTrend risk={metrics.risk} />)}
       </Box>
     </Box>
   )

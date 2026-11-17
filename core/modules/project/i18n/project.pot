@@ -300,3 +300,18 @@ msgstr ""
 
 msgid "Line chart"
 msgstr ""
+
+msgid "Late"
+msgstr ""
+
+msgid "Max criticity"
+msgstr ""
+
+msgid "Green"
+msgstr ""
+
+msgid "Amber"
+msgstr ""
+
+msgid "Red"
+msgstr ""
