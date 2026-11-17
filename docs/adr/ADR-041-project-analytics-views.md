@@ -330,3 +330,41 @@ Pitfalls:
 - The burndown's Hours / Tasks toggle switches the same chart to
   `scope_tasks − done_tasks`; the ideal line belongs to the Hours view only
   (the endpoint has no ideal task count).
+
+### Diagram PNG/PDF exports keep their lines and arrows (WP12)
+
+The client-side PNG/PDF export of the diagram canvases
+(`views/diagram/export.ts`, `diagramToPng` / `elementToPng`) captured the
+live React Flow viewport with `html-to-image`. The serialized clone loses
+the library stylesheet, and React Flow 12 styles every default edge through
+CSS custom properties on the `.react-flow` root (`--xy-edge-stroke`,
+`--xy-edge-stroke-width`; the default arrowheads use the same `var(…)`
+stroke/fill), so in the clone those references have nothing to resolve
+against: the default lines and arrowheads disappeared from the export while
+the canvas still drew them.
+
+The fix mutates the LIVE node right before `toPng` (html-to-image reads the
+computed styles of the live original, so a detached pre-clone would not
+work), in an exported `prepareEdgesForCapture(node, bounds)` with every
+mutation restored in a `finally` — the viewport is byte-identical afterwards
+(pinned by `outerHTML` equality after a success and after a `toPng`
+rejection):
+
+- every edge-layer `<svg>` is sized to the diagram's extent (from the
+  capture's `bounds`, min 1) so the clone is not zero-sized;
+- every `.react-flow__edge path` gets the computed (var-resolved) `stroke`,
+  `stroke-width`, `stroke-dasharray` (when dashed) and a constant
+  `fill: none` inlined — exactly the values the canvas shows;
+- for every `marker-end: url(#id)` the paths use, the `<marker>` is
+  guaranteed to be inside the captured node (defensively copied in from the
+  document when its `<defs>` live outside the capture) and the computed
+  `stroke`/`stroke-width`/`fill` are inlined on its shapes; the copy and any
+  created `<defs>` are removed on restore.
+
+The node handed to `toPng` is self-contained: no `var(…)` stroke or fill
+survives in it and every `marker-end` reference resolves inside it.
+`prepareEdgesForCapture` is also wired into `elementToPng` and is a
+documented no-op there (the mind-map and Ishikawa elements are plain SVG
+with explicit presentation attributes and no markers), so the WP11 PBS
+diagram and the WBS deliverables footer exports are covered by the same
+call.
