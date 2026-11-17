@@ -1,4 +1,5 @@
 'use client'
+import ButtonBase from '@mui/material/ButtonBase'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Table from '@mui/material/Table'
@@ -34,17 +35,18 @@ export function RiskRegister({ rows, categories, onOpen }: {
     return (
       <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {rows.map((r) => (
-          <Box
-            component="li"
-            key={r.id}
-            onClick={() => onOpen(r.id)}
-            sx={{ minHeight: 40, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
-          >
-            <Box sx={{ minWidth: 0 }}>
-              <Box sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{r.name}</Box>
-              <Box sx={{ color: 'text.secondary', fontSize: 13 }}>{dash(r.category_id && cat.get(r.category_id))}</Box>
-            </Box>
-            <Chip size="small" label={dash(r.criticity)} sx={(th) => ({ bgcolor: bandMain(th, band(r.criticity)), color: th.palette.getContrastText(bandMain(th, band(r.criticity))) })} />
+          <Box component="li" key={r.id}>
+            <ButtonBase
+              component="div"
+              onClick={() => onOpen(r.id)}
+              sx={{ width: '100%', minHeight: 40, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, textAlign: 'left' }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Box sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{r.name}</Box>
+                <Box sx={{ color: 'text.secondary', fontSize: 13 }}>{dash(r.category_id && cat.get(r.category_id))}</Box>
+              </Box>
+              <Chip size="small" label={dash(r.criticity)} sx={(th) => ({ bgcolor: bandMain(th, band(r.criticity)), color: th.palette.getContrastText(bandMain(th, band(r.criticity))) })} />
+            </ButtonBase>
           </Box>
         ))}
       </Box>

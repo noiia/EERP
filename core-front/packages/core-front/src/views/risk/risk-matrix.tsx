@@ -40,8 +40,8 @@ export function RiskMatrix({ rows, residual, onOpen }: { rows: RiskRow[]; residu
                     size="small"
                     color={band(c) ? BAND_COLOR[band(c)!] : 'default'}
                     label={items.length <= FULL_LABEL_MAX ? `${value} - ${phone && r.name.length > 12 ? `${r.name.slice(0, 12)}…` : r.name}` : value}
-                    aria-label={phone ? r.name : undefined}
-                    sx={{ maxWidth: '100%' }}
+                    aria-label={phone ? `${value} - ${r.name}` : undefined}
+                    sx={{ maxWidth: '100%', ...(phone && { minHeight: 40 }) }}
                     title={r.name}
                     onClick={() => onOpen(r.id)}
                   />

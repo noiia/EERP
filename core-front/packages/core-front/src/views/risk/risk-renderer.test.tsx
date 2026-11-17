@@ -135,6 +135,7 @@ describe('RiskRenderer', () => {
       expect(screen.getByRole('tab', { name: 'Matrix' }).className).toContain('MuiTab-fullWidth')
       const row = screen.getByRole('button', { name: 'New risk' }).parentElement as HTMLElement
       expect(row.contains(tabs)).toBe(false)
+      expect(tabs.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(screen.getByRole('button', { name: 'Now' })).toBeTruthy()
       expect(screen.getByRole('button', { name: 'After' })).toBeTruthy()
     })
@@ -146,7 +147,8 @@ describe('RiskRenderer', () => {
       expect((cell.parentElement as HTMLElement).style.gridTemplateColumns || getComputedStyle(cell.parentElement as HTMLElement).gridTemplateColumns).toContain('minmax(0px, 1fr)')
       const chip = within(cell).getByRole('button')
       expect(chip.textContent).toBe('6 - A very long …')
-      expect(chip.getAttribute('aria-label')).toBe('A very long risk name')
+      expect(chip.getAttribute('aria-label')).toBe('6 - A very long risk name')
+      expect(getComputedStyle(chip).minHeight).toBe('40px')
     })
 
     it('shows the register as cards that open the form', async () => {
@@ -158,7 +160,13 @@ describe('RiskRenderer', () => {
       expect(screen.queryByRole('table')).toBeNull()
       expect(within(items[0]).getByText('Late vendor')).toBeTruthy()
       expect(within(items[0]).getByText('Internal')).toBeTruthy()
-      fireEvent.click(items[0])
+      const card = within(items[0]).getByRole('button')
+      expect(getComputedStyle(card).minHeight).toBe('40px')
+      fireEvent.click(card)
+      expect(push).toHaveBeenCalledWith('/app/project/risks/Late vendor')
+      push.mockClear()
+      card.focus()
+      fireEvent.keyDown(card, { key: 'Enter' })
       expect(push).toHaveBeenCalledWith('/app/project/risks/Late vendor')
     })
   })
