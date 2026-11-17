@@ -80,6 +80,9 @@ export interface ViewModeDefaults {
    * siblings in that order and a box dropped among siblings writes its new number; PERT's
    * auto-layout runs from the 1.x records to the highest. Module-declared only. */
   wbsOrderField?: string
+  /** WBS mode: a deliverable footer under each level-2 column, listing the records of
+   * `entity` the column's tasks produce through `field`. Module-declared only. */
+  wbsDeliverables?: WbsDeliverablesConfig
   /** PERT mode: the dependency rows (same shape as ganttDependencies). Module-declared only. */
   pertDependencies?: GanttDependenciesConfig
   /** PERT mode: the planned-hours number field read as a task's duration; dates reuse
@@ -192,6 +195,22 @@ export interface GanttDependenciesConfig {
   toField: string
 }
 
+/** The WBS deliverables footer (ADR-039 § PBS): under each level-2 column, one box lists
+ * the records of `entity` that the column's tasks produce through `field` (a many2one on
+ * the task entity). Module-declared only. */
+export interface WbsDeliverablesConfig {
+  /** The many2one on the task entity pointing at a deliverable, e.g. 'pbs_item_id'. */
+  field: string
+  /** The deliverable entity (its generic list route prefix). */
+  entity: string
+  /** The deliverable's display field, e.g. 'name'. */
+  labelField: string
+  /** The deliverable's done-count column, e.g. 'done_count'; no count shown without both. */
+  doneField?: string
+  /** The deliverable's total-count column, e.g. 'task_count'. */
+  totalField?: string
+}
+
 /** How a many2one status field's related records become Kanban columns. */
 export interface KanbanColumnsConfig {
   /** Column order, e.g. 'sequence'. */
@@ -221,6 +240,7 @@ export interface EffectiveViewFields {
   wbsParentField: string | null
   wbsGroupField: string | null
   wbsOrderField: string | null
+  wbsDeliverables: WbsDeliverablesConfig | null
   pertDependencies: GanttDependenciesConfig | null
   pertHoursField: string | null
   obs: ObsConfig | null
@@ -256,6 +276,7 @@ export function effectiveViewFields(
     wbsParentField: defaults?.wbsParentField ?? null,
     wbsGroupField: defaults?.wbsGroupField ?? null,
     wbsOrderField: defaults?.wbsOrderField ?? null,
+    wbsDeliverables: defaults?.wbsDeliverables ?? null,
     pertDependencies: defaults?.pertDependencies ?? null,
     pertHoursField: defaults?.pertHoursField ?? null,
     obs: defaults?.obs ?? null,

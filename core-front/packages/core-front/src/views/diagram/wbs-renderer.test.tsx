@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from 'react'
 
 // React Flow stubbed as in diagram-canvas.test.tsx, but drawing each node through
 // its nodeTypes component so the boxes (chevrons, footers, labels) are on screen.
-type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; height?: number }
+type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; height?: number; draggable?: boolean; selectable?: boolean; connectable?: boolean }
 type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown; deletable?: boolean; reconnectable?: boolean }
 type RfProps = {
   nodes: RfNode[]
@@ -59,18 +59,21 @@ vi.mock('@xyflow/react', async () => {
   }
 })
 const exportPng = vi.hoisted(() => vi.fn(async () => {}))
-vi.mock('./export', () => ({ exportPng, exportPdf: vi.fn() }))
+const exportPdf = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('./export', () => ({ exportPng, exportPdf }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 import { WbsRenderer, type WbsRendererProps } from './wbs-renderer'
 import { LABEL_BOX_SIZE, TASK_BOX_SIZE } from './task-box'
+import { DELIVERABLE_BOX_SIZE } from './deliverable-box'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
 import type { ViewDescriptor } from '../descriptor'
 import type { EntityActions } from '../stores'
 import { useSessionStore } from '../session-store'
 import { moduleRegistry } from '../../registry'
+import { setViewportWidth } from '../../test/viewport'
 
 type Task = { id: string; name: string; parent_id: string | null; project_id: string; planned_hours: number }
 const descriptor: ViewDescriptor = {
@@ -96,7 +99,7 @@ function setup(update?: EntityActions<Task>['update'], write = true, extra: Part
   useSessionStore.setState({
     identity: { userId: 'u1', tenantId: 't1', roles: [], permissions: write ? ['project_task:project_task:read', 'project_task:project_task:write'] : ['project_task:project_task:read'] },
   } as never)
-  const saveViewLayout = vi.fn(async () => {})
+  const saveViewLayout = vi.fn(async () => {}) as unknown as (entity: string, mode: string, layout: { positions: Record<string, unknown> }) => Promise<void>
   const ops: RelationOps = {
     list: vi.fn(async (_e: string, o?: { in?: Record<string, string[]> }) => (o?.in?.id ?? []).map((id) => ({ id, name: projects[id] }))),
     get: vi.fn(),
@@ -404,5 +407,175 @@ describe('WbsRenderer', () => {
     await screen.findByTestId('node-D')
     act(() => rf.props.onConnect!({ source: 'A', target: 'D' }))
     expect(await screen.findByText('nope')).toBeInTheDocument()
+  })
+})
+
+describe('WBS deliverables footer', () => {
+  type PbsTask = Task & { pbs_item_id: string | null }
+  const pbsRows = (): PbsTask[] => [
+    { id: 'A', name: 'Design', parent_id: null, project_id: 'p1', planned_hours: 1, pbs_item_id: 'it1' },
+    { id: 'B', name: 'Mockups', parent_id: 'A', project_id: 'p1', planned_hours: 3, pbs_item_id: 'it2' },
+    { id: 'C', name: 'Ops', parent_id: null, project_id: 'p2', planned_hours: 2, pbs_item_id: 'it3' },
+    { id: 'D', name: 'Review', parent_id: null, project_id: 'p1', planned_hours: 0.333, pbs_item_id: null },
+  ]
+  type PbsItem = { id: string; name: string; project_id: string; done_count: number; task_count: number }
+  const itemCatalog: Record<string, PbsItem> = {
+    it1: { id: 'it1', name: 'Design docs', project_id: 'p1', done_count: 3, task_count: 4 },
+    it2: { id: 'it2', name: 'Mock-ups', project_id: 'p1', done_count: 1, task_count: 2 },
+    it3: { id: 'it3', name: 'Ops kit', project_id: 'p2', done_count: 2, task_count: 2 },
+  }
+  const config = { field: 'pbs_item_id', entity: 'project_pbs_item', labelField: 'name', doneField: 'done_count', totalField: 'task_count' }
+
+  function setupFooter(opts: { rows?: PbsTask[]; catalog?: Record<string, PbsItem>; reject?: boolean; deliverables?: unknown } = {}) {
+    const rows = opts.rows ?? pbsRows()
+    const catalog = opts.catalog ?? itemCatalog
+    const update = vi.fn(async (id: string, body: Partial<Task>) => ({ ...rows.find((r) => r.id === id)!, ...body }))
+    const list = vi.fn(async (e: string, o?: { in?: Record<string, string[]> }) => {
+      if (e === 'project_pbs_item') {
+        if (opts.reject) throw new ApiError({ code: 'FORBIDDEN', message: 'boom', status: 403 })
+        return (o?.in?.id ?? []).map((id) => catalog[id]).filter(Boolean)
+      }
+      return (o?.in?.id ?? []).map((id) => ({ id, name: projects[id] }))
+    })
+    const base = setup(update, true, {
+      initialData: rows as Task[],
+      deliverables: opts.deliverables === undefined ? config : opts.deliverables,
+    } as Partial<WbsRendererProps<Task>>, { list })
+    return { ...base, list, rows, catalog }
+  }
+  const foot = (id: string) => rf.props.nodes.find((n) => n.id === `deliverable:${id}`)!
+  const pbsReads = (list: ReturnType<typeof setupFooter>['list']) =>
+    vi.mocked(list).mock.calls.filter(([e]) => e === 'project_pbs_item')
+  // The bottom of the lowest box on screen (groups included), from what the canvas placed.
+  const bottom = () => Math.max(...rf.props.nodes.filter((n) => !n.id.startsWith('deliverable:')).map((n) => n.position.y + (n.height ?? TASK_BOX_SIZE.h)))
+  const ready = () => screen.findByText('Design docs')
+
+  it('draws one box per level-2 column on one row below the lowest box, centered', async () => {
+    setupFooter()
+    await ready()
+    expect(rf.props.nodes.map((n) => n.id).filter((id) => id.startsWith('deliverable:')).sort()).toEqual(['deliverable:A', 'deliverable:C', 'deliverable:D'])
+    // B is level 3: its items roll into A's box.
+    const a = within(screen.getByTestId('node-deliverable:A'))
+    expect(a.getByText('Design docs')).toBeInTheDocument()
+    expect(a.getByText('3 / 4')).toBeInTheDocument()
+    expect(a.getByText('Mock-ups')).toBeInTheDocument()
+    expect(a.getByText('1 / 2')).toBeInTheDocument()
+    expect(within(screen.getByTestId('node-deliverable:C')).getByText('2 / 2')).toBeInTheDocument()
+    expect(within(screen.getByTestId('node-deliverable:D')).getByText('No deliverable')).toBeInTheDocument()
+    expect(within(screen.getByTestId('node-deliverable:D')).getByTestId('deliverable-box')).toHaveStyle({ borderStyle: 'dashed' })
+    const row = bottom() + 48
+    for (const id of ['A', 'C', 'D']) expect(foot(id).position.y).toBe(row)
+    for (const id of ['A', 'C', 'D']) expect(foot(id).position.x).toBe(node(id).position.x + TASK_BOX_SIZE.w / 2 - DELIVERABLE_BOX_SIZE.w / 2)
+  })
+
+  it('reads the items once per set of ids, in chunks of 100', async () => {
+    const { list } = setupFooter()
+    await ready()
+    const calls = pbsReads(list)
+    expect(calls).toHaveLength(1)
+    expect(calls[0][1]).toEqual({ in: { id: ['it1', 'it2', 'it3'] }, pageSize: 3 })
+  })
+
+  it('chunks a big item set by 100', async () => {
+    const many = Array.from({ length: 150 }, (_, i) => ({ id: `t${i}`, name: `T${i}`, parent_id: null, project_id: 'p1', planned_hours: 1, pbs_item_id: `it${i}` }))
+    const catalog = Object.fromEntries(many.map((t) => [t.pbs_item_id!, { id: t.pbs_item_id!, name: t.name, project_id: 'p1', done_count: 1, task_count: 1 }]))
+    const { list } = setupFooter({ rows: many, catalog })
+    await screen.findByTestId('node-deliverable:t0')
+    const calls = pbsReads(list)
+    expect(calls.map(([, o]) => (o as { in: { id: string[] } }).in.id).map((ids) => ids.length)).toEqual([100, 50])
+    const sent = [...(calls[0]![1]!.in?.id ?? []), ...(calls[1]![1]!.in?.id ?? [])]
+    expect(sent.sort()).toEqual(many.map((t) => t.pbs_item_id!).sort())
+  })
+
+  it('a refused read draws no footer and no error', async () => {
+    setupFooter({ reject: true })
+    await screen.findByTestId('node-A')
+    await act(() => new Promise((r) => setTimeout(r, 50)))
+    expect(rf.props.nodes.find((n) => n.id.startsWith('deliverable:'))).toBeUndefined()
+    expect(screen.queryByText('boom')).toBeNull()
+  })
+
+  it('draws no footer without the config or without any item in the list', async () => {
+    const { list } = setupFooter({ deliverables: null })
+    await screen.findByTestId('node-A')
+    expect(rf.props.nodes.find((n) => n.id.startsWith('deliverable:'))).toBeUndefined()
+    expect(pbsReads(list)).toHaveLength(0)
+    cleanup()
+    const noItems = setupFooter({ rows: pbsRows().map((r) => ({ ...r, pbs_item_id: null })) })
+    await screen.findByTestId('node-A')
+    expect(rf.props.nodes.find((n) => n.id.startsWith('deliverable:'))).toBeUndefined()
+    expect(pbsReads(noItems.list)).toHaveLength(0)
+  })
+
+  it('is detached: no edge, no handle, not draggable, selectable or insertable, and never saved', async () => {
+    const { saveViewLayout } = setupFooter()
+    await ready()
+    const f = foot('A')
+    expect(f.draggable).toBe(false)
+    expect(f.selectable).toBe(false)
+    expect(f.connectable).toBe(false)
+    expect(screen.getByTestId('node-deliverable:A').querySelector('input, .react-flow__handle')).toBeNull()
+    expect(rf.props.edges.some((e) => e.source.startsWith('deliverable:') || e.target.startsWith('deliverable:'))).toBe(false)
+    expect(rf.props.onConnect).toBeDefined() // the canvas still connects task boxes
+    act(() => rf.props.onNodeDragStop!(null, { ...node('A'), position: { x: node('A').position.x + 3000, y: node('A').position.y } }))
+    await waitFor(() => {
+      const saved = vi.mocked(saveViewLayout).mock.calls.find(([, , l]) => l.positions && Object.keys(l.positions).includes('A'))
+      expect(saved).toBeTruthy()
+      expect(Object.keys(saved![2].positions).some((k) => k.startsWith('deliverable:'))).toBe(false)
+    }, { timeout: 2000 })
+  })
+
+  it('follows its column when it moves, undoes with it, and drops the row with a lower box', async () => {
+    setupFooter()
+    await ready()
+    const before = foot('A').position
+    const recentered = () => expect(foot('A').position.x).toBe(node('A').position.x + TASK_BOX_SIZE.w / 2 - DELIVERABLE_BOX_SIZE.w / 2)
+    act(() => rf.props.onNodeDragStop!(null, { ...node('A'), position: { x: node('A').position.x + 3000, y: node('A').position.y } }))
+    await waitFor(recentered)
+    expect(foot('A').position.x).not.toBe(before.x)
+    // The move undoes: A comes back and its box follows.
+    await act(async () => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+    await waitFor(() => expect(foot('A').position.x).toBe(before.x))
+    // B (the lowest box) dropped far lower: the whole row moves down with it.
+    act(() => rf.props.onNodeDragStop!(null, { ...node('B'), position: { x: 0, y: 4000 } }))
+    await waitFor(() => expect(foot('A').position.y).toBe(node('B').position.y + TASK_BOX_SIZE.h + 48))
+    // Re-arrange puts the boxes back in the tree and the footers follow.
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Re-arrange' })))
+    await waitFor(recentered)
+    expect(foot('A').position.x).toBe(before.x)
+  })
+
+  it('clicking an item opens the task list filtered to the project and the item', async () => {
+    setupFooter()
+    await ready()
+    fireEvent.click(screen.getByText('Design docs'))
+    expect(push).toHaveBeenCalledTimes(1)
+    const url = new URL(`http://eerp${String(push.mock.calls[0][0])}`)
+    expect(url.pathname).toBe('/project/tasks')
+    expect(url.searchParams.get('filter[project_id]')).toBe('p1')
+    expect(url.searchParams.get('filter[pbs_item_id]')).toBe('it1')
+  })
+
+  it('PNG and PDF exports include the footer', async () => {
+    setupFooter()
+    await ready()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    expect(exportPng).toHaveBeenCalled()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, expect.objectContaining({ title: 'WBS' }), 'WBS')
+    expect(rf.props.nodes.some((n) => n.id === 'deliverable:A')).toBe(true)
+  })
+
+  it('draws the footer on a phone, and a tap opens the filtered list', async () => {
+    setViewportWidth(390)
+    try {
+      setupFooter()
+      await ready()
+      expect(foot('A')).toBeTruthy()
+      fireEvent.click(screen.getByText('Design docs'))
+      expect(push).toHaveBeenCalledTimes(1)
+    } finally {
+      setViewportWidth(1280)
+    }
   })
 })

@@ -1274,6 +1274,7 @@ function TreeRenderer<T extends HasId>({
         boxFields={[effective.wbsOrderField, 'name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
         hoursField={effective.pertHoursField ?? undefined}
         orderField={effective.wbsOrderField ?? undefined}
+        deliverables={effective.wbsDeliverables ?? undefined}
         onRecordsChange={setLiveRecords as (r: HasId[]) => void}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

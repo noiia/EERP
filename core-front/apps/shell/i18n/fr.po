@@ -2981,3 +2981,6 @@ msgstr "Sans parent"
 
 msgid "No task produces this"
 msgstr "Aucune tâche ne produit ce livrable"
+
+msgid "No deliverable"
+msgstr "Aucun livrable"

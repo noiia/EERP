@@ -2849,3 +2849,6 @@ msgstr ""
 
 msgid "No task produces this"
 msgstr ""
+
+msgid "No deliverable"
+msgstr ""

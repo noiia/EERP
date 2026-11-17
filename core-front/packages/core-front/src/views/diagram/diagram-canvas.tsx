@@ -36,6 +36,7 @@ import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps
 import type { HasId } from '../stores'
 import { freeSpot, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
 import { historyKey, type UndoHistory } from './history'
+import { DeliverableBox } from './deliverable-box'
 import { ObsBox } from './obs-box'
 import { PbsBox } from './pbs-box'
 import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
@@ -277,9 +278,13 @@ export interface DiagramCanvasProps {
   readOnly?: boolean
   /** Undo/redo: box moves are recorded in it, Ctrl+Z / Ctrl+Y and toolbar buttons drive it. */
   history?: UndoHistory
+  /** Extra, non-interactive nodes (the WBS deliverables footer): the caller positions them
+   * from the FINAL placed boxes on every render (never stored), and they stay out of the
+   * saved layout, the collision pass, the drag/move and insert paths and the history. */
+  extraNodes?: (placed: Record<string, Point>) => Node[]
 }
 
-const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox, pbs: PbsBox }
+const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox, pbs: PbsBox, deliverable: DeliverableBox }
 const NOTE_EDGE = 'note-link:'
 // No notes is no key: a layout without notes saves as it always did.
 const savedNotes = (notes: DiagramNote[]) => (notes.length ? notes : undefined)
@@ -505,7 +510,7 @@ function Canvas(props: DiagramCanvasProps) {
   // A drag frame re-renders only the canvas: every other box keeps its node object, so
   // React Flow skips it (2000 boxes would otherwise all re-render per frame).
   const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; selected: boolean; node: Node }>())
-  const rfNodes: Node[] = all.map((n) => {
+  const bodyNodes: Node[] = all.map((n) => {
     const position = live[n.id] ?? placed[n.id]
     const selected = selectedNodes.has(n.id)
     const prev = built.current.get(n.id)
@@ -523,6 +528,24 @@ function Canvas(props: DiagramCanvasProps) {
     built.current.set(n.id, { src: n, position, size: sizes[n.id], selected, node })
     return node
   })
+  // The extra nodes (the WBS deliverables footer) are positioned by the caller from the
+  // placed boxes above: they never drag, select, connect or get saved, and exports still
+  // see them (they are in the node list getNodesBounds measures).
+  const rfNodes: Node[] = [
+    ...bodyNodes,
+    ...(props.extraNodes
+      ? props.extraNodes(placed).map((n) => ({
+          ...n,
+          draggable: false,
+          selectable: false,
+          connectable: false,
+          deletable: false,
+          selected: false,
+          sourcePosition: vertical ? Position.Bottom : Position.Right,
+          targetPosition: vertical ? Position.Top : Position.Left,
+        }))
+      : []),
+  ]
 
   // The line a box at `rect` would be inserted into: the first it crosses, each line taken
   // straight from the source's out side to the target's in side (right → left in PERT,

@@ -167,6 +167,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   wbsParentField: 'parent_id',
   wbsGroupField: 'project_id',
   wbsOrderField: 'wbs_number',
+  // The WBS deliverables footer: the PBS items the column's tasks produce (ADR-039).
+  wbsDeliverables: { field: 'pbs_item_id', entity: 'project_pbs_item', labelField: 'name', doneField: 'done_count', totalField: 'task_count' },
   pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
   pertHoursField: 'planned_hours',
   // OBS chart of the pinned project (ADR-039).

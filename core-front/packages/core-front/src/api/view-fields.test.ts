@@ -32,6 +32,7 @@ describe('effectiveViewFields', () => {
         insights: null,
         matrix: null,
         pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -60,6 +61,7 @@ describe('effectiveViewFields', () => {
         insights: null,
         matrix: null,
         pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -93,6 +95,7 @@ describe('effectiveViewFields', () => {
         insights: null,
         matrix: null,
         pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -123,6 +126,7 @@ describe('effectiveViewFields', () => {
         insights: null,
         matrix: null,
         pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -176,6 +180,7 @@ describe('availableDisplayModes', () => {
         insights: null,
         matrix: null,
         pbs: null,
+        wbsDeliverables: null,
       }),
     ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false, pbs: false })
     expect(
@@ -203,6 +208,7 @@ describe('availableDisplayModes', () => {
         insights: null,
         matrix: null,
         pbs: null,
+        wbsDeliverables: null,
       }),
     ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false, pbs: false })
   })
