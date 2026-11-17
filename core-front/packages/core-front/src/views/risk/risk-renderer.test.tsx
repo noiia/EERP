@@ -155,7 +155,10 @@ describe('RiskRenderer', () => {
     for (const text of ['Late vendor', 'Likelihood :', 'Severity :', 'Detectability :', 'Criticity :', 'Second supplier', 'If it happens', 'Switch supplier']) {
       expect(within(tip).getByText(text)).toBeTruthy()
     }
-    expect(within(tip).getByText('6')).toBeTruthy()
+    const crit = within(tip).getByText('6').parentElement as HTMLElement
+    expect(crit.textContent).toBe('6 → 1')
+    expect(getComputedStyle(within(crit).getByText('6')).fontWeight).toBe('700')
+    expect(getComputedStyle(within(crit).getByText('1')).fontWeight).toBe('400')
   })
 
   describe('phone', () => {

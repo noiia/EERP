@@ -62,13 +62,16 @@ export function RiskMatrix({ rows, residual, onOpen, wide = false }: { rows: Ris
 
 const show = (v: number | string | null | undefined) => (v == null || v === '' ? '—' : String(v))
 
-/** The hover tile over a matrix chip: the risk's title, its scores (current or after
- * remediation, as the matrix shows), its remediation and its "if it happens" plan. */
+/** The hover tile over a matrix chip: the risk's title, its scores (current → after
+ * remediation, the mode's side in bold), its remediation and its "if it happens" plan. */
 export function RiskTip({ risk: r, residual }: { risk: RiskRow; residual: boolean }) {
   const t = useT()
-  const scores: [string, number | null | undefined][] = residual
-    ? [['Likelihood', r.residual_likelihood], ['Severity', r.residual_severity], ['Detectability', r.residual_detectability], ['Criticity', r.residual_criticity]]
-    : [['Likelihood', r.likelihood], ['Severity', r.severity_effective], ['Detectability', r.detectability], ['Criticity', r.criticity]]
+  const scores: [string, number | null | undefined, number | null | undefined][] = [
+    ['Likelihood', r.likelihood, r.residual_likelihood],
+    ['Severity', r.severity_effective, r.residual_severity],
+    ['Detectability', r.detectability, r.residual_detectability],
+    ['Criticity', r.criticity, r.residual_criticity],
+  ]
   const text = (label: string, v: string | null | undefined) => (
     <Box sx={{ mt: 0.75 }}>
       <Typography variant="body2" sx={{ fontWeight: 600, display: 'block' }}>{t(label)}</Typography>
@@ -80,9 +83,14 @@ export function RiskTip({ risk: r, residual }: { risk: RiskRow; residual: boolea
       <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{r.name}</Typography>
       {/* Each value right next to its label (max-content columns), not pushed to the far edge. */}
       <Box component="dl" sx={{ m: 0, mt: 0.5, display: 'grid', gridTemplateColumns: 'max-content max-content', columnGap: 1, '& dd': { m: 0 } }}>
-        {scores.map(([label, v]) => [
+        {scores.map(([label, now, after]) => [
           <Typography key={`${label}-k`} component="dt" variant="body2">{`${t(label)} :`}</Typography>,
-          <Typography key={`${label}-v`} component="dd" variant="body2" sx={{ fontWeight: 600 }}>{show(v)}</Typography>,
+          // Current → after remediation; the pair the matrix's mode plots is bold.
+          <Typography key={`${label}-v`} component="dd" variant="body2">
+            <Box component="span" sx={{ fontWeight: residual ? 400 : 700 }}>{show(now)}</Box>
+            {' → '}
+            <Box component="span" sx={{ fontWeight: residual ? 700 : 400 }}>{show(after)}</Box>
+          </Typography>,
         ])}
       </Box>
       {text('Remediation', r.remediation)}
