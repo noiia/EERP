@@ -150,6 +150,8 @@ const taskListFields: Fields = [
   { name: 'planned_hours', label: 'Planned hours', type: 'number' },
   { name: 'spent_hours', label: 'Spent hours', type: 'number', readOnly: true },
   { name: 'blocked', label: 'Blocked', type: 'boolean', readOnly: true },
+  // When the task moved into a closed stage (Go's trigger; ADR-041).
+  { name: 'closed_at', label: 'Closed at', type: 'date', widget: 'datetime', readOnly: true },
 ]
 
 const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
@@ -266,6 +268,8 @@ const taskFormFields: Fields = [
       ],
     },
   },
+  // When the task moved into a closed stage (Go's trigger; ADR-041).
+  { name: 'closed_at', label: 'Closed at', type: 'date', widget: 'datetime', readOnly: true },
 ]
 
 // Description first, then the task's links; the synthesized Settings page

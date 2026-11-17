@@ -25,7 +25,7 @@ func (m *projectModule) Register() error {
 		orm.Register[ProjectMember](orm.WithTableName("project_member"), orm.WithRowScope(ChildScope(p))),
 		orm.Register[ProjectStage](orm.WithTableName("project_stage"), orm.WithRowScope(StageScope(p))),
 		orm.Register[ProjectTask](orm.WithTableName("project_task"), orm.WithRowScope(TaskScope(p)),
-			orm.WithReadOnlyFields("spent_hours", "subtask_hours", "subtask_count", "subtask_done_count", "blocked", "closed")),
+			orm.WithReadOnlyFields("spent_hours", "subtask_hours", "subtask_count", "subtask_done_count", "blocked", "closed", "closed_at")),
 		orm.Register[ProjectTaskUser](orm.WithTableName("project_task_user"), orm.WithRowScope(TaskChildScope(p))),
 		orm.Register[ProjectTag](orm.WithTableName("project_tag")),
 		orm.Register[ProjectTaskTag](orm.WithTableName("project_task_tag"), orm.WithRowScope(TaskChildScope(p))),
@@ -40,6 +40,10 @@ func (m *projectModule) Register() error {
 			orm.WithReadOnlyFields("severity_computed", "severity_note")),
 		orm.Register[ProjectRiskTask](orm.WithTableName("project_risk_task"), orm.WithRowScope(RiskLinkScope(p))),
 		orm.Register[ProjectRiskCategory](orm.WithTableName("project_risk_category")),
+		// Trigger-maintained history (ADR-041): off the HTTP surface entirely,
+		// migrated like every registered table.
+		orm.Register[ProjectTaskStage](orm.WithTableName("project_task_stage"), orm.WithExcluded()),
+		orm.Register[ProjectRiskHistory](orm.WithTableName("project_risk_history"), orm.WithExcluded()),
 	} {
 		if err != nil {
 			return err

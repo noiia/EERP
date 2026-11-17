@@ -71,6 +71,7 @@ type ProjectTask struct {
 	SubtaskDoneCount int        `db:"subtask_done_count" json:"subtask_done_count"`
 	Blocked          bool       `db:"blocked,index" json:"blocked"`
 	Closed           bool       `db:"closed" json:"closed"` // mirror of its stage's
+	ClosedAt         *time.Time `db:"closed_at" json:"closed_at"` // when it moved into a closed stage (migrate.go)
 }
 
 // ProjectTaskUser assigns a user to a task (an assignee sees the task even
@@ -216,4 +217,37 @@ type ProjectRiskCategory struct {
 	TenantID uuid.UUID `db:"tenant_id"`
 	Name     string    `db:"name" json:"name"`
 	Color    *string   `db:"color" json:"color"`
+}
+
+// ProjectTaskStage is one span of a task's life in a stage: entered_at when
+// it moved in, left_at when it moved on (stage, project) or was deleted.
+// Kept by the trigger in migrate.go — one open row (left_at NULL) per live
+// task that has a stage, backfilled with entered_at = created_at for tasks
+// that predate it. Deliberately NOT model.BaseModel (no created/updated/deleted
+// columns: the span IS the row's whole state); excluded from the HTTP surface.
+type ProjectTaskStage struct {
+	ID        uuid.UUID  `db:"id,pk"`
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	TaskID    uuid.UUID  `db:"task_id,index"`
+	ProjectID uuid.UUID  `db:"project_id,index"`
+	StageID   uuid.UUID  `db:"stage_id"`
+	EnteredAt time.Time  `db:"entered_at"`
+	LeftAt    *time.Time `db:"left_at"`
+}
+
+// ProjectRiskHistory snapshots a risk's criticity once a day (recorded_on,
+// a DATE), so the register can show how its scores moved. Kept by the trigger
+// in migrate.go — an upsert on (risk_id, recorded_on) whenever criticity,
+// residual_criticity or the risk's deleted_at changes. Deliberately NOT
+// model.BaseModel (no soft delete: a day's row is overwritten, never hidden);
+// excluded from the HTTP surface.
+type ProjectRiskHistory struct {
+	ID                uuid.UUID  `db:"id,pk"`
+	TenantID          uuid.UUID  `db:"tenant_id,index"`
+	RiskID            uuid.UUID  `db:"risk_id"`
+	ProjectID         uuid.UUID  `db:"project_id,index"`
+	RecordedOn        time.Time  `db:"recorded_on"` // DATE in the database (Migrate narrows the type)
+	Criticity         *int       `db:"criticity"`
+	ResidualCriticity *int       `db:"residual_criticity"`
+	Deleted           bool       `db:"deleted"`
 }

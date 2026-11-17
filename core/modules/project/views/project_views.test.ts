@@ -178,4 +178,10 @@ describe('project views', () => {
     const config = registry.headerMenus().find((m) => m.module === 'project')!.menus.find((m) => m.label === 'Configuration')!
     expect(config.entries).toContainEqual(expect.objectContaining({ label: 'Risk categories', path: '/project/risk_categories', permission: 'project_risk_category:project_risk_category:read' }))
   })
+
+  it('shows the trigger-maintained closed_at read-only on the task list and form', () => {
+    for (const path of ['/project/tasks', '/project/tasks/:id']) {
+      expect(field(path, 'closed_at'), path).toMatchObject({ type: 'date', widget: 'datetime', readOnly: true })
+    }
+  })
 })
