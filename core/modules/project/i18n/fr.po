@@ -337,3 +337,12 @@ msgstr "Sam"
 
 msgid "Sun"
 msgstr "Dim"
+
+msgid "Unassigned"
+msgstr "Non assigné"
+
+msgid "All projects"
+msgstr "Tous les projets"
+
+msgid "Hours per week"
+msgstr "Heures par semaine"

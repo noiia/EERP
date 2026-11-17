@@ -451,11 +451,19 @@ const riskCategoryFields: Fields = [
   { name: 'color', label: 'Color', type: 'text', widget: 'color' },
 ]
 
+// Weekly capacities (WP10): one row per user, the Workload heatmap compares a
+// user's planned load against it (default 40 h/week when the row is missing).
+const capacityFields: Fields = [
+  { name: 'user_id', label: 'User', type: 'relation', relation: users, required: true },
+  { name: 'hours_per_week', label: 'Hours per week', type: 'number', required: true },
+]
+
 // Color groups are renamed, recolored and deleted from the Configuration menu.
 registerHeaderMenu('project', 'configuration', {
   entries: [
     { kind: 'line', label: 'Color groups', path: '/project/colors', permission: 'project_color:project_color:read' },
     { kind: 'line', label: 'Risk categories', path: '/project/risk_categories', permission: 'project_risk_category:project_risk_category:read' },
+    { kind: 'line', label: 'Capacities', path: '/project/capacities', permission: 'project_capacity:project_capacity:read' },
   ],
 })
 
@@ -634,6 +642,24 @@ const routes: FrontModule['routes'] = [
   {
     path: '/project/portfolio',
     descriptor: { entity: 'project', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project') },
+  },
+  // Weekly capacities, edited from the Configuration menu (no top-bar entry).
+  {
+    path: '/project/capacities',
+    descriptor: {
+      entity: 'project_capacity',
+      viewType: 'tree',
+      navLabel: 'Capacities',
+      hideFromTopBar: true,
+      fields: capacityFields,
+      formPath: '/project/capacities/:id',
+      createPermission: write('project_capacity'),
+      permissions: perm('project_capacity'),
+    },
+  },
+  {
+    path: '/project/capacities/:id',
+    descriptor: { entity: 'project_capacity', viewType: 'form', fields: capacityFields, permissions: perm('project_capacity') },
   },
 ]
 

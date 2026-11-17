@@ -336,3 +336,12 @@ msgstr ""
 
 msgid "Sun"
 msgstr ""
+
+msgid "Unassigned"
+msgstr ""
+
+msgid "All projects"
+msgstr ""
+
+msgid "Hours per week"
+msgstr ""
