@@ -98,7 +98,7 @@ export function Markdown({ text }: { text: string }) {
     }
   }
   return (
-    <Typography variant="body2" component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+    <Typography variant="body1" component="div" sx={{ lineHeight: 1.375, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
       {blocks}
     </Typography>
   )

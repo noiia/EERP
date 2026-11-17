@@ -98,6 +98,12 @@ msgstr "Envoyer"
 msgid "Add reaction"
 msgstr "Ajouter une réaction"
 
+msgid "Message actions"
+msgstr "Actions du message"
+
+msgid "React with"
+msgstr "Réagir avec"
+
 msgid "No messages yet."
 msgstr "Aucun message pour l'instant."
 

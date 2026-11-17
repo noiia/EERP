@@ -97,6 +97,12 @@ msgstr ""
 msgid "Add reaction"
 msgstr ""
 
+msgid "Message actions"
+msgstr ""
+
+msgid "React with"
+msgstr ""
+
 msgid "No messages yet."
 msgstr ""
 

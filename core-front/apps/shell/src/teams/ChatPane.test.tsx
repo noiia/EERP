@@ -71,6 +71,16 @@ describe('ChatPane', () => {
     await waitFor(() => expect(toggleReaction).toHaveBeenCalledWith('m1', '🎉'))
   })
 
+  it('reacts from the hover toolbar, which holds the only reaction button of a message', async () => {
+    renderPane()
+    const first = (await screen.findAllByRole('article'))[0]
+    const bar = within(first).getByRole('toolbar', { name: 'Message actions' })
+    expect(within(first).getAllByRole('button', { name: /add reaction/i })).toHaveLength(1)
+    expect(within(bar).getByRole('button', { name: /add reaction/i })).toBeInTheDocument()
+    fireEvent.click(within(bar).getByRole('button', { name: 'React with 😂' }))
+    await waitFor(() => expect(toggleReaction).toHaveBeenCalledWith('m1', '😂'))
+  })
+
   it('sends a message and appends it', async () => {
     postMessage.mockResolvedValue(msg('m3', '2026-01-03T10:00:00Z'))
     renderPane()

@@ -13,7 +13,9 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
-import { AvatarWithPresence, avatarUrl, T, useSessionStore, useT } from '@eerp/core-front'
+import { faFaceSmile } from '@fortawesome/free-regular-svg-icons'
+import { faEllipsis } from '@fortawesome/free-solid-svg-icons'
+import { AvatarWithPresence, avatarUrl, FontAwesomeIcon, T, useSessionStore, useT } from '@eerp/core-front'
 import { deleteMessage, editMessage, postMessage, toggleReaction, type Message, type Role } from './client'
 import { useChatStore } from './chat-store'
 import { Composer, type MentionCandidate } from './Composer'
@@ -78,71 +80,105 @@ function MessageEditor({ initial, onSave, onCancel }: { initial: string; onSave:
   )
 }
 
+const GUTTER = 72 // px: the avatar column, as on Discord
+const QUICK_REACTIONS = REACTIONS.slice(0, 3)
+const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+// Hidden but still focusable (opacity, not visibility), so tabbing into the toolbar reveals it.
+const toolbarSx = {
+  position: 'absolute', top: -16, right: 16, zIndex: 1, display: 'flex', alignItems: 'center', gap: 0.25, p: 0.25,
+  bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 1, boxShadow: 2,
+  opacity: 0, pointerEvents: 'none',
+} as const
+
+/** One message, Discord style: a full-width row highlighted on hover, the avatar in a left gutter, and a
+ * floating toolbar (quick reactions, the reaction picker, the options menu) on its top-right corner,
+ * shown on hover, keyboard focus, or a tap (the row is click-focusable). */
 function MessageItem({ m, stacked = false, onReact, onEdit, onDelete }: { m: Message; stacked?: boolean; onReact: (emoji: string) => void; onEdit?: (body: string) => Promise<void>; onDelete?: () => void }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [editing, setEditing] = useState(false)
   const sentAt = new Date(m.created_at).toLocaleString()
-  const edited = m.edited_at ? <Typography variant="caption" color="text.secondary" title={new Date(m.edited_at).toLocaleString()}>{t('(edited)')}</Typography> : null
-  const options = (onEdit || onDelete) && (
-    <>
-      <IconButton size="small" className="message-options" aria-label={t('Message options')} aria-haspopup="menu" aria-expanded={menu !== null} onClick={(e) => setMenu(e.currentTarget)}>⋮</IconButton>
-      <Menu anchorEl={menu} open={menu !== null} onClose={() => setMenu(null)}>
-        {onEdit && <MenuItem onClick={() => { setMenu(null); setEditing(true) }}><T text="Modify message" /></MenuItem>}
-        {onDelete && <MenuItem onClick={() => { setMenu(null); onDelete() }} sx={{ color: 'error.main' }}><T text="Delete message" /></MenuItem>}
-      </Menu>
-    </>
-  )
+  const edited = m.edited_at ? <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }} title={new Date(m.edited_at).toLocaleString()}>{t('(edited)')}</Typography> : null
+  const iconSx = { minWidth: 32, width: 32, height: 32, p: 0, fontSize: '1.1rem', color: 'text.secondary' }
+  const open = anchor !== null || menu !== null
   return (
     <Box
       component="article"
+      tabIndex={-1}
       data-stacked={stacked || undefined}
       title={stacked ? sentAt : undefined}
-      // A stacked message has no header: its options sit top-right, shown on hover or keyboard focus.
-      sx={stacked
-        ? { position: 'relative', pt: 0.25, pb: 0.5, '& .message-options': { position: 'absolute', top: 0, right: 0, opacity: 0 }, '&:hover .message-options, & .message-options:focus-visible, & .message-options[aria-expanded="true"]': { opacity: 1 }, '@media (hover: none)': { '& .message-options': { opacity: 1 } } }
-        : { pt: 1.25, pb: 0.5 }}
+      sx={{
+        position: 'relative', pl: `${GUTTER}px`, pr: 2, mt: stacked ? 0 : 2, py: 0.25, minHeight: stacked ? undefined : 44,
+        outline: 'none', bgcolor: open ? 'action.hover' : undefined,
+        '&:hover, &:focus-within': { bgcolor: 'action.hover' },
+        '&:hover .message-toolbar, &:focus-within .message-toolbar': { opacity: 1, pointerEvents: 'auto' },
+        ...(open && { '& .message-toolbar': { opacity: 1, pointerEvents: 'auto' } }),
+        '&:hover .message-time': { opacity: 1 },
+      }}
     >
-      {stacked ? options : (
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <AvatarWithPresence userId={m.author_id} label={m.author_name} size={24} src={avatarUrl(m.author_id, m.author_has_avatar)} />
-          <Typography variant="subtitle2" component="span">{m.author_name}</Typography>
-          <Typography variant="caption" color="text.secondary">{sentAt}</Typography>
-          {edited}
-          {options}
-        </Stack>
+      {stacked ? (
+        <Typography className="message-time" variant="caption" color="text.secondary" sx={{ position: 'absolute', left: 0, width: GUTTER, textAlign: 'center', top: 6, fontSize: '0.7rem', opacity: 0 }}>{hm(m.created_at)}</Typography>
+      ) : (
+        <>
+          <Box sx={{ position: 'absolute', left: 16, top: 4 }}>
+            <AvatarWithPresence userId={m.author_id} label={m.author_name} size={40} src={avatarUrl(m.author_id, m.author_has_avatar)} />
+          </Box>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
+            <Typography component="span" sx={{ fontWeight: 600, fontSize: '1rem' }}>{m.author_name}</Typography>
+            <Typography variant="caption" color="text.secondary" title={sentAt}>{sentAt}</Typography>
+          </Stack>
+        </>
       )}
       {editing && onEdit ? (
         <MessageEditor initial={m.body} onCancel={() => setEditing(false)} onSave={(body) => onEdit(body).then(() => setEditing(false))} />
       ) : (
         <>
           {m.body && <Markdown text={m.body} />}
-          {/* A stacked message has no header line to carry the marker. */}
-          {stacked && edited}
+          {edited}
         </>
       )}
       <ImageAttachments attachments={m.attachments} />
-      <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-        {m.reactions.map((r) => (
-          <Chip
-            key={r.emoji}
-            size="small"
-            label={`${r.emoji} ${r.count}`}
-            color={r.mine ? 'primary' : 'default'}
-            variant={r.mine ? 'filled' : 'outlined'}
-            onClick={() => onReact(r.emoji)}
-          />
+      {m.reactions.length > 0 && (
+        <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {m.reactions.map((r) => (
+            <Chip
+              key={r.emoji}
+              size="small"
+              label={`${r.emoji} ${r.count}`}
+              color={r.mine ? 'primary' : 'default'}
+              variant={r.mine ? 'filled' : 'outlined'}
+              onClick={() => onReact(r.emoji)}
+            />
+          ))}
+        </Stack>
+      )}
+      <Box className="message-toolbar" role="toolbar" aria-label={t('Message actions')} sx={toolbarSx}>
+        {QUICK_REACTIONS.map((e) => (
+          <Button key={e} sx={iconSx} aria-label={`${t('React with')} ${e}`} onClick={() => onReact(e)}>{e}</Button>
         ))}
-        <Button size="small" sx={{ minWidth: 0 }} aria-label={t('Add reaction')} onClick={(e) => setAnchor(e.currentTarget)}>☺</Button>
-        <Popover open={anchor !== null} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: 'top', horizontal: 'left' }} transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
-          <Stack direction="row">
-            {REACTIONS.map((e) => (
-              <Button key={e} sx={{ minWidth: 40 }} onClick={() => { setAnchor(null); onReact(e) }}>{e}</Button>
-            ))}
-          </Stack>
-        </Popover>
-      </Stack>
+        <Box sx={{ width: '1px', alignSelf: 'stretch', bgcolor: 'divider', mx: 0.25 }} />
+        <IconButton sx={iconSx} aria-label={t('Add reaction')} onClick={(e) => setAnchor(e.currentTarget)}>
+          <FontAwesomeIcon icon={faFaceSmile} />
+        </IconButton>
+        {(onEdit || onDelete) && (
+          <IconButton sx={iconSx} aria-label={t('Message options')} aria-haspopup="menu" aria-expanded={menu !== null} onClick={(e) => setMenu(e.currentTarget)}>
+            <FontAwesomeIcon icon={faEllipsis} />
+          </IconButton>
+        )}
+      </Box>
+      <Popover open={anchor !== null} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        <Stack direction="row">
+          {REACTIONS.map((e) => (
+            <Button key={e} sx={{ minWidth: 40, fontSize: '1.25rem' }} onClick={() => { setAnchor(null); onReact(e) }}>{e}</Button>
+          ))}
+        </Stack>
+      </Popover>
+      <Menu anchorEl={menu} open={menu !== null} onClose={() => setMenu(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        {onEdit && <MenuItem onClick={() => { setMenu(null); setEditing(true) }}><T text="Modify message" /></MenuItem>}
+        {onDelete && <MenuItem onClick={() => { setMenu(null); onDelete() }} sx={{ color: 'error.main' }}><T text="Delete message" /></MenuItem>}
+      </Menu>
     </Box>
   )
 }
@@ -285,9 +321,9 @@ export function ChatPane({
             <Button size="small" variant={panel ? 'contained' : 'text'} aria-pressed={panel} onClick={() => setPanel(!panel)}><T text="Folder" /></Button>
           )}
         </Stack>
-        <Box ref={scroller} onScroll={onScroll} sx={{ flex: 1, overflowY: 'auto', px: 2 }}>
+        <Box ref={scroller} onScroll={onScroll} sx={{ flex: 1, overflowY: 'auto', pt: 2, pb: 1 }}>
           {messages.length === 0 && (
-            <Typography color="text.secondary" sx={{ py: 2 }}><T text="No messages yet." /></Typography>
+            <Typography color="text.secondary" sx={{ py: 2, px: 2 }}><T text="No messages yet." /></Typography>
           )}
           {messages.map((m, i) => (
             <MessageItem
