@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the 16 validated Project views: critical path and baseline on Gantt, Kanban swimlanes, an **Insights** mode (burndown/burnup, cumulative flow, earned value, milestone roadmap, risk trend), a **Matrix** mode (Eisenhower, RACI, dependency matrix), a **PBS** diagram mode (product breakdown structure), and four pages (My day, Timesheet week, Workload, Portfolio).
+**Goal:** Add the 16 validated Project views: critical path and baseline on Gantt, Kanban swimlanes, an **Insights** mode (burndown/burnup, cumulative flow, earned value, milestone roadmap, risk trend), a **Matrix** mode (Eisenhower, RACI, dependency matrix), a **PBS** diagram mode (product breakdown structure) with a deliverables footer on the WBS, and four pages (My day, Timesheet week, Workload, Portfolio).
 
 **Architecture:**
 - **Backend** (`core/modules/project`):
@@ -44,6 +44,7 @@
   - The chart is shared data, like OBS: item writes (create, update, move, delete) are manager/admin only (403). Linking a task to an item is a task write, open to anyone who may edit the task.
   - Deleting an item clears its children's `parent_id` and its tasks' `pbs_item_id` in one transaction. Its children become roots and nothing disappears.
   - An item's progress = done / total over the live tasks linked to it **and to its descendants**. A leaf with no task is flagged `No task produces this`.
+  - **WBS footer:** each level-2 column of the WBS (a top-level task and its subtree) gets one detached deliverable box at the bottom of the diagram, listing the items its tasks produce (`No deliverable` when none). It is drawn, never stored, and takes no part in editing.
 - **Capacity:** `hours_per_week` in (0, 168]. A user with no row has 40.
 - **Workload:**
   - A task's planned_hours are spread evenly over the Mon–Fri days of [date_start, deadline] (both dates required, open tasks only), then split equally among its assignees. No assignee → the "Unassigned" row.
@@ -69,7 +70,7 @@
 
 ## Work Packages (one per person)
 
-The 19 tasks below are grouped into 11 work packages (WPs), each one branch and one pull request into `dev`. A WP starts once every WP in its **Blocked by** column is merged. The frontend WPs (5–10) also need `2026-11-16-project-phone-mode.md` merged first.
+The 20 tasks below are grouped into 11 work packages (WPs), each one branch and one pull request into `dev`. A WP starts once every WP in its **Blocked by** column is merged. The frontend WPs (5–10) also need `2026-11-16-project-phone-mode.md` merged first.
 
 | WP | Title | Tasks | Blocked by | Wave |
 |---|---|---|---|---|
@@ -83,7 +84,7 @@ The 19 tasks below are grouped into 11 work packages (WPs), each one branch and 
 | WP8 | Frontend: Matrices mode (Eisenhower, RACI, DSM) | 11, 12 | WP4, WP5 | 2 |
 | WP9 | Pages: plumbing, My day, Timesheet week | 13, 14 | — | 1 |
 | WP10 | Pages: Workload & Portfolio | 15, 16 | WP4, WP9 | 2 |
-| WP11 | PBS: deliverables backend & diagram mode | 18, 19 | WP5 | 2 |
+| WP11 | PBS: deliverables backend, diagram mode & WBS footer | 18, 19, 20 | WP5 | 2 |
 
 **Wave 1 (parallel from day one):** WP1, WP3, WP4, WP5, WP9. **Wave 2:** WP2, WP6, WP8, WP10, WP11. **Wave 3:** WP7.
 
@@ -108,7 +109,7 @@ The 19 tasks below are grouped into 11 work packages (WPs), each one branch and 
 | Go tests | `metrics_test.go`, `schedule_test.go`, `baseline_test.go`, `raci_test.go`, `history_test.go`, `pbs_test.go` (new), `scope_test.go` (table list) |
 | Descriptors | `core/modules/project/views/project_views.ts` (+ test) |
 | Engine config | `core-front/packages/core-front/src/views/descriptor.ts` (`ViewModeDefaults`), `src/api/view-fields.ts` (`DisplayMode`, availability), `views/renderers.tsx` (`MODE_LABELS`, dispatch), `views/lazy-widgets.tsx` |
-| Engine views | `views/gantt-renderer.tsx`, `views/kanban-renderer.tsx`, `views/insights/*` (new), `views/matrix/*` (new), `views/diagram/pbs-renderer.tsx` + `pbs-box.tsx` (new), `views/charts/line-chart.tsx` (new, shared by Insights) |
+| Engine views | `views/gantt-renderer.tsx`, `views/kanban-renderer.tsx`, `views/insights/*` (new), `views/matrix/*` (new), `views/diagram/pbs-renderer.tsx` + `pbs-box.tsx` + `deliverable-box.tsx` (new), `views/diagram/wbs.ts` + `wbs-renderer.tsx` (WBS footer), `views/charts/line-chart.tsx` (new, shared by Insights) |
 | Shell pages | `apps/shell/app/app/project/{my-day,timesheet-week,workload,portfolio}/page.tsx` (new), `apps/shell/src/project/*` (new client components) |
 | Seed & docs | `apps/shell/src/lib/dev-seed.ts` (`seedProjects`), `docs/adr/ADR-041-project-analytics-views.md` (new), `docs/adr/ADR-039-diagram-views.md` (§ PBS), root `CLAUDE.md` project bullet, `core-front/CLAUDE.md` rows |
 
@@ -504,4 +505,43 @@ flowchart LR
 - [ ] **Step 4: Run** the engine and project-module vitest suites. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(core-front): PBS diagram mode`.
 
-WP11 also adds a § PBS to [ADR-039](../../adr/ADR-039-diagram-views.md) (why the chart is shared like OBS, why progress rolls up, delete detaches), the PBS lines in root `CLAUDE.md` and `core-front/CLAUDE.md`, its i18n strings, and seeds one PBS per large demo project (`seedProjects`, items linked to about half the tasks).
+### Task 20: WBS deliverables footer
+
+Under each level-2 column of the WBS (a top-level task — `1`, `2`, `3`… — and its whole subtree; level 1 is the project box), a **deliverable box** sits at the bottom of the diagram. It lists the PBS items produced by the tasks of that column, so the WBS reads "this branch of work delivers that". The boxes are **detached**: no line joins them to the tree, and they are not tasks.
+
+```mermaid
+flowchart TD
+    P["Website v2"] --> T1["1 - Design"]
+    P --> T2["2 - Build"]
+    T1 --> T11["1.1 - Mock-ups"]
+    T2 --> T21["2.1 - Booking API"]
+    T2 --> T22["2.2 - Home page"]
+    T11 ~~~ D1["Deliverables<br/>Style guide 2/2"]
+    T22 ~~~ D2["Deliverables<br/>Booking flow 1/3<br/>Home page 2/2"]
+    classDef deliv stroke-dasharray: 4 3
+    class D1,D2 deliv
+```
+
+**Files:** modify `views/diagram/wbs.ts` (+ `wbs.test.ts`), `views/diagram/wbs-renderer.tsx` (+ `wbs-renderer.test.tsx`), `descriptor.ts`, `core/modules/project/views/project_views.ts` (+ test). Create `views/diagram/deliverable-box.tsx`.
+
+**Interfaces:**
+- Produces: `ViewModeDefaults.wbsDeliverables?: { field: string; entity: string; labelField: string; doneField?: string; totalField?: string }`. Project value: `{ field: 'pbs_item_id', entity: 'project_pbs_item', labelField: 'name', doneField: 'done_count', totalField: 'task_count' }`.
+- `wbsColumnDeliverables(nodes: Record<string, WbsNode>, rows: WbsInput[], itemOf: (id: string) => string | null): Map<string /* level-2 task id */, string[] /* item ids, first-seen in WBS order, unique */>` in `wbs.ts` — walks every task of the column, folded ones included.
+
+- [ ] **Step 1: Write the failing tests:**
+  - `wbs.test.ts`: a column whose tasks link items A, B, A → `[A, B]`; a deep descendant's item counts for its level-2 ancestor; a folded subtree still counts; a task with no parent and no group is its own column; an item id missing from the rows is ignored.
+  - `wbs-renderer.test.tsx`:
+    - One deliverable box per level-2 column, every box on one row below the lowest visible box (48px gap), each centered under its level-2 box. It follows the column when that box is moved, and the row moves down when a box is dropped lower.
+    - A box lists each item's name and `done / total` (from the item's `done_count`/`task_count`); a column with no item shows a dashed `No deliverable` box.
+    - Detached: no edge reaches it, no connector handle, it can't be dragged, selected, inserted into or deleted, and it is left out of the saved layout, the undo history, `clearLines` and the auto-layout.
+    - Clicking an item opens `/project/tasks?filter[project_id]=<its project>&filter[pbs_item_id]=<item>`.
+    - Without `wbsDeliverables`, or with no PBS item in the whole list, no footer is drawn (lists without PBS look as today).
+    - Items are read once per set of item ids (`in[id]=`, chunks of 100); a refused read draws no footer and no error.
+    - PNG/PDF exports include the footer.
+    - At 390px the footer still draws, and tapping an item opens the filtered list.
+- [ ] **Step 2: Run.** Expected: FAIL.
+- [ ] **Step 3: Implement.** The footer boxes are extra React Flow nodes with `draggable: false`, `selectable: false`, `connectable: false`, positioned from the current box positions on every render (never stored). Filter them out before `onMove`, layout saves, history steps and collision passes.
+- [ ] **Step 4: Run** the engine and project-module vitest suites. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(core-front): WBS deliverables footer`.
+
+WP11 also adds a § PBS to [ADR-039](../../adr/ADR-039-diagram-views.md) (why the chart is shared like OBS, why progress rolls up, delete detaches, the WBS footer), the PBS lines in root `CLAUDE.md` and `core-front/CLAUDE.md`, its i18n strings, and seeds one PBS per large demo project (`seedProjects`, items linked to about half the tasks).
