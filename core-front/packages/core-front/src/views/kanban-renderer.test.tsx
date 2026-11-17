@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // A card click (no drag) navigates to the record's form via the App Router.
@@ -12,6 +12,12 @@ import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
 import { RelationOpsProvider as ColorOpsProvider, type RelationOps } from './relation-ops'
 import { ApiError } from '../api/errors'
+import { useSessionStore } from './session-store'
+import { setViewportWidth } from '../test/viewport'
+
+function grant(...permissions: string[]) {
+  useSessionStore.setState({ identity: { userId: 'u1', tenantId: 't1', roles: [], permissions } })
+}
 
 interface Deal {
   id: string
@@ -461,6 +467,20 @@ describe('KanbanRenderer with many2one columns', () => {
     expect(screen.getByRole('group', { name: 'New' })).toHaveTextContent('Write spec')
   })
 
+  it('refuses a move to a merged column without a match, like a drop', async () => {
+    setViewportWidth(390)
+    grant('task:task:write')
+    await renderBoard({ initialData: tasks })
+    await waitFor(() => expect(groupNames()).toEqual(['New', 'Review', 'In progress', 'Done', 'No status']))
+    fireEvent.click(screen.getByRole('button', { name: 'Move Write spec' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Review' }))
+    await screen.findByText('No column named Review exists for this card.')
+    expect(taskUpdate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Move Loose end' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New' }))
+    await waitFor(() => expect(taskUpdate).toHaveBeenCalledWith('t3', { stage_id: 'a-new' }))
+  })
+
   it('queries a merged column with in[] over its ids', async () => {
     await renderBoard({ serverOptions: {} })
     await waitFor(() =>
@@ -644,5 +664,48 @@ describe('color ribbon', () => {
     expect(ribbonOf(screen.getByTestId('kanban-card-2'))).toBeNull()
     // The color field is not printed as a card field.
     expect(screen.queryByText('Color groups')).toBeNull()
+  })
+})
+
+describe('KanbanRenderer on phone', () => {
+  const update = vi.fn(async (id: string, body: Partial<Deal>) => ({ id, ...body }) as Deal)
+  const renderBoard = () =>
+    render(<KanbanRenderer descriptor={descriptor} initialData={records} actions={{ create: vi.fn(), update }} statusField="status" />)
+
+  beforeEach(() => {
+    update.mockClear()
+    grant('deals:deals:write')
+  })
+  afterEach(() => useSessionStore.setState({ identity: null }))
+
+  it('sizes unfolded columns to 85% of the board and snaps them', () => {
+    setViewportWidth(390)
+    renderBoard()
+    expect(getComputedStyle(screen.getByRole('group', { name: 'open' })).flexBasis).toBe('85%')
+    expect(screen.getByRole('group', { name: 'open' }).parentElement).toHaveStyle({ scrollSnapType: 'x mandatory' })
+  })
+
+  it('moves a card with the "Move to" menu', async () => {
+    setViewportWidth(390)
+    renderBoard()
+    const button = screen.getByRole('button', { name: 'Move Acme' })
+    expect(button).toHaveStyle({ width: '40px', height: '40px' })
+    fireEvent.click(button)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'won' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { status: 'won' }))
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('hides "Move to" without write permission', () => {
+    setViewportWidth(390)
+    grant('deals:deals:read')
+    renderBoard()
+    expect(screen.queryByRole('button', { name: /^Move / })).toBeNull()
+  })
+
+  it('keeps 240px columns and no Move button on desktop', () => {
+    renderBoard()
+    expect(getComputedStyle(screen.getByRole('group', { name: 'open' })).flexBasis).toBe('240px')
+    expect(screen.queryByRole('button', { name: /^Move / })).toBeNull()
   })
 })

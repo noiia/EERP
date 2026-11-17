@@ -2490,6 +2490,9 @@ msgstr ""
 msgid "Add a table to search in."
 msgstr ""
 
+msgid "Move"
+msgstr ""
+
 msgid "Move up"
 msgstr ""
 

@@ -8,6 +8,10 @@ import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import ButtonBase from '@mui/material/ButtonBase'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import { usePermission } from '../auth/Can'
+import { usePhone } from './use-phone'
 import TextField from '@mui/material/TextField'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -105,6 +109,8 @@ export function KanbanRenderer<T extends HasId>({
   const router = useRouter()
   const { formPath } = descriptor
   const relationOps = useRelationOps()
+  const phone = usePhone()
+  const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
 
   const statusDescriptor = descriptor.fields.find((f) => f.name === statusField)
   const relation = statusDescriptor?.type === 'relation' && statusDescriptor.relation?.kind === 'many2one'
@@ -271,6 +277,8 @@ export function KanbanRenderer<T extends HasId>({
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  // Phone: the card whose "Move to" menu is open (HTML5 drag never fires on touch).
+  const [moving, setMoving] = useState<{ id: string; anchor: HTMLElement } | null>(null)
 
   function statusOf(record: T): string {
     const raw = (record as Record<string, unknown>)[statusField]
@@ -294,18 +302,25 @@ export function KanbanRenderer<T extends HasId>({
     }
   }
 
-  function dropCard(column: KanbanColumn | null) {
-    if (!draggingId) return
-    if (!column) return void moveField(draggingId, null)
-    if (!config) return void moveField(draggingId, column.key)
-    const card = records.find((r) => r.id === draggingId) as Record<string, unknown> | undefined
+  function dropCard(column: KanbanColumn | null, id: string) {
+    if (!column) return void moveField(id, null)
+    if (!config) return void moveField(id, column.key)
+    const card = records.find((r) => r.id === id) as Record<string, unknown> | undefined
     const target = resolveDropTarget(column, config.scopeField ? card?.[config.scopeField] : undefined, config)
     if (target == null) {
       setColumnError({ code: 'VALIDATION_ERROR', message: t('No column named {name} exists for this card.').replace('{name}', column.label) })
       return
     }
     setColumnError(null)
-    void moveField(draggingId, target)
+    void moveField(id, target)
+  }
+
+  /** The first card field's text, which names a card to a screen reader. */
+  function moveLabel(record: T): string {
+    const f = cardFields[0]
+    if (!f) return ''
+    const rec = record as Record<string, unknown>
+    return orderLabel(descriptor, f.name, rec) ?? labelOf(f.name, rec[f.name])
   }
 
   function addColumn() {
@@ -368,6 +383,9 @@ export function KanbanRenderer<T extends HasId>({
     return (server.counts[column] ?? 0) + shown - loaded
   }
 
+  const movingRecord = moving ? records.find((r) => r.id === moving.id) : undefined
+  const currentKey = movingRecord ? statusOf(movingRecord) : undefined
+
   return (
     <Box>
       <ErrorAlert error={error} />
@@ -375,7 +393,7 @@ export function KanbanRenderer<T extends HasId>({
       {quick.dialog}
       <ErrorAlert error={columnError} />
       <Box
-        sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1, alignItems: 'flex-start' }}
+        sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1, alignItems: 'flex-start', ...(phone && { scrollSnapType: 'x mandatory' }) }}
         // `justifyContent: 'safe center'` as an sx value gets silently dropped by
         // MUI's system/emotion serialization (not a browser support gap — the
         // declaration never reaches the generated CSS rule at all), so it's set via
@@ -404,12 +422,13 @@ export function KanbanRenderer<T extends HasId>({
                 e.preventDefault()
                 if (draggingColumn) {
                   if (column) reorderColumns(draggingColumn, column.key)
-                } else dropCard(column)
+                } else if (draggingId) dropCard(column, draggingId)
               }}
               onClick={folded ? undefined : (e) => onColumnClick(e, column)}
               sx={{
-                minWidth: folded ? 0 : 240,
-                flex: folded ? '0 0 auto' : '0 0 240px',
+                minWidth: folded || phone ? 0 : 240,
+                flex: folded ? '0 0 auto' : phone ? '0 0 85%' : '0 0 240px',
+                ...(phone && !folded && { scrollSnapAlign: 'start' }),
                 bgcolor: 'action.hover',
                 borderRadius: 1,
                 p: 1,
@@ -477,6 +496,18 @@ export function KanbanRenderer<T extends HasId>({
                       >
                         <ColorRibbon colors={colors.get(record.id)} />
                         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                          {phone && canWrite ? (
+                            <IconButton
+                              aria-label={`${t('Move')} ${moveLabel(record)}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setMoving({ id: record.id, anchor: e.currentTarget })
+                              }}
+                              sx={{ float: 'right', width: 40, height: 40, mt: -0.5, mr: -0.5 }}
+                            >
+                              <FontAwesomeIcon icon={byPrefixAndName.fas['arrows-up-down-left-right']} size="sm" />
+                            </IconButton>
+                          ) : null}
                           {cardFields.map((f, i) => (
                             <Typography
                               key={f.name}
@@ -519,6 +550,23 @@ export function KanbanRenderer<T extends HasId>({
           </Box>
         ) : null}
       </Box>
+      {moving ? (
+        <Menu open anchorEl={moving.anchor} onClose={() => setMoving(null)}>
+          {[...columns, null]
+            .filter((column) => (column?.key ?? NO_STATUS) !== currentKey)
+            .map((column) => (
+              <MenuItem
+                key={column?.key ?? NO_STATUS}
+                onClick={() => {
+                  setMoving(null)
+                  dropCard(column, moving.id)
+                }}
+              >
+                {column ? column.label : t('No status')}
+              </MenuItem>
+            ))}
+        </Menu>
+      ) : null}
     </Box>
   )
 }

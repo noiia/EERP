@@ -2622,6 +2622,9 @@ msgstr "Les résultats sont regroupés par table, dans cet ordre."
 msgid "Add a table to search in."
 msgstr "Ajoutez une table dans laquelle chercher."
 
+msgid "Move"
+msgstr "Déplacer"
+
 msgid "Move up"
 msgstr "Monter"
 
