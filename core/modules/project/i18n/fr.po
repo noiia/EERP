@@ -283,3 +283,57 @@ msgstr "Premiers 1000 affichés"
 
 msgid "Actions"
 msgstr "Actions"
+
+msgid "Timesheet week"
+msgstr "Semaine de temps"
+
+msgid "Workload"
+msgstr "Charge"
+
+msgid "Portfolio"
+msgstr "Portefeuille"
+
+msgid "Previous week"
+msgstr "Semaine précédente"
+
+msgid "Next week"
+msgstr "Semaine suivante"
+
+msgid "Add task"
+msgstr "Ajouter une tâche"
+
+msgid "Search tasks"
+msgstr "Rechercher des tâches"
+
+msgid "No matching tasks"
+msgstr "Aucune tâche correspondante"
+
+msgid "Several entries: edit them in Timesheets"
+msgstr "Plusieurs saisies : modifiez-les dans Timesheets"
+
+msgid "Total"
+msgstr "Total"
+
+msgid "Totals"
+msgstr "Totaux"
+
+msgid "Mon"
+msgstr "Lun"
+
+msgid "Tue"
+msgstr "Mar"
+
+msgid "Wed"
+msgstr "Mer"
+
+msgid "Thu"
+msgstr "Jeu"
+
+msgid "Fri"
+msgstr "Ven"
+
+msgid "Sat"
+msgstr "Sam"
+
+msgid "Sun"
+msgstr "Dim"

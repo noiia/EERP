@@ -282,3 +282,57 @@ msgstr ""
 
 msgid "Actions"
 msgstr ""
+
+msgid "Timesheet week"
+msgstr ""
+
+msgid "Workload"
+msgstr ""
+
+msgid "Portfolio"
+msgstr ""
+
+msgid "Previous week"
+msgstr ""
+
+msgid "Next week"
+msgstr ""
+
+msgid "Add task"
+msgstr ""
+
+msgid "Search tasks"
+msgstr ""
+
+msgid "No matching tasks"
+msgstr ""
+
+msgid "Several entries: edit them in Timesheets"
+msgstr ""
+
+msgid "Total"
+msgstr ""
+
+msgid "Totals"
+msgstr ""
+
+msgid "Mon"
+msgstr ""
+
+msgid "Tue"
+msgstr ""
+
+msgid "Wed"
+msgstr ""
+
+msgid "Thu"
+msgstr ""
+
+msgid "Fri"
+msgstr ""
+
+msgid "Sat"
+msgstr ""
+
+msgid "Sun"
+msgstr ""
