@@ -188,6 +188,8 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
                     px: { xs: layout.pageInsetPhone, sm: layout.pageInsetX },
                     py: { xs: layout.pageInsetPhone, sm: layout.pageInsetY },
                     overflowX: 'auto',
+                    // On phone the inset IS the gutter: every page's MUI Container drops its own 16px.
+                    [`@media (max-width:${layout.phoneMaxWidth - 0.05}px)`]: { '& .MuiContainer-root': { px: 0 } },
                     '@media print': { p: 0, overflowX: 'visible' },
                   }}
                 >

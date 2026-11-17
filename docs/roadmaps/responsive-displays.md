@@ -627,8 +627,8 @@ gives every list display mode a phone layout.
 - At ≥ 600px the DOM is unchanged, apart from added `data-testid`s and the diagram
   canvas's Full screen button (also offered on desktop).
 - On phone the page inset is `layout.pageInsetPhone` (8px) instead of `5vw`/`5vh`
-  (`app/app/layout.tsx`); the module page's `Container` drops its own 16px gutter on phone
-  (`px: { xs: 0, sm: 3 }`) so the total is 8px. Anything that cancels the inset (a form's top margin, Teams'
+  (`app/app/layout.tsx`), and that layout drops every MUI `Container`'s own 16px gutter on
+  phone (`.erp-page .MuiContainer-root`), so every `/app` page sits 8px from the edge. Anything that cancels the inset (a form's top margin, Teams'
   full-bleed workspace) cancels the phone value on phone.
 - Tests: `setViewportWidth(390)` (engine `src/test/viewport.ts`) makes `matchMedia`
   answer for that width; every test starts at 1280px.

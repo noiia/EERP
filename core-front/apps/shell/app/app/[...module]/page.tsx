@@ -84,8 +84,6 @@ export default async function ModulePage({ params }: ModulePageProps) {
       maxWidth={false}
       sx={{
         py: 4,
-        // The page inset (layout.tsx) is the phone gutter: drop the Container's own 16px there, keep its 24px from sm up.
-        px: { xs: 0, sm: 3 },
         ...(route.descriptor.viewType === 'tree' || route.descriptor.viewType === 'form'
           ? { pt: 0 }
           : {}),
