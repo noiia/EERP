@@ -216,6 +216,7 @@ describe('seedDemoData', () => {
       'project_task_color',
       'contact_company',
       'project_obs_box',
+      'project_task_raci',
       'project_risk',
       'project_risk_task',
       'report_page_format',

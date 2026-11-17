@@ -83,13 +83,16 @@ describe('project views', () => {
     }
   })
 
-  it('gives the task form its five notebook pages', () => {
+  it('gives the task form its six notebook pages', () => {
     const registry = new ModuleRegistry()
     registry.register(mod, { appMode: true })
     const notebook = JSON.stringify(registry.formDescriptorFor('project_task')!.layout)
-    for (const title of ['Description', 'Subtasks', 'Blocked by', 'Blocking', 'Timesheets']) {
+    for (const title of ['Description', 'Subtasks', 'Blocked by', 'Blocking', 'Timesheets', 'RACI']) {
       expect(notebook).toContain(`"title":"${title}"`)
     }
+    const raci = field('/project/tasks/:id', 'raci')
+    expect(raci.relation).toMatchObject({ entity: 'project_task_raci', kind: 'one2many', inverseField: 'task_id', labelField: 'user_id' })
+    expect((raci.widgetOptions!.columns as { key: string }[]).map((c) => c.key)).toEqual(['user_id', 'role'])
     expect(field('/project/tasks/:id', 'subtasks').relation).toMatchObject({ kind: 'one2many', inverseField: 'parent_id' })
     const timesheets = field('/project/tasks/:id', 'timesheets')
     expect(timesheets.relation).toMatchObject({ kind: 'one2many', inverseField: 'task_id', labelField: 'date' })

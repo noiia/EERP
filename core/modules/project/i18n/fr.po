@@ -277,3 +277,6 @@ msgstr "150 premières tâches affichées"
 
 msgid "First 1000 shown"
 msgstr "1000 premières affichées"
+
+msgid "No one accountable"
+msgstr "Personne n'est responsable"

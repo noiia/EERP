@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { MatrixConfig } from '../../api/view-fields'
 import { ApiError } from '../../api/errors'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
@@ -367,5 +367,130 @@ describe('MatrixRenderer Dependencies (DSM) tab', () => {
     expect(getComputedStyle(rowHeader).left).toBe('0px')
     expect(getComputedStyle(colHeader).position).toBe('sticky')
     expect(getComputedStyle(colHeader).top).toBe('0px')
+  })
+})
+
+describe('MatrixRenderer RACI tab', () => {
+  const RACI_TASKS = [task('t3', { wbs_number: '3' }), task('t1', { wbs_number: '1' }), task('t2', { wbs_number: '2' })]
+  const RACI_MEMBERS = [
+    { id: 'pm3', user_id: 'u3', created_at: '2026-06-02T00:00:00Z' },
+    { id: 'pm2', user_id: 'u2', created_at: '2026-06-01T00:00:00Z' },
+  ]
+  const RACI_ROWS = [{ id: 'r1', task_id: 't2', user_id: 'u9', role: 'A', created_at: '2026-06-01T00:00:00Z' }]
+
+  beforeEach(() => {
+    setViewportWidth(1280)
+    canWriteRaci.value = true
+  })
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it("Columns are the project's manager plus members (the `project_member` rows, plus anyone already holding a RACI role). Rows are tasks in WBS order.", async () => {
+    const { ops } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+    renderRenderer(ops)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    const header = await screen.findByTestId('raci-header')
+    // Manager first, then the members in created_at order, then the role holder.
+    expect(within(header).getAllByTestId(/raci-col-/).map((el) => el.textContent)).toEqual([
+      'manager@ex.com',
+      'member@ex.com',
+      'other@ex.com',
+      'holder@ex.com',
+    ])
+    // Rows in wbs_number order despite the shuffled fetch order (the row
+    // cells carry the task id; the first distinct ids in reading order are
+    // the row order).
+    const grid = screen.getByTestId('raci-grid')
+    const rowOrder = [
+      ...new Set(
+        within(grid)
+          .getAllByTestId(/^raci-cell-/)
+          .map((el) => (el.getAttribute('data-testid') ?? '').replace('raci-cell-', '').split('-')[0]),
+      ),
+    ]
+    expect(rowOrder).toEqual(['t1', 't2', 't3'])
+    // The stored role letter sits in its cell; an unassigned cell is blank.
+    expect(screen.getByTestId('raci-cell-t2-u9').textContent).toBe('A')
+    expect(screen.getByTestId('raci-cell-t1-u2').textContent).toBe('')
+  })
+
+  it('With write permission, tapping a cell cycles `– → R → A → C → I → –` (create / update / delete on `raciEntity`). A 422 `ONE_ACCOUNTABLE` shows Go\'s message in the banner and reverts the cell. A row without an `A` is flagged `No one accountable`.', async () => {
+    const { ops, create, update, remove } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+    renderRenderer(ops)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    await screen.findByTestId('raci-cell-t1-u2')
+
+    const cellT1 = () => screen.getByTestId('raci-cell-t1-u2')
+    const settle = () => act(async () => {})
+
+    // – -> R: a create on the raci entity (the row id lands after it resolves).
+    fireEvent.click(cellT1())
+    expect(create).toHaveBeenCalledWith('project_task_raci', { task_id: 't1', user_id: 'u2', role: 'R' })
+    expect(cellT1().textContent).toBe('R')
+    await settle()
+    // R -> A -> C -> I: updates on the created row.
+    fireEvent.click(cellT1())
+    expect(update).toHaveBeenLastCalledWith('project_task_raci', 'new-raci', { role: 'A' })
+    expect(cellT1().textContent).toBe('A')
+    await settle()
+    fireEvent.click(cellT1())
+    expect(update).toHaveBeenLastCalledWith('project_task_raci', 'new-raci', { role: 'C' })
+    await settle()
+    fireEvent.click(cellT1())
+    expect(update).toHaveBeenLastCalledWith('project_task_raci', 'new-raci', { role: 'I' })
+    await settle()
+    // I -> –: the row is deleted.
+    fireEvent.click(cellT1())
+    expect(remove).toHaveBeenCalledWith('project_task_raci', 'new-raci')
+    expect(cellT1().textContent).toBe('')
+    await settle()
+
+    // t2 already has its A (u9): promoting u2 to A is a 422 ONE_ACCOUNTABLE —
+    // the banner shows Go's message and the cell reverts to R.
+    fireEvent.click(screen.getByTestId('raci-cell-t2-u2'))
+    expect(create).toHaveBeenLastCalledWith('project_task_raci', { task_id: 't2', user_id: 'u2', role: 'R' })
+    await settle()
+    update.mockRejectedValueOnce(new ApiError({ code: 'ONE_ACCOUNTABLE', message: 'a task can have only one accountable', status: 422 }))
+    fireEvent.click(screen.getByTestId('raci-cell-t2-u2'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('a task can have only one accountable')
+    expect(screen.getByTestId('raci-cell-t2-u2').textContent).toBe('R')
+
+    // A row without an A is flagged; the row that has one is not.
+    expect(screen.getByTestId('raci-row-t1')).toHaveTextContent('No one accountable')
+    expect(screen.getByTestId('raci-row-t2')).not.toHaveTextContent('No one accountable')
+  })
+
+  it('Read-only users see letters only.', async () => {
+    canWriteRaci.value = false
+    const { ops } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+    renderRenderer(ops)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    await screen.findByTestId('raci-cell-t2-u9')
+    // The letters render, but the grid has no buttons at all.
+    expect(screen.getByTestId('raci-cell-t2-u9').textContent).toBe('A')
+    expect(screen.getByTestId('raci-grid').querySelector('button')).toBeNull()
+    // Tapping does nothing.
+    fireEvent.click(screen.getByTestId('raci-cell-t2-u9'))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('On phone the grid becomes a per-task card listing `R: …, A: …, C: …, I: …`, and an `Edit` button opens a dialog with one select per person.', async () => {
+    setViewportWidth(390)
+    const { ops } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+    renderRenderer(ops)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    const card = await screen.findByTestId('raci-card-t2')
+    expect(within(card).getByText('R: –')).toBeInTheDocument()
+    expect(within(card).getByText('A: holder@ex.com')).toBeInTheDocument()
+    expect(within(card).getByText('C: –')).toBeInTheDocument()
+    expect(within(card).getByText('I: –')).toBeInTheDocument()
+
+    fireEvent.click(within(card).getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getAllByRole('combobox')).toHaveLength(4) // one select per person
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
   })
 })
