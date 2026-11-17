@@ -277,3 +277,25 @@ type ProjectBaselineTask struct {
 	Deadline     *time.Time `db:"deadline" json:"deadline"`
 	PlannedHours float64    `db:"planned_hours" json:"planned_hours"`
 }
+
+// ProjectTaskRaci gives a staff user one R/A/C/I role on a task (the RACI
+// matrix). project_id is the task's, set server-side like project_task_user.
+// Unique live (task_id, user_id) and one accountable per task (the partial
+// unique live (task_id) WHERE role = 'A') are hand-written in migrate.go.
+type ProjectTaskRaci struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id"`
+	ProjectID uuid.UUID `db:"project_id,index" json:"project_id"`
+	TaskID    uuid.UUID `db:"task_id,index" json:"task_id"`
+	UserID    uuid.UUID `db:"user_id,index" json:"user_id"`
+	Role      string    `db:"role" json:"role"` // "R" | "A" | "C" | "I"
+}
+
+// ProjectCapacity is a user's planned hours per week for the workload view.
+// Shared by the whole tenant (no row scope); a user without a row is 40.
+type ProjectCapacity struct {
+	model.BaseModel
+	TenantID     uuid.UUID `db:"tenant_id"`
+	UserID       uuid.UUID `db:"user_id,index" json:"user_id"`
+	HoursPerWeek float64   `db:"hours_per_week" json:"hours_per_week"`
+}

@@ -60,6 +60,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		"project_risk_category":   h.ValidateRiskCategoryBody,
 		"project_baseline":        h.ValidateBaselineBody,
 		"project_baseline_task":   h.ValidateBaselineTaskBody,
+		"project_task_raci":       h.ValidateRaciBody,
+		"project_capacity":        h.ValidateCapacityBody,
 	}
 	for table, guard := range guards {
 		g := generic(table)
@@ -409,7 +411,7 @@ func moveTask(c *echo.Context, tx *orm.Tx, tenant, task, target uuid.UUID) error
 		WHERE t.id IN (SELECT id FROM tree)`, task, tenant, target); err != nil {
 		return err
 	}
-	for _, table := range []string{"project_timesheet", "project_task_user", "project_task_tag", "project_task_color", "project_task_dependency"} {
+	for _, table := range []string{"project_timesheet", "project_task_user", "project_task_tag", "project_task_color", "project_task_dependency", "project_task_raci"} {
 		if _, err := tx.Exec(ctx, tree+`
 			UPDATE `+table+` SET project_id = $3, updated_at = now()
 			WHERE tenant_id = $2 AND task_id IN (SELECT id FROM tree)`, task, tenant, target); err != nil {

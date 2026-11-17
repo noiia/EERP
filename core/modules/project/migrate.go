@@ -54,6 +54,15 @@ var migrations = slices.Concat(
 		check("project", "project_visibility", "visibility IN ('everyone', 'members')"),
 		check("project_timesheet", "project_timesheet_hours", "hours > 0"),
 
+		// ── RACI and capacities: one role per user per task, and at most one
+		// accountable per task (the partial index; a 23505 on it is a 422
+		// ONE_ACCOUNTABLE, validate.go).
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_live ON project_task_raci (task_id, user_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_one_accountable ON project_task_raci (task_id) WHERE deleted_at IS NULL AND role = 'A'`,
+		check("project_task_raci", "project_task_raci_role", "role IN ('R', 'A', 'C', 'I')"),
+		check("project_capacity", "project_capacity_hours_per_week", "hours_per_week > 0 AND hours_per_week <= 168"),
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_capacity_live ON project_capacity (tenant_id, user_id) WHERE deleted_at IS NULL`,
+
 		// ── Risk register: generated figures (a generated column can't read
 		// another, so criticity inlines the effective severity).
 		`ALTER TABLE project_risk ADD COLUMN IF NOT EXISTS severity_effective integer GENERATED ALWAYS AS (COALESCE(severity, severity_computed)) STORED`,

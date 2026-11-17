@@ -46,6 +46,8 @@ func (m *projectModule) Register() error {
 		orm.Register[ProjectRiskHistory](orm.WithTableName("project_risk_history"), orm.WithExcluded()),
 		orm.Register[ProjectBaseline](orm.WithTableName("project_baseline"), orm.WithRowScope(ChildScope(p))),
 		orm.Register[ProjectBaselineTask](orm.WithTableName("project_baseline_task"), orm.WithRowScope(ChildScope(p))),
+		orm.Register[ProjectTaskRaci](orm.WithTableName("project_task_raci"), orm.WithRowScope(TaskChildScope(p))),
+		orm.Register[ProjectCapacity](orm.WithTableName("project_capacity")),
 	} {
 		if err != nil {
 			return err
