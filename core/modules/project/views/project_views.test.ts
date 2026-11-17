@@ -127,6 +127,42 @@ describe('project views', () => {
     expect(await guard('p1', null)).toBe(false)
   })
 
+  it('saves a baseline from the project form header, manager/admin only', async () => {
+    // The descriptor offers the button on a saved project record.
+    const headerButtons = route('/project/:id').descriptor.headerButtons ?? []
+    expect(headerButtons.map((b) => b.name)).toContain('project.saveBaseline')
+    expect(headerButtons.find((b) => b.name === 'project.saveBaseline')?.label).toBe('Save baseline')
+
+    const handler = headerButtonRegistry.get('project.saveBaseline')!
+    // This package's vitest runs in node (no DOM): stub the prompt on globalThis.
+    const prompt = vi.fn<(message?: string) => string | null>(() => 'Baseline A')
+    ;(globalThis as { prompt?: unknown }).prompt = prompt
+    const runAction = vi.fn(async () => ({}))
+    const ctx = (can: boolean) => ({
+      entity: 'project',
+      recordId: 'p1',
+      draft: {},
+      setFieldAndCommit: vi.fn(),
+      relationOps: { list: vi.fn(), get: vi.fn(async () => ({ id: 'p1/can_manage', can_manage: can })), create: vi.fn(), remove: vi.fn() },
+      runAction,
+    })
+    // Manager: prompts for a name, then runs the baseline action.
+    await handler.handler(ctx(true))
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(runAction).toHaveBeenCalledWith('baseline', { body: { name: 'Baseline A' } })
+
+    // Not a manager (can_manage false): no prompt, no action.
+    const runAction2 = vi.fn(async () => ({}))
+    await handler.handler({ ...ctx(false), runAction: runAction2 })
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(runAction2).not.toHaveBeenCalled()
+
+    // A cancelled prompt (null) writes nothing.
+    prompt.mockReturnValueOnce(null)
+    await handler.handler(ctx(true))
+    expect(runAction).toHaveBeenCalledTimes(1)
+  })
+
   it('puts tasks in color groups, managed from the Configuration menu', () => {
     const registry = new ModuleRegistry()
     registry.register(mod, { appMode: true })

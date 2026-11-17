@@ -367,3 +367,9 @@ msgstr "Sam"
 
 msgid "Sun"
 msgstr "Dim"
+
+msgid "Save baseline"
+msgstr "Enregistrer la ligne de base"
+
+msgid "Baseline name"
+msgstr "Nom de la ligne de base"

@@ -2831,3 +2831,15 @@ msgstr ""
 
 msgid "First 1000 shown"
 msgstr ""
+
+msgid "Critical path"
+msgstr ""
+
+msgid "Baseline"
+msgstr ""
+
+msgid "No baseline"
+msgstr ""
+
+msgid "Dependency cycle: no critical path"
+msgstr ""

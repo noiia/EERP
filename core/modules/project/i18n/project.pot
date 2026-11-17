@@ -366,3 +366,9 @@ msgstr ""
 
 msgid "Sun"
 msgstr ""
+
+msgid "Save baseline"
+msgstr ""
+
+msgid "Baseline name"
+msgstr ""

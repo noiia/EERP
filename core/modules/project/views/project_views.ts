@@ -2,10 +2,13 @@ import {
   FORM_COLUMNS_ID,
   FORM_HEADER_ID,
   FORM_NOTEBOOK_ID,
+  kanbanColumnsGuard,
   registerFieldFunction,
   registerHeaderButtonAction,
   registerHeaderMenu,
   registerKanbanColumnsGuard,
+  translate,
+  useI18nStore,
   type FrontModule,
   type HeaderButtonDescriptor,
   type Operation,
@@ -107,8 +110,28 @@ registerHeaderButtonAction({
   },
 })
 
+// Snapshot the current plan as a baseline (WP3's baseline action). The
+// manager/admin gate is Go's can_manage: a header button's `states.visible`
+// is a field-only condition (it cannot await), so the guard runs here.
+registerHeaderButtonAction({
+  entity: 'project',
+  name: 'project.saveBaseline',
+  handler: async (ctx) => {
+    const guard = kanbanColumnsGuard('project.canEditStages')
+    if (!guard || !(await guard(ctx.recordId, ctx.relationOps))) return
+    // This package type-checks without the DOM lib: prompt is a global.
+    const raw = (globalThis as { prompt?: (message?: string) => string | null }).prompt?.(
+      translate(useI18nStore.getState().locale, 'Baseline name'),
+    )
+    const name = raw?.trim()
+    if (!name) return
+    await ctx.runAction?.('baseline', { body: { name } })
+  },
+})
+
 const projectHeaderButtons: HeaderButtonDescriptor[] = [
   { name: 'project.openTasks', label: 'Tasks', variant: 'secondary', states: { visible: { field: 'id', op: 'set' } } },
+  { name: 'project.saveBaseline', label: 'Save baseline', variant: 'secondary', states: { visible: { field: 'id', op: 'set' } } },
 ]
 
 // Adding/renaming/reordering a project's stages from its board: Go's

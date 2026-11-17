@@ -136,3 +136,37 @@ Pitfalls:
 - The client-side reads of the Insights mode page until a short page and stop
   at 1000 records with a "first 1000 shown" caption (ADR-032); the endpoint
   itself is bounded by the 3-year window and the bucket.
+
+### Gantt critical path and baselines (WP6)
+
+The Gantt mode already draws the plan; WP3's schedule and baseline endpoints
+hold the "what is critical / what was planned" facts. Both are rendered as
+overlays on the existing renderer (`views/gantt-renderer.tsx`), gated on the
+search bar's single-value pin (`pinnedId` on `project_id`) — with no pin there
+is no project to compute them for, and the controls stay hidden:
+
+- **Critical path** (a toolbar `Critical path` button; on phone the More
+  menu): with the toggle on the renderer reads the schedule once —
+  `ops.get('project', '<id>/schedule')`, once per pinned id and toggle state,
+  so a bar move never refetches it — and outlines the critical tasks with a
+  2px `error.main` outline (a non-color cue besides the color one). Every
+  bar present in the schedule reports its slack in its `aria-label`
+  (`, slack N d`). A `cycle: true` answer draws no outline and says
+  "Dependency cycle: no critical path" instead. The toggle state is kept per
+  entity for the tab session (`eerp.gantt.critical.<entity>`), the zoom's
+  pattern.
+- **Baselines** (a toolbar `Baseline` select; on phone the same More menu):
+  the select lists the project's `project_baseline` rows newest first
+  (`order=-created_at`; the server caps them at 20, so one page suffices) and
+  a pick reads that baseline's `project_baseline_task` rows in chunks of 100
+  `in[task_id]` limited to the visible rows' ids (the dependency-links
+  pattern). Each task the snapshot holds gets a 6px `action.disabled` ghost
+  bar under its live bar, clipped to the visible range like the bar itself;
+  rows the snapshot lacks get none.
+- **Save baseline** (a `Save baseline` header button on the project form):
+  prompts for a name, then `runAction('baseline', { body: { name } })`
+  (WP3's `POST /project/:id/baseline`). The manager/admin gate is Go's
+  `can_manage`, an async server check, while a header button's
+  `states.visible` is the field-only condition DSL (it cannot await) — so the
+  `project.canEditStages` kanban guard runs inside the handler, before the
+  prompt.
