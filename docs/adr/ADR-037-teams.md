@@ -134,7 +134,7 @@ flowchart TD
 
 - Teams has no admin override: an administrator who isn't a member can't read a team. Recovering a
   team that lost all its owners is impossible through the API (the last-owner rule prevents it).
-- Messages can't be edited; no threads or search in v1. Deleting a message (added later, `DELETE /messages/:message`) follows the item rule above: its author, or a team owner. It's a soft delete that hides the message everywhere, while files it put in a team folder stay there, since they belong to the folder.
+- No threads or search in v1. Deleting a message (added later, `DELETE /messages/:message`) follows the item rule above: its author, or a team owner. Editing one (added later, `PUT /messages/:message {body}`) is stricter: its author only, never a guest — a team owner may remove someone's message but never put words in it. The body follows the posting rules (trimmed, ≤ 4000 characters, empty only beside files), files and reactions stay, `edited_at` is stamped (an unchanged body isn't marked edited) and readers get a `chat_message_updated` frame, built per viewer like a new message; readers see *(edited)*. Mentions an edit adds notify no one. It's a soft delete that hides the message everywhere, while files it put in a team folder stay there, since they belong to the folder.
 - **Single instance.** Live delivery inherits the presence hub's limit (ADR-019): with several
   `core-back` replicas, a frame only reaches users connected to the replica that handled the
   write. The others see the message on their next read.

@@ -604,6 +604,21 @@ func (r *Repository) DeleteMessage(ctx context.Context, tenant, id uuid.UUID) er
 	return nil
 }
 
+// EditMessage replaces a live message's body and stamps edited_at; orm.ErrNotFound when it
+// was deleted meanwhile.
+func (r *Repository) EditMessage(ctx context.Context, tenant, id uuid.UUID, body string) (Message, error) {
+	n, err := r.messages.UpdateQuery().Set("body", body).Set("edited_at", time.Now()).Set("updated_at", time.Now()).
+		Where(orm.Cond("tenant_id = $1", tenant)).Where(orm.Cond("id = $1", id)).Where(orm.Cond("deleted_at IS NULL")).
+		Exec(ctx, r.db)
+	if err != nil {
+		return Message{}, fmt.Errorf("teams: edit message: %w", err)
+	}
+	if n == 0 {
+		return Message{}, orm.ErrNotFound
+	}
+	return r.FindMessage(ctx, tenant, id)
+}
+
 // ListMessages returns up to limit messages of the channel older than before (when set), newest first.
 func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID, before *time.Time, limit int) ([]Message, error) {
 	q := orm.Select[Message](r.messages.Meta()).Where(orm.Cond("tenant_id = $1", tenant)).

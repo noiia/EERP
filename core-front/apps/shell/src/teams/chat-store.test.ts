@@ -133,4 +133,20 @@ describe('chat-store', () => {
       { emoji: '🎉', count: 1, mine: false },
     ])
   })
+
+  it('an updated message takes its new body, edited_at and files, keeping my reactions', async () => {
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T00:00:00Z', { reactions: [{ emoji: '👍', count: 1, mine: true }] })])
+    await useChatStore.getState().load('c1')
+    const att = { id: 'a1', filename: 'x.pdf', mime: 'application/pdf', size: 1 }
+    // The frame is built from the editor's view: its reactions don't carry my `mine`.
+    useChatStore.getState().update({
+      type: 'chat_message_updated', channel_id: 'c1',
+      message: msg('m1', '2026-01-01T00:00:00Z', { body: 'fixed', edited_at: '2026-01-01T01:00:00Z', attachments: [att], reactions: [{ emoji: '👍', count: 1, mine: false }] }),
+    })
+    const m = useChatStore.getState().messages.c1[0]
+    expect(m).toMatchObject({ body: 'fixed', edited_at: '2026-01-01T01:00:00Z', attachments: [att], reactions: [{ emoji: '👍', count: 1, mine: true }] })
+    // A message this tab never loaded is ignored (no partial history).
+    useChatStore.getState().update({ type: 'chat_message_updated', channel_id: 'c9', message: msg('m9', '2026-01-01T00:00:00Z', { channel_id: 'c9' }) })
+    expect(useChatStore.getState().messages.c9).toBeUndefined()
+  })
 })

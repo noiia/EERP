@@ -11,6 +11,7 @@ describe('chat frames', () => {
     off()
     expect(handleChatFrame({ type: 'chat_reaction' })).toBe(true)
     expect(handleChatFrame({ type: 'chat_message_deleted' })).toBe(true)
+    expect(handleChatFrame({ type: 'chat_message_updated' })).toBe(true)
     expect(fn).toHaveBeenCalledTimes(1)
   })
 })

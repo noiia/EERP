@@ -71,6 +71,8 @@ export interface Message {
   author_has_avatar?: boolean
   body: string
   created_at: string
+  /** Set once its author edited the body. */
+  edited_at?: string | null
   attachments: Attachment[]
   reactions: Reaction[]
 }
@@ -181,6 +183,7 @@ export function postMessage(channel: string, body: string, mentions: string[] = 
   for (const f of files) form.append('files', f)
   return call<Message>('POST', `/channels/${channel}/messages`, form)
 }
+export const editMessage = (message: string, body: string) => call<Message>('PUT', `/messages/${message}`, { body })
 export const deleteMessage = (message: string) => call<void>('DELETE', `/messages/${message}`)
 export const markRead = (channel: string) => call<void>('POST', `/channels/${channel}/read`)
 export const toggleReaction = (message: string, emoji: string) =>

@@ -5,15 +5,18 @@ const listMessages = vi.fn()
 const toggleReaction = vi.fn()
 const postMessage = vi.fn()
 const deleteMessage = vi.fn()
+const editMessage = vi.fn()
 vi.mock('./client', () => ({
   listMessages: (...a: unknown[]) => listMessages(...a),
   markRead: () => Promise.resolve(),
   postMessage: (...a: unknown[]) => postMessage(...a),
   deleteMessage: (...a: unknown[]) => deleteMessage(...a),
+  editMessage: (...a: unknown[]) => editMessage(...a),
   toggleReaction: (...a: unknown[]) => toggleReaction(...a),
 }))
 
-import { ChatPane } from './ChatPane'
+import { ChatPane, stacksOnPrevious } from './ChatPane'
+import type { Message } from './client'
 import { useChatStore } from './chat-store'
 import { useSessionStore } from '@eerp/core-front'
 
@@ -92,6 +95,36 @@ describe('ChatPane', () => {
     await waitFor(() => expect(onFolderChanged).toHaveBeenCalled())
   })
 
+  it('stacks a run of one author\'s messages under a single author line', async () => {
+    useSessionStore.setState({ identity: { userId: 'u1' } } as never)
+    // Newest first, as Go pages them.
+    listMessages.mockResolvedValue([
+      msg('m6', '2026-01-01T23:59:00Z'), // 5h59 after m5: stacked
+      msg('m5', '2026-01-01T18:00:00Z'), // 6h50 after m4: new author line
+      msg('m4', '2026-01-01T11:10:00Z'), // Alice again after Bob: new author line
+      msg('m3', '2026-01-01T11:00:00Z', { author_id: 'u2', author_name: 'Bob' }),
+      msg('m2', '2026-01-01T10:30:00Z'), // stacked under m1
+      msg('m1', '2026-01-01T10:00:00Z'),
+    ])
+    renderPane()
+    const items = await screen.findAllByRole('article')
+    const headed = items.map((i) => within(i).queryByText(/^(Alice|Bob)$/) !== null)
+    expect(headed).toEqual([true, false, true, true, true, false])
+    expect(items.map((i) => i.hasAttribute('data-stacked'))).toEqual(headed.map((h) => !h))
+    // A stacked message keeps its options (delete) and its time, on hover.
+    expect(within(items[1]).getByRole('button', { name: 'Message options' })).toBeInTheDocument()
+    expect(items[1]).toHaveAttribute('title', new Date('2026-01-01T10:30:00Z').toLocaleString())
+    expect(screen.getAllByText('Alice')).toHaveLength(3)
+  })
+
+  it('stacks at most 6 hours apart, same author only', () => {
+    const at = (iso: string, author = 'u1') => msg('x', iso, { author_id: author }) as unknown as Message
+    expect(stacksOnPrevious(undefined, at('2026-01-01T10:00:00Z'))).toBe(false)
+    expect(stacksOnPrevious(at('2026-01-01T10:00:00Z'), at('2026-01-01T16:00:00Z'))).toBe(true)
+    expect(stacksOnPrevious(at('2026-01-01T10:00:00Z'), at('2026-01-01T16:00:01Z'))).toBe(false)
+    expect(stacksOnPrevious(at('2026-01-01T10:00:00Z', 'u2'), at('2026-01-01T10:01:00Z'))).toBe(false)
+  })
+
   it('offers Delete on own messages only, and removes a deleted one', async () => {
     useSessionStore.setState({ identity: { userId: 'u1' } } as never)
     listMessages.mockResolvedValue([msg('m2', '2026-01-02T10:00:00Z', { author_id: 'u2' }), msg('m1', '2026-01-01T10:00:00Z')])
@@ -104,6 +137,51 @@ describe('ChatPane', () => {
     await waitFor(() => expect(deleteMessage).toHaveBeenCalledWith('m1'))
     await waitFor(() => expect(screen.queryByText('body m1')).toBeNull())
     expect(screen.getByText('body m2')).toBeInTheDocument()
+  })
+
+  it('lets the author modify a message in place (Modify above Delete), others only delete', async () => {
+    useSessionStore.setState({ identity: { userId: 'u1' } } as never)
+    listMessages.mockResolvedValue([msg('m2', '2026-01-02T10:00:00Z', { author_id: 'u2', author_name: 'Bob' }), msg('m1', '2026-01-01T10:00:00Z')])
+    editMessage.mockReset().mockImplementation(async (id: string, body: string) => msg(id, '2026-01-01T10:00:00Z', { body, edited_at: '2026-01-03T10:00:00Z' }))
+    render(<ChatPane channelId="c1" title="general" members={[]} canAttach readOnly={false} teamId="t1" role="owner" />)
+    const items = await screen.findAllByRole('article')
+    // Bob's message: an owner may delete it, never rewrite it.
+    fireEvent.click(within(items[1]).getByRole('button', { name: 'Message options' }))
+    expect((await screen.findAllByRole('menuitem')).map((i) => i.textContent)).toEqual(['Delete message'])
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    // Mine: Modify first, then Delete.
+    fireEvent.click(within(items[0]).getByRole('button', { name: 'Message options' }))
+    expect((await screen.findAllByRole('menuitem')).map((i) => i.textContent)).toEqual(['Modify message', 'Delete message'])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Modify message' }))
+    const box = await screen.findByRole('textbox', { name: 'Message to modify' })
+    expect(box).toHaveValue('body m1')
+    // Escape gives the message back untouched.
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(screen.queryByRole('textbox', { name: 'Message to modify' })).toBeNull()
+    expect(screen.getByText('body m1')).toBeInTheDocument()
+    fireEvent.click(within(screen.getAllByRole('article')[0]).getByRole('button', { name: 'Message options' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Modify message' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Message to modify' }), { target: { value: 'body m1, fixed' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Message to modify' }), { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(editMessage).toHaveBeenCalledWith('m1', 'body m1, fixed'))
+    expect(await screen.findByText('body m1, fixed')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Message to modify' })).toBeNull()
+    expect(within(screen.getAllByRole('article')[0]).getByText('(edited)')).toBeInTheDocument()
+  })
+
+  it('keeps the draft in the editor when the edit is refused', async () => {
+    useSessionStore.setState({ identity: { userId: 'u1' } } as never)
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T10:00:00Z')])
+    editMessage.mockReset().mockRejectedValue(new Error('A message needs a body or a file.'))
+    renderPane()
+    fireEvent.click(await screen.findByRole('button', { name: 'Message options' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Modify message' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Message to modify' }), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('A message needs a body or a file.')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Message to modify' })).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByText('body m1')).toBeInTheDocument()
   })
 
   it('lets a team owner delete anyone\'s message and shows a refusal', async () => {

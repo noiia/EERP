@@ -59,10 +59,11 @@ type ChannelMember struct {
 
 type Message struct {
 	model.BaseModel
-	TenantID  uuid.UUID `db:"tenant_id,index"`
-	ChannelID uuid.UUID `db:"channel_id,index"`
-	AuthorID  uuid.UUID `db:"author_id"`
-	Body      string    `db:"body"`
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	ChannelID uuid.UUID  `db:"channel_id,index"`
+	AuthorID  uuid.UUID  `db:"author_id"`
+	Body      string     `db:"body"`
+	EditedAt  *time.Time `db:"edited_at"` // last edit of the body by its author; nil = never edited
 }
 
 type Attachment struct {
