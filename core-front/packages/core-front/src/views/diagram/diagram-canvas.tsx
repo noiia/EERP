@@ -62,7 +62,9 @@ const isTyping = (t: EventTarget | null) =>
 
 /** Every record matching `serverOptions` (paged until a short page, never trusting
  * `total`), up to DIAGRAM_RECORD_CAP; `capped` when a probe finds more. Without
- * `serverOptions` or a bound `listPage`, the seeded `initialData`. */
+ * `serverOptions` or a bound `listPage`, the seeded `initialData`. `loading` only
+ * until these filters' first read: a `reload` swaps the rows in place, so the canvas
+ * (zoom, selection) stays mounted after an edit. */
 export function useDiagramRecords<T extends HasId>(
   entity: string,
   serverOptions: EntityListOptions | undefined,
@@ -70,8 +72,7 @@ export function useDiagramRecords<T extends HasId>(
 ): { records: T[]; capped: boolean; loading: boolean; error: string | null; reload: () => void } {
   const listPage = useRelationOps()?.listPage
   const key = serverOptions && listPage ? JSON.stringify(serverOptions) : null
-  const [state, setState] = useState<{ records: T[]; capped: boolean } | null>(null)
-  const [loading, setLoading] = useState(key != null)
+  const [state, setState] = useState<{ key: string; records: T[] | null; capped: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reloads, setReloads] = useState(0)
   useEffect(() => {
@@ -92,18 +93,17 @@ export function useDiagramRecords<T extends HasId>(
         }
       }
     }
-    setLoading(true)
     load()
       .then((r) => {
         if (cancelled) return
         setError(null)
-        setState(r)
+        setState({ ...r, key })
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(toApiError(e).message)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (cancelled) return
+        setError(toApiError(e).message)
+        // A failed first read shows the error over the seeded rows, not a spinner forever.
+        setState((s) => (s?.key === key ? s : { key, records: null, capped: false }))
       })
     return () => {
       cancelled = true
@@ -112,7 +112,7 @@ export function useDiagramRecords<T extends HasId>(
   return {
     records: key == null ? initialData : (state?.records ?? initialData),
     capped: key != null && !!state?.capped,
-    loading: key != null && loading,
+    loading: key != null && state?.key !== key,
     error: key == null ? null : error,
     reload: () => setReloads((n) => n + 1),
   }
@@ -703,11 +703,13 @@ function Canvas(props: DiagramCanvasProps) {
   const exportAs = async (kind: 'png' | 'pdf') => {
     const viewport = container.current?.querySelector<HTMLElement>('.react-flow__viewport')
     if (!viewport) return
-    const bounds = getNodesBounds(rfNodes)
     setExportError(null)
     // Full boxes in the image even when zoomed out: drawn before the capture starts.
     flushSync(() => setExporting(true))
     try {
+      // Export boxes grow to their content: let React Flow re-measure them before bounding.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const bounds = getNodesBounds(instance.current?.getNodes() ?? rfNodes)
       // html-to-image and jspdf load on the first export, not with the diagram.
       const { exportPdf, exportPng } = await import('./export')
       // The diagram's own background: a dark theme's light text stays readable in the image.
@@ -788,7 +790,9 @@ function Canvas(props: DiagramCanvasProps) {
           borderColor: 'divider',
           borderRadius: 1,
           '& .react-flow__handle': { width: 'var(--handle-size, 8px)', height: 'var(--handle-size, 8px)', minWidth: 0, minHeight: 0 },
+          '&[data-exporting] .react-flow__handle': { width: 5, height: 5 },
         }}
+        data-exporting={exporting || undefined}
       >
         {loaded ? (
           <BoxOps ops={boxOps}>

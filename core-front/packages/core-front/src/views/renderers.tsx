@@ -23,6 +23,7 @@ import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-da
 import { DataGrid, GraphRenderer, ObsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
+import { useRelationLabels } from './use-relation-labels'
 import {
   availableDisplayModes,
   pinnedId,
@@ -1146,6 +1147,12 @@ function TreeRenderer<T extends HasId>({
   // Flat data (no parent links) renders as a grid, with row checkboxes; hierarchical
   // data as a read-only tree (RichTreeView has no selection UI here — out of scope).
   const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
+  // List cells show a many2one's label (relation.labelField), never its id.
+  const m2oFields = descriptor.fields.filter((f) => f.type === 'relation' && f.relation?.kind === 'many2one')
+  const relationLabel = useRelationLabels(
+    m2oFields,
+    liveRecords.flatMap((r) => m2oFields.map((f): [string, unknown] => [f.name, (r as Record<string, unknown>)[f.name]])),
+  )
 
   // Row selection (checkboxes) — only meaningful for the flat grid. Reset on every
   // liveRecords change: ids from a previous search/filter/page-size fetch are
@@ -1333,6 +1340,9 @@ function TreeRenderer<T extends HasId>({
           }
           if (f.widget === 'datetime') {
             col.valueFormatter = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString() : '')
+          }
+          if (f.type === 'relation' && f.relation?.kind === 'many2one') {
+            col.valueFormatter = (v: unknown) => relationLabel(f.name, v)
           }
           // text/color: a swatch beside the hex (an invalid value stays plain text).
           if (f.type === 'text' && f.widget === 'color') {

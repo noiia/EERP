@@ -317,11 +317,16 @@ describe('WbsRenderer', () => {
     expect(screen.queryAllByLabelText('Name')).toHaveLength(0)
     expect(screen.queryByRole('button', { name: 'Collapse' })).toBeNull()
     let inputsDuringExport = -1
+    let smallHandlesDuringExport = false
     exportPng.mockImplementationOnce(async () => {
       inputsDuringExport = screen.queryAllByLabelText('Name').length
+      // 5px connector dots in the image (the canvas' [data-exporting] rule).
+      smallHandlesDuringExport = document.querySelector('[data-exporting]') != null
     })
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
-    expect(inputsDuringExport).toBe(4)
+    await waitFor(() => expect(inputsDuringExport).toBe(4))
+    expect(smallHandlesDuringExport).toBe(true)
+    expect(document.querySelector('[data-exporting]')).toBeNull()
     await waitFor(() => expect(screen.queryAllByLabelText('Name')).toHaveLength(0))
     fireEvent.doubleClick(screen.getByText('2 - Review'))
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/D'))
@@ -378,9 +383,16 @@ describe('WbsRenderer', () => {
     const { actions } = setup(undefined, true, { serverOptions: {}, orderField: 'wbs_number' }, { listPage })
     await screen.findByTestId('node-B')
     expect(listPage).toHaveBeenCalledTimes(1)
+    let finish: (v: { records: ReturnType<typeof rows>; total: number }) => void = () => {}
+    listPage.mockImplementationOnce(() => new Promise((r) => (finish = r)))
     act(() => rf.props.onEdgesDelete!([rf.props.edges.find((e) => e.target === 'B')!]))
     expect(actions.update).toHaveBeenCalledWith('B', { parent_id: null })
     await waitFor(() => expect(listPage).toHaveBeenCalledTimes(2))
+    // The re-read runs behind the drawn diagram: no spinner, the canvas stays mounted.
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(screen.getByTestId('node-B')).toBeInTheDocument()
+    await act(async () => finish({ records: rows(), total: 4 }))
+    expect(screen.getByTestId('node-B')).toBeInTheDocument()
   })
 
   it('moving a link end re-parents: the new child takes it, the old child loses it', async () => {

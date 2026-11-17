@@ -19,7 +19,7 @@ type RfProps = {
   onNodeDragStop?: (e: unknown, n: RfNode, nodes?: RfNode[]) => void
   selectionKeyCode?: string
   multiSelectionKeyCode?: string
-  onInit?: (i: { fitView: () => void }) => void
+  onInit?: (i: { fitView: () => void; getNodes?: () => unknown[] }) => void
   children?: ReactNode
 }
 const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
@@ -66,6 +66,8 @@ const at = (x: number, y: number) => ({ x, y })
 const node = (id: string): Node => ({ id, position: at(0, 0), data: {} })
 const pos = (id: string) => rf.props.nodes.find((n) => n.id === id)!.position
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0))
+// An export waits two animation frames for the grown boxes to be measured.
+const exportFrames = () => act(() => vi.advanceTimersByTimeAsync(50))
 
 function setup(over: Partial<DiagramCanvasProps> = {}, layout: ViewLayout = { positions: {}, folded: [] }) {
   const saveViewLayout = vi.fn(async () => {})
@@ -140,6 +142,7 @@ describe('DiagramCanvas', () => {
     await flush()
     expect(exportLoads.n).toBe(0)
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    await exportFrames()
     expect(exportLoads.n).toBe(1)
   })
 
@@ -232,6 +235,7 @@ describe('DiagramCanvas', () => {
     setup()
     await flush()
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    await exportFrames()
     expect(screen.getByText('canvas too big')).toBeInTheDocument()
   })
 
@@ -490,12 +494,14 @@ describe('DiagramCanvas', () => {
     await flush()
     expect(screen.getByText('Critical')).toBeInTheDocument()
     const fitView = vi.fn()
-    act(() => rf.props.onInit!({ fitView }))
+    act(() => rf.props.onInit!({ fitView, getNodes: () => [] }))
     fireEvent.click(screen.getByRole('button', { name: 'Fit view' }))
     expect(fitView).toHaveBeenCalled()
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    await exportFrames()
     expect(exportPng).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, 'Plan', '#fff')
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    await exportFrames()
     expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, { title: 'Plan', date: expect.any(Date), legend: [{ color: '#ff0000', label: 'Critical' }], background: '#fff' }, 'Plan')
   })
 })
@@ -716,7 +722,7 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     setup()
     await flush()
     const fitView = vi.fn()
-    act(() => rf.props.onInit!({ fitView }))
+    act(() => rf.props.onInit!({ fitView, getNodes: () => [] }))
     enter()
     await act(() => vi.advanceTimersByTimeAsync(200))
     expect(fitView).toHaveBeenCalledTimes(1)

@@ -97,6 +97,7 @@ export function boxFieldOf(descriptor: ViewDescriptor) {
 export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosition, positionAbsoluteX, positionAbsoluteY }: NodeProps<Node<TaskBoxData>>) {
   const t = useT()
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...TASK_BOX_SIZE })
+  const exporting = useContext(ForceDetail)
   const [error, setError] = useState<SerializedError | null>(null)
   const { record, chevron } = data
   const onDoubleClick = (e: MouseEvent) => {
@@ -113,7 +114,8 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
     )
   }
   return (
-    <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'auto', p: 1 }}>
+    // An export grows the box to its content (no scrollbar in the image).
+    <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, ...(exporting ? { minHeight: TASK_BOX_SIZE.h, overflow: 'visible' } : { height: TASK_BOX_SIZE.h, overflow: 'auto' }) }}>
       <Handle type="target" position={targetPosition ?? Position.Top} />
       <ErrorAlert error={error} />
       {chevron || data.badges ? (

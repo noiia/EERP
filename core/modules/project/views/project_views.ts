@@ -39,7 +39,7 @@ const visibility: Fields[number] = {
 
 const projectListFields: Fields = [
   { name: 'name', label: 'Name', type: 'text', required: true },
-  { name: 'manager_id', label: 'Manager', type: 'relation', relation: users },
+  { name: 'manager_id', label: 'Manager', type: 'relation', relation: users},
   visibility,
   { name: 'task_count', label: 'Tasks', type: 'number', widget: 'int', readOnly: true },
   { name: 'planned_hours', label: 'Planned hours', type: 'number', readOnly: true },
