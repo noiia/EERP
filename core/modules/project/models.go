@@ -57,6 +57,7 @@ type ProjectTask struct {
 	StageID          *uuid.UUID `db:"stage_id,index" json:"stage_id"`
 	ParentID         *uuid.UUID `db:"parent_id,index" json:"parent_id"`
 	MilestoneID      *uuid.UUID `db:"milestone_id,index" json:"milestone_id"`
+	PbsItemID        *uuid.UUID `db:"pbs_item_id,index" json:"pbs_item_id"` // the deliverable it produces
 	Name             string     `db:"name" json:"name"`
 	Description      string     `db:"description" json:"description"`
 	Priority         bool       `db:"priority" json:"priority"`
@@ -216,4 +217,22 @@ type ProjectRiskCategory struct {
 	TenantID uuid.UUID `db:"tenant_id"`
 	Name     string    `db:"name" json:"name"`
 	Color    *string   `db:"color" json:"color"`
+}
+
+// ProjectPbsItem is one box of a project's PBS (project breakdown
+// structure) chart: a deliverable, under an optional parent item of the
+// same project, produced by the tasks linked to it (project_task.pbs_item_id).
+// task_count and done_count are the item's own live tasks, kept by a trigger.
+type ProjectPbsItem struct {
+	model.BaseModel
+	TenantID    uuid.UUID  `db:"tenant_id"`
+	ProjectID   uuid.UUID  `db:"project_id,index" json:"project_id"`
+	ParentID    *uuid.UUID `db:"parent_id,index" json:"parent_id"`
+	Name        string     `db:"name" json:"name"`               // the deliverable, ≤ 200 chars
+	Description *string    `db:"description" json:"description"` // ≤ 2000 chars
+	Color       *string    `db:"color" json:"color"`             // "#rrggbb" lowercase or null
+	X           float64    `db:"x" json:"x"`
+	Y           float64    `db:"y" json:"y"`
+	TaskCount   int        `db:"task_count" json:"task_count"`
+	DoneCount   int        `db:"done_count" json:"done_count"`
 }

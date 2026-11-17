@@ -58,6 +58,7 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		"project_risk":            h.ValidateRiskBody,
 		"project_risk_task":       h.ValidateRiskLinkBody,
 		"project_risk_category":   h.ValidateRiskCategoryBody,
+		"project_pbs_item":        h.ValidatePbsBody,
 	}
 	for table, guard := range guards {
 		g := generic(table)
@@ -70,6 +71,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 			del = h.DeleteStage
 		case "project_obs_box":
 			del = h.DeleteObsBox
+		case "project_pbs_item":
+			del = h.DeletePbsItem
 		case "project_color":
 			del, restore = h.DeleteColor, h.RestoreColor(g.GetByID)
 		case "project_task":
@@ -161,7 +164,7 @@ func (h *Handler) DeleteProject(c *echo.Context) error {
 		if tag.RowsAffected() == 0 {
 			return conflict("the project still has tasks: delete them first, or archive the project")
 		}
-		for _, table := range []string{"project_stage", "project_milestone", "project_member", "project_obs_box"} {
+		for _, table := range []string{"project_stage", "project_milestone", "project_member", "project_obs_box", "project_pbs_item"} {
 			if _, err := tx.Exec(ctx, `UPDATE `+table+` SET deleted_at = now(), updated_at = now()
 				WHERE project_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant); err != nil {
 				return err
@@ -198,7 +201,7 @@ func (h *Handler) RestoreProject(get echo.HandlerFunc) echo.HandlerFunc {
 				}
 				return err
 			}
-			for _, table := range []string{"project_stage", "project_milestone", "project_member", "project_obs_box"} {
+			for _, table := range []string{"project_stage", "project_milestone", "project_member", "project_obs_box", "project_pbs_item"} {
 				if _, err := tx.Exec(ctx, `UPDATE `+table+` SET deleted_at = NULL, updated_at = now()
 					WHERE project_id = $1 AND tenant_id = $2 AND deleted_at = $3`, id, tenant, at); err != nil {
 					return err
@@ -326,6 +329,39 @@ func (h *Handler) DeleteObsBox(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// DeletePbsItem handles DELETE /api/v1/project_pbs_item/:id behind
+// ValidatePbsBody (visible, manager or admin): its live children lose their
+// parent, the live tasks it produced lose the link, and the item is
+// soft-deleted, in one transaction (counts then fall back to zero).
+func (h *Handler) DeletePbsItem(c *echo.Context) error {
+	ctx := c.Request().Context()
+	tenant, _ := access.TenantFromContext(ctx)
+	id, err := echo.PathParam[uuid.UUID](c, "id")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid id format")
+	}
+	err = orm.Transact(ctx, h.db, func(tx *orm.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE project_pbs_item SET parent_id = NULL, updated_at = now()
+			WHERE parent_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE project_task SET pbs_item_id = NULL, updated_at = now()
+			WHERE pbs_item_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE project_pbs_item SET deleted_at = now(), updated_at = now()
+			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
+		if err == nil && tag.RowsAffected() == 0 {
+			return errNotFound
+		}
+		return err
+	})
+	if err != nil {
+		return respond(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // moveColumns are set by a move itself, never by the update that follows.
 var moveColumns = []string{"project_id", "stage_id", "milestone_id", "parent_id"}
 
@@ -392,7 +428,7 @@ func moveTask(c *echo.Context, tx *orm.Tx, tenant, task, target uuid.UUID) error
 		SELECT id FROM project_task WHERE id = $1 AND tenant_id = $2
 		UNION SELECT t.id FROM project_task t JOIN tree ON t.parent_id = tree.id WHERE t.tenant_id = $2)`
 	if _, err := tx.Exec(ctx, tree+`
-		UPDATE project_task t SET project_id = $3, milestone_id = NULL, updated_at = now(),
+		UPDATE project_task t SET project_id = $3, milestone_id = NULL, pbs_item_id = NULL, updated_at = now(),
 			parent_id = CASE WHEN t.id = $1 THEN NULL ELSE t.parent_id END,
 			stage_id = COALESCE(
 				(SELECT s.id FROM project_stage s JOIN project_stage old ON old.id = t.stage_id

@@ -118,6 +118,16 @@ var migrations = slices.Concat(
 				(SELECT count(*) FROM project_task t WHERE t.milestone_id = mid AND t.deleted_at IS NULL AND t.closed)::int AS done) v
 			WHERE m.id = mid AND (m.task_count, m.task_done_count) IS DISTINCT FROM (v.n, v.done);
 		END $$`,
+		`CREATE OR REPLACE FUNCTION project_pbs_item_refresh(mid uuid) RETURNS void LANGUAGE plpgsql AS $$
+		BEGIN
+			IF mid IS NULL THEN RETURN; END IF;
+			PERFORM 1 FROM project_pbs_item WHERE id = mid FOR UPDATE;
+			UPDATE project_pbs_item p SET task_count = v.n, done_count = v.done
+			FROM (SELECT
+				(SELECT count(*) FROM project_task t WHERE t.pbs_item_id = mid AND t.deleted_at IS NULL)::int AS n,
+				(SELECT count(*) FROM project_task t WHERE t.pbs_item_id = mid AND t.deleted_at IS NULL AND t.closed)::int AS done) v
+			WHERE p.id = mid AND (p.task_count, p.done_count) IS DISTINCT FROM (v.n, v.done);
+		END $$`,
 
 		// ── Trigger functions.
 		`CREATE OR REPLACE FUNCTION project_default_stages() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -179,6 +189,25 @@ var migrations = slices.Concat(
 		`CREATE OR REPLACE FUNCTION project_stage_closed_changed() RETURNS trigger LANGUAGE plpgsql AS $$
 		BEGIN
 			UPDATE project_task SET closed = NEW.closed WHERE stage_id = NEW.id AND closed IS DISTINCT FROM NEW.closed;
+			RETURN NULL;
+		END $$`,
+		// The PBS item's task counts: the old and the new item are both recounted
+		// (a link move, a close, a soft delete or a restore of the task). The
+		// trigger runs on every row change, not on UPDATE OF the three columns,
+		// because the BEFORE closed mirror flips closed on a stage move the
+		// statement never lists, and that write must recount too.
+		`CREATE OR REPLACE FUNCTION project_pbs_count_changed() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF TG_OP = 'INSERT' THEN
+				PERFORM project_pbs_item_refresh(NEW.pbs_item_id);
+			ELSIF TG_OP = 'DELETE' THEN
+				PERFORM project_pbs_item_refresh(OLD.pbs_item_id);
+			ELSIF NEW.pbs_item_id IS DISTINCT FROM OLD.pbs_item_id
+				OR NEW.closed IS DISTINCT FROM OLD.closed
+				OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
+				PERFORM project_pbs_item_refresh(NEW.pbs_item_id);
+				PERFORM project_pbs_item_refresh(OLD.pbs_item_id);
+			END IF;
 			RETURN NULL;
 		END $$`,
 
@@ -275,4 +304,5 @@ var migrations = slices.Concat(
 		`(OLD.task_id, OLD.depends_on_id, OLD.deleted_at) IS DISTINCT FROM (NEW.task_id, NEW.depends_on_id, NEW.deleted_at)`,
 		"project_dependency_changed"),
 	trigger("project_stage_closed", "project_stage", "AFTER UPDATE OF closed", "OLD.closed IS DISTINCT FROM NEW.closed", "project_stage_closed_changed"),
+	trigger("project_pbs_count", "project_task", "AFTER INSERT OR UPDATE OR DELETE", "", "project_pbs_count_changed"),
 )

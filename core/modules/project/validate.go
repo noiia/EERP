@@ -451,6 +451,10 @@ func taskRules(r *request) error {
 	if _, err := r.inProject("project_milestone", "milestone_id", pid); err != nil {
 		return err
 	}
+	// Any task editor may link the deliverable a task produces (not only the manager).
+	if _, err := r.inProject("project_pbs_item", "pbs_item_id", pid); err != nil {
+		return err
+	}
 	parent, err := r.inProject("project_task", "parent_id", pid)
 	if err != nil || parent == uuid.Nil || !r.changed("parent_id") || r.id == uuid.Nil {
 		return err
@@ -657,6 +661,44 @@ var obsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
 	}
 	if cycle {
 		return invalid("parent_id", "a box can't be its own parent or ancestor")
+	}
+	return nil
+})
+
+// pbsRules: a PBS item is the manager's; its parent is an item of the same
+// project, never itself or a descendant.
+var pbsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
+	if r.op == opDelete {
+		return nil
+	}
+	r.defaults(map[string]any{"x": 0, "y": 0})
+	if name, _ := r.get("name").(string); strings.TrimSpace(name) == "" {
+		return invalid("name", "name is required")
+	}
+	for k, max := range map[string]int{"name": 200, "description": 2000} {
+		if s, _ := r.get(k).(string); utf8.RuneCountInString(s) > max {
+			return invalid(k, k+" is longer than "+strconv.Itoa(max)+" characters")
+		}
+	}
+	if r.get("color") != nil {
+		if err := lowerColor(r); err != nil {
+			return err
+		}
+	}
+	parent, err := r.inProject("project_pbs_item", "parent_id", pid)
+	if err != nil || parent == uuid.Nil || !r.changed("parent_id") || r.id == uuid.Nil {
+		return err
+	}
+	var cycle bool // walk up from the new parent: reaching the item is a cycle
+	if err := r.h.db.QueryRow(r.ctx, `WITH RECURSIVE up AS (
+			SELECT $1::uuid AS id
+			UNION SELECT b.parent_id FROM project_pbs_item b JOIN up ON b.id = up.id
+			WHERE b.parent_id IS NOT NULL AND b.deleted_at IS NULL)
+		SELECT EXISTS (SELECT 1 FROM up WHERE id = $2)`, parent, r.id).Scan(&cycle); err != nil {
+		return err
+	}
+	if cycle {
+		return invalid("parent_id", "an item can't be its own parent or ancestor")
 	}
 	return nil
 })
@@ -958,4 +1000,9 @@ func (h *Handler) ValidateRiskLinkBody(next echo.HandlerFunc) echo.HandlerFunc {
 // ValidateRiskCategoryBody: see riskCategoryRules.
 func (h *Handler) ValidateRiskCategoryBody(next echo.HandlerFunc) echo.HandlerFunc {
 	return h.guard("project_risk_category", riskCategoryRules)(next)
+}
+
+// ValidatePbsBody: see pbsRules.
+func (h *Handler) ValidatePbsBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_pbs_item", pbsRules)(next)
 }

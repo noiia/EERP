@@ -40,6 +40,8 @@ func (m *projectModule) Register() error {
 			orm.WithReadOnlyFields("severity_computed", "severity_note")),
 		orm.Register[ProjectRiskTask](orm.WithTableName("project_risk_task"), orm.WithRowScope(RiskLinkScope(p))),
 		orm.Register[ProjectRiskCategory](orm.WithTableName("project_risk_category")),
+		orm.Register[ProjectPbsItem](orm.WithTableName("project_pbs_item"), orm.WithRowScope(ChildScope(p)),
+			orm.WithReadOnlyFields("task_count", "done_count")),
 	} {
 		if err != nil {
 			return err

@@ -172,6 +172,32 @@ company field, a `canEdit` guard).
   contact form as a dialog (the relation create wizard, kind preset to person) and links the new
   person to the project's company (`contact_company`), so it is offered next time too.
 
+### PBS (project breakdown structure)
+
+A fourth mode, `pbs`, draws what a project delivers: boxes for the
+`project_pbs_item` rows of one pinned project, joined by parent lines
+(descriptor key `pbs`, type `PbsConfig`: the item entity, the project field, the project
+entity, the task field that links a task to the deliverable it produces, a `canEdit` guard).
+
+- *Shared, not per user.* Like OBS: the item's `x`/`y` are the data, the canvas is
+  controlled, and edits (name, description, color, re-parent, add, delete) are record
+  writes for the project manager and admins only.
+- *One pinned project, progress rolled up.* A box shows a progress bar over the
+  project's tasks that produce the deliverable, including the tasks of its descendant
+  items: one paged read of the project's tasks (1000 rows at most, with the "First
+  1000 shown" caption) grouped by `pbs_item_id` client-side. When that read is capped,
+  the trigger-maintained `task_count`/`done_count` on the item serve instead.
+- *A leaf with no task* shows "No task produces this" in the warning color.
+- *Deleting.* Deleting an item clears its children's `parent_id` and its tasks'
+  `pbs_item_id` in the same transaction, then soft-deletes the item (its counts fall
+  back to zero).
+- *The WBS footer.* The WBS mode draws one detached deliverable box under each
+  level-2 column: the items produced by that column's tasks (descriptor key
+  `wbsDeliverables`). The boxes are never stored (no layout, no history, not
+  draggable, selectable or deletable): they are positioned from the current box
+  positions on every render and stay outside `onMove`, layout saves, undo steps,
+  collision passes and line clearing.
+
 See also [ADR-040](ADR-040-risk-analysis.md): the risk severity reuses these conventions for its critical path.
 
 ## Consequences
