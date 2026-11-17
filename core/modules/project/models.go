@@ -251,3 +251,29 @@ type ProjectRiskHistory struct {
 	ResidualCriticity *int       `db:"residual_criticity"`
 	Deleted           bool       `db:"deleted"`
 }
+
+// ProjectBaseline is a named snapshot of a project's tasks: its live tasks'
+// start, deadline and planned hours are copied into project_baseline_task at
+// creation. The project's manager or an admin creates or deletes one (at
+// most baselineLimit live per project); the rows it snapshots are read-only.
+type ProjectBaseline struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id"`
+	ProjectID uuid.UUID `db:"project_id,index" json:"project_id"`
+	Name      string    `db:"name" json:"name"`
+	CreatedBy uuid.UUID `db:"created_by" json:"created_by"`
+}
+
+// ProjectBaselineTask is the frozen copy of one live task (its dates and
+// planned hours) in a baseline's snapshot. Read-only: the guard (validate.go)
+// refuses every write.
+type ProjectBaselineTask struct {
+	model.BaseModel
+	TenantID     uuid.UUID  `db:"tenant_id"`
+	BaselineID   uuid.UUID  `db:"baseline_id,index" json:"baseline_id"`
+	ProjectID    uuid.UUID  `db:"project_id,index" json:"project_id"`
+	TaskID       uuid.UUID  `db:"task_id,index" json:"task_id"`
+	DateStart    *time.Time `db:"date_start" json:"date_start"`
+	Deadline     *time.Time `db:"deadline" json:"deadline"`
+	PlannedHours float64    `db:"planned_hours" json:"planned_hours"`
+}

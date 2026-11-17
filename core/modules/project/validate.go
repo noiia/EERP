@@ -824,6 +824,56 @@ func riskCategoryRules(r *request) error {
 	return lowerColor(r)
 }
 
+// errBaselineGenericCreate refuses the generic create: a baseline is created
+// with POST /api/v1/project/:id/baseline, which snapshots its tasks.
+var errBaselineGenericCreate = &rejection{status: http.StatusForbidden, code: "FORBIDDEN",
+	msg: "create a baseline with POST /api/v1/project/:id/baseline"}
+
+// baselineRules: the manager or an admin deletes a baseline (and restores
+// one, a delete undone); the generic create is refused; a plain rename stays
+// open to any writer of a visible project, like a milestone's.
+func baselineRules(r *request) error {
+	switch r.op {
+	case opDelete:
+		return r.requireManage(r.storedRef("project_id"))
+	case opCreate:
+		if r.id == uuid.Nil { // a POST: only the /project/:id/baseline route creates
+			return errBaselineGenericCreate
+		}
+		pid, err := r.ref("project_id") // a restore: the stored row
+		if err != nil {
+			return err
+		}
+		return r.requireManage(pid)
+	}
+	if err := fixedProject(r); err != nil {
+		return err
+	}
+	if _, err := r.visibleRef("project", "project_id", true); err != nil {
+		return err
+	}
+	if _, set := r.body["name"]; set {
+		name, _ := r.get("name").(string)
+		if strings.TrimSpace(name) == "" {
+			return invalid("name", "name is required")
+		}
+		if utf8.RuneCountInString(name) > 200 {
+			return invalid("name", "name is longer than 200 characters")
+		}
+	}
+	return nil
+}
+
+// errBaselineTaskReadOnly refuses every write of a baseline's snapshot rows.
+var errBaselineTaskReadOnly = &rejection{status: http.StatusForbidden, code: "FORBIDDEN",
+	msg: "baseline task rows are a read-only snapshot"}
+
+// baselineTaskRules: a baseline's task rows are the frozen snapshot:
+// read-only, so every write (create, update, delete, restore) is refused.
+func baselineTaskRules(r *request) error {
+	return errBaselineTaskReadOnly
+}
+
 // timesheetRules: a user logs hours as themselves; another user's line is
 // written by the project's manager or an admin.
 var timesheetRules = taskLinkRules(func(r *request, pid uuid.UUID) error {
@@ -958,4 +1008,14 @@ func (h *Handler) ValidateRiskLinkBody(next echo.HandlerFunc) echo.HandlerFunc {
 // ValidateRiskCategoryBody: see riskCategoryRules.
 func (h *Handler) ValidateRiskCategoryBody(next echo.HandlerFunc) echo.HandlerFunc {
 	return h.guard("project_risk_category", riskCategoryRules)(next)
+}
+
+// ValidateBaselineBody: see baselineRules.
+func (h *Handler) ValidateBaselineBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_baseline", baselineRules)(next)
+}
+
+// ValidateBaselineTaskBody: the snapshot rows are read-only.
+func (h *Handler) ValidateBaselineTaskBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_baseline_task", baselineTaskRules)(next)
 }

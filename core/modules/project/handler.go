@@ -58,6 +58,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 		"project_risk":            h.ValidateRiskBody,
 		"project_risk_task":       h.ValidateRiskLinkBody,
 		"project_risk_category":   h.ValidateRiskCategoryBody,
+		"project_baseline":        h.ValidateBaselineBody,
+		"project_baseline_task":   h.ValidateBaselineTaskBody,
 	}
 	for table, guard := range guards {
 		g := generic(table)
@@ -74,6 +76,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 			del, restore = h.DeleteColor, h.RestoreColor(g.GetByID)
 		case "project_task":
 			update = h.UpdateTask(g.Update, g.GetByID)
+		case "project_baseline":
+			del, restore = h.DeleteBaseline, h.RestoreBaseline(g.GetByID)
 		}
 		create := g.Create
 		if table == "project_risk" || table == "project_risk_task" {
@@ -92,6 +96,8 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 	e.GET("/api/v1/project_risk/:id", h.RecomputeOnRead(risks.GetByID), mw...)
 	e.GET("/api/v1/project/:id/can_manage", h.CanManage, mw...)
 	e.GET("/api/v1/project/:id/metrics", h.Metrics, mw...)
+	e.GET("/api/v1/project/:id/schedule", h.Schedule, mw...)
+	e.POST("/api/v1/project/:id/baseline", h.CreateBaseline, mw...)
 }
 
 // AssignedToMe serves the task list's filter[assignee]=me (the My tasks

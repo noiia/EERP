@@ -32,50 +32,12 @@ func taskDays(t calcTask) float64 {
 	return 1
 }
 
-// projectFinish is the longest path (Kahn order + forward pass), adding extra[id] days
-// to a task's duration. ok is false on a cycle. Links to unknown tasks are ignored.
+// projectFinish is the longest path (Kahn order + forward pass, shared with
+// schedule.go), adding extra[id] days to a task's duration. ok is false on a
+// cycle. Links to unknown tasks are ignored.
 func projectFinish(tasks []calcTask, links []calcLink, extra map[uuid.UUID]float64) (float64, bool) {
-	dur := make(map[uuid.UUID]float64, len(tasks))
-	for _, t := range tasks {
-		dur[t.ID] = taskDays(t) + extra[t.ID]
-	}
-	deg := map[uuid.UUID]int{}
-	out := map[uuid.UUID][]uuid.UUID{}
-	for id := range dur {
-		deg[id] = 0
-	}
-	for _, l := range links {
-		if _, a := dur[l.From]; !a {
-			continue
-		}
-		if _, b := dur[l.To]; !b {
-			continue
-		}
-		out[l.From] = append(out[l.From], l.To)
-		deg[l.To]++
-	}
-	var queue []uuid.UUID
-	for id, d := range deg {
-		if d == 0 {
-			queue = append(queue, id)
-		}
-	}
-	es := map[uuid.UUID]float64{}
-	finish, seen := 0.0, 0
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		seen++
-		ef := es[id] + dur[id]
-		finish = max(finish, ef)
-		for _, n := range out[id] {
-			es[n] = max(es[n], ef)
-			if deg[n]--; deg[n] == 0 {
-				queue = append(queue, n)
-			}
-		}
-	}
-	return finish, seen == len(dur)
+	_, _, finish, _, ok := forwardPass(tasks, links, extra)
+	return finish, ok
 }
 
 func delaySeverity(days float64) int {

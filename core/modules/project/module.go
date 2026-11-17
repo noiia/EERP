@@ -44,6 +44,8 @@ func (m *projectModule) Register() error {
 		// migrated like every registered table.
 		orm.Register[ProjectTaskStage](orm.WithTableName("project_task_stage"), orm.WithExcluded()),
 		orm.Register[ProjectRiskHistory](orm.WithTableName("project_risk_history"), orm.WithExcluded()),
+		orm.Register[ProjectBaseline](orm.WithTableName("project_baseline"), orm.WithRowScope(ChildScope(p))),
+		orm.Register[ProjectBaselineTask](orm.WithTableName("project_baseline_task"), orm.WithRowScope(ChildScope(p))),
 	} {
 		if err != nil {
 			return err
