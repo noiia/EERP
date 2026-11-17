@@ -744,9 +744,9 @@ export function GanttRenderer<T extends HasId>({
                     sx={{ flex: 1, height: ROW_H, justifyContent: 'flex-start', textTransform: 'none', minWidth: 0, overflow: 'hidden' }}
                   >
                     <Typography
-                      variant="body2"
+                      variant={phone ? 'caption' : 'body2'}
                       noWrap={!phone}
-                      sx={phone ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textAlign: 'left', whiteSpace: 'normal' } : undefined}
+                      sx={phone ? { lineHeight: '14px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textAlign: 'left', whiteSpace: 'normal' } : undefined}
                     >
                       {label(row.record)}
                     </Typography>

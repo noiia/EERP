@@ -246,7 +246,8 @@ describe('GanttRenderer', () => {
       setViewportWidth(390)
       renderGantt()
       expect(screen.getByTestId('gantt-track').parentElement!).toHaveStyle({ gridTemplateColumns: '88px minmax(0, 1fr)' })
-      expect(within(screen.getByTestId('gantt-row-1')).getByText('Alpha')).toHaveStyle({ WebkitLineClamp: '2' })
+      expect(within(screen.getByTestId('gantt-row-1')).getByText('Alpha')).toHaveStyle({ WebkitLineClamp: '2', lineHeight: '14px' })
+      expect(within(screen.getByTestId('gantt-row-1')).getByText('Alpha').className).toContain('MuiTypography-caption')
     })
 
     it('gives bar edge handles a 16px touch area on phone', () => {
