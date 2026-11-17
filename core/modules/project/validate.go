@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"core/orm/access"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
 
@@ -883,6 +885,61 @@ func milestoneRules(r *request) error {
 	return nil
 }
 
+// raciRoles are the RACI matrix roles.
+var raciRoles = []string{"R", "A", "C", "I"}
+
+// raciOneAccountableIndex is migrate.go's partial unique index (one
+// accountable per task); its 23505 is a 422 ONE_ACCOUNTABLE, not the generic
+// 409 (ValidateRaciBody).
+const raciOneAccountableIndex = "idx_project_task_raci_one_accountable"
+
+// raciRules: a RACI row hangs off a visible task and takes its project; the
+// user is staff (not a website visitor) and the role is one of R/A/C/I. The
+// second-accountable case is the partial index's, not a pre-check: it would
+// race, and the index is the backstop.
+var raciRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
+	if r.op == opDelete {
+		return nil
+	}
+	role, _ := r.get("role").(string)
+	if !slices.Contains(raciRoles, role) {
+		return invalid("role", "role must be R, A, C or I")
+	}
+	return riskStaff(r, "user_id")
+})
+
+// capacityRules: hours_per_week stays in (0, 168] and the user is a live one
+// of the tenant. Shared by the whole tenant: no row scope, no manager rule.
+func capacityRules(r *request) error {
+	if r.op == opDelete {
+		return nil
+	}
+	switch v := r.get("hours_per_week").(type) {
+	case float64:
+		if v <= 0 || v > 168 {
+			return invalid("hours_per_week", "hours_per_week must be greater than 0 and at most 168")
+		}
+	default:
+		return invalid("hours_per_week", "hours_per_week must be a number")
+	}
+	id, err := r.ref("user_id")
+	if err != nil {
+		return err
+	}
+	if id == uuid.Nil {
+		return invalid("user_id", "user_id is required")
+	}
+	var ok bool
+	if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2
+		AND deleted_at IS NULL)`, id, r.tenant).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return invalid("user_id", "user_id not found")
+	}
+	return nil
+}
+
 // ── Middlewares, in front of the generic writes (mounted by Mount) ───────────
 
 // ValidateProjectBody: a creator becomes manager unless one is given; any
@@ -958,4 +1015,29 @@ func (h *Handler) ValidateRiskLinkBody(next echo.HandlerFunc) echo.HandlerFunc {
 // ValidateRiskCategoryBody: see riskCategoryRules.
 func (h *Handler) ValidateRiskCategoryBody(next echo.HandlerFunc) echo.HandlerFunc {
 	return h.guard("project_risk_category", riskCategoryRules)(next)
+}
+
+// ValidateRaciBody: see raciRules. A 23505 on the one-accountable partial
+// index answers a 422 ONE_ACCOUNTABLE; every other unique violation keeps
+// the generic 409.
+func (h *Handler) ValidateRaciBody(next echo.HandlerFunc) echo.HandlerFunc {
+	guard := h.guard("project_task_raci", raciRules)
+	return func(c *echo.Context) error {
+		err := guard(next)(c)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == raciOneAccountableIndex {
+			return respond(c, &rejection{
+				status: http.StatusUnprocessableEntity,
+				code:   "ONE_ACCOUNTABLE",
+				msg:    "a task can have only one accountable",
+				fields: []string{"role"},
+			})
+		}
+		return err
+	}
+}
+
+// ValidateCapacityBody: see capacityRules.
+func (h *Handler) ValidateCapacityBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_capacity", capacityRules)(next)
 }
