@@ -947,6 +947,7 @@ function DisplayModeSwitcher({
         <Button
           fullWidth
           variant="outlined"
+          sx={{ minHeight: 40 }}
           aria-label={label}
           aria-haspopup="menu"
           onClick={(e) => setAnchor(e.currentTarget)}
@@ -959,6 +960,7 @@ function DisplayModeSwitcher({
             <MenuItem
               key={candidate}
               selected={candidate === mode}
+              sx={{ minHeight: 40 }}
               data-entity={entity}
               onClick={() => {
                 setAnchor(null)
