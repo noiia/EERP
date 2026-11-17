@@ -148,7 +148,9 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
       {exportingBoth && (
         // Off screen, but laid out at a fixed size; the inner box is the one captured (no offset in the image).
         <Box aria-hidden sx={{ position: 'fixed', left: -10000, top: 0 }}>
-          <Box ref={both} data-testid="matrix-export" sx={{ display: 'flex', gap: 3, p: 2, width: 1600, bgcolor: 'background.paper' }}>
+          {/* No entrance animations: the ERP's global chip fade-in (ErpUiStyle) starts at opacity 0,
+              and the capture runs right after this mounts — it would copy every risk as transparent. */}
+          <Box ref={both} data-testid="matrix-export" sx={{ display: 'flex', gap: 3, p: 2, width: 1600, bgcolor: 'background.paper', '& *': { animation: 'none !important', transition: 'none !important' } }}>
             {([false, true] as const).map((r) => (
               <Box key={String(r)} sx={{ flex: 1, minWidth: 0 }}>
                 <Typography variant="h6" align="center">{r ? t('After remediation') : t('Current')}</Typography>

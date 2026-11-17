@@ -131,6 +131,9 @@ describe('RiskRenderer', () => {
     vi.mocked(exportPng).mockImplementationOnce(async (el: HTMLElement) => {
       captured = el.textContent ?? ''
       expect(el.dataset.testid).toBe('matrix-export')
+      // Freshly mounted chips must be drawn at once: no entrance animation inside the capture.
+      const css = [...document.querySelectorAll('style')].map((s) => s.textContent).join('\n')
+      expect(css).toMatch(/animation:\s*none\s*!important/)
     })
     setup(rows())
     await screen.findByTestId('cell-2:3')
