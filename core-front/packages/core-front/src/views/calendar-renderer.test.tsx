@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, act, render, screen, waitFor, within } from '@testing-library/react'
+import { useSessionStore } from './session-store'
+import { setViewportWidth } from '../test/viewport'
 
 // A card click (no drag) navigates to the record's form via the App Router.
 const pushMock = vi.fn()
@@ -387,3 +389,91 @@ describe('color ribbon', () => {
     expect(screen.queryByText('Color groups')).toBeNull()
   })
 })
+
+describe('CalendarRenderer phone', () => {
+  let update: ReturnType<typeof vi.fn<(id: string, body: Partial<Task>) => Promise<Task>>>
+  let actions: EntityActions<Task>
+  beforeEach(() => {
+    update = vi.fn(async (id: string, body: Partial<Task>) => ({ id, ...body }) as Task)
+    actions = { create: vi.fn(async (b) => b as Task), update }
+    pushMock.mockReset()
+  })
+
+    const day10 = iso(thisYear, thisMonth, 10)
+    const dayLabel = new Date(thisYear, thisMonth, 10).toLocaleDateString()
+    const three: Task[] = [
+      { id: '1', name: 'Alpha', due_date: day10 },
+      { id: '2', name: 'Beta', due_date: day10 },
+      { id: '3', name: 'Gamma', due_date: day10 },
+      { id: '4', name: 'Loose', due_date: null },
+    ]
+    function grant(...permissions: string[]) {
+      useSessionStore.setState({ identity: { userId: 'u1', tenantId: 't1', roles: [], permissions } })
+    }
+    const mount = () =>
+      render(<CalendarRenderer descriptor={descriptor} initialData={three} actions={actions} dateField="due_date" />)
+    afterEach(() => useSessionStore.setState({ identity: null }))
+
+    it('shows a count badge per day instead of cards', () => {
+      setViewportWidth(390)
+      mount()
+      const cell = screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) })
+      expect(cell).toHaveTextContent('3')
+      expect(screen.queryByTestId('calendar-card-1')).toBeNull()
+    })
+
+    it("lists the tapped day's records below the grid and opens a form on tap", () => {
+      setViewportWidth(390)
+      const withForm = { ...descriptor, formPath: '/tasks/:id' }
+      render(<CalendarRenderer descriptor={withForm} initialData={three} actions={actions} dateField="due_date" />)
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      const list = screen.getByRole('list', { name: dayLabel })
+      expect(within(list).getAllByRole('listitem')).toHaveLength(3)
+      fireEvent.click(within(list).getByText('Beta'))
+      expect(pushMock).toHaveBeenCalledWith('/app/tasks/2')
+    })
+
+    it('stacks Unscheduled below the agenda, full width', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      const list = screen.getByRole('list', { name: dayLabel })
+      const group = screen.getByRole('group', { name: 'Unscheduled' })
+      expect(list.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(group).not.toHaveStyle({ width: '220px' })
+    })
+
+    it('schedules an unscheduled record on the selected day', async () => {
+      setViewportWidth(390)
+      grant('tasks:tasks:write')
+      mount()
+      // No day picked yet beyond the default (today may be another day): pick one.
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: `Schedule on ${dayLabel}` }))
+      await waitFor(() => expect(update).toHaveBeenCalledWith('4', { due_date: day10 }))
+    })
+
+    it('hides Schedule without write permission or without a selected day', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
+    })
+
+    it('keeps the desktop month grid at 1280px', () => {
+      setViewportWidth(1280)
+      mount()
+      expect(screen.getByRole('group', { name: day10 })).toHaveTextContent('Alpha')
+      expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
+    })
+
+    it('keeps the picked day when the viewport crosses 600px', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      act(() => setViewportWidth(1280))
+      expect(screen.getByRole('group', { name: day10 })).toHaveTextContent('Alpha')
+      act(() => setViewportWidth(390))
+      expect(screen.getByRole('list', { name: dayLabel })).toBeInTheDocument()
+    })
+  })

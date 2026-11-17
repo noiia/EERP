@@ -2493,6 +2493,9 @@ msgstr ""
 msgid "Move"
 msgstr ""
 
+msgid "Schedule on"
+msgstr ""
+
 msgid "Move up"
 msgstr ""
 

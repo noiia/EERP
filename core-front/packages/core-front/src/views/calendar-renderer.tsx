@@ -12,6 +12,8 @@ import Typography from '@mui/material/Typography'
 import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import { useT } from '../i18n/translate'
+import { usePermission } from '../auth/Can'
+import { usePhone } from './use-phone'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
 import { orderedFields, orderLabel } from './layout-fields'
@@ -98,6 +100,8 @@ export function CalendarRenderer<T extends HasId>({
   colorTagsField,
 }: CalendarRendererProps<T>) {
   const t = useT()
+  const phone = usePhone()
+  const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
   const router = useRouter()
   const { formPath } = descriptor
   const relationOps = useRelationOps()
@@ -178,6 +182,11 @@ export function CalendarRenderer<T extends HasId>({
   // nothing. A ref always dereferences the latest moveField/records pair.
   const moveFieldRef = useRef(moveField)
   moveFieldRef.current = moveField
+  // Phone: the tapped day (default today, when in the shown month).
+  const [picked, setPicked] = useState<string | null>(null)
+  const monthPrefix = isoDate(cursor.year, cursor.month, 1).slice(0, 8)
+  const todayIso = isoDate(now.getFullYear(), now.getMonth(), now.getDate())
+  const selectedDay = picked?.startsWith(monthPrefix) ? picked : todayIso.startsWith(monthPrefix) ? todayIso : null
   const [dragging, setDragging] = useState<T | null>(null)
   // Set by a valid onDrop (day cell / Unscheduled) before onDragEnd fires; tells
   // onDragEnd whether the drag landed on one of THIS component's own drop targets
@@ -226,6 +235,11 @@ export function CalendarRenderer<T extends HasId>({
     })
   }
 
+  function dateText(iso: string): string {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString()
+  }
+
   function label(record: T): string {
     if (!labelField) return record.id
     const r = record as Record<string, unknown>
@@ -237,7 +251,7 @@ export function CalendarRenderer<T extends HasId>({
     return (record as Record<string, unknown>)[colorField] === true
   }
 
-  function dayCard(record: T) {
+  function dayCard(record: T, scheduleOn?: string | null) {
     const flagged = isFlagged(record)
     return (
       <Card
@@ -284,6 +298,18 @@ export function CalendarRenderer<T extends HasId>({
           <Typography variant="caption" sx={{ display: 'block' }}>
             {label(record)}
           </Typography>
+          {phone && canWrite && scheduleOn ? (
+            <Button
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation()
+                void moveField(record.id, scheduleOn)
+              }}
+              sx={{ minWidth: 40, minHeight: 40 }}
+            >
+              {`${t('Schedule on')} ${dateText(scheduleOn)}`}
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     )
@@ -298,7 +324,7 @@ export function CalendarRenderer<T extends HasId>({
       <ErrorAlert error={error} />
       <ErrorAlert error={loadError} />
       {quick.dialog}
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
+      <Stack direction={phone ? 'column' : 'row'} spacing={2} sx={{ alignItems: phone ? 'stretch' : 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
             <Button size="small" aria-label={t('Previous month')} onClick={() => changeMonth(-1)}>
@@ -328,6 +354,43 @@ export function CalendarRenderer<T extends HasId>({
             {days.map((day) => {
               const iso = isoDate(cursor.year, cursor.month, day)
               const cards = byDay.get(iso) ?? []
+              if (phone) {
+                return (
+                  <Box
+                    key={iso}
+                    component="button"
+                    type="button"
+                    aria-label={`${iso} — ${cards.length}`}
+                    aria-pressed={selectedDay === iso}
+                    onClick={() => setPicked(iso)}
+                    sx={{
+                      aspectRatio: '1',
+                      minHeight: 40,
+                      border: 0,
+                      borderRadius: 1,
+                      p: 0.5,
+                      font: 'inherit',
+                      color: 'text.primary',
+                      cursor: 'pointer',
+                      bgcolor: selectedDay === iso ? 'primary.main' : 'action.hover',
+                      ...(selectedDay === iso && { color: 'primary.contrastText' }),
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ color: 'inherit' }}>
+                      {day}
+                    </Typography>
+                    {cards.length > 0 ? (
+                      <Box component="span" sx={{ fontSize: 11, fontWeight: 600, px: 0.75, borderRadius: 1, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                        {cards.length}
+                      </Box>
+                    ) : null}
+                  </Box>
+                )
+              }
               return (
                 <Box
                   key={iso}
@@ -355,15 +418,30 @@ export function CalendarRenderer<T extends HasId>({
                     {day}
                   </Typography>
                   <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                    {cards.map(dayCard)}
+                    {cards.map((r) => dayCard(r))}
                   </Stack>
                 </Box>
               )
             })}
           </Box>
+          {phone && selectedDay ? (
+            <Box component="ul" aria-label={dateText(selectedDay)} sx={{ listStyle: 'none', m: 0, mt: 1.5, p: 0 }}>
+              {(byDay.get(selectedDay) ?? []).map((record) => (
+                <li key={record.id}>
+                  <Button
+                    fullWidth
+                    onClick={formPath ? () => router.push(erpPath(formPath.replace(':id', record.id))) : undefined}
+                    sx={{ justifyContent: 'flex-start', minHeight: 40, textAlign: 'left' }}
+                  >
+                    {label(record)}
+                  </Button>
+                </li>
+              ))}
+            </Box>
+          ) : null}
         </Box>
 
-        <Collapse in={unscheduledCount > 0} orientation="horizontal" unmountOnExit>
+        <Collapse in={unscheduledCount > 0} orientation={phone ? 'vertical' : 'horizontal'} unmountOnExit>
           <Box
             role="group"
             aria-label={t('Unscheduled')}
@@ -373,12 +451,12 @@ export function CalendarRenderer<T extends HasId>({
               droppedRef.current = true
               if (dragging) void moveField(dragging.id, null)
             }}
-            sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
+            sx={{ width: phone ? '100%' : 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
           >
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               {t('Unscheduled')} ({formatTotal(unscheduledCount, server?.unscheduledEstimated)})
             </Typography>
-            <Stack spacing={0.5}>{unscheduled.map(dayCard)}</Stack>
+            <Stack spacing={0.5}>{unscheduled.map((r) => dayCard(r, selectedDay))}</Stack>
           </Box>
         </Collapse>
       </Stack>
