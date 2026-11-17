@@ -2822,3 +2822,12 @@ msgstr ""
 
 msgid "Matrices"
 msgstr ""
+
+msgid "Swimlanes"
+msgstr ""
+
+msgid "Unassigned"
+msgstr ""
+
+msgid "First 1000 shown"
+msgstr ""

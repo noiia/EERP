@@ -243,3 +243,6 @@ msgstr ""
 
 msgid "Project has no planned hours"
 msgstr ""
+
+msgid "Assignee"
+msgstr ""

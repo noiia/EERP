@@ -1227,6 +1227,7 @@ function TreeRenderer<T extends HasId>({
         actions={actions}
         statusField={effective.kanbanStatusField}
         columnsConfig={effective.kanbanColumns ?? undefined}
+        swimlanesConfig={effective.kanbanSwimlanes ?? undefined}
         badgeField={effective.kanbanBadgeField ?? undefined}
         colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}

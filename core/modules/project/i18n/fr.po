@@ -244,3 +244,6 @@ msgstr "Cycle de dépendances"
 
 msgid "Project has no planned hours"
 msgstr "Le projet n'a pas d'heures prévues"
+
+msgid "Assignee"
+msgstr "Assigné"
