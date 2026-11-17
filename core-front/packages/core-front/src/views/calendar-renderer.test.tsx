@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, act, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { useSessionStore } from './session-store'
 import { setViewportWidth } from '../test/viewport'
 
@@ -7,6 +7,13 @@ import { setViewportWidth } from '../test/viewport'
 const pushMock = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
+}))
+
+// Quick create needs RelationOps + a wizard; the phone tests only check the hand-off.
+const quickMock = vi.hoisted(() => ({ canCreate: false, open: vi.fn() }))
+vi.mock('./quick-create', async (orig) => ({
+  ...(await orig<typeof import('./quick-create')>()),
+  useQuickCreate: () => ({ canCreate: quickMock.canCreate, open: quickMock.open, dialog: null }),
 }))
 
 import { CalendarRenderer } from './calendar-renderer'
@@ -397,6 +404,8 @@ describe('CalendarRenderer phone', () => {
     update = vi.fn(async (id: string, body: Partial<Task>) => ({ id, ...body }) as Task)
     actions = { create: vi.fn(async (b) => b as Task), update }
     pushMock.mockReset()
+    quickMock.canCreate = false
+    quickMock.open.mockReset()
   })
 
     const day10 = iso(thisYear, thisMonth, 10)
@@ -457,6 +466,28 @@ describe('CalendarRenderer phone', () => {
       setViewportWidth(390)
       mount()
       fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
+    })
+
+    it('offers Add on the selected day only when quick create is available, opening it with that date', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
+      cleanup()
+      quickMock.canCreate = true
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${day10} — 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      expect(quickMock.open).toHaveBeenCalledWith({ due_date: day10 })
+    })
+
+    it('shows no Schedule button once the shown month has no selected day', () => {
+      setViewportWidth(390)
+      grant('tasks:tasks:write')
+      mount()
+      expect(screen.getByRole('button', { name: /^Schedule on/ })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
       expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
     })
 

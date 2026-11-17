@@ -439,6 +439,16 @@ export function CalendarRenderer<T extends HasId>({
               ))}
             </Box>
           ) : null}
+          {phone && selectedDay && quick.canCreate ? (
+            <Button
+              fullWidth
+              variant="outlined"
+              onClick={() => quick.open({ [dateField]: selectedDay })}
+              sx={{ mt: 1, minHeight: 40 }}
+            >
+              {t('Add')}
+            </Button>
+          ) : null}
         </Box>
 
         <Collapse in={unscheduledCount > 0} orientation={phone ? 'vertical' : 'horizontal'} unmountOnExit>
