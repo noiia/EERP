@@ -603,6 +603,61 @@ pages without leaving the form; pages are tenant- and record-scoped server-side;
 pages remain developer-owned; a deployment that never mounts the service loses nothing
 else.
 
+## Phone mode (list display modes) ✅ (implemented)
+
+**Why:** a phone user opening a list (the Project app's task list offers up to nine display
+modes) got desktop layouts squeezed into 360px: a mode switcher wider than the screen,
+Kanban/Calendar moves that only worked by HTML5 drag (which never fires on touch), Gantt
+months of 2px days, diagrams with no room to work. Phase 2 solved Graph only; this phase
+gives every list display mode a phone layout.
+
+### The `usePhone` contract
+
+- `usePhone()` (`views/use-phone.ts`, exported from the engine) is `true` below
+  `layout.phoneMaxWidth` (600px), with the same query the top bar uses:
+  `useMediaQuery('(max-width:599.95px)')`. It is `'use client'` (the shell's server layout
+  imports the engine barrel) and renders the **desktop** tree on the server, so the first
+  client paint may switch once.
+- Use it only when the render *tree* must change. A size-only change is an `sx`
+  breakpoint object `{ xs: <phone>, sm: <desktop> }`, never JavaScript.
+- Crossing 600px (rotating a phone, resizing a window) **re-renders, never remounts**:
+  Kanban scroll, the Gantt anchor and zoom, an unsaved diagram note and the open mode all
+  survive. Each renderer pins this with a "toggles phone without losing X" test.
+- At ≥ 600px the DOM is unchanged, apart from added `data-testid`s.
+- On phone the page inset is `layout.pageInsetPhone` (8px) instead of `5vw`/`5vh`
+  (`app/app/layout.tsx`). Anything that cancels the inset (a form's top margin, Teams'
+  full-bleed workspace) cancels the phone value on phone.
+- Tests: `setViewportWidth(390)` (engine `src/test/viewport.ts`) makes `matchMedia`
+  answer for that width; every test starts at 1280px.
+
+### Per-mode behavior
+
+| Mode | On phone |
+|---|---|
+| Mode picker | One full-width "Display mode: \<mode\>" button opening a menu, so nine modes fit one line. |
+| List | The title row wraps (title + 40px Create, then the search bar beside a 40px Select all); grid columns keep 140px and scroll sideways **inside** the grid; the search dropdown is `calc(100vw - 32px)` wide. |
+| Kanban | One snapping column per screen (85% wide). With write permission, each card has a 40px **Move** button opening a menu of the other columns; it goes through the drop path, so a merged many2one column still answers with `resolveDropTarget`'s refusal. |
+| Calendar | A month of square day buttons with counts; the selected day's records listed below (default today) with **Add** (quick create on that day); Unscheduled stacked below, each card with a 40px **Schedule on \<date\>** button (write permission only). |
+| Gantt | Spans of 7 days / 6 weeks / 3 months, an 88px two-line name column, icon toolbar, 16px bar handles, Unscheduled stacked below. Bars keep `touch-action: none` (pointer drags work on touch), so a vertical scroll must start outside a bar. |
+| WBS / PERT / OBS | A **Full screen** toggle (CSS only, same element, so nothing is lost) that pushes one history entry: browser Back or Escape leaves full screen, never the page. One-row toolbar (Fit view, Undo, Redo, Full screen, **More** menu with the rest) over a `calc(100dvh - 160px)` canvas. |
+| Risk | Full-width tabs, a Now / After toggle, compact matrix chips (12 characters + …, 40px tall), the register as keyboard-accessible tap-to-open cards. |
+| Graph | The read-only one-column projection (Phase 2). |
+
+### Rules for new work
+
+- **No HTML5-drag-only action on phone.** `draggable` drag and drop never fires on touch,
+  so every move a drag offers needs a tap alternative on phone (a menu or a button) that
+  calls the same code path as the drop. Pointer-event drags (Gantt bars, React Flow) work
+  on touch and may stay.
+- Controls a phone layout adds are at least 40×40px.
+- A phone-only write control is shown only with `<entity>:<entity>:write`, like its
+  desktop drag.
+- Check a new view at 390×844 and 360×740: `document.documentElement.scrollWidth` must not
+  exceed `innerWidth`; wide content scrolls inside its own container.
+
+Known gaps: some controls that predate this phase stay under 40px on every width (top-bar
+icons, the form toolbar, chatter Send, filter chips).
+
 ## Coordination
 
 - **[view-customization.md](view-customization.md) / ADR-005:** the notebook extends the
@@ -642,8 +697,8 @@ else.
 - **The title-variant field is still a real field** — required/states/computes apply; the
   big style must not eat the error/required affordances (asterisk, invalid state).
 - **HTML5 DnD does not fire on touch devices.** Phone Graph is read-only by design;
-  Kanban/Calendar drag on touch is a pre-existing gap (documented in list-view-modes
-  Pitfalls) that this roadmap does not attempt — do not advertise phone drag anywhere.
+  Kanban and Calendar offer tap alternatives on phone instead (see *Phone mode*) — do not
+  advertise phone drag anywhere.
 - **50px tiles flirt with the 44–48px minimum touch target** — keep the whole tile (not
   just the icon) tappable and don't shrink below 50.
 - **`position` on `notebook_page` ships in v1 storage but not v1 UI** (pages append in
