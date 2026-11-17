@@ -651,7 +651,7 @@ export function GanttRenderer<T extends HasId>({
       {quick.dialog}
       <Stack direction={phone ? 'column' : 'row'} spacing={2} sx={{ alignItems: phone ? 'stretch' : 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, mb: 1 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: phone ? 0.5 : 1, mb: 1 }}>
             <ToggleButtonGroup
               size="small"
               exclusive
@@ -668,7 +668,7 @@ export function GanttRenderer<T extends HasId>({
               <ToggleButton value="month">{t('Month')}</ToggleButton>
             </ToggleButtonGroup>
             {phone ? (
-              <IconButton aria-label={t('Previous period')} sx={{ minWidth: 40, minHeight: 40 }} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, -1, phone))}>
+              <IconButton aria-label={t('Previous period')} sx={{ width: 40, height: 40, p: 0 }} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, -1, phone))}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} />
               </IconButton>
             ) : (
@@ -680,7 +680,7 @@ export function GanttRenderer<T extends HasId>({
               {t('Today')}
             </Button>
             {phone ? (
-              <IconButton aria-label={t('Next period')} sx={{ minWidth: 40, minHeight: 40 }} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1, phone))}>
+              <IconButton aria-label={t('Next period')} sx={{ width: 40, height: 40, p: 0 }} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1, phone))}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} />
               </IconButton>
             ) : (

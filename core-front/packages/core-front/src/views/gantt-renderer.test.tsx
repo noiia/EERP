@@ -238,8 +238,18 @@ describe('GanttRenderer', () => {
       const next = screen.getByRole('button', { name: 'Next period' })
       expect(next).toHaveTextContent('')
       expect(next.className).toContain('MuiIconButton')
-      expect(getComputedStyle(next).minWidth).toBe('40px')
+      expect(getComputedStyle(next).width).toBe('40px')
       expect(screen.getByText(/–/)).toHaveStyle({ flexBasis: '100%' })
+    })
+
+    it('keeps zoom, Previous, Today and Next on one 312px line on phone (360px screen)', () => {
+      setViewportWidth(360)
+      renderGantt()
+      const next = screen.getByRole('button', { name: 'Next period' })
+      // 150px zoom + 40 + Today + 40 + 3 gaps must fit 312px: square 40px icons, 4px gaps.
+      expect(next).toHaveStyle({ width: '40px', height: '40px', padding: '0px' })
+      expect(screen.getByRole('button', { name: 'Previous period' })).toHaveStyle({ width: '40px' })
+      expect(next.parentElement!).toHaveStyle({ gap: '4px' })
     })
 
     it('narrows the name column to 88px and clamps names to two lines', () => {
