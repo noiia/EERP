@@ -243,3 +243,42 @@ msgstr ""
 
 msgid "Project has no planned hours"
 msgstr ""
+
+msgid "Planning"
+msgstr ""
+
+msgid "My day"
+msgstr ""
+
+msgid "Overdue"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "This week"
+msgstr ""
+
+msgid "Later"
+msgstr ""
+
+msgid "No deadline"
+msgstr ""
+
+msgid "Log time"
+msgstr ""
+
+msgid "Log"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "No open tasks"
+msgstr ""
+
+msgid "First 1000 shown"
+msgstr ""
+
+msgid "Actions"
+msgstr ""

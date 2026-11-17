@@ -459,6 +459,19 @@ registerHeaderMenu('project', 'configuration', {
   ],
 })
 
+// The cross-project planning pages (My day, Timesheet week, Workload,
+// Portfolio): their own shell pages, reached from one Planning menu instead of
+// four more top-bar entries.
+registerHeaderMenu('project', 'planning', {
+  label: 'Planning',
+  entries: [
+    { kind: 'line', label: 'My day', path: '/project/my-day', permission: 'project_task:project_task:read' },
+    { kind: 'line', label: 'Timesheet week', path: '/project/timesheet-week', permission: 'project_timesheet:project_timesheet:read' },
+    { kind: 'line', label: 'Workload', path: '/project/workload', permission: 'project_task:project_task:read' },
+    { kind: 'line', label: 'Portfolio', path: '/project/portfolio', permission: 'project:project:read' },
+  ],
+})
+
 // ── routes ────────────────────────────────────────────────────────────────────
 
 const perm = (table: string) => [`${table}:${table}:read`]
@@ -602,6 +615,25 @@ const routes: FrontModule['routes'] = [
   {
     path: '/project/tags/:id',
     descriptor: { entity: 'project_tag', viewType: 'form', fields: tagFields, permissions: perm('project_tag') },
+  },
+  // The planning pages (ADR-041): shell pages with their own rendering. These
+  // routes only gate them (permission per page) and keep the top bar on the
+  // Project's own menus — dashboard + hideFromTopBar, Teams' trick.
+  {
+    path: '/project/my-day',
+    descriptor: { entity: 'project_task', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project_task') },
+  },
+  {
+    path: '/project/timesheet-week',
+    descriptor: { entity: 'project_timesheet', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project_timesheet') },
+  },
+  {
+    path: '/project/workload',
+    descriptor: { entity: 'project_task', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project_task') },
+  },
+  {
+    path: '/project/portfolio',
+    descriptor: { entity: 'project', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project') },
   },
 ]
 

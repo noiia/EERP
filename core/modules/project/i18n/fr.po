@@ -244,3 +244,42 @@ msgstr "Cycle de dépendances"
 
 msgid "Project has no planned hours"
 msgstr "Le projet n'a pas d'heures prévues"
+
+msgid "Planning"
+msgstr "Planification"
+
+msgid "My day"
+msgstr "Ma journée"
+
+msgid "Overdue"
+msgstr "En retard"
+
+msgid "Today"
+msgstr "Aujourd'hui"
+
+msgid "This week"
+msgstr "Cette semaine"
+
+msgid "Later"
+msgstr "Plus tard"
+
+msgid "No deadline"
+msgstr "Sans échéance"
+
+msgid "Log time"
+msgstr "Saisir du temps"
+
+msgid "Log"
+msgstr "Saisir"
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "No open tasks"
+msgstr "Aucune tâche ouverte"
+
+msgid "First 1000 shown"
+msgstr "Premiers 1000 affichés"
+
+msgid "Actions"
+msgstr "Actions"
