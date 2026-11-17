@@ -68,7 +68,7 @@ const CATEGORICAL_DARK = [
 const CHROME_LIGHT = { primaryInk: '#0b0b0b', mutedInk: '#898781', baseline: '#c3c2b7' }
 const CHROME_DARK = { primaryInk: '#ffffff', mutedInk: '#898781', baseline: '#383835' }
 
-function useGraphPalette() {
+export function useGraphPalette() {
   const theme = useUiStore((s) => s.theme)
   return theme === 'dark'
     ? { categorical: CATEGORICAL_DARK, chrome: CHROME_DARK }

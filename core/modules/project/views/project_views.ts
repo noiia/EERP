@@ -215,6 +215,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
     deadlineField: 'deadline',
     closedField: 'closed',
     urgentDays: 7,
+    taskEntity: 'project_task',
+    taskFormPath: '/project/tasks/:id',
   },
 }
 
@@ -311,6 +313,22 @@ const taskFormFields: Fields = [
   },
   // When the task moved into a closed stage (Go's trigger; ADR-041).
   { name: 'closed_at', label: 'Closed at', type: 'date', widget: 'datetime', readOnly: true },
+  // The task's RACI rows (Matrices mode, ADR-041): who is Responsible /
+  // Accountable / Consulted / Informed. No quick-create — the child entity
+  // has no registered form of its own.
+  {
+    name: 'raci',
+    label: 'RACI',
+    type: 'relation',
+    relation: { entity: 'project_task_raci', kind: 'one2many', inverseField: 'task_id', labelField: 'user_id' },
+    widgetOptions: {
+      deletable: true,
+      columns: [
+        { key: 'user_id', label: 'User' },
+        { key: 'role', label: 'Role' },
+      ],
+    },
+  },
 ]
 
 // Description first, then the task's links; the synthesized Settings page
@@ -321,6 +339,7 @@ export const taskPagesOperations: Operation[] = [
   { op: 'addNode', node: { kind: 'page', title: 'Blocked by', children: [{ kind: 'field', name: 'blocked_by' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
   { op: 'addNode', node: { kind: 'page', title: 'Blocking', children: [{ kind: 'field', name: 'blocking' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
   { op: 'addNode', node: { kind: 'page', title: 'Timesheets', children: [{ kind: 'field', name: 'timesheets' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
+  { op: 'addNode', node: { kind: 'page', title: 'RACI', children: [{ kind: 'field', name: 'raci' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
 ]
 
 // ── milestones, timesheets, stages, tags ─────────────────────────────────────

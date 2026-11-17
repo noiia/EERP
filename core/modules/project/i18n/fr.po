@@ -373,3 +373,33 @@ msgstr "Enregistrer la ligne de base"
 
 msgid "Baseline name"
 msgstr "Nom de la ligne de base"
+
+msgid "Eisenhower"
+msgstr "Eisenhower"
+
+msgid "RACI"
+msgstr "RACI"
+
+msgid "Dependencies"
+msgstr "Dépendances"
+
+msgid "Do"
+msgstr "À faire"
+
+msgid "Schedule"
+msgstr "Planifier"
+
+msgid "Delegate"
+msgstr "Déléguer"
+
+msgid "Eliminate"
+msgstr "Éliminer"
+
+msgid "Toggle priority"
+msgstr "Basculer la priorité"
+
+msgid "First 150 tasks shown"
+msgstr "150 premières tâches affichées"
+
+msgid "No one accountable"
+msgstr "Personne n'est responsable"

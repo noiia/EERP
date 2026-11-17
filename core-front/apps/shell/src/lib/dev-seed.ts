@@ -855,6 +855,17 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
       // Refused (e.g. not a manager, or the limit is reached): the demo just
       // has no baseline to pick, like the stages fallback above.
     }
+    // The RACI matrix (Matrices mode, ADR-041): the first project's first four
+    // tasks get one role each for the signed-in admin, so the tab is not empty.
+    if (pi === 0 && me) {
+      const roles = ['A', 'R', 'C', 'I']
+      track(
+        await createMany(
+          'project_task_raci',
+          tasks.records.slice(0, 4).map((task, i) => ({ task_id: task.id, user_id: me, role: roles[i] })),
+        ),
+      )
+    }
   }
   // Metrics window (WP2): the small demos get a 30-day past start and a 60-day
   // future end; the plan projects span their plan (first phase to last).

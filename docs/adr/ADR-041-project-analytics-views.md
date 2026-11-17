@@ -170,3 +170,46 @@ is no project to compute them for, and the controls stay hidden:
   `states.visible` is the field-only condition DSL (it cannot await) — so the
   `project.canEditStages` kanban guard runs inside the handler, before the
   prompt.
+
+### Matrices mode: Eisenhower, RACI and dependency matrix (WP8)
+
+The Matrices mode (`views/matrix/`) gives the pinned project's task list a
+third analytics angle: where the Risk mode reads `project_risk` rows and the
+Gantt the schedule, it reads the task rows themselves, once for all three
+tabs (`filter[project_id]`, pages of 200, capped at 1000 with a visible
+"first 1000 shown" caption per ADR-032). `MatrixConfig` therefore carries the
+task entity and the task form route (`taskEntity` / `taskFormPath`,
+module-declared like every other mode config), so the renderer is
+self-contained the way `RiskRenderer` and `ObsRenderer` are. Each tab fetches
+its own extras on top of the shared task set:
+
+- **Eisenhower** (`eisenhower.tsx`): the four quadrants of the Global
+  Constraints — Do (important and urgent), Schedule (important), Delegate
+  (urgent), Eliminate (neither) — where important is the task's `priority`
+  boolean and urgent is a deadline strictly inside the config's `urgentDays`
+  horizon (overdue counts). Closed tasks never appear. A card's `Toggle
+  priority` button (write permission only) flips the field through
+  `useOptimisticFieldMove`, so the card moves across quadrants instantly and
+  reverts, with an error alert, on a rejected PATCH. On phone the quadrants
+  stack as four collapsible sections with their counts.
+- **RACI** (`raci.tsx`): rows are the tasks in `wbs_number` order, columns
+  are the project's manager plus its `project_member` rows (plus anyone
+  already holding a role). A cell is one `project_task_raci` row (task x user
+  x role); with write permission tapping it cycles
+  `– -> R -> A -> C -> I -> –` (create / update / delete through
+  `useOptimisticFieldMove`), and a 422 `ONE_ACCOUNTABLE` rejection — Go
+  enforces at most one accountable per task — surfaces the server's message
+  and reverts the cell. A row without an `A` is flagged "No one
+  accountable". The task form hosts the same rows as a `raci` one2many page.
+  Read-only users see the letters only. On phone the grid becomes a per-task
+  card listing `R / A / C / I` and an `Edit` dialog with one select per
+  person.
+- **Dependency structure matrix** (`dsm.tsx`): rows and columns are the
+  tasks in `wbs_number` order (the WBS diagram's `compareOrder`, dotted
+  numbers compared segment by segment), and a dependency "A depends on B"
+  fills the cell at row A (the dependent), column B (the blocker) — the
+  dependency rows are read in chunks of 100 `in[task_id]` over the visible
+  ids, the Gantt links' pattern. The diagonal is greyed, hovering a cell
+  highlights its row and column, and tapping a mark opens the dependent
+  task's form. Over 150 tasks the grid caps at 150 and says so; on phone it
+  scrolls inside its own box with sticky row and column headers.
