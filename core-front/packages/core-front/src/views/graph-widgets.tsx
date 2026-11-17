@@ -72,6 +72,8 @@ export const CHROME_DARK = { primaryInk: '#ffffff', mutedInk: '#898781', baselin
 
 /** The validated categorical palette for the current theme; exported so the
  * diagram boxes can fill a single series (a progress bar) with its first hue. */
+// Exported so the Insights mode's charts (views/insights/*, views/charts/*)
+// reuse the SAME light/dark categorical palette as the graph widgets.
 export function useGraphPalette() {
   const theme = useUiStore((s) => s.theme)
   return theme === 'dark'
@@ -79,7 +81,7 @@ export function useGraphPalette() {
     : { categorical: CATEGORICAL_LIGHT, chrome: CHROME_LIGHT }
 }
 
-function colorFor(index: number, palette: readonly string[]): string {
+export function colorFor(index: number, palette: readonly string[]): string {
   return palette[index % palette.length]!
 }
 

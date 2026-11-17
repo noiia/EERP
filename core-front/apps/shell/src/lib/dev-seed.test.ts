@@ -222,6 +222,7 @@ describe('seedDemoData', () => {
       'project_pbs_item',
       'project metrics span',
       'project_capacity',
+      'project insights milestones',
       'report_page_format',
       'event',
       'event_session',

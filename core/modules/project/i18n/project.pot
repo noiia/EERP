@@ -415,6 +415,30 @@ msgstr ""
 msgid "Hours per week"
 msgstr ""
 
+msgid "Burnup"
+msgstr ""
+
+msgid "Flow"
+msgstr ""
+
+msgid "Remaining tasks"
+msgstr ""
+
+msgid "Scope hours"
+msgstr ""
+
+msgid "Done hours"
+msgstr ""
+
+msgid "Not enough data yet"
+msgstr ""
+
+msgid "tasks without dates are left out of PV"
+msgstr ""
+
+msgid "Line chart"
+msgstr ""
+
 msgid "Late"
 msgstr ""
 
@@ -434,4 +458,16 @@ msgid "green"
 msgstr ""
 
 msgid "No risks"
+msgstr ""
+
+msgid "Max criticity"
+msgstr ""
+
+msgid "Green"
+msgstr ""
+
+msgid "Amber"
+msgstr ""
+
+msgid "Red"
 msgstr ""

@@ -416,6 +416,30 @@ msgstr "Tous les projets"
 msgid "Hours per week"
 msgstr "Heures par semaine"
 
+msgid "Burnup"
+msgstr "Progression"
+
+msgid "Flow"
+msgstr "Flux"
+
+msgid "Remaining tasks"
+msgstr "Tâches restantes"
+
+msgid "Scope hours"
+msgstr "Heures du périmètre"
+
+msgid "Done hours"
+msgstr "Heures réalisées"
+
+msgid "Not enough data yet"
+msgstr "Pas encore assez de données"
+
+msgid "tasks without dates are left out of PV"
+msgstr "tâches sans dates sont exclues de la valeur planifiée"
+
+msgid "Line chart"
+msgstr "Graphique linéaire"
+
 msgid "Late"
 msgstr "En retard"
 
@@ -436,3 +460,15 @@ msgstr "vert"
 
 msgid "No risks"
 msgstr "Aucun risque"
+
+msgid "Max criticity"
+msgstr "Criticité maximale"
+
+msgid "Green"
+msgstr "Vert"
+
+msgid "Amber"
+msgstr "Ambre"
+
+msgid "Red"
+msgstr "Rouge"

@@ -291,3 +291,42 @@ progress, hours (spent / planned, or "-" when unplanned), the end date, a
 titled mark, never color alone). A row or a bubble click opens the
 project's tasks (`filter[project_id]`); on a phone the chart becomes a
 square full-width block and the table becomes one card per project.
+
+### Insights mode frontend (WP7)
+
+The Insights display mode of the project's task list renders six tabs —
+Burndown, Burnup, Earned value, Flow, Milestones, Risk trend — and every tab
+draws from the ONE `GET /project/:id/metrics` read
+(`ops.get(projectEntity, \`${id}/${metricsPath}\`)`) shared across them: the
+mode's renderer is dispatched `key={projectId}`, so a re-pin remounts and
+re-reads, and a tab switch never fires a second request. The selected tab is
+kept in the session (`sessionStorage`, `eerp.insights.tab.<projectEntity>`)
+so a refresh lands back on the tab; the tabs scroll on phone (MUI
+`variant="scrollable"`).
+
+The charts are plain SVG (no charting library, per the ≤ ~5-series
+dataviz guidance): a shared `LineChart` (views/charts/line-chart.tsx) draws
+the axis, the `niceRange` gridlines (the axis always starts at 0 and the
+last tick never below the data's max), one line per series (dashed for the
+ideal burndown line), a legend below the plot, and a hover/tap tooltip that
+lists EVERY series at the pointer's nearest date. The flow areas and the
+risk trend share the fixed-viewBox + `width: 100%` scaling, so a chart fills
+its container on a 390px phone (the legend wraps below it). The categorical
+palette is reused from the graph widgets (`useGraphPalette` / `colorFor`),
+and the risk trend's bands use the ADR-040 band colors through the theme's
+success/warning/error, so dark mode stays consistent.
+
+Pitfalls:
+
+- The endpoint's all-zero answer (a project with no dates, no hours, no
+  timesheets) shows "Not enough data yet" instead of an empty chart — no
+  zero-division, no NaN, no zero-length SVG path.
+- The milestones tab is the only tab that reads beyond the shared metrics
+  read: it pages `project_milestone` through `ops.listPage` (filter
+  `project_id`, ordered by `deadline`) until a short page, capped at 1000
+  with the shared "First 1000 shown" caption (ADR-032, the Gantt and kanban
+  pattern). A milestone row is `Late` (error color) when it is unreached and
+  its deadline has passed — derived on the client, never stored.
+- The burndown's Hours / Tasks toggle switches the same chart to
+  `scope_tasks − done_tasks`; the ideal line belongs to the Hours view only
+  (the endpoint has no ideal task count).
