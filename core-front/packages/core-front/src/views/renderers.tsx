@@ -16,6 +16,8 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid'
 import { DataGrid, GraphRenderer, ObsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
@@ -58,6 +60,7 @@ import { FormActionsMenu } from './form-actions-menu'
 import { HeaderButtonContainer } from './header-button-container'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
+import { usePhone } from './use-phone'
 import { LayoutForm } from './layout-renderer'
 import { orderLabel } from './layout-fields'
 import { useListNavStore, type ListNav } from './list-nav-store'
@@ -934,6 +937,41 @@ function DisplayModeSwitcher({
 }) {
   const t = useT()
   const candidates = DISPLAY_MODES.filter((candidate) => availability[candidate])
+  const phone = usePhone()
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  // Up to 9 modes don't fit one line on a phone: a single menu button names the current one.
+  if (phone) {
+    const label = `${t('Display mode')}: ${t(MODE_LABELS[mode])}`
+    return (
+      <Box sx={{ mb: 1 }}>
+        <Button
+          fullWidth
+          variant="outlined"
+          aria-label={label}
+          aria-haspopup="menu"
+          onClick={(e) => setAnchor(e.currentTarget)}
+          endIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+        >
+          {t(MODE_LABELS[mode])}
+        </Button>
+        <Menu anchorEl={anchor} open={anchor !== null} onClose={() => setAnchor(null)}>
+          {candidates.map((candidate) => (
+            <MenuItem
+              key={candidate}
+              selected={candidate === mode}
+              data-entity={entity}
+              onClick={() => {
+                setAnchor(null)
+                onChange(candidate)
+              }}
+            >
+              {t(MODE_LABELS[candidate])}
+            </MenuItem>
+          ))}
+        </Menu>
+      </Box>
+    )
+  }
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
       <ToggleButtonGroup

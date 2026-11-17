@@ -47,6 +47,7 @@ import { useUiStore } from './ui-store'
 import { useUndoToastStore } from './undo-toast'
 import type { EntityActions } from './stores'
 import { ApiError } from '../api/errors'
+import { setViewportWidth } from '../test/viewport'
 
 function identityWith(permissions: string[]): Identity {
   return { userId: 'u1', tenantId: 't1', roles: ['tester'], permissions }
@@ -1866,5 +1867,47 @@ describe('newFormSeed', () => {
 
   it('seeds nothing without params', () => {
     expect(newFormSeed(tasks, null)).toEqual({})
+  })
+})
+
+describe('DisplayModeSwitcher on phone', () => {
+  const taskDescriptor: ViewDescriptor<Contact & { start?: string | null; end?: string | null }> = {
+    entity: 'crm',
+    viewType: 'tree',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'start', label: 'Start', type: 'date' },
+      { name: 'end', label: 'End', type: 'date' },
+    ],
+    viewModeDefaults: { kanbanStatusField: 'name', calendarDateField: 'start', ganttStartField: 'start', ganttEndField: 'end' },
+  }
+  const renderTasks = () =>
+    render(
+      <EntityView
+        descriptor={taskDescriptor}
+        initialData={[{ id: '1', name: 'Ada', start: null, end: null }]}
+        actions={noopActions as unknown as EntityActions<Contact & { start?: string | null; end?: string | null }>}
+      />,
+    )
+
+  it('shows one "View: <mode>" button instead of the toggle group on phone', () => {
+    setViewportWidth(390)
+    renderTasks()
+    expect(screen.queryByRole('group', { name: 'Display mode' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Display mode: List' })).toBeInTheDocument()
+  })
+
+  it('switches mode from the menu', () => {
+    setViewportWidth(390)
+    renderTasks()
+    fireEvent.click(screen.getByRole('button', { name: 'Display mode: List' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Gantt' }))
+    expect(screen.getByTestId('gantt-track')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Display mode: Gantt' })).toBeInTheDocument()
+  })
+
+  it('keeps the toggle group at desktop width', () => {
+    renderTasks()
+    expect(screen.getByRole('group', { name: 'Display mode' })).toBeInTheDocument()
   })
 })
