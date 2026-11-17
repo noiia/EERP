@@ -917,6 +917,12 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
     }
   }
   track({ result: span })
+  // A weekly capacity for the signed-in user: the Workload heatmap compares
+  // planned load against it (WP10); a live (user) row already exists → 409,
+  // re-running duplicates nothing, like the other seeded rows.
+  if (me) {
+    track(await createMany('project_capacity', [{ user_id: me, hours_per_week: 24 }]))
+  }
   results.push(...Object.values(outcomes))
   return results
 }

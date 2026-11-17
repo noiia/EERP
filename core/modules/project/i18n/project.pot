@@ -405,3 +405,33 @@ msgstr ""
 
 msgid "Deliverable"
 msgstr ""
+
+msgid "Unassigned"
+msgstr ""
+
+msgid "All projects"
+msgstr ""
+
+msgid "Hours per week"
+msgstr ""
+
+msgid "Late"
+msgstr ""
+
+msgid "Portfolio chart"
+msgstr ""
+
+msgid "Progress"
+msgstr ""
+
+msgid "red"
+msgstr ""
+
+msgid "amber"
+msgstr ""
+
+msgid "green"
+msgstr ""
+
+msgid "No risks"
+msgstr ""

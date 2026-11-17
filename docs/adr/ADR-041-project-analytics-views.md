@@ -245,3 +245,49 @@ lose their parent, its live tasks lose the link, then the item is soft-deleted
 clears the link, like the milestone. Deleting and restoring a project carries
 the items with it: they are in the project's delete/restore table lists, under
 the same `deleted_at`.
+
+### Workload heatmap and capacities (WP10)
+
+The Planning menu's **Workload** page (`/project/workload`, a hidden
+`project_task` dashboard route) shows planned hours per assignee x week over
+the coming 8-week window (4 weeks on a phone: the user column stays sticky,
+the weeks scroll horizontally inside their own box). It reads the open tasks
+with `planned_hours > 0` overlapping the window (the list query
+`filter[closed]=false`, `gte[deadline]=<window start>`, `lt[date_start]=<window
+end>`, `gt[planned_hours]=0`), spreads each task's planned hours evenly over
+the Mon-Fri workdays of its `[date_start, deadline]` span (a weekend-only span
+moves its whole load to the following Monday; workdays outside the window are
+dropped), and splits the share equally among the task's assignees. Tasks
+without an assignee land in an **Unassigned** row. Each cell is colored against
+the user's `project_capacity.hours_per_week` (default 40 h/week when the user
+has no row): uncolored up to 80%, warning up to 100%, error above. A cell click
+opens the task list with `filter[assignees]=<user>`; a Project filter narrows
+the task read to one project. Like the other planning pages, the read is
+capped at 1000 rows with the "First 1000 shown" caption.
+
+**Capacities** (`/project/capacities`, a hidden `project_capacity` tree route
+reached from one Configuration-menu line) edit the `project_capacity` rows
+(user, `hours_per_week` in 1..168 by a DB check, one live row per user by the
+tenant-unique index). The table existed since WP4; WP10 gives it a surface -
+the heatmap reads it, and the light seed adds a 24 h/week row for the
+signed-in user.
+
+### Portfolio dashboard (WP10)
+
+The Planning menu's **Portfolio** page (`/project/portfolio`, a hidden
+`project` dashboard route) plots the visible active projects (`?filter[active]=true`,
+read capped at 1000 with the "First 1000 shown" caption) as one plain-SVG
+bubble each: x = % tasks done, y = % planned hours used (spent/planned,
+capped at 200%; a project with no planned hours sits hollow on the bottom
+axis), size = planned hours, color = the project's worst risk criticity band
+from the graph-widgets categorical palette (red, amber, green, or grey when
+it has no risks). The figures come from the named server aggregates
+(`?aggregate=count&group=project_id`): the project's closed tasks, and its
+`project_risk` counts in the criticity bands > 12 (red), 4..12 (amber) and
+<= 4 (green - the third band is what separates "green risks" from "no risks"
+in the color). The table beside the chart shows the manager (by email),
+progress, hours (spent / planned, or "-" when unplanned), the end date, a
+**Late** flag (past `date_end` before 100% done) and the risk dot (a
+titled mark, never color alone). A row or a bubble click opens the
+project's tasks (`filter[project_id]`); on a phone the chart becomes a
+square full-width block and the table becomes one card per project.

@@ -45,7 +45,9 @@ import type { ServerTileData, ServerTileState } from './graph-server'
 // a 5-slot UI brand palette; see references/palette.md for the source and
 // validation status) ─────────────────────────────────────────────────────────
 
-const CATEGORICAL_LIGHT = [
+// Exported (not just used here) so a host's own plain-SVG charts can reuse
+// the validated palette instead of inventing colors (WP10's Portfolio page).
+export const CATEGORICAL_LIGHT = [
   '#2a78d6',
   '#1baf7a',
   '#eda100',
@@ -55,7 +57,7 @@ const CATEGORICAL_LIGHT = [
   '#e87ba4',
   '#eb6834',
 ]
-const CATEGORICAL_DARK = [
+export const CATEGORICAL_DARK = [
   '#3987e5',
   '#199e70',
   '#c98500',
@@ -65,8 +67,8 @@ const CATEGORICAL_DARK = [
   '#d55181',
   '#d95926',
 ]
-const CHROME_LIGHT = { primaryInk: '#0b0b0b', mutedInk: '#898781', baseline: '#c3c2b7' }
-const CHROME_DARK = { primaryInk: '#ffffff', mutedInk: '#898781', baseline: '#383835' }
+export const CHROME_LIGHT = { primaryInk: '#0b0b0b', mutedInk: '#898781', baseline: '#c3c2b7' }
+export const CHROME_DARK = { primaryInk: '#ffffff', mutedInk: '#898781', baseline: '#383835' }
 
 /** The validated categorical palette for the current theme; exported so the
  * diagram boxes can fill a single series (a progress bar) with its first hue. */

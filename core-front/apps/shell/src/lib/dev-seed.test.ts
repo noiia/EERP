@@ -221,6 +221,7 @@ describe('seedDemoData', () => {
       'project_risk_task',
       'project_pbs_item',
       'project metrics span',
+      'project_capacity',
       'report_page_format',
       'event',
       'event_session',

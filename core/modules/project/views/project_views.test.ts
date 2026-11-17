@@ -242,6 +242,25 @@ describe('project views', () => {
     }
   })
 
+  it('lists and edits user capacities from the Configuration menu', () => {
+    expect(route('/project/capacities').descriptor).toMatchObject({
+      entity: 'project_capacity',
+      viewType: 'tree',
+      navLabel: 'Capacities',
+      hideFromTopBar: true,
+      formPath: '/project/capacities/:id',
+    })
+    expect(route('/project/capacities/:id').descriptor).toMatchObject({ entity: 'project_capacity', viewType: 'form' })
+    expect(field('/project/capacities/:id', 'user_id')).toMatchObject({ type: 'relation', relation: { entity: 'users', kind: 'many2one' }, required: true })
+    expect(field('/project/capacities/:id', 'hours_per_week')).toMatchObject({ type: 'number', required: true })
+    const registry = new ModuleRegistry()
+    registry.register(mod, { appMode: true })
+    const config = registry.headerMenus().find((m) => m.module === 'project')!.menus.find((m) => m.label === 'Configuration')!
+    expect(config.entries).toContainEqual(
+      expect.objectContaining({ kind: 'line', label: 'Capacities', path: '/project/capacities', permission: 'project_capacity:project_capacity:read' }),
+    )
+  })
+
   it('declares the planning pages as hidden dashboards behind a Planning menu', () => {
     for (const [path, table] of [
       ['/project/my-day', 'project_task'],
