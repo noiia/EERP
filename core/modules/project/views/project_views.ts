@@ -175,6 +175,24 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
   // Risk analysis: matrix, Ishikawa and register tabs over these tables.
   risk: { entity: 'project_risk', linkEntity: 'project_risk_task', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' },
+  // Gantt schedule and baselines of the pinned project (ADR-041).
+  ganttSchedule: { scopeField: 'project_id', scopeEntity: 'project', path: 'schedule' },
+  ganttBaseline: { entity: 'project_baseline', taskEntity: 'project_baseline_task', scopeField: 'project_id', linkField: 'task_id', startField: 'date_start', endField: 'deadline' },
+  // Kanban swimlanes: one lane per assignee, over the task's assignees junction.
+  kanbanSwimlanes: { label: 'Assignee', via: 'project_task_user', ownField: 'task_id', relatedField: 'user_id', entity: 'users', labelField: 'email' },
+  // Insights and Matrices modes over the pinned project (ADR-041); the DSM
+  // reuses the pert dependencies.
+  insights: { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' },
+  matrix: {
+    projectField: 'project_id',
+    raciEntity: 'project_task_raci',
+    userLabelField: 'email',
+    dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+    priorityField: 'priority',
+    deadlineField: 'deadline',
+    closedField: 'closed',
+    urgentDays: 7,
+  },
 }
 
 // The task's many2many fields: on the form, and filters of the task lists

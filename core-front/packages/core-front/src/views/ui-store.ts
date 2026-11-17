@@ -27,6 +27,9 @@ export interface UiState {
    * default — docs/roadmaps/list-view-modes.md). Purely a UI preference, so it
    * lives here rather than as server state. */
   viewMode: Record<string, DisplayMode>
+  /** The Kanban swimlanes toggle's last choice, per entity (docs/roadmaps/
+   * list-view-modes.md) — a per-user UI preference, off by default. */
+  swimlanes: Record<string, boolean>
   /** The form chatter panel's drag-resized width (px), shared across every
    * entity — a per-user layout preference, not per-entity like viewMode. */
   chatterWidth: number
@@ -42,6 +45,7 @@ export interface UiState {
   setSidebar: (open: boolean) => void
   setLastRoute: (route: string | null) => void
   setViewMode: (entity: string, mode: DisplayMode) => void
+  setSwimlanes: (entity: string, on: boolean) => void
   setChatterWidth: (width: number) => void
 }
 
@@ -54,6 +58,7 @@ export const useUiStore = create<UiState>()(
       sidebarOpen: true,
       lastRoute: null,
       viewMode: {},
+      swimlanes: {},
       chatterWidth: layout.chatterWidthDefault,
       setTheme: (theme) => set({ theme }),
       setUiStyle: (uiStyle) => set({ uiStyle }),
@@ -66,6 +71,8 @@ export const useUiStore = create<UiState>()(
       setLastRoute: (lastRoute) => set({ lastRoute }),
       setViewMode: (entity, mode) =>
         set((state) => ({ viewMode: { ...state.viewMode, [entity]: mode } })),
+      setSwimlanes: (entity, on) =>
+        set((state) => ({ swimlanes: { ...state.swimlanes, [entity]: on } })),
       setChatterWidth: (chatterWidth) => set({ chatterWidth }),
     }),
     {
