@@ -35,7 +35,10 @@ func TestSchedule_CriticalChain(t *testing.T) {
 	if len(byID) != 4 {
 		t.Fatalf("rows = %d, want 4", len(byID))
 	}
-	want := map[uuid.UUID]struct{ es, ef, ls, lf, slack float64; critical bool }{
+	want := map[uuid.UUID]struct {
+		es, ef, ls, lf, slack float64
+		critical              bool
+	}{
 		a: {0, 1, 0, 1, 0, true},
 		b: {1, 3, 1, 3, 0, true},
 		c: {1, 2, 2, 3, 1, false},
