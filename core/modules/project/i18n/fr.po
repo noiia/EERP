@@ -346,3 +346,24 @@ msgstr "Tous les projets"
 
 msgid "Hours per week"
 msgstr "Heures par semaine"
+
+msgid "Late"
+msgstr "En retard"
+
+msgid "Portfolio chart"
+msgstr "Diagramme du portefeuille"
+
+msgid "Progress"
+msgstr "Avancement"
+
+msgid "red"
+msgstr "rouge"
+
+msgid "amber"
+msgstr "ambre"
+
+msgid "green"
+msgstr "vert"
+
+msgid "No risks"
+msgstr "Aucun risque"

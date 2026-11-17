@@ -66,3 +66,7 @@ export * from './diagram/auto-layout'
 export * from './diagram/collide'
 export * from './diagram/pert'
 export * from './diagram/wbs'
+// The chart palette and chrome (graph-widgets' validated dataviz reference
+// instance): reused by host pages that draw their own plain-SVG charts
+// (WP10's Portfolio dashboard).
+export { CATEGORICAL_LIGHT, CATEGORICAL_DARK, CHROME_LIGHT, CHROME_DARK, useGraphPalette } from './graph-widgets'

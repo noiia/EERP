@@ -99,3 +99,23 @@ reached from one Configuration-menu line) edit the `project_capacity` rows
 tenant-unique index). The table existed since WP4; WP10 gives it a surface -
 the heatmap reads it, and the light seed adds a 24 h/week row for the
 signed-in user.
+
+### Portfolio dashboard (WP10)
+
+The Planning menu's **Portfolio** page (`/project/portfolio`, a hidden
+`project` dashboard route) plots the visible active projects (`?filter[active]=true`,
+read capped at 1000 with the "First 1000 shown" caption) as one plain-SVG
+bubble each: x = % tasks done, y = % planned hours used (spent/planned,
+capped at 200%; a project with no planned hours sits hollow on the bottom
+axis), size = planned hours, color = the project's worst risk criticity band
+from the graph-widgets categorical palette (red, amber, green, or grey when
+it has no risks). The figures come from the named server aggregates
+(`?aggregate=count&group=project_id`): the project's closed tasks, and its
+`project_risk` counts in the criticity bands > 12 (red), 4..12 (amber) and
+<= 4 (green - the third band is what separates "green risks" from "no risks"
+in the color). The table beside the chart shows the manager (by email),
+progress, hours (spent / planned, or "-" when unplanned), the end date, a
+**Late** flag (past `date_end` before 100% done) and the risk dot (a
+titled mark, never color alone). A row or a bubble click opens the
+project's tasks (`filter[project_id]`); on a phone the chart becomes a
+square full-width block and the table becomes one card per project.
