@@ -14,6 +14,7 @@ import { RelationOpsProvider, type RelationOps } from './relation-ops'
 import { BannerScope, BannerSlot } from './banner'
 import { useSessionStore } from './session-store'
 import { ApiError } from '../api/errors'
+import { setViewportWidth } from '../test/viewport'
 import type { EntityListOptions } from '../api/list-options'
 
 type Task = {
@@ -183,6 +184,94 @@ describe('GanttRenderer', () => {
     renderGantt()
     fireEvent.click(screen.getByText('Alpha'))
     expect(pushMock).toHaveBeenCalledWith('/app/tasks/1')
+  })
+
+  describe('phone', () => {
+    const labels = () => within(screen.getByTestId('gantt-track')).getAllByText(/./).map((n) => n.textContent)
+
+    it('shows 7 day columns in Day zoom on phone', () => {
+      setViewportWidth(390)
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      expect(labels()).toHaveLength(7)
+    })
+
+    it('shows 6 week columns in Week zoom on phone', () => {
+      setViewportWidth(390)
+      renderGantt()
+      expect(labels()).toHaveLength(6)
+    })
+
+    it('shows 3 months in Month zoom on phone', () => {
+      setViewportWidth(390)
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Month' }))
+      expect(labels()).toHaveLength(3)
+    })
+
+    it('loads only the phone range', async () => {
+      setViewportWidth(390)
+      const listPage = vi.fn<ListPage>(async () => ({ records: [], total: 0 }))
+      const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+      render(
+        <RelationOpsProvider ops={ops}>
+          <GanttRenderer descriptor={descriptor} initialData={[]} actions={actions} startField="date_start" endField="deadline" serverOptions={{}} />
+        </RelationOpsProvider>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      await waitFor(() =>
+        expect(listPage).toHaveBeenCalledWith('task', expect.objectContaining({ lt: { date_start: '2026-03-09' } })),
+      )
+    })
+
+    it('Next moves by the phone span', () => {
+      setViewportWidth(390)
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Next period' }))
+      expect(labels()[0]).toBe(new Date(2026, 2, 9).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }))
+    })
+
+    it('uses icon buttons and puts the range on its own line on phone', () => {
+      setViewportWidth(390)
+      renderGantt()
+      const next = screen.getByRole('button', { name: 'Next period' })
+      expect(next).toHaveTextContent('')
+      expect(next.className).toContain('MuiIconButton')
+      expect(getComputedStyle(next).minWidth).toBe('40px')
+      expect(screen.getByText(/–/)).toHaveStyle({ flexBasis: '100%' })
+    })
+
+    it('narrows the name column to 88px and clamps names to two lines', () => {
+      setViewportWidth(390)
+      renderGantt()
+      expect(screen.getByTestId('gantt-track').parentElement!).toHaveStyle({ gridTemplateColumns: '88px minmax(0, 1fr)' })
+      expect(within(screen.getByTestId('gantt-row-1')).getByText('Alpha')).toHaveStyle({ WebkitLineClamp: '2' })
+    })
+
+    it('gives bar edge handles a 16px touch area on phone', () => {
+      setViewportWidth(390)
+      renderGantt()
+      expect(screen.getByTestId('gantt-handle-start-1')).toHaveStyle({ width: '16px' })
+    })
+
+    it('stacks Unscheduled below the timeline on phone', () => {
+      setViewportWidth(390)
+      renderGantt()
+      expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveStyle({ width: '100%' })
+      expect(screen.getByRole('group', { name: 'Unscheduled' }).closest('.MuiStack-root')).toHaveStyle({ flexDirection: 'column' })
+    })
+
+    it('keeps the desktop range when the viewport crosses back', () => {
+      setViewportWidth(390)
+      renderGantt()
+      fireEvent.click(screen.getByRole('button', { name: 'Day' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Next period' }))
+      act(() => setViewportWidth(1280))
+      expect(labels()).toHaveLength(14)
+      expect(screen.getByRole('button', { name: 'Day' })).toHaveAttribute('aria-pressed', 'true')
+      expect(labels()[0]).toBe(new Date(2026, 2, 9).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }))
+    })
   })
 
   describe('server-loaded', () => {

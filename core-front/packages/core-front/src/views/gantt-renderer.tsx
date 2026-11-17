@@ -30,6 +30,7 @@ import { RelationColorTagsWidget } from './relation-widgets'
 import type { EntityActions, HasId } from './stores'
 import { isEmptyZoneClick, useQuickCreate } from './quick-create'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
+import { usePhone } from './use-phone'
 import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
 
 // Gantt display mode: one row per record, a bar from its start date field to
@@ -100,21 +101,22 @@ function dayDiff(a: Date, b: Date): number {
 }
 
 /** Visible range [start, end) and its header columns for a zoom level. */
-function viewRange(zoom: Zoom, anchor: Date) {
+function viewRange(zoom: Zoom, anchor: Date, phone = false) {
   if (zoom === 'month') {
+    const n = phone ? 3 : 6
     const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
-    const columns = Array.from({ length: 6 }, (_, i) => new Date(start.getFullYear(), start.getMonth() + i, 1))
-    return { start, end: new Date(start.getFullYear(), start.getMonth() + 6, 1), columns }
+    const columns = Array.from({ length: n }, (_, i) => new Date(start.getFullYear(), start.getMonth() + i, 1))
+    return { start, end: new Date(start.getFullYear(), start.getMonth() + n, 1), columns }
   }
   const start = monday(anchor)
-  const [count, step] = zoom === 'day' ? [14, 1] : [12, 7]
+  const [count, step] = zoom === 'day' ? [phone ? 7 : 14, 1] : [phone ? 6 : 12, 7]
   const columns = Array.from({ length: count }, (_, i) => addDays(start, i * step))
   return { start, end: addDays(start, count * step), columns }
 }
 
-function shiftAnchor(zoom: Zoom, anchor: Date, dir: number): Date {
-  if (zoom === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + 6 * dir, 1)
-  return addDays(anchor, (zoom === 'day' ? 14 : 84) * dir)
+function shiftAnchor(zoom: Zoom, anchor: Date, dir: number, phone = false): Date {
+  if (zoom === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + (phone ? 3 : 6) * dir, 1)
+  return addDays(anchor, (zoom === 'day' ? (phone ? 7 : 14) : phone ? 42 : 84) * dir)
 }
 
 /** Grey grid line offsets (days from the range start): every day, or 8 per month in Month zoom. */
@@ -230,7 +232,8 @@ export function GanttRenderer<T extends HasId>({
   const { formPath } = descriptor
   const [zoom, setZoom] = useState<Zoom>(() => readZoom(descriptor.entity))
   const [anchor, setAnchor] = useState(() => new Date())
-  const range = viewRange(zoom, anchor)
+  const phone = usePhone()
+  const range = viewRange(zoom, anchor, phone)
   const totalDays = dayDiff(range.end, range.start)
   const fromIso = isoDate(range.start)
   const untilIso = isoDate(range.end)
@@ -568,7 +571,7 @@ export function GanttRenderer<T extends HasId>({
   const placing = drag?.mode === 'place' && drag.moved ? (unscheduled.find((r) => r.id === drag.id) ?? null) : null
   const hoverDay = placing && drag && drag.pxPerDay > 0 ? Math.floor((drag.x - drag.trackLeft) / drag.pxPerDay) : -1
   const dropDay = hoverDay >= 0 && hoverDay < totalDays ? hoverDay : null
-  const handleSx = { position: 'absolute', top: 0, bottom: 0, width: 8, cursor: 'ew-resize', touchAction: 'none' } as const
+  const handleSx = { position: 'absolute', top: 0, bottom: 0, width: phone ? 16 : 8, cursor: 'ew-resize', touchAction: 'none' } as const
 
   function bar(row: { record: T; s: number; e: number }) {
     const { record, s, e } = row
@@ -646,7 +649,7 @@ export function GanttRenderer<T extends HasId>({
       <ErrorAlert error={error} />
       <ErrorAlert error={loadError} />
       {quick.dialog}
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
+      <Stack direction={phone ? 'column' : 'row'} spacing={2} sx={{ alignItems: phone ? 'stretch' : 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, mb: 1 }}>
             <ToggleButtonGroup
@@ -664,16 +667,28 @@ export function GanttRenderer<T extends HasId>({
               <ToggleButton value="week">{t('Week')}</ToggleButton>
               <ToggleButton value="month">{t('Month')}</ToggleButton>
             </ToggleButtonGroup>
-            <Button size="small" aria-label={t('Previous period')} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, -1))}>
-              {t('Previous')}
-            </Button>
-            <Button size="small" onClick={() => setAnchor(new Date())}>
+            {phone ? (
+              <IconButton aria-label={t('Previous period')} sx={{ minWidth: 40, minHeight: 40 }} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, -1, phone))}>
+                <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} />
+              </IconButton>
+            ) : (
+              <Button size="small" aria-label={t('Previous period')} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, -1))}>
+                {t('Previous')}
+              </Button>
+            )}
+            <Button size="small" sx={{ minHeight: phone ? 40 : undefined }} onClick={() => setAnchor(new Date())}>
               {t('Today')}
             </Button>
-            <Button size="small" aria-label={t('Next period')} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1))}>
-              {t('Next')}
-            </Button>
-            <Typography variant="subtitle2">
+            {phone ? (
+              <IconButton aria-label={t('Next period')} sx={{ minWidth: 40, minHeight: 40 }} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1, phone))}>
+                <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} />
+              </IconButton>
+            ) : (
+              <Button size="small" aria-label={t('Next period')} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1))}>
+                {t('Next')}
+              </Button>
+            )}
+            <Typography variant="subtitle2" sx={{ flexBasis: phone ? '100%' : 'auto' }}>
               {range.start.toLocaleDateString()} – {addDays(range.end, -1).toLocaleDateString()}
             </Typography>
             {server?.capped ? (
@@ -687,7 +702,7 @@ export function GanttRenderer<T extends HasId>({
             // minHeight: the whole timeline stays a drop target for Unscheduled cards, even with few rows.
             sx={{
               display: 'grid',
-              gridTemplateColumns: 'minmax(96px, 200px) minmax(0, 1fr)',
+              gridTemplateColumns: phone ? '88px minmax(0, 1fr)' : 'minmax(96px, 200px) minmax(0, 1fr)',
               gridAutoRows: 'min-content',
               rowGap: `${ROW_GAP}px`,
               minHeight: 240,
@@ -728,7 +743,11 @@ export function GanttRenderer<T extends HasId>({
                     onClick={() => openForm(row.record)}
                     sx={{ flex: 1, height: ROW_H, justifyContent: 'flex-start', textTransform: 'none', minWidth: 0, overflow: 'hidden' }}
                   >
-                    <Typography variant="body2" noWrap>
+                    <Typography
+                      variant="body2"
+                      noWrap={!phone}
+                      sx={phone ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textAlign: 'left', whiteSpace: 'normal' } : undefined}
+                    >
                       {label(row.record)}
                     </Typography>
                   </Button>
@@ -856,7 +875,7 @@ export function GanttRenderer<T extends HasId>({
           <Box
             role="group"
             aria-label={t('Unscheduled')}
-            sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
+            sx={{ width: phone ? '100%' : 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
           >
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               {t('Unscheduled')} ({unscheduled.length})
