@@ -93,6 +93,92 @@ export interface ViewModeDefaults {
    * the entity's form descriptor: its related records' colors paint the Gantt
    * bars and a ribbon on Kanban/Calendar cards. Module-declared only. */
   colorTagsField?: string
+  /** Gantt mode: the pinned scope's schedule, read through
+   * `ops.get(scopeEntity, `${id}/${path}`)`. Module-declared only. */
+  ganttSchedule?: GanttScheduleConfig
+  /** Gantt mode: the baseline rows drawn behind the live tasks of the pinned scope. Module-declared only. */
+  ganttBaseline?: GanttBaselineConfig
+  /** Kanban mode: one lane per related record of a many2many junction, plus an
+   * Unassigned lane (ADR-041). Module-declared only. */
+  kanbanSwimlanes?: KanbanSwimlanesConfig
+  /** Insights mode: the entity's project analytics, available while the list is pinned to one project. Module-declared only. */
+  insights?: InsightsConfig
+  /** Matrix mode: the entity's matrices (Eisenhower, RACI, DSM), available while the list is pinned to one project. Module-declared only. */
+  matrix?: MatrixConfig
+}
+
+/** The pinned scope's Gantt schedule endpoint: `ops.get(scopeEntity, `${id}/${path}`)`. */
+export interface GanttScheduleConfig {
+  /** The scope column on the task entity, e.g. 'project_id'. */
+  scopeField: string
+  /** The scope entity read through, e.g. 'project'. */
+  scopeEntity: string
+  /** The sub-endpoint path, e.g. 'schedule'. */
+  path: string
+}
+
+/** The baseline snapshot rows a Gantt draws behind the live tasks. */
+export interface GanttBaselineConfig {
+  /** The baseline entity (its generic list route prefix). */
+  entity: string
+  /** The baseline's per-task rows (the bar endpoints live there). */
+  taskEntity: string
+  /** The baseline's scope column, e.g. 'project_id'. */
+  scopeField: string
+  /** The baseline task row's FK to the live task, e.g. 'task_id'. */
+  linkField: string
+  /** The baseline task row's bar start column. */
+  startField: string
+  /** The baseline task row's bar end column. */
+  endField: string
+}
+
+/** One Kanban swimlane per record of a many2many junction (plus Unassigned). */
+export interface KanbanSwimlanesConfig {
+  /** The lane dimension's human label (a msgid), e.g. 'Assignee'. */
+  label: string
+  /** The junction entity holding one row per link. */
+  via: string
+  /** The junction's FK column to the board's records, e.g. 'task_id'. */
+  ownField: string
+  /** The junction's FK column to the lane records, e.g. 'user_id'. */
+  relatedField: string
+  /** The lane entity (one lane per live record), e.g. 'users'. */
+  entity: string
+  /** The lane record's display field, e.g. 'email'. */
+  labelField: string
+}
+
+/** Insights mode over the pinned project (ADR-041). */
+export interface InsightsConfig {
+  /** The scope column on the task entity, e.g. 'project_id'. */
+  projectField: string
+  /** The scope entity read through, e.g. 'project'. */
+  projectEntity: string
+  /** The project's metrics sub-endpoint, e.g. 'metrics'. */
+  metricsPath: string
+  /** The pinned project's milestone entity. */
+  milestoneEntity: string
+}
+
+/** Matrix mode over the pinned project (ADR-041). */
+export interface MatrixConfig {
+  /** The scope column on the task entity, e.g. 'project_id'. */
+  projectField: string
+  /** The RACI junction entity (one row per task × user role). */
+  raciEntity: string
+  /** The user's display field on the RACI rows, e.g. 'email'. */
+  userLabelField: string
+  /** The DSM's dependency rows (the pert dependencies' shape). */
+  dependencies: GanttDependenciesConfig
+  /** The Eisenhower priority boolean field. */
+  priorityField: string
+  /** The Eisenhower deadline date field (urgent = within urgentDays). */
+  deadlineField: string
+  /** The task's closed boolean field (closed tasks are excluded). */
+  closedField: string
+  /** The Eisenhower urgency horizon in days. */
+  urgentDays: number
 }
 
 /** Rows of `entity` link record `fromField` (the blocker: the arrow leaves
@@ -138,6 +224,11 @@ export interface EffectiveViewFields {
   obs: ObsConfig | null
   risk: RiskConfig | null
   colorTagsField: string | null
+  ganttSchedule: GanttScheduleConfig | null
+  ganttBaseline: GanttBaselineConfig | null
+  kanbanSwimlanes: KanbanSwimlanesConfig | null
+  insights: InsightsConfig | null
+  matrix: MatrixConfig | null
 }
 
 /**
@@ -167,6 +258,12 @@ export function effectiveViewFields(
     obs: defaults?.obs ?? null,
     risk: defaults?.risk ?? null,
     colorTagsField: defaults?.colorTagsField ?? null,
+    // ADR-041: module-declared only, like obs/risk — no runtime admin override.
+    ganttSchedule: defaults?.ganttSchedule ?? null,
+    ganttBaseline: defaults?.ganttBaseline ?? null,
+    kanbanSwimlanes: defaults?.kanbanSwimlanes ?? null,
+    insights: defaults?.insights ?? null,
+    matrix: defaults?.matrix ?? null,
   }
 }
 
@@ -197,9 +294,9 @@ export function pinnedId(options: EntityListOptions | undefined, field: string):
 }
 
 /** The list view's display-mode switcher (top-right of the list). */
-export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs' | 'risk'
+export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs' | 'risk' | 'insights' | 'matrix'
 
-export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs', 'risk']
+export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs', 'risk', 'insights', 'matrix']
 
 /**
  * Which modes are usable right now for a given entity's EFFECTIVE (module
@@ -219,5 +316,9 @@ export function availableDisplayModes(effective: EffectiveViewFields, options?: 
     pert: effective.pertDependencies != null,
     obs: effective.obs != null && pinnedId(options, effective.obs.projectField) != null,
     risk: effective.risk != null && pinnedId(options, effective.risk.projectField) != null,
+    // ADR-041: both ride the pinnedId rule, obs/risk style — the pin is the
+    // project id the analytics and matrices are computed over.
+    insights: effective.insights != null && pinnedId(options, effective.insights.projectField) != null,
+    matrix: effective.matrix != null && pinnedId(options, effective.matrix.projectField) != null,
   }
 }

@@ -2948,3 +2948,9 @@ msgstr "Quitter le plein écran"
 
 msgid "More"
 msgstr "Plus"
+
+msgid "Insights"
+msgstr "Analyses"
+
+msgid "Matrices"
+msgstr "Matrices"

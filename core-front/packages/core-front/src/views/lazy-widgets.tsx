@@ -9,6 +9,8 @@ import type { WbsRendererProps } from './diagram/wbs-renderer'
 import type { PertRendererProps } from './diagram/pert-renderer'
 import type { ObsRendererProps } from './diagram/obs-renderer'
 import type { RiskRendererProps } from './risk/risk-renderer'
+import type { InsightsRendererProps } from './insights/insights-renderer'
+import type { MatrixRendererProps } from './matrix/matrix-renderer'
 import { lazyComponent } from './lazy-component'
 
 // The engine's heavy widgets, each in its own chunk (see lazy-component.tsx).
@@ -57,4 +59,14 @@ export const ObsRenderer = lazyComponent<ObsRendererProps>(() =>
 
 export const RiskRenderer = lazyComponent<RiskRendererProps>(() =>
   import('./risk/risk-renderer').then((m) => m.RiskRenderer),
+)
+
+// Insights and Matrices modes (ADR-041): stubs for now — their own tasks fill
+// the renderers, the chunk and the dispatch stay.
+export const InsightsRenderer = lazyComponent<InsightsRendererProps>(() =>
+  import('./insights/insights-renderer').then((m) => m.InsightsRenderer),
+)
+
+export const MatrixRenderer = lazyComponent<MatrixRendererProps>(() =>
+  import('./matrix/matrix-renderer').then((m) => m.MatrixRenderer),
 )
