@@ -55,6 +55,20 @@ describe('project views', () => {
       pertHoursField: 'planned_hours',
       obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
       risk: { entity: 'project_risk', linkEntity: 'project_risk_task', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' },
+      ganttSchedule: { scopeField: 'project_id', scopeEntity: 'project', path: 'schedule' },
+      ganttBaseline: { entity: 'project_baseline', taskEntity: 'project_baseline_task', scopeField: 'project_id', linkField: 'task_id', startField: 'date_start', endField: 'deadline' },
+      kanbanSwimlanes: { label: 'Assignee', via: 'project_task_user', ownField: 'task_id', relatedField: 'user_id', entity: 'users', labelField: 'email' },
+      insights: { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' },
+      matrix: {
+        projectField: 'project_id',
+        raciEntity: 'project_task_raci',
+        userLabelField: 'email',
+        dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+        priorityField: 'priority',
+        deadlineField: 'deadline',
+        closedField: 'closed',
+        urgentDays: 7,
+      },
     }
     expect(route('/project/tasks').descriptor.viewModeDefaults).toEqual(expected)
     expect(route('/project/my-tasks').descriptor.viewModeDefaults).toEqual(expected)
