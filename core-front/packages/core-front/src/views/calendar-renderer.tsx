@@ -360,7 +360,7 @@ export function CalendarRenderer<T extends HasId>({
                     key={iso}
                     component="button"
                     type="button"
-                    aria-label={`${iso} — ${cards.length}`}
+                    aria-label={`${dateText(iso)} — ${t('Records: {n}').replace('{n}', String(cards.length))}`}
                     aria-pressed={selectedDay === iso}
                     onClick={() => setPicked(iso)}
                     sx={{

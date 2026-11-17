@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { FieldDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps } from './relation-ops'
 import { fieldWidget } from './widgets'
+import { centreBox } from './mindmap-widget'
 
 vi.mock('./diagram/export', () => ({ exportElementPng: vi.fn() }))
 import { exportElementPng } from './diagram/export'
@@ -78,5 +79,19 @@ describe('text/mindmap', () => {
     render(<Widget field={f} value="own" onChange={vi.fn()} draft={{ name: 'Sibling' }} />)
     expect(screen.getByText('Sibling')).toBeTruthy()
     expect(screen.queryByText('own')).toBeNull()
+  })
+
+  it('sizes the centre box to its text: smaller font, bigger box, within bounds', () => {
+    expect(centreBox('Budget cut')).toEqual({ font: 14, w: 180, h: 56 })
+    const long = centreBox('Key supplier goes bankrupt before the second delivery and no alternative is qualified')
+    expect(long.font).toBeLessThan(14)
+    expect(long.w).toBeGreaterThan(180)
+    expect(long.h).toBeGreaterThanOrEqual(56)
+    const huge = centreBox('x'.repeat(2000))
+    expect(huge).toEqual({ font: 11, w: 320, h: 220 })
+    const f = { ...field, widgetOptions: { center: 'name' } } as FieldDescriptor
+    const Widget = fieldWidget(f)
+    render(<Widget field={f} value="" onChange={vi.fn()} draft={{ name: 'x'.repeat(120) }} />)
+    expect(screen.getByText('x'.repeat(120))).toHaveStyle({ fontSize: '11px' })
   })
 })

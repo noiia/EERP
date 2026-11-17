@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -8,6 +9,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
+import Typography from '@mui/material/Typography'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import { useTheme } from '@mui/material/styles'
@@ -18,7 +20,7 @@ import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
 import { ErrorAlert } from '../error-alert'
 import { DiagramLoading } from '../diagram/diagram-canvas'
-import { usePhone } from '../use-phone'
+import { useFillHeight, usePhone } from '../use-phone'
 import { useRelationOps } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
 import { Ishikawa } from './ishikawa'
@@ -52,6 +54,10 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const [creating, setCreating] = useState(false)
   const [reload, setReload] = useState(0)
   const area = useRef<HTMLDivElement>(null)
+  // The matrix export: both matrices side by side, drawn off screen only while exporting.
+  const both = useRef<HTMLDivElement>(null)
+  const [exportingBoth, setExportingBoth] = useState(false)
+  const fill = useFillHeight(area, phone)
   const { entity, projectField, categoryEntity } = config
   const canCreate = usePermission(`${entity}:${entity}:write`)
 
@@ -94,8 +100,9 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const exportable = tab !== 'register'
   const doExport = (kind: 'png' | 'pdf') => {
     setMenu(null)
-    const el = area.current
-    if (!el) return
+    if (tab === 'matrix') flushSync(() => setExportingBoth(true))
+    const el = tab === 'matrix' ? both.current : area.current
+    if (!el) return setExportingBoth(false)
     const name = `${tab}-${projectId}`
     const bg = th.palette.background.paper
     const meta = { title: `${project} — ${tab === 'matrix' ? t('Matrix') : t('Ishikawa')}`, date: new Date(), legend: [], background: bg }
@@ -103,7 +110,9 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
       const { exportElementPdf, exportElementPng } = await import('../diagram/export')
       return kind === 'png' ? exportElementPng(el, name, bg) : exportElementPdf(el, meta, name)
     }
-    run().catch((e: unknown) => setError(serializeError(toApiError(e))))
+    run()
+      .catch((e: unknown) => setError(serializeError(toApiError(e))))
+      .finally(() => setExportingBoth(false))
   }
 
   return (
@@ -132,10 +141,25 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
       </Stack>
       <Box sx={{ pt: 2, overflow: 'auto' }}>
         {/* The diagrams fill the view (centred, scaled to fit) instead of floating small in an empty zone. */}
-        {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: { xs: 'calc(100dvh - 220px)', sm: '70vh' } }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
-        {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: { xs: 'calc(100dvh - 220px)', sm: '70vh' }, bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
+        {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' } }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
+        {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' }, bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
         {tab === 'register' && <RiskRegister rows={rows} categories={categories} onOpen={open} />}
       </Box>
+      {exportingBoth && (
+        // Off screen, but laid out at a fixed size; the inner box is the one captured (no offset in the image).
+        <Box aria-hidden sx={{ position: 'fixed', left: -10000, top: 0 }}>
+          {/* No entrance animations: the ERP's global chip fade-in (ErpUiStyle) starts at opacity 0,
+              and the capture runs right after this mounts — it would copy every risk as transparent. */}
+          <Box ref={both} data-testid="matrix-export" sx={{ display: 'flex', gap: 3, p: 2, width: 1600, bgcolor: 'background.paper', '& *': { animation: 'none !important', transition: 'none !important' } }}>
+            {([false, true] as const).map((r) => (
+              <Box key={String(r)} sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="h6" align="center">{r ? t('After remediation') : t('Current')}</Typography>
+                <Box sx={{ height: 520 }}><RiskMatrix rows={rows} residual={r} onOpen={open} wide /></Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
       {creating && ops ? (
         <RelationCreateWizard
           rel={{ entity, kind: 'many2one' }}

@@ -352,6 +352,63 @@ func TestReaction_Toggle(t *testing.T) {
 	}
 }
 
+func TestEditMessage(t *testing.T) {
+	f := newChatFixture(t, false)
+	m := f.post(t, f.member, f.general, `{"body":"helo"}`)
+	p := map[string]string{"message": m["id"].(string)}
+	other := f.post(t, f.member, f.general, `{"body":"second"}`)
+	if m["edited_at"] != nil {
+		t.Fatalf("a new message isn't edited: %v", m["edited_at"])
+	}
+	for _, c := range []struct {
+		name string
+		as   uuid.UUID
+		body string
+		want int
+	}{
+		{"outsider", f.outside, `{"body":"x"}`, 404},
+		{"guest", f.guest, `{"body":"x"}`, 403},
+		{"team owner, someone else's", f.owner, `{"body":"x"}`, 403},
+		{"empty body, no file", f.member, `{"body":"  "}`, 422},
+		{"too long", f.member, `{"body":"` + strings.Repeat("a", 4001) + `"}`, 422},
+		{"malformed", f.member, `{`, 400},
+	} {
+		if rec := serve(t, f.h.EditMessage, "PUT", c.body, f.as(c.as), p); rec.Code != c.want {
+			t.Fatalf("%s: %d %s", c.name, rec.Code, rec.Body)
+		}
+	}
+	// Unchanged (after trimming): answered as is, not marked edited, still pushed.
+	rec := serve(t, f.h.EditMessage, "PUT", `{"body":" helo "}`, f.as(f.member), p)
+	if rec.Code != 200 || strings.Contains(rec.Body.String(), `"edited_at":"`) {
+		t.Fatalf("unchanged: %d %s", rec.Code, rec.Body)
+	}
+	rec = serve(t, f.h.EditMessage, "PUT", `{"body":"hello"}`, f.as(f.member), p)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"body":"hello"`) || !strings.Contains(rec.Body.String(), `"edited_at":"`) {
+		t.Fatalf("author: %d %s", rec.Code, rec.Body)
+	}
+	fr := f.hub.frames[len(f.hub.frames)-1]
+	msg, _ := fr.payload["message"].(map[string]any)
+	if fr.payload["type"] != "chat_message_updated" || msg["id"] != m["id"] || msg["body"] != "hello" || msg["edited_at"] == nil {
+		t.Fatalf("frame: %v", fr.payload)
+	}
+	// The list serves the new body; the other message is untouched.
+	list := serve(t, f.h.ListMessages, "GET", "", f.as(f.owner), map[string]string{"channel": f.general.String()}).Body.String()
+	if !strings.Contains(list, `"body":"hello"`) || strings.Contains(list, `"body":"helo"`) || !strings.Contains(list, `"body":"second"`) {
+		t.Fatalf("list: %s", list)
+	}
+	_ = other
+	// A deleted message can't be edited.
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.member), p); rec.Code != 204 {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.EditMessage, "PUT", `{"body":"again"}`, f.as(f.member), p); rec.Code != 404 {
+		t.Fatalf("deleted: %d", rec.Code)
+	}
+	if rec := serve(t, f.h.EditMessage, "PUT", `{"body":"x"}`, f.as(f.member), map[string]string{"message": "x"}); rec.Code != 404 {
+		t.Fatalf("bad id: %d", rec.Code)
+	}
+}
+
 func TestDeleteMessage(t *testing.T) {
 	f := newChatFixture(t, false)
 	m := f.post(t, f.member, f.general, `{"body":"oops"}`)

@@ -9,11 +9,12 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import { AvatarWithPresence, avatarUrl, T, useSessionStore, useT } from '@eerp/core-front'
-import { deleteMessage, postMessage, toggleReaction, type Message, type Role } from './client'
+import { deleteMessage, editMessage, postMessage, toggleReaction, type Message, type Role } from './client'
 import { useChatStore } from './chat-store'
 import { Composer, type MentionCandidate } from './Composer'
 import { FolderPanel } from './FolderPanel'
@@ -25,26 +26,102 @@ const PANEL_WIDTH = 360
 export const REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 const NO_MESSAGES: Message[] = []
 
-function MessageItem({ m, onReact, onDelete }: { m: Message; onReact: (emoji: string) => void; onDelete?: () => void }) {
+/** A message goes under the previous one, without its own author line, when the same
+ * person sent both and at most this long apart; another author or a longer gap starts a new group. */
+export const STACK_GAP_MS = 6 * 60 * 60 * 1000
+export function stacksOnPrevious(prev: Message | undefined, m: Message): boolean {
+  if (!prev || prev.author_id !== m.author_id) return false
+  const gap = Date.parse(m.created_at) - Date.parse(prev.created_at)
+  return Number.isFinite(gap) && gap <= STACK_GAP_MS
+}
+
+/** The inline editor of a message's body: Ctrl/Cmd+Enter saves, Escape cancels; a refusal stays in it. */
+function MessageEditor({ initial, onSave, onCancel }: { initial: string; onSave: (body: string) => Promise<void>; onCancel: () => void }) {
+  const t = useT()
+  const [draft, setDraft] = useState(initial)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const save = () => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    onSave(draft).catch((err: unknown) => {
+      setError(err instanceof Error && err.message ? err.message : t('The message could not be modified.'))
+      setBusy(false)
+    })
+  }
+  return (
+    <Box sx={{ mt: 0.5 }}>
+      <TextField
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save() }
+        }}
+        multiline
+        minRows={1}
+        maxRows={12}
+        fullWidth
+        size="small"
+        autoFocus
+        disabled={busy}
+        error={!!error}
+        helperText={error || undefined}
+        slotProps={{ htmlInput: { 'aria-label': t('Message to modify'), maxLength: 4000 } }}
+      />
+      <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+        <Button size="small" variant="contained" onClick={save} disabled={busy}><T text="Save" /></Button>
+        <Button size="small" onClick={onCancel} disabled={busy}><T text="Cancel" /></Button>
+      </Stack>
+    </Box>
+  )
+}
+
+function MessageItem({ m, stacked = false, onReact, onEdit, onDelete }: { m: Message; stacked?: boolean; onReact: (emoji: string) => void; onEdit?: (body: string) => Promise<void>; onDelete?: () => void }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
+  const [editing, setEditing] = useState(false)
+  const sentAt = new Date(m.created_at).toLocaleString()
+  const edited = m.edited_at ? <Typography variant="caption" color="text.secondary" title={new Date(m.edited_at).toLocaleString()}>{t('(edited)')}</Typography> : null
+  const options = (onEdit || onDelete) && (
+    <>
+      <IconButton size="small" className="message-options" aria-label={t('Message options')} aria-haspopup="menu" aria-expanded={menu !== null} onClick={(e) => setMenu(e.currentTarget)}>⋮</IconButton>
+      <Menu anchorEl={menu} open={menu !== null} onClose={() => setMenu(null)}>
+        {onEdit && <MenuItem onClick={() => { setMenu(null); setEditing(true) }}><T text="Modify message" /></MenuItem>}
+        {onDelete && <MenuItem onClick={() => { setMenu(null); onDelete() }} sx={{ color: 'error.main' }}><T text="Delete message" /></MenuItem>}
+      </Menu>
+    </>
+  )
   return (
-    <Box component="article" sx={{ py: 0.75 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-        <AvatarWithPresence userId={m.author_id} label={m.author_name} size={24} src={avatarUrl(m.author_id, m.author_has_avatar)} />
-        <Typography variant="subtitle2" component="span">{m.author_name}</Typography>
-        <Typography variant="caption" color="text.secondary">{new Date(m.created_at).toLocaleString()}</Typography>
-        {onDelete && (
-          <>
-            <IconButton size="small" aria-label={t('Message options')} aria-haspopup="menu" onClick={(e) => setMenu(e.currentTarget)}>⋮</IconButton>
-            <Menu anchorEl={menu} open={menu !== null} onClose={() => setMenu(null)}>
-              <MenuItem onClick={() => { setMenu(null); onDelete() }} sx={{ color: 'error.main' }}><T text="Delete message" /></MenuItem>
-            </Menu>
-          </>
-        )}
-      </Stack>
-      {m.body && <Markdown text={m.body} />}
+    <Box
+      component="article"
+      data-stacked={stacked || undefined}
+      title={stacked ? sentAt : undefined}
+      // A stacked message has no header: its options sit top-right, shown on hover or keyboard focus.
+      sx={stacked
+        ? { position: 'relative', pt: 0.25, pb: 0.5, '& .message-options': { position: 'absolute', top: 0, right: 0, opacity: 0 }, '&:hover .message-options, & .message-options:focus-visible, & .message-options[aria-expanded="true"]': { opacity: 1 }, '@media (hover: none)': { '& .message-options': { opacity: 1 } } }
+        : { pt: 1.25, pb: 0.5 }}
+    >
+      {stacked ? options : (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <AvatarWithPresence userId={m.author_id} label={m.author_name} size={24} src={avatarUrl(m.author_id, m.author_has_avatar)} />
+          <Typography variant="subtitle2" component="span">{m.author_name}</Typography>
+          <Typography variant="caption" color="text.secondary">{sentAt}</Typography>
+          {edited}
+          {options}
+        </Stack>
+      )}
+      {editing && onEdit ? (
+        <MessageEditor initial={m.body} onCancel={() => setEditing(false)} onSave={(body) => onEdit(body).then(() => setEditing(false))} />
+      ) : (
+        <>
+          {m.body && <Markdown text={m.body} />}
+          {/* A stacked message has no header line to carry the marker. */}
+          {stacked && edited}
+        </>
+      )}
       <ImageAttachments attachments={m.attachments} />
       <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
         {m.reactions.map((r) => (
@@ -160,6 +237,12 @@ export function ChatPane({
       .catch((err: unknown) => setActionError(err instanceof Error && err.message ? err.message : t('The message could not be deleted.')))
   }
 
+  // Throws to the editor, which keeps the draft and shows Go's refusal.
+  const edit = async (messageId: string, body: string) => {
+    const m = await editMessage(messageId, body)
+    useChatStore.getState().update({ type: 'chat_message_updated', channel_id: channelId, message: m })
+  }
+
   const send = async (body: string, mentions: string[], files: File[]) => {
     const m = await postMessage(channelId, body, mentions, files)
     atBottom.current = true
@@ -206,11 +289,14 @@ export function ChatPane({
           {messages.length === 0 && (
             <Typography color="text.secondary" sx={{ py: 2 }}><T text="No messages yet." /></Typography>
           )}
-          {messages.map((m) => (
+          {messages.map((m, i) => (
             <MessageItem
               key={m.id}
               m={m}
+              stacked={stacksOnPrevious(messages[i - 1], m)}
               onReact={(e) => react(m.id, e)}
+              // Go's rule: only its author (not a guest) rewrites a message.
+              onEdit={!readOnly && m.author_id === me ? (body) => edit(m.id, body) : undefined}
               // Go's rule: the author (not a guest) or a team owner.
               onDelete={!readOnly && (m.author_id === me || role === 'owner') ? () => remove(m.id) : undefined}
             />

@@ -71,6 +71,8 @@ export interface Message {
   author_has_avatar?: boolean
   body: string
   created_at: string
+  /** Set once its author edited the body. */
+  edited_at?: string | null
   attachments: Attachment[]
   reactions: Reaction[]
 }
@@ -181,6 +183,7 @@ export function postMessage(channel: string, body: string, mentions: string[] = 
   for (const f of files) form.append('files', f)
   return call<Message>('POST', `/channels/${channel}/messages`, form)
 }
+export const editMessage = (message: string, body: string) => call<Message>('PUT', `/messages/${message}`, { body })
 export const deleteMessage = (message: string) => call<void>('DELETE', `/messages/${message}`)
 export const markRead = (channel: string) => call<void>('POST', `/channels/${channel}/read`)
 export const toggleReaction = (message: string, emoji: string) =>
@@ -203,6 +206,8 @@ export function uploadFile(team: string, file: File, folderId?: string): Promise
 /** folder_id: undefined = unchanged, '' = move to the root. */
 export const updateFile = (team: string, file: string, patch: { name?: string; folder_id?: string }) =>
   call<TeamFile>('PUT', `/${team}/files/${file}`, patch)
+export const saveNote = (team: string, file: string, content: string, version: string) =>
+  call<{ version: string }>('PUT', `/${team}/files/${file}/note`, { content: JSON.parse(content), version })
 export const deleteFile = (team: string, file: string) => call<void>('DELETE', `/${team}/files/${file}`)
 export const getShares = (file: string) => list<Share>(`/files/${file}/shares`)
 export const setShares = async (file: string, userIds: string[]) =>

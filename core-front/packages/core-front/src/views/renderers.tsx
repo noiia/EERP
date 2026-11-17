@@ -23,6 +23,7 @@ import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-da
 import { DataGrid, GraphRenderer, InsightsRenderer, MatrixRenderer, ObsRenderer, PbsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
+import { useRelationLabels } from './use-relation-labels'
 import {
   availableDisplayModes,
   pinnedId,
@@ -199,6 +200,7 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
   // The hook runs unconditionally (rules of hooks); '' never matches a grant.
   const allowed = usePermission(createPermission ?? '')
   const searchParams = useSearchParams()
+  const phone = usePhone()
   if (!formPath || !createPermission || !allowed) return null
   const filters = new URLSearchParams()
   searchParams?.forEach((value, key) => {
@@ -207,7 +209,11 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
   const query = filters.size > 0 ? `?${filters.toString()}` : ''
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-      <Button variant="contained" onClick={() => router.push(erpPath(formPath.replace(':id', 'new')) + query)}>
+      <Button
+        variant="contained"
+        sx={phone ? { minHeight: 40 } : undefined}
+        onClick={() => router.push(erpPath(formPath.replace(':id', 'new')) + query)}
+      >
         {t('Create')}
       </Button>
     </Box>
@@ -1008,6 +1014,7 @@ function TreeRenderer<T extends HasId>({
   title,
 }: EntityViewProps<T>) {
   const t = useT()
+  const phone = usePhone()
   const unitSystem = useUnitStore((s) => s.system)
   const i18nLocale = useI18nStore((s) => s.locale)
   const router = useRouter()
@@ -1150,6 +1157,12 @@ function TreeRenderer<T extends HasId>({
   // Flat data (no parent links) renders as a grid, with row checkboxes; hierarchical
   // data as a read-only tree (RichTreeView has no selection UI here — out of scope).
   const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
+  // List cells show a many2one's label (relation.labelField), never its id.
+  const m2oFields = descriptor.fields.filter((f) => f.type === 'relation' && f.relation?.kind === 'many2one')
+  const relationLabel = useRelationLabels(
+    m2oFields,
+    liveRecords.flatMap((r) => m2oFields.map((f): [string, unknown] => [f.name, (r as Record<string, unknown>)[f.name]])),
+  )
 
   // Row selection (checkboxes) — only meaningful for the flat grid. Reset on every
   // liveRecords change: ids from a previous search/filter/page-size fetch are
@@ -1340,7 +1353,8 @@ function TreeRenderer<T extends HasId>({
         // the search bar's near/inside/covers filters but never becomes a column.
         .filter((f): f is FieldDescriptor => f != null && f.type !== 'geo')
         .map((f) => {
-          const col: GridColDef = { field: f.name, headerName: t(fieldLabel(f)), flex: 1 }
+          // Phone: columns keep a readable width and the grid scrolls sideways instead.
+          const col: GridColDef = { field: f.name, headerName: t(fieldLabel(f)), flex: 1, ...(phone && { minWidth: 140 }) }
           // 'user-presence' is display-only: the row IS a user record (its
           // own id is the user id), so this renders that row's avatar + live
           // presence bubble beside the field's own value instead of the bare
@@ -1350,6 +1364,9 @@ function TreeRenderer<T extends HasId>({
           }
           if (f.widget === 'datetime') {
             col.valueFormatter = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString() : '')
+          }
+          if (f.type === 'relation' && f.relation?.kind === 'many2one') {
+            col.valueFormatter = (v: unknown) => relationLabel(f.name, v)
           }
           // text/color: a swatch beside the hex (an invalid value stays plain text).
           if (f.type === 'text' && f.widget === 'color') {
@@ -1382,7 +1399,7 @@ function TreeRenderer<T extends HasId>({
       // A formPath makes rows navigable: clicking one opens that record's form.
       const { formPath } = descriptor
       content = (
-        <Box sx={{ width: '100%' }}>
+        <Box data-testid="list-grid" sx={{ width: '100%', ...(phone && { overflowX: 'auto' }) }}>
           <DataGrid
             rows={liveRecords}
             columns={columns}
@@ -1465,7 +1482,7 @@ function TreeRenderer<T extends HasId>({
       />
     ) : null
   const searchRow = (
-    <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+    <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'center', ...(phone && { width: '100%' }) }}>
       {searchBar}
       {selectionBar}
     </Stack>
@@ -1476,8 +1493,9 @@ function TreeRenderer<T extends HasId>({
     <BannerScope>
     <Box>
       {title != null ? (
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ flexShrink: 0 }}>
+        // Phone: title and Create share line 1, the search bar wraps to its own line.
+        <Box data-testid="list-title-row" sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, ...(phone && { flexWrap: 'wrap' }) }}>
+          <Typography variant="h4" component="h1" sx={{ flexShrink: 0, ...(phone && { flex: 1 }) }}>
             {t(title)}
           </Typography>
           {/* Built-in search/filter bar (docs/adr/ADR-014-search-filter-bar.md) —
@@ -1487,7 +1505,9 @@ function TreeRenderer<T extends HasId>({
               result shows up identically across List/Kanban/Calendar/Graph. The
               selection toolbar (SelectionBar) rides along on the SAME row, right
               of the search bar. */}
-          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{searchRow}</Box>
+          <Box data-testid="list-search-slot" sx={{ flex: 1, display: 'flex', justifyContent: 'center', ...(phone && { order: 1, flexBasis: '100%' }) }}>
+            {searchRow}
+          </Box>
           <Box sx={{ flexShrink: 0 }}>
             <CreateBar descriptor={descriptor} />
           </Box>

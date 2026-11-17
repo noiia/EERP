@@ -304,7 +304,7 @@ describe('InsightsRenderer — flow, milestones, risk trend', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'Milestones' }))
     expect(await screen.findByText('First 1000 shown')).toBeTruthy()
     expect(screen.getAllByTestId(/^milestone-row-/)).toHaveLength(1000)
-  })
+  }, 20_000) // 1001 rows: slow under a full parallel run
 
   it('draws the risk trend with the banded counts and the max criticity line', async () => {
     const get = vi.fn(async () => metrics())

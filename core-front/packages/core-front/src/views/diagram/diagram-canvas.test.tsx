@@ -27,7 +27,7 @@ type RfProps = {
   onNodeDragStop?: (e: unknown, n: RfNode, nodes?: RfNode[]) => void
   selectionKeyCode?: string
   multiSelectionKeyCode?: string
-  onInit?: (i: { fitView: () => void }) => void
+  onInit?: (i: { fitView: () => void; getNodes?: () => unknown[] }) => void
   children?: ReactNode
 }
 const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
@@ -118,6 +118,8 @@ const at = (x: number, y: number) => ({ x, y })
 const node = (id: string): Node => ({ id, position: at(0, 0), data: {} })
 const pos = (id: string) => rf.props.nodes.find((n) => n.id === id)!.position
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0))
+// An export waits two animation frames for the grown boxes to be measured.
+const exportFrames = () => act(() => vi.advanceTimersByTimeAsync(50))
 
 function setup(over: Partial<DiagramCanvasProps> = {}, layout: ViewLayout = { positions: {}, folded: [] }) {
   const saveViewLayout = vi.fn(async () => {})
@@ -192,6 +194,7 @@ describe('DiagramCanvas', () => {
     await flush()
     expect(exportLoads.n).toBe(0)
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    await exportFrames()
     expect(exportLoads.n).toBe(1)
   })
 
@@ -284,6 +287,7 @@ describe('DiagramCanvas', () => {
     setup()
     await flush()
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    await exportFrames()
     expect(screen.getByText('canvas too big')).toBeInTheDocument()
   })
 
@@ -542,12 +546,14 @@ describe('DiagramCanvas', () => {
     await flush()
     expect(screen.getByText('Critical')).toBeInTheDocument()
     const fitView = vi.fn()
-    act(() => rf.props.onInit!({ fitView }))
+    act(() => rf.props.onInit!({ fitView, getNodes: () => [] }))
     fireEvent.click(screen.getByRole('button', { name: 'Fit view' }))
     expect(fitView).toHaveBeenCalled()
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    await exportFrames()
     expect(exportPng).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, 'Plan', '#fff')
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    await exportFrames()
     expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, { title: 'Plan', date: expect.any(Date), legend: [{ color: '#ff0000', label: 'Critical' }], background: '#fff' }, 'Plan')
   })
 
@@ -567,6 +573,7 @@ describe('DiagramCanvas', () => {
     )
     await flush()
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    await exportFrames()
     const el = (vi.mocked(exportPng).mock.calls.at(-1) as unknown as [HTMLElement])[0]
     const paths = Array.from(el.querySelectorAll<SVGElement>('.react-flow__edge path'))
     // e1, e2 and the note link to a — the link to the hidden box is not drawn.
@@ -806,7 +813,7 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     setup()
     await flush()
     const fitView = vi.fn()
-    act(() => rf.props.onInit!({ fitView }))
+    act(() => rf.props.onInit!({ fitView, getNodes: () => [] }))
     enter()
     await act(() => vi.advanceTimersByTimeAsync(200))
     expect(fitView).toHaveBeenCalledTimes(1)
@@ -819,8 +826,8 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     setViewportWidth(390)
     setup()
     await flush()
-    // jsdom resolves calc(100dvh - 160px) against its window height.
-    expect(screen.getByTestId('react-flow').parentElement!).toHaveStyle({ height: `${window.innerHeight - 160}px` })
+    // The canvas top is measured (0 in jsdom): the height is what remains below it.
+    expect(screen.getByTestId('react-flow').parentElement!).toHaveStyle({ height: `${window.innerHeight - 8}px` })
   })
 
   it('shows Fit, Undo, Redo, Full screen and a More menu on phone', async () => {
@@ -859,5 +866,17 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     expect(screen.getByTestId('react-flow')).toBe(flow)
     expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)
     expect(pos('a')).toEqual(at(40, 40))
+  })
+
+  it('keeps an added note when the viewport crosses from phone to desktop', async () => {
+    setViewportWidth(390)
+    setup({ mode: 'pert', notes: true })
+    await flush()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'More' })))
+    act(() => fireEvent.click(screen.getByRole('menuitem', { name: 'Add note' })))
+    const flow = screen.getByTestId('react-flow')
+    act(() => setViewportWidth(1280))
+    expect(screen.getByTestId('react-flow')).toBe(flow)
+    expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)
   })
 })

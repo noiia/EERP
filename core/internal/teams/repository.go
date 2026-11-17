@@ -604,6 +604,21 @@ func (r *Repository) DeleteMessage(ctx context.Context, tenant, id uuid.UUID) er
 	return nil
 }
 
+// EditMessage replaces a live message's body and stamps edited_at; orm.ErrNotFound when it
+// was deleted meanwhile.
+func (r *Repository) EditMessage(ctx context.Context, tenant, id uuid.UUID, body string) (Message, error) {
+	n, err := r.messages.UpdateQuery().Set("body", body).Set("edited_at", time.Now()).Set("updated_at", time.Now()).
+		Where(orm.Cond("tenant_id = $1", tenant)).Where(orm.Cond("id = $1", id)).Where(orm.Cond("deleted_at IS NULL")).
+		Exec(ctx, r.db)
+	if err != nil {
+		return Message{}, fmt.Errorf("teams: edit message: %w", err)
+	}
+	if n == 0 {
+		return Message{}, orm.ErrNotFound
+	}
+	return r.FindMessage(ctx, tenant, id)
+}
+
 // ListMessages returns up to limit messages of the channel older than before (when set), newest first.
 func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID, before *time.Time, limit int) ([]Message, error) {
 	q := orm.Select[Message](r.messages.Meta()).Where(orm.Cond("tenant_id = $1", tenant)).
@@ -777,7 +792,28 @@ func (r *Repository) UpdateFile(ctx context.Context, f File) (File, error) {
 	if f.Name, err = validName(f.Name); err != nil {
 		return File{}, err
 	}
-	return r.files.Update(ctx, f, f.ID)
+	// Rename/move must not write a stale object key over a concurrent note save.
+	result, err := r.db.Exec(ctx, `UPDATE team_file SET name=$3, folder_id=$4, updated_at=now()
+		WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, f.TenantID, f.ID, f.Name, f.FolderID)
+	if err != nil {
+		return File{}, fmt.Errorf("teams: update file: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return File{}, orm.ErrNotFound
+	}
+	return r.FindFile(ctx, f.TenantID, f.ID)
+}
+
+// ReplaceFileContent swaps only the bytes' metadata, provided the downloaded
+// version is still current. Shares, chat references and ownership keep their ids.
+func (r *Repository) ReplaceFileContent(ctx context.Context, f File, previousKey string) (bool, error) {
+	result, err := r.db.Exec(ctx, `UPDATE team_file SET object_key=$4, mime=$5, size=$6, updated_at=now()
+		WHERE tenant_id=$1 AND id=$2 AND object_key=$3 AND deleted_at IS NULL`,
+		f.TenantID, f.ID, previousKey, f.ObjectKey, f.Mime, f.Size)
+	if err != nil {
+		return false, fmt.Errorf("teams: replace file content: %w", err)
+	}
+	return result.RowsAffected() == 1, nil
 }
 
 // DeleteFile removes the file and its shares, returning its object key.

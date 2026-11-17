@@ -87,7 +87,10 @@ export default async function ModulePage({ params }: ModulePageProps) {
         ...(route.descriptor.viewType === 'tree' || route.descriptor.viewType === 'form'
           ? { pt: 0 }
           : {}),
-        ...(isForm ? { mt: `calc(${layout.pageInsetY} * -1 + 20px)` } : {}),
+        // The phone inset differs (layout.tsx), so each width cancels its own.
+        ...(isForm
+          ? { mt: { xs: `calc(${layout.pageInsetPhone} * -1 + 20px)`, sm: `calc(${layout.pageInsetY} * -1 + 20px)` } }
+          : {}),
       }}
     >
       <Stack spacing={3}>

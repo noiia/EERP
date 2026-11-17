@@ -59,11 +59,12 @@ describe('/api/teams/[...path]', () => {
 
   it('passes content-disposition and status through', async () => {
     proxyTeams.mockResolvedValue(
-      new Response('bytes', { status: 200, headers: { 'content-disposition': 'attachment; filename="a.pdf"', 'content-type': 'application/pdf' } }),
+      new Response('bytes', { status: 200, headers: { 'content-disposition': 'attachment; filename="a.pdf"', 'content-type': 'application/pdf', etag: '"v1"' } }),
     )
     const res = await GET(new Request('http://x/api/teams/files/f/download'), ctx('files', 'f', 'download'))
     expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="a.pdf"')
     expect(res.headers.get('Content-Type')).toBe('application/pdf')
+    expect(res.headers.get('ETag')).toBe('"v1"')
     proxyTeams.mockResolvedValue(new Response('{"error":{"message":"no"}}', { status: 404 }))
     expect((await GET(new Request('http://x/api/teams/zz'), ctx('zz'))).status).toBe(404)
   })

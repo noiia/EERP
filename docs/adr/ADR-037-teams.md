@@ -61,6 +61,19 @@ flowchart LR
 - **Uploads** bypass the global request body limit and are capped by `upload_body_limit`. The
   exempt prefixes include `/api/v1/teams/*/files`, so `BodyLimitExempt` gained a `*` segment
   wildcard.
+- **OpenCloud notes.** `.ocnote` files contain a bare [Tiptap JSON document](https://github.com/opencloud-eu/web/blob/main/packages/web-pkg/src/editor/composables/strategies/tiptapJson.ts).
+  The file manager creates, reads and edits them; shared files, chat attachments and file-backed
+  fields open the same reader. Editing follows the item rule (uploader or team owner). Downloads
+  supply an `ETag`; `PUT /teams/:id/files/:file/note {content, version}` saves a document up to
+  10 MiB, with `version` equal to that ETag. A conditional object-key swap rejects stale saves
+  with 409 and preserves file ids, shares and chat references. Rename/move updates only those
+  columns so it cannot restore an older note's bytes. The editor preserves rich formatting and
+  heading anchors, and refuses unknown nodes, marks or attributes instead of dropping content.
+  Notes open in a full-window workspace with a fixed, grouped toolbar, document outline, zoom,
+  find/replace, table editing, image uploads, syntax-highlighted code and print styling. Existing
+  notes stay open after saving (also available with Ctrl/Cmd+S); the returned version is used for
+  the next save. The interface follows the application theme and adapts to narrow screens.
+  Editing is local to one editor; there is no live collaborative session.
 
 ### v2: private conversations, linked folders, per-user order
 
@@ -121,7 +134,7 @@ flowchart TD
 
 - Teams has no admin override: an administrator who isn't a member can't read a team. Recovering a
   team that lost all its owners is impossible through the API (the last-owner rule prevents it).
-- Messages can't be edited; no threads or search in v1. Deleting a message (added later, `DELETE /messages/:message`) follows the item rule above: its author, or a team owner. It's a soft delete that hides the message everywhere, while files it put in a team folder stay there, since they belong to the folder.
+- No threads or search in v1. Deleting a message (added later, `DELETE /messages/:message`) follows the item rule above: its author, or a team owner. Editing one (added later, `PUT /messages/:message {body}`) is stricter: its author only, never a guest — a team owner may remove someone's message but never put words in it. The body follows the posting rules (trimmed, ≤ 4000 characters, empty only beside files), files and reactions stay, `edited_at` is stamped (an unchanged body isn't marked edited) and readers get a `chat_message_updated` frame, built per viewer like a new message; readers see *(edited)*. Mentions an edit adds notify no one. It's a soft delete that hides the message everywhere, while files it put in a team folder stay there, since they belong to the folder.
 - **Single instance.** Live delivery inherits the presence hub's limit (ADR-019): with several
   `core-back` replicas, a frame only reaches users connected to the replica that handled the
   write. The others see the message on their next read.

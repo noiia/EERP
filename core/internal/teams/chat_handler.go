@@ -66,6 +66,7 @@ type messageJSON struct {
 	AuthorHasAvatar bool             `json:"author_has_avatar"`
 	Body            string           `json:"body"`
 	CreatedAt       time.Time        `json:"created_at"`
+	EditedAt        *time.Time       `json:"edited_at"`
 	Attachments     []attachmentJSON `json:"attachments"`
 	Reactions       []reactionJSON   `json:"reactions"`
 }
@@ -193,7 +194,7 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 	out := make([]messageJSON, len(msgs))
 	for i, m := range msgs {
 		w := messageJSON{ID: m.ID, ChannelID: m.ChannelID, AuthorID: m.AuthorID, AuthorName: displayName(users[m.AuthorID]), AuthorHasAvatar: hasAvatar(users[m.AuthorID]),
-			Body: m.Body, CreatedAt: m.CreatedAt, Attachments: []attachmentJSON{}, Reactions: []reactionJSON{}}
+			Body: m.Body, CreatedAt: m.CreatedAt, EditedAt: m.EditedAt, Attachments: []attachmentJSON{}, Reactions: []reactionJSON{}}
 		for _, a := range atts[m.ID] {
 			w.Attachments = append(w.Attachments, attachmentJSON{ID: a.ID, Kind: "attachment", Filename: a.Filename, Mime: a.Mime, Size: a.Size})
 		}
@@ -248,8 +249,10 @@ func (h *Handler) redact(ctx context.Context, tenant, viewer uuid.UUID, role str
 // of the message's files get them redacted (new files have no shares yet, and
 // they all sit in the channel's one folder). On a lookup error everyone gets the
 // redacted form: the message is already stored, so this fails closed, not the request.
-func (h *Handler) pushMessage(ctx context.Context, tenant uuid.UUID, ch Channel, audience []uuid.UUID, m messageJSON) {
-	frame := messageFrame{Type: "chat_message", ChannelID: ch.ID, TeamID: ch.TeamID, Message: m}
+// pushMessage sends a new (chat_message) or edited (chat_message_updated) message to the
+// channel's audience, its files in a hidden folder redacted for those who can't see it.
+func (h *Handler) pushMessage(ctx context.Context, tenant uuid.UUID, ch Channel, audience []uuid.UUID, typ string, m messageJSON) {
+	frame := messageFrame{Type: typ, ChannelID: ch.ID, TeamID: ch.TeamID, Message: m}
 	var folder *uuid.UUID
 	for _, a := range m.Attachments {
 		if a.Kind == "file" && !a.Deleted && a.folder != nil {
@@ -407,7 +410,7 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	h.pushMessage(ctx, id.TenantID, ch, audience, out[0])
+	h.pushMessage(ctx, id.TenantID, ch, audience, "chat_message", out[0])
 	if err := h.redact(ctx, id.TenantID, id.UserID, role, out); err != nil {
 		// the message is stored: fail closed on its files, not the request
 		if common.Logger != nil {
@@ -575,6 +578,74 @@ func (h *Handler) DeleteMessage(c *echo.Context) error {
 	}
 	h.push(id.TenantID, audience, deletedFrame{Type: "chat_message_deleted", ChannelID: m.ChannelID, MessageID: m.ID})
 	return c.NoContent(http.StatusNoContent)
+}
+
+// EditMessage serves PUT /messages/:message {body}: only its author (not a guest) rewrites
+// it — unlike delete, a team owner can't put words in someone else's message. The body
+// follows PostMessage's rules (trimmed, ≤ maxBodyChars, empty only beside files); files and
+// reactions stay. edited_at is set (unless the body is unchanged) and the channel's audience
+// gets a chat_message_updated frame. Mentions added by an edit notify no one.
+func (h *Handler) EditMessage(c *echo.Context) error {
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	msgID, err := echo.PathParam[uuid.UUID](c, "message")
+	if err != nil {
+		return notFound(c, "message")
+	}
+	m, err := h.repo.FindMessage(ctx, id.TenantID, msgID)
+	if errors.Is(err, orm.ErrNotFound) {
+		return notFound(c, "message")
+	}
+	if err != nil {
+		return err
+	}
+	ch, role, audience, err := h.channelAccess(c, m.ChannelID)
+	if role == "" {
+		return err
+	}
+	if !CanWrite(role) || m.AuthorID != id.UserID {
+		return forbidden(c)
+	}
+	var b postBody
+	if err := c.Bind(&b); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	b.Body = strings.TrimSpace(b.Body)
+	if len([]rune(b.Body)) > maxBodyChars {
+		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "A message is at most 4000 characters.")
+	}
+	if b.Body != m.Body {
+		if b.Body == "" {
+			cur, err := h.wire(ctx, id.TenantID, id.UserID, []Message{m})
+			if err != nil {
+				return err
+			}
+			if len(cur[0].Attachments) == 0 {
+				return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "A message needs a body or a file.")
+			}
+		}
+		if m, err = h.repo.EditMessage(ctx, id.TenantID, m.ID, b.Body); errors.Is(err, orm.ErrNotFound) {
+			return notFound(c, "message") // deleted meanwhile
+		} else if err != nil {
+			return err
+		}
+	}
+	out, err := h.wire(ctx, id.TenantID, id.UserID, []Message{m})
+	if err != nil {
+		return err
+	}
+	h.pushMessage(ctx, id.TenantID, ch, audience, "chat_message_updated", out[0])
+	if err := h.redact(ctx, id.TenantID, id.UserID, role, out); err != nil {
+		if common.Logger != nil {
+			common.Logger.Warn("teams: response redaction failed", zap.Error(err))
+		}
+		for i, a := range out[0].Attachments {
+			if a.Kind == "file" {
+				out[0].Attachments[i] = a.redacted()
+			}
+		}
+	}
+	return c.JSON(http.StatusOK, out[0])
 }
 
 type deletedFrame struct {

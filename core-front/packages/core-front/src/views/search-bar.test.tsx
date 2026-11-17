@@ -6,6 +6,7 @@ import { SavedFilterOpsProvider, type SavedFilterOps, type SavedFilterRecord } f
 import { SearchBar, toListOptions } from './search-bar'
 import { useSessionStore, type Identity } from './session-store'
 import { useUndoToastStore } from './undo-toast'
+import { setViewportWidth } from '../test/viewport'
 
 // The page URL's query, as Next's useSearchParams serves it (null outside a router).
 const urlParams = vi.hoisted(() => ({ current: null as URLSearchParams | null }))
@@ -20,6 +21,7 @@ function identityWith(groups: string[]): Identity {
 
 beforeEach(() => {
   urlParams.current = null
+  window.history.replaceState(null, '', '/')
   useSessionStore.setState({ identity: null })
   useUndoToastStore.setState({ pending: null })
   vi.useRealTimers()
@@ -427,6 +429,57 @@ describe('SearchBar', () => {
     await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ in: { project_id: ['p-1', 'p-2'] } }))
   })
 
+  it('keeps its exact-match filters in the URL, so coming back to the list restores them', async () => {
+    window.history.replaceState(null, '', '/project/tasks?view=x')
+    const list = vi.fn(async (entity: string) => (entity === 'project' ? [{ id: 'p-1', name: 'Apollo' }] : []))
+    const onFiltersChange = vi.fn()
+    const withProject: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [...descriptor.fields, { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one', labelField: 'name' } }],
+    }
+    const bar = () => (
+      <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as RelationOps}>
+        <SearchBar descriptor={withProject} onResults={vi.fn()} fallback={fallback} onFiltersChange={onFiltersChange} pagedByParent />
+      </RelationOpsProvider>
+    )
+    const { rerender } = render(bar())
+    const add = async (field: string, op: string, pick: () => Promise<void>) => {
+      fireEvent.click(screen.getByPlaceholderText('Search…'))
+      const [fieldSelect, opSelect] = screen.getAllByRole('combobox')
+      fireEvent.mouseDown(fieldSelect)
+      fireEvent.click(await screen.findByRole('option', { name: field }))
+      fireEvent.mouseDown(opSelect)
+      fireEvent.click(await screen.findByRole('option', { name: op }))
+      await pick()
+      fireEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+    }
+    await add('Project', '=', async () => {
+      fireEvent.mouseDown(screen.getByPlaceholderText('Value'))
+      fireEvent.click(await screen.findByRole('option', { name: 'Apollo' }))
+    })
+    await add('Name', 'contains', async () => {
+      fireEvent.change(screen.getByPlaceholderText('Value'), { target: { value: 'ada' } })
+    })
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { project_id: 'p-1' }, search: { name: 'ada' } }))
+    // The pin is in the URL (other params kept); a contains filter isn't (the URL can't seed it).
+    const query = new URLSearchParams(window.location.search)
+    expect(query.get('filter[project_id]')).toBe('p-1')
+    expect(query.get('view')).toBe('x')
+    expect([...query.keys()]).toEqual(['view', 'filter[project_id]'])
+    expect(window.location.pathname).toBe('/project/tasks')
+    // Next then serves that query through useSearchParams: the bar doesn't re-seed from
+    // its own write (which would drop the contains filter).
+    const calls = onFiltersChange.mock.calls.length
+    urlParams.current = new URLSearchParams(window.location.search)
+    rerender(bar())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(onFiltersChange.mock.calls.length).toBe(calls)
+    // Removing the pin takes it out of the URL.
+    fireEvent.click(within(screen.getByText(/Project = Apollo/).closest('.MuiChip-root') as HTMLElement).getByTestId('CancelIcon'))
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('filter[project_id]')).toBeNull())
+    expect(new URLSearchParams(window.location.search).get('view')).toBe('x')
+  })
+
   it('typing into the Add-filter value field never lets the Menu steal focus (the MUI Menu typeahead bug)', async () => {
     // The "Status" field option starts with 's' — exactly the letter MUI's
     // MenuList typeahead would jump focus to if the keydown ever reached it.
@@ -503,5 +556,32 @@ describe('geo filter value validation', () => {
   })
   it('covers drops a radius', () => {
     expect(run('covers', '2.35,48.85,1000')).toEqual({ pageSize: 1, covers: { g: '2.35,48.85' } })
+  })
+})
+
+describe('SearchBar on phone (390px)', () => {
+  // Defect: the dropdown took the search field's width minus 20px (~170px),
+  // cutting off the Filters row's Field/Op/Value/Add controls.
+  it('opens the filter menu at full screen width', () => {
+    setViewportWidth(390)
+    renderBar()
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    // calc(100vw - 32px): jsdom resolves 100vw against its fixed 1024px layout width.
+    expect(getComputedStyle(document.querySelector('.MuiMenu-paper')!).width).toBe(`${1024 - 32}px`)
+  })
+
+  // Defect: the field kept its 450px desktop width, capped by an auto-width parent.
+  it('lets the search field fill its line', () => {
+    setViewportWidth(390)
+    renderBar()
+    expect(screen.getByPlaceholderText('Search…').closest('.MuiTextField-root')).toHaveStyle({ width: '100%' })
+  })
+
+  // Defect: the filter row's Add button was a 30×37px target.
+  it('gives the Add filter button a 40px touch target', () => {
+    setViewportWidth(390)
+    renderBar()
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    expect(screen.getByRole('button', { name: 'Add filter' })).toHaveStyle({ minWidth: '40px', minHeight: '40px' })
   })
 })

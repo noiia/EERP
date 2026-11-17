@@ -16,6 +16,7 @@ export interface RiskRow {
   residual_criticity: number | null
   severity_note: string | null
   remediation?: string | null
+  if_it_happens?: string | null
   responsible_id?: string | null
   deadline?: string | null
 }

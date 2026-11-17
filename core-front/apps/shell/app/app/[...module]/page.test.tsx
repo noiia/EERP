@@ -52,6 +52,18 @@ describe('ModulePage', () => {
     expect(viewProps().listViews).toBeUndefined()
   })
 
+  it("a form's top margin cancels the phone page inset on a phone, not the desktop one", async () => {
+    const { container } = await show()
+    const cls = [...(container.querySelector('.MuiContainer-root') as Element).classList]
+    // MUI emits xs under @media (min-width:0px); jsdom matches @media at 1024px, so read the rules.
+    const rules = (list: CSSRuleList, media = ''): string[] => [...list].flatMap((r) =>
+      r instanceof CSSMediaRule ? rules(r.cssRules, r.conditionText)
+        : r instanceof CSSStyleRule && cls.some((c) => r.selectorText === `.${c}`) && r.style.marginTop
+          ? [`${media || 'all'} => ${r.style.marginTop}`] : [])
+    const margins = [...document.styleSheets].flatMap((sheet) => rules(sheet.cssRules))
+    expect(margins).toEqual(['(min-width: 0px) => calc(12px)', '(min-width: 600px) => calc(20px - 5vh)'])
+  })
+
   it('a list hands its title to the view; a dashboard shows it and rolls up the list views', async () => {
     match.value = route('tree')
     const { unmount } = await show(['crm', 'list'])

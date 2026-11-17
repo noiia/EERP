@@ -31,6 +31,7 @@ import { RelationFilterInput } from './relation-filter-input'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { useRelationLabels } from './use-relation-labels'
 import { useRelationOps } from './relation-ops'
+import { usePhone } from './use-phone'
 import { useSavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
 import { useSessionStore } from './session-store'
 import type { HasId } from './stores'
@@ -363,8 +364,12 @@ export function SearchBar<T extends HasId>({
   // The URL's filter[<field>]=<value> on a filterable field starts the bar
   // with that exact-match filter (e.g. a project form's link to its tasks).
   const searchParams = useSearchParams()
+  // The query this bar last wrote itself (syncUrl): seeding from it again would drop
+  // the filters a URL can't carry (contains, ranges, in).
+  const written = useRef<string | null>(null)
   useEffect(() => {
     if (!searchParams) return
+    if (searchParams.toString() === written.current) return
     const seeded: FilterCondition[] = filterFields.flatMap((f) => {
       const value = searchParams.get(`filter[${f.name}]`)
       return value ? [{ field: f.name, op: 'eq' as const, value }] : []
@@ -408,8 +413,27 @@ export function SearchBar<T extends HasId>({
     }, LIVE_SEARCH_DEBOUNCE_MS)
   }
 
+  // Mirrors the bar's exact-match filters on filterable fields into the URL — the same
+  // filter[<field>]=<value> the seeding above reads — so leaving for a record and coming
+  // back (breadcrumb, browser Back) restores them, e.g. a task list pinned to a project.
+  // history.replaceState: Next syncs useSearchParams from it with no server round trip.
+  function syncUrl(next: FilterCondition[]) {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    for (const f of filterFields) params.delete(`filter[${f.name}]`)
+    const names = new Set(filterFields.map((f) => f.name))
+    for (const f of next) {
+      if (f.op === 'eq' && names.has(f.field) && f.value !== '' && f.value != null) params.set(`filter[${f.field}]`, String(f.value))
+    }
+    const query = params.toString()
+    written.current = query
+    if (query === window.location.search.replace(/^\?/, '')) return
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
+  }
+
   async function applyFilters(next: FilterCondition[]) {
     setFilters(next)
+    syncUrl(next)
     setAppliedSavedFilter(null)
     if (onFiltersChange) {
       const options = toListOptions(next, FETCH_LIMIT)
@@ -540,26 +564,31 @@ export function SearchBar<T extends HasId>({
     })
   }
 
+  const phone = usePhone()
   const menuOpen = Boolean(anchorEl)
   const stopKeyPropagation = (e: React.KeyboardEvent) => e.stopPropagation()
   const draftRelation = filterFields.find((f) => f.name === draftField && f.type === 'relation' && f.relation)
 
   return (
-    <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+    <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, ...(phone && { flex: 1, minWidth: 0 }) }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...(phone && { width: '100%' }) }}>
         <TextField
           size="small"
           placeholder={t('Search…')}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onClick={(e) => void openMenu(e.currentTarget)}
-          sx={{
-            width: `${layout.searchBarMaxWidth}px`,
-            maxWidth: '100%',
-            [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
-              width: layout.searchBarNarrowWidth,
-            },
-          }}
+          sx={
+            phone
+              ? { width: '100%' }
+              : {
+                  width: `${layout.searchBarMaxWidth}px`,
+                  maxWidth: '100%',
+                  [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
+                    width: layout.searchBarNarrowWidth,
+                  },
+                }
+          }
           slotProps={{
             input: {
               startAdornment: (
@@ -611,7 +640,10 @@ export function SearchBar<T extends HasId>({
             // (anchorOrigin/transformOrigin above) — the bar's own live
             // width, not a fixed guess, so it tracks the narrow-viewport
             // breakpoint automatically.
-            sx: { width: anchorEl ? anchorEl.offsetWidth - 20 : 360, maxWidth: '90vw' },
+            // On phone the bar is too narrow for the Filters row: full screen width, inside the Popover's 16px edge margin.
+            sx: phone
+              ? { width: 'calc(100vw - 32px)', maxWidth: 'none' }
+              : { width: anchorEl ? anchorEl.offsetWidth - 20 : 360, maxWidth: '90vw' },
           },
         }}
       >
@@ -687,6 +719,7 @@ export function SearchBar<T extends HasId>({
             <IconButton
               size="small"
               aria-label={t('Add filter')}
+              sx={phone ? { minWidth: 40, minHeight: 40 } : undefined}
               disabled={!draftField || !draftOp}
               onClick={addFilter}
             >

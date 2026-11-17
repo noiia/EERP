@@ -5,6 +5,7 @@ import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models
 import type { HasId } from './stores'
 import type { GraphRendererProps } from './graph-renderer'
 import type { HtmlEditorProps } from './html-editor'
+import type { OcNoteEditorProps } from './ocnote-editor'
 import type { WbsRendererProps } from './diagram/wbs-renderer'
 import type { PertRendererProps } from './diagram/pert-renderer'
 import type { ObsRendererProps } from './diagram/obs-renderer'
@@ -32,6 +33,10 @@ export const RichTreeView = lazyComponent<TreeProps>(() =>
 
 export const HtmlEditor = lazyComponent<HtmlEditorProps>(() =>
   import('./html-editor').then((m) => m.HtmlEditor),
+)
+
+export const OcNoteEditor = lazyComponent<OcNoteEditorProps>(() =>
+  import('./ocnote-editor').then((m) => m.OcNoteEditor),
 )
 
 export const GraphRenderer = lazyComponent<GraphRendererProps<HasId>>(() =>

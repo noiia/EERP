@@ -325,5 +325,17 @@ msgstr ""
 msgid "Delete message"
 msgstr ""
 
+msgid "Modify message"
+msgstr ""
+
+msgid "Message to modify"
+msgstr ""
+
+msgid "(edited)"
+msgstr ""
+
+msgid "The message could not be modified."
+msgstr ""
+
 msgid "The message could not be deleted."
 msgstr ""

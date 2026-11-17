@@ -13,6 +13,12 @@ export interface ChatMessageFrame {
   team_id?: string | null
   message: Message
 }
+/** An edited message: its body, edited_at and files change; reactions keep each viewer's own `mine`. */
+export interface ChatUpdatedFrame {
+  type: 'chat_message_updated'
+  channel_id: string
+  message: Message
+}
 export interface ChatReactionFrame {
   type: 'chat_reaction'
   channel_id: string
@@ -39,6 +45,7 @@ interface ChatState {
   close: (channel: string) => void
   receive: (frame: ChatMessageFrame) => void
   applyReactions: (frame: ChatReactionFrame) => void
+  update: (frame: ChatUpdatedFrame) => void
   remove: (frame: ChatDeletedFrame) => void
 }
 
@@ -94,6 +101,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // The open one keeps it even mid-load, and load()'s merge dedupes.
       messages: list || isOpen ? { ...s.messages, [channel]: [...(list ?? []), message] } : s.messages,
       unread: isOpen || mine ? s.unread : { ...s.unread, [channel]: (s.unread[channel] ?? 0) + 1 },
+    })
+  },
+  update: ({ channel_id: channel, message }) => {
+    const list = get().messages[channel]
+    if (!list?.some((m) => m.id === message.id)) return
+    set({
+      messages: {
+        ...get().messages,
+        [channel]: list.map((m) => (m.id === message.id ? { ...m, body: message.body, edited_at: message.edited_at, attachments: message.attachments } : m)),
+      },
     })
   },
   remove: ({ channel_id: channel, message_id }) => {

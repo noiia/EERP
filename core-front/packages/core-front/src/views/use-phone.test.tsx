@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act, render, renderHook, screen } from '@testing-library/react'
 import { useRef } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -25,5 +27,12 @@ describe('usePhone', () => {
     act(() => setViewportWidth(390))
     expect(screen.getByText('phone')).toBeInTheDocument()
     expect(mounts).toBe(1)
+  })
+
+  // Defect (390px live check): without the directive, the shell's server layout,
+  // which imports the engine barrel, ran MUI's client-only useMediaQuery factory
+  // on the server and every /app page answered HTTP 500.
+  it('is marked use client so server components can import the engine', () => {
+    expect(readFileSync(join(__dirname, 'use-phone.ts'), 'utf8')).toMatch(/^'use client'\n/)
   })
 })
