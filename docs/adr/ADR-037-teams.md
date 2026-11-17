@@ -61,6 +61,19 @@ flowchart LR
 - **Uploads** bypass the global request body limit and are capped by `upload_body_limit`. The
   exempt prefixes include `/api/v1/teams/*/files`, so `BodyLimitExempt` gained a `*` segment
   wildcard.
+- **OpenCloud notes.** `.ocnote` files contain a bare [Tiptap JSON document](https://github.com/opencloud-eu/web/blob/main/packages/web-pkg/src/editor/composables/strategies/tiptapJson.ts).
+  The file manager creates, reads and edits them; shared files, chat attachments and file-backed
+  fields open the same reader. Editing follows the item rule (uploader or team owner). Downloads
+  supply an `ETag`; `PUT /teams/:id/files/:file/note {content, version}` saves a document up to
+  10 MiB, with `version` equal to that ETag. A conditional object-key swap rejects stale saves
+  with 409 and preserves file ids, shares and chat references. Rename/move updates only those
+  columns so it cannot restore an older note's bytes. The editor preserves rich formatting and
+  heading anchors, and refuses unknown nodes, marks or attributes instead of dropping content.
+  Notes open in a full-window workspace with a fixed, grouped toolbar, document outline, zoom,
+  find/replace, table editing, image uploads, syntax-highlighted code and print styling. Existing
+  notes stay open after saving (also available with Ctrl/Cmd+S); the returned version is used for
+  the next save. The interface follows the application theme and adapts to narrow screens.
+  Editing is local to one editor; there is no live collaborative session.
 
 ### v2: private conversations, linked folders, per-user order
 

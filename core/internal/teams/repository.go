@@ -777,7 +777,28 @@ func (r *Repository) UpdateFile(ctx context.Context, f File) (File, error) {
 	if f.Name, err = validName(f.Name); err != nil {
 		return File{}, err
 	}
-	return r.files.Update(ctx, f, f.ID)
+	// Rename/move must not write a stale object key over a concurrent note save.
+	result, err := r.db.Exec(ctx, `UPDATE team_file SET name=$3, folder_id=$4, updated_at=now()
+		WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, f.TenantID, f.ID, f.Name, f.FolderID)
+	if err != nil {
+		return File{}, fmt.Errorf("teams: update file: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return File{}, orm.ErrNotFound
+	}
+	return r.FindFile(ctx, f.TenantID, f.ID)
+}
+
+// ReplaceFileContent swaps only the bytes' metadata, provided the downloaded
+// version is still current. Shares, chat references and ownership keep their ids.
+func (r *Repository) ReplaceFileContent(ctx context.Context, f File, previousKey string) (bool, error) {
+	result, err := r.db.Exec(ctx, `UPDATE team_file SET object_key=$4, mime=$5, size=$6, updated_at=now()
+		WHERE tenant_id=$1 AND id=$2 AND object_key=$3 AND deleted_at IS NULL`,
+		f.TenantID, f.ID, previousKey, f.ObjectKey, f.Mime, f.Size)
+	if err != nil {
+		return false, fmt.Errorf("teams: replace file content: %w", err)
+	}
+	return result.RowsAffected() == 1, nil
 }
 
 // DeleteFile removes the file and its shares, returning its object key.

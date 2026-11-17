@@ -1,10 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { ImageAttachments } from './ImageAttachments'
+import { preloadLazyComponents } from '@eerp/core-front'
+
+beforeAll(() => preloadLazyComponents())
+afterEach(() => vi.unstubAllGlobals())
 
 const a = (over: object) => ({ id: 'x', filename: 'f', mime: 'application/pdf', size: 1, ...over })
 
 describe('ImageAttachments', () => {
+  it.each(['file', 'attachment'] as const)('opens an .ocnote from a chat %s', async (kind) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Chat note"}]}]}'))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ImageAttachments attachments={[a({ id: 'n1', filename: 'Chat.ocnote', kind })]} />)
+    fireEvent.click(screen.getByRole('link', { name: 'Chat.ocnote (1 B)' }))
+    expect(await screen.findByText('Chat note')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(kind === 'file' ? '/api/teams/files/n1/download' : '/api/teams/attachments/n1', expect.any(Object))
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+  })
   it('renders a png thumbnail from the right route for both kinds', () => {
     render(<ImageAttachments attachments={[
       a({ id: 'f1', filename: 'one.png', mime: 'image/png', kind: 'file' }),
