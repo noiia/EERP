@@ -23,7 +23,9 @@ function download(content = note) {
   )
 }
 
-describe('note file reader and editor', () => {
+// The Tiptap editor is slow in jsdom: ~2.7 s alone, past vitest's 5 s default under a full
+// parallel coverage run — and a timed-out test keeps running into the next one's dialog.
+describe('note file reader and editor', { timeout: 20_000 }, () => {
   it('detects extensions case-insensitively and leaves other download links alone', () => {
     expect(isOcNote('Notes.OCNOTE')).toBe(true)
     expect(isOcNote('ocnote.txt')).toBe(false)
