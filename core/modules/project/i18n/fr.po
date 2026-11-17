@@ -244,3 +244,96 @@ msgstr "Cycle de dépendances"
 
 msgid "Project has no planned hours"
 msgstr "Le projet n'a pas d'heures prévues"
+
+msgid "Planning"
+msgstr "Planification"
+
+msgid "My day"
+msgstr "Ma journée"
+
+msgid "Overdue"
+msgstr "En retard"
+
+msgid "Today"
+msgstr "Aujourd'hui"
+
+msgid "This week"
+msgstr "Cette semaine"
+
+msgid "Later"
+msgstr "Plus tard"
+
+msgid "No deadline"
+msgstr "Sans échéance"
+
+msgid "Log time"
+msgstr "Saisir du temps"
+
+msgid "Log"
+msgstr "Saisir"
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "No open tasks"
+msgstr "Aucune tâche ouverte"
+
+msgid "First 1000 shown"
+msgstr "Premiers 1000 affichés"
+
+msgid "Actions"
+msgstr "Actions"
+
+msgid "Timesheet week"
+msgstr "Semaine de temps"
+
+msgid "Workload"
+msgstr "Charge"
+
+msgid "Portfolio"
+msgstr "Portefeuille"
+
+msgid "Previous week"
+msgstr "Semaine précédente"
+
+msgid "Next week"
+msgstr "Semaine suivante"
+
+msgid "Add task"
+msgstr "Ajouter une tâche"
+
+msgid "Search tasks"
+msgstr "Rechercher des tâches"
+
+msgid "No matching tasks"
+msgstr "Aucune tâche correspondante"
+
+msgid "Several entries: edit them in Timesheets"
+msgstr "Plusieurs saisies : modifiez-les dans Timesheets"
+
+msgid "Total"
+msgstr "Total"
+
+msgid "Totals"
+msgstr "Totaux"
+
+msgid "Mon"
+msgstr "Lun"
+
+msgid "Tue"
+msgstr "Mar"
+
+msgid "Wed"
+msgstr "Mer"
+
+msgid "Thu"
+msgstr "Jeu"
+
+msgid "Fri"
+msgstr "Ven"
+
+msgid "Sat"
+msgstr "Sam"
+
+msgid "Sun"
+msgstr "Dim"

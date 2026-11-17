@@ -30,7 +30,7 @@ describe('project views', () => {
       expect(r.permission, path).toBe(`${table}:${table}:read`)
     }
     const menus = registry.headerMenus().find((m) => m.module === 'project')!.menus
-    expect(menus.map((m) => m.label)).toEqual(['Projects', 'Tasks', 'My tasks', 'Milestones', 'Timesheets', 'Risks', 'Configuration'])
+    expect(menus.map((m) => m.label)).toEqual(['Projects', 'Tasks', 'My tasks', 'Milestones', 'Timesheets', 'Risks', 'Planning', 'Configuration'])
     // Archived projects are hidden by a removable default filter, not a fixed listFilter.
     expect(menus[0].entries[0]).toMatchObject({ path: '/project?filter[active]=true' })
     expect(route('/project').descriptor.listFilter).toBeUndefined()
@@ -177,5 +177,34 @@ describe('project views', () => {
     registry.register(mod, { appMode: true })
     const config = registry.headerMenus().find((m) => m.module === 'project')!.menus.find((m) => m.label === 'Configuration')!
     expect(config.entries).toContainEqual(expect.objectContaining({ label: 'Risk categories', path: '/project/risk_categories', permission: 'project_risk_category:project_risk_category:read' }))
+  })
+
+  it('declares the planning pages as hidden dashboards behind a Planning menu', () => {
+    for (const [path, table] of [
+      ['/project/my-day', 'project_task'],
+      ['/project/timesheet-week', 'project_timesheet'],
+      ['/project/workload', 'project_task'],
+      ['/project/portfolio', 'project'],
+    ] as const) {
+      // Shell pages render themselves; the route only gates and keeps the
+      // top bar on the Project's own menus (hideFromTopBar, Teams' trick).
+      expect(route(path).descriptor, path).toMatchObject({ viewType: 'dashboard', fields: [], hideFromTopBar: true })
+      expect(route(path).descriptor.entity, path).toBe(table)
+      expect(route(path).permission, path).toBe(`${table}:${table}:read`)
+    }
+    // The app tile keeps pointing at the project list (the first route).
+    expect(mod.routes[0].path).toBe('/project')
+    const registry = new ModuleRegistry()
+    registry.register(mod, { appMode: true })
+    const menus = registry.headerMenus().find((m) => m.module === 'project')!.menus
+    expect(menus.find((m) => m.label === 'Planning')?.entries).toEqual([
+      { kind: 'line', label: 'My day', path: '/project/my-day', permission: 'project_task:project_task:read' },
+      { kind: 'line', label: 'Timesheet week', path: '/project/timesheet-week', permission: 'project_timesheet:project_timesheet:read' },
+      { kind: 'line', label: 'Workload', path: '/project/workload', permission: 'project_task:project_task:read' },
+      { kind: 'line', label: 'Portfolio', path: '/project/portfolio', permission: 'project:project:read' },
+    ])
+    // The hidden routes add no top-bar menus of their own.
+    expect(menus.map((m) => m.name)).not.toContain('/project/my-day')
+    expect(menus.map((m) => m.name)).not.toContain('/project/timesheet-week')
   })
 })
