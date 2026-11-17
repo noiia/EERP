@@ -738,6 +738,38 @@ async function seedProjectPlan(
     { risk_id: cost?.id, task_id: at(2), extra_hours: 8 },
   ]
   track(await createMany('project_risk_task', links.filter((l) => l.risk_id && l.task_id)))
+  return ids
+}
+
+/** The plan project's PBS: four deliverables, the even packages of each phase range (about
+ * half the leaves) linked to them by `pbs_item_id`; the PBS mode and WBS footer demo. */
+async function seedPbs(
+  projectId: string,
+  planIds: Map<string, string>,
+  track: (o: { result: SeedEntityResult }) => void,
+) {
+  const plan = buildProjectPlan()
+  const defs = [
+    { name: 'Scope & design', color: '#2a78d6', x: 0, y: 0, phases: [0, 1] },
+    { name: 'Build', color: '#43a047', x: 400, y: 0, phases: [2, 3, 4, 5] },
+    { name: 'Integration', color: '#ed6c02', x: 800, y: 0, phases: [6, 7] },
+    { name: 'Delivery', color: '#8e24aa', x: 1200, y: 0, phases: [8, 9] },
+  ]
+  const client = createServerApiClient()
+  for (const def of defs) {
+    const { phases, ...body } = def
+    const r = await createMany<{ id: string }>('project_pbs_item', [{ project_id: projectId, ...body }])
+    track(r)
+    const itemId = r.records[0]?.id
+    if (!itemId) continue
+    const links = plan.leaves
+      .filter((l) => phases.includes(l.p) && Number(l.key.split('.')[1]) % 2 === 0)
+      .map((l) => planIds.get(l.key))
+      .filter((id): id is string => !!id)
+    if (!links.length) continue
+    // One pbs_item_id write per linked task; the counts trigger keeps the item's columns.
+    await Promise.all(links.map((id) => client.update('project_task', id, { pbs_item_id: itemId }).catch(() => null)))
+  }
 }
 
 async function seedProjects(contacts: { records: { id: string }[]; bodies: Record<string, unknown>[] }): Promise<SeedEntityResult[]> {
@@ -781,7 +813,8 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
   for (const [pi, project] of projects.records.entries()) {
     const stages = await stagesOf(project.id)
     if (isPlan(pi)) {
-      await seedProjectPlan(project.id, stages, track)
+      const planIds = await seedProjectPlan(project.id, stages, track)
+      await seedPbs(project.id, planIds, track)
       continue
     }
     const milestones = await createMany<{ id: string }>(

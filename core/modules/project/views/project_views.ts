@@ -191,6 +191,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
     closedField: 'closed',
     urgentDays: 7,
   },
+  // PBS diagram mode over the pinned project: its deliverables (ADR-039).
+  pbs: { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id', canEdit: 'project.canEditStages' },
 }
 
 // The task's many2many fields: on the form, and filters of the task lists
@@ -207,6 +209,14 @@ const colorGroupsField: Fields[number] = {
   type: 'relation',
   widget: 'colortags',
   relation: { entity: 'project_color', kind: 'many2many', via: 'project_task_color', viaFields: { own: 'task_id', related: 'color_id' }, labelField: 'name' },
+}
+// The task's deliverable (PBS, ADR-039): on the form, and a filter of the task
+// lists (Go's TaskFilters resolves filter[pbs_item_id]).
+const deliverableField: Fields[number] = {
+  name: 'pbs_item_id',
+  label: 'Deliverable',
+  type: 'relation',
+  relation: { entity: 'project_pbs_item', kind: 'many2one', labelField: 'name', filterFields: sameProject },
 }
 
 const taskFormFields: Fields = [
@@ -284,6 +294,7 @@ const taskFormFields: Fields = [
       ],
     },
   },
+  deliverableField,
 ]
 
 // Description first, then the task's links; the synthesized Settings page
@@ -491,7 +502,7 @@ const tasksList = (navLabel: string, listFilter?: ViewDescriptor['listFilter']):
   createPermission: write('project_task'),
   permissions: perm('project_task'),
   viewModeDefaults: taskViewModeDefaults,
-  search: { filterOnlyFields: [assigneesField, colorGroupsField] },
+  search: { filterOnlyFields: [assigneesField, colorGroupsField, deliverableField] },
   ...(listFilter ? { listFilter } : {}),
 })
 

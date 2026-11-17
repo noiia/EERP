@@ -2963,3 +2963,21 @@ msgstr "Non assigné"
 
 msgid "First 1000 shown"
 msgstr "Premiers 1000 affichés"
+
+msgid "PBS"
+msgstr "PBS"
+
+msgid "Add item"
+msgstr "Ajouter un élément"
+
+msgid "Edit item"
+msgstr "Modifier l'élément"
+
+msgid "Parent"
+msgstr "Parent"
+
+msgid "No parent"
+msgstr "Sans parent"
+
+msgid "No task produces this"
+msgstr "Aucune tâche ne produit ce livrable"

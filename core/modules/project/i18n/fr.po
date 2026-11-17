@@ -247,3 +247,6 @@ msgstr "Le projet n'a pas d'heures prévues"
 
 msgid "Assignee"
 msgstr "Assigné"
+
+msgid "Deliverable"
+msgstr "Livrable"

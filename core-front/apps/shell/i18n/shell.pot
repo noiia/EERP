@@ -2831,3 +2831,21 @@ msgstr ""
 
 msgid "First 1000 shown"
 msgstr ""
+
+msgid "PBS"
+msgstr ""
+
+msgid "Add item"
+msgstr ""
+
+msgid "Edit item"
+msgstr ""
+
+msgid "Parent"
+msgstr ""
+
+msgid "No parent"
+msgstr ""
+
+msgid "No task produces this"
+msgstr ""

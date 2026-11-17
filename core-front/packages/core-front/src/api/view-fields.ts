@@ -105,6 +105,8 @@ export interface ViewModeDefaults {
   insights?: InsightsConfig
   /** Matrix mode: the entity's matrices (Eisenhower, RACI, DSM), available while the list is pinned to one project. Module-declared only. */
   matrix?: MatrixConfig
+  /** PBS mode: the entity's project breakdown structure deliverables, available while the list is pinned to one project. Module-declared only. */
+  pbs?: PbsConfig
 }
 
 /** The pinned scope's Gantt schedule endpoint: `ops.get(scopeEntity, `${id}/${path}`)`. */
@@ -229,6 +231,7 @@ export interface EffectiveViewFields {
   kanbanSwimlanes: KanbanSwimlanesConfig | null
   insights: InsightsConfig | null
   matrix: MatrixConfig | null
+  pbs: PbsConfig | null
 }
 
 /**
@@ -264,6 +267,7 @@ export function effectiveViewFields(
     kanbanSwimlanes: defaults?.kanbanSwimlanes ?? null,
     insights: defaults?.insights ?? null,
     matrix: defaults?.matrix ?? null,
+    pbs: defaults?.pbs ?? null,
   }
 }
 
@@ -285,6 +289,22 @@ export interface ObsConfig {
   canEdit?: string
 }
 
+/** PBS mode over the pinned project (ADR-039): the deliverables a project's
+ * tasks produce, drawn as a shared chart of colored boxes (one per project).
+ * Module-declared only. */
+export interface PbsConfig {
+  /** The deliverable entity (its generic list route prefix). */
+  entity: string
+  /** The scope column on the deliverable AND the task entities, e.g. 'project_id'. */
+  projectField: string
+  /** The project entity the canEdit guard reads through, e.g. 'project'. */
+  projectEntity: string
+  /** The many2one on the task entity pointing at a deliverable, e.g. 'pbs_item_id'. */
+  taskField: string
+  /** Name registered with registerKanbanColumnsGuard: may the caller edit this project's chart? */
+  canEdit?: string
+}
+
 /** The one id `options` pins `field` to (filter[field]=id, or in[field] with one id), else null. */
 export function pinnedId(options: EntityListOptions | undefined, field: string): string | null {
   const f = options?.filter?.[field]
@@ -294,9 +314,9 @@ export function pinnedId(options: EntityListOptions | undefined, field: string):
 }
 
 /** The list view's display-mode switcher (top-right of the list). */
-export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs' | 'risk' | 'insights' | 'matrix'
+export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs' | 'risk' | 'insights' | 'matrix' | 'pbs'
 
-export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs', 'risk', 'insights', 'matrix']
+export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs', 'risk', 'insights', 'matrix', 'pbs']
 
 /**
  * Which modes are usable right now for a given entity's EFFECTIVE (module
@@ -320,5 +340,6 @@ export function availableDisplayModes(effective: EffectiveViewFields, options?: 
     // project id the analytics and matrices are computed over.
     insights: effective.insights != null && pinnedId(options, effective.insights.projectField) != null,
     matrix: effective.matrix != null && pinnedId(options, effective.matrix.projectField) != null,
+    pbs: effective.pbs != null && pinnedId(options, effective.pbs.projectField) != null,
   }
 }

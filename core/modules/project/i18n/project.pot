@@ -246,3 +246,6 @@ msgstr ""
 
 msgid "Assignee"
 msgstr ""
+
+msgid "Deliverable"
+msgstr ""
