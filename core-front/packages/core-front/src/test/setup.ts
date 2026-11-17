@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { beforeAll } from 'vitest'
+import { afterEach, beforeAll, beforeEach } from 'vitest'
+import { setViewportWidth } from './viewport'
 
 // jsdom has no native ResizeObserver. react-grid-layout's useContainerWidth (Graph
 // mode, graph-renderer.tsx) uses one internally; graph-renderer.test.tsx mocks the
@@ -22,3 +23,7 @@ beforeAll(async () => {
   const { preloadLazyComponents } = await import('../views/lazy-component')
   await preloadLazyComponents()
 })
+
+// Every test starts as a desktop (1280px) viewport; a test calls setViewportWidth for a phone.
+beforeEach(() => setViewportWidth(1280))
+afterEach(() => setViewportWidth(1280))

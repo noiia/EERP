@@ -39,4 +39,8 @@ describe('design tokens', () => {
   it('focusRing builds a 3px ring in the given color', () => {
     expect(focusRing('#00ADD8')).toBe('0 0 0 3px rgba(0, 173, 216, 0.4)')
   })
+
+  it('has an 8px phone page inset', () => {
+    expect(layout.pageInsetPhone).toBe('8px')
+  })
 })

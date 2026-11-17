@@ -185,8 +185,8 @@ export default async function ErpLayout({ children }: { children: ReactNode }) {
                 <Box
                   className="erp-page"
                   sx={{
-                    px: layout.pageInsetX,
-                    py: layout.pageInsetY,
+                    px: { xs: layout.pageInsetPhone, sm: layout.pageInsetX },
+                    py: { xs: layout.pageInsetPhone, sm: layout.pageInsetY },
                     overflowX: 'auto',
                     '@media print': { p: 0, overflowX: 'visible' },
                   }}

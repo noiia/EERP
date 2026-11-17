@@ -104,6 +104,8 @@ export const layout = {
    * overflowing child (e.g. Graph's canvas) must never be allowed to escape. */
   pageInsetX: '5vw',
   pageInsetY: '5vh',
+  /** Page inset on a phone (below `phoneMaxWidth`): 5vw/5vh would waste the small screen. */
+  pageInsetPhone: '8px',
   /** "Phone" boundary (px), pinned to MUI's `sm` breakpoint (600) so the CSS side
    * (`sx` breakpoint values, which keep using `xs`/`sm` directly) and the JS side can
    * never drift apart. The ONE named number for JavaScript phone-width branches —

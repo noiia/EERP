@@ -149,8 +149,8 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   return (
     <Box sx={{
       // Full bleed: cancel the ERP page inset and fill the viewport under the top bar.
-      mx: `calc(-1 * ${layout.pageInsetX})`,
-      my: `calc(-1 * ${layout.pageInsetY})`,
+      mx: { xs: `calc(-1 * ${layout.pageInsetPhone})`, sm: `calc(-1 * ${layout.pageInsetX})` },
+      my: { xs: `calc(-1 * ${layout.pageInsetPhone})`, sm: `calc(-1 * ${layout.pageInsetY})` },
       height: `calc(100dvh - ${TOP_BAR}px)`,
       display: 'flex',
       flexDirection: phone ? 'column' : 'row',
