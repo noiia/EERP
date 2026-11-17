@@ -1257,6 +1257,9 @@ function TreeRenderer<T extends HasId>({
         endField={effective.ganttEndField}
         dependencies={effective.ganttDependencies ?? undefined}
         colorTagsField={effective.colorTagsField ?? undefined}
+        // ADR-041: the pinned project's schedule overlay and baseline snapshots.
+        schedule={effective.ganttSchedule ?? undefined}
+        baseline={effective.ganttBaseline ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

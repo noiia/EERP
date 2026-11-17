@@ -247,3 +247,9 @@ msgstr "Le projet n'a pas d'heures prévues"
 
 msgid "Assignee"
 msgstr "Assigné"
+
+msgid "Save baseline"
+msgstr "Enregistrer la ligne de base"
+
+msgid "Baseline name"
+msgstr "Nom de la ligne de base"

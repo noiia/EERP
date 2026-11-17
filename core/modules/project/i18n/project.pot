@@ -246,3 +246,9 @@ msgstr ""
 
 msgid "Assignee"
 msgstr ""
+
+msgid "Save baseline"
+msgstr ""
+
+msgid "Baseline name"
+msgstr ""

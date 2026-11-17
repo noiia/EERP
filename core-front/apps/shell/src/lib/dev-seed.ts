@@ -675,6 +675,9 @@ const PROJECT_COLOR_DEMOS = [
  * plus 4 color groups some tasks are put in; then 2 large projects (buildProjectPlan, 220
  * tasks and 175 dependencies each) for the WBS and PERT views.
  * Aggregates (hours, counts, blocked) belong to Go's triggers: never sent.
+ * Each small project also keeps a 'Baseline v1' snapshot (the POST
+ * /project/:id/baseline route; the guard refuses the generic create), so the
+ * Gantt's Baseline select has a choice to ghost.
  */
 // Creates buildProjectPlan's tasks level by level (in order, so Go numbers siblings as listed),
 // then its dependencies between the tasks that were created.
@@ -844,6 +847,14 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
       ),
     )
     if (pi === 0 && company) await seedObs(project.id, company, people, me, track)
+    // A saved snapshot so the Gantt's Baseline select has a choice (POST
+    // route: the guard refuses the generic create of a baseline).
+    try {
+      await apiRequest('POST', `/api/v1/project/${project.id}/baseline`, { name: 'Baseline v1' })
+    } catch {
+      // Refused (e.g. not a manager, or the limit is reached): the demo just
+      // has no baseline to pick, like the stages fallback above.
+    }
   }
   results.push(...Object.values(outcomes))
   return results

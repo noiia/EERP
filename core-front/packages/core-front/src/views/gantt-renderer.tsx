@@ -7,16 +7,20 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Collapse from '@mui/material/Collapse'
 import IconButton from '@mui/material/IconButton'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Popover from '@mui/material/Popover'
+import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
+import { useTheme } from '@mui/material/styles'
 import { erpPath } from '../navigation'
 import { usePermission } from '../auth/Can'
 import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
-import type { GanttDependenciesConfig } from '../api/view-fields'
+import { pinnedId, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttScheduleConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
@@ -69,6 +73,25 @@ function writeZoom(entity: string, zoom: Zoom) {
   }
 }
 
+// The Critical-path toggle is kept per entity for the browser tab's session, the
+// zoom's pattern: leaving the Gantt and coming back keeps the overlay the user asked for.
+const criticalKey = (entity: string) => `eerp.gantt.critical.${entity}`
+function readCritical(entity: string): boolean {
+  try {
+    return sessionStorage.getItem(criticalKey(entity)) === '1'
+  } catch {
+    // no storage: default below
+  }
+  return false
+}
+function writeCritical(entity: string, on: boolean) {
+  try {
+    sessionStorage.setItem(criticalKey(entity), on ? '1' : '0')
+  } catch {
+    // not persisted, still applied
+  }
+}
+
 const DAY_MS = 86_400_000
 /** Rows per request while paging the visible range. */
 const GANTT_PAGE_SIZE = 200
@@ -78,6 +101,8 @@ const GANTT_RECORD_CAP = 1000
 const GANTT_UNSCHEDULED_LIMIT = 50
 /** Record ids per dependency-link request (`in[toField]`). */
 const GANTT_LINK_CHUNK = 100
+/** Task ids per baseline-task request (`in[task_id]`); baselines cap at 20 per project. */
+const BASELINE_CHUNK = 100
 /** Timeline geometry (px): rows must stay exactly ROW_H tall, the today/arrow overlay is drawn from it. */
 const HEADER_H = 24
 const ROW_H = 32
@@ -212,6 +237,10 @@ export interface GanttRendererProps<T extends HasId> {
   dependencies?: GanttDependenciesConfig
   /** A color-tags many2many field (ViewModeDefaults.colorTagsField): bars take its colors. */
   colorTagsField?: string
+  /** Set ⇒ the pinned scope's critical-path schedule (the `Critical path` toggle). */
+  schedule?: GanttScheduleConfig
+  /** Set ⇒ the pinned scope's baseline snapshot rows (the `Baseline` select + ghost bars). */
+  baseline?: GanttBaselineConfig
 }
 
 export function GanttRenderer<T extends HasId>({
@@ -224,8 +253,11 @@ export function GanttRenderer<T extends HasId>({
   serverOptions,
   dependencies,
   colorTagsField,
+  schedule,
+  baseline,
 }: GanttRendererProps<T>) {
   const t = useT()
+  const theme = useTheme()
   const router = useRouter()
   const relationOps = useRelationOps()
   const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
@@ -355,6 +387,9 @@ export function GanttRenderer<T extends HasId>({
   const colorsField = colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField)
   const { colors, reload: reloadColors } = useRecordColors(descriptor.entity, colorsField, rows.map((r) => r.record.id))
   const [colorPicker, setColorPicker] = useState<{ record: T; anchor: HTMLElement } | null>(null)
+  // The phone toolbar's More menu: the pinned-scope controls (Critical path, Baseline)
+  // don't fit the 390px row, so they sit in it (the diagram canvas' pattern).
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
 
   const trackRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -530,6 +565,128 @@ export function GanttRenderer<T extends HasId>({
       cancelled = true
     }
   }, [depKey, rowIdsKey])
+
+  // The pinned scope, or null when the list is not pinned: the schedule and the
+  // baselines exist for a pinned project only (the search bar's single-value pin).
+  const schedulePin = schedule && relationOps?.get ? pinnedId(serverOptions, schedule.scopeField) : null
+  const baselinePin = baseline && relationOps?.listPage ? pinnedId(serverOptions, baseline.scopeField) : null
+
+  // The Critical-path toggle, kept per entity for the tab session (the zoom's pattern).
+  const [criticalOn, setCriticalOn] = useState(() => readCritical(descriptor.entity))
+  const onCriticalToggle = () => {
+    const next = !criticalOn
+    setCriticalOn(next)
+    writeCritical(descriptor.entity, next)
+  }
+
+  // The pinned project's schedule (WP3), read once per pinned id and toggle state,
+  // so a bar move never refetches it.
+  const [scheduleData, setScheduleData] = useState<{ cycle: boolean; tasks: Map<string, { slack: number; critical: boolean }> } | null>(null)
+  const scheduleKey = schedulePin && schedule ? JSON.stringify(schedule) : null
+  useEffect(() => {
+    if (scheduleKey == null || !schedulePin || !criticalOn || !relationOps?.get) {
+      setScheduleData(null)
+      return
+    }
+    const cfg = JSON.parse(scheduleKey) as GanttScheduleConfig
+    let cancelled = false
+    relationOps
+      .get(cfg.scopeEntity, `${schedulePin}/${cfg.path}`)
+      .then((res) => {
+        if (cancelled) return
+        // The relation op returns a record; a host (or a test double) may hand the payload back bare.
+        const body = (res as { body?: unknown }).body ?? res
+        const payload = body as { cycle?: boolean; tasks?: { id: string | number; slack: number; critical: boolean }[] } | null
+        const tasks = new Map<string, { slack: number; critical: boolean }>()
+        for (const task of payload?.tasks ?? []) tasks.set(String(task.id), { slack: Number(task.slack), critical: Boolean(task.critical) })
+        setScheduleData({ cycle: Boolean(payload?.cycle), tasks })
+      })
+      .catch(() => {
+        if (!cancelled) setScheduleData(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [scheduleKey, schedulePin, criticalOn])
+
+  // The pinned project's baselines, newest first (the server caps them: one page).
+  const [baselines, setBaselines] = useState<{ id: string; name: string }[]>([])
+  const baselineKey = baselinePin && baseline ? JSON.stringify(baseline) : null
+  const [pickedBaseline, setPickedBaseline] = useState('')
+  useEffect(() => {
+    if (baselineKey == null || !baselinePin || !relationOps?.listPage) {
+      setBaselines([])
+      return
+    }
+    const cfg = JSON.parse(baselineKey) as GanttBaselineConfig
+    let cancelled = false
+    relationOps
+      .listPage(cfg.entity, { filter: { [cfg.scopeField]: baselinePin }, order: '-created_at', pageSize: 100 })
+      .then((page) => {
+        if (cancelled) return
+        setBaselines(page.records.map((r) => ({ id: r.id, name: String(r.name ?? '') })))
+      })
+      .catch(() => {
+        if (!cancelled) setBaselines([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [baselineKey, baselinePin])
+  // A different pinned project starts with no baseline picked.
+  useEffect(() => {
+    setPickedBaseline('')
+  }, [baselinePin])
+
+  // The picked baseline's task rows for the visible rows, read in id chunks (the
+  // dependency-links pattern): a ghost bar under every task the snapshot holds.
+  const [baselineBars, setBaselineBars] = useState<Map<string, { start: Date; end: Date }>>(new Map())
+  useEffect(() => {
+    if (baselineKey == null || !baselinePin || !pickedBaseline || !relationOps?.listPage || rowIdsKey === '') {
+      setBaselineBars(new Map())
+      return
+    }
+    const cfg = JSON.parse(baselineKey) as GanttBaselineConfig
+    const ids = rowIdsKey.split(',')
+    const listPage = relationOps.listPage
+    let cancelled = false
+    const load = async () => {
+      const out: Record<string, unknown>[] = []
+      for (let i = 0; i < ids.length; i += BASELINE_CHUNK) {
+        const chunk = ids.slice(i, i + BASELINE_CHUNK)
+        for (let page = 1; ; page++) {
+          const res = await listPage(cfg.taskEntity, {
+            // `baseline_id` is the task entity's FK to its baseline (the WP3 baseline schema).
+            filter: { [cfg.scopeField]: baselinePin, baseline_id: pickedBaseline },
+            in: { [cfg.linkField]: chunk },
+            page,
+            pageSize: BASELINE_CHUNK,
+          })
+          out.push(...(res.records as Record<string, unknown>[]))
+          if (res.records.length < BASELINE_CHUNK) break
+        }
+      }
+      return out
+    }
+    void load()
+      .then((rs) => {
+        if (cancelled) return
+        const m = new Map<string, { start: Date; end: Date }>()
+        for (const r of rs) {
+          const start = dayOf(r[cfg.startField], isDatetime(cfg.startField))
+          const end = dayOf(r[cfg.endField], isDatetime(cfg.endField))
+          if (!start || !end) continue
+          m.set(String(r[cfg.linkField]), { start, end })
+        }
+        setBaselineBars(m)
+      })
+      .catch(() => {
+        if (!cancelled) setBaselineBars(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [baselineKey, baselinePin, pickedBaseline, rowIdsKey])
   const finishRef = useRef(finishDrag)
   finishRef.current = finishDrag
 
@@ -573,6 +730,28 @@ export function GanttRenderer<T extends HasId>({
   const dropDay = hoverDay >= 0 && hoverDay < totalDays ? hoverDay : null
   const handleSx = { position: 'absolute', top: 0, bottom: 0, width: phone ? 16 : 8, cursor: 'ew-resize', touchAction: 'none' } as const
 
+  /** The picked baseline's snapshot of this row: a 6px ghost bar under the live one,
+   * clipped to the visible range like the bar itself. Rows the snapshot lacks get none. */
+  function ghostBar(row: { record: T; s: number; e: number }) {
+    if (!pickedBaseline) return null
+    const g = baselineBars.get(row.record.id)
+    if (!g) return null
+    const si = dayDiff(g.start, range.start)
+    const ei = Math.max(si, dayDiff(g.end, range.start))
+    if (si >= totalDays || ei < 0) return null
+    const left = Math.max(si, 0)
+    const right = Math.min(ei + 1, totalDays)
+    if (right <= left) return null
+    return (
+      <Box
+        data-testid={`gantt-baseline-${row.record.id}`}
+        aria-hidden
+        sx={{ position: 'absolute', bottom: 0, height: 6, bgcolor: 'action.disabled', borderRadius: 0.5, pointerEvents: 'none' }}
+        style={{ left: pct(left), width: pct(right - left) }}
+      />
+    )
+  }
+
   function bar(row: { record: T; s: number; e: number }) {
     const { record, s, e } = row
     let [bs, be] = [s, e]
@@ -584,13 +763,16 @@ export function GanttRenderer<T extends HasId>({
     const left = Math.max(bs, 0)
     const right = Math.min(be + 1, totalDays)
     if (right <= left) return null
+    // The schedule overlay (toggle on): critical bars get the error outline, and every
+    // scheduled bar its slack in the label — a non-color cue as well as the color one.
+    const sched = criticalOn ? scheduleData?.tasks.get(record.id) : undefined
     return (
       <Box
         data-testid={`gantt-bar-${record.id}`}
         title={label(record)}
         role="button"
         tabIndex={0}
-        aria-label={`${label(record)}: ${addDays(range.start, s).toLocaleDateString()} – ${addDays(range.start, e).toLocaleDateString()}`}
+        aria-label={`${label(record)}: ${addDays(range.start, s).toLocaleDateString()} – ${addDays(range.start, e).toLocaleDateString()}${sched ? `, slack ${sched.slack} d` : ''}`}
         onKeyDown={(ev) => onBarKey(ev, row)}
         onPointerDown={canWrite ? (ev) => startDrag(ev, record.id, 'move') : undefined}
         onClick={canWrite ? undefined : () => openForm(record)}
@@ -607,6 +789,7 @@ export function GanttRenderer<T extends HasId>({
         style={{
           left: pct(left),
           width: pct(right - left),
+          ...(sched?.critical ? { outlineWidth: '2px', outlineStyle: 'solid', outlineColor: theme.palette.error.main } : {}),
           ...(colors.get(record.id) ? { background: colorStripes(colors.get(record.id)!, 'to bottom') } : {}),
         }}
       >
@@ -688,12 +871,37 @@ export function GanttRenderer<T extends HasId>({
                 {t('Next')}
               </Button>
             )}
+            {!phone && schedulePin ? (
+              <Button size="small" aria-pressed={criticalOn} onClick={onCriticalToggle}>
+                {t('Critical path')}
+              </Button>
+            ) : null}
+            {!phone && baselinePin ? (
+              <Select size="small" aria-label={t('Baseline')} value={pickedBaseline} displayEmpty onChange={(e) => setPickedBaseline(e.target.value)}>
+                <MenuItem value="">{t('No baseline')}</MenuItem>
+                {baselines.map((b) => (
+                  <MenuItem key={b.id} value={b.id}>
+                    {b.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            ) : null}
+            {phone && (schedulePin || baselinePin) ? (
+              <IconButton aria-label={t('More')} sx={{ minWidth: 40, minHeight: 40 }} onClick={(e) => setMoreAnchor(e.currentTarget)}>
+                <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
+              </IconButton>
+            ) : null}
             <Typography variant="subtitle2" sx={{ flexBasis: phone ? '100%' : 'auto' }}>
               {range.start.toLocaleDateString()} – {addDays(range.end, -1).toLocaleDateString()}
             </Typography>
             {server?.capped ? (
               <Typography variant="caption" color="text.secondary">
                 {GANTT_RECORD_CAP} {t('records shown — narrow the range or the filters to see the rest')}
+              </Typography>
+            ) : null}
+            {criticalOn && scheduleData?.cycle ? (
+              <Typography variant="caption" color="text.secondary">
+                {t('Dependency cycle: no critical path')}
               </Typography>
             ) : null}
           </Box>
@@ -774,6 +982,8 @@ export function GanttRenderer<T extends HasId>({
                     cursor: quick.canCreate ? 'cell' : undefined,
                   }}
                 >
+                  {/* The baseline snapshot under the live bar, so the bar stacks on top. */}
+                  {ghostBar(row)}
                   {bar(row)}
                 </Box>
               </Box>
@@ -904,6 +1114,28 @@ export function GanttRenderer<T extends HasId>({
           </Box>
         </Collapse>
       </Stack>
+
+      {phone && (schedulePin || baselinePin) ? (
+        <Menu open={!!moreAnchor} anchorEl={moreAnchor} onClose={() => setMoreAnchor(null)}>
+          {schedulePin ? (
+            <MenuItem selected={criticalOn} onClick={() => { setMoreAnchor(null); onCriticalToggle() }}>
+              {t('Critical path')}
+            </MenuItem>
+          ) : null}
+          {baselinePin ? (
+            <>
+              <MenuItem selected={pickedBaseline === ''} onClick={() => { setMoreAnchor(null); setPickedBaseline('') }}>
+                {t('No baseline')}
+              </MenuItem>
+              {baselines.map((b) => (
+                <MenuItem key={b.id} selected={pickedBaseline === b.id} onClick={() => { setMoreAnchor(null); setPickedBaseline(b.id) }}>
+                  {b.name}
+                </MenuItem>
+              ))}
+            </>
+          ) : null}
+        </Menu>
+      ) : null}
     </Box>
   )
 }
