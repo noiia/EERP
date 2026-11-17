@@ -675,6 +675,9 @@ const PROJECT_COLOR_DEMOS = [
  * plus 4 color groups some tasks are put in; then 2 large projects (buildProjectPlan, 220
  * tasks and 175 dependencies each) for the WBS and PERT views.
  * Aggregates (hours, counts, blocked) belong to Go's triggers: never sent.
+ * Each small project also keeps a 'Baseline v1' snapshot (the POST
+ * /project/:id/baseline route; the guard refuses the generic create), so the
+ * Gantt's Baseline select has a choice to ghost.
  */
 // Creates buildProjectPlan's tasks level by level (in order, so Go numbers siblings as listed),
 // then its dependencies between the tasks that were created.
@@ -738,6 +741,38 @@ async function seedProjectPlan(
     { risk_id: cost?.id, task_id: at(2), extra_hours: 8 },
   ]
   track(await createMany('project_risk_task', links.filter((l) => l.risk_id && l.task_id)))
+  return ids
+}
+
+/** The plan project's PBS: four deliverables, the even packages of each phase range (about
+ * half the leaves) linked to them by `pbs_item_id`; the PBS mode and WBS footer demo. */
+async function seedPbs(
+  projectId: string,
+  planIds: Map<string, string>,
+  track: (o: { result: SeedEntityResult }) => void,
+) {
+  const plan = buildProjectPlan()
+  const defs = [
+    { name: 'Scope & design', color: '#2a78d6', x: 0, y: 0, phases: [0, 1] },
+    { name: 'Build', color: '#43a047', x: 400, y: 0, phases: [2, 3, 4, 5] },
+    { name: 'Integration', color: '#ed6c02', x: 800, y: 0, phases: [6, 7] },
+    { name: 'Delivery', color: '#8e24aa', x: 1200, y: 0, phases: [8, 9] },
+  ]
+  const client = createServerApiClient()
+  for (const def of defs) {
+    const { phases, ...body } = def
+    const r = await createMany<{ id: string }>('project_pbs_item', [{ project_id: projectId, ...body }])
+    track(r)
+    const itemId = r.records[0]?.id
+    if (!itemId) continue
+    const links = plan.leaves
+      .filter((l) => phases.includes(l.p) && Number(l.key.split('.')[1]) % 2 === 0)
+      .map((l) => planIds.get(l.key))
+      .filter((id): id is string => !!id)
+    if (!links.length) continue
+    // One pbs_item_id write per linked task; the counts trigger keeps the item's columns.
+    await Promise.all(links.map((id) => client.update('project_task', id, { pbs_item_id: itemId }).catch(() => null)))
+  }
 }
 
 async function seedProjects(contacts: { records: { id: string }[]; bodies: Record<string, unknown>[] }): Promise<SeedEntityResult[]> {
@@ -781,7 +816,8 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
   for (const [pi, project] of projects.records.entries()) {
     const stages = await stagesOf(project.id)
     if (isPlan(pi)) {
-      await seedProjectPlan(project.id, stages, track)
+      const planIds = await seedProjectPlan(project.id, stages, track)
+      await seedPbs(project.id, planIds, track)
       continue
     }
     const milestones = await createMany<{ id: string }>(
@@ -844,7 +880,76 @@ async function seedProjects(contacts: { records: { id: string }[]; bodies: Recor
       ),
     )
     if (pi === 0 && company) await seedObs(project.id, company, people, me, track)
+    // A saved snapshot so the Gantt's Baseline select has a choice (POST
+    // route: the guard refuses the generic create of a baseline).
+    try {
+      await apiRequest('POST', `/api/v1/project/${project.id}/baseline`, { name: 'Baseline v1' })
+    } catch {
+      // Refused (e.g. not a manager, or the limit is reached): the demo just
+      // has no baseline to pick, like the stages fallback above.
+    }
+    // The RACI matrix (Matrices mode, ADR-041): the first project's first four
+    // tasks get one role each for the signed-in admin, so the tab is not empty.
+    if (pi === 0 && me) {
+      const roles = ['A', 'R', 'C', 'I']
+      track(
+        await createMany(
+          'project_task_raci',
+          tasks.records.slice(0, 4).map((task, i) => ({ task_id: task.id, user_id: me, role: roles[i] })),
+        ),
+      )
+    }
   }
+  // Metrics window (WP2): the small demos get a 30-day past start and a 60-day
+  // future end; the plan projects span their plan (first phase to last).
+  const span: SeedEntityResult = { entity: 'project metrics span', created: 0, failed: 0, errors: [] }
+  const planPhases = buildProjectPlan().phases
+  for (const [pi, project] of projects.records.entries()) {
+    const body = isPlan(pi)
+      ? { date_start: planPhases[0]?.date_start, date_end: planPhases[planPhases.length - 1]?.deadline }
+      : { date_start: new Date(Date.now() - 30 * day).toISOString(), date_end: new Date(Date.now() + 60 * day).toISOString() }
+    try {
+      await client.update('project', project.id, body)
+      span.created += 1
+    } catch (e) {
+      span.failed += 1
+      if (span.errors.length < 5) span.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  track({ result: span })
+  // A weekly capacity for the signed-in user: the Workload heatmap compares
+  // planned load against it (WP10); a live (user) row already exists → 409,
+  // re-running duplicates nothing, like the other seeded rows.
+  if (me) {
+    track(await createMany('project_capacity', [{ user_id: me, hours_per_week: 24 }]))
+  }
+  // Insights milestones (WP7): the small demos' two milestones become a
+  // reached one (deadline 30 days ago, reached stamped by the server) and a
+  // late unreached one (deadline 3 days ago) so the roadmap tab is alive.
+  const insightMilestones: SeedEntityResult = { entity: 'project insights milestones', created: 0, failed: 0, errors: [] }
+  for (const [pi, project] of projects.records.entries()) {
+    if (isPlan(pi)) continue
+    let existing: { id: string }[]
+    try {
+      existing = await client.list<{ id: string }>('project_milestone', { filter: { project_id: project.id }, order: 'created_at' })
+    } catch {
+      existing = [] // unreadable milestones: leave the defaults
+    }
+    const bodies = [
+      { deadline: new Date(Date.now() - 30 * day).toISOString(), reached: true },
+      { deadline: new Date(Date.now() - 3 * day).toISOString() },
+    ].slice(0, existing.length)
+    for (let i = 0; i < bodies.length; i++) {
+      try {
+        await client.update('project_milestone', existing[i].id, bodies[i])
+        insightMilestones.created += 1
+      } catch (e) {
+        insightMilestones.failed += 1
+        if (insightMilestones.errors.length < 5) insightMilestones.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+      }
+    }
+  }
+  track({ result: insightMilestones })
   results.push(...Object.values(outcomes))
   return results
 }

@@ -1,10 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Typography from '@mui/material/Typography'
 import type { Connection, Edge, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
+import type { WbsDeliverablesConfig } from '../../api/view-fields'
 import type { EntityListOptions } from '../../api/list-options'
 import { usePermission } from '../../auth/Can'
 import { useT } from '../../i18n/translate'
@@ -14,11 +15,14 @@ import { ErrorAlert } from '../error-alert'
 import { useNumberFormat } from '../format-store'
 import type { EntityActions, HasId } from '../stores'
 import { useRelationLabels } from '../use-relation-labels'
+import { useRelationOps } from '../relation-ops'
 import { layoutWbs } from './auto-layout'
+import { DELIVERABLE_BOX_SIZE, type DeliverableBoxData } from './deliverable-box'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { useUndoHistory } from './history'
+import type { Point } from './collide'
 import { boxFieldOf, LABEL_BOX_SIZE, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
-import { buildWbs, canReparent } from './wbs'
+import { buildWbs, canReparent, wbsColumnDeliverables } from './wbs'
 
 // WBS display mode: the records as a top-down tree over `parentField`, under one
 // read-only root per `groupField` value. Boxes edit their fields in place, parents
@@ -30,6 +34,10 @@ import { buildWbs, canReparent } from './wbs'
 
 const FOLDED_COLOR = '#ed6c02'
 const GROUP = 'group:'
+/** The row the deliverable footer sits on: this far below the lowest drawn box. */
+const DELIVERABLE_FOOTER_GAP = 48
+/** Item ids per `in[id]=` read (the same chunk size the relation labels use). */
+const DELIVERABLE_CHUNK = 100
 
 export interface WbsRendererProps<T extends HasId> {
   descriptor: ViewDescriptor
@@ -44,6 +52,9 @@ export interface WbsRendererProps<T extends HasId> {
   /** The dotted order number field (`wbsOrderField`): siblings drawn in its order, and a
    * dropped box writes its new number from where it lands among its (new) siblings. */
   orderField?: string
+  /** Deliverable footer (`wbsDeliverables`): one box under each level-2 column listing the
+   * deliverables the column's tasks produce. */
+  deliverables?: WbsDeliverablesConfig
   onRecordsChange?: (records: T[]) => void
   serverOptions?: EntityListOptions
 }
@@ -57,6 +68,7 @@ export function WbsRenderer<T extends HasId>({
   boxFields = ['name'],
   hoursField,
   orderField,
+  deliverables,
   onRecordsChange,
   serverOptions,
 }: WbsRendererProps<T>) {
@@ -89,16 +101,14 @@ export function WbsRenderer<T extends HasId>({
   const values = (r: T) => r as unknown as Record<string, unknown>
   const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null)
   const foldedSet = new Set(folded)
-  const { nodes, roots, visible } = buildWbs(
-    rows.map((r) => ({
-      id: r.id,
-      parentId: str(values(r)[parentField]),
-      groupId: groupField ? str(values(r)[groupField]) : null,
-      order: orderField ? str(values(r)[orderField]) : null,
-      plannedHours: hoursField ? Number(values(r)[hoursField]) || 0 : 0,
-    })),
-    foldedSet,
-  )
+  const inputs = rows.map((r) => ({
+    id: r.id,
+    parentId: str(values(r)[parentField]),
+    groupId: groupField ? str(values(r)[groupField]) : null,
+    order: orderField ? str(values(r)[orderField]) : null,
+    plannedHours: hoursField ? Number(values(r)[hoursField]) || 0 : 0,
+  }))
+  const { nodes, roots, visible } = buildWbs(inputs, foldedSet)
   const groupIds = roots.filter((id) => id.startsWith(GROUP))
   const labelOf = useRelationLabels(
     groupDescriptor ? [groupDescriptor] : [],
@@ -121,6 +131,93 @@ export function WbsRenderer<T extends HasId>({
   const byId = new Map(rows.map((r) => [r.id, r]))
   // The zoomed-out box title: "<order> - <name>" like the lists.
   const titleOf = (r: T) => [orderField ? str(values(r)[orderField]) : null, str(values(r).name) ?? str(values(r).title)].filter(Boolean).join(' - ')
+
+  // ---- Deliverables footer (ADR-039 § PBS): one detached box under each level-2 column,
+  // listing the deliverables the column's tasks produce (folded subtrees included).
+  const deliverableMap = useMemo(
+    () =>
+      deliverables
+        ? wbsColumnDeliverables(nodes, inputs, (id) => str(values(byId.get(id)!)[deliverables.field]))
+        : new Map<string, string[]>(),
+    [deliverables, nodes, inputs, byId],
+  )
+  const allDeliverableIds = useMemo(() => [...new Set([...deliverableMap.values()].flat())].sort(), [deliverableMap])
+  const ops = useRelationOps()
+  // null = no footer yet (still loading, or the read was refused: then none at all, no error).
+  const [deliverableRows, setDeliverableRows] = useState<Record<string, unknown>[] | null>(null)
+  const deliverableEntity = deliverables?.entity
+  const deliverableKey = deliverables && allDeliverableIds.length ? allDeliverableIds.join('\n') : ''
+  // One read per set of item ids (`in[id]=`, chunks of DELIVERABLE_CHUNK): the ids only,
+  // so a move never re-reads; the set changes when the pinned scope or the links do.
+  useEffect(() => {
+    if (!deliverableEntity || !deliverableKey || !ops) {
+      setDeliverableRows([])
+      return
+    }
+    const ids = deliverableKey.split('\n')
+    let cancelled = false
+    const found: Record<string, unknown>[] = []
+    ;(async () => {
+      for (let i = 0; i < ids.length; i += DELIVERABLE_CHUNK) {
+        const chunk = ids.slice(i, i + DELIVERABLE_CHUNK)
+        found.push(...(await ops.list(deliverableEntity, { in: { id: chunk }, pageSize: chunk.length })))
+      }
+      if (!cancelled) setDeliverableRows(found)
+    })().catch(() => {
+      if (!cancelled) setDeliverableRows(null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [ops, deliverableEntity, deliverableKey])
+  const deliverableById = new Map((deliverableRows ?? []).map((r) => [String(r.id), r]))
+  const deliverablesReady = !!deliverables && deliverableRows !== null && allDeliverableIds.length > 0
+  // The task list filtered to the item's project and the item itself (the count opens it).
+  const openDeliverable = (itemId: string) => {
+    const d = deliverables!
+    if (!formPath) return
+    const listPath = formPath.replace(/\/:id\/?$/, '')
+    const r = deliverableById.get(itemId) ?? {}
+    const q = new URLSearchParams()
+    const projKey = groupField ?? 'project_id'
+    if (r[projKey] != null) q.set(`filter[${projKey}]`, String(r[projKey]))
+    q.set(`filter[${d.field}]`, itemId)
+    router.push(`${listPath}?${q.toString()}`)
+  }
+  // One box per visible column head, all on one row below the lowest box; positioned from
+  // the final placed boxes on every render (never stored), so the footer follows a moved
+  // column, a dropped-lower box and an undo alike.
+  const extraDeliverableNodes = (positions: Record<string, Point>): Node[] => {
+    if (!deliverablesReady) return []
+    const heads = visible.filter((id) => nodes[id].kind === 'task' && nodes[id].depth <= 1)
+    if (!heads.length) return []
+    const bottom = Math.max(...visible.map((id) => positions[id]!.y + (nodes[id].kind === 'group' ? LABEL_BOX_SIZE.h : TASK_BOX_SIZE.h)))
+    const row = bottom + DELIVERABLE_FOOTER_GAP
+    const doneField = deliverables!.doneField
+    const totalField = deliverables!.totalField
+    const hasCounts = !!doneField && !!totalField
+    return heads.map((id) => {
+      const p = positions[id]!
+      const items = (deliverableMap.get(id) ?? []).filter((iid) => deliverableById.has(iid)).map((iid) => {
+        const r = deliverableById.get(iid)!
+        return {
+          id: iid,
+          label: String(r[deliverables!.labelField] ?? r.name ?? iid),
+          done: hasCounts && doneField ? Number(r[doneField]) || 0 : 0,
+          total: hasCounts && totalField ? Number(r[totalField]) || 0 : 0,
+          hasCounts,
+        }
+      })
+      return {
+        id: `deliverable:${id}`,
+        type: 'deliverable',
+        position: { x: p.x + TASK_BOX_SIZE.w / 2 - DELIVERABLE_BOX_SIZE.w / 2, y: row },
+        width: DELIVERABLE_BOX_SIZE.w,
+        height: DELIVERABLE_BOX_SIZE.h,
+        data: { items, onOpen: (iid: string) => openDeliverable(iid) } satisfies DeliverableBoxData,
+      }
+    })
+  }
   const rfNodes: Node[] = visible.map((id) => {
     if (nodes[id].kind === 'group') {
       const data: LabelBoxData = { label: labelOf(groupField!, id.slice(GROUP.length)), chevron: chevron(id), footer: footer(id) }
@@ -276,6 +373,7 @@ export function WbsRenderer<T extends HasId>({
         title={t('WBS')}
         nodes={rfNodes}
         edges={edges}
+        extraNodes={extraDeliverableNodes}
         autoLayout={() => layoutWbs(nodes, roots, visible, TASK_BOX_SIZE, (id) => (nodes[id].kind === 'group' ? LABEL_BOX_SIZE.h : TASK_BOX_SIZE.h))}
         folded={folded}
         onFoldedChange={setFolded}

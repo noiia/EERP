@@ -26,6 +26,13 @@ describe('effectiveViewFields', () => {
       colorTagsField: null,
         obs: null,
         risk: null,
+        ganttSchedule: null,
+        ganttBaseline: null,
+        kanbanSwimlanes: null,
+        insights: null,
+        matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -48,6 +55,13 @@ describe('effectiveViewFields', () => {
       colorTagsField: null,
         obs: null,
         risk: null,
+        ganttSchedule: null,
+        ganttBaseline: null,
+        kanbanSwimlanes: null,
+        insights: null,
+        matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -75,6 +89,13 @@ describe('effectiveViewFields', () => {
       colorTagsField: null,
         obs: null,
         risk: null,
+        ganttSchedule: null,
+        ganttBaseline: null,
+        kanbanSwimlanes: null,
+        insights: null,
+        matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -99,6 +120,13 @@ describe('effectiveViewFields', () => {
       colorTagsField: null,
         obs: null,
         risk: null,
+        ganttSchedule: null,
+        ganttBaseline: null,
+        kanbanSwimlanes: null,
+        insights: null,
+        matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
     })
   })
 
@@ -146,8 +174,15 @@ describe('availableDisplayModes', () => {
       colorTagsField: null,
         obs: null,
         risk: null,
+        ganttSchedule: null,
+        ganttBaseline: null,
+        kanbanSwimlanes: null,
+        insights: null,
+        matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
       }),
-    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false, risk: false })
+    ).toEqual({ list: true, kanban: false, calendar: false, graph: false, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false, pbs: false })
     expect(
       availableDisplayModes({
         kanbanStatusField: 'status',
@@ -167,8 +202,15 @@ describe('availableDisplayModes', () => {
       colorTagsField: null,
         obs: null,
         risk: null,
+        ganttSchedule: null,
+        ganttBaseline: null,
+        kanbanSwimlanes: null,
+        insights: null,
+        matrix: null,
+        pbs: null,
+        wbsDeliverables: null,
       }),
-    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false, risk: false })
+    ).toEqual({ list: true, kanban: true, calendar: true, graph: true, gantt: false, wbs: false, pert: false, obs: false, risk: false, insights: false, matrix: false, pbs: false })
   })
 
   it('gantt needs BOTH a start and an end field', () => {
@@ -240,5 +282,68 @@ describe('risk availability', () => {
     expect(availableDisplayModes(eff).risk).toBe(false)
     expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).risk).toBe(true)
     expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).risk).toBe(false)
+  })
+})
+
+describe('insights availability', () => {
+  const insights = { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' }
+  it('needs a module config and a pinned project', () => {
+    const eff = effectiveViewFields({ insights }, EMPTY_VIEW_FIELDS)
+    expect(eff.insights).toEqual(insights)
+    expect(availableDisplayModes(eff).insights).toBe(false)
+    expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).insights).toBe(true)
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).insights).toBe(false)
+  })
+})
+
+describe('matrix availability', () => {
+  const matrix = {
+    projectField: 'project_id',
+    raciEntity: 'project_task_raci',
+    userLabelField: 'email',
+    dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+    priorityField: 'priority',
+    deadlineField: 'deadline',
+    closedField: 'closed',
+    urgentDays: 7,
+    taskEntity: 'project_task',
+    taskFormPath: '/project/tasks/:id',
+  }
+  it('needs a module config and a pinned project', () => {
+    const eff = effectiveViewFields({ matrix }, EMPTY_VIEW_FIELDS)
+    expect(eff.matrix).toEqual(matrix)
+    expect(availableDisplayModes(eff).matrix).toBe(false)
+    expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).matrix).toBe(true)
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).matrix).toBe(false)
+  })
+})
+
+describe('pbs availability', () => {
+  const pbs = { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id' }
+  it('needs a module config and a pinned project', () => {
+    const eff = effectiveViewFields({ pbs }, EMPTY_VIEW_FIELDS)
+    expect(eff.pbs).toEqual(pbs)
+    expect(availableDisplayModes(eff).pbs).toBe(false)
+    expect(availableDisplayModes(eff, { filter: { project_id: 'p1' } }).pbs).toBe(true)
+    expect(availableDisplayModes(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS), { filter: { project_id: 'p1' } }).pbs).toBe(false)
+  })
+})
+
+describe('gantt schedule, baseline and kanban swimlanes configs', () => {
+  it('carry the module defaults into the effective config, module-declared only', () => {
+    const ganttSchedule = { scopeField: 'project_id', scopeEntity: 'project', path: 'schedule' }
+    const ganttBaseline = { entity: 'project_baseline', taskEntity: 'project_baseline_task', scopeField: 'project_id', linkField: 'task_id', startField: 'date_start', endField: 'deadline' }
+    const kanbanSwimlanes = { label: 'Assignee', via: 'project_task_user', ownField: 'task_id', relatedField: 'user_id', entity: 'users', labelField: 'email' }
+    expect(
+      effectiveViewFields({ ganttSchedule, ganttBaseline, kanbanSwimlanes }, EMPTY_VIEW_FIELDS),
+    ).toMatchObject({ ganttSchedule, ganttBaseline, kanbanSwimlanes })
+    // Declared none: every one resolves null, the mode stays off.
+    expect(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS)).toMatchObject({
+      ganttSchedule: null,
+      ganttBaseline: null,
+      kanbanSwimlanes: null,
+      insights: null,
+      matrix: null,
+    })
   })
 })

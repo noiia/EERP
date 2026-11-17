@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"core/orm/access"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
 
@@ -451,6 +453,10 @@ func taskRules(r *request) error {
 	if _, err := r.inProject("project_milestone", "milestone_id", pid); err != nil {
 		return err
 	}
+	// Any task editor may link the deliverable a task produces (not only the manager).
+	if _, err := r.inProject("project_pbs_item", "pbs_item_id", pid); err != nil {
+		return err
+	}
 	parent, err := r.inProject("project_task", "parent_id", pid)
 	if err != nil || parent == uuid.Nil || !r.changed("parent_id") || r.id == uuid.Nil {
 		return err
@@ -661,6 +667,44 @@ var obsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
 	return nil
 })
 
+// pbsRules: a PBS item is the manager's; its parent is an item of the same
+// project, never itself or a descendant.
+var pbsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
+	if r.op == opDelete {
+		return nil
+	}
+	r.defaults(map[string]any{"x": 0, "y": 0})
+	if name, _ := r.get("name").(string); strings.TrimSpace(name) == "" {
+		return invalid("name", "name is required")
+	}
+	for k, max := range map[string]int{"name": 200, "description": 2000} {
+		if s, _ := r.get(k).(string); utf8.RuneCountInString(s) > max {
+			return invalid(k, k+" is longer than "+strconv.Itoa(max)+" characters")
+		}
+	}
+	if r.get("color") != nil {
+		if err := lowerColor(r); err != nil {
+			return err
+		}
+	}
+	parent, err := r.inProject("project_pbs_item", "parent_id", pid)
+	if err != nil || parent == uuid.Nil || !r.changed("parent_id") || r.id == uuid.Nil {
+		return err
+	}
+	var cycle bool // walk up from the new parent: reaching the item is a cycle
+	if err := r.h.db.QueryRow(r.ctx, `WITH RECURSIVE up AS (
+			SELECT $1::uuid AS id
+			UNION SELECT b.parent_id FROM project_pbs_item b JOIN up ON b.id = up.id
+			WHERE b.parent_id IS NOT NULL AND b.deleted_at IS NULL)
+		SELECT EXISTS (SELECT 1 FROM up WHERE id = $2)`, parent, r.id).Scan(&cycle); err != nil {
+		return err
+	}
+	if cycle {
+		return invalid("parent_id", "an item can't be its own parent or ancestor")
+	}
+	return nil
+})
+
 var dependencyRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
 	on, err := r.visibleRef("project_task", "depends_on_id", true)
 	if err != nil {
@@ -824,6 +868,56 @@ func riskCategoryRules(r *request) error {
 	return lowerColor(r)
 }
 
+// errBaselineGenericCreate refuses the generic create: a baseline is created
+// with POST /api/v1/project/:id/baseline, which snapshots its tasks.
+var errBaselineGenericCreate = &rejection{status: http.StatusForbidden, code: "FORBIDDEN",
+	msg: "create a baseline with POST /api/v1/project/:id/baseline"}
+
+// baselineRules: the manager or an admin deletes a baseline (and restores
+// one, a delete undone); the generic create is refused; a plain rename stays
+// open to any writer of a visible project, like a milestone's.
+func baselineRules(r *request) error {
+	switch r.op {
+	case opDelete:
+		return r.requireManage(r.storedRef("project_id"))
+	case opCreate:
+		if r.id == uuid.Nil { // a POST: only the /project/:id/baseline route creates
+			return errBaselineGenericCreate
+		}
+		pid, err := r.ref("project_id") // a restore: the stored row
+		if err != nil {
+			return err
+		}
+		return r.requireManage(pid)
+	}
+	if err := fixedProject(r); err != nil {
+		return err
+	}
+	if _, err := r.visibleRef("project", "project_id", true); err != nil {
+		return err
+	}
+	if _, set := r.body["name"]; set {
+		name, _ := r.get("name").(string)
+		if strings.TrimSpace(name) == "" {
+			return invalid("name", "name is required")
+		}
+		if utf8.RuneCountInString(name) > 200 {
+			return invalid("name", "name is longer than 200 characters")
+		}
+	}
+	return nil
+}
+
+// errBaselineTaskReadOnly refuses every write of a baseline's snapshot rows.
+var errBaselineTaskReadOnly = &rejection{status: http.StatusForbidden, code: "FORBIDDEN",
+	msg: "baseline task rows are a read-only snapshot"}
+
+// baselineTaskRules: a baseline's task rows are the frozen snapshot:
+// read-only, so every write (create, update, delete, restore) is refused.
+func baselineTaskRules(r *request) error {
+	return errBaselineTaskReadOnly
+}
+
 // timesheetRules: a user logs hours as themselves; another user's line is
 // written by the project's manager or an admin.
 var timesheetRules = taskLinkRules(func(r *request, pid uuid.UUID) error {
@@ -879,6 +973,61 @@ func milestoneRules(r *request) error {
 		delete(r.body, "reached_at")
 	default:
 		r.body["reached_at"] = nil
+	}
+	return nil
+}
+
+// raciRoles are the RACI matrix roles.
+var raciRoles = []string{"R", "A", "C", "I"}
+
+// raciOneAccountableIndex is migrate.go's partial unique index (one
+// accountable per task); its 23505 is a 422 ONE_ACCOUNTABLE, not the generic
+// 409 (ValidateRaciBody).
+const raciOneAccountableIndex = "idx_project_task_raci_one_accountable"
+
+// raciRules: a RACI row hangs off a visible task and takes its project; the
+// user is staff (not a website visitor) and the role is one of R/A/C/I. The
+// second-accountable case is the partial index's, not a pre-check: it would
+// race, and the index is the backstop.
+var raciRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
+	if r.op == opDelete {
+		return nil
+	}
+	role, _ := r.get("role").(string)
+	if !slices.Contains(raciRoles, role) {
+		return invalid("role", "role must be R, A, C or I")
+	}
+	return riskStaff(r, "user_id")
+})
+
+// capacityRules: hours_per_week stays in (0, 168] and the user is a live one
+// of the tenant. Shared by the whole tenant: no row scope, no manager rule.
+func capacityRules(r *request) error {
+	if r.op == opDelete {
+		return nil
+	}
+	switch v := r.get("hours_per_week").(type) {
+	case float64:
+		if v <= 0 || v > 168 {
+			return invalid("hours_per_week", "hours_per_week must be greater than 0 and at most 168")
+		}
+	default:
+		return invalid("hours_per_week", "hours_per_week must be a number")
+	}
+	id, err := r.ref("user_id")
+	if err != nil {
+		return err
+	}
+	if id == uuid.Nil {
+		return invalid("user_id", "user_id is required")
+	}
+	var ok bool
+	if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2
+		AND deleted_at IS NULL)`, id, r.tenant).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return invalid("user_id", "user_id not found")
 	}
 	return nil
 }
@@ -958,4 +1107,44 @@ func (h *Handler) ValidateRiskLinkBody(next echo.HandlerFunc) echo.HandlerFunc {
 // ValidateRiskCategoryBody: see riskCategoryRules.
 func (h *Handler) ValidateRiskCategoryBody(next echo.HandlerFunc) echo.HandlerFunc {
 	return h.guard("project_risk_category", riskCategoryRules)(next)
+}
+
+// ValidateBaselineBody: see baselineRules.
+func (h *Handler) ValidateBaselineBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_baseline", baselineRules)(next)
+}
+
+// ValidateBaselineTaskBody: the snapshot rows are read-only.
+func (h *Handler) ValidateBaselineTaskBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_baseline_task", baselineTaskRules)(next)
+}
+
+// ValidateRaciBody: see raciRules. A 23505 on the one-accountable partial
+// index answers a 422 ONE_ACCOUNTABLE; every other unique violation keeps
+// the generic 409.
+func (h *Handler) ValidateRaciBody(next echo.HandlerFunc) echo.HandlerFunc {
+	guard := h.guard("project_task_raci", raciRules)
+	return func(c *echo.Context) error {
+		err := guard(next)(c)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == raciOneAccountableIndex {
+			return respond(c, &rejection{
+				status: http.StatusUnprocessableEntity,
+				code:   "ONE_ACCOUNTABLE",
+				msg:    "a task can have only one accountable",
+				fields: []string{"role"},
+			})
+		}
+		return err
+	}
+}
+
+// ValidateCapacityBody: see capacityRules.
+func (h *Handler) ValidateCapacityBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_capacity", capacityRules)(next)
+}
+
+// ValidatePbsBody: see pbsRules.
+func (h *Handler) ValidatePbsBody(next echo.HandlerFunc) echo.HandlerFunc {
+	return h.guard("project_pbs_item", pbsRules)(next)
 }

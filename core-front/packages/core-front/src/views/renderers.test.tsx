@@ -32,6 +32,16 @@ vi.mock('./diagram/obs-renderer', () => ({
 vi.mock('./risk/risk-renderer', () => ({
   RiskRenderer: (p: { projectId: string }) => <div data-testid="risk-renderer">{p.projectId}</div>,
 }))
+vi.mock('./insights/insights-renderer', () => ({
+  InsightsRenderer: (p: { config: unknown; projectId: string }) => (
+    <div data-testid="insights-renderer">{JSON.stringify([p.projectId, p.config])}</div>
+  ),
+}))
+vi.mock('./matrix/matrix-renderer', () => ({
+  MatrixRenderer: (p: { config: unknown; projectId: string }) => (
+    <div data-testid="matrix-renderer">{JSON.stringify([p.projectId, p.config])}</div>
+  ),
+}))
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
 import { useBreadcrumbStore } from './breadcrumb-store'
 import type { ViewDescriptor } from './descriptor'
@@ -1544,6 +1554,57 @@ describe('EntityView', () => {
       )
       fireEvent.click(screen.getByRole('button', { name: 'Risk' }))
       expect(await screen.findByTestId('risk-renderer')).toHaveTextContent('p1')
+    })
+
+    it('Insights and Matrices show only when pinned to one project, and render their lazy placeholders', async () => {
+      const insights = { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' }
+      const matrix = {
+        projectField: 'project_id',
+        raciEntity: 'project_task_raci',
+        userLabelField: 'email',
+        dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+        priorityField: 'priority',
+        deadlineField: 'deadline',
+        closedField: 'closed',
+        urgentDays: 7,
+        taskEntity: 'project_task',
+        taskFormPath: '/project/tasks/:id',
+      }
+      const { unmount } = render(
+        <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { insights, matrix } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.queryByRole('button', { name: 'Insights' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Matrices' })).not.toBeInTheDocument()
+      unmount()
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, listFilter: { filter: { project_id: 'p1' } }, viewModeDefaults: { insights, matrix } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Insights' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('insights-renderer')).toHaveTextContent(
+        JSON.stringify(['p1', insights]),
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Matrices' }))
+      expect(await screen.findByTestId('matrix-renderer')).toHaveTextContent(
+        JSON.stringify(['p1', matrix]),
+      )
+    })
+
+    it('a persisted insights or matrix mode with no pin falls back to the list', async () => {
+      const insights = { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' }
+      for (const mode of ['insights', 'matrix'] as const) {
+        useUiStore.setState({ viewMode: { [treeDescriptor.entity]: mode } })
+        const { unmount } = render(
+          <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { insights } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+        )
+        expect(await screen.findByRole('grid')).toBeInTheDocument()
+        unmount()
+        useUiStore.setState({ viewMode: {} })
+      }
     })
 
     it('switching to Graph with a GraphOpsProvider renders the real canvas, not the placeholder', async () => {

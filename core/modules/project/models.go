@@ -57,6 +57,7 @@ type ProjectTask struct {
 	StageID          *uuid.UUID `db:"stage_id,index" json:"stage_id"`
 	ParentID         *uuid.UUID `db:"parent_id,index" json:"parent_id"`
 	MilestoneID      *uuid.UUID `db:"milestone_id,index" json:"milestone_id"`
+	PbsItemID        *uuid.UUID `db:"pbs_item_id,index" json:"pbs_item_id"` // the deliverable it produces
 	Name             string     `db:"name" json:"name"`
 	Description      string     `db:"description" json:"description"`
 	Priority         bool       `db:"priority" json:"priority"`
@@ -71,6 +72,7 @@ type ProjectTask struct {
 	SubtaskDoneCount int        `db:"subtask_done_count" json:"subtask_done_count"`
 	Blocked          bool       `db:"blocked,index" json:"blocked"`
 	Closed           bool       `db:"closed" json:"closed"` // mirror of its stage's
+	ClosedAt         *time.Time `db:"closed_at" json:"closed_at"` // when it moved into a closed stage (migrate.go)
 }
 
 // ProjectTaskUser assigns a user to a task (an assignee sees the task even
@@ -217,4 +219,102 @@ type ProjectRiskCategory struct {
 	TenantID uuid.UUID `db:"tenant_id"`
 	Name     string    `db:"name" json:"name"`
 	Color    *string   `db:"color" json:"color"`
+}
+
+// ProjectTaskStage is one span of a task's life in a stage: entered_at when
+// it moved in, left_at when it moved on (stage, project) or was deleted.
+// Kept by the trigger in migrate.go — one open row (left_at NULL) per live
+// task that has a stage, backfilled with entered_at = created_at for tasks
+// that predate it. Deliberately NOT model.BaseModel (no created/updated/deleted
+// columns: the span IS the row's whole state); excluded from the HTTP surface.
+type ProjectTaskStage struct {
+	ID        uuid.UUID  `db:"id,pk"`
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	TaskID    uuid.UUID  `db:"task_id,index"`
+	ProjectID uuid.UUID  `db:"project_id,index"`
+	StageID   uuid.UUID  `db:"stage_id"`
+	EnteredAt time.Time  `db:"entered_at"`
+	LeftAt    *time.Time `db:"left_at"`
+}
+
+// ProjectRiskHistory snapshots a risk's criticity once a day (recorded_on,
+// a DATE), so the register can show how its scores moved. Kept by the trigger
+// in migrate.go — an upsert on (risk_id, recorded_on) whenever criticity,
+// residual_criticity or the risk's deleted_at changes. Deliberately NOT
+// model.BaseModel (no soft delete: a day's row is overwritten, never hidden);
+// excluded from the HTTP surface.
+type ProjectRiskHistory struct {
+	ID                uuid.UUID  `db:"id,pk"`
+	TenantID          uuid.UUID  `db:"tenant_id,index"`
+	RiskID            uuid.UUID  `db:"risk_id"`
+	ProjectID         uuid.UUID  `db:"project_id,index"`
+	RecordedOn        time.Time  `db:"recorded_on"` // DATE in the database (Migrate narrows the type)
+	Criticity         *int       `db:"criticity"`
+	ResidualCriticity *int       `db:"residual_criticity"`
+	Deleted           bool       `db:"deleted"`
+}
+
+// ProjectBaseline is a named snapshot of a project's tasks: its live tasks'
+// start, deadline and planned hours are copied into project_baseline_task at
+// creation. The project's manager or an admin creates or deletes one (at
+// most baselineLimit live per project); the rows it snapshots are read-only.
+type ProjectBaseline struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id"`
+	ProjectID uuid.UUID `db:"project_id,index" json:"project_id"`
+	Name      string    `db:"name" json:"name"`
+	CreatedBy uuid.UUID `db:"created_by" json:"created_by"`
+}
+
+// ProjectBaselineTask is the frozen copy of one live task (its dates and
+// planned hours) in a baseline's snapshot. Read-only: the guard (validate.go)
+// refuses every write.
+type ProjectBaselineTask struct {
+	model.BaseModel
+	TenantID     uuid.UUID  `db:"tenant_id"`
+	BaselineID   uuid.UUID  `db:"baseline_id,index" json:"baseline_id"`
+	ProjectID    uuid.UUID  `db:"project_id,index" json:"project_id"`
+	TaskID       uuid.UUID  `db:"task_id,index" json:"task_id"`
+	DateStart    *time.Time `db:"date_start" json:"date_start"`
+	Deadline     *time.Time `db:"deadline" json:"deadline"`
+	PlannedHours float64    `db:"planned_hours" json:"planned_hours"`
+}
+
+// ProjectTaskRaci gives a staff user one R/A/C/I role on a task (the RACI
+// matrix). project_id is the task's, set server-side like project_task_user.
+// Unique live (task_id, user_id) and one accountable per task (the partial
+// unique live (task_id) WHERE role = 'A') are hand-written in migrate.go.
+type ProjectTaskRaci struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id"`
+	ProjectID uuid.UUID `db:"project_id,index" json:"project_id"`
+	TaskID    uuid.UUID `db:"task_id,index" json:"task_id"`
+	UserID    uuid.UUID `db:"user_id,index" json:"user_id"`
+	Role      string    `db:"role" json:"role"` // "R" | "A" | "C" | "I"
+}
+
+// ProjectCapacity is a user's planned hours per week for the workload view.
+// Shared by the whole tenant (no row scope); a user without a row is 40.
+type ProjectCapacity struct {
+	model.BaseModel
+	TenantID     uuid.UUID `db:"tenant_id"`
+	UserID       uuid.UUID `db:"user_id,index" json:"user_id"`
+	HoursPerWeek float64   `db:"hours_per_week" json:"hours_per_week"`
+}
+// ProjectPbsItem is one box of a project's PBS (project breakdown
+// structure) chart: a deliverable, under an optional parent item of the
+// same project, produced by the tasks linked to it (project_task.pbs_item_id).
+// task_count and done_count are the item's own live tasks, kept by a trigger.
+type ProjectPbsItem struct {
+	model.BaseModel
+	TenantID    uuid.UUID  `db:"tenant_id"`
+	ProjectID   uuid.UUID  `db:"project_id,index" json:"project_id"`
+	ParentID    *uuid.UUID `db:"parent_id,index" json:"parent_id"`
+	Name        string     `db:"name" json:"name"`               // the deliverable, ≤ 200 chars
+	Description *string    `db:"description" json:"description"` // ≤ 2000 chars
+	Color       *string    `db:"color" json:"color"`             // "#rrggbb" lowercase or null
+	X           float64    `db:"x" json:"x"`
+	Y           float64    `db:"y" json:"y"`
+	TaskCount   int        `db:"task_count" json:"task_count"`
+	DoneCount   int        `db:"done_count" json:"done_count"`
 }

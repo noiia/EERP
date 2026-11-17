@@ -246,3 +246,231 @@ msgstr ""
 
 msgid "Project has no planned hours"
 msgstr ""
+
+msgid "Closed at"
+msgstr ""
+
+msgid "Burndown"
+msgstr ""
+
+msgid "Planned value"
+msgstr ""
+
+msgid "Earned value"
+msgstr ""
+
+msgid "Actual cost"
+msgstr ""
+
+msgid "Schedule performance index"
+msgstr ""
+
+msgid "Cost performance index"
+msgstr ""
+
+msgid "Ideal"
+msgstr ""
+
+msgid "Risk trend"
+msgstr ""
+
+msgid "Assignee"
+msgstr ""
+
+msgid "Planning"
+msgstr ""
+
+msgid "My day"
+msgstr ""
+
+msgid "Overdue"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "This week"
+msgstr ""
+
+msgid "Later"
+msgstr ""
+
+msgid "No deadline"
+msgstr ""
+
+msgid "Log time"
+msgstr ""
+
+msgid "Log"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "No open tasks"
+msgstr ""
+
+msgid "Eisenhower"
+msgstr ""
+
+msgid "RACI"
+msgstr ""
+
+msgid "Dependencies"
+msgstr ""
+
+msgid "Do"
+msgstr ""
+
+msgid "Schedule"
+msgstr ""
+
+msgid "Delegate"
+msgstr ""
+
+msgid "Eliminate"
+msgstr ""
+
+msgid "Toggle priority"
+msgstr ""
+
+msgid "First 150 tasks shown"
+msgstr ""
+
+msgid "First 1000 shown"
+msgstr ""
+
+msgid "Actions"
+msgstr ""
+
+msgid "Timesheet week"
+msgstr ""
+
+msgid "Workload"
+msgstr ""
+
+msgid "Portfolio"
+msgstr ""
+
+msgid "Previous week"
+msgstr ""
+
+msgid "Next week"
+msgstr ""
+
+msgid "Add task"
+msgstr ""
+
+msgid "Search tasks"
+msgstr ""
+
+msgid "No matching tasks"
+msgstr ""
+
+msgid "Several entries: edit them in Timesheets"
+msgstr ""
+
+msgid "Total"
+msgstr ""
+
+msgid "Totals"
+msgstr ""
+
+msgid "Mon"
+msgstr ""
+
+msgid "Tue"
+msgstr ""
+
+msgid "Wed"
+msgstr ""
+
+msgid "Thu"
+msgstr ""
+
+msgid "Fri"
+msgstr ""
+
+msgid "Sat"
+msgstr ""
+
+msgid "Sun"
+msgstr ""
+
+msgid "Save baseline"
+msgstr ""
+
+msgid "Baseline name"
+msgstr ""
+
+msgid "No one accountable"
+msgstr ""
+
+msgid "Deliverable"
+msgstr ""
+
+msgid "Unassigned"
+msgstr ""
+
+msgid "All projects"
+msgstr ""
+
+msgid "Hours per week"
+msgstr ""
+
+msgid "Burnup"
+msgstr ""
+
+msgid "Flow"
+msgstr ""
+
+msgid "Remaining tasks"
+msgstr ""
+
+msgid "Scope hours"
+msgstr ""
+
+msgid "Done hours"
+msgstr ""
+
+msgid "Not enough data yet"
+msgstr ""
+
+msgid "tasks without dates are left out of PV"
+msgstr ""
+
+msgid "Line chart"
+msgstr ""
+
+msgid "Late"
+msgstr ""
+
+msgid "Portfolio chart"
+msgstr ""
+
+msgid "Progress"
+msgstr ""
+
+msgid "red"
+msgstr ""
+
+msgid "amber"
+msgstr ""
+
+msgid "green"
+msgstr ""
+
+msgid "No risks"
+msgstr ""
+
+msgid "Max criticity"
+msgstr ""
+
+msgid "Green"
+msgstr ""
+
+msgid "Amber"
+msgstr ""
+
+msgid "Red"
+msgstr ""

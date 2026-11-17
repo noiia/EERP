@@ -54,6 +54,15 @@ var migrations = slices.Concat(
 		check("project", "project_visibility", "visibility IN ('everyone', 'members')"),
 		check("project_timesheet", "project_timesheet_hours", "hours > 0"),
 
+		// ── RACI and capacities: one role per user per task, and at most one
+		// accountable per task (the partial index; a 23505 on it is a 422
+		// ONE_ACCOUNTABLE, validate.go).
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_live ON project_task_raci (task_id, user_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_one_accountable ON project_task_raci (task_id) WHERE deleted_at IS NULL AND role = 'A'`,
+		check("project_task_raci", "project_task_raci_role", "role IN ('R', 'A', 'C', 'I')"),
+		check("project_capacity", "project_capacity_hours_per_week", "hours_per_week > 0 AND hours_per_week <= 168"),
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_capacity_live ON project_capacity (tenant_id, user_id) WHERE deleted_at IS NULL`,
+
 		// ── Risk register: generated figures (a generated column can't read
 		// another, so criticity inlines the effective severity).
 		`ALTER TABLE project_risk ADD COLUMN IF NOT EXISTS severity_effective integer GENERATED ALWAYS AS (COALESCE(severity, severity_computed)) STORED`,
@@ -118,6 +127,16 @@ var migrations = slices.Concat(
 				(SELECT count(*) FROM project_task t WHERE t.milestone_id = mid AND t.deleted_at IS NULL AND t.closed)::int AS done) v
 			WHERE m.id = mid AND (m.task_count, m.task_done_count) IS DISTINCT FROM (v.n, v.done);
 		END $$`,
+		`CREATE OR REPLACE FUNCTION project_pbs_item_refresh(mid uuid) RETURNS void LANGUAGE plpgsql AS $$
+		BEGIN
+			IF mid IS NULL THEN RETURN; END IF;
+			PERFORM 1 FROM project_pbs_item WHERE id = mid FOR UPDATE;
+			UPDATE project_pbs_item p SET task_count = v.n, done_count = v.done
+			FROM (SELECT
+				(SELECT count(*) FROM project_task t WHERE t.pbs_item_id = mid AND t.deleted_at IS NULL)::int AS n,
+				(SELECT count(*) FROM project_task t WHERE t.pbs_item_id = mid AND t.deleted_at IS NULL AND t.closed)::int AS done) v
+			WHERE p.id = mid AND (p.task_count, p.done_count) IS DISTINCT FROM (v.n, v.done);
+		END $$`,
 
 		// ── Trigger functions.
 		`CREATE OR REPLACE FUNCTION project_default_stages() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -131,6 +150,11 @@ var migrations = slices.Concat(
 		`CREATE OR REPLACE FUNCTION project_task_mirror_closed() RETURNS trigger LANGUAGE plpgsql AS $$
 		BEGIN
 			NEW.closed := COALESCE((SELECT s.closed FROM project_stage s WHERE s.id = NEW.stage_id), false);
+			-- closed_at: the moment the task moved into a closed stage; moving
+			-- back to an open stage clears it, a no-op stage_id write keeps it.
+			IF TG_OP = 'INSERT' OR OLD.stage_id IS DISTINCT FROM NEW.stage_id THEN
+				NEW.closed_at := CASE WHEN NEW.closed THEN now() ELSE NULL END;
+			END IF;
 			RETURN NEW;
 		END $$`,
 		// A parent cycle would otherwise recurse forever: fail the write rather
@@ -179,6 +203,66 @@ var migrations = slices.Concat(
 		`CREATE OR REPLACE FUNCTION project_stage_closed_changed() RETURNS trigger LANGUAGE plpgsql AS $$
 		BEGIN
 			UPDATE project_task SET closed = NEW.closed WHERE stage_id = NEW.id AND closed IS DISTINCT FROM NEW.closed;
+			RETURN NULL;
+		END $$`,
+		// Stage history (ADR-041): one open row (left_at NULL) per live task
+		// that has a stage. A stage or project change closes the old row and
+		// opens a new one; a soft delete closes the row; a restore reopens.
+		`CREATE OR REPLACE FUNCTION project_task_stage_history() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF TG_OP = 'UPDATE' AND (OLD.deleted_at, OLD.project_id, OLD.stage_id) IS NOT DISTINCT FROM (NEW.deleted_at, NEW.project_id, NEW.stage_id) THEN
+				RETURN NULL; -- no-op write: nothing to record
+			END IF;
+			IF NEW.deleted_at IS NOT NULL THEN
+				UPDATE project_task_stage SET left_at = now() WHERE task_id = NEW.id AND left_at IS NULL;
+				RETURN NULL;
+			END IF;
+			UPDATE project_task_stage SET left_at = now() WHERE task_id = NEW.id AND left_at IS NULL;
+			IF NEW.stage_id IS NOT NULL THEN
+				INSERT INTO project_task_stage (tenant_id, task_id, project_id, stage_id, entered_at)
+				VALUES (NEW.tenant_id, NEW.id, NEW.project_id, NEW.stage_id, now());
+			END IF;
+			RETURN NULL;
+		END $$`,
+		// Risk history (ADR-041): one row per (risk, day); a change upserts the
+		// day's row to the new values, a soft delete marks the day's row. The
+		// trigger fires on every INSERT OR UPDATE: an INSERT trigger's WHEN
+		// may not reference OLD, so the "criticity, residual_criticity or
+		// deleted_at is distinct from the old value" guard lives in the body.
+		`CREATE OR REPLACE FUNCTION project_risk_history() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF TG_OP = 'UPDATE'
+			   AND (OLD.criticity, OLD.residual_criticity, OLD.deleted_at) IS NOT DISTINCT FROM (NEW.criticity, NEW.residual_criticity, NEW.deleted_at) THEN
+				RETURN NULL;
+			END IF;
+			IF TG_OP = 'INSERT' AND NEW.criticity IS NULL AND NEW.residual_criticity IS NULL AND NEW.deleted_at IS NULL THEN
+				RETURN NULL; -- an unscored risk has nothing to record
+			END IF;
+			INSERT INTO project_risk_history (tenant_id, risk_id, project_id, recorded_on, criticity, residual_criticity, deleted)
+			VALUES (NEW.tenant_id, NEW.id, NEW.project_id, CURRENT_DATE, NEW.criticity, NEW.residual_criticity, NEW.deleted_at IS NOT NULL)
+			ON CONFLICT (risk_id, recorded_on) DO UPDATE
+				SET criticity = EXCLUDED.criticity,
+				    residual_criticity = EXCLUDED.residual_criticity,
+				    deleted = EXCLUDED.deleted;
+			RETURN NULL;
+		END $$`,
+		// The PBS item's task counts: the old and the new item are both recounted
+		// (a link move, a close, a soft delete or a restore of the task). The
+		// trigger runs on every row change, not on UPDATE OF the three columns,
+		// because the BEFORE closed mirror flips closed on a stage move the
+		// statement never lists, and that write must recount too.
+		`CREATE OR REPLACE FUNCTION project_pbs_count_changed() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF TG_OP = 'INSERT' THEN
+				PERFORM project_pbs_item_refresh(NEW.pbs_item_id);
+			ELSIF TG_OP = 'DELETE' THEN
+				PERFORM project_pbs_item_refresh(OLD.pbs_item_id);
+			ELSIF NEW.pbs_item_id IS DISTINCT FROM OLD.pbs_item_id
+				OR NEW.closed IS DISTINCT FROM OLD.closed
+				OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
+				PERFORM project_pbs_item_refresh(NEW.pbs_item_id);
+				PERFORM project_pbs_item_refresh(OLD.pbs_item_id);
+			END IF;
 			RETURN NULL;
 		END $$`,
 
@@ -275,4 +359,24 @@ var migrations = slices.Concat(
 		`(OLD.task_id, OLD.depends_on_id, OLD.deleted_at) IS DISTINCT FROM (NEW.task_id, NEW.depends_on_id, NEW.deleted_at)`,
 		"project_dependency_changed"),
 	trigger("project_stage_closed", "project_stage", "AFTER UPDATE OF closed", "OLD.closed IS DISTINCT FROM NEW.closed", "project_stage_closed_changed"),
+	// ── History (ADR-041): closed_at, the stage spans and the daily risk
+	// criticity. The column DDL comes from the struct tags (ensureSchema);
+	// only the type narrowing, the unique pair and the backfills live here.
+	[]string{
+		// A daily grain: recorded_on is DATE, not the struct's TIMESTAMPTZ
+		// (a no-op re-run once the column is already DATE).
+		`ALTER TABLE project_risk_history ALTER COLUMN recorded_on TYPE date USING recorded_on::date`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_risk_history_risk_date ON project_risk_history (risk_id, recorded_on)`,
+		// Pre-migration rows, backfilled once (idempotent: the WHERE guards
+		// drop the row from the next run).
+		`UPDATE project_task SET closed_at = updated_at, updated_at = now()
+		 WHERE deleted_at IS NULL AND closed AND closed_at IS NULL`,
+		`INSERT INTO project_task_stage (tenant_id, task_id, project_id, stage_id, entered_at)
+		 SELECT t.tenant_id, t.id, t.project_id, t.stage_id, t.created_at FROM project_task t
+		 WHERE t.deleted_at IS NULL AND t.stage_id IS NOT NULL
+		   AND NOT EXISTS (SELECT 1 FROM project_task_stage h WHERE h.task_id = t.id)`,
+	},
+	trigger("project_task_stage_history", "project_task", "AFTER INSERT OR UPDATE OF stage_id, project_id, deleted_at", "", "project_task_stage_history"),
+	trigger("project_risk_history", "project_risk", "AFTER INSERT OR UPDATE", "", "project_risk_history"),
+	trigger("project_pbs_count", "project_task", "AFTER INSERT OR UPDATE OR DELETE", "", "project_pbs_count_changed"),
 )

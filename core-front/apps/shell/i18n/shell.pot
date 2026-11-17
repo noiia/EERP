@@ -2823,6 +2823,50 @@ msgstr ""
 msgid "More"
 msgstr ""
 
+msgid "Insights"
+msgstr ""
+
+msgid "Matrices"
+msgstr ""
+
+msgid "Swimlanes"
+msgstr ""
+
+msgid "Unassigned"
+msgstr ""
+
+msgid "First 1000 shown"
+msgstr ""
+
+msgid "Baseline"
+msgstr ""
+
+msgid "No baseline"
+msgstr ""
+
+msgid "Dependency cycle: no critical path"
+msgstr ""
+
+msgid "PBS"
+msgstr ""
+
+msgid "Add item"
+msgstr ""
+
+msgid "Edit item"
+msgstr ""
+
+msgid "Parent"
+msgstr ""
+
+msgid "No parent"
+msgstr ""
+
+msgid "No task produces this"
+msgstr ""
+
+msgid "No deliverable"
+
 msgid "New note"
 msgstr ""
 

@@ -6,6 +6,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }))
 
+import { createTheme, ThemeProvider } from '@mui/material/styles'
 import { GanttRenderer } from './gantt-renderer'
 import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
@@ -16,6 +17,7 @@ import { useSessionStore } from './session-store'
 import { ApiError } from '../api/errors'
 import { setViewportWidth } from '../test/viewport'
 import type { EntityListOptions } from '../api/list-options'
+import type { GanttBaselineConfig, GanttScheduleConfig } from '../api/view-fields'
 
 type Task = {
   id: string
@@ -892,6 +894,175 @@ describe('GanttRenderer', () => {
       colorRender()
       await waitFor(() => expect(screen.getByTestId('gantt-bar-3').style.background).toBe('rgb(255, 0, 0)'))
       expect(screen.queryByRole('button', { name: 'Colors of Alpha' })).toBeNull()
+    })
+  })
+
+  describe('critical path and baselines', () => {
+    const scheduleCfg: GanttScheduleConfig = { scopeField: 'project_id', scopeEntity: 'project', path: 'schedule' }
+    const baselineCfg: GanttBaselineConfig = {
+      entity: 'project_baseline',
+      taskEntity: 'project_baseline_task',
+      scopeField: 'project_id',
+      linkField: 'task_id',
+      startField: 'date_start',
+      endField: 'deadline',
+    }
+    const theme = createTheme({ palette: { mode: 'light', error: { main: '#ff0000' }, action: { disabled: '#888888' } } })
+
+    const t1: Task = { id: '1', name: 'Alpha', date_start: '2026-03-02', deadline: '2026-03-08' }
+    const t2: Task = { id: '2', name: 'Beta', date_start: '2026-03-03', deadline: '2026-03-06' }
+
+    function opsFor(listPage: ListPage, get: RelationOps['get']) {
+      return { list: vi.fn(), get, create: vi.fn(), remove: vi.fn(), listPage }
+    }
+
+    /** A pinned list (serverOptions filter[project_id]) with schedule + baseline configs. */
+    function pinnedRender(
+      listPage: ListPage,
+      get: RelationOps['get'],
+      d: ViewDescriptor<Task> = descriptor,
+      serverOptions: EntityListOptions = { filter: { project_id: 'p1' } },
+    ) {
+      return render(
+        <ThemeProvider theme={theme}>
+          <RelationOpsProvider ops={opsFor(listPage, get)}>
+            <GanttRenderer
+              descriptor={d}
+              initialData={[]}
+              actions={actions}
+              startField="date_start"
+              endField="deadline"
+              serverOptions={serverOptions}
+              schedule={scheduleCfg}
+              baseline={baselineCfg}
+            />
+          </RelationOpsProvider>
+        </ThemeProvider>,
+      )
+    }
+
+    const taskListPage = (records: Task[]) =>
+      vi.fn<ListPage>(async (entity: string) => (entity === 'task' ? { records, total: records.length } : { records: [], total: 0 }))
+
+    it('outlines critical bars and shows slack when Critical path is on', async () => {
+      const listPage = taskListPage([t1, t2])
+      const get = vi.fn(async () => ({
+        id: 'p1/schedule',
+        start: '2026-03-02',
+        finish_days: 6,
+        cycle: false,
+        tasks: [
+          { id: '1', early_start: 0, early_finish: 6, late_start: 0, late_finish: 6, slack: 0, critical: true },
+          { id: '2', early_start: 1, early_finish: 4, late_start: 4, late_finish: 7, slack: 3, critical: false },
+        ],
+      }))
+      pinnedRender(listPage, get)
+      fireEvent.click(screen.getByRole('button', { name: 'Critical path' }))
+      const bar1 = await screen.findByTestId('gantt-bar-1')
+      await waitFor(() => expect(bar1.style.outlineWidth).toBe('2px'))
+      expect(bar1.style.outlineStyle).toBe('solid')
+      expect(bar1.style.outlineColor).toBe('rgb(255, 0, 0)')
+      const bar2 = screen.getByTestId('gantt-bar-2')
+      await waitFor(() => expect(bar2).toHaveAccessibleName(/, slack 3 d$/))
+      expect(get).toHaveBeenCalledWith('project', 'p1/schedule')
+    })
+
+    it('hides the critical path toggle when the list is not pinned', () => {
+      const listPage = vi.fn<ListPage>(async () => ({ records: [], total: 0 }))
+      render(
+        <ThemeProvider theme={theme}>
+          <RelationOpsProvider ops={opsFor(listPage, vi.fn())}>
+            <GanttRenderer
+              descriptor={descriptor}
+              initialData={[t1]}
+              actions={actions}
+              startField="date_start"
+              endField="deadline"
+              schedule={scheduleCfg}
+              baseline={baselineCfg}
+            />
+          </RelationOpsProvider>
+        </ThemeProvider>,
+      )
+      expect(screen.queryByRole('button', { name: 'Critical path' })).toBeNull()
+      expect(screen.queryByRole('combobox', { name: 'Baseline' })).toBeNull()
+    })
+
+    it('says so when the schedule has a cycle', async () => {
+      const listPage = taskListPage([t1, t2])
+      const get = vi.fn(async () => ({ id: 'p1/schedule', start: '2026-03-02', cycle: true, tasks: [] }))
+      pinnedRender(listPage, get)
+      fireEvent.click(screen.getByRole('button', { name: 'Critical path' }))
+      expect(await screen.findByText('Dependency cycle: no critical path')).toBeInTheDocument()
+    })
+
+    it('draws ghost bars from the picked baseline', async () => {
+      const listPage = vi.fn<ListPage>(async (entity: string, o?: EntityListOptions) => {
+        if (entity === 'task') return { records: [t1, t2], total: 2 }
+        if (entity === 'project_baseline') return { records: [{ id: 'b2', name: 'New' }, { id: 'b1', name: 'Old' }], total: 2 }
+        if (entity === 'project_baseline_task') {
+          if (o?.filter?.baseline_id === 'b1') return { records: [{ id: 'bt1', task_id: '1', date_start: '2026-03-01', deadline: '2026-03-09' }], total: 1 }
+          return { records: [], total: 0 }
+        }
+        return { records: [], total: 0 }
+      })
+      pinnedRender(listPage, vi.fn(async () => ({ id: 'p1/schedule', cycle: false, tasks: [] })))
+      // Newest first: the read asks for created_at descending.
+      await waitFor(() => expect(listPage).toHaveBeenCalledWith('project_baseline', expect.objectContaining({ order: '-created_at' })))
+      fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Baseline' }))
+      const options = await screen.findAllByRole('option')
+      expect(options.map((o) => o.textContent)).toEqual(['No baseline', 'New', 'Old'])
+      fireEvent.click(screen.getByRole('option', { name: 'Old' }))
+      // t1 is in the picked baseline (a ghost bar); t2 is not (no ghost bar).
+      const ghost = await screen.findByTestId('gantt-baseline-1')
+      expect(ghost).toHaveStyle({ height: '6px' })
+      expect(screen.queryByTestId('gantt-baseline-2')).toBeNull()
+    })
+
+    it('keeps the toggle state per entity for the tab session', async () => {
+      const listPage = vi.fn<ListPage>(async () => ({ records: [], total: 0 }))
+      const get = vi.fn(async () => ({ id: 'p1/schedule', cycle: false, tasks: [] }))
+      pinnedRender(listPage, get)
+      fireEvent.click(screen.getByRole('button', { name: 'Critical path' }))
+      expect(screen.getByRole('button', { name: 'Critical path' })).toHaveAttribute('aria-pressed', 'true')
+      cleanup()
+      pinnedRender(listPage, get)
+      expect(screen.getByRole('button', { name: 'Critical path' })).toHaveAttribute('aria-pressed', 'true')
+      cleanup()
+      pinnedRender(listPage, get, { ...descriptor, entity: 'other' })
+      expect(screen.getByRole('button', { name: 'Critical path' })).toHaveAttribute('aria-pressed', 'false')
+      // The pending reads (server load, schedule) settle after the sync body: flush inside act.
+      await act(async () => {})
+    })
+
+    it('works on phone', async () => {
+      setViewportWidth(390)
+      const listPage = vi.fn<ListPage>(async (entity: string, o?: EntityListOptions) => {
+        if (entity === 'task') return { records: [t1, t2], total: 2 }
+        if (entity === 'project_baseline') return { records: [{ id: 'b1', name: 'Old' }], total: 1 }
+        if (entity === 'project_baseline_task') {
+          if (o?.filter?.baseline_id === 'b1') return { records: [{ id: 'bt1', task_id: '1', date_start: '2026-03-01', deadline: '2026-03-09' }], total: 1 }
+          return { records: [], total: 0 }
+        }
+        return { records: [], total: 0 }
+      })
+      const get = vi.fn(async () => ({
+        id: 'p1/schedule',
+        cycle: false,
+        tasks: [{ id: '1', early_start: 0, early_finish: 6, late_start: 0, late_finish: 6, slack: 0, critical: true }],
+      }))
+      pinnedRender(listPage, get)
+      // Both controls sit in the phone toolbar's More menu, not inline.
+      expect(screen.queryByRole('button', { name: 'Critical path' })).toBeNull()
+      expect(screen.queryByRole('combobox', { name: 'Baseline' })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'More' }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Critical path' }))
+      const bar1 = await screen.findByTestId('gantt-bar-1')
+      await waitFor(() => expect(bar1.style.outlineWidth).toBe('2px'))
+      // Ghost bars still draw: pick the baseline from the same menu.
+      fireEvent.click(screen.getByRole('button', { name: 'More' }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Old' }))
+      expect(await screen.findByTestId('gantt-baseline-1')).toBeInTheDocument()
     })
   })
 })

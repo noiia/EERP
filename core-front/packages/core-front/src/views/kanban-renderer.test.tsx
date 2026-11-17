@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 // A card click (no drag) navigates to the record's form via the App Router.
 const pushMock = vi.fn()
@@ -13,6 +13,7 @@ import type { EntityActions } from './stores'
 import { RelationOpsProvider as ColorOpsProvider, type RelationOps } from './relation-ops'
 import { ApiError } from '../api/errors'
 import { useSessionStore } from './session-store'
+import { useUiStore } from './ui-store'
 import { setViewportWidth } from '../test/viewport'
 
 function grant(...permissions: string[]) {
@@ -707,5 +708,146 @@ describe('KanbanRenderer on phone', () => {
     renderBoard()
     expect(getComputedStyle(screen.getByRole('group', { name: 'open' })).flexBasis).toBe('240px')
     expect(screen.queryByRole('button', { name: /^Move / })).toBeNull()
+  })
+})
+
+describe('KanbanRenderer swimlanes', () => {
+  const swimlanes = {
+    label: 'Assignee',
+    via: 'deal_user',
+    ownField: 'deal_id',
+    relatedField: 'user_id',
+    entity: 'users',
+    labelField: 'email',
+  }
+  // Acme has two assignees (alice and bob), Globex alice only, Initech none.
+  const junctionRows = [
+    { id: 'j1', deal_id: '1', user_id: 'u-alice' },
+    { id: 'j2', deal_id: '1', user_id: 'u-bob' },
+    { id: 'j3', deal_id: '2', user_id: 'u-alice' },
+  ]
+  const userRows = [
+    { id: 'u-alice', email: 'alice@example.com' },
+    { id: 'u-bob', email: 'bob@example.com' },
+  ]
+  let list: ReturnType<typeof vi.fn<RelationOps['list']>>
+  let update: ReturnType<typeof vi.fn<(id: string, body: Partial<Deal>) => Promise<Deal>>>
+  let ops: RelationOps
+
+  beforeEach(() => {
+    list = vi.fn(async (entity: string, options?: import('../api/list-options').EntityListOptions) => {
+      if (entity === 'deal_user') {
+        const inIds = options?.in?.deal_id
+        return inIds ? junctionRows.filter((r) => inIds.includes(r.deal_id)) : []
+      }
+      if (entity === 'users') {
+        const inIds = options?.in?.id
+        return inIds ? userRows.filter((r) => inIds.includes(r.id)) : []
+      }
+      return []
+    })
+    update = vi.fn(async (id: string, body: Partial<Deal>) => ({ id, ...body }) as Deal)
+    ops = { list, get: vi.fn(), create: vi.fn(), remove: vi.fn() }
+    grant('deals:deals:write')
+    // The per-entity swimlanes toggle is a persisted UI preference: start every
+    // test off, whatever the previous test left in the store singleton.
+    useUiStore.setState({ swimlanes: {} })
+  })
+  afterEach(() => {
+    useSessionStore.setState({ identity: null })
+    useUiStore.setState({ swimlanes: {} })
+  })
+
+  function renderBoard(initialData: Deal[] = records) {
+    render(
+      <ColorOpsProvider ops={ops}>
+        <KanbanRenderer
+          descriptor={descriptor}
+          initialData={initialData}
+          actions={{ create: vi.fn(), update }}
+          statusField="status"
+          swimlanesConfig={swimlanes}
+        />
+      </ColorOpsProvider>,
+    )
+  }
+
+  async function enableLanes() {
+    fireEvent.click(screen.getByRole('switch', { name: 'Swimlanes: Assignee' }))
+    await screen.findByText('alice@example.com (2)')
+  }
+
+  it('splits the board into one lane per assignee plus Unassigned', async () => {
+    renderBoard()
+    expect(screen.queryByTestId('kanban-lanes')).toBeNull()
+    await enableLanes()
+    const alice = within(screen.getByTestId('kanban-lane-u-alice'))
+    expect(alice.getByTestId('kanban-card-1')).toHaveTextContent('Acme')
+    expect(alice.getByTestId('kanban-card-2')).toHaveTextContent('Globex')
+    expect(alice.queryByTestId('kanban-card-3')).toBeNull()
+    const bob = within(screen.getByTestId('kanban-lane-u-bob'))
+    expect(bob.getByTestId('kanban-card-1')).toHaveTextContent('Acme')
+    expect(bob.queryByTestId('kanban-card-2')).toBeNull()
+    const unassigned = within(screen.getByTestId('kanban-lane-__unassigned__'))
+    expect(unassigned.getByTestId('kanban-card-3')).toHaveTextContent('Initech')
+    expect(unassigned.queryByTestId('kanban-card-1')).toBeNull()
+    // A two-assignee task sits in both lanes at once.
+    expect(screen.getByTestId('kanban-lanes').querySelectorAll('[data-testid="kanban-card-1"]')).toHaveLength(2)
+  })
+
+  it('moves stage within a lane on drop and Move to', async () => {
+    renderBoard()
+    await enableLanes()
+    const alice = within(screen.getByTestId('kanban-lane-u-alice'))
+    // Desktop: a drop on a column inside the lane patches the status field only.
+    fireEvent.dragStart(alice.getByTestId('kanban-card-1'))
+    fireEvent.dragOver(alice.getByRole('group', { name: 'won' }))
+    fireEvent.drop(alice.getByRole('group', { name: 'won' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('1', { status: 'won' }))
+    // Phone: the Move-to menu inside a lane does the same single-field patch.
+    // The viewport changes after mount, so the media-query re-render is flushed
+    // inside act() before the Move button is queried.
+    act(() => setViewportWidth(390))
+    fireEvent.click(screen.getByRole('button', { name: 'Move Globex' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'lost' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('2', { status: 'lost' }))
+    // Lanes never write: the junction is only ever read, and the payload is the
+    // status field alone (toHaveBeenCalledWith matches the whole object).
+    expect(ops.create).not.toHaveBeenCalled()
+    expect(ops.remove).not.toHaveBeenCalled()
+  })
+
+  it('collapses a lane', async () => {
+    renderBoard()
+    await enableLanes()
+    const alice = () => screen.getByTestId('kanban-lane-u-alice')
+    expect(within(alice()).getByTestId('kanban-card-1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'alice@example.com (2)' }))
+    expect(within(alice()).queryByTestId('kanban-card-1')).toBeNull()
+    expect(within(alice()).queryByRole('group', { name: 'open' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'alice@example.com (2)' }))
+    expect(within(alice()).getByTestId('kanban-card-1')).toBeInTheDocument()
+  })
+
+  it('reads junction rows in chunks of 100 ids', async () => {
+    const bulk: Deal[] = Array.from({ length: 250 }, (_, i) => ({ id: `d${i}`, name: `Deal ${i}` }))
+    renderBoard(bulk)
+    fireEvent.click(screen.getByRole('switch', { name: 'Swimlanes: Assignee' }))
+    await screen.findByText('Unassigned (250)')
+    const chunks = list.mock.calls
+      .filter(([entity]) => entity === 'deal_user')
+      .map(([, options]) => (options as import('../api/list-options').EntityListOptions).in!.deal_id)
+    expect(chunks.map((ids) => ids.length)).toEqual([100, 100, 50])
+  })
+
+  it('shows lanes stacked with their columns snapping on phone', async () => {
+    setViewportWidth(390)
+    renderBoard()
+    fireEvent.click(screen.getByRole('switch', { name: 'Swimlanes: Assignee' }))
+    const lanes = await screen.findByTestId('kanban-lanes')
+    expect(lanes).toHaveStyle({ flexDirection: 'column' })
+    const row = screen.getByTestId('kanban-lane-row-u-alice')
+    expect(row).toHaveStyle({ scrollSnapType: 'x mandatory' })
+    expect(getComputedStyle(within(row).getByRole('group', { name: 'open' })).flexBasis).toBe('85%')
   })
 })

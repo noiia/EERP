@@ -7,7 +7,15 @@ import type { Node, NodeProps } from '@xyflow/react'
 // WorkflowMap tests, the stub keeps its props so the tests call the canvas's handlers
 // the way React Flow would.
 type RfNode = { id: string; type?: string; data?: Record<string, unknown>; position: { x: number; y: number }; measured?: { width: number; height: number }; selected?: boolean }
-type RfEdge = { id: string; source: string; target: string; selected?: boolean; data?: unknown }
+type RfEdge = {
+  id: string
+  source: string
+  target: string
+  selected?: boolean
+  data?: unknown
+  style?: Record<string, string | number>
+  markerEnd?: { type: string; color?: string }
+}
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
@@ -26,12 +34,56 @@ const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: RfProps) => {
     rf.props = props
+    // The stub mirrors React Flow 12's DOM where the export looks: the edge layer
+    // (one svg per edge + the arrowhead marker defs) sits inside the viewport, and a
+    // line with no color of its own falls back to the .react-flow root's custom
+    // property (the library's stylesheet rule, inlined here).
+    const markerId = (e: RfEdge) =>
+      e.markerEnd ? `stub-mark-${e.markerEnd.type}${e.markerEnd.color ? `-${e.markerEnd.color}` : ''}` : null
+    const markers = new Map<string, { color?: string }>()
+    for (const e of props.edges) {
+      const id = markerId(e)
+      if (id) markers.set(id, e.markerEnd!)
+    }
     return (
       // React Flow's Delete key removes only the edges it was handed as selected.
       <div data-testid="react-flow" tabIndex={0} onKeyDown={(e) => {
         if (e.key === 'Delete') props.onEdgesDelete?.(props.edges.filter((x) => x.selected))
       }}>
-        <div className="react-flow__viewport" />
+        <div className="react-flow__viewport">
+          <div className="react-flow__edges">
+            {markers.size ? (
+              <svg className="react-flow__marker" aria-hidden="true">
+                <defs>
+                  {[...markers.entries()].map(([id, me]) => (
+                    <marker key={id} id={id} markerWidth="12.5" markerHeight="12.5" viewBox="-10 -10 20 20">
+                      <polyline
+                        className="arrowclosed"
+                        points="-5,-4 0,0 -5,4 -5,-4"
+                        style={me.color ? { stroke: me.color, fill: me.color } : { stroke: 'var(--xy-edge-stroke, #b1b1b7)' }}
+                      />
+                    </marker>
+                  ))}
+                </defs>
+              </svg>
+            ) : null}
+            {props.edges.map((e, i) => {
+              const id = markerId(e)
+              return (
+                <svg key={e.id} style={{ zIndex: i }}>
+                  <g className="react-flow__edge" data-id={e.id}>
+                    <path
+                      className="react-flow__edge-path"
+                      d="M 0 0 L 100 0"
+                      {...(id ? { 'marker-end': `url(#${id})` } : {})}
+                      style={{ stroke: 'var(--xy-edge-stroke, #b1b1b7)', ...(e.style ?? {}) }}
+                    />
+                  </g>
+                </svg>
+              )
+            })}
+          </div>
+        </div>
         {props.children}
       </div>
     )
@@ -503,6 +555,45 @@ describe('DiagramCanvas', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
     await exportFrames()
     expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, { title: 'Plan', date: expect.any(Date), legend: [{ color: '#ff0000', label: 'Critical' }], background: '#fff' }, 'Plan')
+  })
+
+  it('hands the exporter every visible edge with its dash and color, hidden ones stay hidden', async () => {
+    const red = '#ff0000'
+    setup(
+      {
+        mode: 'pert',
+        notes: true,
+        edges: [
+          { id: 'e1', source: 'a', target: 'b', markerEnd: { type: 'arrowclosed' } },
+          { id: 'e2', source: 'a', target: 'b', markerEnd: { type: 'arrowclosed', color: red }, style: { stroke: red, strokeWidth: 2 } },
+        ],
+      },
+      // The note links to 'a' (drawn) and to 'gone' (folded away, not drawn).
+      { positions: {}, folded: [], notes: [{ id: 'n1', text: '', links: ['a', 'gone'] }] },
+    )
+    await flush()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    await exportFrames()
+    const el = (vi.mocked(exportPng).mock.calls.at(-1) as unknown as [HTMLElement])[0]
+    const paths = Array.from(el.querySelectorAll<SVGElement>('.react-flow__edge path'))
+    // e1, e2 and the note link to a — the link to the hidden box is not drawn.
+    expect(paths).toHaveLength(3)
+    const of = (id: string) => paths.find((p) => p.closest('g')?.getAttribute('data-id') === id)
+    // The marker arrow keeps its arrowhead: the ref resolves to a marker in the
+    // captured node, and the default color stays the root's custom property for the
+    // exporter to resolve.
+    expect(of('e1')!.getAttribute('marker-end')).toBe('url(#stub-mark-arrowclosed)')
+    expect(el.querySelector('marker[id="stub-mark-arrowclosed"]')).not.toBeNull()
+    expect(of('e1')!.getAttribute('style')).toContain('var(--xy-edge-stroke')
+    // The dashed note link keeps its dash.
+    expect(of('note-link:n1>a')!.getAttribute('style')).toContain('stroke-dasharray: 4 4')
+    // The highlighted line keeps its color and width, and its arrowhead keeps its
+    // color (the CSSOM serialization of #ff0000 in a style attribute).
+    expect(of('e2')!.getAttribute('style')).toContain('stroke: rgb(255, 0, 0)')
+    expect(of('e2')!.getAttribute('style')).toContain('stroke-width: 2')
+    expect(of('e2')!.getAttribute('marker-end')).toBe(`url(#stub-mark-arrowclosed-${red})`)
+    expect(el.querySelector(`marker[id="stub-mark-arrowclosed-${red}"] polyline`)!.getAttribute('style')).toContain('rgb(255, 0, 0)')
+    expect(el.querySelector('[data-id="note-link:n1>gone"]')).toBeNull()
   })
 })
 

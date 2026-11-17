@@ -247,3 +247,231 @@ msgstr "Cycle de dépendances"
 
 msgid "Project has no planned hours"
 msgstr "Le projet n'a pas d'heures prévues"
+
+msgid "Closed at"
+msgstr "Fermée le"
+
+msgid "Burndown"
+msgstr "Consommation"
+
+msgid "Planned value"
+msgstr "Valeur planifiée"
+
+msgid "Earned value"
+msgstr "Valeur acquise"
+
+msgid "Actual cost"
+msgstr "Coût réel"
+
+msgid "Schedule performance index"
+msgstr "Indice de performance des délais"
+
+msgid "Cost performance index"
+msgstr "Indice de performance des coûts"
+
+msgid "Ideal"
+msgstr "Idéal"
+
+msgid "Risk trend"
+msgstr "Tendance des risques"
+
+msgid "Assignee"
+msgstr "Assigné"
+
+msgid "Planning"
+msgstr "Planification"
+
+msgid "My day"
+msgstr "Ma journée"
+
+msgid "Overdue"
+msgstr "En retard"
+
+msgid "Today"
+msgstr "Aujourd'hui"
+
+msgid "This week"
+msgstr "Cette semaine"
+
+msgid "Later"
+msgstr "Plus tard"
+
+msgid "No deadline"
+msgstr "Sans échéance"
+
+msgid "Log time"
+msgstr "Saisir du temps"
+
+msgid "Log"
+msgstr "Saisir"
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "No open tasks"
+msgstr "Aucune tâche ouverte"
+
+msgid "First 1000 shown"
+msgstr "Premiers 1000 affichés"
+
+msgid "Actions"
+msgstr "Actions"
+
+msgid "Timesheet week"
+msgstr "Semaine de temps"
+
+msgid "Workload"
+msgstr "Charge"
+
+msgid "Portfolio"
+msgstr "Portefeuille"
+
+msgid "Previous week"
+msgstr "Semaine précédente"
+
+msgid "Next week"
+msgstr "Semaine suivante"
+
+msgid "Add task"
+msgstr "Ajouter une tâche"
+
+msgid "Search tasks"
+msgstr "Rechercher des tâches"
+
+msgid "No matching tasks"
+msgstr "Aucune tâche correspondante"
+
+msgid "Several entries: edit them in Timesheets"
+msgstr "Plusieurs saisies : modifiez-les dans Timesheets"
+
+msgid "Total"
+msgstr "Total"
+
+msgid "Totals"
+msgstr "Totaux"
+
+msgid "Mon"
+msgstr "Lun"
+
+msgid "Tue"
+msgstr "Mar"
+
+msgid "Wed"
+msgstr "Mer"
+
+msgid "Thu"
+msgstr "Jeu"
+
+msgid "Fri"
+msgstr "Ven"
+
+msgid "Sat"
+msgstr "Sam"
+
+msgid "Sun"
+msgstr "Dim"
+
+msgid "Save baseline"
+msgstr "Enregistrer la ligne de base"
+
+msgid "Baseline name"
+msgstr "Nom de la ligne de base"
+
+msgid "Eisenhower"
+msgstr "Eisenhower"
+
+msgid "RACI"
+msgstr "RACI"
+
+msgid "Dependencies"
+msgstr "Dépendances"
+
+msgid "Do"
+msgstr "À faire"
+
+msgid "Schedule"
+msgstr "Planifier"
+
+msgid "Delegate"
+msgstr "Déléguer"
+
+msgid "Eliminate"
+msgstr "Éliminer"
+
+msgid "Toggle priority"
+msgstr "Basculer la priorité"
+
+msgid "First 150 tasks shown"
+msgstr "150 premières tâches affichées"
+
+msgid "No one accountable"
+msgstr "Personne n'est responsable"
+
+msgid "Deliverable"
+msgstr "Livrable"
+
+msgid "Unassigned"
+msgstr "Non assigné"
+
+msgid "All projects"
+msgstr "Tous les projets"
+
+msgid "Hours per week"
+msgstr "Heures par semaine"
+
+msgid "Burnup"
+msgstr "Progression"
+
+msgid "Flow"
+msgstr "Flux"
+
+msgid "Remaining tasks"
+msgstr "Tâches restantes"
+
+msgid "Scope hours"
+msgstr "Heures du périmètre"
+
+msgid "Done hours"
+msgstr "Heures réalisées"
+
+msgid "Not enough data yet"
+msgstr "Pas encore assez de données"
+
+msgid "tasks without dates are left out of PV"
+msgstr "tâches sans dates sont exclues de la valeur planifiée"
+
+msgid "Line chart"
+msgstr "Graphique linéaire"
+
+msgid "Late"
+msgstr "En retard"
+
+msgid "Portfolio chart"
+msgstr "Diagramme du portefeuille"
+
+msgid "Progress"
+msgstr "Avancement"
+
+msgid "red"
+msgstr "rouge"
+
+msgid "amber"
+msgstr "ambre"
+
+msgid "green"
+msgstr "vert"
+
+msgid "No risks"
+msgstr "Aucun risque"
+
+msgid "Max criticity"
+msgstr "Criticité maximale"
+
+msgid "Green"
+msgstr "Vert"
+
+msgid "Amber"
+msgstr "Ambre"
+
+msgid "Red"
+msgstr "Rouge"

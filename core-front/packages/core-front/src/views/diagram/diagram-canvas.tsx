@@ -36,7 +36,9 @@ import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps
 import type { HasId } from '../stores'
 import { freeSpot, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
 import { historyKey, type UndoHistory } from './history'
+import { DeliverableBox } from './deliverable-box'
 import { ObsBox } from './obs-box'
+import { PbsBox } from './pbs-box'
 import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
@@ -157,18 +159,19 @@ function toggled(prev: Set<string>, picks: { id: string; selected: boolean }[]):
 }
 
 /** How to use the canvas: the tips that apply to what this canvas allows. */
-function DiagramHelp({ mode, links, drop, insert, history, notes }: { mode: 'wbs' | 'pert' | 'obs'; links: boolean; drop: boolean; insert: boolean; history: boolean; notes: boolean }) {
+function DiagramHelp({ mode, links, drop, insert, history, notes }: { mode: 'wbs' | 'pert' | 'obs' | 'pbs'; links: boolean; drop: boolean; insert: boolean; history: boolean; notes: boolean }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const shared = mode === 'obs' || mode === 'pbs'
   const tips = [
     t('Scroll to zoom, drag the background to move around.'),
-    mode === 'obs'
+    shared
       ? t('Drag a box to move it: the chart is shared, and only the project manager can change it.')
       : t('Drag a box to move it: your arrangement is saved for you only.'),
     t('Shift+click or Shift+drag on the background selects several boxes; drag one to move them all.'),
     t('Double-click a box to open its record. Zoomed out, boxes show only their title.'),
-    mode === 'obs' && t("Add boxes from the toolbar; drag from a box's dot to another to put it under that one."),
-    links && mode !== 'obs' && (mode === 'pert'
+    shared && t("Add boxes from the toolbar; drag from a box's dot to another to put it under that one."),
+    links && !shared && (mode === 'pert'
       ? t('Drag from the dot on the right of a box to another box to add a dependency.')
       : t('Drag from the dot under a box to another box to make it its parent.')),
     links && t('Click a link to select it, then press Delete to remove it.'),
@@ -235,7 +238,7 @@ function useCachedGet(ops: RelationOps | null): RelationOps | null {
 
 export interface DiagramCanvasProps {
   entity: string
-  mode: 'wbs' | 'pert' | 'obs'
+  mode: 'wbs' | 'pert' | 'obs' | 'pbs'
   title: string
   /** Positions are ignored: the canvas places them. */
   nodes: Node[]
@@ -273,9 +276,13 @@ export interface DiagramCanvasProps {
   readOnly?: boolean
   /** Undo/redo: box moves are recorded in it, Ctrl+Z / Ctrl+Y and toolbar buttons drive it. */
   history?: UndoHistory
+  /** Extra, non-interactive nodes (the WBS deliverables footer): the caller positions them
+   * from the FINAL placed boxes on every render (never stored), and they stay out of the
+   * saved layout, the collision pass, the drag/move and insert paths and the history. */
+  extraNodes?: (placed: Record<string, Point>) => Node[]
 }
 
-const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox }
+const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox, pbs: PbsBox, deliverable: DeliverableBox }
 const NOTE_EDGE = 'note-link:'
 // No notes is no key: a layout without notes saves as it always did.
 const savedNotes = (notes: DiagramNote[]) => (notes.length ? notes : undefined)
@@ -298,7 +305,7 @@ function Canvas(props: DiagramCanvasProps) {
   const boxOps = useCachedGet(ops)
   const compact = useMemo(() => compactTheme(outer), [outer])
   // Controlled positions never touch the per-user layout.
-  const layoutMode = mode === 'obs' ? undefined : mode
+  const layoutMode = mode === 'obs' || mode === 'pbs' ? undefined : mode
   const getViewLayout = props.positions || !layoutMode ? undefined : ops?.getViewLayout
   const saveViewLayout = props.positions || !layoutMode ? undefined : ops?.saveViewLayout
   const [loaded, setLoaded] = useState(!getViewLayout)
@@ -502,7 +509,7 @@ function Canvas(props: DiagramCanvasProps) {
   // A drag frame re-renders only the canvas: every other box keeps its node object, so
   // React Flow skips it (2000 boxes would otherwise all re-render per frame).
   const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; selected: boolean; node: Node }>())
-  const rfNodes: Node[] = all.map((n) => {
+  const bodyNodes: Node[] = all.map((n) => {
     const position = live[n.id] ?? placed[n.id]
     const selected = selectedNodes.has(n.id)
     const prev = built.current.get(n.id)
@@ -520,6 +527,24 @@ function Canvas(props: DiagramCanvasProps) {
     built.current.set(n.id, { src: n, position, size: sizes[n.id], selected, node })
     return node
   })
+  // The extra nodes (the WBS deliverables footer) are positioned by the caller from the
+  // placed boxes above: they never drag, select, connect or get saved, and exports still
+  // see them (they are in the node list getNodesBounds measures).
+  const rfNodes: Node[] = [
+    ...bodyNodes,
+    ...(props.extraNodes
+      ? props.extraNodes(placed).map((n) => ({
+          ...n,
+          draggable: false,
+          selectable: false,
+          connectable: false,
+          deletable: false,
+          selected: false,
+          sourcePosition: vertical ? Position.Bottom : Position.Right,
+          targetPosition: vertical ? Position.Top : Position.Left,
+        }))
+      : []),
+  ]
 
   // The line a box at `rect` would be inserted into: the first it crosses, each line taken
   // straight from the source's out side to the target's in side (right → left in PERT,

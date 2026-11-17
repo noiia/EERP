@@ -20,7 +20,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid'
-import { DataGrid, GraphRenderer, ObsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
+import { DataGrid, GraphRenderer, InsightsRenderer, MatrixRenderer, ObsRenderer, PbsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
 import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
 import { useRelationLabels } from './use-relation-labels'
@@ -916,6 +916,9 @@ const MODE_LABELS: Record<DisplayMode, string> = {
   pert: 'PERT',
   obs: 'OBS',
   risk: 'Risk',
+  insights: 'Insights',
+  matrix: 'Matrices',
+  pbs: 'PBS',
 }
 
 /**
@@ -1064,8 +1067,15 @@ function TreeRenderer<T extends HasId>({
   )
   const availability = availableDisplayModes(effective, baseOptions)
   // OBS depends on the live filters: once the pin is lost the persisted 'obs' reads as List everywhere.
+  // Insights/Matrices ride the same pin rule (ADR-041).
   const mode =
-    (storedMode === 'obs' && !availability.obs) || (storedMode === 'risk' && !availability.risk) ? 'list' : storedMode
+    (storedMode === 'obs' && !availability.obs) ||
+    (storedMode === 'risk' && !availability.risk) ||
+    (storedMode === 'insights' && !availability.insights) ||
+    (storedMode === 'matrix' && !availability.matrix) ||
+    (storedMode === 'pbs' && !availability.pbs)
+      ? 'list'
+      : storedMode
   const onFiltersChange = (options: EntityListOptions | undefined) => {
     setActiveFilters(options)
     setLiveResults(null)
@@ -1232,6 +1242,7 @@ function TreeRenderer<T extends HasId>({
         actions={actions}
         statusField={effective.kanbanStatusField}
         columnsConfig={effective.kanbanColumns ?? undefined}
+        swimlanesConfig={effective.kanbanSwimlanes ?? undefined}
         badgeField={effective.kanbanBadgeField ?? undefined}
         colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}
@@ -1261,6 +1272,9 @@ function TreeRenderer<T extends HasId>({
         endField={effective.ganttEndField}
         dependencies={effective.ganttDependencies ?? undefined}
         colorTagsField={effective.colorTagsField ?? undefined}
+        // ADR-041: the pinned project's schedule overlay and baseline snapshots.
+        schedule={effective.ganttSchedule ?? undefined}
+        baseline={effective.ganttBaseline ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
@@ -1276,6 +1290,7 @@ function TreeRenderer<T extends HasId>({
         boxFields={[effective.wbsOrderField, 'name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
         hoursField={effective.pertHoursField ?? undefined}
         orderField={effective.wbsOrderField ?? undefined}
+        deliverables={effective.wbsDeliverables ?? undefined}
         onRecordsChange={setLiveRecords as (r: HasId[]) => void}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
@@ -1302,6 +1317,15 @@ function TreeRenderer<T extends HasId>({
   } else if (mode === 'risk' && effective.risk && availability.risk) {
     const projectId = pinnedId(baseOptions, effective.risk.projectField)!
     content = <RiskRenderer key={projectId} config={effective.risk} projectId={projectId} />
+  } else if (mode === 'insights' && effective.insights && availability.insights) {
+    const projectId = pinnedId(baseOptions, effective.insights.projectField)!
+    content = <InsightsRenderer key={projectId} config={effective.insights} projectId={projectId} />
+  } else if (mode === 'matrix' && effective.matrix && availability.matrix) {
+    const projectId = pinnedId(baseOptions, effective.matrix.projectField)!
+    content = <MatrixRenderer key={projectId} config={effective.matrix} projectId={projectId} />
+  } else if (mode === 'pbs' && effective.pbs && availability.pbs) {
+    const projectId = pinnedId(baseOptions, effective.pbs.projectField)!
+    content = <PbsRenderer key={projectId} config={effective.pbs} projectId={projectId} />
   } else if (mode === 'graph' && effective.enableGraphs) {
     content = (
       <GraphRenderer

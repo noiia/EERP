@@ -2,10 +2,13 @@ import {
   FORM_COLUMNS_ID,
   FORM_HEADER_ID,
   FORM_NOTEBOOK_ID,
+  kanbanColumnsGuard,
   registerFieldFunction,
   registerHeaderButtonAction,
   registerHeaderMenu,
   registerKanbanColumnsGuard,
+  translate,
+  useI18nStore,
   type FrontModule,
   type HeaderButtonDescriptor,
   type Operation,
@@ -107,8 +110,28 @@ registerHeaderButtonAction({
   },
 })
 
+// Snapshot the current plan as a baseline (WP3's baseline action). The
+// manager/admin gate is Go's can_manage: a header button's `states.visible`
+// is a field-only condition (it cannot await), so the guard runs here.
+registerHeaderButtonAction({
+  entity: 'project',
+  name: 'project.saveBaseline',
+  handler: async (ctx) => {
+    const guard = kanbanColumnsGuard('project.canEditStages')
+    if (!guard || !(await guard(ctx.recordId, ctx.relationOps))) return
+    // This package type-checks without the DOM lib: prompt is a global.
+    const raw = (globalThis as { prompt?: (message?: string) => string | null }).prompt?.(
+      translate(useI18nStore.getState().locale, 'Baseline name'),
+    )
+    const name = raw?.trim()
+    if (!name) return
+    await ctx.runAction?.('baseline', { body: { name } })
+  },
+})
+
 const projectHeaderButtons: HeaderButtonDescriptor[] = [
   { name: 'project.openTasks', label: 'Tasks', variant: 'secondary', states: { visible: { field: 'id', op: 'set' } } },
+  { name: 'project.saveBaseline', label: 'Save baseline', variant: 'secondary', states: { visible: { field: 'id', op: 'set' } } },
 ]
 
 // Adding/renaming/reordering a project's stages from its board: Go's
@@ -150,6 +173,8 @@ const taskListFields: Fields = [
   { name: 'planned_hours', label: 'Planned hours', type: 'number' },
   { name: 'spent_hours', label: 'Spent hours', type: 'number', readOnly: true },
   { name: 'blocked', label: 'Blocked', type: 'boolean', readOnly: true },
+  // When the task moved into a closed stage (Go's trigger; ADR-041).
+  { name: 'closed_at', label: 'Closed at', type: 'date', widget: 'datetime', readOnly: true },
 ]
 
 const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
@@ -167,12 +192,36 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   wbsParentField: 'parent_id',
   wbsGroupField: 'project_id',
   wbsOrderField: 'wbs_number',
+  // The WBS deliverables footer: the PBS items the column's tasks produce (ADR-039).
+  wbsDeliverables: { field: 'pbs_item_id', entity: 'project_pbs_item', labelField: 'name', doneField: 'done_count', totalField: 'task_count' },
   pertDependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
   pertHoursField: 'planned_hours',
   // OBS chart of the pinned project (ADR-039).
   obs: { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id', canEdit: 'project.canEditStages' },
   // Risk analysis: matrix, Ishikawa and register tabs over these tables.
   risk: { entity: 'project_risk', linkEntity: 'project_risk_task', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' },
+  // Gantt schedule and baselines of the pinned project (ADR-041).
+  ganttSchedule: { scopeField: 'project_id', scopeEntity: 'project', path: 'schedule' },
+  ganttBaseline: { entity: 'project_baseline', taskEntity: 'project_baseline_task', scopeField: 'project_id', linkField: 'task_id', startField: 'date_start', endField: 'deadline' },
+  // Kanban swimlanes: one lane per assignee, over the task's assignees junction.
+  kanbanSwimlanes: { label: 'Assignee', via: 'project_task_user', ownField: 'task_id', relatedField: 'user_id', entity: 'users', labelField: 'email' },
+  // Insights and Matrices modes over the pinned project (ADR-041); the DSM
+  // reuses the pert dependencies.
+  insights: { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' },
+  matrix: {
+    projectField: 'project_id',
+    raciEntity: 'project_task_raci',
+    userLabelField: 'email',
+    dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+    priorityField: 'priority',
+    deadlineField: 'deadline',
+    closedField: 'closed',
+    urgentDays: 7,
+    taskEntity: 'project_task',
+    taskFormPath: '/project/tasks/:id',
+  },
+  // PBS diagram mode over the pinned project: its deliverables (ADR-039).
+  pbs: { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id', canEdit: 'project.canEditStages' },
 }
 
 // The task's many2many fields: on the form, and filters of the task lists
@@ -189,6 +238,14 @@ const colorGroupsField: Fields[number] = {
   type: 'relation',
   widget: 'colortags',
   relation: { entity: 'project_color', kind: 'many2many', via: 'project_task_color', viaFields: { own: 'task_id', related: 'color_id' }, labelField: 'name' },
+}
+// The task's deliverable (PBS, ADR-039): on the form, and a filter of the task
+// lists (Go's TaskFilters resolves filter[pbs_item_id]).
+const deliverableField: Fields[number] = {
+  name: 'pbs_item_id',
+  label: 'Deliverable',
+  type: 'relation',
+  relation: { entity: 'project_pbs_item', kind: 'many2one', labelField: 'name', filterFields: sameProject },
 }
 
 const taskFormFields: Fields = [
@@ -266,6 +323,25 @@ const taskFormFields: Fields = [
       ],
     },
   },
+  // When the task moved into a closed stage (Go's trigger; ADR-041).
+  { name: 'closed_at', label: 'Closed at', type: 'date', widget: 'datetime', readOnly: true },
+  // The task's RACI rows (Matrices mode, ADR-041): who is Responsible /
+  // Accountable / Consulted / Informed. No quick-create — the child entity
+  // has no registered form of its own.
+  {
+    name: 'raci',
+    label: 'RACI',
+    type: 'relation',
+    relation: { entity: 'project_task_raci', kind: 'one2many', inverseField: 'task_id', labelField: 'user_id' },
+    widgetOptions: {
+      deletable: true,
+      columns: [
+        { key: 'user_id', label: 'User' },
+        { key: 'role', label: 'Role' },
+      ],
+    },
+  },
+  deliverableField,
 ]
 
 // Description first, then the task's links; the synthesized Settings page
@@ -276,6 +352,7 @@ export const taskPagesOperations: Operation[] = [
   { op: 'addNode', node: { kind: 'page', title: 'Blocked by', children: [{ kind: 'field', name: 'blocked_by' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
   { op: 'addNode', node: { kind: 'page', title: 'Blocking', children: [{ kind: 'field', name: 'blocking' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
   { op: 'addNode', node: { kind: 'page', title: 'Timesheets', children: [{ kind: 'field', name: 'timesheets' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
+  { op: 'addNode', node: { kind: 'page', title: 'RACI', children: [{ kind: 'field', name: 'raci' }] }, target: FORM_NOTEBOOK_ID, position: 'last' },
 ]
 
 // ── milestones, timesheets, stages, tags ─────────────────────────────────────
@@ -452,11 +529,32 @@ const riskCategoryFields: Fields = [
   { name: 'color', label: 'Color', type: 'text', widget: 'color' },
 ]
 
+// Weekly capacities (WP10): one row per user, the Workload heatmap compares a
+// user's planned load against it (default 40 h/week when the row is missing).
+const capacityFields: Fields = [
+  { name: 'user_id', label: 'User', type: 'relation', relation: users, required: true },
+  { name: 'hours_per_week', label: 'Hours per week', type: 'number', required: true },
+]
+
 // Color groups are renamed, recolored and deleted from the Configuration menu.
 registerHeaderMenu('project', 'configuration', {
   entries: [
     { kind: 'line', label: 'Color groups', path: '/project/colors', permission: 'project_color:project_color:read' },
     { kind: 'line', label: 'Risk categories', path: '/project/risk_categories', permission: 'project_risk_category:project_risk_category:read' },
+    { kind: 'line', label: 'Capacities', path: '/project/capacities', permission: 'project_capacity:project_capacity:read' },
+  ],
+})
+
+// The cross-project planning pages (My day, Timesheet week, Workload,
+// Portfolio): their own shell pages, reached from one Planning menu instead of
+// four more top-bar entries.
+registerHeaderMenu('project', 'planning', {
+  label: 'Planning',
+  entries: [
+    { kind: 'line', label: 'My day', path: '/project/my-day', permission: 'project_task:project_task:read' },
+    { kind: 'line', label: 'Timesheet week', path: '/project/timesheet-week', permission: 'project_timesheet:project_timesheet:read' },
+    { kind: 'line', label: 'Workload', path: '/project/workload', permission: 'project_task:project_task:read' },
+    { kind: 'line', label: 'Portfolio', path: '/project/portfolio', permission: 'project:project:read' },
   ],
 })
 
@@ -474,7 +572,7 @@ const tasksList = (navLabel: string, listFilter?: ViewDescriptor['listFilter']):
   createPermission: write('project_task'),
   permissions: perm('project_task'),
   viewModeDefaults: taskViewModeDefaults,
-  search: { filterOnlyFields: [assigneesField, colorGroupsField] },
+  search: { filterOnlyFields: [assigneesField, colorGroupsField, deliverableField] },
   ...(listFilter ? { listFilter } : {}),
 })
 
@@ -603,6 +701,43 @@ const routes: FrontModule['routes'] = [
   {
     path: '/project/tags/:id',
     descriptor: { entity: 'project_tag', viewType: 'form', fields: tagFields, permissions: perm('project_tag') },
+  },
+  // The planning pages (ADR-041): shell pages with their own rendering. These
+  // routes only gate them (permission per page) and keep the top bar on the
+  // Project's own menus — dashboard + hideFromTopBar, Teams' trick.
+  {
+    path: '/project/my-day',
+    descriptor: { entity: 'project_task', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project_task') },
+  },
+  {
+    path: '/project/timesheet-week',
+    descriptor: { entity: 'project_timesheet', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project_timesheet') },
+  },
+  {
+    path: '/project/workload',
+    descriptor: { entity: 'project_task', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project_task') },
+  },
+  {
+    path: '/project/portfolio',
+    descriptor: { entity: 'project', viewType: 'dashboard', fields: [], hideFromTopBar: true, permissions: perm('project') },
+  },
+  // Weekly capacities, edited from the Configuration menu (no top-bar entry).
+  {
+    path: '/project/capacities',
+    descriptor: {
+      entity: 'project_capacity',
+      viewType: 'tree',
+      navLabel: 'Capacities',
+      hideFromTopBar: true,
+      fields: capacityFields,
+      formPath: '/project/capacities/:id',
+      createPermission: write('project_capacity'),
+      permissions: perm('project_capacity'),
+    },
+  },
+  {
+    path: '/project/capacities/:id',
+    descriptor: { entity: 'project_capacity', viewType: 'form', fields: capacityFields, permissions: perm('project_capacity') },
   },
 ]
 
