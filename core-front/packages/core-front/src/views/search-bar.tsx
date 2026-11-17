@@ -364,8 +364,12 @@ export function SearchBar<T extends HasId>({
   // The URL's filter[<field>]=<value> on a filterable field starts the bar
   // with that exact-match filter (e.g. a project form's link to its tasks).
   const searchParams = useSearchParams()
+  // The query this bar last wrote itself (syncUrl): seeding from it again would drop
+  // the filters a URL can't carry (contains, ranges, in).
+  const written = useRef<string | null>(null)
   useEffect(() => {
     if (!searchParams) return
+    if (searchParams.toString() === written.current) return
     const seeded: FilterCondition[] = filterFields.flatMap((f) => {
       const value = searchParams.get(`filter[${f.name}]`)
       return value ? [{ field: f.name, op: 'eq' as const, value }] : []
@@ -409,8 +413,27 @@ export function SearchBar<T extends HasId>({
     }, LIVE_SEARCH_DEBOUNCE_MS)
   }
 
+  // Mirrors the bar's exact-match filters on filterable fields into the URL — the same
+  // filter[<field>]=<value> the seeding above reads — so leaving for a record and coming
+  // back (breadcrumb, browser Back) restores them, e.g. a task list pinned to a project.
+  // history.replaceState: Next syncs useSearchParams from it with no server round trip.
+  function syncUrl(next: FilterCondition[]) {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    for (const f of filterFields) params.delete(`filter[${f.name}]`)
+    const names = new Set(filterFields.map((f) => f.name))
+    for (const f of next) {
+      if (f.op === 'eq' && names.has(f.field) && f.value !== '' && f.value != null) params.set(`filter[${f.field}]`, String(f.value))
+    }
+    const query = params.toString()
+    written.current = query
+    if (query === window.location.search.replace(/^\?/, '')) return
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
+  }
+
   async function applyFilters(next: FilterCondition[]) {
     setFilters(next)
+    syncUrl(next)
     setAppliedSavedFilter(null)
     if (onFiltersChange) {
       const options = toListOptions(next, FETCH_LIMIT)
