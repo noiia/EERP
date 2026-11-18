@@ -16,6 +16,9 @@ core/internal/testdb.findConfig
 core/internal/testdb.Migrate
 core/internal/testdb.MigrateModules
 core/internal/testdb.Open
+# Handler.check validates one write on any orm.Executor. Its caller (the .gan
+# importer) lands later in this epic, so nothing reachable from main uses it yet.
+core/modules/project.Handler.check
 core/orm.ExposedTableNames
 core/orm.ExtendSchema
 core/orm.In
