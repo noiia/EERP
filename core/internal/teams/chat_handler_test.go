@@ -169,17 +169,76 @@ func TestPostMessage_PushesToTeamAudienceOnly(t *testing.T) {
 	}
 }
 
-func TestMentions_OnlyReaders(t *testing.T) {
+func TestMessage_NotifiesEveryReaderButMuted(t *testing.T) {
 	f := newChatFixture(t, false)
 	body := `{"body":"hey @all","mentions":["` + f.guest.String() + `","` + f.outside.String() + `","` + f.member.String() + `"]}`
 	f.post(t, f.member, f.general, body)
-	if len(f.notes.sent) != 1 || f.notes.sent[0].user != f.guest {
+	got := map[uuid.UUID]notify.Message{}
+	for _, n := range f.notes.sent {
+		got[n.user] = n.msg
+	}
+	if len(f.notes.sent) != 2 || len(got) != 2 {
 		t.Fatalf("notified: %+v", f.notes.sent)
 	}
-	n := f.notes.sent[0].msg
+	n := got[f.guest]
 	if n.Category != "teams" || n.Link != "/teams/"+f.team.String()+"/channels/"+f.general.String() ||
 		n.Title != f.member.String()+"@t.test mentioned you" || n.Body != "hey @all" {
-		t.Fatalf("message: %+v", n)
+		t.Fatalf("mention: %+v", n)
+	}
+	if n := got[f.owner]; n.Title != f.member.String()+"@t.test in #general" {
+		t.Fatalf("plain: %+v", n)
+	}
+
+	p := map[string]string{"channel": f.general.String()}
+	if rec := serve(t, f.h.SetMuted, "PUT", `{"muted":true}`, f.as(f.guest), p); rec.Code != 200 {
+		t.Fatalf("mute: %d %s", rec.Code, rec.Body)
+	}
+	f.notes.sent = nil
+	f.post(t, f.member, f.general, body)
+	if len(f.notes.sent) != 1 || f.notes.sent[0].user != f.owner {
+		t.Fatalf("muted guest notified: %+v", f.notes.sent)
+	}
+	if rec := serve(t, f.h.SetMuted, "PUT", `{"muted":true}`, f.as(f.outside), p); rec.Code != 404 {
+		t.Fatalf("outsider mute: %d", rec.Code)
+	}
+	rec := serve(t, f.h.ListChannels, "GET", "", f.as(f.guest), map[string]string{"id": f.team.String()})
+	if !strings.Contains(rec.Body.String(), `"muted":true`) {
+		t.Fatalf("list muted: %s", rec.Body)
+	}
+}
+
+func TestDirect_HideClearsForCallerOnly(t *testing.T) {
+	f := newChatFixture(t, false)
+	_, a := direct(t, f, f.owner, f.staff)
+	cleanupDirect(t, f, a)
+	f.post(t, f.staff, a, `{"body":"one"}`)
+	p := map[string]string{"channel": a.String()}
+	if rec := serve(t, f.h.HideDirect, "DELETE", "", f.as(f.owner), p); rec.Code != 204 {
+		t.Fatalf("hide: %d %s", rec.Code, rec.Body)
+	}
+	if rec := serve(t, f.h.HideDirect, "DELETE", "", f.as(f.owner), map[string]string{"channel": f.general.String()}); rec.Code != 404 {
+		t.Fatalf("hide team channel: %d", rec.Code)
+	}
+	count := func(as uuid.UUID) int {
+		var out struct{ Data []any }
+		_ = jsonDecode(serve(t, f.h.ListDirect, "GET", "", f.as(as), nil), &out)
+		return len(out.Data)
+	}
+	msgs := func(as uuid.UUID) int {
+		var out struct{ Data []any }
+		_ = jsonDecode(serve(t, f.h.ListMessages, "GET", "", f.as(as), p), &out)
+		return len(out.Data)
+	}
+	if count(f.owner) != 0 || count(f.staff) != 1 || msgs(f.owner) != 0 || msgs(f.staff) != 1 {
+		t.Fatalf("after hide: %d %d %d %d", count(f.owner), count(f.staff), msgs(f.owner), msgs(f.staff))
+	}
+	f.notes.sent = nil
+	f.post(t, f.staff, a, `{"body":"two"}`)
+	if count(f.owner) != 1 || msgs(f.owner) != 1 || msgs(f.staff) != 2 {
+		t.Fatalf("after new message: %d %d %d", count(f.owner), msgs(f.owner), msgs(f.staff))
+	}
+	if len(f.notes.sent) != 1 || f.notes.sent[0].user != f.owner || f.notes.sent[0].msg.Title != f.staff.String()+"@t.test" {
+		t.Fatalf("direct notification: %+v", f.notes.sent)
 	}
 }
 

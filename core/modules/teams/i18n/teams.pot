@@ -345,3 +345,21 @@ msgstr ""
 
 msgid "The message could not be deleted."
 msgstr ""
+
+msgid "Mute notifications"
+msgstr ""
+
+msgid "Unmute notifications"
+msgstr ""
+
+msgid "Muted"
+msgstr ""
+
+msgid "Delete conversation"
+msgstr ""
+
+msgid "Conversation options"
+msgstr ""
+
+msgid "The history is cleared for you only."
+msgstr ""

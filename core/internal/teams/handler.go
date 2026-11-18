@@ -120,6 +120,8 @@ func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 	g.DELETE("/:id/groups/:group", h.DeleteGroup)
 	g.GET("/direct", h.ListDirect)
 	g.POST("/direct", h.OpenDirect)
+	g.DELETE("/direct/:channel", h.HideDirect)
+	g.PUT("/channels/:channel/mute", h.SetMuted)
 	g.GET("/channels/:channel/messages", h.ListMessages)
 	g.POST("/channels/:channel/messages", h.PostMessage, upload)
 	g.POST("/channels/:channel/read", h.MarkRead, upload)

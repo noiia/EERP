@@ -22,6 +22,7 @@ import { layoutPert } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { useUndoHistory } from './history'
 import { computePert, offsetToDate } from './pert'
+import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
 import { boxFieldOf, TASK_BOX_SIZE, type TaskBoxData } from './task-box'
 
 // PERT display mode: one box per record, an arrow per dependency row (blocker →
@@ -48,6 +49,8 @@ export interface PertRendererProps<T extends HasId> {
   boxFields?: (string | null | undefined)[]
   onRecordsChange?: (records: T[]) => void
   serverOptions?: EntityListOptions
+  /** ViewModeDefaults.colorTagsField: each box shows its color groups as a bar along its top. */
+  colorTagsField?: string
 }
 
 export function PertRenderer<T extends HasId>({
@@ -62,6 +65,7 @@ export function PertRenderer<T extends HasId>({
   boxFields = ['name'],
   onRecordsChange,
   serverOptions,
+  colorTagsField,
 }: PertRendererProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -76,6 +80,7 @@ export function PertRenderer<T extends HasId>({
   const canLink = usePermission(`${dep.entity}:${dep.entity}:write`)
   const loaded = useDiagramRecords(entity, serverOptions, initialData)
   const [rows, setRows] = useState(loaded.records)
+  const { colors } = useRecordColors(entity, colorTagsFieldOf(descriptor, colorTagsField), rows.map((r) => r.id))
   const [seen, setSeen] = useState(loaded.records)
   if (seen !== loaded.records) {
     setSeen(loaded.records)
@@ -171,6 +176,7 @@ export function PertRenderer<T extends HasId>({
       onOpen: () => {
         if (formPath) router.push(erpPath(formPath.replace(':id', id)))
       },
+      colors: colors.get(id),
       badges: n.noEstimate ? <Chip size="small" color="warning" label={t('No estimate')} /> : undefined,
       footer: pert.cycle ? undefined : (
         <Typography variant="caption" component="div" color="text.secondary" sx={{ mt: 0.5 }}>

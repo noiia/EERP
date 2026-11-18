@@ -8,13 +8,15 @@ const createChannel = vi.fn()
 const openDirect = vi.fn()
 const orderChannels = vi.fn()
 const orderDirect = vi.fn()
-const m = { updateTeam: vi.fn(), deleteTeam: vi.fn(), removeMember: vi.fn(), renameChannel: vi.fn(), deleteChannel: vi.fn() }
+const m = { updateTeam: vi.fn(), deleteTeam: vi.fn(), removeMember: vi.fn(), renameChannel: vi.fn(), deleteChannel: vi.fn(), muteChannel: vi.fn(), deleteDirect: vi.fn() }
 vi.mock('./client', () => ({
   updateTeam: (...a: unknown[]) => m.updateTeam(...a),
   deleteTeam: (...a: unknown[]) => m.deleteTeam(...a),
   removeMember: (...a: unknown[]) => m.removeMember(...a),
   renameChannel: (...a: unknown[]) => m.renameChannel(...a),
   deleteChannel: (...a: unknown[]) => m.deleteChannel(...a),
+  muteChannel: (...a: unknown[]) => m.muteChannel(...a),
+  deleteDirect: (...a: unknown[]) => m.deleteDirect(...a),
   listFiles: (t: string, f?: string) => listFiles(t, f),
   directory: () => Promise.resolve([{ id: 'u2', display_name: 'Bob', email: 'b@x' }]),
   createChannel: (...a: unknown[]) => createChannel(...a),
@@ -162,9 +164,38 @@ describe('Sidebar team management', () => {
     expect(within(list).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Rename team', 'Groups', 'Delete team', 'Leave team'])
     unmount()
     render(<Sidebar {...props('member')} />)
-    expect(screen.queryByRole('button', { name: /channel options/i })).toBeNull()
+    list = await menu(/channel options #general/i)
+    expect(within(list).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Mute notifications'])
+    fireEvent.keyDown(list, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
     list = await menu(/team options/i)
     expect(within(list).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Leave team'])
+  })
+
+  it('mutes a channel and shows the muted mark', async () => {
+    m.muteChannel.mockResolvedValue({ muted: true })
+    const p = props('member')
+    const { rerender } = render(<Sidebar {...p} />)
+    fireEvent.click(within(await menu(/channel options #random/i)).getByText('Mute notifications'))
+    expect(m.muteChannel).toHaveBeenCalledWith('c2', true)
+    await waitFor(() => expect(p.onChanged).toHaveBeenCalled())
+    rerender(<Sidebar {...p} channels={[{ ...p.channels[1], muted: true }]} />)
+    expect(within(screen.getByRole('link', { name: /random/ })).getByLabelText('Muted')).toBeInTheDocument()
+    expect(within(await menu(/channel options #random/i)).getByText('Unmute notifications')).toBeInTheDocument()
+  })
+
+  it('mutes and deletes a direct conversation from its menu', async () => {
+    m.muteChannel.mockResolvedValue({ muted: true })
+    m.deleteDirect.mockResolvedValue(undefined)
+    const p = { ...props('member'), directs: [{ id: 'd1', other_user: { id: 'u2', display_name: 'Bob', email: 'b@x' }, unread: 0, last_message_at: null }], view: { kind: 'direct' as const, id: 'd1' } }
+    render(<Sidebar {...p} />)
+    fireEvent.click(within(await menu(/conversation options bob/i)).getByText('Mute notifications'))
+    expect(m.muteChannel).toHaveBeenCalledWith('d1', true)
+    fireEvent.click(within(await menu(/conversation options bob/i)).getByText('Delete conversation'))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete conversation' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(m.deleteDirect).toHaveBeenCalledWith('d1'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith(expect.stringMatching(/\/teams$/)))
   })
 
   it('renames the team, keeping its description', async () => {

@@ -438,7 +438,7 @@ func (r *Repository) GetOrCreateDirect(ctx context.Context, tenant, a, b uuid.UU
 		if err != nil {
 			return Channel{}, fmt.Errorf("teams: find direct: %w", err)
 		}
-		return rows[0], nil
+		return rows[0], r.ShowDirect(ctx, tenant, rows[0].ID, a)
 	}
 	var ch Channel
 	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
@@ -470,21 +470,22 @@ func (r *Repository) GetOrCreateDirect(ctx context.Context, tenant, a, b uuid.UU
 type DirectSummary struct {
 	Channel       Channel
 	LastMessageAt *time.Time
+	Muted         bool
 }
 
 // ListDirect returns the user's direct conversations, own order first, then most recent activity.
 func (r *Repository) ListDirect(ctx context.Context, tenant, user uuid.UUID) ([]DirectSummary, error) {
 	rows, err := r.db.Query(ctx, `SELECT c.id, c.direct_key, (SELECT max(m.created_at) FROM chat_message m
-			WHERE m.channel_id = c.id AND m.deleted_at IS NULL)
+			WHERE m.channel_id = c.id AND m.deleted_at IS NULL AND (cm.cleared_at IS NULL OR m.created_at > cm.cleared_at)), cm.muted
 		FROM chat_channel c JOIN chat_channel_member cm ON cm.channel_id = c.id AND cm.user_id = $2 AND cm.deleted_at IS NULL
-		WHERE c.tenant_id = $1 AND c.kind = 'direct' AND c.deleted_at IS NULL
+		WHERE c.tenant_id = $1 AND c.kind = 'direct' AND c.deleted_at IS NULL AND NOT cm.hidden
 		ORDER BY cm.position ASC NULLS LAST, 3 DESC NULLS LAST, c.id`, tenant, user)
 	if err != nil {
 		return nil, fmt.Errorf("teams: list direct: %w", err)
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (DirectSummary, error) {
 		d := DirectSummary{Channel: Channel{TenantID: tenant, Kind: KindDirect}}
-		err := row.Scan(&d.Channel.ID, &d.Channel.DirectKey, &d.LastMessageAt)
+		err := row.Scan(&d.Channel.ID, &d.Channel.DirectKey, &d.LastMessageAt, &d.Muted)
 		return d, err
 	})
 }
@@ -532,6 +533,81 @@ func (r *Repository) SetOrder(ctx context.Context, tenant, user uuid.UUID, chann
 		}
 		return nil
 	})
+}
+
+// SetMuted stores whether the user gets notifications from the channel.
+func (r *Repository) SetMuted(ctx context.Context, tenant, channel, user uuid.UUID, muted bool) error {
+	_, err := r.cursors.UpsertPartial(ctx, ChannelMember{TenantID: tenant, ChannelID: channel, UserID: user, Muted: muted},
+		[]string{"channel_id", "user_id"}, "deleted_at IS NULL", "muted = EXCLUDED.muted, updated_at = now()")
+	if err != nil {
+		return fmt.Errorf("teams: set muted: %w", err)
+	}
+	return nil
+}
+
+// MutedUsers returns which of the channel's users muted it.
+func (r *Repository) MutedUsers(ctx context.Context, tenant, channel uuid.UUID) (map[uuid.UUID]bool, error) {
+	cms, err := r.cursors.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("channel_id = $1", channel), orm.Cond("muted"))
+	if err != nil {
+		return nil, fmt.Errorf("teams: muted users: %w", err)
+	}
+	out := make(map[uuid.UUID]bool, len(cms))
+	for _, cm := range cms {
+		out[cm.UserID] = true
+	}
+	return out, nil
+}
+
+// MutedChannels returns which of the channels the user muted.
+func (r *Repository) MutedChannels(ctx context.Context, tenant, user uuid.UUID, channels []uuid.UUID) (map[uuid.UUID]bool, error) {
+	out := map[uuid.UUID]bool{}
+	if len(channels) == 0 {
+		return out, nil
+	}
+	cms, err := r.cursors.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("user_id = $1", user),
+		orm.In("channel_id", channels), orm.Cond("muted"))
+	if err != nil {
+		return nil, fmt.Errorf("teams: muted channels: %w", err)
+	}
+	for _, cm := range cms {
+		out[cm.ChannelID] = true
+	}
+	return out, nil
+}
+
+// HideDirect removes a direct conversation from the user's list and clears its
+// history for them only; the other participant keeps everything.
+func (r *Repository) HideDirect(ctx context.Context, tenant, channel, user uuid.UUID) error {
+	now := time.Now()
+	_, err := r.cursors.UpsertPartial(ctx, ChannelMember{TenantID: tenant, ChannelID: channel, UserID: user, Hidden: true, ClearedAt: &now, LastReadAt: &now},
+		[]string{"channel_id", "user_id"}, "deleted_at IS NULL",
+		"hidden = true, cleared_at = EXCLUDED.cleared_at, last_read_at = EXCLUDED.last_read_at, updated_at = now()")
+	if err != nil {
+		return fmt.Errorf("teams: hide direct: %w", err)
+	}
+	return nil
+}
+
+// ShowDirect puts a hidden direct conversation back in the given users' lists.
+func (r *Repository) ShowDirect(ctx context.Context, tenant, channel uuid.UUID, users ...uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `UPDATE chat_channel_member SET hidden = false, updated_at = now()
+		WHERE tenant_id = $1 AND channel_id = $2 AND user_id = ANY($3) AND hidden AND deleted_at IS NULL`, tenant, channel, users)
+	if err != nil {
+		return fmt.Errorf("teams: show direct: %w", err)
+	}
+	return nil
+}
+
+// ClearedAt returns the user's history cut on the channel (nil = none).
+func (r *Repository) ClearedAt(ctx context.Context, tenant, channel, user uuid.UUID) (*time.Time, error) {
+	cms, err := r.cursors.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("channel_id = $1", channel), orm.Cond("user_id = $1", user))
+	if err != nil {
+		return nil, fmt.Errorf("teams: cleared at: %w", err)
+	}
+	if len(cms) == 0 {
+		return nil, nil
+	}
+	return cms[0].ClearedAt, nil
 }
 
 // UnreadCounts counts, per channel, the messages by others newer than the user's read cursor.
@@ -620,9 +696,12 @@ func (r *Repository) EditMessage(ctx context.Context, tenant, id uuid.UUID, body
 }
 
 // ListMessages returns up to limit messages of the channel older than before (when set), newest first.
-func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID, before *time.Time, limit int) ([]Message, error) {
+func (r *Repository) ListMessages(ctx context.Context, tenant, channel uuid.UUID, before, after *time.Time, limit int) ([]Message, error) {
 	q := orm.Select[Message](r.messages.Meta()).Where(orm.Cond("tenant_id = $1", tenant)).
 		Where(orm.Cond("channel_id = $1", channel)).Where(orm.Cond("deleted_at IS NULL"))
+	if after != nil {
+		q = q.Where(orm.Cond("created_at > $1", *after))
+	}
 	if before != nil {
 		q = q.Where(orm.Cond("created_at < $1", *before))
 	}

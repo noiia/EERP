@@ -29,7 +29,7 @@ flowchart LR
   API --> DB[("Postgres: team_* / chat_*")]
   API --> S3[("S3: file bytes")]
   API -->|"SendToUsers: chat frames"| Hub
-  API -->|"Personal: mentions"| Notify["internal/notify"]
+  API -->|"Personal: every message, unless muted"| Notify["internal/notify"]
 ```
 
 - **Off the generic CRUD surface.** Every table (`team`, `team_member`, `chat_channel`,
@@ -129,6 +129,20 @@ flowchart TD
   Q -->|"listed, or in a listed group"| Y
   Q -->|otherwise| N["no: 404, no frames, no unread, files redacted"]
 ```
+
+### Message notifications, mute and per-user deletion (2026-11-18)
+
+Every message notifies each reader of the conversation (team channel or direct) except its author,
+so a direct message reaches its recipient without an @mention; a mention only changes the title.
+Each user may **mute** a conversation (`chat_channel_member.muted`): no notification at all from it,
+mentions included. The setting is per user and per conversation, kept on the read-cursor row the
+user already has.
+
+Deleting a direct conversation never touches the other participant's copy: it hides the
+conversation for the caller and records `cleared_at`, the point before which messages are gone
+for them. A new message un-hides it for both, so a deleted conversation comes back with the
+reply, starting at that message. A full delete for both was rejected: either participant could
+erase the other's history.
 
 ## Consequences
 

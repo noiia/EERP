@@ -19,9 +19,10 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { faBellSlash } from '@fortawesome/free-solid-svg-icons'
 import { AvatarWithPresence, avatarUrl, byPrefixAndName, erpPath, FontAwesomeIcon, IntentLink, T, useBreadcrumbStore, useSessionStore, useT } from '@eerp/core-front'
 import {
-  createChannel, deleteChannel, deleteTeam, listFiles, openDirect, orderChannels, orderDirect, removeMember, renameChannel, updateTeam,
+  createChannel, deleteChannel, deleteDirect, deleteTeam, listFiles, muteChannel, openDirect, orderChannels, orderDirect, removeMember, renameChannel, updateTeam,
   type Channel, type DirectChat, type DirectoryUser, type Folder, type Member, type Role, type Team,
 } from './client'
 import { AccessDialog } from './AccessDialog'
@@ -34,6 +35,7 @@ export type WorkspaceView = { kind: 'channel' | 'direct' | 'files' | 'shared'; i
 type Action =
   | { kind: 'renameTeam' | 'deleteTeam' | 'leaveTeam' }
   | { kind: 'renameChannel' | 'deleteChannel'; channel: Channel }
+  | { kind: 'deleteDirect'; direct: DirectChat }
 
 function NavItem({ href, selected, unread = 0, children, indent = 0 }: { href: string; selected?: boolean; unread?: number; children: ReactNode; indent?: number }) {
   return (
@@ -76,6 +78,11 @@ function useReorder<T extends { id: string }>(items: T[], save: (ids: string[]) 
     },
   })
   return { list, itemProps }
+}
+
+function MutedIcon() {
+  const t = useT()
+  return <FontAwesomeIcon icon={faBellSlash} aria-label={t('Muted')} role="img" size="xs" style={{ marginLeft: 6, opacity: 0.6 }} />
 }
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
@@ -129,7 +136,7 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
   const t = useT()
   const router = useRouter()
   const me = useSessionStore((s) => s.identity?.userId)
-  const [menu, setMenu] = useState<{ anchor: HTMLElement; channel?: Channel } | null>(null)
+  const [menu, setMenu] = useState<{ anchor: HTMLElement; channel?: Channel; direct?: DirectChat } | null>(null)
   const [action, setAction] = useState<Action | null>(null)
   const [newName, setNewName] = useState('')
   // null = no file storage (Go doesn't mount the files routes without S3): the section is hidden.
@@ -159,8 +166,20 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
     setNewName(name)
     setAction(a)
   }
+  const toggleMute = (id: string, muted: boolean) => {
+    setMenu(null)
+    muteChannel(id, muted).then(onChanged, orderFail)
+  }
   const confirmAction = async () => {
-    if (!teamId || !action) return
+    if (!action) return
+    if (action.kind === 'deleteDirect') {
+      await deleteDirect(action.direct.id)
+      setAction(null)
+      onChanged()
+      if (view.kind === 'direct' && view.id === action.direct.id) router.push(erpPath('/teams'))
+      return
+    }
+    if (!teamId) return
     switch (action.kind) {
       case 'renameTeam':
         await updateTeam(teamId, newName.trim(), team?.description ?? '')
@@ -189,6 +208,7 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
     leaveTeam: t('Leave team'),
     renameChannel: t('Rename channel'),
     deleteChannel: t('Delete channel'),
+    deleteDirect: t('Delete conversation'),
   }[action.kind]
 
   const addChannel = async () => {
@@ -239,11 +259,10 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
                   <NavItem href={`/teams/${teamId}/channels/${c.id}`} selected={view.kind === 'channel' && view.id === c.id} unread={unread[c.id] ?? c.unread}>
                     # {c.name}
                     {c.private && <FontAwesomeIcon icon={byPrefixAndName.fas['lock']} aria-label={t('Private')} role="img" size="xs" style={{ marginLeft: 6 }} />}
+                    {c.muted && <MutedIcon />}
                   </NavItem>
                 </Box>
-                {owner && (
-                  <IconButton size="small" aria-label={`${t('Channel options')} #${c.name}`} onClick={(e) => setMenu({ anchor: e.currentTarget, channel: c })}>⋮</IconButton>
-                )}
+                <IconButton size="small" aria-label={`${t('Channel options')} #${c.name}`} onClick={(e) => setMenu({ anchor: e.currentTarget, channel: c })}>⋮</IconButton>
               </Box>
             ))}
           </Section>
@@ -261,13 +280,17 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
         <IconButton size="small" aria-label={t('New conversation')} onClick={() => { setDialogError(''); setNewDirect(true) }}>+</IconButton>
       }>
         {dms.list.map((d) => (
-          <Box key={d.id} {...dms.itemProps(d.id)}>
-          <NavItem href={`/teams/direct/${d.id}`} selected={view.kind === 'direct' && view.id === d.id} unread={unread[d.id] ?? d.unread}>
-            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-              <AvatarWithPresence userId={d.other_user.id} label={d.other_user.display_name} size={24} src={avatarUrl(d.other_user.id, d.other_user.has_avatar)} />
-              {d.other_user.display_name}
+          <Box key={d.id} {...dms.itemProps(d.id)} sx={{ display: 'flex', alignItems: 'center' }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <NavItem href={`/teams/direct/${d.id}`} selected={view.kind === 'direct' && view.id === d.id} unread={unread[d.id] ?? d.unread}>
+                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+                  <AvatarWithPresence userId={d.other_user.id} label={d.other_user.display_name} size={24} src={avatarUrl(d.other_user.id, d.other_user.has_avatar)} />
+                  {d.other_user.display_name}
+                  {d.muted && <MutedIcon />}
+                </Box>
+              </NavItem>
             </Box>
-          </NavItem>
+            <IconButton size="small" aria-label={`${t('Conversation options')} ${d.other_user.display_name}`} onClick={(e) => setMenu({ anchor: e.currentTarget, direct: d })}>⋮</IconButton>
           </Box>
         ))}
       </Section>
@@ -295,10 +318,16 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
         </DialogActions>
       </Dialog>
       <Menu anchorEl={menu?.anchor} open={!!menu} onClose={() => setMenu(null)}>
-        {menu?.channel ? [
-          <MenuItem key="rename" onClick={() => pick({ kind: 'renameChannel', channel: menu.channel! }, menu.channel!.name)}><T text="Rename channel" /></MenuItem>,
-          <MenuItem key="access" onClick={() => { setAccessFor(menu.channel!); setMenu(null) }}><T text="Manage access" /></MenuItem>,
-          <MenuItem key="delete" onClick={() => pick({ kind: 'deleteChannel', channel: menu.channel! })}><T text="Delete channel" /></MenuItem>,
+        {menu?.direct ? [
+          <MenuItem key="mute" onClick={() => toggleMute(menu.direct!.id, !menu.direct!.muted)}>{menu.direct.muted ? <T text="Unmute notifications" /> : <T text="Mute notifications" />}</MenuItem>,
+          <MenuItem key="delete" onClick={() => pick({ kind: 'deleteDirect', direct: menu.direct! })}><T text="Delete conversation" /></MenuItem>,
+        ] : menu?.channel ? [
+          <MenuItem key="mute" onClick={() => toggleMute(menu.channel!.id, !menu.channel!.muted)}>{menu.channel.muted ? <T text="Unmute notifications" /> : <T text="Mute notifications" />}</MenuItem>,
+          ...(owner ? [
+            <MenuItem key="rename" onClick={() => pick({ kind: 'renameChannel', channel: menu.channel! }, menu.channel!.name)}><T text="Rename channel" /></MenuItem>,
+            <MenuItem key="access" onClick={() => { setAccessFor(menu.channel!); setMenu(null) }}><T text="Manage access" /></MenuItem>,
+            <MenuItem key="delete" onClick={() => pick({ kind: 'deleteChannel', channel: menu.channel! })}><T text="Delete channel" /></MenuItem>,
+          ] : []),
         ] : [
           ...(owner ? [
             <MenuItem key="rename" onClick={() => pick({ kind: 'renameTeam' }, team?.name ?? '')}><T text="Rename team" /></MenuItem>,
@@ -314,7 +343,7 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
           {dialogError && <Alert severity="error" sx={{ mb: 1 }}>{dialogError}</Alert>}
           {renaming
             ? <TextField autoFocus fullWidth label={t('Name')} value={newName} onChange={(e) => setNewName(e.target.value)} sx={{ mt: 1 }} />
-            : <Typography><T text="Are you sure?" /> {action?.kind === 'deleteTeam' || action?.kind === 'deleteChannel' ? t('This cannot be undone.') : ''}</Typography>}
+            : <Typography><T text="Are you sure?" /> {action?.kind === 'deleteDirect' ? t('The history is cleared for you only.') : action?.kind === 'deleteTeam' || action?.kind === 'deleteChannel' ? t('This cannot be undone.') : ''}</Typography>}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAction(null)}><T text="Cancel" /></Button>

@@ -319,7 +319,11 @@ func (h *Handler) ListMessages(c *echo.Context) error {
 	limit = min(limit, 100)
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
-	msgs, err := h.repo.ListMessages(ctx, id.TenantID, ch.ID, before, limit)
+	cleared, err := h.repo.ClearedAt(ctx, id.TenantID, ch.ID, id.UserID)
+	if err != nil {
+		return err
+	}
+	msgs, err := h.repo.ListMessages(ctx, id.TenantID, ch.ID, before, cleared, limit)
 	if err != nil {
 		return err
 	}
@@ -406,6 +410,12 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 		h.deleteObjects(ctx, keys, "failed message insert")
 		return err
 	}
+	if ch.TeamID == nil {
+		// a participant who deleted the conversation gets it back with this message
+		if err := h.repo.ShowDirect(ctx, id.TenantID, ch.ID, audience...); err != nil {
+			return err
+		}
+	}
 	out, err := h.wire(ctx, id.TenantID, id.UserID, []Message{m})
 	if err != nil {
 		return err
@@ -422,7 +432,7 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 			}
 		}
 	}
-	h.notifyMentions(ctx, id, ch, audience, b.Mentions, out[0])
+	h.notifyMessage(ctx, id, ch, audience, b.Mentions, out[0])
 	return c.JSON(http.StatusCreated, out[0])
 }
 
@@ -458,34 +468,87 @@ func (h *Handler) storeFiles(ctx context.Context, tenant uuid.UUID, files []*mul
 	return atts, nil
 }
 
-// notifyMentions notifies each mentioned reader of the channel except the author; failures are only logged.
-func (h *Handler) notifyMentions(ctx context.Context, id auth.Identity, ch Channel, audience, mentions []uuid.UUID, m messageJSON) {
-	if h.notifier == nil || len(mentions) == 0 {
+// notifyMessage notifies every reader of the channel but the author and those
+// who muted it: "mentioned you" for the mentioned ones, a plain new-message
+// notification for the others. Failures are only logged.
+func (h *Handler) notifyMessage(ctx context.Context, id auth.Identity, ch Channel, audience, mentions []uuid.UUID, m messageJSON) {
+	if h.notifier == nil {
+		return
+	}
+	muted, err := h.repo.MutedUsers(ctx, id.TenantID, ch.ID)
+	if err != nil {
+		if common.Logger != nil {
+			common.Logger.Warn("teams: muted users lookup failed", zap.Error(err))
+		}
 		return
 	}
 	link := "/teams/direct/" + ch.ID.String()
+	title := m.AuthorName
 	if ch.TeamID != nil {
 		link = "/teams/" + ch.TeamID.String() + "/channels/" + ch.ID.String()
+		title = m.AuthorName + " in #" + ch.Name
 	}
 	body := []rune(m.Body)
 	if len(body) > 140 {
 		body = body[:140]
 	}
-	readers := map[uuid.UUID]bool{}
-	for _, u := range audience {
-		readers[u] = true
-	}
-	delete(readers, id.UserID)
+	mentioned := map[uuid.UUID]bool{}
 	for _, u := range mentions {
-		if !readers[u] {
+		mentioned[u] = true
+	}
+	seen := map[uuid.UUID]bool{id.UserID: true}
+	for _, u := range audience {
+		if seen[u] || muted[u] {
 			continue
 		}
-		delete(readers, u) // once per user, even if mentioned twice
+		seen[u] = true
+		t := title
+		if mentioned[u] {
+			t = m.AuthorName + " mentioned you"
+		}
 		if _, err := h.notifier.Personal(ctx, id.TenantID, u, notify.Message{Category: "teams",
-			Title: m.AuthorName + " mentioned you", Body: string(body), Link: link}); err != nil && common.Logger != nil {
-			common.Logger.Warn("teams: mention notification failed", zap.String("user", u.String()), zap.Error(err))
+			Title: t, Body: string(body), Link: link}); err != nil && common.Logger != nil {
+			common.Logger.Warn("teams: message notification failed", zap.String("user", u.String()), zap.Error(err))
 		}
 	}
+}
+
+// SetMuted serves PUT /channels/:channel/mute {muted}: the caller's own notification mute, any reader.
+func (h *Handler) SetMuted(c *echo.Context) error {
+	ch, role, _, err := h.paramAccess(c)
+	if role == "" {
+		return err
+	}
+	var b struct {
+		Muted bool `json:"muted"`
+	}
+	if err := c.Bind(&b); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	if err := h.repo.SetMuted(ctx, id.TenantID, ch.ID, id.UserID, b.Muted); err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, map[string]any{"muted": b.Muted})
+}
+
+// HideDirect serves DELETE /direct/:channel: the conversation leaves the caller's
+// list and its history is cleared for them only; a new message brings it back.
+func (h *Handler) HideDirect(c *echo.Context) error {
+	ch, role, _, err := h.paramAccess(c)
+	if role == "" {
+		return err
+	}
+	if ch.TeamID != nil {
+		return notFound(c, "channel")
+	}
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	if err := h.repo.HideDirect(ctx, id.TenantID, ch.ID, id.UserID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 // MarkRead serves POST /channels/:channel/read: any reader, guests included.
@@ -699,6 +762,7 @@ type directJSON struct {
 	OtherUser     directoryJSON `json:"other_user"`
 	Unread        int           `json:"unread"`
 	LastMessageAt *time.Time    `json:"last_message_at"`
+	Muted         bool          `json:"muted"`
 }
 
 func (h *Handler) directEntries(ctx context.Context, id auth.Identity) ([]directJSON, error) {
@@ -727,7 +791,7 @@ func (h *Handler) directEntries(ctx context.Context, id auth.Identity) ([]direct
 			}
 		}
 		u := users[other]
-		out[i] = directJSON{d.Channel.ID, directoryJSON{other, displayName(u), u.Email, hasAvatar(u)}, unread[d.Channel.ID], d.LastMessageAt}
+		out[i] = directJSON{d.Channel.ID, directoryJSON{other, displayName(u), u.Email, hasAvatar(u)}, unread[d.Channel.ID], d.LastMessageAt, d.Muted}
 	}
 	return out, nil
 }

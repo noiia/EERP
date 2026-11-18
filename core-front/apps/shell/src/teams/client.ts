@@ -33,6 +33,8 @@ export interface Channel {
   folder_id?: string | null
   /** Owners-only conversation (an access list was set). */
   private?: boolean
+  /** The caller gets no notification from it. */
+  muted?: boolean
 }
 export interface Group {
   id: string
@@ -48,6 +50,7 @@ export interface DirectChat {
   other_user: DirectoryUser
   unread: number
   last_message_at: string | null
+  muted?: boolean
 }
 /** kind "file" is a team file (/files/:id/download); deleted = gone or in a folder the viewer can't see. */
 export interface Attachment {
@@ -171,6 +174,10 @@ export const listDirect = () => list<DirectChat>('/direct')
 export const orderChannels = (team: string, ids: string[]) => call<void>('PUT', `/${team}/channels/order`, { ids })
 export const orderDirect = (ids: string[]) => call<void>('PUT', '/direct/order', { ids })
 export const openDirect = (userId: string) => call<DirectChat>('POST', '/direct', { user_id: userId })
+/** Hides the conversation and clears its history for the caller only; a new message brings it back. */
+export const deleteDirect = (channel: string) => call<void>('DELETE', `/direct/${channel}`)
+/** The caller's own notification mute, team channel or direct conversation. */
+export const muteChannel = (channel: string, muted: boolean) => call<{ muted: boolean }>('PUT', `/channels/${channel}/mute`, { muted })
 
 // Messages (newest first; `before` is an RFC3339 timestamp)
 export const listMessages = (channel: string, before?: string, limit?: number) =>

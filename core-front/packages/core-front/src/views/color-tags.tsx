@@ -42,15 +42,15 @@ export function ColorDot({ color, className }: { color: string; className?: stri
   )
 }
 
-/** A 1px band along a card's top edge (the card must be position: relative). */
-export function ColorRibbon({ colors }: { colors: string[] | undefined }) {
+/** A band along a card's top edge, 4px by default (the card must be position: relative). */
+export function ColorRibbon({ colors, height = 4 }: { colors: string[] | undefined; height?: number }) {
   if (!colors || colors.length === 0) return null
   return (
     <Box
       data-testid="color-ribbon"
       aria-hidden
       sx={{ position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' }}
-      style={{ height: '4px', background: colorStripes(colors, 'to right') }}
+      style={{ height: `${height}px`, background: colorStripes(colors, 'to right') }}
     />
   )
 }

@@ -11,6 +11,7 @@ import { Handle, Position, useStore, type Node, type NodeProps } from '@xyflow/r
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import { useT } from '../../i18n/translate'
 import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
+import { ColorRibbon } from '../color-tags'
 import { ErrorAlert } from '../error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { fieldWidget } from '../widgets'
@@ -74,6 +75,8 @@ export interface TaskBoxData extends Record<string, unknown> {
   badges?: ReactNode
   footer?: ReactNode
   chevron?: { folded: boolean; onToggle: () => void }
+  /** The record's color groups (ViewModeDefaults.colorTagsField): a solid bar along the top. */
+  colors?: string[]
 }
 
 /** The form's widgets, compact (they have no size prop of their own). The canvas
@@ -106,7 +109,8 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
   if (!detailed) {
     // Same size and handles as the full box: the layout and the arrows don't move.
     return (
-      <Paper variant="outlined" data-testid="task-box-far" onDoubleClick={data.onOpen} sx={{ width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1.5 }}>
+      <Paper variant="outlined" data-testid="task-box-far" onDoubleClick={data.onOpen} sx={{ position: 'relative', width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1.5, pt: data.colors?.length ? 4 : 1.5 }}>
+        <ColorRibbon colors={data.colors} height={20} />
         <Handle type="target" position={targetPosition ?? Position.Top} />
         <Typography sx={FAR_TITLE_SX}>{data.title ?? String(record.name ?? record.title ?? '')}</Typography>
         <Handle type="source" position={sourcePosition ?? Position.Bottom} />
@@ -115,7 +119,8 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
   }
   return (
     // An export grows the box to its content (no scrollbar in the image).
-    <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, ...(exporting ? { minHeight: TASK_BOX_SIZE.h, overflow: 'visible' } : { height: TASK_BOX_SIZE.h, overflow: 'auto' }) }}>
+    <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ position: 'relative', width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, pt: data.colors?.length ? 2.5 : 1, ...(exporting ? { minHeight: TASK_BOX_SIZE.h, overflow: 'visible' } : { height: TASK_BOX_SIZE.h, overflow: 'auto' }) }}>
+      <ColorRibbon colors={data.colors} height={10} />
       <Handle type="target" position={targetPosition ?? Position.Top} />
       <ErrorAlert error={error} />
       {chevron || data.badges ? (

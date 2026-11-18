@@ -324,6 +324,7 @@ type channelJSON struct {
 	Unread   int        `json:"unread"`
 	Private  bool       `json:"private"`
 	FolderID *uuid.UUID `json:"folder_id"`
+	Muted    bool       `json:"muted"`
 }
 
 func toChannelJSON(ch Channel) channelJSON {
@@ -331,7 +332,7 @@ func toChannelJSON(ch Channel) channelJSON {
 	if ch.TeamID != nil {
 		t = *ch.TeamID
 	}
-	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0, ch.Restricted, ch.FolderID}
+	return channelJSON{ch.ID, t, ch.Kind, ch.Name, 0, ch.Restricted, ch.FolderID, false}
 }
 
 func (h *Handler) ListChannels(c *echo.Context) error {
@@ -359,11 +360,16 @@ func (h *Handler) ListChannels(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
+	muted, err := h.repo.MutedChannels(ctx, id.TenantID, id.UserID, ids)
+	if err != nil {
+		return err
+	}
 	out := make([]channelJSON, 0, len(ids))
 	for _, ch := range all {
 		if visible[ch.ID] {
 			j := toChannelJSON(ch)
 			j.Unread = unread[ch.ID]
+			j.Muted = muted[ch.ID]
 			out = append(out, j)
 		}
 	}

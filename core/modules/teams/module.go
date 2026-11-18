@@ -72,6 +72,11 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_message_file ON chat_message_file (message_id, file_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_message_channel_created ON chat_message (channel_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_team_file_team_folder ON team_file (team_id, folder_id)`,
+		`ALTER TABLE chat_channel_member ADD COLUMN IF NOT EXISTS muted boolean`,
+		notNullFalse("chat_channel_member", "muted"),
+		`ALTER TABLE chat_channel_member ADD COLUMN IF NOT EXISTS hidden boolean`,
+		notNullFalse("chat_channel_member", "hidden"),
+		`ALTER TABLE chat_channel_member ADD COLUMN IF NOT EXISTS cleared_at timestamptz`,
 	} {
 		if _, err := db.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("teams: migrate: %w", err)

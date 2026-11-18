@@ -346,3 +346,21 @@ msgstr "Le message n'a pas pu être modifié."
 
 msgid "The message could not be deleted."
 msgstr "Le message n'a pas pu être supprimé."
+
+msgid "Mute notifications"
+msgstr "Désactiver les notifications"
+
+msgid "Unmute notifications"
+msgstr "Réactiver les notifications"
+
+msgid "Muted"
+msgstr "Notifications désactivées"
+
+msgid "Delete conversation"
+msgstr "Supprimer la conversation"
+
+msgid "Conversation options"
+msgstr "Options de la conversation"
+
+msgid "The history is cleared for you only."
+msgstr "L'historique est effacé pour vous uniquement."

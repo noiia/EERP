@@ -55,6 +55,12 @@ type ChannelMember struct {
 	LastReadAt *time.Time `db:"last_read_at"`
 	// Position is the user's own sidebar order of the channel (nil = unordered, last).
 	Position *int `db:"position"`
+	// Muted: the user gets no notification from this channel, mentions included.
+	Muted bool `db:"muted"`
+	// Hidden: a direct conversation the user deleted; it comes back on the next message.
+	Hidden bool `db:"hidden"`
+	// ClearedAt: messages up to it are gone for this user (set when they delete a direct conversation).
+	ClearedAt *time.Time `db:"cleared_at"`
 }
 
 type Message struct {

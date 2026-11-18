@@ -21,6 +21,7 @@ import { DELIVERABLE_BOX_SIZE, type DeliverableBoxData } from './deliverable-box
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { useUndoHistory } from './history'
 import type { Point } from './collide'
+import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
 import { boxFieldOf, LABEL_BOX_SIZE, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
 import { buildWbs, canReparent, wbsColumnDeliverables } from './wbs'
 
@@ -57,6 +58,8 @@ export interface WbsRendererProps<T extends HasId> {
   deliverables?: WbsDeliverablesConfig
   onRecordsChange?: (records: T[]) => void
   serverOptions?: EntityListOptions
+  /** ViewModeDefaults.colorTagsField: each box shows its color groups as a bar along its top. */
+  colorTagsField?: string
 }
 
 export function WbsRenderer<T extends HasId>({
@@ -71,6 +74,7 @@ export function WbsRenderer<T extends HasId>({
   deliverables,
   onRecordsChange,
   serverOptions,
+  colorTagsField,
 }: WbsRendererProps<T>) {
   const t = useT()
   const router = useRouter()
@@ -79,6 +83,7 @@ export function WbsRenderer<T extends HasId>({
   const canWrite = usePermission(`${entity}:${entity}:write`)
   const loaded = useDiagramRecords(entity, serverOptions, initialData)
   const [rows, setRows] = useState(loaded.records)
+  const { colors } = useRecordColors(entity, colorTagsFieldOf(descriptor, colorTagsField), rows.map((r) => r.id))
   const [seen, setSeen] = useState(loaded.records)
   if (seen !== loaded.records) {
     setSeen(loaded.records)
@@ -240,6 +245,7 @@ export function WbsRenderer<T extends HasId>({
       },
       chevron: chevron(id),
       footer: footer(id),
+      colors: colors.get(id),
     }
     return { id, position: { x: 0, y: 0 }, data }
   })

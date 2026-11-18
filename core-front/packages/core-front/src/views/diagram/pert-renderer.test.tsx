@@ -72,7 +72,7 @@ const diamondLinks = (): Link[] => [
   { id: 'l4', depends_on_id: 'C', task_id: 'D' },
 ]
 
-function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrite?: boolean; create?: RelationOps['create']; update?: EntityActions<Task>['update']; listPage?: RelationOps['listPage']; serverOptions?: object } = {}) {
+function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrite?: boolean; create?: RelationOps['create']; update?: EntityActions<Task>['update']; listPage?: RelationOps['listPage']; serverOptions?: object; list?: RelationOps['list']; colorTagsField?: string; descriptor?: ViewDescriptor } = {}) {
   const { tasks = diamond(), links = diamondLinks(), write = true, linkWrite = write } = opts
   useSessionStore.setState({
     identity: {
@@ -83,7 +83,7 @@ function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrit
     },
   } as never)
   const ops: RelationOps = {
-    list: vi.fn(async () => []),
+    list: opts.list ?? vi.fn(async () => []),
     get: vi.fn(),
     create: opts.create ?? vi.fn(async (_e: string, body: Record<string, unknown>) => ({ id: 'new', ...body })),
     remove: vi.fn(async () => {}),
@@ -102,7 +102,8 @@ function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrit
   render(
     <RelationOpsProvider ops={ops}>
       <PertRenderer
-        descriptor={descriptor}
+        descriptor={opts.descriptor ?? descriptor}
+        colorTagsField={opts.colorTagsField}
         initialData={tasks}
         actions={actions}
         dependencies={dep}
@@ -126,6 +127,28 @@ afterEach(() => {
 })
 
 describe('PertRenderer', () => {
+  it('draws each task\'s color groups as a solid bar on its box', async () => {
+    rf.zoom = 1
+    const colorsField = {
+      name: 'color_groups', label: 'Color groups', type: 'relation' as const, widget: 'colortags',
+      relation: { entity: 'color', kind: 'many2many' as const, via: 'rec_color', viaFields: { own: 'rec_id', related: 'color_id' }, labelField: 'name' },
+    }
+    setup({
+      descriptor: { ...descriptor, fields: [...descriptor.fields, colorsField] },
+      colorTagsField: 'color_groups',
+      list: vi.fn(async (entity: string) =>
+        entity === 'rec_color'
+          ? [{ id: 'j1', rec_id: 'A', color_id: 'c1' }, { id: 'j2', rec_id: 'A', color_id: 'c2' }, { id: 'j3', rec_id: 'B', color_id: 'c1' }]
+          : [{ id: 'c1', color: '#ff0000' }, { id: 'c2', color: '#00ff00' }],
+      ) as unknown as RelationOps['list'],
+    })
+    const bar = (id: string) => screen.getByTestId(`node-${id}`).querySelector<HTMLElement>('[data-testid="color-ribbon"]')
+    await waitFor(() => expect(bar('B')?.style.background).toBe('rgb(255, 0, 0)'))
+    expect(bar('A')!.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0%, rgb(255, 0, 0) 50%, rgb(0, 255, 0) 50%, rgb(0, 255, 0) 100%)')
+    expect(bar('A')!.style.height).toBe('10px')
+    expect(bar('D')).toBeNull()
+  })
+
   it('zoomed out, boxes show only their title', async () => {
     rf.zoom = 0.3
     try {
