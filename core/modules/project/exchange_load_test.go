@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"slices"
@@ -640,5 +641,154 @@ func TestPlanHash_HostileFloat(t *testing.T) {
 	}
 	if planHash(nan) == planHash(zero) || planHash(inf) == planHash(zero) || planHash(nan) == planHash(inf) {
 		t.Error("a NaN or an infinity hashed as 0 planned hours, want the value kept apart")
+	}
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+
+// exExport reads the project as the plan to write out, the way the export route does.
+func exExport(t *testing.T, f *fixture, pid uuid.UUID) Plan {
+	t.Helper()
+	p, err := exportPlan(context.Background(), f.app.DB, f.tenant, pid)
+	if err != nil {
+		t.Fatalf("exportPlan: %v", err)
+	}
+	return p
+}
+
+// exUsers is the map the diff resolves a file's assignees against: lower(email) to
+// id, for the tenant's live staff. The route builds it with this query, so a test
+// that invented its own could pass while the route missed a person.
+func exUsers(t *testing.T, f *fixture) map[string]uuid.UUID {
+	t.Helper()
+	rows, err := f.app.DB.Query(context.Background(), `
+		SELECT lower(email), id FROM users
+		WHERE tenant_id = $1 AND deleted_at IS NULL AND kind <> 'website'`, f.tenant)
+	if err != nil {
+		t.Fatalf("users: %v", err)
+	}
+	defer rows.Close()
+	out := map[string]uuid.UUID{}
+	for rows.Next() {
+		var email string
+		var id uuid.UUID
+		if err := rows.Scan(&email, &id); err != nil {
+			t.Fatalf("users scan: %v", err)
+		}
+		out[email] = id
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("users: %v", err)
+	}
+	return out
+}
+
+// TestExport_ReimportIsEmpty is Goal 5: what EERP writes must come back as nothing
+// to do. A manager exports, changes their mind and re-imports the same file, so the
+// wizard must show an empty list rather than a rewrite of the project. Every shape
+// the loader and the encoder could disagree about shows up here, which is why the
+// fixture holds the awkward ones: a deadline that lands on a Saturday (a duration
+// the two calendars must agree on), a task nobody ever dated, a milestone a task
+// links to, a dependency, and a person on a task.
+func TestExport_ReimportIsEmpty(t *testing.T) {
+	f := newFixture(t)
+	mgr := uuid.New()
+	p := f.project(mgr, "everyone")
+	// A name with the characters XML likes to eat, so a round trip that loses the
+	// label is caught here rather than by a partner's complaint.
+	const label = `Bridge & Road <phase "1">`
+	f.exec(`UPDATE project SET name = $2, date_start = $3 WHERE id = $1`, p, label, exDate("2026-03-02"))
+
+	phase := f.task(p, nil, nil)
+	exTaskName(f, phase, "Phase 1")
+	design := f.task(p, &phase, nil)
+	exTaskName(f, design, "Design")
+	// Monday to Saturday: five working days, and the file must say the same.
+	exTaskDates(f, design, "2026-03-02", "2026-03-07")
+	f.exec(`UPDATE project_task SET planned_hours = 8.25 WHERE id = $1`, design)
+	build := f.task(p, &phase, nil)
+	exTaskName(f, build, "Build")
+	exTaskDates(f, build, "2026-03-02", "2026-03-04")
+	f.exec(`UPDATE project_task SET closed = true WHERE id = $1`, build)
+
+	// Nobody ever gave it a day: the loader holds it at a placeholder, and the file
+	// must not turn that placeholder into a decision.
+	someday := f.task(p, nil, nil)
+	exTaskName(f, someday, "Someday")
+
+	gate := f.milestone(p)
+	exMilestoneName(f, gate, "Delivery")
+	exMilestoneDeadline(f, gate, "2026-03-06")
+	linked := f.task(p, nil, &gate)
+	exTaskName(f, linked, "Inspect")
+	exTaskDates(f, linked, "2026-03-04", "2026-03-05")
+
+	f.dependency(p, build, design)
+
+	// Mixed case in the address: a file writes what a person typed, and the diff
+	// matches people on the lowercased form.
+	ann := exStaff(f, "Ann.X@Example.com", "Ann", "Ann", "Lee")
+	f.member(p, ann)
+	f.assign(p, design, ann)
+
+	exported := exExport(t, f, p)
+	if exported.Name != label {
+		t.Errorf("name = %q, want the project's %q: the wizard titles its preview with it", exported.Name, label)
+	}
+	if exported.Weekend != DefaultWeekend {
+		t.Errorf("weekend = %+v, want the calendar EERP schedules on", exported.Weekend)
+	}
+	if len(exported.Tasks) != 6 {
+		t.Errorf("%d rows, want the five tasks and the milestone: %v", len(exported.Tasks), exKeys(exported))
+	}
+
+	// What the round trip is meant to prove is actually in the plan, so an empty
+	// diff below cannot come from a fixture that quietly built nothing.
+	phaseKey, designKey, buildKey := phase.String(), design.String(), build.String()
+	somedayKey, linkedKey, gateKey := someday.String(), linked.String(), "milestone:"+gate.String()
+	if designRow := exPlanTask(t, exported, designKey); designRow.Duration != 5 {
+		t.Errorf("Design duration = %d, want 5: Monday to a Saturday deadline is five working days", designRow.Duration)
+	}
+	if !exPlanTask(t, exported, phaseKey).HasChildren {
+		t.Error("Phase 1 is not a summary, want the encoder to write it as one")
+	}
+	if !exPlanTask(t, exported, somedayKey).Undated {
+		t.Error("Someday is not undated, want the placeholder row the file must not turn into a change")
+	}
+	if !exHasDep(exported, PlanDep{Pred: designKey, Succ: buildKey}) {
+		t.Errorf("no Build-after-Design dependency in %+v", exported.Deps)
+	}
+	if !exHasDep(exported, PlanDep{Pred: linkedKey, Succ: gateKey}) {
+		t.Errorf("no deliverable link for Inspect in %+v", exported.Deps)
+	}
+	if len(exported.Assignments) != 1 || exported.Assignments[0].Task != designKey ||
+		!strings.EqualFold(exported.Assignments[0].Email, "ann.x@example.com") {
+		t.Errorf("assignments = %+v, want Ann on Design", exported.Assignments)
+	}
+
+	var buf bytes.Buffer
+	if err := (ganFormat{}).Encode(&buf, exported); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	file, warnings, err := (ganFormat{}).Decode(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode(Encode(exportPlan)): %v\n%s", err, buf.String())
+	}
+	if len(warnings) != 0 {
+		t.Errorf("Decode(Encode(exportPlan)) warnings = %+v, want none: EERP wrote every byte of this file", warnings)
+	}
+	if file.Name != label {
+		t.Errorf("file name = %q, want %q: the label has to survive the escaping", file.Name, label)
+	}
+
+	changes, diffWarnings := diffPlans(exLoad(t, f, p, file.Weekend), file, exUsers(t, f))
+	if len(changes) != 0 {
+		t.Errorf("re-importing what EERP wrote is not empty: %s", strings.Join(dfxKeys(changes), " "))
+		for _, row := range changes {
+			t.Errorf("  %s: kind=%s field=%s before=%v after=%v", row.Key, row.Kind, row.Field, row.Before, row.After)
+		}
+	}
+	if len(diffWarnings) != 0 {
+		t.Errorf("re-importing what EERP wrote warned: %+v", diffWarnings)
 	}
 }

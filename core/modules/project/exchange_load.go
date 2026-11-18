@@ -77,6 +77,32 @@ func loadPlan(ctx context.Context, ex orm.Executor, tenant, pid uuid.UUID, w Wee
 	return p, nil
 }
 
+// exportPlan reads tenant's project pid as the plan to write out: the project's own
+// label, on the calendar EERP schedules on.
+//
+// The two differ from a preview's plan on purpose. A preview asks what the file
+// would change, so it reads the project through the file's calendar and keeps the
+// label out of the comparison; an export writes the file, so it declares EERP's own
+// week (what a partner sees as the default week is what the schedule was computed
+// with) and names the project, which is how a manager finds their own file again in
+// a downloads folder. A file re-imported straight from here has nothing to do (see
+// TestExport_ReimportIsEmpty): the label is the only thing this adds to the plan the
+// diff compares, and the diff does not compare it.
+func exportPlan(ctx context.Context, ex orm.Executor, tenant, pid uuid.UUID) (Plan, error) {
+	p, err := loadPlan(ctx, ex, tenant, pid, DefaultWeekend)
+	if err != nil {
+		return Plan{}, err
+	}
+	// loadPlan has just read this project's row, so the row exists and the read
+	// cannot miss; it stays a separate query because the preview side has no use
+	// for the label and must not hash it.
+	if err := ex.QueryRow(ctx, `SELECT name FROM project
+		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, pid, tenant).Scan(&p.Name); err != nil {
+		return Plan{}, err
+	}
+	return p, nil
+}
+
 // ── The rows ─────────────────────────────────────────────────────────────────
 
 // planTaskRow is one live project_task read for the plan, with the columns the
