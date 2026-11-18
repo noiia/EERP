@@ -316,6 +316,95 @@ func TestLoadPlan_HasChildrenIsLiveSubtasks(t *testing.T) {
 	}
 }
 
+// TestLoadPlan_DeletedParentLeavesChildAtTopLevel: deleting a task cascades nothing
+// (taskRules returns nil on opDelete), so a live task routinely outlives its parent
+// by its parent_id. Such a Parent names a row the plan does not hold, and the file
+// cannot carry that: the encoder writes the child at the top level (an unknown parent
+// key is no parent) and the decoder reads it back with none, so a plan holding the
+// dead uuid would report a ticked "move to the top level" on every preview of the
+// file, and one click would quietly move the task there. That breaks what the plan's
+// Review Focus 2 demands, that the values the loader writes re-encode to a preview
+// with nothing to do.
+func TestLoadPlan_DeletedParentLeavesChildAtTopLevel(t *testing.T) {
+	f := newFixture(t)
+	mgr := uuid.New()
+	p := f.project(mgr, "everyone")
+	f.exec(`UPDATE project SET date_start = $2 WHERE id = $1`, p, exDate("2026-03-02"))
+
+	phase := f.task(p, nil, nil)
+	exTaskName(f, phase, "Phase 1")
+	design := f.task(p, &phase, nil)
+	exTaskName(f, design, "Design")
+	exTaskDates(f, design, "2026-03-02", "2026-03-04")
+	build := f.task(p, nil, nil)
+	exTaskName(f, build, "Build")
+	exTaskDates(f, build, "2026-03-05", "2026-03-06")
+
+	before := exPlanTask(t, exLoad(t, f, p, DefaultWeekend), design.String())
+	if before.Parent != phase.String() {
+		t.Fatalf("Design Parent = %q, want %q: the fixture's shape before the deletion", before.Parent, phase)
+	}
+
+	f.exec(`UPDATE project_task SET deleted_at = now() WHERE id = $1`, phase)
+
+	// The database still names the deleted parent: clearing the key is the loader's
+	// doing, not the row's.
+	var stillParented *uuid.UUID
+	if err := f.app.DB.QueryRow(context.Background(),
+		`SELECT parent_id FROM project_task WHERE id = $1`, design).Scan(&stillParented); err != nil {
+		t.Fatal(err)
+	}
+	if stillParented == nil || *stillParented != phase {
+		t.Fatalf("Design parent_id = %v, want %s: the deletion cascades nothing, which is the case here", stillParented, phase)
+	}
+
+	plan := exLoad(t, f, p, DefaultWeekend)
+	if slices.Contains(exKeys(plan), phase.String()) {
+		t.Errorf("the plan still holds the deleted parent %s", phase)
+	}
+	got := exPlanTask(t, plan, design.String())
+	if got.Parent != "" {
+		t.Errorf("Design Parent = %q, want the top level: %s is deleted and no row of the plan answers to it", got.Parent, phase)
+	}
+	if got.Name != "Design" || got.Duration != 3 || got.Undated {
+		t.Errorf("Design = %+v, want the row itself intact apart from its parent", got)
+	}
+	// The orphan keeps its place among the rows the plan holds: it is the file's
+	// order, not the deleted parent's position, that the loader owes the diff.
+	if want := []string{design.String(), build.String()}; !slices.Equal(exKeys(plan), want) {
+		t.Errorf("task order = %v, want %v", exKeys(plan), want)
+	}
+
+	// The re-import leg of the same promise: the file EERP writes for this state
+	// comes back as nothing to do (see TestExport_ReimportIsEmpty for the shape of
+	// the assertion).
+	exported := exExport(t, f, p)
+	if row := exPlanTask(t, exported, design.String()); row.Parent != "" {
+		t.Errorf("the exported Design Parent = %q, want the top level", row.Parent)
+	}
+	var buf bytes.Buffer
+	if err := (ganFormat{}).Encode(&buf, exported); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	file, warnings, err := (ganFormat{}).Decode(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode(Encode(exportPlan)): %v\n%s", err, buf.String())
+	}
+	if len(warnings) != 0 {
+		t.Errorf("Decode(Encode(exportPlan)) warnings = %+v, want none", warnings)
+	}
+	changes, diffWarnings := diffPlans(exLoad(t, f, p, file.Weekend), file, exUsers(t, f))
+	if len(changes) != 0 {
+		t.Errorf("re-importing what EERP wrote is not empty: %s", strings.Join(dfxKeys(changes), " "))
+		for _, row := range changes {
+			t.Errorf("  %s: kind=%s field=%s before=%v after=%v", row.Key, row.Kind, row.Field, row.Before, row.After)
+		}
+	}
+	if len(diffWarnings) != 0 {
+		t.Errorf("re-importing what EERP wrote warned: %+v", diffWarnings)
+	}
+}
+
 // An assignee whose user row is gone is not an assignment: the file cannot name a
 // person EERP has no email for. A website visitor is not an assignee either, the
 // same staff-only rule the import's users map applies.

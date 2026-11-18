@@ -215,6 +215,12 @@ type diff struct {
 	// may never land on one current row: they would overwrite each other on apply,
 	// and one of them would vanish.
 	consumed []bool
+	// curToFile[c] is the file position of the file row that took current row c.
+	// It is only meaningful where consumed[c] is true. Anchors are file positions,
+	// so a row placed beside a current neighbour must be translated through this
+	// rather than handed the neighbour's current index: the two spaces only agree
+	// while the file keeps the project's order above that row.
+	curToFile []int
 
 	fileRows     []fileRow
 	fileRowByKey map[string]int // as the file writes a key, to the row carrying it
@@ -280,6 +286,7 @@ func (d *diff) match() {
 		}
 	}
 	d.consumed = make([]bool, len(d.cur.Tasks))
+	d.curToFile = make([]int, len(d.cur.Tasks))
 	d.fileRows = make([]fileRow, len(d.file.Tasks))
 	d.fileRowByKey = make(map[string]int, len(d.file.Tasks))
 	d.fileIdxByKey = make(map[string]int, len(d.file.Tasks))
@@ -289,6 +296,9 @@ func (d *diff) match() {
 	for i := range d.file.Tasks {
 		row := d.accept(i, taken)
 		d.fileRows[i] = row
+		if row.matched {
+			d.curToFile[row.cur] = i
+		}
 		if _, dup := d.fileRowByKey[d.file.Tasks[i].Key()]; !dup {
 			d.fileRowByKey[d.file.Tasks[i].Key()] = i
 		}
@@ -591,10 +601,17 @@ func (d *diff) deleteRow(c int) {
 
 // deleteAnchor is where a removal sits: beside the current neighbour the file still
 // holds, which is where the task used to be, or at the top of the list.
+//
+// The neighbour is found in the current order and handed back as a *file* position,
+// because anchors are file positions (see finish): the two spaces only agree while
+// the file keeps the project's order above the lost row, and a create or a move
+// inserted above it is exactly when they do not. With cur [A, B, X] and the file
+// [new, A, B], X's removal sits after B's group, the neighbour it used to follow,
+// not inside A's.
 func (d *diff) deleteAnchor(c int) int {
 	for j := c - 1; j >= 0; j-- {
 		if d.consumed[j] {
-			return j
+			return d.curToFile[j]
 		}
 	}
 	return -1
@@ -917,6 +934,17 @@ func (d *diff) depRows() {
 	d.linkRows()
 }
 
+// dependencyRows reports the links EERP does not have and the ones it has and the
+// file no longer names.
+//
+// A removal of a dependency is a row of its own even when one of its ends is being
+// deleted too. Nothing subsumes it: the two rows are two decisions, and the manager
+// who unticks the task's removal to keep it must still be given the removed link to
+// tick, or the file's divergence from the project is inexpressible. What the spec's
+// "Selection consistency" section does require is that a row on a *new* task has its
+// create ticked, and that a summary is not deleted while its subtasks stay; neither
+// is a licence to drop a row. A removal is unticked, so the cost of always showing
+// one is a row nobody selected.
 func (d *diff) dependencyRows() {
 	for _, k := range d.depsFile.order {
 		if d.depsCur.deps[k] {
@@ -933,7 +961,7 @@ func (d *diff) dependencyRows() {
 		})
 	}
 	for _, k := range d.depsCur.order {
-		if d.depsFile.deps[k] || d.endsGone(k) {
+		if d.depsFile.deps[k] {
 			continue
 		}
 		d.add(d.anchorOf(k.pred), phaseDelete, Change{
@@ -947,9 +975,12 @@ func (d *diff) dependencyRows() {
 	}
 }
 
-// linkRows reports a task's deliverable changing, including being cleared. A new
-// task carries its own inside its create, and a task the file dropped loses it with
-// the task.
+// linkRows reports a task's deliverable changing, including being cleared.
+//
+// Only a row the file added carries its deliverable inside its create instead,
+// because there is no task yet to update. A task the file lost gets its clearing row
+// like any other: the removal of the task is a separate decision, and unticking it
+// has to leave a row to tick for the link (see dependencyRows).
 func (d *diff) linkRows() {
 	done := map[string]bool{}
 	for _, pred := range d.depsFile.linkOrder {
@@ -968,16 +999,21 @@ func (d *diff) linkRow(pred string) {
 	if want == have {
 		return
 	}
-	i, ok := d.fileIdxByKey[pred]
-	if !ok || !d.fileRows[i].matched {
+	// The row must be about a task EERP holds. One the file added has its create
+	// instead (see createRow); one the file lost is still a task of the project, and
+	// its cleared deliverable is a decision of its own.
+	if i, ok := d.fileIdxByKey[pred]; ok && !d.fileRows[i].matched {
 		return
 	}
-	c := d.fileRows[i].cur
+	c, ok := d.curByKey[pred]
+	if !ok {
+		return
+	}
 	var requires []string
 	if d.needsCreate(want) {
 		requires = append(requires, want)
 	}
-	d.add(i, phaseDep, Change{
+	d.add(d.anchorOf(pred), phaseDep, Change{
 		Key:             changeKey(pred, fieldMilestoneID),
 		Kind:            kindUpdate,
 		Task:            d.cur.Tasks[c].Name,
@@ -988,18 +1024,6 @@ func (d *diff) linkRow(pred string) {
 		DefaultSelected: want != "",
 		Requires:        requires,
 	})
-}
-
-// endsGone reports a dependency whose own ends are going away: removing a task
-// takes its dependencies and its assignments with it, so the wizard does not ask
-// twice about the same loss.
-func (d *diff) endsGone(k depKey) bool {
-	for _, key := range []string{k.pred, k.succ} {
-		if _, ok := d.fileIdxByKey[key]; !ok {
-			return true
-		}
-	}
-	return false
 }
 
 func (d *diff) depValueOf(k depKey) depValue {
@@ -1075,10 +1099,16 @@ func (d *diff) assignAdded(cur map[string]map[string]PlanAssign) {
 
 // assignRemoved reports a person EERP holds that the file no longer names. Taking a
 // colleague off a task loses their work on it, so the row arrives unticked.
+//
+// Like a removed dependency, the row is never subsumed by the removal of its task
+// (see dependencyRows): keep the task, and the assignment still has to be ticked off
+// somewhere. The row is about a task of the current plan, which is what keeps a key
+// the plan does not hold (a hand built plan's oddity, a milestone) out of the list:
+// EERP assigns people to tasks.
 func (d *diff) assignRemoved(file map[string]map[string]PlanAssign) {
 	for _, a := range d.cur.Assignments {
 		key, email := a.Task, strings.ToLower(strings.TrimSpace(a.Email))
-		if _, held := d.fileIdxByKey[key]; !held || namesMilestone(key) {
+		if _, held := d.curByKey[key]; !held || namesMilestone(key) {
 			continue
 		}
 		if _, had := file[key][email]; had {
@@ -1117,12 +1147,12 @@ func assignIndex(assigns []PlanAssign, translate func(string) (string, bool)) ma
 
 // ── Where a row sits, and what it is about ───────────────────────────────────
 
-// anchorOf is the file position a row about one key belongs at. Every row built
-// through it is about a row the file holds: a dependency or assignment whose end
-// the file lost is dropped as a duplicate of that row's removal, and a removal of a
-// task places itself with deleteAnchor where it is built. A key the file does not
-// have sits at the top of the list rather than at some current index the wizard
-// cannot read.
+// anchorOf is the file position a row about one key belongs at. A row about a row
+// the file holds sits inside that row's group. A row about a row the file lost (the
+// dependency, assignment or deliverable of a task that is itself being removed) has
+// no group of its own to sit in, and goes to the top of the list with the other
+// removals rather than at some current index the wizard cannot read; a removal of a
+// task places itself beside its former neighbour with deleteAnchor, where it is built.
 func (d *diff) anchorOf(key string) int {
 	if i, ok := d.fileIdxByKey[key]; ok {
 		return i

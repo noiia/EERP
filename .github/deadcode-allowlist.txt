@@ -52,7 +52,6 @@ core/modules/project.diff.depRows
 core/modules/project.diff.depValueOf
 core/modules/project.diff.dependencyRows
 core/modules/project.diff.endRequires
-core/modules/project.diff.endsGone
 core/modules/project.diff.fileLabel
 core/modules/project.diff.fileParent
 core/modules/project.diff.fileWarn
@@ -85,6 +84,7 @@ core/modules/project.endAfter
 core/modules/project.exportPlan
 core/modules/project.fileKey
 core/modules/project.formatByKey
+core/modules/project.liveTaskKeys
 core/modules/project.loadPlan
 core/modules/project.longestIncreasing
 core/modules/project.milestoneKeys

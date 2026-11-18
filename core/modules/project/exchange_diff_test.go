@@ -400,6 +400,9 @@ func TestDiff_ForeignIdsAreCreates(t *testing.T) {
 
 	changes, warnings := diffPlans(cur, file, nil)
 	dfxWantKeys(t, changes,
+		// Draft produced Deliverable; the foreign file names no such link, and
+		// that removal is a row of its own, unticked like every other removal.
+		"task:"+kB+":milestone_id",
 		"task:"+kA+":delete",
 		"task:"+kB+":delete",
 		"milestone:"+dfxKey(dfxGate)+":delete",
@@ -429,8 +432,12 @@ func TestDiff_ForeignIdsAreCreates(t *testing.T) {
 	if got := draft.Requires; len(got) != 1 || got[0] != "new:1" {
 		t.Errorf("requires = %v, want [new:1]", got)
 	}
-	// Nothing the file holds is ticked for removal.
-	for _, key := range []string{"task:" + kA + ":delete", "task:" + kB + ":delete", "milestone:" + dfxKey(dfxGate) + ":delete"} {
+	// Nothing is ticked for removal, the deliverable the foreign file does not
+	// name included: a file from another project touches nothing here.
+	for _, key := range []string{
+		"task:" + kA + ":delete", "task:" + kB + ":delete",
+		"milestone:" + dfxKey(dfxGate) + ":delete", "task:" + kB + ":milestone_id",
+	} {
 		if row := dfxRow(t, changes, key); row.DefaultSelected {
 			t.Errorf("row %s is ticked, want unticked", key)
 		}
@@ -1312,6 +1319,11 @@ func TestDiff_NameTruncated(t *testing.T) {
 
 // TestDiff_DeleteRowsFollowFormerNeighbours: a removal is shown where the task
 // used to sit, so the list still reads like the project.
+//
+// The neighbour is found in the project's order and written as a *file* position.
+// The two orders only agree while the file keeps the project's order above the lost
+// row, so the cases that matter are the ones where it does not: a create or a move
+// inserted above the lost row shifts the file's indices and not the project's.
 func TestDiff_DeleteRowsFollowFormerNeighbours(t *testing.T) {
 	kA, kB, kDrop := dfxKey(dfxA), dfxKey(dfxB), dfxKey(dfxDrop)
 	cur := dfxPlan([]PlanTask{
@@ -1337,6 +1349,60 @@ func TestDiff_DeleteRowsFollowFormerNeighbours(t *testing.T) {
 	file = dfxPlan([]PlanTask{dfxTask(kA, "", "Design v2", dfxMon, 1)}, nil)
 	changes, _ = diffPlans(cur, file, nil)
 	dfxWantKeys(t, changes, "task:"+kDrop+":delete", "task:"+kA+":name")
+
+	// A create inserted above the lost row. Scratch used to sit right after Build,
+	// so its removal reads after Build's group; reading the neighbour's current
+	// index instead of its file position would drop it inside Design's group, above
+	// the neighbour it follows.
+	cur = dfxPlan([]PlanTask{
+		dfxTask(kA, "", "Design", dfxMon, 1),
+		dfxTask(kB, "", "Build", dfxTue, 1),
+		dfxTask(kDrop, "", "Scratch", dfxWed, 1),
+	}, nil)
+	t.Run("a create inserted above a lost row", func(t *testing.T) {
+		file := dfxPlan([]PlanTask{
+			dfxNew("9", "", "Kickoff", dfxMon, 1),
+			dfxTask(kA, "", "Design v2", dfxMon, 1),
+			dfxTask(kB, "", "Build v2", dfxTue, 1),
+		}, nil)
+		changes, warnings := diffPlans(cur, file, nil)
+		if len(warnings) != 0 {
+			t.Fatalf("warnings = %+v, want none", warnings)
+		}
+		if got := dfxCount(changes, "move"); got != 0 {
+			t.Errorf("%d move rows, want none: an insert above is not a move of what is below it", got)
+		}
+		dfxWantKeys(t, changes,
+			"new:9",
+			"task:"+kA+":name",
+			"task:"+kB+":name",
+			"task:"+kDrop+":delete",
+		)
+	})
+
+	// The same with a move above it rather than a create. The file puts Build before
+	// Design, which moves Build (Design is the sibling the longest run keeps), and
+	// Build is also Scratch's former neighbour: the removal follows the neighbour's
+	// group where the file now puts it, the first one, not the group the project
+	// numbered above it.
+	t.Run("a move above a lost row", func(t *testing.T) {
+		file := dfxPlan([]PlanTask{
+			dfxTask(kB, "", "Build", dfxTue, 1),
+			dfxTask(kA, "", "Design v2", dfxMon, 1),
+		}, nil)
+		changes, warnings := diffPlans(cur, file, nil)
+		if len(warnings) != 0 {
+			t.Fatalf("warnings = %+v, want none", warnings)
+		}
+		if got := dfxCount(changes, "move"); got != 1 {
+			t.Errorf("%d move rows, want the one swap to cost one", got)
+		}
+		dfxWantKeys(t, changes,
+			"task:"+kB+":move",
+			"task:"+kDrop+":delete",
+			"task:"+kA+":name",
+		)
+	})
 }
 
 // TestDiff_RowOrder is the wizard's reading order: the file's task order, and
@@ -1413,21 +1479,113 @@ func TestDiff_WbsFromTheCurrentTree(t *testing.T) {
 	}
 }
 
-// TestDiff_DeletionOfATaskSubsumesItsRows: a removal already takes the task's
-// dependencies and assignments with it, so the wizard does not ask twice.
-func TestDiff_DeletionOfATaskSubsumesItsRows(t *testing.T) {
-	kA, kB := dfxKey(dfxA), dfxKey(dfxB)
-	cur := dfxPlan([]PlanTask{
-		dfxTask(kA, "", "Design", dfxMon, 1),
-		dfxTask(kB, "", "Build", dfxTue, 1),
-	}, []PlanDep{{Pred: kA, Succ: kB}},
-		PlanAssign{Task: kA, Email: "ann@x.com", Name: "Ann"})
-	file := dfxPlan([]PlanTask{dfxTask(kB, "", "Build", dfxTue, 1)}, nil)
-	changes, warnings := diffPlans(cur, file, dfxUsers())
-	dfxWantKeys(t, changes, "task:"+kA+":delete")
-	if len(warnings) != 0 {
-		t.Errorf("warnings = %+v, want none", warnings)
-	}
+// TestDiff_DeletionOfATaskNeverSubsumesItsRows: a removal is never shown twice, but
+// it is never made unsayable either. The loss of a task is one decision; the loss of
+// one of its dependencies, of a person on it, or of its deliverable is another.
+//
+// The case the rows exist for: the file drops both task X and the link A to X, and
+// the manager unticks X's removal to keep X. Without a row of its own for the link,
+// the file's divergence from the project has nothing to tick, and the manager cannot
+// import what they meant. Every such row arrives unticked, so the cost of always
+// writing one is a row nobody selected. The brief asks for each of them
+// unconditionally ("removed -> dependency_delete (unticked)", "Removed ->
+// assign_delete (unticked)", "A removed milestone link -> a milestone_id update to
+// null (unticked)"); the spec's "Selection consistency" section binds only a row on
+// a new task needing its create and a summary not deleted while its subtasks stay.
+func TestDiff_DeletionOfATaskNeverSubsumesItsRows(t *testing.T) {
+	kA, kB, kG := dfxKey(dfxA), dfxKey(dfxB), dfxGateKey(dfxGate)
+
+	t.Run("the dependency and the assignee of a task the file dropped", func(t *testing.T) {
+		cur := dfxPlan([]PlanTask{
+			dfxTask(kA, "", "Design", dfxMon, 1),
+			dfxTask(kB, "", "Build", dfxTue, 1),
+		}, []PlanDep{{Pred: kA, Succ: kB}},
+			PlanAssign{Task: kA, Email: "ann@x.com", Name: "Ann"})
+		file := dfxPlan([]PlanTask{dfxTask(kB, "", "Build", dfxTue, 1)}, nil)
+		changes, warnings := diffPlans(cur, file, dfxUsers())
+		// The task's own removal first: nothing is ticked, so the default still
+		// keeps the task, its link and its person, and each loss is ticked on its own.
+		dfxWantKeys(t, changes,
+			"task:"+kA+":delete",
+			"dep:"+kA+":"+kB+":delete",
+			"assign:"+kA+":ann@x.com:delete",
+		)
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+		for _, key := range dfxKeys(changes) {
+			if row := dfxRow(t, changes, key); row.DefaultSelected {
+				t.Errorf("row %s is ticked, want unticked: every one of these destroys data", key)
+			}
+		}
+		// The rows still name both ends, so the wizard can label them without the
+		// task they belong to being there to look up.
+		if got, want := dfxJSON(t, dfxRow(t, changes, "dep:"+kA+":"+kB+":delete").Before),
+			`{"pred":"`+kA+`","pred_name":"Design","succ":"`+kB+`","succ_name":"Build"}`; got != want {
+			t.Errorf("before = %s, want %s", got, want)
+		}
+		if got, want := dfxJSON(t, dfxRow(t, changes, "assign:"+kA+":ann@x.com:delete").Before),
+			`{"task":"`+kA+`","email":"ann@x.com","name":"Ann"}`; got != want {
+			t.Errorf("before = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("the deliverable of a task the file dropped", func(t *testing.T) {
+		cur := dfxPlan([]PlanTask{
+			dfxTask(kA, "", "Design", dfxMon, 1),
+			dfxMilestone(kG, "Deliverable", dfxFri),
+		}, []PlanDep{{Pred: kA, Succ: kG}})
+		file := dfxPlan([]PlanTask{dfxMilestone(kG, "Deliverable", dfxFri)}, nil)
+		changes, warnings := diffPlans(cur, file, nil)
+		dfxWantKeys(t, changes,
+			"task:"+kA+":milestone_id",
+			"task:"+kA+":delete",
+		)
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+		row := dfxRow(t, changes, "task:"+kA+":milestone_id")
+		if row.DefaultSelected {
+			t.Error("a cleared deliverable is ticked, want unticked like any other removal")
+		}
+		if got, want := dfxJSON(t, row.Before), `{"id":"`+kG+`","name":"Deliverable"}`; got != want {
+			t.Errorf("before = %s, want %s", got, want)
+		}
+		if got, want := dfxJSON(t, row.After), "null"; got != want {
+			t.Errorf("after = %s, want %s", got, want)
+		}
+	})
+
+	// A deliverable the file *added* on a row the file also added still rides inside
+	// that row's create rather than becoming a second row (TestDiff_MilestoneLinkOf
+	// NewTaskGoesInCreate), and a row the file holds keeps its own clearing row
+	// (TestDiff_RemovalsUnticked): the two cases the guard in linkRow separates.
+	t.Run("a task the file dropped is not offered a milestone update it cannot hold", func(t *testing.T) {
+		cur := dfxPlan([]PlanTask{
+			dfxTask(kA, "", "Design", dfxMon, 1),
+			dfxMilestone(kG, "Deliverable", dfxFri),
+		}, []PlanDep{{Pred: kA, Succ: kG}})
+		file := dfxPlan([]PlanTask{
+			dfxNew("9", "", "Design", dfxMon, 1),
+			dfxMilestone(kG, "Deliverable", dfxFri),
+		}, []PlanDep{{Pred: "new:9", Succ: kG}})
+		changes, warnings := diffPlans(cur, file, nil)
+		// The file's Design is a new row (its eerp_id is absent, so it never matched),
+		// EERP's Design is offered for removal with its deliverable, and the new row
+		// carries its own deliverable inside its create.
+		dfxWantKeys(t, changes,
+			"task:"+kA+":milestone_id",
+			"task:"+kA+":delete",
+			"new:9",
+		)
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+		if got, want := dfxJSON(t, dfxRow(t, changes, "new:9").After),
+			`{"name":"Design","parent":null,"start":"2026-03-02","end":"2026-03-02","planned_hours":0,"milestone_id":{"id":"`+kG+`","name":"Deliverable"}}`; got != want {
+			t.Errorf("after = %s, want %s", got, want)
+		}
+	})
 }
 
 // TestDiff_AssignmentsOfUnknownRowsAreIgnored: an assignment hangs on a task EERP

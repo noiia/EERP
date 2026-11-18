@@ -59,9 +59,23 @@ func loadPlan(ctx context.Context, ex orm.Executor, tenant, pid uuid.UUID, w Wee
 	// elder siblings, milestones last (the invariant Plan promises).
 	slices.SortStableFunc(rows, byWbs)
 
+	// A Parent may only name a row the plan itself holds. Deleting a task cascades
+	// nothing (taskRules returns nil on opDelete), so a live task can outlive its
+	// parent by its parent_id, and a Parent naming that deleted row is a key the
+	// plan does not have: the encoder would write the child at the top level and
+	// the decoder would read it back with no parent, so every preview of the file
+	// would offer to move the task to the top level, ticked. The guard is the same
+	// shape as the ones readPlanDeps applies to a dependency end and to a
+	// deliverable link: what the plan cannot hold is not put in it.
+	live := liveTaskKeys(rows)
+
 	p := Plan{Weekend: w}
 	for _, row := range rows {
-		p.Tasks = append(p.Tasks, row.planTask(projectStart, w))
+		task := row.planTask(projectStart, w)
+		if !live[task.Parent] {
+			task.Parent = ""
+		}
+		p.Tasks = append(p.Tasks, task)
 	}
 	for _, row := range milestones {
 		p.Tasks = append(p.Tasks, row.planTask(projectStart))
@@ -174,6 +188,8 @@ func (r planTaskRow) planTask(projectStart *time.Time, w Weekend) PlanTask {
 		HasChildren:  r.hasChildren,
 	}
 	if r.parentID != nil {
+		// The row's own parent_id, which is the truth of the database and not yet of
+		// the plan: loadPlan drops it when no live row of the plan answers to it.
 		task.Parent = r.parentID.String()
 	}
 	return task
@@ -227,6 +243,18 @@ func milestoneKeys(rows []planMilestoneRow) map[string]bool {
 	out := make(map[string]bool, len(rows))
 	for _, row := range rows {
 		out[milestoneRefPrefix+row.id.String()] = true
+	}
+	return out
+}
+
+// liveTaskKeys is the set of task keys the plan holds, the same shape as
+// milestoneKeys. loadPlan consults it so a task whose parent_id names a soft
+// deleted row comes back at the top level rather than with a Parent no row of the
+// plan answers to (see loadPlan).
+func liveTaskKeys(rows []planTaskRow) map[string]bool {
+	out := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		out[row.id.String()] = true
 	}
 	return out
 }
