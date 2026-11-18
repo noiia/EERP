@@ -277,22 +277,17 @@ func (h *Handler) load(c *echo.Context, table string) (*request, error) {
 			return nil, &rejection{status: http.StatusBadRequest, code: "BAD_REQUEST", msg: "invalid id format"}
 		}
 		r.id = id
-		if !restore {
-			ok, err := orm.CanSeeRecord(ctx, h.db, table, id)
+		if restore { // the deleted row, read unchecked here: the rules check it as a create
+			row, err := h.row(ctx, table, id, tenant, false)
 			if err != nil {
 				return nil, err
 			}
-			if !ok {
-				return nil, errNotFound
-			}
-		}
-		row, err := h.row(ctx, table, id, tenant, !restore)
-		if err != nil {
-			return nil, err
-		}
-		if restore {
 			r.body = row
 			return r, nil
+		}
+		row, err := h.visibleRowOn(ctx, h.db, table, id, tenant, true)
+		if err != nil {
+			return nil, err
 		}
 		r.stored = row
 	}
@@ -326,6 +321,23 @@ func (h *Handler) rowOn(ctx context.Context, ex orm.Executor, table string, id, 
 	return m, json.Unmarshal(raw, &m)
 }
 
+// visibleRowOn is the single visibility gate in front of rowOn: 404 unless the
+// caller may see the row under its row scope, then read it through ex. The
+// HTTP path (load, on the pool) and check (on the transaction a bulk write runs
+// in) both go through it, so tightening the gate once holds for both. The gate
+// is about the live row, so a restore, which reads a deleted row and is checked
+// by the rules as a create, stays in load, outside here.
+func (h *Handler) visibleRowOn(ctx context.Context, ex orm.Executor, table string, id, tenant uuid.UUID, live bool) (map[string]any, error) {
+	seen, err := orm.CanSeeRecord(ctx, ex, table, id)
+	if err != nil {
+		return nil, err
+	}
+	if !seen {
+		return nil, errNotFound
+	}
+	return h.rowOn(ctx, ex, table, id, tenant, live)
+}
+
 // rulesByTable are the tables a caller outside the HTTP path may validate a
 // write of, with the same rules the guard middlewares run. Every entry is the
 // very function Mount puts in front of that table's generic write.
@@ -357,15 +369,8 @@ func (h *Handler) check(ctx context.Context, ex orm.Executor, table string, o op
 		body = map[string]any{}
 	}
 	r := &request{h: h, ctx: ctx, ex: ex, op: o, tenant: tenant, user: who.UserID, id: id, body: body}
-	if o != opCreate { // load's gate: 404 unless the caller may see the row being written
-		seen, err := orm.CanSeeRecord(ctx, ex, table, id)
-		if err != nil {
-			return nil, err
-		}
-		if !seen {
-			return nil, errNotFound
-		}
-		stored, err := h.rowOn(ctx, ex, table, id, tenant, true)
+	if o != opCreate { // load's gate and stored read, on ex
+		stored, err := h.visibleRowOn(ctx, ex, table, id, tenant, true)
 		if err != nil {
 			return nil, err
 		}
