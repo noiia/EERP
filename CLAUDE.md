@@ -365,7 +365,7 @@ When MCP behavior changes, run the relevant checks from `core/`:
 ```bash
 go test -race ./internal/mcpbridge ./orm/server
 go test ./internal/types ./internal/app
-CONFIG=../eerp-config.json go test ./modules/project -run MCP
+CONFIG=$PWD/../eerp-config.json go test ./modules/project -run MCP   # absolute: tests run from their package dir
 ```
 
 Include tests for other affected business modules as needed. Database tests

@@ -252,7 +252,7 @@ From `core/`, using Go 1.27.3 (the repository's pinned version):
 ```bash
 go test -race ./internal/mcpbridge ./orm/server
 go test ./internal/types ./internal/app
-CONFIG=../eerp-config.json go test ./modules/project -run MCP
+CONFIG=$PWD/../eerp-config.json go test ./modules/project -run MCP   # absolute: tests run from their package dir
 ```
 
 Tests that do not require a database cover the protocol, tools, resources,
