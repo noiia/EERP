@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
@@ -100,7 +100,8 @@ export function PertRenderer<T extends HasId>({
   // re-created link gets a new id; the ref holds the links as they are now.
   const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
   const linksRef = useRef(links)
-  useEffect(() => {
+  // Layout effect: synced in the same commit that renders the edges, so a delete right after never sees a stale ref.
+  useLayoutEffect(() => {
     linksRef.current = links
   })
   const listPage = ops?.listPage
