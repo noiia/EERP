@@ -746,27 +746,13 @@ func exExport(t *testing.T, f *fixture, pid uuid.UUID) Plan {
 }
 
 // exUsers is the map the diff resolves a file's assignees against: lower(email) to
-// id, for the tenant's live staff. The route builds it with this query, so a test
-// that invented its own could pass while the route missed a person.
+// id, for the tenant's live staff. It is the production query (exchangeUsers), which the
+// routes use too: a test that invented its own could pass while the route missed a
+// person.
 func exUsers(t *testing.T, f *fixture) map[string]uuid.UUID {
 	t.Helper()
-	rows, err := f.app.DB.Query(context.Background(), `
-		SELECT lower(email), id FROM users
-		WHERE tenant_id = $1 AND deleted_at IS NULL AND kind <> 'website'`, f.tenant)
+	out, err := exchangeUsers(context.Background(), f.app.DB, f.tenant)
 	if err != nil {
-		t.Fatalf("users: %v", err)
-	}
-	defer rows.Close()
-	out := map[string]uuid.UUID{}
-	for rows.Next() {
-		var email string
-		var id uuid.UUID
-		if err := rows.Scan(&email, &id); err != nil {
-			t.Fatalf("users scan: %v", err)
-		}
-		out[email] = id
-	}
-	if err := rows.Err(); err != nil {
 		t.Fatalf("users: %v", err)
 	}
 	return out

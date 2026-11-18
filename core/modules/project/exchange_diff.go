@@ -189,6 +189,14 @@ type assignValue struct {
 // create, move, updates, dependencies, assignees, then removals.
 func diffPlans(cur, file Plan, users map[string]uuid.UUID) ([]Change, []Warning) {
 	d := &diff{cur: cur, file: file, users: users}
+	return d.run()
+}
+
+// run is the comparison, from plans to rows. It is a method rather than the body of
+// diffPlans because Task 7's apply needs the diff's own state (which file row matched
+// what, and under which key) to resolve the keys it is handed, and must not reach a
+// second, drifting copy of the phase order.
+func (d *diff) run() ([]Change, []Warning) {
 	d.match()
 	d.readDepSets()
 	d.taskRows()
@@ -1252,6 +1260,38 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// ── The people a file can name ───────────────────────────────────────────────
+
+// exchangeUsers is the staff an exchange may put on a task: the tenant's live staff
+// accounts (a website visitor has no place on a schedule), keyed by the lowercased
+// address the file writes.
+//
+// One query, one meaning, for both halves of the exchange. The preview offers an
+// assignment only for a person it can name from this map, and apply adds the person the
+// same map names; a route or a test that invented its own filter would either refuse
+// someone the preview had promised or add someone the file was never offered.
+func exchangeUsers(ctx context.Context, ex orm.Executor, tenant uuid.UUID) (map[string]uuid.UUID, error) {
+	rows, err := ex.Query(ctx, `SELECT lower(email), id FROM users
+		WHERE tenant_id = $1 AND deleted_at IS NULL AND kind <> 'website'`, tenant)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]uuid.UUID{}
+	for rows.Next() {
+		var (
+			email string
+			id    uuid.UUID
+		)
+		if err := rows.Scan(&email, &id); err != nil {
+			return nil, err
+		}
+		out[email] = id
+	}
+	return out, rows.Err()
 }
 
 // ── What a removal takes with it ─────────────────────────────────────────────

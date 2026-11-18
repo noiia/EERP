@@ -285,7 +285,7 @@ func (h *Handler) load(c *echo.Context, table string) (*request, error) {
 			r.body = row
 			return r, nil
 		}
-		row, err := h.visibleRowOn(ctx, h.db, table, id, tenant, true)
+		row, err := h.visibleRowOn(ctx, h.db, table, id, tenant)
 		if err != nil {
 			return nil, err
 		}
@@ -324,10 +324,12 @@ func (h *Handler) rowOn(ctx context.Context, ex orm.Executor, table string, id, 
 // visibleRowOn is the single visibility gate in front of rowOn: 404 unless the
 // caller may see the row under its row scope, then read it through ex. The
 // HTTP path (load, on the pool) and check (on the transaction a bulk write runs
-// in) both go through it, so tightening the gate once holds for both. The gate
-// is about the live row, so a restore, which reads a deleted row and is checked
-// by the rules as a create, stays in load, outside here.
-func (h *Handler) visibleRowOn(ctx context.Context, ex orm.Executor, table string, id, tenant uuid.UUID, live bool) (map[string]any, error) {
+// in) both go through it, so tightening the gate once holds for both.
+//
+// It reads the live row, always: the gate is CanSeeRecord, which is about the row a
+// caller can currently see, and the one caller that wants a deleted row (a restore,
+// which the rules check as a create) reads it through h.row outside here.
+func (h *Handler) visibleRowOn(ctx context.Context, ex orm.Executor, table string, id, tenant uuid.UUID) (map[string]any, error) {
 	seen, err := orm.CanSeeRecord(ctx, ex, table, id)
 	if err != nil {
 		return nil, err
@@ -335,7 +337,7 @@ func (h *Handler) visibleRowOn(ctx context.Context, ex orm.Executor, table strin
 	if !seen {
 		return nil, errNotFound
 	}
-	return h.rowOn(ctx, ex, table, id, tenant, live)
+	return h.rowOn(ctx, ex, table, id, tenant, true)
 }
 
 // rulesByTable are the tables a caller outside the HTTP path may validate a
@@ -370,7 +372,7 @@ func (h *Handler) check(ctx context.Context, ex orm.Executor, table string, o op
 	}
 	r := &request{h: h, ctx: ctx, ex: ex, op: o, tenant: tenant, user: who.UserID, id: id, body: body}
 	if o != opCreate { // load's gate and stored read, on ex
-		stored, err := h.visibleRowOn(ctx, ex, table, id, tenant, true)
+		stored, err := h.visibleRowOn(ctx, ex, table, id, tenant)
 		if err != nil {
 			return nil, err
 		}
