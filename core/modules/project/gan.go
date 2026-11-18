@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // The .gan format: GanttProject 3.x project files, an uncompressed XML document.
@@ -443,7 +445,7 @@ func (w *ganWalker) eerpRef(el ganTaskEl) string {
 		return ""
 	}
 	if validRef(ref) {
-		return ref
+		return canonicalRef(ref)
 	}
 	w.warnings = append(w.warnings, Warning{
 		Code:    "UNKNOWN_ID",
@@ -451,6 +453,29 @@ func (w *ganWalker) eerpRef(el ganTaskEl) string {
 		Task:    el.Name,
 	})
 	return ""
+}
+
+// canonicalRef writes an accepted eerp_id the one way EERP writes it. A UUID is
+// case-insensitive, so a partner editing the XML by hand (or a tool that upper-cases
+// ids) means the same task by AAAAAAAA-... and aaaaaaaa-...; the loader reads ids out
+// of Postgres, which spells them lower-case, and the diff matches on the string. Without
+// this step the second spelling would name nothing and the task would be imported as a
+// duplicate of itself. The milestone: prefix is kept as validRef read it.
+func canonicalRef(ref string) string {
+	id, isMilestone := strings.CutPrefix(ref, milestoneRefPrefix)
+	if !isMilestone {
+		id = ref
+	}
+	// validRef has just parsed this, so the parse cannot fail here; returning ref
+	// unchanged keeps this a formatting helper rather than a second gatekeeper.
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return ref
+	}
+	if isMilestone {
+		return milestoneRefPrefix + parsed.String()
+	}
+	return parsed.String()
 }
 
 // weekend reads the file's calendar. ok is false when the file has no

@@ -846,9 +846,37 @@ func TestGanDecode_RefShape(t *testing.T) {
 		for _, tc := range []struct{ value, want string }{
 			{ganAlphaRef, ganAlphaRef},
 			{ganGateRef, ganGateRef},
-			{strings.ToUpper(ganAlphaRef), strings.ToUpper(ganAlphaRef)},
 			{" " + ganAlphaRef, ganAlphaRef},
 			{ganAlphaRef + "\t", ganAlphaRef},
+		} {
+			p, warnings, err := ganDecodeString(t, row(tc.value))
+			if err != nil {
+				t.Fatalf("Decode(%q): %v", tc.value, err)
+			}
+			if len(p.Tasks) != 1 || p.Tasks[0].Ref != tc.want {
+				t.Errorf("Decode(%q): tasks = %+v, want the one row carrying %q", tc.value, p.Tasks, tc.want)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("Decode(%q): warnings = %+v, want none for an id EERP can hold", tc.value, warnings)
+			}
+		}
+	})
+
+	t.Run("an id is read in one spelling", func(t *testing.T) {
+		// A UUID is case-insensitive, and the loader writes the ids Postgres
+		// spells in lower-case. A partner who hand-edits the XML (or a tool that
+		// upper-cases them) means the same task either way, so the decoder hands
+		// the diff one spelling: the canonical one. Without this, the second
+		// spelling names nothing here and the task comes back as a duplicate of
+		// itself. Only the id is case-insensitive: an upper-case milestone: prefix
+		// is not an EERP id at all (see the case below), so it stays refused.
+		for _, tc := range []struct{ value, want string }{
+			{strings.ToUpper(ganAlphaRef), ganAlphaRef},
+			{"AAAAAAAA-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ganAlphaRef},
+			{"milestone:DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD", ganGateRef},
+			{" milestone:EEEEEEEE-0000-4000-8000-000000000004 ", ganRoundGate},
+			// Mixed case in the middle of the id, the shape a hand-edit takes.
+			{"eeeeeeee-0000-4000-8000-00000000000A", "eeeeeeee-0000-4000-8000-00000000000a"},
 		} {
 			p, warnings, err := ganDecodeString(t, row(tc.value))
 			if err != nil {
