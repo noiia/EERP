@@ -1285,6 +1285,7 @@ function TreeRenderer<T extends HasId>({
         // ADR-041: the pinned project's schedule overlay and baseline snapshots.
         schedule={effective.ganttSchedule ?? undefined}
         baseline={effective.ganttBaseline ?? undefined}
+        milestones={effective.ganttMilestones ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

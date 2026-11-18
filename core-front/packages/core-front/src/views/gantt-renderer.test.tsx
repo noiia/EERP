@@ -17,7 +17,7 @@ import { useSessionStore } from './session-store'
 import { ApiError } from '../api/errors'
 import { setViewportWidth } from '../test/viewport'
 import type { EntityListOptions } from '../api/list-options'
-import type { GanttBaselineConfig, GanttScheduleConfig } from '../api/view-fields'
+import type { GanttBaselineConfig, GanttMilestonesConfig, GanttScheduleConfig } from '../api/view-fields'
 
 type Task = {
   id: string
@@ -1063,6 +1063,55 @@ describe('GanttRenderer', () => {
       fireEvent.click(screen.getByRole('button', { name: 'More' }))
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Old' }))
       expect(await screen.findByTestId('gantt-baseline-1')).toBeInTheDocument()
+    })
+
+    it('draws the pinned project milestones as diamonds, colored by state, opening their form', async () => {
+      const cfg: GanttMilestonesConfig = { entity: 'project_milestone', scopeField: 'project_id', dateField: 'deadline', labelField: 'name', reachedField: 'reached', formPath: '/project/milestones/:id' }
+      const listPage = vi.fn<ListPage>(async (entity: string) => {
+        if (entity === 'task') return { records: [t1], total: 1 }
+        if (entity === 'project_milestone')
+          return {
+            records: [
+              { id: 'late', name: 'Late', deadline: '2026-03-03T00:00:00Z', reached: false },
+              { id: 'next', name: 'Next', deadline: '2026-03-10T00:00:00Z', reached: false },
+              { id: 'done', name: 'Done', deadline: '2026-03-02T00:00:00Z', reached: true },
+              { id: 'far', name: 'Far', deadline: '2027-06-01T00:00:00Z', reached: false },
+              { id: 'none', name: 'No date', deadline: null, reached: false },
+            ],
+            total: 5,
+          }
+        return { records: [], total: 0 }
+      })
+      render(
+        <ThemeProvider theme={theme}>
+          <RelationOpsProvider ops={opsFor(listPage, vi.fn())}>
+            <GanttRenderer descriptor={descriptor} initialData={[]} actions={actions} startField="date_start" endField="deadline" serverOptions={{ filter: { project_id: 'p1' } }} milestones={cfg} />
+          </RelationOpsProvider>
+        </ThemeProvider>,
+      )
+      const next = await screen.findByTestId('gantt-milestone-next')
+      expect(listPage).toHaveBeenCalledWith('project_milestone', expect.objectContaining({ filter: { project_id: 'p1' }, order: 'deadline' }))
+      expect(next).toHaveAccessibleName(`Milestone Next: ${new Date(2026, 2, 10).toLocaleDateString()}`)
+      expect(getComputedStyle(screen.getByTestId('gantt-milestone-late')).backgroundColor).toBe('rgb(255, 0, 0)')
+      expect(screen.getByTestId('gantt-milestone-done')).toBeInTheDocument()
+      // Outside the range, or with no date: no diamond.
+      expect(screen.queryByTestId('gantt-milestone-far')).toBeNull()
+      expect(screen.queryByTestId('gantt-milestone-none')).toBeNull()
+      fireEvent.click(next)
+      expect(pushMock).toHaveBeenCalledWith('/app/project/milestones/next')
+    })
+
+    it('draws no milestone row when the list is not pinned', async () => {
+      const listPage = taskListPage([t1])
+      const cfg: GanttMilestonesConfig = { entity: 'project_milestone', scopeField: 'project_id', dateField: 'deadline', labelField: 'name' }
+      render(
+        <RelationOpsProvider ops={opsFor(listPage, vi.fn())}>
+          <GanttRenderer descriptor={descriptor} initialData={[]} actions={actions} startField="date_start" endField="deadline" serverOptions={{}} milestones={cfg} />
+        </RelationOpsProvider>,
+      )
+      await screen.findByTestId('gantt-bar-1')
+      expect(screen.queryByTestId('gantt-milestones')).toBeNull()
+      expect(listPage).not.toHaveBeenCalledWith('project_milestone', expect.anything())
     })
   })
 })

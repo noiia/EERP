@@ -102,6 +102,8 @@ export interface ViewModeDefaults {
   ganttSchedule?: GanttScheduleConfig
   /** Gantt mode: the baseline rows drawn behind the live tasks of the pinned scope. Module-declared only. */
   ganttBaseline?: GanttBaselineConfig
+  /** Gantt mode: the pinned scope's milestones, drawn as diamonds on their date. Module-declared only. */
+  ganttMilestones?: GanttMilestonesConfig
   /** Kanban mode: one lane per related record of a many2many junction, plus an
    * Unassigned lane (ADR-041). Module-declared only. */
   kanbanSwimlanes?: KanbanSwimlanesConfig
@@ -137,6 +139,22 @@ export interface GanttBaselineConfig {
   startField: string
   /** The baseline task row's bar end column. */
   endField: string
+}
+
+/** The milestones a Gantt draws as diamonds on a row of their own, for the pinned scope. */
+export interface GanttMilestonesConfig {
+  /** The milestone entity (its generic list route prefix). */
+  entity: string
+  /** The milestone's scope column, e.g. 'project_id'. */
+  scopeField: string
+  /** The milestone's date column (where the diamond sits). */
+  dateField: string
+  /** The column naming the milestone. */
+  labelField: string
+  /** A boolean column: true draws the diamond in the success color. */
+  reachedField?: string
+  /** The milestone form (':id'), opened on click. */
+  formPath?: string
 }
 
 /** One Kanban swimlane per record of a many2many junction (plus Unassigned). */
@@ -255,6 +273,7 @@ export interface EffectiveViewFields {
   colorTagsField: string | null
   ganttSchedule: GanttScheduleConfig | null
   ganttBaseline: GanttBaselineConfig | null
+  ganttMilestones: GanttMilestonesConfig | null
   kanbanSwimlanes: KanbanSwimlanesConfig | null
   insights: InsightsConfig | null
   matrix: MatrixConfig | null
@@ -292,6 +311,7 @@ export function effectiveViewFields(
     // ADR-041: module-declared only, like obs/risk — no runtime admin override.
     ganttSchedule: defaults?.ganttSchedule ?? null,
     ganttBaseline: defaults?.ganttBaseline ?? null,
+    ganttMilestones: defaults?.ganttMilestones ?? null,
     kanbanSwimlanes: defaults?.kanbanSwimlanes ?? null,
     insights: defaults?.insights ?? null,
     matrix: defaults?.matrix ?? null,

@@ -21,7 +21,7 @@ import { erpPath } from '../navigation'
 import { usePermission } from '../auth/Can'
 import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
-import { pinnedId, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttScheduleConfig } from '../api/view-fields'
+import { pinnedId, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttMilestonesConfig, type GanttScheduleConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
@@ -259,6 +259,8 @@ export interface GanttRendererProps<T extends HasId> {
   schedule?: GanttScheduleConfig
   /** Set ⇒ the pinned scope's baseline snapshot rows (the `Baseline` select + ghost bars). */
   baseline?: GanttBaselineConfig
+  /** Set ⇒ the pinned scope's milestones, as diamonds on a row under the header. */
+  milestones?: GanttMilestonesConfig
 }
 
 export function GanttRenderer<T extends HasId>({
@@ -273,6 +275,7 @@ export function GanttRenderer<T extends HasId>({
   colorTagsField,
   schedule,
   baseline,
+  milestones,
 }: GanttRendererProps<T>) {
   const t = useT()
   const theme = useTheme()
@@ -736,6 +739,38 @@ export function GanttRenderer<T extends HasId>({
       cancelled = true
     }
   }, [baselineKey, baselinePin, pickedBaseline, rowIdsKey])
+  // The pinned scope's milestones, read once per pinned id (a few per project: one page).
+  const milestonePin = milestones && relationOps?.listPage ? pinnedId(serverOptions, milestones.scopeField) : null
+  const milestoneKey = milestonePin && milestones ? JSON.stringify(milestones) : null
+  const [milestoneRows, setMilestoneRows] = useState<{ id: string; name: string; day: Date; reached: boolean }[]>([])
+  useEffect(() => {
+    if (milestoneKey == null || !milestonePin || !relationOps?.listPage) {
+      setMilestoneRows([])
+      return
+    }
+    const cfg = JSON.parse(milestoneKey) as GanttMilestonesConfig
+    let cancelled = false
+    relationOps
+      .listPage(cfg.entity, { filter: { [cfg.scopeField]: milestonePin }, order: cfg.dateField, pageSize: GANTT_PAGE_SIZE })
+      .then((page) => {
+        if (cancelled) return
+        const out: { id: string; name: string; day: Date; reached: boolean }[] = []
+        for (const r of page.records as Record<string, unknown>[]) {
+          // The date prefix, not the instant: a deadline is a day, whatever the zone.
+          const day = dayOf(r[cfg.dateField], false)
+          if (day) out.push({ id: String(r.id), name: String(r[cfg.labelField] ?? ''), day, reached: cfg.reachedField ? r[cfg.reachedField] === true : false })
+        }
+        setMilestoneRows(out)
+      })
+      // Decoration, like the arrows: a refused read draws no milestone.
+      .catch(() => {
+        if (!cancelled) setMilestoneRows([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [milestoneKey, milestonePin])
+
   const finishRef = useRef(finishDrag)
   finishRef.current = finishDrag
 
@@ -863,7 +898,13 @@ export function GanttRenderer<T extends HasId>({
   const now = new Date()
   const todayIdx = dayDiff(new Date(now.getFullYear(), now.getMonth(), now.getDate()), range.start)
   const markerId = useId()
-  const rowY = (i: number) => HEADER_H + ROW_GAP + i * (ROW_H + ROW_GAP) + ROW_H / 2
+  const visibleMilestones = milestoneRows.filter((m) => {
+    const d = dayDiff(m.day, range.start)
+    return d >= 0 && d < totalDays
+  })
+  // The milestone row sits right under the header and pushes the task rows down by one.
+  const msRow = milestoneRows.length > 0 ? 1 : 0
+  const rowY = (i: number) => HEADER_H + ROW_GAP + (i + msRow) * (ROW_H + ROW_GAP) + ROW_H / 2
   const rowIndex = new Map(rows.map((r, i) => [r.record.id, i]))
   const clampX = (days: number) => pct(Math.min(Math.max(days, 0), totalDays))
   const arrows: { id: string; x1: number; y1: number; x2: number; y2: number }[] = []
@@ -986,11 +1027,51 @@ export function GanttRenderer<T extends HasId>({
                 </Typography>
               ))}
             </Box>
+            {msRow ? (
+              <>
+                <Typography variant="body2" color="text.secondary" sx={{ gridColumn: 1, gridRow: 2, alignSelf: 'center', px: 1 }}>
+                  {t('Milestones')}
+                </Typography>
+                <Box data-testid="gantt-milestones" sx={{ gridColumn: 2, gridRow: 2, position: 'relative', height: ROW_H, zIndex: 2 }}>
+                  {visibleMilestones.map((m) => {
+                    const late = !m.reached && dayDiff(m.day, new Date(now.getFullYear(), now.getMonth(), now.getDate())) < 0
+                    const text = `${m.name}: ${m.day.toLocaleDateString()}`
+                    return (
+                      <Box
+                        key={m.id}
+                        component="button"
+                        type="button"
+                        title={text}
+                        aria-label={`${t('Milestone')} ${text}`}
+                        data-testid={`gantt-milestone-${m.id}`}
+                        onPointerDown={(ev: React.PointerEvent) => ev.stopPropagation()}
+                        onClick={() => {
+                          if (milestones?.formPath) router.push(erpPath(milestones.formPath.replace(':id', m.id)))
+                        }}
+                        sx={{
+                          position: 'absolute',
+                          top: '50%',
+                          width: 14,
+                          height: 14,
+                          p: 0,
+                          border: 0,
+                          transform: 'translate(-50%, -50%) rotate(45deg)',
+                          bgcolor: m.reached ? 'success.main' : late ? 'error.main' : 'primary.main',
+                          cursor: milestones?.formPath ? 'pointer' : 'default',
+                          '&:focus-visible': { outline: '2px solid', outlineColor: 'text.primary', outlineOffset: 2 },
+                        }}
+                        style={{ left: pct(dayDiff(m.day, range.start) + 0.5) }}
+                      />
+                    )
+                  })}
+                </Box>
+              </>
+            ) : null}
             {rows.length > 0 ? (
               <Box
                 data-testid="gantt-grid-lines"
                 aria-hidden
-                sx={{ gridColumn: 2, gridRow: `2 / span ${rows.length}`, position: 'relative', pointerEvents: 'none' }}
+                sx={{ gridColumn: 2, gridRow: `2 / span ${rows.length + msRow}`, position: 'relative', pointerEvents: 'none' }}
               >
                 {gridLines(zoom, range.start, totalDays).map((d) => (
                   <Box key={d} sx={{ position: 'absolute', top: 0, bottom: 0, width: '1px', bgcolor: 'divider' }} style={{ left: pct(d) }} />
@@ -999,7 +1080,7 @@ export function GanttRenderer<T extends HasId>({
             ) : null}
             {rows.map((row, i) => (
               <Box key={row.record.id} data-testid={`gantt-row-${row.record.id}`} sx={{ display: 'contents' }}>
-                <Box sx={{ gridColumn: 1, gridRow: i + 2, display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                <Box sx={{ gridColumn: 1, gridRow: i + 2 + msRow, display: 'flex', alignItems: 'center', minWidth: 0 }}>
                   <Button
                     size="small"
                     onClick={() => openForm(row.record)}
@@ -1028,7 +1109,7 @@ export function GanttRenderer<T extends HasId>({
                   onClick={onTrackClick}
                   sx={{
                     gridColumn: 2,
-                    gridRow: i + 2,
+                    gridRow: i + 2 + msRow,
                     position: 'relative',
                     height: ROW_H,
                     bgcolor: 'action.hover',
@@ -1043,14 +1124,14 @@ export function GanttRenderer<T extends HasId>({
               </Box>
             ))}
             {rows.length === 0 && unscheduled.length > 0 && canWrite ? (
-              <Typography variant="body2" color="text.secondary" sx={{ gridColumn: 2, gridRow: 2, p: 2, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ gridColumn: 2, gridRow: 2 + msRow, p: 2, textAlign: 'center' }}>
                 {t('Drag an unscheduled record onto the timeline to plan it.')}
               </Typography>
             ) : null}
             {dropDay != null ? (
               <Box
                 data-testid="gantt-drop-day"
-                sx={{ gridColumn: 2, gridRow: `1 / span ${rows.length + 1}`, position: 'relative', pointerEvents: 'none' }}
+                sx={{ gridColumn: 2, gridRow: `1 / span ${rows.length + 1 + msRow}`, position: 'relative', pointerEvents: 'none' }}
               >
                 <Box
                   sx={{ position: 'absolute', top: 0, bottom: 0, bgcolor: 'primary.main', opacity: 0.12 }}
@@ -1059,7 +1140,7 @@ export function GanttRenderer<T extends HasId>({
               </Box>
             ) : null}
             <Box
-              sx={{ gridColumn: 2, gridRow: `1 / span ${rows.length + 1}`, position: 'relative', pointerEvents: 'none', zIndex: 1 }}
+              sx={{ gridColumn: 2, gridRow: `1 / span ${rows.length + 1 + msRow}`, position: 'relative', pointerEvents: 'none', zIndex: 1 }}
             >
               {todayIdx >= 0 && todayIdx < totalDays ? (
                 <Box

@@ -203,6 +203,8 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   // Gantt schedule and baselines of the pinned project (ADR-041).
   ganttSchedule: { scopeField: 'project_id', scopeEntity: 'project', path: 'schedule' },
   ganttBaseline: { entity: 'project_baseline', taskEntity: 'project_baseline_task', scopeField: 'project_id', linkField: 'task_id', startField: 'date_start', endField: 'deadline' },
+  // Milestones of the pinned project as diamonds on their deadline.
+  ganttMilestones: { entity: 'project_milestone', scopeField: 'project_id', dateField: 'deadline', labelField: 'name', reachedField: 'reached', formPath: '/project/milestones/:id' },
   // Kanban swimlanes: one lane per assignee, over the task's assignees junction.
   kanbanSwimlanes: { label: 'Assignee', via: 'project_task_user', ownField: 'task_id', relatedField: 'user_id', entity: 'users', labelField: 'email' },
   // Insights and Matrices modes over the pinned project (ADR-041); the DSM
