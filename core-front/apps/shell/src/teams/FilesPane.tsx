@@ -67,9 +67,13 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
   const folderName = folderId ? listing?.folder?.name ?? null : null
   useEffect(() => onFolderName?.(folderName), [folderName, onFolderName])
 
+  const [busy, setBusy] = useState(false)
   const run = (p: Promise<unknown>, folders = false) => {
     setError('')
-    p.then(() => { setDlg(null); reload(); if (folders) onFoldersChanged?.() }).catch((e: unknown) => setError(e instanceof Error ? e.message : t('The change could not be saved.')))
+    setBusy(true)
+    p.then(() => { setDlg(null); reload(); if (folders) onFoldersChanged?.() })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : t('The change could not be saved.')))
+      .finally(() => setBusy(false))
   }
   const canEdit = (owner: string) => role === 'owner' || (role === 'member' && owner === me)
   const canWrite = role === 'owner' || role === 'member'
@@ -87,7 +91,8 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
   }
 
   const submitName = () => {
-    if (!dlg || !name.trim()) return
+    // busy: a double click must not create the folder twice.
+    if (!dlg || !name.trim() || busy) return
     if (dlg.kind === 'newFolder') run(createFolder(teamId, name.trim(), folderId), true)
     else if (dlg.kind === 'newNote') {
       setNewNote(isOcNote(name.trim()) ? name.trim() : `${name.trim()}.ocnote`)
@@ -95,7 +100,7 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
     }
     else if (dlg.kind === 'rename') run(dlg.target === 'file' ? updateFile(teamId, dlg.id, { name: name.trim() }) : updateFolder(teamId, dlg.id, { name: name.trim() }), dlg.target === 'folder')
   }
-  const openName = (d: Dlg, initial = '') => { setName(initial); setDlg(d) }
+  const openName = (d: Dlg, initial = '') => { setError(''); setName(initial); setDlg(d) }
 
   const folderLink = (id: string, label: string) => rootFolderId
     ? <Link key={id} component="button" onClick={() => setInPanel(id)} underline="hover" sx={{ verticalAlign: 'baseline' }}>{label}</Link>
@@ -168,11 +173,12 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
       <Dialog open={dlg?.kind === 'newFolder' || dlg?.kind === 'newNote' || dlg?.kind === 'rename'} onClose={() => setDlg(null)} fullWidth maxWidth="xs">
         <DialogTitle>{dlg?.kind === 'rename' ? <T text="Rename" /> : dlg?.kind === 'newNote' ? <T text="New note" /> : <T text="New folder" />}</DialogTitle>
         <DialogContent>
+          {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
           <TextField autoFocus fullWidth size="small" sx={{ mt: 1 }} label={t('Name')} value={name} onChange={(e) => setName(e.target.value)} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDlg(null)}><T text="Cancel" /></Button>
-          <Button variant="contained" disabled={!name.trim()} onClick={submitName}><T text="Save" /></Button>
+          <Button variant="contained" disabled={!name.trim() || busy} onClick={submitName}><T text="Save" /></Button>
         </DialogActions>
       </Dialog>
 
@@ -183,7 +189,7 @@ export function FilesPane({ teamId, folderId: urlFolder, rootFolderId, compact =
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDlg(null)}><T text="Cancel" /></Button>
-          <Button color="error" variant="contained" onClick={() => {
+          <Button color="error" variant="contained" disabled={busy} onClick={() => {
             if (dlg?.kind === 'delete') run(dlg.target === 'file' ? deleteFile(teamId, dlg.id) : deleteFolder(teamId, dlg.id), dlg.target === 'folder')
           }}><T text="Delete" /></Button>
         </DialogActions>

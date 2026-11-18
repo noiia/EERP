@@ -18,6 +18,7 @@ vi.mock('./client', () => ({
   muteChannel: (...a: unknown[]) => m.muteChannel(...a),
   deleteDirect: (...a: unknown[]) => m.deleteDirect(...a),
   listFiles: (t: string, f?: string) => listFiles(t, f),
+  folderDownloadUrl: (t: string, f: string) => `/api/teams/${t}/folders/${f}/download`,
   directory: () => Promise.resolve([{ id: 'u2', display_name: 'Bob', email: 'b@x' }]),
   createChannel: (...a: unknown[]) => createChannel(...a),
   openDirect: (...a: unknown[]) => openDirect(...a),

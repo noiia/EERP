@@ -364,3 +364,9 @@ msgstr "Options de la conversation"
 
 msgid "The history is cleared for you only."
 msgstr "L'historique est effacé pour vous uniquement."
+
+msgid "Folder options"
+msgstr "Options du dossier"
+
+msgid "New subfolder"
+msgstr "Nouveau sous-dossier"

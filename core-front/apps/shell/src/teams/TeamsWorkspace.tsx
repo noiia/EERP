@@ -132,7 +132,8 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
       />
     )
   } else if (view.kind === 'files' && teamId) {
-    main = <FilesPane teamId={teamId} folderId={view.id} role={team?.role} onFoldersChanged={() => setFoldersRev((n) => n + 1)} onFolderName={setFolderName} />
+    // Remounted when the sidebar's folder menu changes a folder, so the listing re-reads.
+    main = <FilesPane key={`${view.id ?? ''}:${foldersRev}`} teamId={teamId} folderId={view.id} role={team?.role} onFoldersChanged={() => setFoldersRev((n) => n + 1)} onFolderName={setFolderName} />
   } else if (view.kind === 'shared') {
     main = <SharedPane />
   } else {
@@ -144,7 +145,7 @@ export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: Worksp
   }
 
   const sidebar = (
-    <Sidebar teamId={teamId} team={team} role={team?.role} foldersRev={foldersRev} members={members} channels={channels} directs={directs} unread={unread} view={view} onChanged={reload} />
+    <Sidebar teamId={teamId} team={team} role={team?.role} foldersRev={foldersRev} members={members} channels={channels} directs={directs} unread={unread} view={view} onChanged={reload} onFoldersChanged={() => { setFoldersRev((n) => n + 1); setPanelRev((n) => n + 1) }} />
   )
 
   return (

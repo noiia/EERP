@@ -51,6 +51,25 @@ describe('FilesPane', () => {
     expect(c.listFiles).toHaveBeenCalledWith('t1', 'f1')
   })
 
+  it('a double-clicked Save creates one folder, and a taken name shows in the dialog', async () => {
+    let resolve!: () => void
+    c.createFolder.mockReturnValueOnce(new Promise<void>((r) => { resolve = r }))
+    render(<FilesPane teamId="t1" folderId="f1" role="member" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'New folder' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Specs' } })
+    const save = screen.getByRole('button', { name: 'Save' })
+    fireEvent.click(save)
+    fireEvent.click(save)
+    expect(c.createFolder).toHaveBeenCalledTimes(1)
+    resolve()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    c.createFolder.mockRejectedValueOnce(new Error('A folder with this name already exists in this folder.'))
+    fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Specs' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await within(screen.getByRole('dialog')).findByText('A folder with this name already exists in this folder.')).toBeInTheDocument()
+  })
+
   it('starts the breadcrumb at rootFolderId, without All files', async () => {
     c.listFiles.mockResolvedValue({ ...listing, folder: { id: 'f2', name: 'Specs', parent_id: 'f1' }, path: [{ id: 'f1', name: 'Docs' }, { id: 'f2', name: 'Specs' }], folders: [{ id: 'f3', name: 'Drafts', parent_id: 'f2', created_by: 'me' }] })
     render(<FilesPane teamId="t1" rootFolderId="f2" role="owner" compact />)

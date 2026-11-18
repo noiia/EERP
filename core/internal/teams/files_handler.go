@@ -1,11 +1,15 @@
 package teams
 
 import (
+	"archive/zip"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"time"
 
 	"core/internal/auth"
@@ -43,6 +47,11 @@ func toFolderJSON(f Folder) folderJSON { return folderJSON{f.ID, f.Name, f.Paren
 
 func (h *Handler) toFileJSON(f File, users map[uuid.UUID]auth.Users, shared int) fileJSON {
 	return fileJSON{f.ID, f.Name, f.FolderID, f.Mime, f.Size, f.UploadedBy, displayName(users[f.UploadedBy]), f.CreatedAt, shared}
+}
+
+// nameTaken answers 409: the target folder already holds a folder (or file) of that name.
+func nameTaken(c *echo.Context, kind string) error {
+	return errorJSON(c, http.StatusConflict, "NAME_TAKEN", "A "+kind+" with this name already exists in this folder.")
 }
 
 func invalid(c *echo.Context, msg string) error {
@@ -183,6 +192,9 @@ func (h *Handler) CreateFolder(c *echo.Context) error {
 	if errors.Is(err, ErrInvalidName) {
 		return badName(c)
 	}
+	if errors.Is(err, ErrNameTaken) {
+		return nameTaken(c, "folder")
+	}
 	if err != nil {
 		return err
 	}
@@ -242,6 +254,9 @@ func (h *Handler) UpdateFolder(c *echo.Context) error {
 	if errors.Is(err, ErrInvalidName) {
 		return badName(c)
 	}
+	if errors.Is(err, ErrNameTaken) {
+		return nameTaken(c, "folder")
+	}
 	if err != nil {
 		return err
 	}
@@ -289,6 +304,87 @@ func (h *Handler) DeleteFolder(c *echo.Context) error {
 	}
 	h.deleteObjects(ctx, keys, "folder delete")
 	return c.NoContent(http.StatusNoContent)
+}
+
+// DownloadFolder serves GET /:id/folders/:folder/download: the folder and every
+// subfolder the caller can see, with their files, as one zip.
+func (h *Handler) DownloadFolder(c *echo.Context) error {
+	team, role, err := h.access(c, CanRead)
+	if role == "" {
+		return err
+	}
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	root, ok, err := h.teamFolder(c, id.TenantID, team, role)
+	if !ok {
+		return err
+	}
+	folders, files, err := h.repo.FolderTree(ctx, id.TenantID, root.ID)
+	if errors.Is(err, orm.ErrNotFound) {
+		return notFound(c, "folder")
+	}
+	if err != nil {
+		return err
+	}
+	// Each visible folder's path in the zip; a hidden folder drops its whole subtree (parents come first).
+	paths := map[uuid.UUID]string{root.ID: zipName(root.Name) + "/"}
+	dirs := []string{paths[root.ID]}
+	for _, f := range folders[1:] {
+		parent, ok := paths[*f.ParentID]
+		if !ok {
+			continue
+		}
+		if visible, err := h.folderVisible(c, id.TenantID, team, id.UserID, role, &f.ID); err != nil {
+			return err
+		} else if visible {
+			paths[f.ID] = parent + zipName(f.Name) + "/"
+			dirs = append(dirs, paths[f.ID])
+		}
+	}
+	w := c.Response()
+	w.Header().Set(echo.HeaderContentType, "application/zip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": root.Name + ".zip"}))
+	w.WriteHeader(http.StatusOK)
+	// shortcut: built while streaming, so a failed object read after the first byte only truncates the zip (logged); add a size cap or a background job if folders get huge.
+	zw := zip.NewWriter(w)
+	for _, d := range dirs {
+		if _, err := zw.Create(d); err != nil {
+			return err
+		}
+	}
+	for _, f := range files {
+		dir, ok := paths[*f.FolderID]
+		if !ok {
+			continue
+		}
+		if err := h.zipFile(ctx, zw, dir+zipName(f.Name), f); err != nil {
+			return err
+		}
+	}
+	return zw.Close()
+}
+
+func (h *Handler) zipFile(ctx context.Context, zw *zip.Writer, name string, f File) error {
+	body, _, err := h.objects.Get(ctx, f.ObjectKey)
+	if err != nil {
+		return fmt.Errorf("teams: read object: %w", err)
+	}
+	defer func() { _ = body.Close() }()
+	out, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: f.CreatedAt})
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, body)
+	return err
+}
+
+// zipName makes a stored name one safe zip path segment (no separators, no dot segments).
+func zipName(s string) string {
+	s = strings.NewReplacer("/", "_", "\\", "_").Replace(s)
+	if s == "." || s == ".." {
+		return "_"
+	}
+	return s
 }
 
 // UploadFile serves POST /:id/files, multipart `file` with an optional `folder_id`.
@@ -394,6 +490,9 @@ func (h *Handler) UpdateFile(c *echo.Context) error {
 	f, err = h.repo.UpdateFile(ctx, f)
 	if errors.Is(err, ErrInvalidName) {
 		return badName(c)
+	}
+	if errors.Is(err, ErrNameTaken) {
+		return nameTaken(c, "file")
 	}
 	if err != nil {
 		return err

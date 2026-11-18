@@ -363,3 +363,9 @@ msgstr ""
 
 msgid "The history is cleared for you only."
 msgstr ""
+
+msgid "Folder options"
+msgstr ""
+
+msgid "New subfolder"
+msgstr ""

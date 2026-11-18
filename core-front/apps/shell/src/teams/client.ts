@@ -204,6 +204,8 @@ export const createFolder = (team: string, name: string, parentId?: string) =>
 export const updateFolder = (team: string, folder: string, patch: { name?: string; parent_id?: string }) =>
   call<Folder>('PUT', `/${team}/folders/${folder}`, patch)
 export const deleteFolder = (team: string, folder: string) => call<void>('DELETE', `/${team}/folders/${folder}`)
+/** The folder and its subfolders the caller can see, as one zip. */
+export const folderDownloadUrl = (team: string, folder: string) => `/api/teams/${team}/folders/${folder}/download`
 export function uploadFile(team: string, file: File, folderId?: string): Promise<TeamFile> {
   const form = new FormData()
   form.append('file', file)

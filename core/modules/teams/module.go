@@ -77,12 +77,36 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		`ALTER TABLE chat_channel_member ADD COLUMN IF NOT EXISTS hidden boolean`,
 		notNullFalse("chat_channel_member", "hidden"),
 		`ALTER TABLE chat_channel_member ADD COLUMN IF NOT EXISTS cleared_at timestamptz`,
+		uniqueNames("team_folder", "parent_id", "uq_team_folder_name", false),
+		uniqueNames("team_file", "folder_id", "uq_team_file_name", true),
 	} {
 		if _, err := db.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("teams: migrate: %w", err)
 		}
 	}
 	return nil
+}
+
+// uniqueNames makes names unique per folder (case ignored) among table's live rows,
+// once: rows created before it that clash keep the oldest name, the others get
+// " (<id prefix>)" — before the extension for files — so the index can be built.
+func uniqueNames(table, parent, index string, keepExt bool) string {
+	suffix := `' (' || left(t.id::text, 8) || ')'`
+	renamed := `t.name || ` + suffix
+	if keepExt {
+		renamed = `CASE WHEN t.name ~ '.\.[^.]*$' THEN regexp_replace(t.name, '^(.*)(\.[^.]*)$', '\1') || ` + suffix +
+			` || regexp_replace(t.name, '^(.*)(\.[^.]*)$', '\2') ELSE ` + renamed + ` END`
+	}
+	return `DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = '` + index + `') THEN
+			UPDATE ` + table + ` t SET name = ` + renamed + `, updated_at = now()
+			FROM (SELECT id, row_number() OVER (PARTITION BY tenant_id, team_id, ` + parent + `, lower(name) ORDER BY created_at, id) AS n
+				FROM ` + table + ` WHERE deleted_at IS NULL) d
+			WHERE t.id = d.id AND d.n > 1;
+			CREATE UNIQUE INDEX ` + index + ` ON ` + table + ` (tenant_id, team_id,
+				COALESCE(` + parent + `, '00000000-0000-0000-0000-000000000000'::uuid), lower(name)) WHERE deleted_at IS NULL;
+		END IF;
+	END $$`
 }
 
 // notNullFalse makes a boolean column NOT NULL DEFAULT false, only when it isn't

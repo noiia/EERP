@@ -847,40 +847,126 @@ func (r *Repository) CreateFolder(ctx context.Context, f Folder) (Folder, error)
 	if f.Name, err = validName(f.Name); err != nil {
 		return Folder{}, err
 	}
-	return r.folders.Create(ctx, f)
+	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		taken, err := takenNames(ctx, tx, f.TenantID, f.TeamID, f.ParentID, false, nil)
+		if err != nil {
+			return err
+		}
+		if taken[strings.ToLower(f.Name)] {
+			return ErrNameTaken
+		}
+		f, err = r.folders.WithTx(tx).Create(ctx, f)
+		return err
+	})
+	return f, nameErr(err)
 }
 
+// UpdateFolder renames and/or moves f; ErrNameTaken when its (new) parent holds another folder of that name.
 func (r *Repository) UpdateFolder(ctx context.Context, f Folder) (Folder, error) {
 	var err error
 	if f.Name, err = validName(f.Name); err != nil {
 		return Folder{}, err
 	}
-	return r.folders.Update(ctx, f, f.ID)
+	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		taken, err := takenNames(ctx, tx, f.TenantID, f.TeamID, f.ParentID, false, &f.ID)
+		if err != nil {
+			return err
+		}
+		if taken[strings.ToLower(f.Name)] {
+			return ErrNameTaken
+		}
+		f, err = r.folders.WithTx(tx).Update(ctx, f, f.ID)
+		return err
+	})
+	return f, nameErr(err)
 }
 
+// CreateFile stores f, renamed "<name> (n).<ext>" when its folder already has a file of that name.
 func (r *Repository) CreateFile(ctx context.Context, f File) (File, error) {
 	var err error
 	if f.Name, err = validName(f.Name); err != nil {
 		return File{}, err
 	}
-	return r.files.Create(ctx, f)
+	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		taken, err := takenNames(ctx, tx, f.TenantID, f.TeamID, f.FolderID, true, nil)
+		if err != nil {
+			return err
+		}
+		f.Name = freeName(f.Name, taken, true)
+		f, err = r.files.WithTx(tx).Create(ctx, f)
+		return err
+	})
+	return f, nameErr(err)
 }
 
+// UpdateFile renames and/or moves f; ErrNameTaken when its (new) folder holds another file of that name.
 func (r *Repository) UpdateFile(ctx context.Context, f File) (File, error) {
 	var err error
 	if f.Name, err = validName(f.Name); err != nil {
 		return File{}, err
 	}
-	// Rename/move must not write a stale object key over a concurrent note save.
-	result, err := r.db.Exec(ctx, `UPDATE team_file SET name=$3, folder_id=$4, updated_at=now()
-		WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, f.TenantID, f.ID, f.Name, f.FolderID)
+	err = orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
+		taken, err := takenNames(ctx, tx, f.TenantID, f.TeamID, f.FolderID, true, &f.ID)
+		if err != nil {
+			return err
+		}
+		if taken[strings.ToLower(f.Name)] {
+			return ErrNameTaken
+		}
+		// Rename/move must not write a stale object key over a concurrent note save.
+		result, err := tx.Exec(ctx, `UPDATE team_file SET name=$3, folder_id=$4, updated_at=now()
+			WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, f.TenantID, f.ID, f.Name, f.FolderID)
+		if err != nil {
+			return fmt.Errorf("teams: update file: %w", err)
+		}
+		if result.RowsAffected() == 0 {
+			return orm.ErrNotFound
+		}
+		return nil
+	})
 	if err != nil {
-		return File{}, fmt.Errorf("teams: update file: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return File{}, orm.ErrNotFound
+		return File{}, nameErr(err)
 	}
 	return r.FindFile(ctx, f.TenantID, f.ID)
+}
+
+// FolderTree returns folder and its subfolders, parents before children, and their files.
+func (r *Repository) FolderTree(ctx context.Context, tenant, folder uuid.UUID) ([]Folder, []File, error) {
+	rows, err := r.db.Query(ctx, `WITH RECURSIVE tree AS (
+			SELECT id, 0 AS depth FROM team_folder WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL
+			UNION ALL SELECT f.id, t.depth + 1 FROM team_folder f JOIN tree t ON f.parent_id = t.id
+				WHERE f.tenant_id=$1 AND f.deleted_at IS NULL AND t.depth < 100)
+		SELECT id FROM tree ORDER BY depth`, tenant, folder)
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: folder tree: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: folder tree: %w", err)
+	}
+	if len(ids) == 0 {
+		return nil, nil, orm.ErrNotFound
+	}
+	found, err := r.folders.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.In("id", ids))
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: folder tree: %w", err)
+	}
+	byID := make(map[uuid.UUID]Folder, len(found))
+	for _, f := range found {
+		byID[f.ID] = f
+	}
+	folders := make([]Folder, 0, len(ids))
+	for _, id := range ids {
+		if f, ok := byID[id]; ok {
+			folders = append(folders, f)
+		}
+	}
+	files, err := r.files.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.In("folder_id", ids))
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: folder tree files: %w", err)
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	return folders, files, nil
 }
 
 // ReplaceFileContent swaps only the bytes' metadata, provided the downloaded

@@ -144,6 +144,28 @@ for them. A new message un-hides it for both, so a deleted conversation comes ba
 reply, starting at that message. A full delete for both was rejected: either participant could
 erase the other's history.
 
+### Unique names per folder, folder menu (2026-11-18)
+
+Creating a folder sometimes made two: the dialog's Save stayed clickable while the request ran, and
+nothing in the database stopped a second identical row. Names are now unique **per folder, case
+ignored**, in two separate namespaces (folders among folders, files among files):
+
+- `uq_team_folder_name` / `uq_team_file_name` (`tenant_id, team_id, COALESCE(parent, nil uuid),
+  lower(name)` over live rows) enforce it. Their migration first renames older clashing rows (the
+  oldest keeps its name, the others get ` (<id prefix>)`, before the extension for files), once.
+- Every name write takes the folder's advisory lock (`teams.names:<team>[:<folder>]`) before its
+  check, so concurrent writes can't both pass it (`internal/teams/names.go`).
+- A new folder, a rename or a move onto a taken name is a **409 `NAME_TAKEN`**. An upload — from
+  the files pane or a chat message into the linked folder — never fails on a name: it is stored as
+  `<name> (n).<ext>` (as a desktop does). The conversation's auto-created folder follows the same rule.
+- `GET /:id/folders/:folder/download` streams the folder as a zip: the subfolders the caller can
+  see (a hidden one drops its subtree) and their files, names made safe zip segments.
+- The sidebar's folders have a ⋮ menu (`FolderMenu.tsx`): New subfolder, Download, Rename, Move,
+  Manage access, Delete — each following the caller's role. *Manage access* edits the access of the
+  conversation linked to that folder (owners), since a folder's privacy is that conversation's; an
+  unlinked folder has no access list of its own, so it has no such entry. Dialogs send one request
+  at a time.
+
 ## Consequences
 
 - Teams has no admin override: an administrator who isn't a member can't read a team. Recovering a
@@ -170,3 +192,5 @@ erase the other's history.
   chat frame must be built per viewer (a hidden file is redacted), not once for the audience.
 - Don't infer privacy from the access list's size: read `restricted`. An empty list on a restricted
   channel means owners-only, not open.
+- A file and a folder may share a name in one folder (separate namespaces); a zip download then
+  holds both `x` and `x/`, which some extractors refuse.

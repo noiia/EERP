@@ -26,6 +26,7 @@ import {
   type Channel, type DirectChat, type DirectoryUser, type Folder, type Member, type Role, type Team,
 } from './client'
 import { AccessDialog } from './AccessDialog'
+import { FolderMenu } from './FolderMenu'
 import { GroupsDialog } from './GroupsDialog'
 import { DirectoryPicker, MembersDialog } from './MembersDialog'
 
@@ -97,7 +98,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   )
 }
 
-function FolderNode({ teamId, folder, depth }: { teamId: string; folder: Folder; depth: number }) {
+function FolderNode({ teamId, folder, depth, menu }: { teamId: string; folder: Folder; depth: number; menu: (f: Folder) => ReactNode }) {
   const t = useT()
   const [children, setChildren] = useState<Folder[] | null>(null)
   const [open, setOpen] = useState(false)
@@ -114,13 +115,14 @@ function FolderNode({ teamId, folder, depth }: { teamId: string; folder: Folder;
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <NavItem href={`/teams/${teamId}/files?folder=${folder.id}`}>{folder.name}</NavItem>
         </Box>
+        {menu(folder)}
       </Box>
-      {open && children?.map((c) => <FolderNode key={c.id} teamId={teamId} folder={c} depth={depth + 1} />)}
+      {open && children?.map((c) => <FolderNode key={c.id} teamId={teamId} folder={c} depth={depth + 1} menu={menu} />)}
     </>
   )
 }
 
-export function Sidebar({ teamId, team, role, members, channels, directs, unread, view, onChanged, foldersRev = 0 }: {
+export function Sidebar({ teamId, team, role, members, channels, directs, unread, view, onChanged, foldersRev = 0, onFoldersChanged }: {
   teamId?: string
   team?: Team | null
   role?: Role
@@ -132,6 +134,8 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
   onChanged: () => void
   /** Bumped after a folder mutation in the files pane: the folder tree reloads. */
   foldersRev?: number
+  /** A folder was changed from its ⋮ menu: the tree and the files pane reload. */
+  onFoldersChanged?: () => void
 }) {
   const t = useT()
   const router = useRouter()
@@ -270,7 +274,9 @@ export function Sidebar({ teamId, team, role, members, channels, directs, unread
             <Section title={t('Folders')}>
               <NavItem href={`/teams/${teamId}/files`} selected={view.kind === 'files' && !view.id}><T text="All files" /></NavItem>
               {/* the rev in the key remounts the nodes, so expanded subfolders re-read too */}
-              {folders.map((f) => <FolderNode key={`${f.id}:${foldersRev}`} teamId={teamId} folder={f} depth={0} />)}
+              {folders.map((f) => <FolderNode key={`${f.id}:${foldersRev}`} teamId={teamId} folder={f} depth={0} menu={(folder) => (
+                <FolderMenu teamId={teamId} folder={folder} role={role} channels={channels} members={members} onChanged={() => onFoldersChanged?.()} onAccessSaved={onChanged} />
+              )} />)}
             </Section>
           )}
         </>

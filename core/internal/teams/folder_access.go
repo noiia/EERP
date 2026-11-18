@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"strings"
 
 	"core/orm"
 
@@ -199,26 +199,11 @@ func (r *Repository) CreateFileMessage(ctx context.Context, m Message, team uuid
 			return err
 		}
 		if folder == nil {
-			rows, err := tx.Query(ctx, `SELECT name FROM team_folder WHERE tenant_id = $1 AND team_id = $2
-				AND parent_id IS NULL AND deleted_at IS NULL`, m.TenantID, team)
+			taken, err := takenNames(ctx, tx, m.TenantID, team, nil, false, nil)
 			if err != nil {
 				return err
 			}
-			names, err := pgx.CollectRows(rows, pgx.RowTo[string])
-			if err != nil {
-				return err
-			}
-			taken := map[string]bool{}
-			for _, n := range names {
-				taken[n] = true
-			}
-			pick := name
-			for i := 2; taken[pick]; i++ {
-				suffix := " (" + strconv.Itoa(i) + ")"
-				base := []rune(name)
-				base = base[:min(len(base), 200-len(suffix))] // "<base> (n)" stays a valid name
-				pick = string(base) + suffix
-			}
+			pick := freeName(name, taken, false)
 			f, err := r.folders.WithTx(tx).Create(ctx, Folder{TenantID: m.TenantID, TeamID: team, Name: pick, CreatedBy: m.AuthorID})
 			if err != nil {
 				return err
@@ -229,12 +214,18 @@ func (r *Repository) CreateFileMessage(ctx context.Context, m Message, team uuid
 				return err
 			}
 		}
-		var err error
+		taken, err := takenNames(ctx, tx, m.TenantID, team, folder, true, nil)
+		if err != nil {
+			return err
+		}
 		if m, err = r.messages.WithTx(tx).Create(ctx, m); err != nil {
 			return err
 		}
 		for _, a := range uploads {
-			f, err := r.files.WithTx(tx).Create(ctx, File{TenantID: m.TenantID, TeamID: team, FolderID: folder, Name: a.Filename,
+			// A name already in the folder becomes "<name> (n).<ext>" (also two same-named files in one message).
+			name := freeName(a.Filename, taken, true)
+			taken[strings.ToLower(name)] = true
+			f, err := r.files.WithTx(tx).Create(ctx, File{TenantID: m.TenantID, TeamID: team, FolderID: folder, Name: name,
 				Mime: a.Mime, Size: a.Size, ObjectKey: a.ObjectKey, UploadedBy: m.AuthorID})
 			if err != nil {
 				return err
