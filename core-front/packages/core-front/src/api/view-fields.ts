@@ -80,8 +80,9 @@ export interface ViewModeDefaults {
    * siblings in that order and a box dropped among siblings writes its new number; PERT's
    * auto-layout runs from the 1.x records to the highest. Module-declared only. */
   wbsOrderField?: string
-  /** WBS mode: a deliverable footer under each level-2 column, listing the records of
-   * `entity` the column's tasks produce through `field`. Module-declared only. */
+  /** WBS mode: each task's deliverable (the `entity` record its `field` names) drawn under
+   * it; a level-1 task's on a footer row below the diagram, an empty placeholder (opening
+   * the creation form, linked back on save) when it has none. Module-declared only. */
   wbsDeliverables?: WbsDeliverablesConfig
   /** PERT mode: the dependency rows (same shape as ganttDependencies). Module-declared only. */
   pertDependencies?: GanttDependenciesConfig
@@ -203,8 +204,10 @@ export interface GanttDependenciesConfig {
  * the records of `entity` that the column's tasks produce through `field` (a many2one on
  * the task entity). Module-declared only. */
 export interface WbsDeliverablesConfig {
-  /** The many2one on the task entity pointing at a deliverable, e.g. 'pbs_item_id'. */
+  /** The many2one on the task entity pointing at a deliverable, e.g. 'milestone_id'. */
   field: string
+  /** The deliverable's form, ':id'-templated (':id' → 'new' for the creation form). */
+  formPath: string
   /** The deliverable entity (its generic list route prefix). */
   entity: string
   /** The deliverable's display field, e.g. 'name'. */

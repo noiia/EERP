@@ -2997,8 +2997,8 @@ msgstr "Sans parent"
 msgid "No task produces this"
 msgstr "Aucune tâche ne produit ce livrable"
 
-msgid "No deliverable"
-msgstr "Aucun livrable"
+msgid "No milestone yet for {name}"
+msgstr "Aucun jalon pour l’instant pour {name}"
 
 msgid "New note"
 msgstr "Nouvelle note"

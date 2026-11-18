@@ -639,6 +639,16 @@ function FormRenderer<T extends HasId>({
               })
           }
         }
+        // `?link=<entity>:<id>:<field>` (e.g. a WBS "no milestone yet" tile): once a NEW
+        // record exists, point that other record's many2one at it. Go authorizes the write.
+        const link = !wasExisting ? searchParams?.get('link')?.split(':') : undefined
+        if (link?.length === 3 && link.every(Boolean) && relationOps?.update) {
+          const [linkEntity, linkId, linkField] = link
+          relationOps
+            .update(linkEntity, linkId, { [linkField]: saved.id })
+            .then(() => useEntityRefreshStore.getState().bump(linkEntity))
+            .catch((e: unknown) => setDeleteError(serializeError(toApiError(e))))
+        }
         lastPersistedRef.current = saved
       }
     } finally {

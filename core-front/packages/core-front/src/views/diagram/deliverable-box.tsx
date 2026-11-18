@@ -1,42 +1,44 @@
 'use client'
 import { memo } from 'react'
-import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
-import { useTheme } from '@mui/material/styles'
-import type { Node, NodeProps } from '@xyflow/react'
+import { alpha, useTheme } from '@mui/material/styles'
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { useT } from '../../i18n/translate'
 import { useDetailed } from './task-box'
 
-// One box of the WBS deliverables footer: the PBS items the column's tasks produce.
-// Detached from the diagram: no lines, no handles, never a task (ADR-039 § PBS footer).
+// One deliverable (a milestone) of the WBS: under the task that carries it, or, for a
+// level-1 task, on the footer row below the diagram — then empty ("No milestone yet")
+// when that task has none. Never dragged, saved or connected by hand (ADR-039).
 
-export const DELIVERABLE_BOX_SIZE = { w: 240, h: 96 }
-
-export interface DeliverableItem {
-  id: string
-  label: string
-  /** Present (>= 0) only when the config names both count columns. */
-  done: number
-  total: number
-  hasCounts: boolean
-}
+export const DELIVERABLE_BOX_SIZE = { w: 240, h: 72 }
+const YELLOW = '#fbc02d'
 
 export interface DeliverableBoxData extends Record<string, unknown> {
-  items: DeliverableItem[]
-  /** Opens the task list filtered to the item's project and the item itself. */
-  onOpen: (itemId: string) => void
+  /** The milestone's label; null = the empty placeholder of `taskName`. */
+  label: string | null
+  taskName: string
+  /** "done / total", shown only when the config names both count columns. */
+  counts?: string
+  /** Opens the milestone, or the creation form for the empty placeholder. */
+  onOpen: () => void
 }
 
 function DeliverableBoxImpl({ data, positionAbsoluteX, positionAbsoluteY }: NodeProps<Node<DeliverableBoxData>>) {
   const t = useT()
   const theme = useTheme()
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...DELIVERABLE_BOX_SIZE })
-  const empty = data.items.length === 0
+  const empty = data.label === null
   return (
     <Paper
       data-testid="deliverable-box"
+      role="button"
+      tabIndex={0}
       elevation={0}
+      onClick={data.onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') data.onOpen()
+      }}
       sx={{
         width: '100%',
         height: '100%',
@@ -44,38 +46,31 @@ function DeliverableBoxImpl({ data, positionAbsoluteX, positionAbsoluteY }: Node
         py: 1,
         display: 'flex',
         flexDirection: 'column',
+        justifyContent: 'center',
         gap: 0.5,
         borderRadius: 1,
-        bgcolor: 'background.paper',
-        border: `1px ${empty ? 'dashed' : 'solid'} ${theme.palette.divider}`,
+        cursor: 'pointer',
+        bgcolor: empty ? 'background.paper' : alpha(YELLOW, 0.15),
+        border: empty ? `1px dashed ${theme.palette.divider}` : `1px solid ${alpha(YELLOW, 0.7)}`,
       }}
     >
+      {/* The arrow from the task ends here; no hand-drawn link starts or ends on it. */}
+      <Handle type="target" position={Position.Top} isConnectable={false} style={{ opacity: 0 }} />
       {empty ? (
-        <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', my: 'auto' }}>
-          {t('No deliverable')}
+        <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+          {t('No milestone yet for {name}').replace('{name}', data.taskName)}
         </Typography>
-      ) : detailed ? (
-        data.items.map((it) => (
-          <Box
-            key={it.id}
-            onClick={() => data.onOpen(it.id)}
-            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1, cursor: 'pointer' }}
-          >
-            <Typography variant="caption" sx={{ fontWeight: 600 }} noWrap>
-              {it.label}
-            </Typography>
-            {it.hasCounts ? (
-              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                {it.done} / {it.total}
-              </Typography>
-            ) : null}
-          </Box>
-        ))
       ) : (
-        // Zoomed out: just the first item, like a box's own title.
-        <Typography variant="caption" noWrap sx={{ alignSelf: 'center' }}>
-          {data.items[0]?.label ?? ''}
-        </Typography>
+        <>
+          <Typography variant="caption" sx={{ fontWeight: 600 }} noWrap>
+            {data.label}
+          </Typography>
+          {detailed && data.counts ? (
+            <Typography variant="caption" color="text.secondary">
+              {data.counts}
+            </Typography>
+          ) : null}
+        </>
       )}
     </Paper>
   )

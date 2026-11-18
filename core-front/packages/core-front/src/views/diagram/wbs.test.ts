@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWbs, canReparent, compareOrder, wbsColumnDeliverables } from './wbs'
+import { buildWbs, canReparent, compareOrder } from './wbs'
 
 const chain = [
   { id: 'a', parentId: null, plannedHours: 1 },
@@ -56,54 +56,6 @@ describe('canReparent', () => {
     expect(canReparent(nodes, 'zz', 'a')).toBe(false)
     expect(canReparent(nodes, 'b', 'zz')).toBe(false)
     expect(canReparent(nodes, 'group:p', 'a')).toBe(false)
-  })
-})
-
-describe('wbsColumnDeliverables', () => {
-  const rows = [
-    { id: 'r', parentId: null, order: '1' },
-    { id: 'c1', parentId: 'r', order: '1.1' },
-    { id: 'c2', parentId: 'r', order: '1.2' },
-    { id: 'd1', parentId: 'c1', order: '1.1.1' },
-    { id: 'd2', parentId: 'c1', order: '1.1.2' },
-    { id: 'd3', parentId: 'c2', order: '1.2.1' },
-    { id: 'e1', parentId: 'd1', order: '1.1.1.1' },
-  ]
-  const itemOf = (map: Record<string, string>) => (id: string) => map[id] ?? null
-
-  it('dedupes each column to the first-seen items in WBS order', () => {
-    const { nodes } = buildWbs(rows, new Set())
-    const got = wbsColumnDeliverables(nodes, rows, itemOf({ c1: 'A', d1: 'B', d2: 'A', c2: 'C', d3: 'C' }))
-    expect(got.get('c1')).toEqual(['A', 'B'])
-    expect(got.get('c2')).toEqual(['C'])
-    expect([...got.keys()].sort()).toEqual(['c1', 'c2'])
-  })
-
-  it('counts a deep descendant under its level-2 ancestor', () => {
-    const { nodes } = buildWbs(rows, new Set())
-    const got = wbsColumnDeliverables(nodes, rows, itemOf({ c1: 'A', e1: 'Z' }))
-    expect(got.get('c1')).toEqual(['A', 'Z'])
-  })
-
-  it('still counts a folded subtree', () => {
-    const r = buildWbs(rows, new Set(['c1']))
-    expect(r.visible).not.toContain('d1')
-    const got = wbsColumnDeliverables(r.nodes, rows, itemOf({ c1: 'A', d1: 'B', e1: 'Z' }))
-    expect(got.get('c1')).toEqual(['A', 'B', 'Z'])
-  })
-
-  it('a task with no parent and no group is its own column', () => {
-    const input = [{ id: 's', parentId: null, order: '5' }]
-    const { nodes } = buildWbs(input, new Set())
-    const got = wbsColumnDeliverables(nodes, input, itemOf({ s: 'X' }))
-    expect(got.get('s')).toEqual(['X'])
-  })
-
-  it('ignores tasks that are not in the given rows', () => {
-    const input = [{ id: 'c1', parentId: null, order: '1' }, { id: 't9', parentId: 'c1', order: '1.1' }]
-    const { nodes } = buildWbs(input, new Set())
-    const got = wbsColumnDeliverables(nodes, [input[0]], itemOf({ c1: 'A', t9: 'Q' }))
-    expect(got.get('c1')).toEqual(['A'])
   })
 })
 

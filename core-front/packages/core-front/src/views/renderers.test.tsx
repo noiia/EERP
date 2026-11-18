@@ -212,6 +212,27 @@ describe('form context (ViewDescriptor.formContext)', () => {
   })
 })
 
+describe('form ?link= after a create', () => {
+  it('points the named record at the new one once created, and never on an edit', async () => {
+    const update = vi.fn(async () => ({ id: 't1' }))
+    const ops = { list: vi.fn(async () => []), get: vi.fn(), create: vi.fn(), remove: vi.fn(), update } as unknown as RelationOps
+    mockSearchParams = new URLSearchParams('link=project_task:t1:milestone_id')
+    const create = vi.fn(async (b: Partial<Contact>) => ({ id: 'm9', name: '', ...b }) as Contact)
+    render(
+      <RelationOpsProvider ops={ops}>
+        <EntityView descriptor={formDescriptor} initialData={[]} actions={{ create, update: vi.fn() }} />
+      </RelationOpsProvider>,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Go live' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('project_task', 't1', { milestone_id: 'm9' }))
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Go live 2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeDefined())
+    expect(update).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('banners above the view', () => {
   it('a failed save shows its error banner between the toolbar and the form, not in it', async () => {
     const actions: EntityActions<Contact> = {

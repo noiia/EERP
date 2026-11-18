@@ -2865,7 +2865,8 @@ msgstr ""
 msgid "No task produces this"
 msgstr ""
 
-msgid "No deliverable"
+msgid "No milestone yet for {name}"
+msgstr ""
 
 msgid "New note"
 msgstr ""

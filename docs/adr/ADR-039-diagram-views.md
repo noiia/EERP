@@ -191,12 +191,25 @@ entity, the task field that links a task to the deliverable it produces, a `canE
 - *Deleting.* Deleting an item clears its children's `parent_id` and its tasks'
   `pbs_item_id` in the same transaction, then soft-deletes the item (its counts fall
   back to zero).
-- *The WBS footer.* The WBS mode draws one detached deliverable box under each
-  level-2 column: the items produced by that column's tasks (descriptor key
-  `wbsDeliverables`). The boxes are never stored (no layout, no history, not
-  draggable, selectable or deletable): they are positioned from the current box
-  positions on every render and stay outside `onMove`, layout saves, undo steps,
-  collision passes and line clearing.
+- *Milestones on the WBS* (amended 2026-11-18). The WBS deliverables are the tasks'
+  **milestones** (descriptor key `wbsDeliverables`, Project:
+  `{field: 'milestone_id', entity: 'project_milestone', formPath: '/project/milestones/:id', …}`),
+  no longer the PBS items (those keep their own PBS mode). A task below level 1 that
+  carries a milestone gets a yellow-tinted tile right under it, with an arrow from the
+  task; the auto-layout keeps room for it, so the next row starts below the tile. A
+  level-1 task (`1.`, `2.`…) gets its tile on one footer row below the whole diagram,
+  aligned on its column, without an arrow (it would cross the column's boxes); when it
+  has no milestone the tile is an empty placeholder, "No milestone yet for <task>".
+  Clicking a tile opens the milestone; the placeholder opens the milestone creation
+  form with `?filter[project_id]=…&link=project_task:<task>:milestone_id`, and the
+  form, once that new record is created, sets the task's `milestone_id` to it (the
+  generic `link=<entity>:<id>:<field>` form parameter, written through
+  `RelationOps.update`, so Go authorizes it). Tiles are never stored (no layout, no
+  history, not draggable, selectable or deletable): they are positioned from the
+  current box positions on every render and stay outside `onMove`, layout saves, undo
+  steps, collision passes and line clearing. Pitfall: a layout saved before a task
+  had its milestone keeps its box positions, so its tile may overlap the row below
+  until *Re-arrange*.
 
 See also [ADR-040](ADR-040-risk-analysis.md): the risk severity reuses these conventions for its critical path.
 

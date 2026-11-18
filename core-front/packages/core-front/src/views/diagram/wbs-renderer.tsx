@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Typography from '@mui/material/Typography'
-import type { Connection, Edge, Node } from '@xyflow/react'
+import { MarkerType, type Connection, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { WbsDeliverablesConfig } from '../../api/view-fields'
@@ -23,7 +23,7 @@ import { useUndoHistory } from './history'
 import type { Point } from './collide'
 import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
 import { boxFieldOf, LABEL_BOX_SIZE, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
-import { buildWbs, canReparent, wbsColumnDeliverables } from './wbs'
+import { buildWbs, canReparent } from './wbs'
 
 // WBS display mode: the records as a top-down tree over `parentField`, under one
 // read-only root per `groupField` value. Boxes edit their fields in place, parents
@@ -37,6 +37,9 @@ const FOLDED_COLOR = '#ed6c02'
 const GROUP = 'group:'
 /** The row the deliverable footer sits on: this far below the lowest drawn box. */
 const DELIVERABLE_FOOTER_GAP = 48
+/** Between a task and the milestone tile under it. */
+const DELIVERABLE_GAP = 24
+const DELIVERABLE = 'deliverable:'
 /** Item ids per `in[id]=` read (the same chunk size the relation labels use). */
 const DELIVERABLE_CHUNK = 100
 
@@ -53,8 +56,8 @@ export interface WbsRendererProps<T extends HasId> {
   /** The dotted order number field (`wbsOrderField`): siblings drawn in its order, and a
    * dropped box writes its new number from where it lands among its (new) siblings. */
   orderField?: string
-  /** Deliverable footer (`wbsDeliverables`): one box under each level-2 column listing the
-   * deliverables the column's tasks produce. */
+  /** Deliverables (`wbsDeliverables`): each task's milestone under it, level-1 ones on a
+   * footer row (empty placeholder when none). */
   deliverables?: WbsDeliverablesConfig
   onRecordsChange?: (records: T[]) => void
   serverOptions?: EntityListOptions
@@ -137,25 +140,27 @@ export function WbsRenderer<T extends HasId>({
   // The zoomed-out box title: "<order> - <name>" like the lists.
   const titleOf = (r: T) => [orderField ? str(values(r)[orderField]) : null, str(values(r).name) ?? str(values(r).title)].filter(Boolean).join(' - ')
 
-  // ---- Deliverables footer (ADR-039 § PBS): one detached box under each level-2 column,
-  // listing the deliverables the column's tasks produce (folded subtrees included).
-  const deliverableMap = useMemo(
-    () =>
-      deliverables
-        ? wbsColumnDeliverables(nodes, inputs, (id) => str(values(byId.get(id)!)[deliverables.field]))
-        : new Map<string, string[]>(),
-    [deliverables, nodes, inputs, byId],
+  // ---- Deliverables (ADR-039): each task's milestone (`deliverables.field`) as a tile under
+  // it, an arrow from the task; a level-1 task's on one footer row below the diagram, aligned
+  // on its column — an empty placeholder (opening the creation form) when it has none.
+  const deliverableOf = (id: string) => (deliverables && nodes[id]?.kind === 'task' ? str(values(byId.get(id)!)[deliverables.field]) : null)
+  const isTopTask = (id: string) => nodes[id].kind === 'task' && (!nodes[id].parentId || nodes[id].parentId!.startsWith(GROUP))
+  const allDeliverableIds = useMemo(
+    () => (deliverables ? [...new Set(rows.map((r) => str(values(r)[deliverables.field])).filter((v): v is string => !!v))].sort() : []),
+    [deliverables, rows],
   )
-  const allDeliverableIds = useMemo(() => [...new Set([...deliverableMap.values()].flat())].sort(), [deliverableMap])
   const ops = useRelationOps()
-  // null = no footer yet (still loading, or the read was refused: then none at all, no error).
+  // null = not read yet, or the read was refused: then no tile at all, no error.
   const [deliverableRows, setDeliverableRows] = useState<Record<string, unknown>[] | null>(null)
   const deliverableEntity = deliverables?.entity
-  const deliverableKey = deliverables && allDeliverableIds.length ? allDeliverableIds.join('\n') : ''
-  // One read per set of item ids (`in[id]=`, chunks of DELIVERABLE_CHUNK): the ids only,
-  // so a move never re-reads; the set changes when the pinned scope or the links do.
+  const deliverableKey = allDeliverableIds.join('\n')
+  // One read per set of ids (`in[id]=`, chunks of DELIVERABLE_CHUNK): a move never re-reads.
   useEffect(() => {
-    if (!deliverableEntity || !deliverableKey || !ops) {
+    if (!deliverableEntity || !ops) {
+      setDeliverableRows(null)
+      return
+    }
+    if (!deliverableKey) {
       setDeliverableRows([])
       return
     }
@@ -176,53 +181,59 @@ export function WbsRenderer<T extends HasId>({
     }
   }, [ops, deliverableEntity, deliverableKey])
   const deliverableById = new Map((deliverableRows ?? []).map((r) => [String(r.id), r]))
-  const deliverablesReady = !!deliverables && deliverableRows !== null && allDeliverableIds.length > 0
-  // The task list filtered to the item's project and the item itself (the count opens it).
-  const openDeliverable = (itemId: string) => {
+  const deliverablesReady = !!deliverables && deliverableRows !== null
+  // A task whose milestone tile sits right under it (a non-level-1 one with a known milestone).
+  const tiled = (id: string) => deliverablesReady && !isTopTask(id) && deliverableById.has(deliverableOf(id) ?? '')
+  // The layout keeps room for that tile, so the next row starts below it.
+  const heightOf = (id: string) =>
+    nodes[id].kind === 'group' ? LABEL_BOX_SIZE.h : TASK_BOX_SIZE.h + (tiled(id) ? DELIVERABLE_GAP + DELIVERABLE_BOX_SIZE.h : 0)
+  const openForm = (path: string) => router.push(erpPath(path))
+  const deliverableNode = (id: string, x: number, y: number, task: string): Node => {
     const d = deliverables!
-    if (!formPath) return
-    const listPath = formPath.replace(/\/:id\/?$/, '')
-    const r = deliverableById.get(itemId) ?? {}
-    const q = new URLSearchParams()
-    const projKey = groupField ?? 'project_id'
-    if (r[projKey] != null) q.set(`filter[${projKey}]`, String(r[projKey]))
-    q.set(`filter[${d.field}]`, itemId)
-    router.push(`${listPath}?${q.toString()}`)
+    const mid = deliverableOf(id)
+    const r = mid ? deliverableById.get(mid) : undefined
+    const record = values(byId.get(id)!)
+    const hasCounts = !!d.doneField && !!d.totalField
+    let onOpen = () => openForm(d.formPath.replace(':id', mid!))
+    if (!r) {
+      // The creation form, seeded with the task's project and linked back to the task once saved.
+      const q = new URLSearchParams()
+      const scope = groupField ? str(record[groupField]) : null
+      if (scope) q.set(`filter[${groupField}]`, scope)
+      q.set('link', `${entity}:${id}:${d.field}`)
+      onOpen = () => openForm(`${d.formPath.replace(':id', 'new')}?${q.toString()}`)
+    }
+    const data: DeliverableBoxData = {
+      label: r ? String(r[d.labelField] ?? r.name ?? mid) : null,
+      taskName: task,
+      counts: r && hasCounts ? `${Number(r[d.doneField!]) || 0} / ${Number(r[d.totalField!]) || 0}` : undefined,
+      onOpen,
+    }
+    return { id: `${DELIVERABLE}${id}`, type: 'deliverable', position: { x: x + TASK_BOX_SIZE.w / 2 - DELIVERABLE_BOX_SIZE.w / 2, y }, width: DELIVERABLE_BOX_SIZE.w, height: DELIVERABLE_BOX_SIZE.h, data }
   }
-  // One box per visible column head, all on one row below the lowest box; positioned from
-  // the final placed boxes on every render (never stored), so the footer follows a moved
-  // column, a dropped-lower box and an undo alike.
+  // Positioned from the final placed boxes on every render (never stored), so a tile follows
+  // its task through a move, a re-arrange and an undo alike.
   const extraDeliverableNodes = (positions: Record<string, Point>): Node[] => {
     if (!deliverablesReady) return []
-    const heads = visible.filter((id) => nodes[id].kind === 'task' && nodes[id].depth <= 1)
-    if (!heads.length) return []
-    const bottom = Math.max(...visible.map((id) => positions[id]!.y + (nodes[id].kind === 'group' ? LABEL_BOX_SIZE.h : TASK_BOX_SIZE.h)))
+    const under = visible.filter(tiled).map((id) => deliverableNode(id, positions[id]!.x, positions[id]!.y + TASK_BOX_SIZE.h + DELIVERABLE_GAP, titleOf(byId.get(id)!)))
+    const heads = visible.filter(isTopTask)
+    if (!heads.length) return under
+    const bottom = Math.max(...visible.map((id) => positions[id]!.y + heightOf(id)))
     const row = bottom + DELIVERABLE_FOOTER_GAP
-    const doneField = deliverables!.doneField
-    const totalField = deliverables!.totalField
-    const hasCounts = !!doneField && !!totalField
-    return heads.map((id) => {
-      const p = positions[id]!
-      const items = (deliverableMap.get(id) ?? []).filter((iid) => deliverableById.has(iid)).map((iid) => {
-        const r = deliverableById.get(iid)!
-        return {
-          id: iid,
-          label: String(r[deliverables!.labelField] ?? r.name ?? iid),
-          done: hasCounts && doneField ? Number(r[doneField]) || 0 : 0,
-          total: hasCounts && totalField ? Number(r[totalField]) || 0 : 0,
-          hasCounts,
-        }
-      })
-      return {
-        id: `deliverable:${id}`,
-        type: 'deliverable',
-        position: { x: p.x + TASK_BOX_SIZE.w / 2 - DELIVERABLE_BOX_SIZE.w / 2, y: row },
-        width: DELIVERABLE_BOX_SIZE.w,
-        height: DELIVERABLE_BOX_SIZE.h,
-        data: { items, onOpen: (iid: string) => openDeliverable(iid) } satisfies DeliverableBoxData,
-      }
-    })
+    return [...under, ...heads.map((id) => deliverableNode(id, positions[id]!.x, row, str(values(byId.get(id)!).name) ?? titleOf(byId.get(id)!)))]
   }
+  // The arrows to the tiles right under their task (the footer ones are aligned instead: an
+  // arrow down a whole column would cross its boxes).
+  const deliverableEdges: Edge[] = visible.filter(tiled).map((id) => ({
+    id: `${DELIVERABLE}edge:${id}`,
+    source: id,
+    target: `${DELIVERABLE}${id}`,
+    markerEnd: { type: MarkerType.ArrowClosed },
+    deletable: false,
+    reconnectable: false,
+    selectable: false,
+    focusable: false,
+  }))
   const rfNodes: Node[] = visible.map((id) => {
     if (nodes[id].kind === 'group') {
       const data: LabelBoxData = { label: labelOf(groupField!, id.slice(GROUP.length)), chevron: chevron(id), footer: footer(id) }
@@ -250,12 +261,12 @@ export function WbsRenderer<T extends HasId>({
     return { id, position: { x: 0, y: 0 }, data }
   })
   const shown = new Set(visible)
-  const edges: Edge[] = visible.flatMap((id) => {
+  const edges: Edge[] = [...deliverableEdges, ...visible.flatMap((id) => {
     const p = nodes[id].parentId
     // A group root's line isn't a parent link: it can't be deleted or moved.
     const link = canWrite && !p?.startsWith(GROUP)
     return p && shown.has(p) ? [{ id: `${p}->${id}`, source: p, target: id, deletable: link, reconnectable: link }] : []
-  })
+  })]
 
   const groupOf = (target: string) =>
     target.startsWith(GROUP) ? target.slice(GROUP.length) : str(values(byId.get(target)!)[groupField!])
@@ -380,7 +391,7 @@ export function WbsRenderer<T extends HasId>({
         nodes={rfNodes}
         edges={edges}
         extraNodes={extraDeliverableNodes}
-        autoLayout={() => layoutWbs(nodes, roots, visible, TASK_BOX_SIZE, (id) => (nodes[id].kind === 'group' ? LABEL_BOX_SIZE.h : TASK_BOX_SIZE.h))}
+        autoLayout={() => layoutWbs(nodes, roots, visible, TASK_BOX_SIZE, heightOf)}
         folded={folded}
         onFoldedChange={setFolded}
         onNodeDrop={onNodeDrop}
