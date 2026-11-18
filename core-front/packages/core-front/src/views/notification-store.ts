@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { erpPath } from '../navigation'
+import { translate } from '../i18n/translate'
+import { useI18nStore } from '../i18n/i18n-store'
 
 // The bell's state: the caller's notifications, seeded by one BFF read and kept
 // live by the presence socket (presence-store.ts dispatches notification frames
@@ -74,7 +77,11 @@ function isNotification(v: unknown): v is Omit<AppNotification, 'read'> {
 /** Applies one live frame; true when it was a notification frame (handled or not). */
 export function handleNotificationFrame(msg: { type?: string; notification?: unknown; ids?: string[]; all?: boolean }): boolean {
   if (msg.type === 'notification') {
-    if (isNotification(msg.notification)) useNotificationStore.getState().upsert(msg.notification)
+    if (isNotification(msg.notification)) {
+      const isNew = !useNotificationStore.getState().items.some((i) => i.id === (msg.notification as AppNotification).id)
+      useNotificationStore.getState().upsert(msg.notification)
+      if (isNew) showBrowserNotification(msg.notification)
+    }
     return true
   }
   if (msg.type === 'notification_read') {
@@ -82,6 +89,29 @@ export function handleNotificationFrame(msg: { type?: string; notification?: unk
     return true
   }
   return false
+}
+
+/** An ERP path only — mirrors Go's notify.ValidLink. */
+const isErpPath = (link: string) => link.startsWith('/') && !link.startsWith('//') && !/[\\:]/.test(link)
+
+/**
+ * Shows a live personal message (a Teams message, a failed cron run…) as a
+ * system notification while the ERP window isn't focused and the user granted
+ * the permission. Go already left out the users who muted the conversation,
+ * so every message frame that reaches here is one to show. Activities (their
+ * progress frames) never pop up. `tag` = the notification id, so several
+ * open tabs show it once.
+ */
+export function showBrowserNotification(n: Omit<AppNotification, 'read'>): void {
+  if (n.kind !== 'message' || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+  if (typeof document !== 'undefined' && document.hasFocus()) return
+  const locale = useI18nStore.getState().locale
+  const shown = new Notification(translate(locale, n.title), { body: n.body, tag: n.id })
+  shown.onclick = () => {
+    window.focus()
+    if (isErpPath(n.link)) window.location.assign(erpPath(n.link))
+    shown.close()
+  }
 }
 
 const reconnectListeners = new Set<() => void>()

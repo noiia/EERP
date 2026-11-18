@@ -1830,6 +1830,9 @@ msgstr "En cours"
 msgid "Mark all as read"
 msgstr "Tout marquer comme lu"
 
+msgid "Enable desktop notifications"
+msgstr "Activer les notifications du bureau"
+
 msgid "No notifications"
 msgstr "Aucune notification"
 

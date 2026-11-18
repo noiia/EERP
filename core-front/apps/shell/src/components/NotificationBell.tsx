@@ -79,6 +79,13 @@ export function NotificationBell() {
     dwell.current = null
   }
   useEffect(() => cancelDwell, [])
+  // Read after mount (no Notification on the server): 'default' = not asked yet.
+  const [permission, setPermission] = useState<NotificationPermission | null>(null)
+  useEffect(() => setPermission(typeof Notification === 'undefined' ? null : Notification.permission), [])
+
+  function askPermission() {
+    void Notification.requestPermission().then(setPermission)
+  }
   const running = items.filter((i) => i.status === 'running')
   const rest = items.filter((i) => i.status !== 'running')
 
@@ -136,6 +143,13 @@ export function NotificationBell() {
         ) : null}
       </Stack>
       <Divider />
+      {permission === 'default' ? (
+        <Box sx={{ px: 2, py: 1 }}>
+          <Button size="small" variant="outlined" onClick={askPermission} startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['bell']} />}>
+            {t('Enable desktop notifications')}
+          </Button>
+        </Box>
+      ) : null}
       {items.length === 0 ? (
         <Typography color="text.secondary" sx={{ p: 2 }}>
           {t('No notifications')}

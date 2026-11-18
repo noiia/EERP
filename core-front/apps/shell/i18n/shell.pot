@@ -1670,6 +1670,9 @@ msgstr ""
 msgid "Mark all as read"
 msgstr ""
 
+msgid "Enable desktop notifications"
+msgstr ""
+
 msgid "No notifications"
 msgstr ""
 
