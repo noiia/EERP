@@ -325,9 +325,62 @@ Nothing is pushed until the tests pass **and** every service still meets the cov
 - The README's coverage badges are **written by CI**, not by hand: after a green run on `main`, test-build.yml's `coverage-badges` job rewrites the block between `<!-- coverage-badges:start -->` and `<!-- coverage-badges:end -->` from the figures that run measured (`.github/scripts/update-coverage-badges.py`) and commits it. `main` only, because badge commits on `dev` too would conflict on every `dev` → `main` merge. Adding a service with coverage means a `workflow_call` output in test-check.yml, a `name=<output>` argument in the `coverage-badges` job and a `LINKS` entry in the script.
 - Pitfall: the Go figure is measured against your dev database, while CI uses a fresh one, and it varies with the Go version (`.github/.testcoverage.yml` explains why). A local run just above the floor can still fail in CI.
 
+## Keep MCP aligned with EERP
+
+Treat MCP support as part of every change to business features, API routes,
+models, fields, permissions, row visibility, module activation or shared API/UI
+behavior. Review the MCP impact and make the necessary implementation,
+documentation and test updates in the same change. A feature change is complete
+only when its applicable functionality remains available through authorized MCP
+operations.
+
+- Check model discovery and schemas in `core/orm/server/catalog.go`. New CRUD
+  models are discovered automatically; verify field names, types, exclusions,
+  read-only flags and field group restrictions after model changes.
+- Check route discovery and execution in `core/internal/mcpbridge/bridge.go`.
+  New dedicated staff API roots require explicit admission in `mcpbridge.New`.
+  Update affected operation IDs and parameters when routes are renamed or
+  removed. Keep authentication, public/visitor routes, webhooks, database
+  administration, development seeding and MCP recursion excluded.
+- Update affected tools, descriptions, resources, prompts and usage guidance in
+  `core/internal/mcpbridge/server.go`, including dedicated project tools when
+  project behavior changes.
+- Keep MCP mounted after all business routes and handler overrides in
+  `core/internal/app/app.go`; its operation catalog snapshots the final routes.
+- Preserve the HTTP router as the authorization and business validation
+  boundary. Keep JWT authentication, tenant isolation, role permissions, field
+  groups, row scopes, active module checks and read-only mode effective. Preserve
+  the configured request and execution limits. MCP operations must continue
+  through the existing API handlers and business overrides.
+- Update [docs/mcp.md](docs/mcp.md) for changes to capabilities, arguments,
+  responses, authentication, limits or setup. Update README links and example
+  configuration files when affected. Keep all MCP documentation in English.
+- Add or adjust meaningful tests for changed MCP behavior, including access
+  denial and tenant/project isolation when relevant. Existing MCP tests live in
+  `core/internal/mcpbridge/server_test.go`, `core/orm/server/catalog_test.go`,
+  `core/internal/app/mcp_test.go` and `core/modules/project/mcp_test.go`.
+
+When MCP behavior changes, run the relevant checks from `core/`:
+
+```bash
+go test -race ./internal/mcpbridge ./orm/server
+go test ./internal/types ./internal/app
+CONFIG=$PWD/../eerp-config.json go test ./modules/project -run MCP   # absolute: tests run from their package dir
+```
+
+Include tests for other affected business modules as needed. Database tests
+must use isolated test tenants and clean up only their own rows.
+
+For changes with no MCP impact, state that briefly in the change summary.
+Presentation-only changes do not require unnecessary MCP code edits. Document
+any intentional change to MCP coverage and its reason.
+
 # Documentation Rules
 
 Documentation is considered part of the codebase.
+
+Write repository documentation and agent instructions in English, including
+example text and placeholders.
 
 Whenever the architecture, public API, data model, routing, ORM behavior, module system or developer workflow changes, update the documentation in the same task.
 

@@ -26,6 +26,7 @@ import (
 	geoapi "core/internal/geo"
 	"core/internal/graphfield"
 	"core/internal/mail"
+	"core/internal/mcpbridge"
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
@@ -115,6 +116,9 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 	}
 
 	if err := mail.ValidateConfig(configContent); err != nil {
+		return nil, err
+	}
+	if err := mcpbridge.ValidateConfig(configContent); err != nil {
 		return nil, err
 	}
 	for _, w := range mail.ConfigWarnings(configContent) {
@@ -1191,6 +1195,11 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	billingLineTaxGroup.POST("", propertyManagementHandler.CreateBillingLineTax)
 	billingLineTaxGroup.DELETE("/:id", propertyManagementHandler.DeleteBillingLineTax)
 
+	// Snapshot the final business routes, after all generic-handler overrides.
+	if configContent.MCPEnabled {
+		mcpbridge.New(srv.Echo(), permRepo, moduleRuntime.IsTableActive, configContent.MCPAllowWrites, app.Logger).
+			Mount(srv.Echo(), configContent, jwtMw)
+	}
 	a.server, a.userRepo, a.permRepo, a.presenceHub = srv, userRepo, permRepo, presenceHub
 	for _, r := range srv.Routes() {
 		common.Logger.Debug("route", zap.String("method", r.Method), zap.String("path", r.Path))
