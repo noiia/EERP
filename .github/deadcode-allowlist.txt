@@ -19,13 +19,33 @@ core/internal/testdb.Open
 # Handler.check validates one write on any orm.Executor. Its caller (the .gan
 # importer) lands later in this epic, so nothing reachable from main uses it yet.
 core/modules/project.Handler.check
-# Exchange layer (WP2): the neutral Plan model and the .gan adapter. What is
-# still unreachable has its first caller in a later WP of this epic:
-# workdaysBetween, endAfter and Weekend.worked in the diff (WP3 Task 5),
-# formatByKey in the routes (WP4 Task 8).
+# Exchange layer (WP2/WP3): the neutral Plan model, the .gan adapter and the
+# loader. What is still unreachable has its first caller in a later WP of this
+# epic: endAfter in the diff (WP3 Task 5), formatByKey and the loader entry
+# points loadPlan and planHash in the routes and importer (WP4 Task 8); the
+# remaining loader helpers are only reachable through them, which is also why
+# workdaysBetween and Weekend.worked stay listed even though planDates (Task 4)
+# and the diff (Task 5) call them: deadcode measures reachability from main, so
+# a helper used only inside the still-unwired loader subtree stays dead until
+# WP4 puts a route on top of it.
 core/modules/project.Weekend.worked
+core/modules/project.byWbs
+core/modules/project.canonicalJSON
 core/modules/project.endAfter
 core/modules/project.formatByKey
+core/modules/project.loadPlan
+core/modules/project.milestoneKeys
+core/modules/project.placeholderDay
+core/modules/project.planDates
+core/modules/project.planHash
+core/modules/project.planMilestoneRow.planTask
+core/modules/project.planTaskRow.planTask
+core/modules/project.planUserName
+core/modules/project.readPlanAssignments
+core/modules/project.readPlanDeps
+core/modules/project.readPlanMilestones
+core/modules/project.readPlanTasks
+core/modules/project.wbsParts
 core/modules/project.workdaysBetween
 core/orm.ExposedTableNames
 core/orm.ExtendSchema
