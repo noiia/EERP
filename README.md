@@ -50,8 +50,7 @@ model discovery, business actions, resources and prompts. See the [MCP setup and
 Clone the repository:
 
 ```bash
-git clone git@github.com:noiia/EERP.git
-cd EERP
+git clone https://github.com/noiia/EERP.git
 ```
 
 ### Configure secrets and start (one command)
