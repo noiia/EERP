@@ -19,17 +19,13 @@ core/internal/testdb.Open
 # Handler.check validates one write on any orm.Executor. Its caller (the .gan
 # importer) lands later in this epic, so nothing reachable from main uses it yet.
 core/modules/project.Handler.check
-# Exchange layer (WP2): the neutral Plan model, its calendar helpers and the
-# format registry. Their first callers land in later WPs of this epic:
-# workdaysBetween/endAfter/Weekend.worked/PlanTask.Key in the diff (WP3 Task 5),
-# registerFormat and day in the .gan adapter (Task 3), formatByKey in the routes
-# (WP4 Task 8).
-core/modules/project.PlanTask.Key
+# Exchange layer (WP2): the neutral Plan model and the .gan adapter. What is
+# still unreachable has its first caller in a later WP of this epic:
+# workdaysBetween, endAfter and Weekend.worked in the diff (WP3 Task 5),
+# formatByKey in the routes (WP4 Task 8).
 core/modules/project.Weekend.worked
-core/modules/project.day
 core/modules/project.endAfter
 core/modules/project.formatByKey
-core/modules/project.registerFormat
 core/modules/project.workdaysBetween
 core/orm.ExposedTableNames
 core/orm.ExtendSchema
