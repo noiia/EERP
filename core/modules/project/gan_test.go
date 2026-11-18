@@ -3,6 +3,7 @@ package project
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,16 @@ const (
 	ganLongRef    = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 	ganCharlieRef = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 	ganGateRef    = "milestone:dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+
+	// The plans the encoder tests build in code carry uuid-shaped refs too, because
+	// that is what EERP writes and what the decoder reads back as an identity: an
+	// eerp_id of any other shape comes back as a new row (see validRef), which
+	// would silently break a round trip that is meant to be exact.
+	ganRoundA      = "eeeeeeee-0000-4000-8000-000000000001"
+	ganRoundB      = "eeeeeeee-0000-4000-8000-000000000002"
+	ganRoundC      = "eeeeeeee-0000-4000-8000-000000000003"
+	ganRoundGate   = "milestone:eeeeeeee-0000-4000-8000-000000000004"
+	ganRoundDupRef = "eeeeeeee-0000-4000-8000-000000000005"
 )
 
 func ganDecodeFile(t *testing.T, name string) (Plan, []Warning) {
@@ -418,29 +429,30 @@ func TestGanRoundTrip(t *testing.T) {
 		Name:    "Round & trip <Project>",
 		Weekend: Weekend{time.Wednesday: true, time.Saturday: true, time.Sunday: true},
 		Tasks: []PlanTask{
-			{Ref: "a", Name: `Parent "quoted" & <child>`, Start: exchangeDay(2026, time.January, 5),
+			{Ref: ganRoundA, Name: `Parent "quoted" & <child>`, Start: exchangeDay(2026, time.January, 5),
 				Duration: 10, PlannedHours: 40, Complete: 0, HasChildren: true},
-			{Ref: "b", Name: "Child", Parent: "a", Start: exchangeDay(2026, time.January, 7),
+			{Ref: ganRoundB, Name: "Child", Parent: ganRoundA, Start: exchangeDay(2026, time.January, 7),
 				Duration: 5, PlannedHours: 16.5, Complete: 100},
-			{Ref: "c", Name: "Sibling", Start: exchangeDay(2026, time.February, 2),
+			{Ref: ganRoundC, Name: "Sibling", Start: exchangeDay(2026, time.February, 2),
 				Duration: 3, PlannedHours: 0.25, Complete: 0},
-			{Ref: "milestone:m", Name: "Gate", Milestone: true, Start: exchangeDay(2026, time.February, 20),
+			{Ref: ganRoundGate, Name: "Gate", Milestone: true, Start: exchangeDay(2026, time.February, 20),
 				Duration: 0, PlannedHours: 0, Complete: 0},
 		},
 		// A <depend> hangs off its predecessor, so the format cannot keep
 		// dependencies in an order other than their predecessors' document order:
 		// that is the order this plan lists them in, and what a decoded file comes
-		// back in.
+		// back in. Plan.Deps itself promises nothing about order (see its comment),
+		// which is why a diff has to compare them as a multiset.
 		Deps: []PlanDep{
-			{Pred: "a", Succ: "c", Type: DepFF, Lag: 1},
-			{Pred: "a", Succ: "milestone:m", Type: DepSF, Lag: 3},
-			{Pred: "b", Succ: "c", Type: DepFS, Lag: 2},
-			{Pred: "c", Succ: "milestone:m", Type: DepSS, Lag: 0},
+			{Pred: ganRoundA, Succ: ganRoundC, Type: DepFF, Lag: 1},
+			{Pred: ganRoundA, Succ: ganRoundGate, Type: DepSF, Lag: 3},
+			{Pred: ganRoundB, Succ: ganRoundC, Type: DepFS, Lag: 2},
+			{Pred: ganRoundC, Succ: ganRoundGate, Type: DepSS, Lag: 0},
 		},
 		Assignments: []PlanAssign{
-			{Task: "b", Email: "ann@x.com", Name: "Ann Lee"},
-			{Task: "c", Email: "bob@x.com", Name: "Bob"},
-			{Task: "milestone:m", Email: "ann@x.com", Name: "Ann Lee"},
+			{Task: ganRoundB, Email: "ann@x.com", Name: "Ann Lee"},
+			{Task: ganRoundC, Email: "bob@x.com", Name: "Bob"},
+			{Task: ganRoundGate, Email: "ann@x.com", Name: "Ann Lee"},
 		},
 	}
 
@@ -598,16 +610,42 @@ func TestGanDecode_Hostile(t *testing.T) {
 		}
 	})
 
-	t.Run("every attribute missing", func(t *testing.T) {
-		p, warnings, err := ganDecodeString(t, `<project><tasks><task/></tasks></project>`)
+	t.Run("every attribute missing but the id", func(t *testing.T) {
+		p, warnings, err := ganDecodeString(t, `<project><tasks><task id="1"/></tasks></project>`)
 		if err != nil {
 			t.Fatalf("Decode: %v", err)
 		}
-		if len(p.Tasks) != 1 || p.Tasks[0].Key() != "new:" {
-			t.Errorf("tasks = %+v, want one task keyed new:", p.Tasks)
+		if len(p.Tasks) != 1 || p.Tasks[0].Key() != "new:1" {
+			t.Errorf("tasks = %+v, want one task keyed new:1", p.Tasks)
+		}
+		if p.Tasks[0].FileID != "1" {
+			t.Errorf("FileID = %q, want the file's own id, which is what names the row", p.Tasks[0].FileID)
 		}
 		if len(warnings) != 0 {
 			t.Errorf("warnings = %+v, want none", warnings)
+		}
+	})
+
+	t.Run("a task with no id is refused", func(t *testing.T) {
+		// A row the file does not number cannot be named by Parent, PlanDep or
+		// PlanAssign, and two of them would share the key "new:", so one would be
+		// silently lost. GanttProject always numbers its rows.
+		for _, doc := range []string{
+			`<project><tasks><task/></tasks></project>`,
+			`<project><tasks><task name="no id" meeting="false" start="2026-01-05" duration="1"/></tasks></project>`,
+			`<project><tasks><task id="1" name="parent"><task name="orphan"/></task></tasks></project>`,
+		} {
+			p, warnings, err := ganDecodeString(t, doc)
+			if err == nil {
+				t.Errorf("Decode(%s) = no error, want one; plan %+v", doc, p)
+				continue
+			}
+			if !errors.Is(err, errNotGan) {
+				t.Errorf("Decode(%s) error = %v, want it to wrap errNotGan (422 INVALID_FILE)", doc, err)
+			}
+			if len(warnings) != 0 || !reflect.DeepEqual(p, Plan{}) {
+				t.Errorf("Decode(%s) = plan %+v warnings %+v, want the zero plan and none", doc, p, warnings)
+			}
 		}
 	})
 }
@@ -782,6 +820,280 @@ func TestGanDecode_Shape(t *testing.T) {
 	})
 }
 
+// TestGanDecode_RefShape pins the identity boundary. The only eerp_id the decoder
+// hands to the model is one EERP could itself have written (see validRef): a task
+// uuid, or milestone: plus a uuid. Anything else is read the way a foreign id is
+// already read, as a row the file added keyed on its own file id, and says so with
+// the same UNKNOWN_ID warning the diff raises for an id this project does not know.
+//
+// The shape that matters is new:7. Key() builds a new row's key from its file id,
+// so a file allowed to put that in eerp_id would be handed the key of another row,
+// and that row would vanish from the diff without a word: no duplicate warning, no
+// change row.
+func TestGanDecode_RefShape(t *testing.T) {
+	row := func(value string) string {
+		return `<project name="x"><tasks>` +
+			`<taskproperties>` +
+			`<taskproperty id="tpc0" name="eerp_id" type="custom" valuetype="text"/>` +
+			`</taskproperties>` +
+			`<task id="7" name="Row" meeting="false" start="2026-01-05" duration="1" complete="0">` +
+			`<customproperty taskproperty-id="tpc0" value="` + value + `"/></task></tasks></project>`
+	}
+
+	t.Run("an EERP id survives", func(t *testing.T) {
+		// The padded pair is the same identity read through the same trimming the
+		// planned_hours column gets: a stray space is not another row.
+		for _, tc := range []struct{ value, want string }{
+			{ganAlphaRef, ganAlphaRef},
+			{ganGateRef, ganGateRef},
+			{strings.ToUpper(ganAlphaRef), strings.ToUpper(ganAlphaRef)},
+			{" " + ganAlphaRef, ganAlphaRef},
+			{ganAlphaRef + "\t", ganAlphaRef},
+		} {
+			p, warnings, err := ganDecodeString(t, row(tc.value))
+			if err != nil {
+				t.Fatalf("Decode(%q): %v", tc.value, err)
+			}
+			if len(p.Tasks) != 1 || p.Tasks[0].Ref != tc.want {
+				t.Errorf("Decode(%q): tasks = %+v, want the one row carrying %q", tc.value, p.Tasks, tc.want)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("Decode(%q): warnings = %+v, want none for an id EERP can hold", tc.value, warnings)
+			}
+		}
+	})
+
+	t.Run("any other shape is an unknown id", func(t *testing.T) {
+		bad := []string{
+			// The synthetic namespace of Key(), which a file must never reach.
+			"new:7", "new-milestone:7", "new:", "new", "new-milestone:",
+			// Not an id at all.
+			"7", "not-a-uuid", "00000000-0000-0000-0000-00000000000g",
+			"milestone:", "milestone:not-a-uuid", "milestone:m",
+			"MILESTONE:" + ganAlphaRef, "milestone:" + ganAlphaRef + "f",
+			"aaaa-bbbb", ganAlphaRef[:len(ganAlphaRef)-1],
+			strings.Repeat("a", 36), ganAlphaRef + "," + ganRoundB,
+		}
+		for _, value := range bad {
+			p, warnings, err := ganDecodeString(t, row(value))
+			if err != nil {
+				t.Errorf("Decode(%q): %v, want the file to decode with the row read as new", value, err)
+				continue
+			}
+			if len(p.Tasks) != 1 {
+				t.Fatalf("Decode(%q) = %+v, want one row", value, p.Tasks)
+			}
+			task := p.Tasks[0]
+			if task.Ref != "" {
+				t.Errorf("Decode(%q): Ref = %q, want it dropped: the row is a create", value, task.Ref)
+			}
+			if task.FileID != "7" || task.Key() != "new:7" {
+				t.Errorf("Decode(%q): FileID/Key = %q/%q, want 7/new:7 (keyed on its own file id)",
+					value, task.FileID, task.Key())
+			}
+			if len(warnings) != 1 || warnings[0].Code != "UNKNOWN_ID" || warnings[0].Task != "Row" {
+				t.Errorf("Decode(%q): warnings = %+v, want one UNKNOWN_ID naming the task", value, warnings)
+			}
+		}
+	})
+
+	t.Run("an empty or absent eerp_id is an ordinary create", func(t *testing.T) {
+		// The partner's own task: GanttProject writes the column with an empty
+		// value, which is not a broken id and must not warn.
+		for _, doc := range []string{row(""), row(strings.Repeat(" ", 3))} {
+			p, warnings, err := ganDecodeString(t, doc)
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if len(p.Tasks) != 1 || p.Tasks[0].Key() != "new:7" {
+				t.Errorf("tasks = %+v, want one row keyed new:7", p.Tasks)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("warnings = %+v, want none for a row nobody gave an id", warnings)
+			}
+		}
+	})
+
+	t.Run("a milestone keeps a well formed prefixed id", func(t *testing.T) {
+		doc := `<project name="x"><tasks>` +
+			`<taskproperties>` +
+			`<taskproperty id="tpc0" name="eerp_id" type="custom" valuetype="text"/>` +
+			`</taskproperties>` +
+			`<task id="9" name="Gate" meeting="true" start="2026-01-05" duration="0" complete="0">` +
+			`<customproperty taskproperty-id="tpc0" value="` + ganGateRef + `"/></task></tasks></project>`
+		p, warnings, err := ganDecodeString(t, doc)
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if len(p.Tasks) != 1 || p.Tasks[0].Ref != ganGateRef || !p.Tasks[0].Milestone {
+			t.Errorf("tasks = %+v, want the milestone carrying its prefixed id", p.Tasks)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+	})
+
+	t.Run("a forged new: id cannot take another row's key", func(t *testing.T) {
+		// The collision the boundary exists for: the row the file added as id 7 is
+		// the one a hand-written eerp_id="new:7" claims to be, and the dependency
+		// and the allocation both name it. Read verbatim, the two rows collapsed
+		// onto one Key and a whole task disappeared from the diff in silence.
+		doc := `<project name="x"><tasks>` +
+			`<taskproperties>` +
+			`<taskproperty id="tpc0" name="eerp_id" type="custom" valuetype="text"/>` +
+			`</taskproperties>` +
+			`<task id="1" name="Forged" meeting="false" start="2026-01-05" duration="1" complete="0">` +
+			`<customproperty taskproperty-id="tpc0" value="new:7"/>` +
+			`<depend id="7" type="2" difference="0" hardness="Strong"/></task>` +
+			`<task id="7" name="Genuine" meeting="false" start="2026-01-06" duration="1" complete="0"/>` +
+			`</tasks><resources>` +
+			`<resource id="1" name="Ann Lee" contacts="ann@x.com"/>` +
+			`</resources><allocations>` +
+			`<allocation task-id="7" resource-id="1"/>` +
+			`</allocations></project>`
+		p, warnings, err := ganDecodeString(t, doc)
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if len(p.Tasks) != 2 {
+			t.Fatalf("%d tasks = %+v, want both rows: a file must not be able to hide one", len(p.Tasks), p.Tasks)
+		}
+		forged := ganTask(t, p, "new:1")
+		if forged.Name != "Forged" || forged.Ref != "" {
+			t.Errorf("forged row = %+v, want it read as a new row with no Ref", forged)
+		}
+		genuine := ganTask(t, p, "new:7")
+		if genuine.Name != "Genuine" {
+			t.Errorf("row keyed new:7 = %+v, want the row the file added as id 7", genuine)
+		}
+		wantDeps := []PlanDep{{Pred: "new:1", Succ: "new:7", Type: DepFS, Lag: 0}}
+		if !reflect.DeepEqual(p.Deps, wantDeps) {
+			t.Errorf("deps = %+v, want %+v (the dependency still names the row it pointed at)", p.Deps, wantDeps)
+		}
+		wantAssigns := []PlanAssign{{Task: "new:7", Email: "ann@x.com", Name: "Ann Lee"}}
+		if !reflect.DeepEqual(p.Assignments, wantAssigns) {
+			t.Errorf("assignments = %+v, want %+v", p.Assignments, wantAssigns)
+		}
+		if len(warnings) != 1 || warnings[0].Code != "UNKNOWN_ID" || warnings[0].Task != "Forged" {
+			t.Errorf("warnings = %+v, want exactly one UNKNOWN_ID naming the forged row", warnings)
+		}
+	})
+
+	t.Run("two rows of one file id never share a key", func(t *testing.T) {
+		// FileIDs are what a new row keys on, so the decoder never hands out a row
+		// without one (see the missing id case in TestGanDecode_Hostile); this is
+		// the same promise from the other side, with the milestone prefix involved.
+		doc := `<project name="x"><tasks>` +
+			`<taskproperties>` +
+			`<taskproperty id="tpc0" name="eerp_id" type="custom" valuetype="text"/>` +
+			`</taskproperties>` +
+			`<task id="3" name="Gate" meeting="true" start="2026-01-05" duration="0" complete="0">` +
+			`<customproperty taskproperty-id="tpc0" value="new-milestone:4"/></task>` +
+			`<task id="4" name="Other gate" meeting="true" start="2026-01-06" duration="0" complete="0"/>` +
+			`</tasks></project>`
+		p, warnings, err := ganDecodeString(t, doc)
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if len(p.Tasks) != 2 || p.Tasks[0].Key() != "new-milestone:3" || p.Tasks[1].Key() != "new-milestone:4" {
+			t.Errorf("tasks = %+v, want the two milestones on their own file ids", p.Tasks)
+		}
+		if len(warnings) != 1 || warnings[0].Code != "UNKNOWN_ID" {
+			t.Errorf("warnings = %+v, want one UNKNOWN_ID", warnings)
+		}
+	})
+}
+
+// TestGanDecode_Calendar pins what the decoder makes of the file's <default-week>,
+// and above all the mask that works no day. <default-week sun="1" ... sat="1"/>
+// states a calendar with no working day at all: a file like that holds no schedule
+// (any duration at all looks for a worked day that never comes), and GanttProject
+// never writes one. It comes back as "not this format", which the route answers 422
+// INVALID_FILE, rather than as a plan whose calendar EERP invented. The day loops
+// are bounded on their own whatever the mask says (see TestWorkdays), so this is
+// the layer above them refusing a file no calendar can schedule, not the guard
+// against a hang.
+func TestGanDecode_Calendar(t *testing.T) {
+	week := func(attrs string) string {
+		return `<project name="x"><calendars><day-types><day-type id="0"/><default-week id="1" name="default" ` +
+			attrs + `/></day-types></calendars>` +
+			`<tasks><task id="1" name="x" meeting="false" start="2026-01-05" duration="2" complete="0"/></tasks></project>`
+	}
+
+	t.Run("a week that works no day is refused", func(t *testing.T) {
+		for _, attrs := range []string{
+			`sun="1" mon="1" tue="1" wed="1" thu="1" fri="1" sat="1"`,
+			`sun="true" mon="true" tue="true" wed="true" thu="true" fri="true" sat="true"`,
+			`sun="1" mon="TRUE" tue="1" wed="True" thu="1" fri="1" sat="1"`,
+		} {
+			p, warnings, err := ganDecodeString(t, week(attrs))
+			if err == nil {
+				t.Errorf("Decode(%s) = no error, want a refusal; plan %+v", attrs, p)
+				continue
+			}
+			if !errors.Is(err, errNotGan) {
+				t.Errorf("Decode(%s) error = %v, want it to wrap errNotGan (422 INVALID_FILE)", attrs, err)
+			}
+			if len(warnings) != 0 || !reflect.DeepEqual(p, Plan{}) {
+				t.Errorf("Decode(%s) = plan %+v warnings %+v, want the zero plan and none", attrs, p, warnings)
+			}
+		}
+	})
+
+	t.Run("a week with one worked day is a calendar", func(t *testing.T) {
+		// The sparsest real calendar: seven days walked per worked day. Read, not
+		// refused, and the plan carries it whole.
+		p, warnings, err := ganDecodeString(t, week(`sun="1" mon="0" tue="1" wed="1" thu="1" fri="1" sat="1"`))
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if p.Weekend != worksOnly(time.Monday) {
+			t.Errorf("Weekend = %v, want Monday worked and nothing else", p.Weekend)
+		}
+		if !p.Weekend.hasWorkedDay() {
+			t.Error("hasWorkedDay() = false, want true: the decoder never hands out a mask with none")
+		}
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+	})
+
+	t.Run("a week that works every day is read as it says", func(t *testing.T) {
+		// The other all-one-value mask, and the legal one: every day worked is a
+		// calendar GanttProject writes (the six day week a partner really runs).
+		p, warnings, err := ganDecodeString(t, week(`sun="0" mon="0" tue="0" wed="0" thu="0" fri="0" sat="0"`))
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if p.Weekend != (Weekend{}) {
+			t.Errorf("Weekend = %v, want every day worked as the file states", p.Weekend)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+		// The decoder never substitutes a calendar for a file that gave one: the
+		// default is what a file with no default-week gets, not this one.
+		if p.Weekend == DefaultWeekend {
+			t.Error("Weekend = DefaultWeekend, want the file's own mask")
+		}
+	})
+
+	t.Run("a calendars block with no default-week keeps the default", func(t *testing.T) {
+		doc := `<project name="x"><calendars><day-types><day-type id="0"/></day-types></calendars>` +
+			`<tasks><task id="1" name="x" meeting="false" start="2026-01-05" duration="1" complete="0"/></tasks></project>`
+		p, warnings, err := ganDecodeString(t, doc)
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if p.Weekend != DefaultWeekend {
+			t.Errorf("Weekend = %v, want DefaultWeekend", p.Weekend)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+	})
+}
+
 // TestGanEncode_Shape pins what the encoder writes: the numbering, the order, the
 // two custom columns, and the weakest dependency hardness that keeps a pushed
 // successor visible as a conflict.
@@ -792,16 +1104,16 @@ func TestGanEncode_Shape(t *testing.T) {
 		// the file, so the encoder has to move it there itself rather than trust
 		// the caller's order.
 		Tasks: []PlanTask{
-			{Ref: "milestone:m", Name: "Gate", Milestone: true, Start: exchangeDay(2026, time.January, 9)},
-			{Ref: "a", Name: "Parent", Start: exchangeDay(2026, time.January, 5), Duration: 3, PlannedHours: 8, HasChildren: true},
-			{Ref: "b", Name: "Child", Parent: "a", Start: exchangeDay(2026, time.January, 6), Duration: 2, Complete: 100},
+			{Ref: ganRoundGate, Name: "Gate", Milestone: true, Start: exchangeDay(2026, time.January, 9)},
+			{Ref: ganRoundA, Name: "Parent", Start: exchangeDay(2026, time.January, 5), Duration: 3, PlannedHours: 8, HasChildren: true},
+			{Ref: ganRoundB, Name: "Child", Parent: ganRoundA, Start: exchangeDay(2026, time.January, 6), Duration: 2, Complete: 100},
 		},
 		Deps: []PlanDep{
-			{Pred: "a", Succ: "b", Type: DepFS},
-			{Pred: "b", Succ: "milestone:m", Type: DepFS, Lag: 2},
-			{Pred: "a", Succ: "gone", Type: DepFS},
+			{Pred: ganRoundA, Succ: ganRoundB, Type: DepFS},
+			{Pred: ganRoundB, Succ: ganRoundGate, Type: DepFS, Lag: 2},
+			{Pred: ganRoundA, Succ: "gone", Type: DepFS},
 		},
-		Assignments: []PlanAssign{{Task: "b", Email: "ann@x.com", Name: "Ann Lee"}},
+		Assignments: []PlanAssign{{Task: ganRoundB, Email: "ann@x.com", Name: "Ann Lee"}},
 	}
 	var buf bytes.Buffer
 	if err := (ganFormat{}).Encode(&buf, p); err != nil {
@@ -818,7 +1130,7 @@ func TestGanEncode_Shape(t *testing.T) {
 		`<project name="Q&amp;A &#34;Project&#34; &lt;2026&gt;"`,
 		`<taskproperty id="tpc0" name="eerp_id" type="custom" valuetype="text"`,
 		`<taskproperty id="tpc1" name="planned_hours" type="custom" valuetype="double"`,
-		`<customproperty taskproperty-id="tpc0" value="milestone:m"`,
+		`<customproperty taskproperty-id="tpc0" value="milestone:eeeeeeee-0000-4000-8000-000000000004"`,
 		`hardness="Rubber"`,
 		`difference="2"`,
 		`<resource id="1" name="Ann Lee" function="Default:0" contacts="ann@x.com"`,
@@ -856,8 +1168,8 @@ func TestGanEncode_Shape(t *testing.T) {
 func TestGanEncode_HostilePlan(t *testing.T) {
 	t.Run("a Parent cycle is cut and keeps its rows", func(t *testing.T) {
 		p := Plan{Tasks: []PlanTask{
-			{Ref: "x", Name: "X", Parent: "y", Start: exchangeDay(2026, time.January, 5), Duration: 1},
-			{Ref: "y", Name: "Y", Parent: "x", Start: exchangeDay(2026, time.January, 6), Duration: 1},
+			{Ref: ganRoundA, Name: "X", Parent: ganRoundB, Start: exchangeDay(2026, time.January, 5), Duration: 1},
+			{Ref: ganRoundB, Name: "Y", Parent: ganRoundA, Start: exchangeDay(2026, time.January, 6), Duration: 1},
 		}}
 		var buf bytes.Buffer
 		done := make(chan error, 1)
@@ -881,8 +1193,8 @@ func TestGanEncode_HostilePlan(t *testing.T) {
 
 	t.Run("a duplicated Key still gives every row its own id", func(t *testing.T) {
 		p := Plan{Tasks: []PlanTask{
-			{Ref: "dup", Name: "First", Start: exchangeDay(2026, time.January, 5), Duration: 1},
-			{Ref: "dup", Name: "Second", Start: exchangeDay(2026, time.January, 6), Duration: 1},
+			{Ref: ganRoundDupRef, Name: "First", Start: exchangeDay(2026, time.January, 5), Duration: 1},
+			{Ref: ganRoundDupRef, Name: "Second", Start: exchangeDay(2026, time.January, 6), Duration: 1},
 		}}
 		var buf bytes.Buffer
 		if err := (ganFormat{}).Encode(&buf, p); err != nil {
@@ -898,7 +1210,7 @@ func TestGanEncode_HostilePlan(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Decode: %v", err)
 		}
-		if len(got.Tasks) != 2 || got.Tasks[0].Key() != "dup" || got.Tasks[1].Key() != "dup" {
+		if len(got.Tasks) != 2 || got.Tasks[0].Key() != ganRoundDupRef || got.Tasks[1].Key() != ganRoundDupRef {
 			t.Errorf("tasks = %+v, want the two rows sharing one Key", got.Tasks)
 		}
 	})

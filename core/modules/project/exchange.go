@@ -2,7 +2,10 @@ package project
 
 import (
 	"io"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // The exchange layer moves a project's schedule between EERP and a desktop
@@ -66,6 +69,9 @@ type PlanTask struct {
 // Key is the task's identity inside a Plan, used by Parent, PlanDep and
 // PlanAssign. It is stable for a given file and a given project state, which is
 // what lets a diff's change keys survive a preview/apply round trip.
+//
+// The two "new" prefixes are EERP's own namespace: no Ref a file supplies may
+// look like them, which is what validRef is for.
 func (t PlanTask) Key() string {
 	if t.Ref != "" {
 		return t.Ref
@@ -74,6 +80,33 @@ func (t PlanTask) Key() string {
 		return "new-milestone:" + t.FileID
 	}
 	return "new:" + t.FileID
+}
+
+// milestoneRefPrefix marks an eerp_id that names a milestone rather than a task
+// (spec "Matching and change keys"). Task 4's loader builds the same shape from
+// a milestone row's id.
+const milestoneRefPrefix = "milestone:"
+
+// validRef reports whether an identity a file carries is one EERP can recognise:
+// a task uuid, or milestoneRefPrefix plus a uuid. It is the one rule the .gan
+// decoder, Task 4's loader and Task 5's diff share.
+//
+// It exists to keep the synthetic half of the Key() namespace closed. Key()
+// builds a new row's key from its FileID, so a file allowed to put "new:7" in
+// eerp_id would be handed the key of another row, and that row would vanish from
+// the diff without a word. A Ref that passes validRef can never be such a key:
+// only the exact milestoneRefPrefix is stripped, and every remaining form is a
+// uuid, which begins with a hex digit; "new" and "new-milestone" do not.
+//
+// A Ref that passes is well formed, not known: whether it names a task of this
+// project is the diff's call, and it answers with the UNKNOWN_ID warning. The
+// encoder writes EERP's own ids back verbatim and does not consult this.
+func validRef(ref string) bool {
+	if rest, ok := strings.CutPrefix(ref, milestoneRefPrefix); ok {
+		ref = rest
+	}
+	_, err := uuid.Parse(ref)
+	return err == nil
 }
 
 // PlanDep is a dependency between two tasks, named by Key().
@@ -106,7 +139,15 @@ type Plan struct {
 	HasHolidays bool
 	// Tasks is document order (pre-order, a parent before its children), with
 	// milestones last. Encoding writes, and decoding normalises to, that order.
-	Tasks       []PlanTask
+	Tasks []PlanTask
+	// Deps is every dependency of the plan, and its slice order means nothing:
+	// each format puts the dependencies where its own file puts them (the .gan
+	// one hangs each <depend> off its predecessor, so a decoded file comes back
+	// grouped by predecessor in document order), and a plan loaded from EERP comes
+	// back in whatever order its rows were read. Two plans' dependencies are the
+	// same when they hold the same PlanDeps, so any comparison must be a
+	// set/multiset comparison, never DeepEqual on the slices: a diff that compared
+	// order would report change rows on a file nobody touched.
 	Deps        []PlanDep
 	Assignments []PlanAssign
 }

@@ -48,9 +48,12 @@ const (
 	// cap is a product decision (an import that large is refused with 422), not a
 	// defence against a hang: decoding 6000 tasks costs milliseconds.
 	ganMaxTasks = 5000
-	// ganMaxDurationDays bounds the day loops of workdaysBetween and endAfter. A
-	// duration past a hundred years is a hostile value, not a schedule.
-	ganMaxDurationDays = 36500
+	// ganMaxDurationDays bounds the duration and the dependency lag the decoder
+	// accepts. It is the exchange's own ceiling for a working-day count, so the
+	// file and the day loops cannot drift apart: a duration the decoder hands out
+	// is one workdaysBetween and endAfter never saturate on (see maxWorkdayCount).
+	// A duration past a hundred years is a hostile value, not a schedule.
+	ganMaxDurationDays = maxWorkdayCount
 
 	// The two columns EERP adds. GanttProject keeps custom columns across saves.
 	ganEERPIDColumn    = "eerp_id"
@@ -246,18 +249,11 @@ func (doc *ganProjectEl) toPlan() (Plan, []Warning, error) {
 	p := Plan{Name: doc.Name, Weekend: DefaultWeekend}
 	var warnings []Warning
 
-	if doc.Calendars != nil {
-		if w, ok := doc.Calendars.weekend(); ok {
-			p.Weekend = w
-		}
-		if doc.Calendars.hasHoliday() {
-			p.HasHolidays = true
-			warnings = append(warnings, Warning{
-				Code:    "HOLIDAYS",
-				Message: "the file defines holidays; only its weekends are used",
-			})
-		}
+	calendarWarnings, err := doc.calendar(&p)
+	if err != nil {
+		return Plan{}, nil, err
 	}
+	warnings = append(warnings, calendarWarnings...)
 
 	w := ganWalker{columns: doc.Tasks.columnByName(), byFileID: map[string]string{}}
 	if doc.Tasks != nil {
@@ -267,6 +263,7 @@ func (doc *ganProjectEl) toPlan() (Plan, []Warning, error) {
 			}
 		}
 	}
+	warnings = append(warnings, w.warnings...)
 	// Milestones are hoisted last so that a decoded Plan is in the order the
 	// encoder writes, which is what makes a file read back as it was written.
 	p.Tasks = append(w.tasks, w.milestones...)
@@ -298,6 +295,9 @@ type ganWalker struct {
 	milestones []PlanTask
 	byFileID   map[string]string
 	pending    []ganPendingDep
+	// warnings holds what the rows themselves could not be read as, in document
+	// order. The calendar's warnings come before them.
+	warnings []Warning
 }
 
 type ganPendingDep struct {
@@ -309,9 +309,19 @@ func (w *ganWalker) walk(el ganTaskEl, parentKey string) error {
 	if len(w.tasks)+len(w.milestones) >= ganMaxTasks {
 		return fmt.Errorf("%w: more than %d tasks", errNotGan, ganMaxTasks)
 	}
+	// The file's own id is what a row is named by: Key() falls back to it for a
+	// row EERP does not know, and Parent, PlanDep and PlanAssign all hold Key()s.
+	// Two rows without one would share the key "new:" and one of them would be
+	// lost. GanttProject always numbers its rows, so a <task> with no id is a
+	// corrupt file rather than a task EERP could import.
+	if el.ID == "" {
+		return fmt.Errorf("%w: a <task> has no id attribute", errNotGan)
+	}
+
+	ref := w.eerpRef(el)
 
 	task := PlanTask{
-		Ref:          w.column(el, ganEERPIDColumn),
+		Ref:          ref,
 		FileID:       el.ID,
 		Name:         el.Name,
 		Start:        ganDay(el.Start),
@@ -334,10 +344,8 @@ func (w *ganWalker) walk(el ganTaskEl, parentKey string) error {
 	}
 
 	key := task.Key()
-	if el.ID != "" {
-		if _, dup := w.byFileID[el.ID]; !dup {
-			w.byFileID[el.ID] = key
-		}
+	if _, dup := w.byFileID[el.ID]; !dup {
+		w.byFileID[el.ID] = key
 	}
 	for _, dep := range el.Deps {
 		w.pending = append(w.pending, ganPendingDep{pred: key, dep: dep})
@@ -380,6 +388,68 @@ func (w *ganWalker) column(el ganTaskEl, name string) string {
 			return prop.Value
 		}
 	}
+	return ""
+}
+
+// calendar applies the file's <calendars> block to p: the working week, and the
+// one thing about it EERP cannot hold. A file with no <default-week> leaves the
+// caller's DefaultWeekend in place.
+//
+// A mask that works no day (<default-week sun="1" ... sat="1"/>) is refused
+// rather than degraded. It states a calendar with no working day at all, so the
+// file holds no schedule to import: any duration at all runs past every horizon.
+// GanttProject never writes one, its UI keeps at least one day worked. Degrading
+// it to a five-day week would be the decoder inventing the one thing it never
+// invents, a calendar the partner did not write, and the nine warning codes have
+// nothing to say about it. So it is "not a .gan file", which the route answers
+// 422 INVALID_FILE. The day loops are bounded on their own whatever the mask
+// (see maxWorkdayScan); this is the layer above them, refusing the file rather
+// than importing a plan no calendar can schedule.
+func (doc *ganProjectEl) calendar(p *Plan) ([]Warning, error) {
+	if doc.Calendars == nil {
+		return nil, nil
+	}
+	mask, ok := doc.Calendars.weekend()
+	if ok {
+		if !mask.hasWorkedDay() {
+			return nil, fmt.Errorf("%w: <default-week> works no day", errNotGan)
+		}
+		p.Weekend = mask
+	}
+	if !doc.Calendars.hasHoliday() {
+		return nil, nil
+	}
+	p.HasHolidays = true
+	return []Warning{{
+		Code:    "HOLIDAYS",
+		Message: "the file defines holidays; only its weekends are used",
+	}}, nil
+}
+
+// eerpRef reads one row's EERP identity off the file's custom column. An absent
+// value is the normal case for a task the partner added. A value that is not an
+// EERP identity at all (see validRef) is dropped, and the row becomes an ordinary
+// create keyed on its own file id: that is how a foreign id is already read, and
+// it is what keeps a hand-written eerp_id="new:7" from being handed the Key() of
+// another row, which would make that row vanish from the diff. The warning is the
+// one the diff raises for an id this project does not know, so the file never
+// passes for an identity EERP cannot have.
+func (w *ganWalker) eerpRef(el ganTaskEl) string {
+	// Trimmed the way the other column EERP owns is (see ganHours): an empty cell
+	// is how GanttProject writes a row nobody gave an id to, and a stray space does
+	// not make it a different identity.
+	ref := strings.TrimSpace(w.column(el, ganEERPIDColumn))
+	if ref == "" {
+		return ""
+	}
+	if validRef(ref) {
+		return ref
+	}
+	w.warnings = append(w.warnings, Warning{
+		Code:    "UNKNOWN_ID",
+		Message: "the file's eerp_id is not an EERP id; the task is imported as a new task",
+		Task:    el.Name,
+	})
 	return ""
 }
 
