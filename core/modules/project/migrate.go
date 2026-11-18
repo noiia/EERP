@@ -54,11 +54,12 @@ var migrations = slices.Concat(
 		check("project", "project_visibility", "visibility IN ('everyone', 'members')"),
 		check("project_timesheet", "project_timesheet_hours", "hours > 0"),
 
-		// ── RACI and capacities: one role per user per task, and at most one
-		// accountable per task (the partial index; a 23505 on it is a 422
-		// ONE_ACCOUNTABLE, validate.go).
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_live ON project_task_raci (task_id, user_id) WHERE deleted_at IS NULL`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_one_accountable ON project_task_raci (task_id) WHERE deleted_at IS NULL AND role = 'A'`,
+		// ── RACI and capacities: a user may hold several roles on a task, one
+		// row per role. Several accountables are allowed (the matrix warns);
+		// the older one-role and one-accountable indexes are dropped.
+		`DROP INDEX IF EXISTS idx_project_task_raci_live`,
+		`DROP INDEX IF EXISTS idx_project_task_raci_one_accountable`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_role_live ON project_task_raci (task_id, user_id, role) WHERE deleted_at IS NULL`,
 		check("project_task_raci", "project_task_raci_role", "role IN ('R', 'A', 'C', 'I')"),
 		check("project_capacity", "project_capacity_hours_per_week", "hours_per_week > 0 AND hours_per_week <= 168"),
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_capacity_live ON project_capacity (tenant_id, user_id) WHERE deleted_at IS NULL`,

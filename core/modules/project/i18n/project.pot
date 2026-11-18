@@ -406,6 +406,18 @@ msgstr ""
 msgid "No one accountable"
 msgstr ""
 
+msgid "Several people accountable"
+msgstr ""
+
+msgid "Bulk edit"
+msgstr ""
+
+msgid "Select all"
+msgstr ""
+
+msgid "Person"
+msgstr ""
+
 msgid "Deliverable"
 msgstr ""
 
